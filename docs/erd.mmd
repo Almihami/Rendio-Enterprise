@@ -1,0 +1,250 @@
+%% MER (Modelo Entidad-Relación) — Rendio MVP
+%% Renderizable en GitHub directamente. Para generar PNG/SVG: usar https://mermaid.live
+%% Fuente de verdad: Arquitectura_Tecnica_MVP_Rendio.md §5
+
+erDiagram
+    organizations ||--o{ airports : "has"
+    organizations ||--o{ profiles : "has"
+    organizations ||--o{ vehicles : "owns"
+
+    airports ||--o{ flights : "departs/arrives"
+
+    profiles ||--o| auxiliar_profiles : "extends_when_role=auxiliar"
+    profiles ||--o| driver_profiles : "extends_when_role=driver"
+    profiles ||--o{ incidents : "reports"
+    profiles ||--o{ audit_events : "actor"
+
+    auxiliar_profiles ||--o{ reservations : "books"
+
+    driver_profiles ||--o{ driver_shifts : "works"
+    driver_profiles ||--o{ driver_availability : "submits_weekly"
+    driver_profiles ||--o{ route_assignments : "drives"
+    driver_profiles ||--o{ driver_locations : "tracks"
+    driver_profiles ||--o{ vehicle_inspections : "performs"
+
+    vehicles ||--o{ driver_shifts : "used_in"
+    vehicles ||--o{ route_assignments : "assigned_to"
+    vehicles ||--o{ vehicle_inspections : "inspected"
+    vehicles ||--o{ maintenance_logs : "serviced"
+
+    driver_shifts ||--o{ vehicle_inspections : "pre_op_and_post_op"
+
+    flights ||--o{ reservations : "served_by"
+    flights ||--o{ route_assignments : "destination"
+
+    reservations ||--o| route_stops : "scheduled_in"
+    reservations ||--o{ incidents : "may_have"
+
+    route_assignments ||--o{ route_stops : "ordered_stops"
+    route_assignments ||--o{ driver_locations : "tracked_in"
+    route_assignments ||--o{ incidents : "may_have"
+
+    vehicle_inspections ||--o{ inspection_photos : "documented_by"
+
+    organizations {
+        uuid id PK
+        text name
+        text slug UK
+        text timezone "default America/Bogota"
+        timestamptz created_at
+    }
+
+    airports {
+        uuid id PK
+        uuid organization_id FK
+        text iata_code "MDE"
+        text name
+        double latitude
+        double longitude
+    }
+
+    profiles {
+        uuid id PK_FK "auth.users"
+        uuid organization_id FK
+        user_role role "admin/driver/auxiliar"
+        text full_name
+        text email
+        text phone
+        text avatar_url
+        boolean is_active
+        timestamptz deleted_at
+    }
+
+    auxiliar_profiles {
+        uuid id PK
+        uuid profile_id FK_UK
+        text home_address
+        double home_latitude
+        double home_longitude
+        text employee_code
+    }
+
+    driver_profiles {
+        uuid id PK
+        uuid profile_id FK_UK
+        text license_number
+        date license_expires_at
+        text eps_provider
+        date eps_expires_at
+        text arl_provider
+        date arl_expires_at
+    }
+
+    vehicles {
+        uuid id PK
+        uuid organization_id FK
+        text internal_code UK "HAP 001"
+        text license_plate UK
+        text brand
+        text model
+        int year
+        int capacity "default 4"
+        int current_km
+        int last_maintenance_km
+        int maintenance_interval_km "default 7000"
+        vehicle_status status
+        date soat_expires_at
+        date tecnomec_expires_at
+        date insurance_expires_at
+    }
+
+    flights {
+        uuid id PK
+        uuid airport_id FK
+        text flight_number "AV9540"
+        trip_direction direction
+        timestamptz scheduled_at
+        timestamptz actual_at
+        flight_status status
+        text terminal
+        text gate
+        int required_auxiliars
+    }
+
+    reservations {
+        uuid id PK
+        uuid auxiliar_profile_id FK
+        uuid flight_id FK
+        trip_direction direction
+        reservation_status_h2a status_h2a "nullable"
+        reservation_status_a2h status_a2h "nullable"
+        text pickup_address
+        double pickup_latitude
+        double pickup_longitude
+        timestamptz calculated_pickup_at
+        timestamptz required_arrival_at
+        timestamptz ready_confirmed_at
+        text disembark_gate "a2h only"
+    }
+
+    route_assignments {
+        uuid id PK
+        uuid driver_profile_id FK
+        uuid vehicle_id FK
+        uuid flight_id FK "nullable"
+        trip_direction direction
+        timestamptz planned_start_at
+        timestamptz actual_start_at
+        timestamptz actual_end_at
+        text status "planned/in_progress/completed/cancelled"
+        int total_distance_m
+        int total_duration_s
+        text encoded_polyline
+    }
+
+    route_stops {
+        uuid id PK
+        uuid route_assignment_id FK
+        uuid reservation_id FK
+        int stop_order
+        timestamptz estimated_arrival_at
+        timestamptz actual_arrival_at
+        timestamptz actual_pickup_at
+        text status "pending/arrived/picked_up/no_show"
+    }
+
+    driver_locations {
+        bigint id PK
+        uuid driver_profile_id FK
+        uuid route_assignment_id FK "nullable"
+        double latitude
+        double longitude
+        real heading
+        real speed_kmh
+        timestamptz recorded_at
+    }
+
+    driver_shifts {
+        uuid id PK
+        uuid driver_profile_id FK
+        uuid vehicle_id FK
+        shift_status status
+        timestamptz started_at
+        timestamptz ended_at
+        int km_start
+        int km_end
+    }
+
+    driver_availability {
+        uuid id PK
+        uuid driver_profile_id FK
+        date week_start_date
+        text_array available_days
+        timestamptz submitted_at
+    }
+
+    vehicle_inspections {
+        uuid id PK
+        uuid driver_profile_id FK
+        uuid vehicle_id FK
+        uuid shift_id FK
+        text type "pre_op/post_op"
+        jsonb checklist
+        int km_reading
+        text observations
+        double location_lat
+        double location_lon
+    }
+
+    inspection_photos {
+        uuid id PK
+        uuid inspection_id FK
+        text angle "front/rear/left/right/interior/damage"
+        text storage_path
+        text caption
+    }
+
+    incidents {
+        uuid id PK
+        uuid reported_by FK
+        uuid reservation_id FK "nullable"
+        uuid route_assignment_id FK "nullable"
+        incident_category category
+        incident_severity severity
+        text description
+        text status "open/in_progress/resolved"
+        uuid resolved_by FK "nullable"
+        timestamptz resolved_at
+    }
+
+    maintenance_logs {
+        uuid id PK
+        uuid vehicle_id FK
+        text type "preventive/corrective"
+        int km_at_service
+        text description
+        numeric cost_cop
+        text performed_by
+        timestamptz performed_at
+        int next_service_km
+    }
+
+    audit_events {
+        bigint id PK
+        uuid actor_profile_id FK
+        text event_type
+        text entity_type
+        uuid entity_id
+        jsonb payload
+        timestamptz created_at
+    }

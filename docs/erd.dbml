@@ -1,0 +1,386 @@
+// MER (Modelo Entidad-Relación) — Rendio MVP
+// Pegar en https://dbdiagram.io/d para visualización interactiva y export PNG/PDF.
+// Fuente de verdad: Arquitectura_Tecnica_MVP_Rendio.md §5
+
+Project rendio_mvp {
+  database_type: 'PostgreSQL'
+  Note: 'MVP de Rendio Enterprises — transporte de auxiliares al aeropuerto JMC.'
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────────────────────────────
+
+Enum user_role {
+  admin
+  driver
+  auxiliar
+}
+
+Enum trip_direction {
+  home_to_airport
+  airport_to_home
+}
+
+Enum reservation_status_h2a {
+  requested
+  assigned
+  ready
+  en_route
+  at_pickup
+  on_board
+  delivered
+  no_show
+  cancelled
+}
+
+Enum reservation_status_a2h {
+  scheduled
+  in_air
+  landed
+  disembarking
+  driver_assigned
+  picked_up
+  en_route_home
+  delivered
+  cancelled
+}
+
+Enum flight_status {
+  scheduled
+  boarding
+  in_air
+  delayed
+  advanced
+  landed
+  cancelled
+  diverted
+}
+
+Enum vehicle_status {
+  available
+  in_use
+  maintenance
+  blocked
+}
+
+Enum shift_status {
+  vehicle_selected
+  inspection_in_progress
+  active
+  closing
+  closed
+}
+
+Enum incident_severity {
+  low
+  medium
+  high
+}
+
+Enum incident_category {
+  cant_leave_on_time
+  address_change
+  driver_late
+  flight_delay
+  flight_advanced
+  terminal_change
+  missed_flight
+  traffic
+  aux_not_responding
+  aux_not_ready
+  wrong_address
+  vehicle_problem
+  other
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Multi-tenancy
+// ──────────────────────────────────────────────────────────────────────
+
+Table organizations {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name text [not null]
+  slug text [unique, not null]
+  timezone text [default: 'America/Bogota']
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table airports {
+  id uuid [pk, default: `gen_random_uuid()`]
+  organization_id uuid [not null, ref: > organizations.id]
+  iata_code text [note: 'ej. MDE']
+  name text [not null]
+  latitude double [not null]
+  longitude double [not null]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Profiles
+// ──────────────────────────────────────────────────────────────────────
+
+Table profiles {
+  id uuid [pk, note: 'FK to auth.users(id) ON DELETE CASCADE']
+  organization_id uuid [not null, ref: > organizations.id]
+  role user_role [not null]
+  full_name text [not null]
+  email text [not null]
+  phone text
+  avatar_url text
+  is_active boolean [default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  deleted_at timestamptz
+}
+
+Table auxiliar_profiles {
+  id uuid [pk, default: `gen_random_uuid()`]
+  profile_id uuid [unique, not null, ref: - profiles.id]
+  home_address text [not null]
+  home_latitude double [not null]
+  home_longitude double [not null]
+  employee_code text
+  notes text
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table driver_profiles {
+  id uuid [pk, default: `gen_random_uuid()`]
+  profile_id uuid [unique, not null, ref: - profiles.id]
+  license_number text
+  license_expires_at date
+  eps_provider text
+  eps_expires_at date
+  arl_provider text
+  arl_expires_at date
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Fleet
+// ──────────────────────────────────────────────────────────────────────
+
+Table vehicles {
+  id uuid [pk, default: `gen_random_uuid()`]
+  organization_id uuid [not null, ref: > organizations.id]
+  internal_code text [unique, not null, note: 'HAP 001']
+  license_plate text [unique, not null]
+  brand text
+  model text
+  year int
+  capacity int [default: 4]
+  current_km int [not null, default: 0]
+  last_maintenance_km int [not null, default: 0]
+  maintenance_interval_km int [default: 7000]
+  status vehicle_status [default: 'available']
+  soat_expires_at date
+  tecnomec_expires_at date
+  insurance_expires_at date
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+  deleted_at timestamptz
+}
+
+Table maintenance_logs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  vehicle_id uuid [not null, ref: > vehicles.id]
+  type text [note: 'preventive | corrective']
+  km_at_service int [not null]
+  description text
+  cost_cop numeric(12,0)
+  performed_by text
+  performed_at timestamptz [not null]
+  next_service_km int
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Operations: shifts, availability
+// ──────────────────────────────────────────────────────────────────────
+
+Table driver_shifts {
+  id uuid [pk, default: `gen_random_uuid()`]
+  driver_profile_id uuid [not null, ref: > driver_profiles.id]
+  vehicle_id uuid [not null, ref: > vehicles.id]
+  status shift_status [default: 'vehicle_selected']
+  started_at timestamptz
+  ended_at timestamptz
+  km_start int
+  km_end int
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table driver_availability {
+  id uuid [pk, default: `gen_random_uuid()`]
+  driver_profile_id uuid [not null, ref: > driver_profiles.id]
+  week_start_date date [not null, note: 'lunes de la semana']
+  available_days text [not null, note: 'array de días: mon,tue,...']
+  notes text
+  submitted_at timestamptz [default: `now()`]
+
+  Indexes {
+    (driver_profile_id, week_start_date) [unique]
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Inspections
+// ──────────────────────────────────────────────────────────────────────
+
+Table vehicle_inspections {
+  id uuid [pk, default: `gen_random_uuid()`]
+  driver_profile_id uuid [not null, ref: > driver_profiles.id]
+  vehicle_id uuid [not null, ref: > vehicles.id]
+  shift_id uuid [not null, ref: > driver_shifts.id]
+  type text [not null, note: 'pre_op | post_op']
+  checklist jsonb [not null]
+  km_reading int [not null]
+  observations text
+  location_lat double
+  location_lon double
+  created_at timestamptz [default: `now()`]
+}
+
+Table inspection_photos {
+  id uuid [pk, default: `gen_random_uuid()`]
+  inspection_id uuid [not null, ref: > vehicle_inspections.id]
+  angle text [not null, note: 'front|rear|left|right|interior|damage']
+  storage_path text [not null]
+  caption text
+  created_at timestamptz [default: `now()`]
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Flights & Reservations
+// ──────────────────────────────────────────────────────────────────────
+
+Table flights {
+  id uuid [pk, default: `gen_random_uuid()`]
+  airport_id uuid [not null, ref: > airports.id]
+  flight_number text [not null, note: 'AV9540']
+  direction trip_direction [not null]
+  scheduled_at timestamptz [not null]
+  actual_at timestamptz
+  status flight_status [default: 'scheduled']
+  terminal text
+  gate text
+  required_auxiliars int [default: 1]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (airport_id, flight_number, scheduled_at) [unique]
+  }
+}
+
+Table reservations {
+  id uuid [pk, default: `gen_random_uuid()`]
+  auxiliar_profile_id uuid [not null, ref: > auxiliar_profiles.id]
+  flight_id uuid [not null, ref: > flights.id]
+  direction trip_direction [not null]
+  status_h2a reservation_status_h2a [note: 'nullable; only when direction = home_to_airport']
+  status_a2h reservation_status_a2h [note: 'nullable; only when direction = airport_to_home']
+  pickup_address text [not null]
+  pickup_latitude double
+  pickup_longitude double
+  calculated_pickup_at timestamptz
+  required_arrival_at timestamptz [not null]
+  ready_confirmed_at timestamptz
+  disembark_gate text [note: 'a2h only']
+  notes text
+  cancelled_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Routing
+// ──────────────────────────────────────────────────────────────────────
+
+Table route_assignments {
+  id uuid [pk, default: `gen_random_uuid()`]
+  driver_profile_id uuid [not null, ref: > driver_profiles.id]
+  vehicle_id uuid [not null, ref: > vehicles.id]
+  flight_id uuid [ref: > flights.id]
+  direction trip_direction [not null]
+  planned_start_at timestamptz
+  actual_start_at timestamptz
+  actual_end_at timestamptz
+  status text [default: 'planned', note: 'planned|in_progress|completed|cancelled']
+  total_distance_m int
+  total_duration_s int
+  encoded_polyline text
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table route_stops {
+  id uuid [pk, default: `gen_random_uuid()`]
+  route_assignment_id uuid [not null, ref: > route_assignments.id]
+  reservation_id uuid [not null, ref: > reservations.id]
+  stop_order int [not null]
+  estimated_arrival_at timestamptz
+  actual_arrival_at timestamptz
+  actual_pickup_at timestamptz
+  status text [note: 'pending|arrived|picked_up|no_show']
+
+  Indexes {
+    (route_assignment_id, stop_order) [unique]
+    (route_assignment_id, reservation_id) [unique]
+  }
+}
+
+Table driver_locations {
+  id bigint [pk, increment]
+  driver_profile_id uuid [not null, ref: > driver_profiles.id]
+  route_assignment_id uuid [ref: > route_assignments.id]
+  latitude double [not null]
+  longitude double [not null]
+  heading real
+  speed_kmh real
+  recorded_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (driver_profile_id, recorded_at) [name: 'idx_driver_loc_recent']
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Incidents & Audit
+// ──────────────────────────────────────────────────────────────────────
+
+Table incidents {
+  id uuid [pk, default: `gen_random_uuid()`]
+  reported_by uuid [not null, ref: > profiles.id]
+  reservation_id uuid [ref: > reservations.id]
+  route_assignment_id uuid [ref: > route_assignments.id]
+  category incident_category [not null]
+  severity incident_severity [default: 'medium']
+  description text [not null]
+  status text [default: 'open', note: 'open|in_progress|resolved']
+  resolved_by uuid [ref: > profiles.id]
+  resolved_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, default: `now()`]
+}
+
+Table audit_events {
+  id bigint [pk, increment]
+  actor_profile_id uuid [ref: > profiles.id]
+  event_type text [not null]
+  entity_type text [not null]
+  entity_id uuid [not null]
+  payload jsonb
+  created_at timestamptz [not null, default: `now()`]
+
+  Indexes {
+    (entity_type, entity_id, created_at) [name: 'idx_audit_entity']
+  }
+}
