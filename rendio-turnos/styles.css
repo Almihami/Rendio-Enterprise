@@ -1,0 +1,249 @@
+/* ============================================================
+   Rendio Turnos · Design system
+   ============================================================ */
+
+* { -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ---------- Splash / boot animation ---------- */
+#screen-splash {
+  transition: opacity 700ms ease-out;
+}
+#screen-splash.fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+.splash-logo {
+  opacity: 0;
+  transform: scale(0.92);
+  animation: splash-in 1100ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes splash-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-logo { animation: none; opacity: 1; transform: none; }
+  #screen-splash { transition: none; }
+}
+
+/* ---------- Tabs (admin) ---------- */
+.tab-btn { font-weight: 600; color: rgb(71 85 105); transition: all 0.15s; }
+.tab-btn:hover { color: rgb(15 23 42); }
+.tab-btn.active { color: rgb(244 121 31); border-bottom-color: rgb(244 121 31) !important; }
+
+/* ---------- Schedule table (admin + driver pie) ---------- */
+#schedule-table { border-collapse: collapse; width: 100%; min-width: 720px; }
+#schedule-table th, #schedule-table td {
+  border: 1px solid rgb(226 232 240);
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+#schedule-table thead th { background: white; font-weight: 700; }
+.row-morning   { background-color: rgb(219 234 254); }
+.row-afternoon { background-color: rgb(186 230 253); }
+.row-rest td   { font-style: italic; font-weight: 600; color: rgb(71 85 105); }
+.cell-label    { background: white !important; font-weight: 700; text-align: left; min-width: 180px; }
+.shift-cell    { cursor: pointer; text-align: center; font-weight: 600; white-space: nowrap; }
+.shift-cell:hover { outline: 2px solid rgb(244 121 31); outline-offset: -2px; }
+.row-coord     { background-color: rgb(220 252 231); }
+.row-coord td  { font-weight: 700; color: rgb(22 101 52); }
+
+/* ---------- Availability matrix ---------- */
+#availability-table th, #availability-table td {
+  border: 1px solid rgb(226 232 240);
+  padding: 6px 8px;
+}
+#availability-table th { font-weight: 600; }
+
+.avail-pill {
+  font-size: 11px; padding: 5px 9px; border-radius: 6px; font-weight: 700;
+  border: 1px solid transparent; cursor: pointer; user-select: none;
+  letter-spacing: 0.5px;
+}
+.avail-pill[data-state="available"]    { background-color: rgb(187 247 208); color: rgb(20 83 45); }
+.avail-pill[data-state="prefer_rest"]  { background-color: rgb(253 230 138); color: rgb(120 53 15); }
+.avail-pill[data-state="unavailable"]  { background-color: rgb(254 205 211); color: rgb(136 19 55); }
+
+/* ---------- Driver: day cards (mobile-first) ---------- */
+.day-card {
+  background: white;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04);
+  transition: box-shadow 0.2s;
+}
+.day-card.is-weekend { background: linear-gradient(135deg, #fff 0%, #FFF4EC 100%); border-color: rgb(255 226 203); }
+.day-card.is-today { border-color: rgb(244 121 31); box-shadow: 0 0 0 3px rgba(244,121,31,0.1); }
+
+.day-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.day-card-day {
+  font-size: 18px; font-weight: 800; color: rgb(10 10 10);
+  letter-spacing: -0.3px;
+}
+.day-card-date {
+  font-size: 11px; font-weight: 600; color: rgb(100 116 139);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+
+.day-card-actions {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+
+.shift-btn {
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: 4px; padding: 12px;
+  border-radius: 12px; border: 2px solid transparent;
+  cursor: pointer; transition: transform 0.1s, box-shadow 0.15s;
+  text-align: center; user-select: none;
+}
+.shift-btn:active { transform: scale(0.97); }
+.shift-btn-label {
+  font-size: 10px; font-weight: 700;
+  color: rgb(100 116 139);
+  letter-spacing: 1.5px;
+}
+.shift-btn-state {
+  font-size: 14px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+
+.shift-btn[data-state="available"]    { background: rgb(220 252 231); border-color: rgb(187 247 208); }
+.shift-btn[data-state="available"] .shift-btn-state { color: rgb(20 83 45); }
+.shift-btn[data-state="prefer_rest"]  { background: rgb(254 243 199); border-color: rgb(253 230 138); }
+.shift-btn[data-state="prefer_rest"] .shift-btn-state { color: rgb(120 53 15); }
+.shift-btn[data-state="unavailable"]  { background: rgb(254 226 226); border-color: rgb(254 205 211); }
+.shift-btn[data-state="unavailable"] .shift-btn-state { color: rgb(136 19 55); }
+
+.day-all-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  font-size: 13px; padding: 11px 16px; border-radius: 12px;
+  background: rgb(244 121 31); border: 1.5px solid rgb(244 121 31);
+  color: white; font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(244,121,31,0.25);
+  transition: background 0.15s, color 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+.day-all-btn:hover {
+  background: rgb(216 95 8); border-color: rgb(216 95 8); color: white;
+  box-shadow: 0 4px 12px rgba(244,121,31,0.3);
+}
+.day-all-btn:active { transform: scale(0.98); }
+
+/* Approval badge dentro de shift-btn */
+.approval-badge {
+  display: inline-block;
+  font-size: 9px; font-weight: 700;
+  padding: 2px 6px; border-radius: 999px;
+  letter-spacing: 0.5px; text-transform: uppercase;
+}
+.approval-badge[data-state="pending"]   { background-color: rgb(219 234 254); color: rgb(30 64 175); }
+.approval-badge[data-state="approved"]  { background-color: rgb(209 250 229); color: rgb(6 95 70); }
+.approval-badge[data-state="rejected"]  { background-color: rgb(254 226 226); color: rgb(153 27 27); }
+
+/* State dot (legend + picker) */
+.state-dot {
+  display: inline-block; width: 10px; height: 10px; border-radius: 999px;
+  flex-shrink: 0;
+}
+.state-available    { background-color: rgb(16 185 129); }
+.state-prefer-rest  { background-color: rgb(245 158 11); }
+.state-unavailable  { background-color: rgb(225 29 72); }
+
+/* State picker modal */
+.state-pick-btn {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: rgb(248 250 252);
+  border: 2px solid rgb(226 232 240); border-radius: 12px;
+  cursor: pointer; transition: all 0.15s;
+}
+.state-pick-btn:hover { background: white; border-color: rgb(244 121 31); }
+.state-pick-btn:active { transform: scale(0.98); }
+
+/* ---------- Request cards (driver "Mis solicitudes") ---------- */
+.request-card {
+  background: white; border: 1px solid rgb(226 232 240);
+  border-radius: 12px; padding: 12px 14px;
+  display: flex; gap: 12px; align-items: flex-start;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.request-card-icon {
+  width: 36px; height: 36px; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: 16px;
+}
+.request-card[data-state="pending"]  .request-card-icon { background: rgb(219 234 254); color: rgb(30 64 175); }
+.request-card[data-state="approved"] .request-card-icon { background: rgb(209 250 229); color: rgb(6 95 70); }
+.request-card[data-state="rejected"] .request-card-icon { background: rgb(254 226 226); color: rgb(153 27 27); }
+
+/* ---------- Approval cards (admin) ---------- */
+.approval-card {
+  background: white; border: 1px solid rgb(226 232 240);
+  border-radius: 16px; padding: 16px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.approval-card.has-conflict {
+  border-color: rgb(245 158 11);
+  background: linear-gradient(135deg, #fff 0%, #fffbeb 100%);
+}
+.approval-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 0; }
+.approval-row + .approval-row { border-top: 1px solid rgb(241 245 249); }
+
+/* ---------- Worker cards ---------- */
+.worker-card {
+  background: white; border: 1px solid rgb(226 232 240);
+  border-radius: 12px; padding: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.worker-card.coordinator { border-color: rgb(244 121 31); background: linear-gradient(135deg, #fff 0%, #FFF4EC 100%); }
+.worker-card.is-suspended { opacity: 0.85; background: rgb(248 250 252); border-style: dashed; }
+.worker-actions { display: flex; gap: 8px; margin-top: 12px; }
+.wk-btn {
+  flex: 1; font-size: 12px; font-weight: 700; padding: 8px 10px;
+  border-radius: 9px; border: 1.5px solid; cursor: pointer;
+  background: white; transition: background 0.15s, color 0.15s;
+}
+.wk-suspend    { border-color: rgb(245 158 11); color: rgb(180 83 9); }
+.wk-suspend:hover    { background: rgb(245 158 11); color: white; }
+.wk-reactivate { border-color: rgb(16 185 129); color: rgb(4 120 87); }
+.wk-reactivate:hover { background: rgb(16 185 129); color: white; }
+.wk-delete     { border-color: rgb(244 63 94); color: rgb(190 18 60); }
+.wk-delete:hover     { background: rgb(244 63 94); color: white; }
+.wk-coord-on   { border-color: rgb(244 121 31); color: white; background: rgb(244 121 31); }
+.wk-coord-on:hover   { background: rgb(216 95 8); border-color: rgb(216 95 8); }
+.wk-coord-off  { border-color: rgb(203 213 225); color: rgb(100 116 139); }
+.wk-coord-off:hover  { background: rgb(241 245 249); }
+.wk-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- Conflict modal (pre-Generar) ---------- */
+.conflict-group {
+  background: white; border: 1px solid rgb(226 232 240);
+  border-radius: 14px; padding: 12px;
+}
+.conflict-group.is-forced { border-color: rgb(244 63 94); background: linear-gradient(135deg, #fff 0%, #fff1f2 100%); }
+.conflict-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.conf-dec { background: white; border-color: rgb(203 213 225); color: rgb(71 85 105); }
+.conf-dec-on.conf-rest { background: rgb(16 185 129); border-color: rgb(16 185 129); color: white; }
+.conf-dec-on.conf-work { background: rgb(244 121 31); border-color: rgb(244 121 31); color: white; }
+
+/* ---------- Print ---------- */
+@media print {
+  header, nav, #schedule-warnings, #worker-summary, .no-print, button, #toast,
+  #driver-save-bar, #driver-requests-container { display: none !important; }
+  main { padding: 0; max-width: none; }
+  #schedule-container, #driver-schedule-container { border: none; box-shadow: none; }
+  body { background: white; }
+  section[data-panel]:not([data-panel="schedule"]) { display: none !important; }
+  #screen-driver > *:not(:last-child):not(#driver-schedule-container) { display: none !important; }
+}

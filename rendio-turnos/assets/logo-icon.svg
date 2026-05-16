@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Rendio">
+  <circle cx="24" cy="24" r="22" fill="#0A0A0A"/>
+  <circle cx="9" cy="24" r="4" fill="#F4791F"/>
+  <path d="M 9,22 L 38,18 L 41,14 L 43,15 L 42,21 L 44,22 L 44,26 L 42,27 L 43,33 L 41,34 L 38,30 L 9,26 Z"
+        fill="#FFFFFF" transform="rotate(-12, 24, 24)"/>
+</svg>
