@@ -29,14 +29,33 @@
   }
 
   async function listDrivers() {
-    const { data, error } = await sb
+    let { data, error } = await sb
       .from('profiles')
-      .select('id, full_name, email, role, is_active')
+      .select('id, full_name, email, role, is_active, priority')
       .eq('role', 'driver')
       .is('deleted_at', null)
       .order('full_name');
+    if (error) {
+      // Fallback: la migración 0012 (priority) aún no aplicada → todos prioridad 1.
+      ({ data, error } = await sb
+        .from('profiles')
+        .select('id, full_name, email, role, is_active')
+        .eq('role', 'driver')
+        .is('deleted_at', null)
+        .order('full_name'));
+      if (error) throw error;
+    }
+    return (data || []).filter(p => p.is_active !== false)
+      .map(p => ({ id: p.id, name: p.full_name, email: p.email, priority: p.priority || 1 }));
+  }
+
+  async function setDriverPriority(profileId, value) {
+    const v = Math.min(3, Math.max(1, parseInt(value, 10) || 1));
+    const { error } = await sb
+      .from('profiles')
+      .update({ priority: v })
+      .eq('id', profileId);
     if (error) throw error;
-    return (data || []).filter(p => p.is_active !== false).map(p => ({ id: p.id, name: p.full_name, email: p.email }));
   }
 
   async function listAdmins() {
@@ -311,7 +330,7 @@
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
-    listAllDriversForAdmin, setProfileActive, softDeleteProfile, setAdminCoordinator,
+    listAllDriversForAdmin, setProfileActive, softDeleteProfile, setAdminCoordinator, setDriverPriority,
     getWeeklyAvailability, getMyWeeklyAvailability,
     upsertAvailabilityRow, saveDriverWeekAvailability,
     getSchedule, saveSchedule, deleteSchedule,

@@ -336,7 +336,7 @@
   const isCoordKind = (k) => COORD_KINDS.includes(k);
   const coordinatorAdmins = () => state.admins.filter(a => a.is_coordinator);
   // Daniel: conductor que también coordina (≥1 jornada/semana; ese día no conduce).
-  const FLEX_COORD_EMAIL = 'danielgmr203851@gmail.com';
+  const FLEX_COORD_EMAIL = 'daniel.alvarez@rendio.co'; // Daniel Alvarez Torres
   const flexCoordinator = () => state.drivers.find(d => (d.email || '').toLowerCase() === FLEX_COORD_EMAIL) || null;
   const coordPeople = () => {
     const fc = flexCoordinator();
@@ -437,16 +437,56 @@
     }).join('');
   }
 
+  // Descansos ("prefer_rest") agrupados por día+jornada cuyo grupo tiene
+  // cobertura suficiente (mustWork === 0): se pueden aprobar solos, sin admin.
+  // Misma fórmula de cobertura que usa el modal de conflictos.
+  function restRequestIdsWithCoverage(restPending) {
+    const groups = {};
+    restPending.forEach(r => {
+      const key = `${r.day_of_week}-${r.shift}`;
+      (groups[key] = groups[key] || { day_of_week: r.day_of_week, shift: r.shift, items: [] }).items.push(r);
+    });
+    const okIds = [];
+    Object.values(groups).forEach(g => {
+      const dayKey = Scheduler.DAYS[g.day_of_week];
+      const slots = g.shift === 'am' ? state.settings.morning_slots : state.settings.afternoon_slots;
+      const groupIds = new Set(g.items.map(i => i.profile_id));
+      const othersCanWork = state.drivers.filter(d =>
+        !groupIds.has(d.id) &&
+        Scheduler.getRawState(state.availability, d.id, dayKey, g.shift) !== 'unavailable'
+      ).length;
+      const mustWork = Math.max(0, slots - othersCanWork);
+      if (mustWork === 0) g.items.forEach(r => okIds.push(r.id));
+    });
+    return okIds;
+  }
+
   async function onGenerate() {
     state.availability = await Api.getWeeklyAvailability(state.currentWeek, state.drivers);
-    let pending = [];
+    const ids = new Set(state.drivers.map(d => d.id));
+    let all = [];
     try {
-      const ids = new Set(state.drivers.map(d => d.id));
-      const all = await Api.listPendingApprovals(state.currentWeek);
-      pending = all.filter(r => r.state === 'pending' && ids.has(r.profile_id));
-      conflictState = { allRequests: all };
-    } catch (e) { conflictState = { allRequests: [] }; }
+      all = await Api.listPendingApprovals(state.currentWeek);
+    } catch (e) {
+      conflictState = { allRequests: [] };
+      await doGenerate();
+      return;
+    }
+    let pending = all.filter(r => r.state === 'pending' && ids.has(r.profile_id));
 
+    // 1) "Descanso" sin conflicto de cobertura → se aprueba solo (sin admin).
+    //    Lo forzado (mustWork>0) y "No disponible" NO se tocan: van al admin.
+    const autoIds = restRequestIdsWithCoverage(pending.filter(r => r.kind === 'prefer_rest'));
+    if (autoIds.length) {
+      for (const id of autoIds) {
+        await Api.resolveApproval(id, 'approved', 'Aprobado automático: hay cobertura suficiente');
+      }
+      all = await Api.listPendingApprovals(state.currentWeek);
+      pending = all.filter(r => r.state === 'pending' && ids.has(r.profile_id));
+    }
+    conflictState = { allRequests: all };
+
+    // 2) Lo que queda (descansos sin cobertura + "No disponible") → el admin decide.
     if (pending.length) {
       openConflictModal(pending);
       return;
@@ -462,6 +502,10 @@
       settings: { morningSlots: state.settings.morning_slots, afternoonSlots: state.settings.afternoon_slots },
       availability: state.availability,
       flexCoordinatorId: flexCoordinator()?.id || null,
+      weekStart: state.currentWeek,
+      // Nonce nuevo por clic: cada "Generar" baraja distinto (siempre válido).
+      // Lo que el admin elija se fija al Guardar/Publicar.
+      nonce: Date.now() + '-' + Math.random(),
     });
     state.schedule = schedule;
     const box = $('#schedule-warnings');
@@ -523,7 +567,7 @@
 
         const rows = g.items.map(r => {
           const nm = driversById[r.profile_id]?.name || 'Conductor eliminado';
-          const kind = r.kind === 'unavailable' ? 'No disponible' : 'Pido descanso';
+          const kind = r.kind === 'unavailable' ? 'No disponible' : 'Descanso';
           const reason = r.reason ? ` · <span class="text-slate-500">${escapeHtml(r.reason)}</span>` : '';
           return `<div class="conflict-row" data-req="${r.id}">
             <div class="min-w-0 flex-1">
@@ -760,7 +804,7 @@
 
   function approvalRowHtml(r, driversById) {
     const name = driversById[r.profile_id]?.name || 'Conductor eliminado';
-    const kindLabel = r.kind === 'unavailable' ? 'No disponible' : 'Pido descanso';
+    const kindLabel = r.kind === 'unavailable' ? 'No disponible' : 'Descanso';
     const stateBadge = approvalBadgeHtml(r);
     const reasonLine = r.kind === 'unavailable'
       ? `<p class="text-xs text-slate-700 mt-1"><strong>Razón:</strong> ${escapeHtml(r.reason || '(sin texto)')}</p>`
@@ -1027,6 +1071,52 @@
     $('#setting-afternoon-label').value = state.settings.afternoon_label;
     $('#setting-morning-slots').value = state.settings.morning_slots;
     $('#setting-afternoon-slots').value = state.settings.afternoon_slots;
+    renderPriorityList();
+  }
+
+  // Prioridad por antigüedad (1=nuevo, 2=con tiempo, 3=antiguo). Influye SUAVE
+  // en la generación: ver scheduler.js (desempate por prioridad).
+  function renderPriorityList() {
+    const box = $('#priority-list');
+    if (!box) return;
+    const drivers = [...state.drivers].sort((a, b) => a.name.localeCompare(b.name));
+    if (!drivers.length) {
+      box.innerHTML = '<p class="text-sm text-slate-500">No hay conductores activos.</p>';
+      return;
+    }
+    box.innerHTML = drivers.map(d => {
+      const p = d.priority || 1;
+      return `<div class="flex items-center justify-between gap-3 py-2 border-b border-slate-100 last:border-0">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-ink truncate">${escapeHtml(d.name)}</p>
+          <p class="text-xs text-slate-500 truncate">${escapeHtml(d.email || '')}</p>
+        </div>
+        <select data-prio-id="${d.id}" class="shrink-0 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none">
+          <option value="1"${p === 1 ? ' selected' : ''}>1 · Nuevo</option>
+          <option value="2"${p === 2 ? ' selected' : ''}>2 · Con tiempo</option>
+          <option value="3"${p === 3 ? ' selected' : ''}>3 · Antiguo</option>
+        </select>
+      </div>`;
+    }).join('');
+    box.querySelectorAll('select[data-prio-id]').forEach(sel => {
+      sel.addEventListener('change', () => onChangePriority(sel));
+    });
+  }
+
+  async function onChangePriority(sel) {
+    const id = sel.dataset.prioId;
+    const value = parseInt(sel.value, 10) || 1;
+    sel.disabled = true;
+    try {
+      await Api.setDriverPriority(id, value);
+      const d = state.drivers.find(x => x.id === id);
+      if (d) d.priority = value;
+      toast('Prioridad actualizada.');
+    } catch (e) {
+      alert('Error al guardar prioridad: ' + e.message);
+    } finally {
+      sel.disabled = false;
+    }
   }
 
   async function onSaveSettings() {
@@ -1117,7 +1207,7 @@
   }
 
   function stateLabelShort(s) {
-    return { available: 'Disponible', prefer_rest: 'Pido descanso', unavailable: 'No disponible' }[s] || s;
+    return { available: 'Disponible', prefer_rest: 'Descanso', unavailable: 'No disponible' }[s] || s;
   }
 
   // State picker -------------------------------------------------------
@@ -1224,14 +1314,10 @@
     const box = $('#driver-requests-container');
     try {
       const reqs = await Api.listMyApprovalRequests(state.profile.id, state.currentWeek);
-      if (!reqs.length) {
-        box.innerHTML = '<p class="text-xs text-slate-500 bg-white border border-slate-200 rounded-xl p-4 text-center">No tienes solicitudes esta semana.</p>';
-        return;
-      }
       const icons = { pending: '⏳', approved: '✓', rejected: '✗' };
-      box.innerHTML = reqs.map(r => {
+      const reqCards = reqs.map(r => {
         const dayLabel = Scheduler.DAY_LABELS_ES[Scheduler.DAYS[r.day_of_week]] || '—';
-        const kindLabel = r.kind === 'unavailable' ? 'No disponible' : 'Pido descanso';
+        const kindLabel = r.kind === 'unavailable' ? 'No disponible' : 'Descanso';
         const stateLabel = { pending: 'Pendiente', approved: 'Aprobada', rejected: 'Rechazada' }[r.state] || r.state;
         return `<div class="request-card" data-state="${r.state}">
           <div class="request-card-icon">${icons[r.state] || '?'}</div>
@@ -1243,6 +1329,32 @@
           </div>
         </div>`;
       }).join('');
+
+      // Descansos entre semana sin conflicto: NO generan solicitud, pero el
+      // sistema los acepta (hay con quién cubrir). Se muestran para que el
+      // conductor no piense que se perdieron.
+      const haveReq = new Set(reqs.map(r => `${r.day_of_week}-${r.shift}`));
+      const autoCards = [];
+      Scheduler.DAYS.forEach((dayKey, idx) => {
+        const cell = state.ownAvail && state.ownAvail[dayKey];
+        if (!cell) return;
+        ['am', 'pm'].forEach(sh => {
+          if (cell[sh] === 'prefer_rest' && !haveReq.has(`${idx}-${sh}`)) {
+            const dayLabel = Scheduler.DAY_LABELS_ES[dayKey] || '—';
+            autoCards.push(`<div class="request-card" data-state="approved">
+              <div class="request-card-icon">✓</div>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold text-ink">${dayLabel} · ${sh.toUpperCase()}</p>
+                <p class="text-xs text-slate-600">Descanso · <strong>Aceptado automáticamente</strong></p>
+                <p class="text-xs text-slate-500 mt-1">No requiere aprobación: hay con quién cubrir.</p>
+              </div>
+            </div>`);
+          }
+        });
+      });
+
+      box.innerHTML = (reqCards + autoCards.join('')) ||
+        '<p class="text-xs text-slate-500 bg-white border border-slate-200 rounded-xl p-4 text-center">No tienes solicitudes esta semana.</p>';
     } catch (e) {
       box.innerHTML = `<p class="text-sm text-rose-600 p-3">Error: ${e.message}</p>`;
     }
