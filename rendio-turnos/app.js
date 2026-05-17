@@ -496,12 +496,37 @@
 
   async function doGenerate() {
     state.availability = await Api.getWeeklyAvailability(state.currentWeek, state.drivers);
+
+    // Regla domingo 6:30 PM (hora Colombia): si el corte ya pasó, el conductor
+    // que NO guardó disponibilidad para esta semana queda FUERA del generador
+    // (no maneja, no descansa, no coordina). El admin lo puede rescatar
+    // llenándole la disponibilidad consolidada (no tiene candado).
+    let pool = state.drivers;
+    let excluded = [];
+    if (Scheduler.availabilityClosed(state.currentWeek)) {
+      try {
+        const submitted = await Api.listSubmittedDriverIds(state.currentWeek);
+        excluded = state.drivers.filter(d => !submitted.has(d.id));
+        pool = state.drivers.filter(d => submitted.has(d.id));
+      } catch (e) {
+        pool = state.drivers; excluded = []; // si la consulta falla, no excluir (fail-safe)
+      }
+    }
+
+    const flexCand = flexCoordinator();
+    const flexId = (flexCand && pool.some(d => d.id === flexCand.id)) ? flexCand.id : null;
+    // Pool de coordinadores = admins con is_coordinator + conductores con
+    // can_coordinate (Daniel queda fuera: tiene su garantía dura aparte).
+    const coordPool = [
+      ...coordinatorAdmins(),
+      ...pool.filter(d => d.can_coordinate && d.id !== flexId),
+    ];
     const { schedule, warnings } = Scheduler.generateSchedule({
-      drivers: state.drivers,
-      admins: coordinatorAdmins(),
+      drivers: pool,
+      admins: coordPool,
       settings: { morningSlots: state.settings.morning_slots, afternoonSlots: state.settings.afternoon_slots },
       availability: state.availability,
-      flexCoordinatorId: flexCoordinator()?.id || null,
+      flexCoordinatorId: flexId,
       weekStart: state.currentWeek,
       // Nonce nuevo por clic: cada "Generar" baraja distinto (siempre válido).
       // Lo que el admin elija se fija al Guardar/Publicar.
@@ -509,9 +534,14 @@
     });
     state.schedule = schedule;
     const box = $('#schedule-warnings');
-    if (warnings.length) {
-      box.innerHTML = '<strong>Advertencias:</strong><ul class="list-disc pl-5 mt-1">' +
-        warnings.map(w => `<li>${w}</li>`).join('') + '</ul>';
+    const exclMsg = excluded.length
+      ? `<p class="text-rose-700 font-semibold">⛔ ${excluded.length} conductor(es) fuera por no llenar disponibilidad antes del domingo 6:30 PM: ${excluded.map(d => escapeHtml(d.name)).join(', ')}</p>`
+      : '';
+    if (warnings.length || exclMsg) {
+      box.innerHTML = exclMsg + (warnings.length
+        ? '<strong>Advertencias:</strong><ul class="list-disc pl-5 mt-1">' +
+          warnings.map(w => `<li>${w}</li>`).join('') + '</ul>'
+        : '');
       box.classList.remove('hidden');
     } else {
       box.classList.add('hidden');
@@ -1000,13 +1030,19 @@
       });
     }).join('');
 
-    const activeCards = activeDrivers.map(d => workerCardHtml(d, {
-      kind: 'driver',
-      actions: `<div class="worker-actions">
-        <button data-act="suspend" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-suspend">Suspender</button>
-        <button data-act="delete" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-delete">Eliminar</button>
-      </div>`,
-    })).join('') || '<p class="text-sm text-slate-500">No hay conductores activos.</p>';
+    const activeCards = activeDrivers.map(d => {
+      const dcoord = d.can_coordinate === true;
+      return workerCardHtml(d, {
+        kind: 'driver',
+        actions: `<div class="worker-actions">
+          <button data-act="${dcoord ? 'dcoord-off' : 'dcoord-on'}" data-id="${d.id}" data-name="${escapeHtml(d.name)}"
+            class="wk-btn ${dcoord ? 'wk-coord-on' : 'wk-coord-off'}">
+            ${dcoord ? '✓ Coordina' : '✕ No coordina'}</button>
+          <button data-act="suspend" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-suspend">Suspender</button>
+          <button data-act="delete" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-delete">Eliminar</button>
+        </div>`,
+      });
+    }).join('') || '<p class="text-sm text-slate-500">No hay conductores activos.</p>';
 
     const suspendedSection = suspended.length ? `
       <div>
@@ -1049,6 +1085,7 @@
       suspend: 'Conductor suspendido.', reactivate: 'Conductor reactivado.',
       delete: 'Conductor eliminado.',
       'coord-off': `${name} ya no entra en Coordinación.`, 'coord-on': `${name} ahora entra en Coordinación.`,
+      'dcoord-off': `${name} ya no entra en Coordinación.`, 'dcoord-on': `${name} ahora puede coordinar.`,
     };
     try {
       if (act === 'suspend') await Api.setProfileActive(id, false);
@@ -1056,6 +1093,8 @@
       else if (act === 'delete') await Api.softDeleteProfile(id);
       else if (act === 'coord-off') await Api.setAdminCoordinator(id, false);
       else if (act === 'coord-on') await Api.setAdminCoordinator(id, true);
+      else if (act === 'dcoord-off') await Api.setDriverCanCoordinate(id, false);
+      else if (act === 'dcoord-on') await Api.setDriverCanCoordinate(id, true);
       state.drivers = await Api.listDrivers();
       state.admins = (await Api.listAdmins()).map(a => ({ id: a.id, name: a.full_name, email: a.email, is_coordinator: a.is_coordinator !== false }));
       await renderWorkers();
@@ -1166,7 +1205,14 @@
     const week = Scheduler.weekDates(state.currentWeek);
     const todayISO = new Date().toISOString().slice(0,10);
     const wrap = $('#driver-days');
-    wrap.innerHTML = week.map(d => {
+    const locked = Scheduler.availabilityClosed(state.currentWeek);
+    const soon = !locked && Scheduler.availabilityClosingSoon(state.currentWeek);
+    const banner = locked
+      ? `<div class="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 font-semibold">🔒 La disponibilidad de esta semana cerró el domingo 6:30 PM. Habla con tu jefe.</div>`
+      : (soon
+        ? `<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 font-semibold">⚠ La disponibilidad de esta semana cierra HOY a las 6:30 PM. Guarda antes.</div>`
+        : `<div class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 font-semibold">ℹ️ Tienes hasta el domingo 6:30 PM para guardar la disponibilidad de esta semana.</div>`);
+    wrap.innerHTML = banner + week.map(d => {
       const av = state.ownAvail[d.key] || { am: 'available', pm: 'available' };
       const isWeekend = d.key === 'sat' || d.key === 'sun';
       const isToday = d.date === todayISO;
@@ -1197,6 +1243,8 @@
     wrap.querySelectorAll('.shift-btn, .day-all-btn').forEach(btn => {
       btn.addEventListener('click', () => openStatePicker(btn.dataset.day, btn.dataset.shift));
     });
+    const saveBtn = $('#driver-save-btn');
+    if (saveBtn) saveBtn.disabled = locked;
     $('#driver-save-state').textContent = '';
     updateDriverGreeting();
   }
@@ -1215,6 +1263,10 @@
   let pickerContext = null;
 
   function openStatePicker(day, shift) {
+    if (Scheduler.availabilityClosed(state.currentWeek)) {
+      toast('La disponibilidad de esta semana ya cerró (domingo 6:30 PM). Habla con tu jefe.');
+      return;
+    }
     pickerContext = { day, shift };
     const dayLabel = Scheduler.DAY_LABELS_ES[day];
     const shiftLabel = shift === 'whole' ? 'todo el día' : (shift === 'am' ? 'Mañana' : 'Tarde');
@@ -1292,6 +1344,11 @@
   }
 
   async function onDriverSave() {
+    if (Scheduler.availabilityClosed(state.currentWeek)) {
+      $('#driver-save-state').textContent = 'Cerrado: la disponibilidad de esta semana cerró el domingo 6:30 PM.';
+      $('#driver-save-state').className = 'text-xs text-rose-600 flex-1';
+      return;
+    }
     const btn = $('#driver-save-btn');
     btn.disabled = true;
     btn.textContent = 'Guardando…';

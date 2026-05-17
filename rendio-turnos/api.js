@@ -29,24 +29,20 @@
   }
 
   async function listDrivers() {
-    let { data, error } = await sb
-      .from('profiles')
-      .select('id, full_name, email, role, is_active, priority')
-      .eq('role', 'driver')
-      .is('deleted_at', null)
-      .order('full_name');
-    if (error) {
-      // Fallback: la migración 0012 (priority) aún no aplicada → todos prioridad 1.
-      ({ data, error } = await sb
-        .from('profiles')
-        .select('id, full_name, email, role, is_active')
-        .eq('role', 'driver')
-        .is('deleted_at', null)
-        .order('full_name'));
-      if (error) throw error;
-    }
+    const sel = cols => sb.from('profiles').select(cols)
+      .eq('role', 'driver').is('deleted_at', null).order('full_name');
+    // Fallback en capas: 0012 (priority) y 0013 (can_coordinate) podrían no
+    // estar aplicadas todavía. Conserva priority si solo falta can_coordinate.
+    let { data, error } = await sel('id, full_name, email, role, is_active, priority, can_coordinate');
+    if (error) ({ data, error } = await sel('id, full_name, email, role, is_active, priority'));
+    if (error) ({ data, error } = await sel('id, full_name, email, role, is_active'));
+    if (error) throw error;
     return (data || []).filter(p => p.is_active !== false)
-      .map(p => ({ id: p.id, name: p.full_name, email: p.email, priority: p.priority || 1 }));
+      .map(p => ({
+        id: p.id, name: p.full_name, email: p.email,
+        priority: p.priority || 1,
+        can_coordinate: p.can_coordinate === true,
+      }));
   }
 
   async function setDriverPriority(profileId, value) {
@@ -54,6 +50,14 @@
     const { error } = await sb
       .from('profiles')
       .update({ priority: v })
+      .eq('id', profileId);
+    if (error) throw error;
+  }
+
+  async function setDriverCanCoordinate(profileId, value) {
+    const { error } = await sb
+      .from('profiles')
+      .update({ can_coordinate: value })
       .eq('id', profileId);
     if (error) throw error;
   }
@@ -90,17 +94,27 @@
 
   // Conductores no borrados (activos + suspendidos) — para el módulo Personal.
   async function listAllDriversForAdmin() {
-    const { data, error } = await sb
-      .from('profiles')
-      .select('id, full_name, email, role, is_active')
-      .eq('role', 'driver')
-      .is('deleted_at', null)
-      .order('full_name');
+    const sel = cols => sb.from('profiles').select(cols)
+      .eq('role', 'driver').is('deleted_at', null).order('full_name');
+    let { data, error } = await sel('id, full_name, email, role, is_active, can_coordinate');
+    if (error) ({ data, error } = await sel('id, full_name, email, role, is_active')); // 0013 sin aplicar
     if (error) throw error;
     return (data || []).map(p => ({
       id: p.id, name: p.full_name, email: p.email,
       active: p.is_active !== false,
+      can_coordinate: p.can_coordinate === true,
     }));
+  }
+
+  // Conductores que SÍ guardaron disponibilidad para esa semana (≥1 fila).
+  // Si no llenaron y ya pasó el corte del sábado → quedan fuera del generador.
+  async function listSubmittedDriverIds(weekStart) {
+    const { data, error } = await sb
+      .from('driver_availability')
+      .select('profile_id')
+      .eq('week_start_date', weekStart);
+    if (error) throw error;
+    return new Set((data || []).map(r => r.profile_id));
   }
 
   async function setProfileActive(profileId, active) {
@@ -330,7 +344,8 @@
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
-    listAllDriversForAdmin, setProfileActive, softDeleteProfile, setAdminCoordinator, setDriverPriority,
+    listAllDriversForAdmin, setProfileActive, softDeleteProfile, setAdminCoordinator, setDriverPriority, setDriverCanCoordinate,
+    listSubmittedDriverIds,
     getWeeklyAvailability, getMyWeeklyAvailability,
     upsertAvailabilityRow, saveDriverWeekAvailability,
     getSchedule, saveSchedule, deleteSchedule,
