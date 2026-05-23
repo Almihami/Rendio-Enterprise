@@ -138,7 +138,7 @@
     drivers.forEach(d => {
       map[d.id] = {};
       Scheduler.DAYS.forEach(day => {
-        map[d.id][day] = { am: 'available', pm: 'available', am_reason: null, pm_reason: null };
+        map[d.id][day] = { am: 'available', pm: 'available', am_reason: null, pm_reason: null, shift_pref: 'any' };
       });
     });
     rows.forEach(r => {
@@ -148,23 +148,23 @@
       map[r.profile_id][day] = {
         am: r.am_state, pm: r.pm_state,
         am_reason: r.am_reason || null, pm_reason: r.pm_reason || null,
+        shift_pref: r.shift_pref || 'any',
       };
     });
     return map;
   }
 
   async function getWeeklyAvailability(weekStart, drivers) {
-    const [availRes, approvalsRes] = await Promise.all([
-      sb.from('driver_availability')
-        .select('profile_id, day_of_week, am_state, pm_state, am_reason, pm_reason')
-        .eq('week_start_date', weekStart),
-      sb.from('approval_requests')
-        .select('id, profile_id, day_of_week, shift, kind, state, reason, admin_note')
-        .eq('week_start_date', weekStart),
-    ]);
-    if (availRes.error) throw availRes.error;
+    // Fallback en capas: si 0015 (shift_pref) aún no aplicada, lee sin esa col.
+    const selAvail = cols => sb.from('driver_availability').select(cols).eq('week_start_date', weekStart);
+    let { data: availData, error: availErr } = await selAvail('profile_id, day_of_week, am_state, pm_state, am_reason, pm_reason, shift_pref');
+    if (availErr) ({ data: availData, error: availErr } = await selAvail('profile_id, day_of_week, am_state, pm_state, am_reason, pm_reason'));
+    if (availErr) throw availErr;
+    const approvalsRes = await sb.from('approval_requests')
+      .select('id, profile_id, day_of_week, shift, kind, state, reason, admin_note')
+      .eq('week_start_date', weekStart);
     if (approvalsRes.error) throw approvalsRes.error;
-    const map = toAvailMap(availRes.data || [], drivers);
+    const map = toAvailMap(availData || [], drivers);
     (approvalsRes.data || []).forEach(a => {
       const day = Scheduler.DAYS[a.day_of_week];
       if (!day || !map[a.profile_id]) return;
@@ -174,29 +174,28 @@
   }
 
   async function getMyWeeklyAvailability(profileId, weekStart) {
-    const [availRes, approvalsRes] = await Promise.all([
-      sb.from('driver_availability')
-        .select('day_of_week, am_state, pm_state, am_reason, pm_reason')
-        .eq('profile_id', profileId)
-        .eq('week_start_date', weekStart),
-      sb.from('approval_requests')
-        .select('id, day_of_week, shift, kind, state, reason, admin_note')
-        .eq('profile_id', profileId)
-        .eq('week_start_date', weekStart),
-    ]);
-    if (availRes.error) throw availRes.error;
+    const selOwn = cols => sb.from('driver_availability').select(cols)
+      .eq('profile_id', profileId).eq('week_start_date', weekStart);
+    let { data: availData, error: availErr } = await selOwn('day_of_week, am_state, pm_state, am_reason, pm_reason, shift_pref');
+    if (availErr) ({ data: availData, error: availErr } = await selOwn('day_of_week, am_state, pm_state, am_reason, pm_reason'));
+    if (availErr) throw availErr;
+    const approvalsRes = await sb.from('approval_requests')
+      .select('id, day_of_week, shift, kind, state, reason, admin_note')
+      .eq('profile_id', profileId)
+      .eq('week_start_date', weekStart);
     if (approvalsRes.error) throw approvalsRes.error;
     const own = {};
     Scheduler.DAYS.forEach(d => {
-      own[d] = { am: 'available', pm: 'available', am_reason: null, pm_reason: null, am_request: null, pm_request: null };
+      own[d] = { am: 'available', pm: 'available', am_reason: null, pm_reason: null, shift_pref: 'any', am_request: null, pm_request: null };
     });
-    (availRes.data || []).forEach(r => {
+    (availData || []).forEach(r => {
       const day = Scheduler.DAYS[r.day_of_week];
       if (day) {
         own[day].am = r.am_state;
         own[day].pm = r.pm_state;
         own[day].am_reason = r.am_reason;
         own[day].pm_reason = r.pm_reason;
+        own[day].shift_pref = r.shift_pref || 'any';
       }
     });
     (approvalsRes.data || []).forEach(a => {
@@ -206,19 +205,26 @@
     return own;
   }
 
-  async function upsertAvailabilityRow({ profileId, weekStart, day, am, pm, am_reason, pm_reason }) {
+  async function upsertAvailabilityRow({ profileId, weekStart, day, am, pm, am_reason, pm_reason, shift_pref }) {
     const dayIdx = Scheduler.DAY_INDEX[day];
-    const { error } = await sb
-      .from('driver_availability')
-      .upsert({
-        profile_id: profileId,
-        week_start_date: weekStart,
-        day_of_week: dayIdx,
-        am_state: am,
-        pm_state: pm,
-        am_reason: am === 'unavailable' ? am_reason : null,
-        pm_reason: pm === 'unavailable' ? pm_reason : null,
-      }, { onConflict: 'profile_id,week_start_date,day_of_week' });
+    const base = {
+      profile_id: profileId,
+      week_start_date: weekStart,
+      day_of_week: dayIdx,
+      am_state: am,
+      pm_state: pm,
+      am_reason: am === 'unavailable' ? am_reason : null,
+      pm_reason: pm === 'unavailable' ? pm_reason : null,
+      shift_pref: shift_pref || 'any',
+    };
+    let { error } = await sb.from('driver_availability')
+      .upsert(base, { onConflict: 'profile_id,week_start_date,day_of_week' });
+    if (error) {
+      // Fallback si 0015 no aplicada: re-intentar sin shift_pref.
+      const { shift_pref: _ignore, ...withoutPref } = base;
+      ({ error } = await sb.from('driver_availability')
+        .upsert(withoutPref, { onConflict: 'profile_id,week_start_date,day_of_week' }));
+    }
     if (error) throw error;
   }
 
@@ -233,11 +239,17 @@
         pm_state: row.pm || 'available',
         am_reason: row.am === 'unavailable' ? (row.am_reason || null) : null,
         pm_reason: row.pm === 'unavailable' ? (row.pm_reason || null) : null,
+        shift_pref: row.shift_pref || 'any',
       };
     });
-    const { error } = await sb
-      .from('driver_availability')
+    let { error } = await sb.from('driver_availability')
       .upsert(rows, { onConflict: 'profile_id,week_start_date,day_of_week' });
+    if (error) {
+      // Fallback si 0015 no aplicada: re-intentar sin shift_pref.
+      const rowsNoPref = rows.map(({ shift_pref, ...rest }) => rest);
+      ({ error } = await sb.from('driver_availability')
+        .upsert(rowsNoPref, { onConflict: 'profile_id,week_start_date,day_of_week' }));
+    }
     if (error) throw error;
   }
 
@@ -310,6 +322,19 @@
     return out;
   }
 
+  // Horarios PUBLICADOS con week_start_date en [fromWeek, toWeek] (para Balance).
+  async function listPublishedSchedules(fromWeekISO, toWeekISO) {
+    const { data, error } = await sb
+      .from('weekly_schedules')
+      .select('week_start_date, data')
+      .eq('published', true)
+      .gte('week_start_date', fromWeekISO)
+      .lte('week_start_date', toWeekISO)
+      .order('week_start_date');
+    if (error) throw error;
+    return data || [];
+  }
+
   async function deleteSchedule(weekStart) {
     const { error } = await sb
       .from('weekly_schedules')
@@ -319,13 +344,17 @@
   }
 
   async function getSettings() {
-    const { data, error } = await sb
-      .from('app_settings')
-      .select('morning_label, afternoon_label, morning_slots, afternoon_slots')
-      .eq('id', 'singleton')
-      .maybeSingle();
+    const sel = cols => sb.from('app_settings').select(cols).eq('id', 'singleton').maybeSingle();
+    // Fallback: si la migración 0014 (reopen_*) no está, lee sin esas columnas.
+    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until');
+    if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots'));
     if (error) throw error;
-    return data || { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2 };
+    const base = { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2 };
+    return {
+      ...base, ...(data || {}),
+      reopen_week_start: (data && data.reopen_week_start) || null,
+      reopen_until: (data && data.reopen_until) || null,
+    };
   }
 
   async function saveSettings(s) {
@@ -341,6 +370,19 @@
     if (error) throw error;
   }
 
+  // Reapertura temporal de la disponibilidad de una semana (admin).
+  // weekStart = lunes ISO; untilISO = timestamp ISO o null para cancelar.
+  async function setAvailabilityReopen(weekStart, untilISO) {
+    const { error } = await sb
+      .from('app_settings')
+      .update({
+        reopen_week_start: untilISO ? weekStart : null,
+        reopen_until: untilISO || null,
+      })
+      .eq('id', 'singleton');
+    if (error) throw error;
+  }
+
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
@@ -348,8 +390,8 @@
     listSubmittedDriverIds,
     getWeeklyAvailability, getMyWeeklyAvailability,
     upsertAvailabilityRow, saveDriverWeekAvailability,
-    getSchedule, saveSchedule, deleteSchedule,
-    getSettings, saveSettings,
+    getSchedule, saveSchedule, deleteSchedule, listPublishedSchedules,
+    getSettings, saveSettings, setAvailabilityReopen,
     listMyApprovalRequests, listPendingApprovals, resolveApproval, runAutoResolve,
   };
 })();

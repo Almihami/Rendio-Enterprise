@@ -21,6 +21,21 @@
     return d.toISOString().slice(0, 10);
   }
 
+  // Semana por defecto al cargar la app. Lun–Jue → semana actual (la que ya
+  // arrancó); Vie–Dom → semana SIGUIENTE (la que se está llenando para generar).
+  // Antes pasaba que el viernes los conductores entraban y editaban la semana
+  // que ya habían trabajado por error.
+  function defaultWeekISO(date) {
+    const d = new Date(typeof date === 'string' ? date + 'T00:00:00' : date);
+    const dow = d.getDay(); // 0=Dom, 5=Vie, 6=Sáb
+    if (dow === 0 || dow === 5 || dow === 6) {
+      const dPlus = new Date(d);
+      dPlus.setDate(dPlus.getDate() + 7);
+      return startOfWeekISO(dPlus);
+    }
+    return startOfWeekISO(d);
+  }
+
   function weekDates(weekStartISO) {
     return DAYS.map((day, i) => {
       const iso = addDays(weekStartISO, i);
@@ -63,9 +78,9 @@
     const raw = cell[shift] || 'available';
     if (raw === 'available') return 'available';
     const req = cell[`${shift}_request`];
-    if (!req) return raw; // weekday prefer_rest sin conflicto: honor directo
-    if (req.state === 'approved') return raw;
-    return 'available'; // pending o rejected: el generador no lo respeta todavía
+    if (!req) return raw;                       // sin solicitud: honor directo
+    if (req.state === 'rejected') return 'available';
+    return raw;                                  // pending o approved: respeta lo pedido
   }
 
   function getState(availability, profileId, day, shift) {
@@ -113,6 +128,18 @@
     return m;
   }
 
+  // Sesgo por preferencia de jornada (shift_pref). Solo aplica si el conductor
+  // dejó la celda en 'available' (si pidió descanso, no tiene sentido la pref).
+  // Devuelve: -1 (prefiere ESTA jornada), +1 (prefiere la OTRA), 0 (any/sin pref).
+  function shiftPrefBias(availability, profileId, day, shift) {
+    const cell = availability?.[profileId]?.[day];
+    if (!cell) return 0;
+    if ((cell[shift] || 'available') !== 'available') return 0;
+    const pref = cell.shift_pref;
+    if (!pref || pref === 'any') return 0;
+    return pref === shift ? -1 : 1;
+  }
+
   function pickForShift(eligibles, workerLoads, availability, day, shift, count, rank) {
     const sorted = [...eligibles].sort((a, b) => {
       const loadA = workerLoads.get(a.id) || 0;
@@ -121,6 +148,10 @@
       const prefA = getState(availability, a.id, day, shift) === 'prefer_rest' ? 1 : 0;
       const prefB = getState(availability, b.id, day, shift) === 'prefer_rest' ? 1 : 0;
       if (prefA !== prefB) return prefA - prefB;
+      // Preferencia AM/PM del conductor: si pidió ESTA jornada, entra antes.
+      const spA = shiftPrefBias(availability, a.id, day, shift);
+      const spB = shiftPrefBias(availability, b.id, day, shift);
+      if (spA !== spB) return spA - spB;
       // Prioridad por antigüedad (1=nuevo … 3=antiguo). Sesgo SUAVE: solo decide
       // cuando empatan en carga y en preferencia, así no rompe la equidad.
       const prioA = a.priority || 1;
@@ -139,18 +170,28 @@
     return sorted.slice(0, count);
   }
 
-  function pickCoordinators(admins, coordLoads, count, exclude, rank) {
-    const sorted = admins
-      .filter(a => !exclude.has(a.id))
-      .sort((a, b) => {
-        const la = coordLoads.get(a.id) || 0;
-        const lb = coordLoads.get(b.id) || 0;
-        if (la !== lb) return la - lb;
-        const ra = rank ? (rank.get(a.id) ?? 0) : 0;
-        const rb = rank ? (rank.get(b.id) ?? 0) : 0;
-        if (ra !== rb) return ra - rb;
-        return (a.name || '').localeCompare(b.name || '');
-      });
+  // Selecciona coordinadores RESPETANDO la disponibilidad pedida:
+  //  - 'unavailable' (con o sin solicitud) → filtro DURO, no entra.
+  //  - 'prefer_rest' → filtro BLANDO, va al fondo (solo entra si no hay otra opción).
+  // Si todos los del pool pidieron unavailable y faltan cupos, el generador
+  // devolverá < count y se reporta como warning (no hay con quién cubrir).
+  function pickCoordinators(admins, coordLoads, count, exclude, rank, availability, day, shift) {
+    const eligible = admins.filter(a => !exclude.has(a.id) && (
+      !availability || getState(availability, a.id, day, shift) !== 'unavailable'
+    ));
+    const sorted = eligible.sort((a, b) => {
+      // Quien pidió 'prefer_rest' ese día/jornada va al fondo.
+      const restA = availability && getState(availability, a.id, day, shift) === 'prefer_rest' ? 1 : 0;
+      const restB = availability && getState(availability, b.id, day, shift) === 'prefer_rest' ? 1 : 0;
+      if (restA !== restB) return restA - restB;
+      const la = coordLoads.get(a.id) || 0;
+      const lb = coordLoads.get(b.id) || 0;
+      if (la !== lb) return la - lb;
+      const ra = rank ? (rank.get(a.id) ?? 0) : 0;
+      const rb = rank ? (rank.get(b.id) ?? 0) : 0;
+      if (ra !== rb) return ra - rb;
+      return (a.name || '').localeCompare(b.name || '');
+    });
     return sorted.slice(0, count);
   }
 
@@ -198,10 +239,15 @@
       }
       return false;
     }
+    // Regla DURA "PM hoy ⇒ no AM mañana": un conductor que cerró el día anterior
+    // a las ~2am no puede arrancar a las 2am del día siguiente. Se rastrea entre
+    // iteraciones del loop (los días van en orden lun→dom).
+    let prevPmIds = new Set();
     const eligibleFor = (d, day, shift) =>
       getState(availability, d.id, day, shift) !== 'unavailable' &&
       !ruleBlocked(d.id, day, shift) &&
-      !atCap(d.id);
+      !atCap(d.id) &&
+      !(shift === 'am' && prevPmIds.has(d.id));
 
     for (const day of DAYS) {
       const usedToday = new Set();
@@ -210,14 +256,17 @@
       // Pool = admins (is_coordinator) + conductores con can_coordinate; ambos
       // llegan en `admins`. Barajado NUEVO por día → rotan día a día y por
       // generación (el nonce mueve el rng). coordLoads equilibra el total.
+      // Respeta disponibilidad: 'unavailable' bloquea duro; 'prefer_rest' suave.
       const dayAdminRank = seededRankMap(admins, rng);
       const usedCoord = new Set();
-      const coordAm = pickCoordinators(admins, coordLoads, COORD_SLOTS, usedCoord, dayAdminRank);
+      const coordAm = pickCoordinators(admins, coordLoads, COORD_SLOTS, usedCoord, dayAdminRank, availability, day, 'am');
       coordAm.forEach(a => { usedCoord.add(a.id); coordLoads.set(a.id, (coordLoads.get(a.id) || 0) + 1); });
       // Con 2+ en el pool, el de AM no repite en PM ese día; con 1 sí cubre ambos.
       const excludePm = admins.length > 1 ? usedCoord : new Set();
-      const coordPm = pickCoordinators(admins, coordLoads, COORD_SLOTS, excludePm, dayAdminRank);
+      const coordPm = pickCoordinators(admins, coordLoads, COORD_SLOTS, excludePm, dayAdminRank, availability, day, 'pm');
       coordPm.forEach(a => { coordLoads.set(a.id, (coordLoads.get(a.id) || 0) + 1); });
+      if (coordAm.length < COORD_SLOTS) warnings.push(`Falta coordinador AM en ${DAY_LABELS_ES[day]} (todos pidieron descanso o no disponibilidad).`);
+      if (coordPm.length < COORD_SLOTS) warnings.push(`Falta coordinador PM en ${DAY_LABELS_ES[day]} (todos pidieron descanso o no disponibilidad).`);
       // Si un CONDUCTOR coordina hoy: ese día NO maneja ni descansa (como Daniel).
       const coordDriversToday = new Set(
         [...coordAm, ...coordPm].map(a => a.id).filter(id => driverIds.has(id))
@@ -266,6 +315,11 @@
         coord_am: coordAm.map(a => a.id),
         coord_pm: coordPm.map(a => a.id),
       };
+      // Para la regla PM→AM del día siguiente: PM de manejo + coord PM.
+      prevPmIds = new Set([
+        ...afternoon.map(d => d.id),
+        ...coordPm.map(a => a.id).filter(id => driverIds.has(id)),
+      ]);
     }
 
     // --- Daniel: conductor que coordina ≥1 jornada/semana; ese día NO conduce ---
@@ -336,7 +390,7 @@
 
   window.Scheduler = {
     DAYS, DAY_INDEX, DAY_LABELS_ES,
-    weekDates, startOfWeekISO, addDays,
+    weekDates, startOfWeekISO, defaultWeekISO, addDays,
     availabilityCutoff, availabilityClosed, availabilityClosingSoon,
     generateSchedule, emptySchedule, getState, getRawState, getEffectiveState,
   };

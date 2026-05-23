@@ -141,6 +141,7 @@
           </button>
           <button data-tab="workers" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Personal</button>
           <button data-tab="settings" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Ajustes</button>
+          <button data-tab="balance" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Balance</button>
         </div>
       </nav>
     </header>
@@ -184,9 +185,9 @@
         <!-- Legend -->
         <div class="bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
           <p class="font-semibold text-slate-700 mb-1">¿Qué significa cada estado?</p>
-          <p class="flex items-center gap-2"><span class="state-dot state-available"></span> <strong>Disponible</strong> — puedes trabajar.</p>
-          <p class="flex items-center gap-2"><span class="state-dot state-prefer-rest"></span> <strong>Descanso</strong> — sujeto a aprobación en fines de semana o si hay conflicto.</p>
-          <p class="flex items-center gap-2"><span class="state-dot state-unavailable"></span> <strong>No disponible</strong> — requiere razón. Siempre pasa por aprobación.</p>
+          <p class="flex items-center gap-2"><span class="state-dot state-available"></span> <strong>Disponible</strong> — puedes trabajar. Opcional: marca preferencia AM, PM o Indistinto.</p>
+          <p class="flex items-center gap-2"><span class="state-dot state-prefer-rest"></span> <strong>Descanso (P2)</strong> — preferís descansar; el admin lo respeta si hay con quién cubrir.</p>
+          <p class="flex items-center gap-2"><span class="state-dot state-unavailable"></span> <strong>No disponible (P1)</strong> — requiere razón. Siempre pasa por aprobación del admin.</p>
         </div>
 
         <!-- Mis solicitudes -->
@@ -194,6 +195,9 @@
           <h3 class="text-base font-bold text-ink mb-2">Mis solicitudes</h3>
           <div id="driver-requests-container" class="space-y-2"></div>
         </div>
+
+        <!-- Mi semana (resumen de turnos cuando hay horario publicado) -->
+        <div id="driver-week-summary"></div>
 
         <!-- Horario publicado -->
         <div>
@@ -242,6 +246,8 @@
           <button id="save-btn" class="border border-slate-300 text-sm px-3 py-2 rounded-lg hover:bg-slate-100 bg-white">Guardar</button>
           <button id="publish-btn" class="border border-emerald-300 text-emerald-700 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-emerald-50 bg-white">Publicar</button>
           <button id="clear-schedule-btn" class="border border-slate-300 text-sm px-3 py-2 rounded-lg hover:bg-slate-100 bg-white">Limpiar</button>
+          <button id="reopen-avail-btn" class="border border-amber-300 text-amber-700 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-amber-50 bg-white" title="Reabre la disponibilidad de esta semana 2 horas para que los conductores corrijan">Reabrir disp. 2h</button>
+          <button id="download-schedule-btn" class="border border-emerald-300 text-emerald-700 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-emerald-50 bg-white">Descargar CSV</button>
           <button id="generate-btn" class="ml-auto bg-brand text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-600 shadow-brand">Generar</button>
         </div>
 
@@ -323,20 +329,30 @@
         </div>
       </section>
 
-    </main>
-  </div>
+      <!-- =============== ADMIN: BALANCE TAB =============== -->
+      <section data-panel="balance" class="hidden space-y-4">
+        <h2 class="text-xl md:text-2xl font-bold text-ink">Balance de turnos</h2>
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-card">
+          <p class="text-xs text-slate-500 mb-3">Cuenta turnos de horarios <strong>publicados</strong>. Cada turno (manejo o coordinación) = 12 h.</p>
+          <div class="flex flex-wrap items-end gap-3 text-sm">
+            <label class="block">
+              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Desde</span>
+              <input id="balance-from" type="date" class="mt-1 border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
+            </label>
+            <label class="block">
+              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Hasta</span>
+              <input id="balance-to" type="date" class="mt-1 border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
+            </label>
+            <button id="balance-month" class="border border-slate-300 text-sm px-3 py-2 rounded-lg hover:bg-slate-100 bg-white">Mes actual</button>
+            <button id="balance-generate" class="bg-brand text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-600 shadow-brand">Generar informe</button>
+            <button id="balance-csv" class="ml-auto border border-emerald-300 text-emerald-700 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-emerald-50 bg-white">Descargar CSV</button>
+          </div>
+          <p id="balance-summary" class="text-xs text-slate-500 mt-3"></p>
+          <div id="balance-table" class="mt-2 overflow-x-auto"></div>
+        </div>
+      </section>
 
-  <!-- Modal: conflictos previo a Generar -->
-  <div id="conflict-modal" class="hidden fixed inset-0 z-30 bg-black/40 flex items-end md:items-center justify-center backdrop-blur-sm">
-    <div class="bg-white rounded-t-2xl md:rounded-2xl shadow-xl w-full md:max-w-lg p-5 md:p-6 max-h-[85vh] flex flex-col">
-      <h3 class="font-bold text-lg text-ink">Conflictos de descanso</h3>
-      <p class="text-sm text-slate-500 mb-3">Define quién descansa y quién trabaja. Lo "forzado" no tiene con quién cubrirse. Se guarda en las solicitudes.</p>
-      <div id="conflict-list" class="overflow-y-auto flex-1 space-y-3 pr-1"></div>
-      <div class="flex gap-2 mt-4">
-        <button id="conflict-cancel" class="flex-1 px-3 py-3 rounded-lg border border-slate-300 hover:bg-slate-100 font-medium">Cancelar</button>
-        <button id="conflict-apply" class="flex-1 px-3 py-3 rounded-lg bg-brand text-white hover:bg-brand-600 font-semibold shadow-brand">Aplicar y generar</button>
-      </div>
-    </div>
+    </main>
   </div>
 
   <!-- Modal: cell editor (admin) -->
@@ -382,14 +398,14 @@
         <button data-pick="prefer_rest" class="state-pick-btn w-full">
           <span class="state-dot state-prefer-rest"></span>
           <span class="flex-1 text-left">
-            <span class="block font-semibold">Descanso</span>
-            <span class="block text-xs text-slate-500">Sujeto a aprobación en fin de semana o conflictos</span>
+            <span class="block font-semibold">Descanso (P2)</span>
+            <span class="block text-xs text-slate-500">El admin lo respeta si hay con quién cubrir</span>
           </span>
         </button>
         <button data-pick="unavailable" class="state-pick-btn w-full">
           <span class="state-dot state-unavailable"></span>
           <span class="flex-1 text-left">
-            <span class="block font-semibold">No disponible</span>
+            <span class="block font-semibold">No disponible (P1)</span>
             <span class="block text-xs text-slate-500">Requiere razón. Siempre se aprueba por admin</span>
           </span>
         </button>

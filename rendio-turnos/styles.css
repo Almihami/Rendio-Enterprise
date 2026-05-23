@@ -140,6 +140,39 @@ html { -webkit-text-size-adjust: 100%; }
 }
 .day-all-btn:active { transform: scale(0.98); }
 
+/* Preferencia AM/PM/Indistinto por día (solo si AM y PM disponibles) */
+.day-pref-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.day-pref-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgb(100 116 139);
+  font-weight: 600;
+}
+.pref-btn {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(203 213 225);
+  background: white;
+  color: rgb(71 85 105);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.pref-btn:hover { background: rgb(241 245 249); }
+.pref-btn.pref-on {
+  background: rgb(244 121 31);
+  border-color: rgb(244 121 31);
+  color: white;
+}
+
 /* Approval badge dentro de shift-btn */
 .approval-badge {
   display: inline-block;

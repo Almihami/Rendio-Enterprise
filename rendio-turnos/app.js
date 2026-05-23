@@ -2,12 +2,14 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
+  let lastAutoWeek = Scheduler.defaultWeekISO(new Date());
+
   const state = {
     profile: null,
     drivers: [],
     admins: [],
     settings: null,
-    currentWeek: Scheduler.startOfWeekISO(new Date()),
+    currentWeek: lastAutoWeek,
     availability: {},
     schedule: null,
     activeTab: 'schedule',
@@ -51,6 +53,35 @@
     if (result && typeof result.then === 'function') {
       result.catch((e) => console.error(e));
     }
+    // Auto-cambio de semana: si el usuario deja la app abierta y cruza la
+    // medianoche del lunes (o el viernes, según defaultWeekISO), salta solo
+    // a la semana correcta. Si el usuario navegó manualmente a otra semana
+    // se respeta su elección (no se pisa).
+    setInterval(checkWeekDrift, 5 * 60 * 1000);
+  }
+
+  function checkWeekDrift() {
+    if (!state.profile) return;
+    if (state.currentWeek !== lastAutoWeek) return; // el usuario eligió otra
+    const expected = Scheduler.defaultWeekISO(new Date());
+    if (expected === state.currentWeek) return;
+    state.currentWeek = expected;
+    lastAutoWeek = expected;
+    if (state.profile.role === 'admin') {
+      if (state.activeTab === 'schedule') refreshScheduleData();
+      else if (state.activeTab === 'availability') refreshAvailabilityMatrix();
+      else if (state.activeTab === 'approvals') refreshApprovals();
+    } else {
+      refreshDriverView();
+    }
+    toast(`Cambiamos a la semana del ${weekLabelES(expected)}`);
+  }
+
+  // navegación manual: cualquier prev/next/picker actualiza lastAutoWeek
+  // para mantener el timer "armado" (no piso al usuario si él eligió).
+  function setCurrentWeekManual(weekISO) {
+    state.currentWeek = weekISO;
+    lastAutoWeek = weekISO;
   }
 
   function dismissSplash() {
@@ -88,21 +119,20 @@
     $('#prev-week').addEventListener('click', () => navigateWeek(-7));
     $('#next-week').addEventListener('click', () => navigateWeek(7));
     $('#week-start-input').addEventListener('change', (e) => {
-      state.currentWeek = Scheduler.startOfWeekISO(e.target.value);
+      setCurrentWeekManual(Scheduler.startOfWeekISO(e.target.value));
       refreshScheduleData();
     });
     $('#generate-btn').addEventListener('click', onGenerate);
+    $('#reopen-avail-btn')?.addEventListener('click', onReopenAvailability);
+    $('#balance-generate')?.addEventListener('click', onGenerateBalance);
+    $('#balance-month')?.addEventListener('click', balanceThisMonth);
+    $('#balance-csv')?.addEventListener('click', onDownloadBalanceCsv);
+    $('#download-schedule-btn')?.addEventListener('click', onDownloadScheduleCsv);
     $('#save-btn').addEventListener('click', () => onSaveSchedule(false));
     $('#publish-btn').addEventListener('click', () => onSaveSchedule(true));
     $('#clear-schedule-btn').addEventListener('click', onClearSchedule);
 
     $('#save-settings-btn').addEventListener('click', onSaveSettings);
-
-    $('#conflict-cancel').addEventListener('click', closeConflictModal);
-    $('#conflict-apply').addEventListener('click', applyConflictsAndGenerate);
-    $('#conflict-modal').addEventListener('click', (e) => {
-      if (e.target.id === 'conflict-modal') closeConflictModal();
-    });
 
     $('#cell-editor-cancel').addEventListener('click', closeCellEditor);
     $('#cell-editor-save').addEventListener('click', saveCellEditor);
@@ -293,6 +323,7 @@
     if (name === 'approvals') refreshApprovals();
     if (name === 'workers') renderWorkers();
     if (name === 'settings') renderSettings();
+    if (name === 'balance') renderBalance();
   }
 
   async function refreshPendingBadge() {
@@ -323,7 +354,7 @@
   }
 
   function navigateWeek(deltaDays) {
-    state.currentWeek = Scheduler.addDays(state.currentWeek, deltaDays);
+    setCurrentWeekManual(Scheduler.addDays(state.currentWeek, deltaDays));
     refreshScheduleData();
   }
 
@@ -334,6 +365,25 @@
 
   const COORD_KINDS = ['coord_am', 'coord_pm'];
   const isCoordKind = (k) => COORD_KINDS.includes(k);
+  // --- Reapertura temporal de disponibilidad (admin reabre una semana 2h) ---
+  // Devuelve {active, until} si esa semana está reabierta y vigente.
+  function reopenInfo(weekStartISO) {
+    const s = state.settings || {};
+    if (s.reopen_week_start === weekStartISO && s.reopen_until) {
+      const until = new Date(s.reopen_until).getTime();
+      if (Date.now() < until) return { active: true, until };
+    }
+    return { active: false, until: 0 };
+  }
+  // Cerrada = pasó el corte del domingo Y NO hay reapertura vigente.
+  function weekAvailClosed(weekStartISO) {
+    if (!Scheduler.availabilityClosed(weekStartISO)) return false;
+    return !reopenInfo(weekStartISO).active;
+  }
+  const hhmmCO = ts => new Date(ts).toLocaleTimeString('es-CO', {
+    timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+
   const coordinatorAdmins = () => state.admins.filter(a => a.is_coordinator);
   // Daniel: conductor que también coordina (≥1 jornada/semana; ese día no conduce).
   const FLEX_COORD_EMAIL = 'daniel.alvarez@rendio.co'; // Daniel Alvarez Torres
@@ -437,60 +487,34 @@
     }).join('');
   }
 
-  // Descansos ("prefer_rest") agrupados por día+jornada cuyo grupo tiene
-  // cobertura suficiente (mustWork === 0): se pueden aprobar solos, sin admin.
-  // Misma fórmula de cobertura que usa el modal de conflictos.
-  function restRequestIdsWithCoverage(restPending) {
-    const groups = {};
-    restPending.forEach(r => {
-      const key = `${r.day_of_week}-${r.shift}`;
-      (groups[key] = groups[key] || { day_of_week: r.day_of_week, shift: r.shift, items: [] }).items.push(r);
-    });
-    const okIds = [];
-    Object.values(groups).forEach(g => {
-      const dayKey = Scheduler.DAYS[g.day_of_week];
-      const slots = g.shift === 'am' ? state.settings.morning_slots : state.settings.afternoon_slots;
-      const groupIds = new Set(g.items.map(i => i.profile_id));
-      const othersCanWork = state.drivers.filter(d =>
-        !groupIds.has(d.id) &&
-        Scheduler.getRawState(state.availability, d.id, dayKey, g.shift) !== 'unavailable'
-      ).length;
-      const mustWork = Math.max(0, slots - othersCanWork);
-      if (mustWork === 0) g.items.forEach(r => okIds.push(r.id));
-    });
-    return okIds;
+  async function onReopenAvailability() {
+    const wk = state.currentWeek;
+    const info = reopenInfo(wk);
+    try {
+      if (info.active) {
+        if (!confirm(`La disponibilidad de esta semana está reabierta hasta las ${hhmmCO(info.until)}. ¿Cerrarla ahora?`)) return;
+        await Api.setAvailabilityReopen(wk, null);
+        state.settings = { ...state.settings, reopen_week_start: null, reopen_until: null };
+        toast('Reapertura cerrada.');
+      } else {
+        if (!confirm('¿Reabrir la disponibilidad de ESTA semana por 2 horas para TODOS los conductores? Podrán entrar a corregir/llenar; al vencerse vuelve a cerrarse.')) return;
+        const until = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+        await Api.setAvailabilityReopen(wk, until);
+        state.settings = { ...state.settings, reopen_week_start: wk, reopen_until: until };
+        toast(`Disponibilidad reabierta hasta las ${hhmmCO(until)} (2 h). Avisa a los conductores.`);
+      }
+    } catch (e) {
+      alert('No se pudo cambiar la reapertura: ' + e.message + '\n(¿Falta aplicar la migración 0014?)');
+    }
   }
 
   async function onGenerate() {
-    state.availability = await Api.getWeeklyAvailability(state.currentWeek, state.drivers);
-    const ids = new Set(state.drivers.map(d => d.id));
-    let all = [];
-    try {
-      all = await Api.listPendingApprovals(state.currentWeek);
-    } catch (e) {
-      conflictState = { allRequests: [] };
-      await doGenerate();
-      return;
-    }
-    let pending = all.filter(r => r.state === 'pending' && ids.has(r.profile_id));
-
-    // 1) "Descanso" sin conflicto de cobertura → se aprueba solo (sin admin).
-    //    Lo forzado (mustWork>0) y "No disponible" NO se tocan: van al admin.
-    const autoIds = restRequestIdsWithCoverage(pending.filter(r => r.kind === 'prefer_rest'));
-    if (autoIds.length) {
-      for (const id of autoIds) {
-        await Api.resolveApproval(id, 'approved', 'Aprobado automático: hay cobertura suficiente');
-      }
-      all = await Api.listPendingApprovals(state.currentWeek);
-      pending = all.filter(r => r.state === 'pending' && ids.has(r.profile_id));
-    }
-    conflictState = { allRequests: all };
-
-    // 2) Lo que queda (descansos sin cobertura + "No disponible") → el admin decide.
-    if (pending.length) {
-      openConflictModal(pending);
-      return;
-    }
+    // El admin decide al PUBLICAR: las solicitudes quedan PENDIENTES hasta entonces.
+    // El generador respeta lo que pidió cada conductor (pending o approved). Si
+    // queda un cupo sin cubrir (todos pidieron descanso/unavailable), aparece en
+    // las "Advertencias" para que el admin edite manualmente o cierre solicitudes
+    // desde la pestaña Solicitudes.
+    try { state.settings = await Api.getSettings(); } catch (e) { /* usa cacheado */ }
     await doGenerate();
   }
 
@@ -503,7 +527,7 @@
     // llenándole la disponibilidad consolidada (no tiene candado).
     let pool = state.drivers;
     let excluded = [];
-    if (Scheduler.availabilityClosed(state.currentWeek)) {
+    if (weekAvailClosed(state.currentWeek)) {
       try {
         const submitted = await Api.listSubmittedDriverIds(state.currentWeek);
         excluded = state.drivers.filter(d => !submitted.has(d.id));
@@ -551,135 +575,48 @@
   }
 
   // ====================================================================
-  // Modal de conflictos previo a "Generar"
+  // Publicar: reconcilia solicitudes pending → approved/rejected según el
+  // horario final. Si el conductor quedó descansando ese día/jornada (no en
+  // morning/afternoon ni en coord_*), su pending pasa a APPROVED; si quedó
+  // trabajando o coordinando, pasa a REJECTED. El admin firma con su acción
+  // de "Publicar" — antes no se toca ninguna solicitud.
   // ====================================================================
 
-  let conflictState = null;
-
-  function openConflictModal(pending) {
-    const driversById = {};
-    state.drivers.forEach(d => { driversById[d.id] = d; });
-
-    // Descansos ya aprobados esta semana, para repartir con equidad.
-    const approvedRestByDriver = {};
-    (conflictState.allRequests || []).forEach(r => {
-      if (r.state === 'approved') approvedRestByDriver[r.profile_id] = (approvedRestByDriver[r.profile_id] || 0) + 1;
-    });
-
-    // Agrupar pendientes por día + jornada.
-    const groups = {};
-    pending.forEach(r => {
-      const key = `${r.day_of_week}-${r.shift}`;
-      (groups[key] = groups[key] || { day_of_week: r.day_of_week, shift: r.shift, items: [] }).items.push(r);
-    });
-
-    const decisions = {};
-    const rendered = Object.values(groups)
-      .sort((a, b) => a.day_of_week - b.day_of_week || a.shift.localeCompare(b.shift))
-      .map(g => {
-        const dayKey = Scheduler.DAYS[g.day_of_week];
-        const slots = g.shift === 'am' ? state.settings.morning_slots : state.settings.afternoon_slots;
-        const groupIds = new Set(g.items.map(i => i.profile_id));
-        // Conductores que SÍ pueden cubrir esa jornada (no marcados "No disponible") y no están pidiendo descanso aquí.
-        const othersCanWork = state.drivers.filter(d =>
-          !groupIds.has(d.id) &&
-          Scheduler.getRawState(state.availability, d.id, dayKey, g.shift) !== 'unavailable'
-        ).length;
-        const mustWork = Math.max(0, slots - othersCanWork);
-        const canApprove = Math.max(0, g.items.length - mustWork);
-        const forced = mustWork > 0;
-
-        // Sugerencia equitativa: descansa primero quien menos descansos lleva.
-        const ordered = [...g.items].sort((a, b) =>
-          (approvedRestByDriver[a.profile_id] || 0) - (approvedRestByDriver[b.profile_id] || 0)
-        );
-        ordered.forEach((r, idx) => { decisions[r.id] = idx < canApprove ? 'approved' : 'rejected'; });
-
-        const rows = g.items.map(r => {
-          const nm = driversById[r.profile_id]?.name || 'Conductor eliminado';
-          const kind = r.kind === 'unavailable' ? 'No disponible' : 'Descanso';
-          const reason = r.reason ? ` · <span class="text-slate-500">${escapeHtml(r.reason)}</span>` : '';
-          return `<div class="conflict-row" data-req="${r.id}">
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-semibold text-ink truncate">${escapeHtml(nm)}</p>
-              <p class="text-xs text-slate-500">${kind}${reason}</p>
-            </div>
-            <div class="flex gap-1.5 shrink-0">
-              <button data-req="${r.id}" data-dec="approved" class="conf-dec text-xs px-3 py-1.5 rounded-lg border font-semibold">Descansa</button>
-              <button data-req="${r.id}" data-dec="rejected" class="conf-dec text-xs px-3 py-1.5 rounded-lg border font-semibold">Trabaja</button>
-            </div>
-          </div>`;
-        }).join('');
-
-        const note = forced
-          ? `<p class="text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1 mt-1">⚠ Conflicto forzado: al menos ${mustWork} debe(n) seguir trabajando — no hay con quién cubrir los ${slots} cupos.</p>`
-          : `<p class="text-xs text-emerald-700 mt-1">Hay cobertura suficiente: puedes aprobar todos los descansos.</p>`;
-
-        return `<div class="conflict-group ${forced ? 'is-forced' : ''}">
-          <div class="flex items-center justify-between">
-            <h4 class="font-bold text-sm text-ink">${Scheduler.DAY_LABELS_ES[dayKey]} · ${g.shift.toUpperCase()}</h4>
-            <span class="text-[10px] uppercase font-bold tracking-wide ${forced ? 'text-rose-600' : 'text-emerald-600'}">${forced ? 'Forzado' : 'Libre'}</span>
-          </div>
-          ${note}
-          <div class="mt-2 space-y-1.5">${rows}</div>
-        </div>`;
-      }).join('');
-
-    conflictState.decisions = decisions;
-    $('#conflict-list').innerHTML = rendered;
-    syncConflictButtons();
-    $('#conflict-list').querySelectorAll('.conf-dec').forEach(btn => {
-      btn.addEventListener('click', () => {
-        conflictState.decisions[btn.dataset.req] = btn.dataset.dec;
-        syncConflictButtons();
-      });
-    });
-    $('#conflict-modal').classList.remove('hidden');
-  }
-
-  function syncConflictButtons() {
-    $('#conflict-list').querySelectorAll('.conf-dec').forEach(btn => {
-      const sel = conflictState.decisions[btn.dataset.req];
-      const on = sel === btn.dataset.dec;
-      btn.classList.toggle('conf-dec-on', on);
-      if (btn.dataset.dec === 'approved') {
-        btn.classList.toggle('conf-rest', on);
-      } else {
-        btn.classList.toggle('conf-work', on);
-      }
-    });
-  }
-
-  function closeConflictModal() {
-    $('#conflict-modal').classList.add('hidden');
-  }
-
-  async function applyConflictsAndGenerate() {
-    const btn = $('#conflict-apply');
-    btn.disabled = true;
-    btn.textContent = 'Aplicando…';
-    try {
-      const entries = Object.entries(conflictState.decisions);
-      for (const [id, dec] of entries) {
-        await Api.resolveApproval(id, dec, dec === 'rejected' ? 'Resuelto al generar el horario' : null);
-      }
-      closeConflictModal();
-      await doGenerate();
-      refreshPendingBadge();
-      toast(`${entries.length} solicitud(es) resueltas. Horario generado.`);
-    } catch (e) {
-      alert('Error aplicando decisiones: ' + e.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Aplicar y generar';
+  async function reconcilePendingApprovals() {
+    const all = await Api.listPendingApprovals(state.currentWeek);
+    const ids = new Set(state.drivers.map(d => d.id));
+    const pending = all.filter(r => r.state === 'pending' && ids.has(r.profile_id));
+    if (!pending.length) return 0;
+    const sched = state.schedule || {};
+    let resolved = 0;
+    for (const r of pending) {
+      const day = Scheduler.DAYS[r.day_of_week];
+      const slot = r.shift === 'am' ? 'morning' : 'afternoon';
+      const coord = r.shift === 'am' ? 'coord_am' : 'coord_pm';
+      const working = (sched[day]?.[slot] || []).includes(r.profile_id)
+                   || (sched[day]?.[coord] || []).includes(r.profile_id);
+      const decision = working ? 'rejected' : 'approved';
+      const note = working
+        ? 'Rechazado al publicar: la cobertura del día requería tu jornada.'
+        : 'Aprobado al publicar: el horario final respeta tu solicitud.';
+      try {
+        await Api.resolveApproval(r.id, decision, note);
+        resolved++;
+      } catch (e) { /* ignora una y sigue con las demás */ }
     }
+    return resolved;
   }
 
   async function onSaveSchedule(publish) {
     if (!state.schedule) { toast('Genera o edita el horario primero.'); return; }
     try {
+      if (publish) {
+        const n = await reconcilePendingApprovals();
+        if (n) toast(`${n} solicitud(es) resueltas al publicar.`);
+      }
       await Api.saveSchedule(state.currentWeek, state.schedule, { published: publish, drivers: [...state.drivers, ...state.admins] });
       $('#published-pill').classList.toggle('hidden', !publish);
+      refreshPendingBadge();
       toast(publish ? 'Horario publicado.' : 'Horario guardado.');
     } catch (e) {
       alert('Error al guardar: ' + e.message);
@@ -974,6 +911,7 @@
         pm: state.availability[id][day].pm,
         am_reason: state.availability[id][day].am_reason,
         pm_reason: state.availability[id][day].pm_reason,
+        shift_pref: state.availability[id][day].shift_pref || 'any',
       });
       await refreshAvailabilityMatrix();
       refreshPendingBadge();
@@ -1175,11 +1113,151 @@
   }
 
   // ====================================================================
+  // Balance de turnos (informe para los jefes)
+  // ====================================================================
+
+  function monthRangeDefault() {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    return {
+      from: `${d.getFullYear()}-${p(d.getMonth() + 1)}-01`,
+      to: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
+    };
+  }
+
+  function renderBalance() {
+    const f = $('#balance-from'), t = $('#balance-to');
+    if (f && !f.value) { const r = monthRangeDefault(); f.value = r.from; t.value = r.to; }
+    onGenerateBalance();
+  }
+
+  function balanceThisMonth() {
+    const r = monthRangeDefault();
+    $('#balance-from').value = r.from;
+    $('#balance-to').value = r.to;
+    onGenerateBalance();
+  }
+
+  // Cuenta, por persona: días de manejo + días de coordinación (= turnos de 12h).
+  // Un mismo día cuenta 1 sola vez (maneja XOR coordina, como genera el sistema).
+  function aggregateBalance(rows) {
+    const merged = {}, agg = {};
+    rows.forEach(r => {
+      const dataObj = r.data || {};
+      Object.assign(merged, dataObj._names || {});
+      Scheduler.DAYS.forEach(dk => {
+        const day = dataObj[dk];
+        if (!day) return;
+        const drive = new Set([...(day.morning || []), ...(day.afternoon || [])]);
+        const coord = new Set([...(day.coord_am || []), ...(day.coord_pm || [])]);
+        new Set([...drive, ...coord]).forEach(id => {
+          agg[id] = agg[id] || { manejo: 0, coord: 0 };
+          if (drive.has(id)) agg[id].manejo++;
+          else if (coord.has(id)) agg[id].coord++;
+        });
+      });
+    });
+    const adminIds = new Set((state.admins || []).map(a => a.id));
+    const liveName = {};
+    (state.drivers || []).forEach(d => { liveName[d.id] = d.name; });
+    (state.admins || []).forEach(a => { liveName[a.id] = liveName[a.id] || a.name; });
+    const driverIds = new Set((state.drivers || []).map(d => d.id));
+    const list = Object.keys(agg).map(id => {
+      const manejo = agg[id].manejo, coord = agg[id].coord, total = manejo + coord;
+      const name = liveName[id] || merged[id] || '(eliminado)';
+      const role = adminIds.has(id) ? 'Admin' : (driverIds.has(id) ? 'Conductor' : '—');
+      return { id, name, role, manejo, coord, total, horas: total * 12 };
+    }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    return { weeks: rows.length, list };
+  }
+
+  async function onGenerateBalance() {
+    const fromV = $('#balance-from').value, toV = $('#balance-to').value;
+    const box = $('#balance-table'), sum = $('#balance-summary');
+    if (!fromV || !toV) { sum.textContent = 'Elige el rango (Desde / Hasta).'; box.innerHTML = ''; return; }
+    const fromWk = Scheduler.startOfWeekISO(fromV), toWk = Scheduler.startOfWeekISO(toV);
+    sum.textContent = 'Calculando…'; box.innerHTML = '';
+    let rows;
+    try { rows = await Api.listPublishedSchedules(fromWk, toWk); }
+    catch (e) { sum.textContent = 'Error: ' + e.message; return; }
+    const agg = aggregateBalance(rows);
+    state.balanceData = { ...agg, fromV, toV };
+    sum.textContent = `Período ${fromV} → ${toV} · ${agg.weeks} semana(s) publicada(s) · ${agg.list.length} persona(s). Cada turno = 12 h.`;
+    if (!agg.list.length) {
+      box.innerHTML = '<p class="text-sm text-slate-500 py-4">No hay horarios publicados en ese rango.</p>';
+      return;
+    }
+    box.innerHTML = `<table class="w-full text-sm border-collapse">
+      <thead><tr class="text-left text-xs uppercase tracking-wide text-slate-500 border-b">
+        <th class="py-2 pr-3">Nombre</th><th class="py-2 pr-3">Rol</th>
+        <th class="py-2 pr-3 text-right">Manejo</th><th class="py-2 pr-3 text-right">Coord.</th>
+        <th class="py-2 pr-3 text-right">Total turnos</th><th class="py-2 text-right">Horas</th></tr></thead>
+      <tbody>${agg.list.map(r => `<tr class="border-b border-slate-100">
+        <td class="py-2 pr-3 font-medium text-ink">${escapeHtml(r.name)}</td>
+        <td class="py-2 pr-3 text-slate-500">${r.role}</td>
+        <td class="py-2 pr-3 text-right">${r.manejo}</td>
+        <td class="py-2 pr-3 text-right">${r.coord}</td>
+        <td class="py-2 pr-3 text-right font-semibold">${r.total}</td>
+        <td class="py-2 text-right font-semibold">${r.horas} h</td></tr>`).join('')}</tbody></table>`;
+  }
+
+  function onDownloadBalanceCsv() {
+    const bd = state.balanceData;
+    if (!bd || !bd.list.length) { toast('Genera primero un informe con datos.'); return; }
+    const esc = v => { v = String(v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const lines = [
+      `Balance de turnos;${bd.fromV} a ${bd.toV};${bd.weeks} semanas publicadas`,
+      ['Nombre', 'Rol', 'Turnos manejo', 'Dias coordinacion', 'Total turnos', 'Horas (x12)'].join(';'),
+      ...bd.list.map(r => [r.name, r.role, r.manejo, r.coord, r.total, r.horas].map(esc).join(';')),
+    ];
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `balance_${bd.fromV}_a_${bd.toV}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // Descarga el horario de la semana actual en CSV (`;` separador + BOM, abre
+  // en Excel es-CO). Una fila por jornada × cupo; columnas = días de la semana.
+  function onDownloadScheduleCsv() {
+    if (!state.schedule) { toast('Genera o guarda el horario primero.'); return; }
+    const week = Scheduler.weekDates(state.currentWeek);
+    const esc = v => { v = String(v == null ? '' : v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const labelOf = id => {
+      if (!id) return '—';
+      const w = state.drivers.find(d => d.id === id) || state.admins.find(a => a.id === id);
+      return w ? w.name : '—';
+    };
+    const lines = [
+      [`Horario semanal Rendio - semana del ${state.currentWeek}`].join(';'),
+      ['Franja', ...week.map(d => `${d.label} ${d.dayNum}`)].map(esc).join(';'),
+    ];
+    for (let i = 0; i < state.settings.morning_slots; i++) {
+      const label = i === 0 ? `MAÑANA (${state.settings.morning_label})` : '';
+      lines.push([label, ...week.map(d => labelOf(state.schedule[d.key]?.morning?.[i]))].map(esc).join(';'));
+    }
+    for (let i = 0; i < state.settings.afternoon_slots; i++) {
+      const label = i === 0 ? `TARDE (${state.settings.afternoon_label})` : '';
+      lines.push([label, ...week.map(d => labelOf(state.schedule[d.key]?.afternoon?.[i]))].map(esc).join(';'));
+    }
+    lines.push(['COORDINACIÓN AM', ...week.map(d => labelOf(state.schedule[d.key]?.coord_am?.[0]))].map(esc).join(';'));
+    lines.push(['COORDINACIÓN PM', ...week.map(d => labelOf(state.schedule[d.key]?.coord_pm?.[0]))].map(esc).join(';'));
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `horario_${state.currentWeek}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ====================================================================
   // Driver view — cards mobile-first
   // ====================================================================
 
   async function refreshDriverView() {
     updateDriverWeekLabel();
+    // Refrescar settings: así el conductor ve si el jefe reabrió la semana.
+    try { state.settings = await Api.getSettings(); } catch (e) { /* usa el cacheado */ }
     state.ownAvail = await Api.getMyWeeklyAvailability(state.profile.id, state.currentWeek);
     renderDriverDays();
     await renderDriverRequests();
@@ -1197,7 +1275,7 @@
   }
 
   function navigateDriverWeek(deltaDays) {
-    state.currentWeek = Scheduler.addDays(state.currentWeek, deltaDays);
+    setCurrentWeekManual(Scheduler.addDays(state.currentWeek, deltaDays));
     refreshDriverView();
   }
 
@@ -1205,20 +1283,34 @@
     const week = Scheduler.weekDates(state.currentWeek);
     const todayISO = new Date().toISOString().slice(0,10);
     const wrap = $('#driver-days');
-    const locked = Scheduler.availabilityClosed(state.currentWeek);
-    const soon = !locked && Scheduler.availabilityClosingSoon(state.currentWeek);
-    const banner = locked
+    const reopen = reopenInfo(state.currentWeek);
+    const locked = weekAvailClosed(state.currentWeek);
+    const soon = !locked && !reopen.active && Scheduler.availabilityClosingSoon(state.currentWeek);
+    const banner = reopen.active
+      ? `<div class="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 font-semibold">✅ El jefe reabrió esta semana hasta las ${hhmmCO(reopen.until)}. Corrige y guarda antes de esa hora.</div>`
+      : (locked
       ? `<div class="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 font-semibold">🔒 La disponibilidad de esta semana cerró el domingo 6:30 PM. Habla con tu jefe.</div>`
       : (soon
         ? `<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 font-semibold">⚠ La disponibilidad de esta semana cierra HOY a las 6:30 PM. Guarda antes.</div>`
-        : `<div class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 font-semibold">ℹ️ Tienes hasta el domingo 6:30 PM para guardar la disponibilidad de esta semana.</div>`);
+        : `<div class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 font-semibold">ℹ️ Tienes hasta el domingo 6:30 PM para guardar la disponibilidad de esta semana.</div>`));
     wrap.innerHTML = banner + week.map(d => {
-      const av = state.ownAvail[d.key] || { am: 'available', pm: 'available' };
+      const av = state.ownAvail[d.key] || { am: 'available', pm: 'available', shift_pref: 'any' };
       const isWeekend = d.key === 'sat' || d.key === 'sun';
       const isToday = d.date === todayISO;
       const cls = ['day-card'];
       if (isWeekend) cls.push('is-weekend');
       if (isToday) cls.push('is-today');
+      // El selector AM/PM/Indistinto solo aparece si AM Y PM están disponibles
+      // (si pediste descanso/no disponible en alguna, la preferencia no aplica).
+      const bothAvailable = av.am === 'available' && av.pm === 'available';
+      const pref = av.shift_pref || 'any';
+      const prefBtn = (val, label) => `<button class="pref-btn ${pref === val ? 'pref-on' : ''}" data-pref-day="${d.key}" data-pref-val="${val}">${label}</button>`;
+      const prefRow = bothAvailable ? `<div class="day-pref-row">
+        <span class="day-pref-label">Prefiero:</span>
+        ${prefBtn('any', 'Indistinto')}
+        ${prefBtn('am', 'AM')}
+        ${prefBtn('pm', 'PM')}
+      </div>` : '';
       return `<div class="${cls.join(' ')}">
         <div class="day-card-header">
           <div>
@@ -1236,12 +1328,16 @@
             <span class="shift-btn-state">${stateLabelShort(av.pm)} ${approvalBadgeHtml(av.pm_request)}</span>
           </button>
         </div>
+        ${prefRow}
         <button class="day-all-btn" data-day="${d.key}" data-shift="whole">Todo el día</button>
       </div>`;
     }).join('');
 
     wrap.querySelectorAll('.shift-btn, .day-all-btn').forEach(btn => {
       btn.addEventListener('click', () => openStatePicker(btn.dataset.day, btn.dataset.shift));
+    });
+    wrap.querySelectorAll('.pref-btn').forEach(btn => {
+      btn.addEventListener('click', () => setDayPref(btn.dataset.prefDay, btn.dataset.prefVal));
     });
     const saveBtn = $('#driver-save-btn');
     if (saveBtn) saveBtn.disabled = locked;
@@ -1255,7 +1351,18 @@
   }
 
   function stateLabelShort(s) {
-    return { available: 'Disponible', prefer_rest: 'Descanso', unavailable: 'No disponible' }[s] || s;
+    return { available: 'Disponible', prefer_rest: 'Descanso (P2)', unavailable: 'No disponible (P1)' }[s] || s;
+  }
+
+  function setDayPref(day, value) {
+    if (weekAvailClosed(state.currentWeek)) {
+      toast('La disponibilidad de esta semana ya cerró.');
+      return;
+    }
+    state.ownAvail[day] = state.ownAvail[day] || { am: 'available', pm: 'available' };
+    state.ownAvail[day].shift_pref = value;
+    renderDriverDays();
+    flashSaveState('Cambios sin guardar', 'amber');
   }
 
   // State picker -------------------------------------------------------
@@ -1263,7 +1370,7 @@
   let pickerContext = null;
 
   function openStatePicker(day, shift) {
-    if (Scheduler.availabilityClosed(state.currentWeek)) {
+    if (weekAvailClosed(state.currentWeek)) {
       toast('La disponibilidad de esta semana ya cerró (domingo 6:30 PM). Habla con tu jefe.');
       return;
     }
@@ -1344,7 +1451,7 @@
   }
 
   async function onDriverSave() {
-    if (Scheduler.availabilityClosed(state.currentWeek)) {
+    if (weekAvailClosed(state.currentWeek)) {
       $('#driver-save-state').textContent = 'Cerrado: la disponibilidad de esta semana cerró el domingo 6:30 PM.';
       $('#driver-save-state').className = 'text-xs text-rose-600 flex-1';
       return;
@@ -1387,30 +1494,31 @@
         </div>`;
       }).join('');
 
-      // Descansos entre semana sin conflicto: NO generan solicitud, pero el
-      // sistema los acepta (hay con quién cubrir). Se muestran para que el
-      // conductor no piense que se perdieron.
+      // Descansos entre semana sin solicitud formal: se muestran como
+      // "Pendiente — se confirma al publicar" para que el conductor sepa que
+      // su intención está registrada (el scheduler la respeta) pero el admin
+      // decide al publicar el horario.
       const haveReq = new Set(reqs.map(r => `${r.day_of_week}-${r.shift}`));
-      const autoCards = [];
+      const pendingCards = [];
       Scheduler.DAYS.forEach((dayKey, idx) => {
         const cell = state.ownAvail && state.ownAvail[dayKey];
         if (!cell) return;
         ['am', 'pm'].forEach(sh => {
           if (cell[sh] === 'prefer_rest' && !haveReq.has(`${idx}-${sh}`)) {
             const dayLabel = Scheduler.DAY_LABELS_ES[dayKey] || '—';
-            autoCards.push(`<div class="request-card" data-state="approved">
-              <div class="request-card-icon">✓</div>
+            pendingCards.push(`<div class="request-card" data-state="pending">
+              <div class="request-card-icon">⏳</div>
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-semibold text-ink">${dayLabel} · ${sh.toUpperCase()}</p>
-                <p class="text-xs text-slate-600">Descanso · <strong>Aceptado automáticamente</strong></p>
-                <p class="text-xs text-slate-500 mt-1">No requiere aprobación: hay con quién cubrir.</p>
+                <p class="text-xs text-slate-600">Descanso · <strong>Pendiente</strong></p>
+                <p class="text-xs text-slate-500 mt-1">Se confirma cuando el admin publique el horario.</p>
               </div>
             </div>`);
           }
         });
       });
 
-      box.innerHTML = (reqCards + autoCards.join('')) ||
+      box.innerHTML = (reqCards + pendingCards.join('')) ||
         '<p class="text-xs text-slate-500 bg-white border border-slate-200 rounded-xl p-4 text-center">No tienes solicitudes esta semana.</p>';
     } catch (e) {
       box.innerHTML = `<p class="text-sm text-rose-600 p-3">Error: ${e.message}</p>`;
@@ -1419,15 +1527,48 @@
 
   async function renderDriverPublishedSchedule() {
     const container = $('#driver-schedule-container');
+    const summaryBox = $('#driver-week-summary');
     const sch = await Api.getSchedule(state.currentWeek);
     if (!sch || !sch.published) {
       container.innerHTML = '<p class="p-6 text-sm text-slate-500 text-center">Esta semana no tiene horario publicado todavía.</p>';
+      if (summaryBox) summaryBox.innerHTML = '';
       return;
     }
     const driverNames = sch.data._names || {};
     if (!driverNames[state.profile.id]) driverNames[state.profile.id] = state.profile.full_name;
 
     const week = Scheduler.weekDates(state.currentWeek);
+
+    // --- Mi semana: lista corta de mis turnos + totales ---
+    const myShifts = [];
+    week.forEach(d => {
+      const day = sch.data[d.key] || {};
+      const meId = state.profile.id;
+      if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Manejo' });
+      if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Manejo' });
+      if ((day.coord_am || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Coordinación' });
+      if ((day.coord_pm || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Coordinación' });
+    });
+    if (summaryBox) {
+      if (!myShifts.length) {
+        summaryBox.innerHTML = `<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
+          <p class="text-sm font-bold text-ink">Mi semana</p>
+          <p class="text-sm text-slate-500 mt-1">No tienes turnos asignados esta semana.</p>
+        </div>`;
+      } else {
+        const horas = myShifts.length * 12;
+        const items = myShifts.map(s => `<li class="flex items-center justify-between border-b border-slate-100 last:border-0 py-1.5">
+          <span class="text-sm text-ink">${s.d.label} ${s.d.dayNum}</span>
+          <span class="text-xs font-semibold text-slate-600">${s.shift}${s.kind === 'Coordinación' ? ' · Coord.' : ''}</span>
+        </li>`).join('');
+        summaryBox.innerHTML = `<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
+          <p class="text-sm font-bold text-ink">Mi semana</p>
+          <p class="text-xs text-slate-500 mt-0.5 mb-2">${myShifts.length} turno${myShifts.length === 1 ? '' : 's'} · ${horas} h aprox.</p>
+          <ul>${items}</ul>
+        </div>`;
+      }
+    }
+
     let html = '<table class="w-full text-xs" id="schedule-table">';
     html += '<caption class="text-base font-bold py-3">HORARIO SEMANAL</caption>';
     html += '<thead><tr><th class="cell-label">FRANJA</th>' +
