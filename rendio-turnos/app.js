@@ -1351,7 +1351,7 @@
   }
 
   function stateLabelShort(s) {
-    return { available: 'Disponible', prefer_rest: 'Descanso (P2)', unavailable: 'No disponible (P1)' }[s] || s;
+    return { available: 'Disponible', prefer_rest: 'Descanso', unavailable: 'No disponible' }[s] || s;
   }
 
   function setDayPref(day, value) {
