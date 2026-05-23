@@ -140,6 +140,15 @@ html { -webkit-text-size-adjust: 100%; }
 }
 .day-all-btn:active { transform: scale(0.98); }
 
+/* Colapsable "Horario completo del equipo" (vista conductor) */
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }
+.details-chevron {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+details[open] .details-chevron { transform: rotate(180deg); }
+
 /* Mis turnos resaltados en el horario publicado (vista conductor) */
 .my-shift-cell {
   background: rgb(255 226 203);        /* brand-100 */

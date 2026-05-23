@@ -199,12 +199,17 @@
         <!-- Mi semana (resumen de turnos cuando hay horario publicado) -->
         <div id="driver-week-summary"></div>
 
-        <!-- Horario publicado -->
-        <div>
-          <h3 class="text-base font-bold text-ink mb-2">Horario publicado</h3>
-          <p class="text-xs text-slate-500 mb-2">Tus turnos aparecen resaltados en naranja para que los ubiques rápido.</p>
-          <div id="driver-schedule-container" class="bg-white rounded-2xl border border-slate-200 overflow-x-auto shadow-card"></div>
-        </div>
+        <!-- Horario completo del equipo (colapsable) -->
+        <details class="bg-white border border-slate-200 rounded-2xl shadow-card overflow-hidden group">
+          <summary class="cursor-pointer px-4 py-3 text-base font-bold text-ink hover:bg-slate-50 flex items-center justify-between list-none">
+            <span>📋 Horario completo del equipo</span>
+            <span class="details-chevron text-slate-400 text-sm">▼</span>
+          </summary>
+          <div class="border-t border-slate-200 p-3">
+            <p class="text-xs text-slate-500 mb-2">Tus turnos aparecen resaltados en naranja para que los ubiques rápido.</p>
+            <div id="driver-schedule-container" class="overflow-x-auto"></div>
+          </div>
+        </details>
       </section>
 
       <!-- Save sticky bottom bar (driver) -->

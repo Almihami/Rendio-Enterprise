@@ -1563,7 +1563,6 @@
         summaryBox.innerHTML = `<div class="rounded-xl border border-brand-100 bg-gradient-to-br from-brand-50 to-white p-4 shadow-card">
           <p class="text-sm font-bold text-ink">Mi semana</p>
           <p class="text-sm text-slate-600 mt-1.5">Tu horario aún no está publicado para esta semana.</p>
-          <p class="text-xs text-slate-500 mt-2">Cuando tu jefe publique el horario, aquí vas a ver <strong>tus turnos</strong> (día, AM o PM, coordinaciones) y el <strong>total de horas</strong> aprox. Mientras tanto, asegúrate de marcar tu disponibilidad arriba.</p>
         </div>`;
       }
       return;
