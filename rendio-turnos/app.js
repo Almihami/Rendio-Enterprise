@@ -1559,7 +1559,13 @@
     const sch = await Api.getSchedule(state.currentWeek);
     if (!sch || !sch.published) {
       container.innerHTML = '<p class="p-6 text-sm text-slate-500 text-center">Esta semana no tiene horario publicado todavía.</p>';
-      if (summaryBox) summaryBox.innerHTML = '';
+      if (summaryBox) {
+        summaryBox.innerHTML = `<div class="rounded-xl border border-brand-100 bg-gradient-to-br from-brand-50 to-white p-4 shadow-card">
+          <p class="text-sm font-bold text-ink">Mi semana</p>
+          <p class="text-sm text-slate-600 mt-1.5">Tu horario aún no está publicado para esta semana.</p>
+          <p class="text-xs text-slate-500 mt-2">Cuando tu jefe publique el horario, aquí vas a ver <strong>tus turnos</strong> (día, AM o PM, coordinaciones) y el <strong>total de horas</strong> aprox. Mientras tanto, asegúrate de marcar tu disponibilidad arriba.</p>
+        </div>`;
+      }
       return;
     }
     const driverNames = sch.data._names || {};
@@ -1607,7 +1613,7 @@
       week.forEach(d => {
         const id = sch.data[d.key]?.morning?.[i];
         const name = (driverNames[id] || '—').toUpperCase();
-        const cls = id === state.profile.id ? 'shift-cell text-brand font-bold' : 'shift-cell';
+        const cls = id === state.profile.id ? 'shift-cell my-shift-cell' : 'shift-cell';
         html += `<td class="${cls}">${escapeHtml(name)}</td>`;
       });
       html += '</tr>';
@@ -1618,7 +1624,7 @@
       week.forEach(d => {
         const id = sch.data[d.key]?.afternoon?.[i];
         const name = (driverNames[id] || '—').toUpperCase();
-        const cls = id === state.profile.id ? 'shift-cell text-brand font-bold' : 'shift-cell';
+        const cls = id === state.profile.id ? 'shift-cell my-shift-cell' : 'shift-cell';
         html += `<td class="${cls}">${escapeHtml(name)}</td>`;
       });
       html += '</tr>';
@@ -1628,7 +1634,8 @@
       week.forEach(d => {
         const id = sch.data[d.key]?.[kind]?.[0];
         const name = (driverNames[id] || '—').toUpperCase();
-        html += `<td class="shift-cell">${escapeHtml(name)}</td>`;
+        const cls = id === state.profile.id ? 'shift-cell my-shift-cell' : 'shift-cell';
+        html += `<td class="${cls}">${escapeHtml(name)}</td>`;
       });
       html += '</tr>';
     });

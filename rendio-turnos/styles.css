@@ -140,6 +140,17 @@ html { -webkit-text-size-adjust: 100%; }
 }
 .day-all-btn:active { transform: scale(0.98); }
 
+/* Mis turnos resaltados en el horario publicado (vista conductor) */
+.my-shift-cell {
+  background: rgb(255 226 203);        /* brand-100 */
+  color: rgb(168 73 8);                /* brand-700 */
+  font-weight: 800;
+  outline: 2px solid rgb(244 121 31);  /* brand */
+  outline-offset: -3px;
+  border-radius: 6px;
+  position: relative;
+}
+
 /* Preferencia AM/PM/Indistinto por día (solo si AM y PM disponibles) */
 .day-pref-row {
   display: flex;
