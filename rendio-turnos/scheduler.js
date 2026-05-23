@@ -148,12 +148,9 @@
       const prefA = getState(availability, a.id, day, shift) === 'prefer_rest' ? 1 : 0;
       const prefB = getState(availability, b.id, day, shift) === 'prefer_rest' ? 1 : 0;
       if (prefA !== prefB) return prefA - prefB;
-      // Preferencia AM/PM del conductor: si pidió ESTA jornada, entra antes.
-      const spA = shiftPrefBias(availability, a.id, day, shift);
-      const spB = shiftPrefBias(availability, b.id, day, shift);
-      if (spA !== spB) return spA - spB;
-      // Prioridad por antigüedad (1=nuevo … 3=antiguo). Sesgo SUAVE: solo decide
-      // cuando empatan en carga y en preferencia, así no rompe la equidad.
+      // Prioridad por antigüedad (1=nuevo … 3=antiguo). Pesa MÁS que la
+      // preferencia AM/PM: el antiguo entra primero aunque el nuevo haya
+      // marcado preferencia por esta jornada.
       const prioA = a.priority || 1;
       const prioB = b.priority || 1;
       if (prioA !== prioB) {
@@ -162,6 +159,11 @@
         // conserva su descanso "si quiere pedir muchos, los tendrá").
         return prefA === 1 ? (prioA - prioB) : (prioB - prioA);
       }
+      // Preferencia AM/PM: solo desempata cuando hay igual carga, igual
+      // estado de descanso e igual antigüedad. Sesgo SUAVE.
+      const spA = shiftPrefBias(availability, a.id, day, shift);
+      const spB = shiftPrefBias(availability, b.id, day, shift);
+      if (spA !== spB) return spA - spB;
       const ra = rank ? (rank.get(a.id) ?? 0) : 0;
       const rb = rank ? (rank.get(b.id) ?? 0) : 0;
       if (ra !== rb) return ra - rb;
