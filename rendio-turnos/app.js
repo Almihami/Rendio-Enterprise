@@ -2,6 +2,8 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
+  const isSuspended = () => state.profile && state.profile.is_active === false;
+
   let lastAutoWeek = Scheduler.defaultWeekISO(new Date());
 
   const state = {
@@ -34,10 +36,11 @@
       const session = await Api.getSession();
       if (session) {
         const profile = await Api.getCurrentProfile();
-        if (!profile || profile.is_active === false) {
+        if (!profile) {
           await Api.signOut();
-          nextAction = () => showLogin('Cuenta inactiva o sin perfil. Contacta a tu admin.');
+          nextAction = () => showLogin('Tu cuenta no tiene perfil asociado.');
         } else {
+          // Suspendido: lo dejamos entrar a ver el banner; el módulo se bloquea.
           state.profile = profile;
           nextAction = () => enterApp();
         }
@@ -147,6 +150,10 @@
   }
 
   function onMarkAllAvailable() {
+    if (isSuspended()) {
+      toast('Tu cuenta está suspendida. Habla con tu admin para reactivarla.');
+      return;
+    }
     const week = Scheduler.weekDates(state.currentWeek);
     let dirtyCount = 0;
     for (const d of week) {
@@ -1284,15 +1291,18 @@
     const todayISO = new Date().toISOString().slice(0,10);
     const wrap = $('#driver-days');
     const reopen = reopenInfo(state.currentWeek);
-    const locked = weekAvailClosed(state.currentWeek);
+    const suspended = isSuspended();
+    const locked = suspended || weekAvailClosed(state.currentWeek);
     const soon = !locked && !reopen.active && Scheduler.availabilityClosingSoon(state.currentWeek);
-    const banner = reopen.active
+    const banner = suspended
+      ? `<div class="mb-3 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800 font-semibold">🚫 Tu cuenta está suspendida. No puedes marcar disponibilidad ni hacer solicitudes hasta que tu admin te reactive.</div>`
+      : (reopen.active
       ? `<div class="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 font-semibold">✅ El jefe reabrió esta semana hasta las ${hhmmCO(reopen.until)}. Corrige y guarda antes de esa hora.</div>`
       : (locked
       ? `<div class="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 font-semibold">🔒 La disponibilidad de esta semana cerró el domingo 6:30 PM. Habla con tu jefe.</div>`
       : (soon
         ? `<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 font-semibold">⚠ La disponibilidad de esta semana cierra HOY a las 6:30 PM. Guarda antes.</div>`
-        : `<div class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 font-semibold">ℹ️ Tienes hasta el domingo 6:30 PM para guardar la disponibilidad de esta semana.</div>`));
+        : `<div class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 font-semibold">ℹ️ Tienes hasta el domingo 6:30 PM para guardar la disponibilidad de esta semana.</div>`)));
     wrap.innerHTML = banner + week.map(d => {
       const av = state.ownAvail[d.key] || { am: 'available', pm: 'available', shift_pref: 'any' };
       const isWeekend = d.key === 'sat' || d.key === 'sun';
@@ -1333,6 +1343,9 @@
       </div>`;
     }).join('');
 
+    wrap.querySelectorAll('.shift-btn, .day-all-btn, .pref-btn').forEach(btn => {
+      if (suspended) btn.disabled = true;
+    });
     wrap.querySelectorAll('.shift-btn, .day-all-btn').forEach(btn => {
       btn.addEventListener('click', () => openStatePicker(btn.dataset.day, btn.dataset.shift));
     });
@@ -1341,6 +1354,8 @@
     });
     const saveBtn = $('#driver-save-btn');
     if (saveBtn) saveBtn.disabled = locked;
+    const markBtn = $('#driver-mark-all-available');
+    if (markBtn) markBtn.disabled = suspended;
     $('#driver-save-state').textContent = '';
     updateDriverGreeting();
   }
@@ -1355,6 +1370,10 @@
   }
 
   function setDayPref(day, value) {
+    if (isSuspended()) {
+      toast('Tu cuenta está suspendida. Habla con tu admin para reactivarla.');
+      return;
+    }
     if (weekAvailClosed(state.currentWeek)) {
       toast('La disponibilidad de esta semana ya cerró.');
       return;
@@ -1370,6 +1389,10 @@
   let pickerContext = null;
 
   function openStatePicker(day, shift) {
+    if (isSuspended()) {
+      toast('Tu cuenta está suspendida. Habla con tu admin para reactivarla.');
+      return;
+    }
     if (weekAvailClosed(state.currentWeek)) {
       toast('La disponibilidad de esta semana ya cerró (domingo 6:30 PM). Habla con tu jefe.');
       return;
@@ -1451,6 +1474,11 @@
   }
 
   async function onDriverSave() {
+    if (isSuspended()) {
+      $('#driver-save-state').textContent = 'Suspendido: no puedes guardar. Habla con tu admin.';
+      $('#driver-save-state').className = 'text-xs text-rose-600 flex-1';
+      return;
+    }
     if (weekAvailClosed(state.currentWeek)) {
       $('#driver-save-state').textContent = 'Cerrado: la disponibilidad de esta semana cerró el domingo 6:30 PM.';
       $('#driver-save-state').className = 'text-xs text-rose-600 flex-1';
