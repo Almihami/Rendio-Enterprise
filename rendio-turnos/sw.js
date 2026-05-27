@@ -6,10 +6,12 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v21';
+const CACHE_VERSION = 'rendio-turnos-v22';
+const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
   '/index.html',
+  '/offline.html',
   '/config.js',
   '/supabase-client.js',
   '/scheduler.js',
@@ -48,6 +50,26 @@ self.addEventListener('fetch', (event) => {
 
   // GET only
   if (event.request.method !== 'GET') return;
+
+  // Navegación (HTML): si la red falla Y no hay cache, sirve offline.html.
+  // Así el usuario nunca ve "pantalla en blanco / sin conexión" del navegador.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        const networkFetch = fetch(event.request)
+          .then((resp) => {
+            if (resp && resp.status === 200 && resp.type === 'basic') {
+              const clone = resp.clone();
+              caches.open(CACHE_VERSION).then((cache) => cache.put(event.request, clone));
+            }
+            return resp;
+          })
+          .catch(() => cached || caches.match(OFFLINE_URL));
+        return cached || networkFetch;
+      })
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {

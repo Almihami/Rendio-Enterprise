@@ -4,6 +4,18 @@
 
 * { -webkit-tap-highlight-color: transparent; }
 html { -webkit-text-size-adjust: 100%; }
+/* Sin 300ms delay al tocar botones en iOS antiguo + mejor respuesta táctil */
+button, a, .shift-btn, .day-all-btn, .pref-btn, .state-pick-btn, .tab-btn { touch-action: manipulation; }
+
+/* Safe-area bottom para el sticky bar del conductor (iPhone X+ home indicator).
+   Solo aplica en mobile (en md+ el bar se vuelve static). */
+@media (max-width: 767px) {
+  .driver-save-bar-safe {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    padding-left: calc(16px + env(safe-area-inset-left));
+    padding-right: calc(16px + env(safe-area-inset-right));
+  }
+}
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

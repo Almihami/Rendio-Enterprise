@@ -214,8 +214,8 @@
         </details>
       </section>
 
-      <!-- Save sticky bottom bar (driver) -->
-      <div id="driver-save-bar" class="hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-20 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:static md:bg-transparent md:border-0 md:shadow-none md:px-0 md:pb-0 md:pt-3">
+      <!-- Save sticky bottom bar (driver) — safe-area-bottom para iPhones con home indicator -->
+      <div id="driver-save-bar" class="driver-save-bar-safe hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-20 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:static md:bg-transparent md:border-0 md:shadow-none md:px-0 md:pb-0 md:pt-3">
         <div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
           <span id="driver-save-state" class="text-xs text-slate-500 flex-1"></span>
           <button id="driver-save-btn" class="bg-brand text-white text-base font-bold px-6 py-3 rounded-xl hover:bg-brand-600 active:scale-[0.98] transition shadow-brand">
@@ -497,12 +497,45 @@
   <script src="api.js"></script>
   <script src="app.js"></script>
 
-  <!-- PWA: registrar service worker -->
+  <!-- PWA: registrar service worker + detectar updates -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(err => {
           console.warn('SW registration failed:', err);
+        });
+
+        // Cuando hay una versión nueva del SW y toma control, avisar al usuario
+        // con un toast persistente que tiene un botón "Actualizar". Sin recarga
+        // automática para no perder lo que el usuario esté tecleando.
+        let updateShown = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (updateShown) return;
+          updateShown = true;
+          const t = document.createElement('div');
+          t.id = 'sw-update-toast';
+          t.style.cssText = [
+            'position:fixed',
+            'bottom:calc(20px + env(safe-area-inset-bottom))',
+            'left:50%',
+            'transform:translateX(-50%)',
+            'z-index:9999',
+            'background:#0A0A0A',
+            'color:white',
+            'padding:12px 16px 12px 20px',
+            'border-radius:999px',
+            'display:flex',
+            'align-items:center',
+            'gap:12px',
+            'box-shadow:0 8px 24px rgba(0,0,0,0.3)',
+            'font-family:Inter,system-ui,-apple-system,sans-serif',
+            'font-size:14px',
+            'max-width:calc(100vw - 32px)',
+          ].join(';');
+          t.innerHTML = '<span>Hay una versión nueva.</span>' +
+            '<button style="background:#F4791F;color:white;border:none;padding:6px 14px;border-radius:999px;font-weight:600;cursor:pointer;font-size:13px;">Actualizar</button>';
+          document.body.appendChild(t);
+          t.querySelector('button').onclick = () => location.reload();
         });
       });
     }

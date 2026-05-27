@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es-CO">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0A0A0A" />
+  <title>Rendio · Sin conexión</title>
+  <link rel="icon" type="image/png" href="assets/logo-icon.png" />
+  <style>
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, system-ui, "Segoe UI", Inter, sans-serif;
+      background: linear-gradient(135deg, #fff 0%, #f8fafc 50%, #FFF4EC 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
+      text-align: center;
+      color: #0A0A0A;
+    }
+    img { height: 64px; margin-bottom: 28px; }
+    .icon {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: #FFE2CB;
+      color: #A84908;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+      margin-bottom: 20px;
+    }
+    h1 { font-size: 22px; font-weight: 700; margin: 0 0 8px; }
+    p { color: #475569; font-size: 14px; max-width: 360px; line-height: 1.55; margin: 0 0 24px; }
+    button {
+      background: #F4791F; color: white; border: none;
+      padding: 14px 28px; border-radius: 12px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      box-shadow: 0 8px 24px rgba(244,121,31,0.25);
+      transition: transform 0.1s ease, background 0.15s ease;
+    }
+    button:hover { background: #D85F08; }
+    button:active { transform: scale(0.97); }
+  </style>
+</head>
+<body>
+  <img src="assets/logo.png" alt="Rendio Enterprises" onerror="this.style.display='none'" />
+  <div class="icon">📡</div>
+  <h1>Sin conexión</h1>
+  <p>No pudimos cargar la app porque parece que no tienes internet. Verifica tu conexión y reintenta.</p>
+  <button onclick="location.reload()">Reintentar</button>
+</body>
+</html>
