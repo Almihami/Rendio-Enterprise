@@ -1,11 +1,25 @@
 %% MER (Modelo Entidad-Relación) — Rendio MVP
 %% Renderizable en GitHub directamente. Para generar PNG/SVG: usar https://mermaid.live
-%% Fuente de verdad: Arquitectura_Tecnica_MVP_Rendio.md §5
+%% Fuente de verdad: migrations 0001-0016 (rendio-backend/supabase/migrations/).
+%%
+%% Notas de evolución:
+%%   - El módulo "rendio-turnos" introdujo en 0008 las tablas driver_availability,
+%%     weekly_schedules y app_settings (jornadas AM/PM por conductor).
+%%     No existe una tabla "availability" genérica para auxiliares: la disponibilidad
+%%     operativa hoy solo se modela para drivers.
+%%   - La migration 0016 introdujo las tablas operativas de E2.01:
+%%     shifts, inspections, inspection_photos, incidents, maintenance.
+%%     (Antes el ERD usaba los nombres aspiracionales driver_shifts /
+%%     vehicle_inspections / maintenance_logs — actualizados aquí a los reales.)
 
 erDiagram
     organizations ||--o{ airports : "has"
     organizations ||--o{ profiles : "has"
     organizations ||--o{ vehicles : "owns"
+    organizations ||--o{ shifts : "scopes"
+    organizations ||--o{ inspections : "scopes"
+    organizations ||--o{ incidents : "scopes"
+    organizations ||--o{ maintenance : "scopes"
 
     airports ||--o{ flights : "departs/arrives"
 
@@ -13,21 +27,23 @@ erDiagram
     profiles ||--o| driver_profiles : "extends_when_role=driver"
     profiles ||--o{ incidents : "reports"
     profiles ||--o{ audit_events : "actor"
+    profiles ||--o{ driver_availability : "submits_weekly"
 
     auxiliar_profiles ||--o{ reservations : "books"
 
-    driver_profiles ||--o{ driver_shifts : "works"
-    driver_profiles ||--o{ driver_availability : "submits_weekly"
+    driver_profiles ||--o{ shifts : "works"
     driver_profiles ||--o{ route_assignments : "drives"
     driver_profiles ||--o{ driver_locations : "tracks"
-    driver_profiles ||--o{ vehicle_inspections : "performs"
+    driver_profiles ||--o{ inspections : "performs"
 
-    vehicles ||--o{ driver_shifts : "used_in"
+    vehicles ||--o{ shifts : "used_in"
     vehicles ||--o{ route_assignments : "assigned_to"
-    vehicles ||--o{ vehicle_inspections : "inspected"
-    vehicles ||--o{ maintenance_logs : "serviced"
+    vehicles ||--o{ inspections : "inspected"
+    vehicles ||--o{ maintenance : "serviced"
+    vehicles ||--o{ incidents : "may_have"
 
-    driver_shifts ||--o{ vehicle_inspections : "pre_op_and_post_op"
+    shifts ||--o{ inspections : "initial_and_final"
+    shifts ||--o{ incidents : "may_have"
 
     flights ||--o{ reservations : "served_by"
     flights ||--o{ route_assignments : "destination"
@@ -37,9 +53,8 @@ erDiagram
 
     route_assignments ||--o{ route_stops : "ordered_stops"
     route_assignments ||--o{ driver_locations : "tracked_in"
-    route_assignments ||--o{ incidents : "may_have"
 
-    vehicle_inspections ||--o{ inspection_photos : "documented_by"
+    inspections ||--o{ inspection_photos : "documented_by"
 
     organizations {
         uuid id PK
@@ -67,6 +82,9 @@ erDiagram
         text phone
         text avatar_url
         boolean is_active
+        boolean is_coordinator
+        boolean can_coordinate
+        int priority
         timestamptz deleted_at
     }
 
@@ -98,11 +116,11 @@ erDiagram
         text brand
         text model
         int year
-        int capacity "default 4"
+        int capacity "default 4, max 4"
         int current_km
         int last_maintenance_km
         int maintenance_interval_km "default 7000"
-        vehicle_status status
+        vehicle_status status "blocked si supera intervalo al cerrar shift"
         date soat_expires_at
         date tecnomec_expires_at
         date insurance_expires_at
@@ -174,69 +192,82 @@ erDiagram
         timestamptz recorded_at
     }
 
-    driver_shifts {
-        uuid id PK
-        uuid driver_profile_id FK
-        uuid vehicle_id FK
-        shift_status status
-        timestamptz started_at
-        timestamptz ended_at
-        int km_start
-        int km_end
-    }
-
     driver_availability {
         uuid id PK
-        uuid driver_profile_id FK
+        uuid profile_id FK
         date week_start_date
-        text_array available_days
+        smallint day_of_week "0=lunes..6=domingo"
+        availability_state am_state
+        availability_state pm_state
+        shift_period shift_preference "am|pm"
+        text notes
         timestamptz submitted_at
     }
 
-    vehicle_inspections {
+    shifts {
         uuid id PK
-        uuid driver_profile_id FK
+        uuid organization_id FK
+        uuid driver_id FK "driver_profiles"
         uuid vehicle_id FK
+        shift_status status "vehicle_selected→inspection_in_progress→active→closing→closed"
+        timestamptz start_at
+        timestamptz end_at
+        int opening_km
+        int closing_km
+        text notes
+    }
+
+    inspections {
+        uuid id PK
+        uuid organization_id FK
         uuid shift_id FK
-        text type "pre_op/post_op"
-        jsonb checklist
-        int km_reading
-        text observations
-        double location_lat
-        double location_lon
+        uuid vehicle_id FK
+        uuid driver_id FK
+        inspection_kind kind "initial|final"
+        int odometer_km
+        jsonb checklist "frenos/luces/llantas/niveles/espejos/cinturones"
+        boolean has_damage
+        text notes
+        timestamptz performed_at
     }
 
     inspection_photos {
         uuid id PK
         uuid inspection_id FK
-        text angle "front/rear/left/right/interior/damage"
-        text storage_path
-        text caption
+        uuid organization_id FK
+        inspection_photo_type photo_type "front/left/right/rear/dashboard"
+        text storage_path "bucket inspections (privado)"
+        int size_bytes
+        timestamptz taken_at
     }
 
     incidents {
         uuid id PK
-        uuid reported_by FK
+        uuid organization_id FK
+        uuid reporter_id FK "profiles"
+        uuid shift_id FK "nullable"
+        uuid vehicle_id FK "nullable"
         uuid reservation_id FK "nullable"
-        uuid route_assignment_id FK "nullable"
         incident_category category
         incident_severity severity
+        incident_status status "open/in_progress/resolved"
         text description
-        text status "open/in_progress/resolved"
-        uuid resolved_by FK "nullable"
+        jsonb photo_paths
+        uuid assigned_to FK "nullable"
+        text resolution_notes
         timestamptz resolved_at
     }
 
-    maintenance_logs {
+    maintenance {
         uuid id PK
+        uuid organization_id FK
         uuid vehicle_id FK
-        text type "preventive/corrective"
-        int km_at_service
-        text description
+        uuid performed_by FK "profiles, nullable"
+        text maintenance_type
+        int km_at_event
         numeric cost_cop
-        text performed_by
         timestamptz performed_at
-        int next_service_km
+        text notes
     }
 
     audit_events {

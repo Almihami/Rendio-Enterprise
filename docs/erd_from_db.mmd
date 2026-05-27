@@ -1,26 +1,49 @@
 %% MER (Modelo Entidad-Relación) — generado por introspección desde rendio-dev
-%% Snapshot: 2026-05-11T19:48:19
+%% Snapshot: 2026-05-26T20:40:37
 %% Refleja el estado REAL de la BD aplicada.
 %% Para regenerar: ./scripts/generate_erd_from_db.sh
 %% Renderizable en GitHub o https://mermaid.live
 
 erDiagram
     organizations ||--o{ airports : "organization_id__id"
+    profiles ||--o{ app_settings : "updated_by__id"
+    profiles ||--o{ approval_requests : "profile_id__id"
+    profiles ||--o{ approval_requests : "resolved_by__id"
     profiles ||--o{ audit_events : "actor_profile_id__id"
     profiles ||--o{ auxiliar_profiles : "profile_id__id"
+    profiles ||--o{ driver_availability : "profile_id__id"
     driver_profiles ||--o{ driver_locations : "driver_profile_id__id"
     route_assignments ||--o{ driver_locations : "route_assignment_id__id"
     profiles ||--o{ driver_profiles : "profile_id__id"
     airports ||--o{ flights : "airport_id__id"
+    organizations ||--o{ incidents : "organization_id__id"
+    profiles ||--o{ incidents : "reporter_id__id"
+    profiles ||--o{ incidents : "assigned_to__id"
+    vehicles ||--o{ incidents : "vehicle_id__id"
+    reservations ||--o{ incidents : "reservation_id__id"
+    shifts ||--o{ incidents : "shift_id__id"
+    organizations ||--o{ inspection_photos : "organization_id__id"
+    inspections ||--o{ inspection_photos : "inspection_id__id"
+    driver_profiles ||--o{ inspections : "driver_id__id"
+    organizations ||--o{ inspections : "organization_id__id"
+    shifts ||--o{ inspections : "shift_id__id"
+    vehicles ||--o{ inspections : "vehicle_id__id"
+    organizations ||--o{ maintenance : "organization_id__id"
+    profiles ||--o{ maintenance : "performed_by__id"
+    vehicles ||--o{ maintenance : "vehicle_id__id"
     organizations ||--o{ profiles : "organization_id__id"
-    auxiliar_profiles ||--o{ reservations : "auxiliar_profile_id__id"
     flights ||--o{ reservations : "flight_id__id"
-    driver_profiles ||--o{ route_assignments : "driver_profile_id__id"
+    auxiliar_profiles ||--o{ reservations : "auxiliar_profile_id__id"
     vehicles ||--o{ route_assignments : "vehicle_id__id"
     flights ||--o{ route_assignments : "flight_id__id"
-    reservations ||--o{ route_stops : "reservation_id__id"
+    driver_profiles ||--o{ route_assignments : "driver_profile_id__id"
     route_assignments ||--o{ route_stops : "route_assignment_id__id"
+    reservations ||--o{ route_stops : "reservation_id__id"
+    organizations ||--o{ shifts : "organization_id__id"
+    vehicles ||--o{ shifts : "vehicle_id__id"
+    driver_profiles ||--o{ shifts : "driver_id__id"
     organizations ||--o{ vehicles : "organization_id__id"
+    profiles ||--o{ weekly_schedules : "created_by__id"
 
     airports {
         uuid id PK "NOT NULL"
@@ -29,6 +52,33 @@ erDiagram
         text name "NOT NULL"
         double latitude "NOT NULL"
         double longitude "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    app_settings {
+        text id PK "NOT NULL"
+        text morning_label "NOT NULL"
+        text afternoon_label "NOT NULL"
+        smallint morning_slots "NOT NULL"
+        smallint afternoon_slots "NOT NULL"
+        uuid updated_by FK
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+        date reopen_week_start
+        timestamptz reopen_until
+    }
+    approval_requests {
+        uuid id PK "NOT NULL"
+        uuid profile_id FK "NOT NULL"
+        date week_start_date "NOT NULL"
+        smallint day_of_week "NOT NULL"
+        shift_period shift "NOT NULL"
+        availability_state kind "NOT NULL"
+        text reason
+        approval_state state "NOT NULL"
+        uuid resolved_by FK
+        timestamptz resolved_at
+        text admin_note
         timestamptz created_at "NOT NULL"
         timestamptz updated_at "NOT NULL"
     }
@@ -51,6 +101,21 @@ erDiagram
         text notes
         timestamptz created_at "NOT NULL"
         timestamptz updated_at "NOT NULL"
+    }
+    driver_availability {
+        uuid id PK "NOT NULL"
+        uuid profile_id FK "NOT NULL"
+        date week_start_date "NOT NULL"
+        smallint day_of_week "NOT NULL"
+        availability_state am_state "NOT NULL"
+        availability_state pm_state "NOT NULL"
+        text notes
+        timestamptz submitted_at "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+        text am_reason
+        text pm_reason
+        text shift_pref "NOT NULL"
     }
     driver_locations {
         bigint id PK "NOT NULL"
@@ -88,6 +153,62 @@ erDiagram
         timestamptz created_at "NOT NULL"
         timestamptz updated_at "NOT NULL"
     }
+    incidents {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        uuid reporter_id FK "NOT NULL"
+        uuid shift_id FK
+        uuid vehicle_id FK
+        uuid reservation_id FK
+        incident_category category "NOT NULL"
+        incident_severity severity "NOT NULL"
+        incident_status status "NOT NULL"
+        text description "NOT NULL"
+        jsonb photo_paths "NOT NULL"
+        uuid assigned_to FK
+        text resolution_notes
+        timestamptz resolved_at
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    inspection_photos {
+        uuid id PK "NOT NULL"
+        uuid inspection_id FK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        inspection_photo_type photo_type "NOT NULL"
+        text storage_path "NOT NULL"
+        int size_bytes
+        timestamptz taken_at "NOT NULL"
+        timestamptz created_at "NOT NULL"
+    }
+    inspections {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        uuid shift_id FK "NOT NULL"
+        uuid vehicle_id FK "NOT NULL"
+        uuid driver_id FK "NOT NULL"
+        inspection_kind kind "NOT NULL"
+        int odometer_km "NOT NULL"
+        jsonb checklist "NOT NULL"
+        bool has_damage "NOT NULL"
+        text notes
+        timestamptz performed_at "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    maintenance {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        uuid vehicle_id FK "NOT NULL"
+        uuid performed_by FK
+        text maintenance_type "NOT NULL"
+        int km_at_event "NOT NULL"
+        numeric cost_cop
+        timestamptz performed_at "NOT NULL"
+        text notes
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
     organizations {
         uuid id PK "NOT NULL"
         text name "NOT NULL"
@@ -108,6 +229,9 @@ erDiagram
         timestamptz created_at "NOT NULL"
         timestamptz updated_at "NOT NULL"
         timestamptz deleted_at
+        bool is_coordinator "NOT NULL"
+        smallint priority "NOT NULL"
+        bool can_coordinate "NOT NULL"
     }
     reservations {
         uuid id PK "NOT NULL"
@@ -154,6 +278,20 @@ erDiagram
         timestamptz actual_pickup_at
         text status "NOT NULL"
     }
+    shifts {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        uuid driver_id FK "NOT NULL"
+        uuid vehicle_id FK "NOT NULL"
+        shift_status status "NOT NULL"
+        timestamptz start_at "NOT NULL"
+        timestamptz end_at
+        int opening_km
+        int closing_km
+        text notes
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
     vehicles {
         uuid id PK "NOT NULL"
         uuid organization_id FK "NOT NULL"
@@ -173,4 +311,13 @@ erDiagram
         timestamptz created_at "NOT NULL"
         timestamptz updated_at "NOT NULL"
         timestamptz deleted_at
+    }
+    weekly_schedules {
+        uuid id PK "NOT NULL"
+        date week_start_date "NOT NULL"
+        jsonb data "NOT NULL"
+        bool published "NOT NULL"
+        uuid created_by FK
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
     }
