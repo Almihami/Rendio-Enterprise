@@ -62,6 +62,36 @@
     if (error) throw error;
   }
 
+  // Crea un conductor nuevo vía Edge Function (requiere sesión admin activa).
+  // Devuelve { id, email, full_name, priority, can_coordinate } o lanza Error.
+  async function createDriver({ email, password, full_name, priority = 1, can_coordinate = false }) {
+    const { data, error } = await sb.functions.invoke('create-driver', {
+      body: { email, password, full_name, priority, can_coordinate },
+    });
+    if (error) {
+      // sb.functions.invoke envuelve el body de error en `error.context.body` si la
+      // function respondió con status no-2xx. Intentamos extraer el mensaje real.
+      let msg = error.message || 'Error desconocido';
+      try {
+        const ctx = error.context;
+        if (ctx) {
+          if (typeof ctx.body === 'string') {
+            const parsed = JSON.parse(ctx.body);
+            if (parsed?.error) msg = parsed.error;
+          } else if (ctx.body?.error) {
+            msg = ctx.body.error;
+          } else if (typeof ctx.json === 'function') {
+            const j = await ctx.json();
+            if (j?.error) msg = j.error;
+          }
+        }
+      } catch { /* deja msg original */ }
+      throw new Error(msg);
+    }
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }
+
   async function listAdmins() {
     let { data, error } = await sb
       .from('profiles')
@@ -387,6 +417,7 @@
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
     listAllDriversForAdmin, setProfileActive, softDeleteProfile, setAdminCoordinator, setDriverPriority, setDriverCanCoordinate,
+    createDriver,
     listSubmittedDriverIds,
     getWeeklyAvailability, getMyWeeklyAvailability,
     upsertAvailabilityRow, saveDriverWeekAvailability,

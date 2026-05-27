@@ -130,12 +130,15 @@
     $('#balance-generate')?.addEventListener('click', onGenerateBalance);
     $('#balance-month')?.addEventListener('click', balanceThisMonth);
     $('#balance-csv')?.addEventListener('click', onDownloadBalanceCsv);
-    $('#download-schedule-btn')?.addEventListener('click', onDownloadScheduleCsv);
+    $('#download-schedule-btn')?.addEventListener('click', onDownloadScheduleXlsx);
     $('#save-btn').addEventListener('click', () => onSaveSchedule(false));
     $('#publish-btn').addEventListener('click', () => onSaveSchedule(true));
     $('#clear-schedule-btn').addEventListener('click', onClearSchedule);
 
     $('#save-settings-btn').addEventListener('click', onSaveSettings);
+
+    $('#new-driver-gen-pw')?.addEventListener('click', onGenerateDriverPassword);
+    $('#new-driver-create-btn')?.addEventListener('click', onCreateDriver);
 
     $('#cell-editor-cancel').addEventListener('click', closeCellEditor);
     $('#cell-editor-save').addEventListener('click', saveCellEditor);
@@ -1103,6 +1106,75 @@
     }
   }
 
+  // --- Crear conductor desde Ajustes ---
+  // Caracteres seguros (sin O/0, l/I/1) para que el conductor no se confunda
+  // al teclear la contraseña.
+  function generateReadablePassword(len = 10) {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let out = '';
+    const arr = new Uint32Array(len);
+    crypto.getRandomValues(arr);
+    for (let i = 0; i < len; i++) out += chars[arr[i] % chars.length];
+    return out;
+  }
+
+  function onGenerateDriverPassword() {
+    $('#new-driver-password').value = generateReadablePassword(10);
+  }
+
+  async function onCreateDriver() {
+    const btn = $('#new-driver-create-btn');
+    const stateEl = $('#new-driver-state');
+    const name = $('#new-driver-name').value.trim();
+    const email = $('#new-driver-email').value.trim().toLowerCase();
+    const password = $('#new-driver-password').value;
+    const priority = parseInt($('#new-driver-priority').value, 10) || 1;
+    const canCoord = $('#new-driver-can-coord').checked;
+
+    const setState = (text, tone) => {
+      stateEl.textContent = text;
+      stateEl.className = {
+        ok: 'text-xs text-emerald-700 font-semibold',
+        err: 'text-xs text-rose-600 font-semibold',
+        info: 'text-xs text-slate-500',
+      }[tone] || 'text-xs text-slate-500';
+    };
+
+    if (!name) { setState('Falta el nombre completo.', 'err'); return; }
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setState('Email inválido.', 'err'); return; }
+    if (!password || password.length < 8) { setState('Contraseña mínimo 8 caracteres.', 'err'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Creando…';
+    setState('Creando cuenta en Supabase…', 'info');
+    try {
+      const created = await Api.createDriver({
+        email, password, full_name: name,
+        priority, can_coordinate: canCoord,
+      });
+      // Refresca la lista de conductores en memoria para que aparezca al instante.
+      state.drivers = await Api.listDrivers();
+      // Mensaje copiable con las credenciales.
+      const credLine = `${email} / ${password}`;
+      setState(`✓ Creado. Credenciales: ${credLine}`, 'ok');
+      toast(`Conductor "${name}" creado. Pásale: ${credLine}`);
+      // Limpia el form (deja el toast/cred visible).
+      $('#new-driver-name').value = '';
+      $('#new-driver-email').value = '';
+      $('#new-driver-password').value = '';
+      $('#new-driver-priority').value = '1';
+      $('#new-driver-can-coord').checked = false;
+      // Si está la vista Personal abierta, también refrescarla.
+      if (state.activeTab === 'workers') await renderWorkers();
+      renderPriorityList();
+    } catch (e) {
+      setState(`✗ ${e.message || 'Error creando conductor'}`, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Crear conductor';
+    }
+  }
+
   async function onSaveSettings() {
     const next = {
       morning_label: $('#setting-morning-label').value,
@@ -1224,35 +1296,233 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
-  // Descarga el horario de la semana actual en CSV (`;` separador + BOM, abre
-  // en Excel es-CO). Una fila por jornada × cupo; columnas = días de la semana.
-  function onDownloadScheduleCsv() {
+  // Descarga el horario de la semana en Excel respetando el formato de
+  // "TURNOS CONDUCTORES.xlsx": hoja única "TURNOS SEMANALES", título mergeado,
+  // filas Mañana (2 cupos), Tarde (2 cupos), Coordinación AM/PM,
+  // Suspensión temporal (suspendidos esa semana) y Descanso (todos los que
+  // descansan ese día, una fila por persona).
+  async function onDownloadScheduleXlsx() {
     if (!state.schedule) { toast('Genera o guarda el horario primero.'); return; }
+    if (typeof ExcelJS === 'undefined') {
+      alert('No se pudo cargar la librería de Excel. Revisa tu conexión y reintenta.');
+      return;
+    }
     const week = Scheduler.weekDates(state.currentWeek);
-    const esc = v => { v = String(v == null ? '' : v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     const labelOf = id => {
-      if (!id) return '—';
+      if (!id) return '';
       const w = state.drivers.find(d => d.id === id) || state.admins.find(a => a.id === id);
-      return w ? w.name : '—';
+      return (w ? w.name : '').toUpperCase();
     };
-    const lines = [
-      [`Horario semanal Rendio - semana del ${state.currentWeek}`].join(';'),
-      ['Franja', ...week.map(d => `${d.label} ${d.dayNum}`)].map(esc).join(';'),
+
+    // Suspendidos esa semana = conductores con is_active=false (a futuro
+    // podríamos cruzar con una columna de "suspendido por semana", pero hoy
+    // is_active es global).
+    let suspendedNames = [];
+    try {
+      const all = await Api.listAllDriversForAdmin();
+      suspendedNames = all.filter(d => !d.active).map(d => d.name.toUpperCase());
+    } catch (e) { /* si falla, fila queda vacía */ }
+
+    // Por día, lista de conductores que descansan. Se obtiene del schedule.rest
+    // de cada día (excluyendo admins).
+    const driverIdSet = new Set(state.drivers.map(d => d.id));
+    const restByDay = week.map(d => {
+      const ids = state.schedule[d.key]?.rest || [];
+      return ids.filter(id => driverIdSet.has(id)).map(labelOf);
+    });
+    const maxRest = Math.max(1, ...restByDay.map(r => r.length));
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('TURNOS SEMANALES', {
+      views: [{ showGridLines: false }],
+    });
+
+    // Anchos de columna similares al formato original.
+    ws.columns = [
+      { width: 2.8 },   // A: margen
+      { width: 29 },    // B: label
+      { width: 4.2 },   // C: sub-label (AM/PM en coord)
+      { width: 26 },    // D: LUN
+      { width: 26 },    // E: MAR
+      { width: 26 },    // F: MIÉ
+      { width: 26 },    // G: JUE
+      { width: 26 },    // H: VIE
+      { width: 26 },    // I: SÁB
+      { width: 26 },    // J: DOM
     ];
-    for (let i = 0; i < state.settings.morning_slots; i++) {
-      const label = i === 0 ? `MAÑANA (${state.settings.morning_label})` : '';
-      lines.push([label, ...week.map(d => labelOf(state.schedule[d.key]?.morning?.[i]))].map(esc).join(';'));
+
+    // Helpers de estilo.
+    const border = { style: 'thin', color: { argb: 'FFBFBFBF' } };
+    const allBorders = { top: border, bottom: border, left: border, right: border };
+    const titleFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F1F1F' } };
+    const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4791F' } };
+    const morningFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEAF6' } };
+    const afternoonFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBE5D6' } };
+    const coordFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } };
+    const suspFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE699' } };
+    const restFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
+    const centerWrap = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+    // Título: HORARIO SEMANAL (B2:J2)
+    ws.mergeCells('B2:J2');
+    const t = ws.getCell('B2');
+    t.value = 'HORARIO SEMANAL';
+    t.font = { name: 'Arial', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
+    t.fill = titleFill;
+    t.alignment = centerWrap;
+    ws.getRow(2).height = 32;
+
+    // Encabezado: FRANJA DE SERVICIO + días (fila 4)
+    ws.mergeCells('B4:C4');
+    const head = ws.getCell('B4');
+    head.value = 'FRANJA DE SERVICIO';
+    head.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+    head.fill = headerFill;
+    head.alignment = centerWrap;
+    head.border = allBorders;
+    const dayCols = ['D', 'E', 'F', 'G', 'H', 'I', 'J'];
+    week.forEach((d, i) => {
+      const cell = ws.getCell(`${dayCols[i]}4`);
+      cell.value = `${d.label} ${d.dayNum}`;
+      cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = headerFill;
+      cell.alignment = centerWrap;
+      cell.border = allBorders;
+    });
+    ws.getRow(4).height = 22;
+
+    // Filas MAÑANA (cupos), TARDE (cupos)
+    const morningSlots = state.settings.morning_slots;
+    const afternoonSlots = state.settings.afternoon_slots;
+    let row = 5;
+    // MAÑANA
+    const morningStart = row;
+    for (let i = 0; i < morningSlots; i++, row++) {
+      week.forEach((d, idx) => {
+        const cell = ws.getCell(`${dayCols[idx]}${row}`);
+        cell.value = labelOf(state.schedule[d.key]?.morning?.[i]);
+        cell.font = { name: 'Arial', size: 11 };
+        cell.fill = morningFill;
+        cell.alignment = centerWrap;
+        cell.border = allBorders;
+      });
+      ws.getRow(row).height = 26;
     }
-    for (let i = 0; i < state.settings.afternoon_slots; i++) {
-      const label = i === 0 ? `TARDE (${state.settings.afternoon_label})` : '';
-      lines.push([label, ...week.map(d => labelOf(state.schedule[d.key]?.afternoon?.[i]))].map(esc).join(';'));
+    const morningEnd = row - 1;
+    ws.mergeCells(`B${morningStart}:C${morningEnd}`);
+    const mLabel = ws.getCell(`B${morningStart}`);
+    mLabel.value = `MAÑANA (${state.settings.morning_label})`;
+    mLabel.font = { name: 'Arial', size: 12, bold: true };
+    mLabel.fill = morningFill;
+    mLabel.alignment = centerWrap;
+    mLabel.border = allBorders;
+
+    // TARDE
+    const afternoonStart = row;
+    for (let i = 0; i < afternoonSlots; i++, row++) {
+      week.forEach((d, idx) => {
+        const cell = ws.getCell(`${dayCols[idx]}${row}`);
+        cell.value = labelOf(state.schedule[d.key]?.afternoon?.[i]);
+        cell.font = { name: 'Arial', size: 11 };
+        cell.fill = afternoonFill;
+        cell.alignment = centerWrap;
+        cell.border = allBorders;
+      });
+      ws.getRow(row).height = 26;
     }
-    lines.push(['COORDINACIÓN AM', ...week.map(d => labelOf(state.schedule[d.key]?.coord_am?.[0]))].map(esc).join(';'));
-    lines.push(['COORDINACIÓN PM', ...week.map(d => labelOf(state.schedule[d.key]?.coord_pm?.[0]))].map(esc).join(';'));
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const afternoonEnd = row - 1;
+    ws.mergeCells(`B${afternoonStart}:C${afternoonEnd}`);
+    const aLabel = ws.getCell(`B${afternoonStart}`);
+    aLabel.value = `TARDE (${state.settings.afternoon_label})`;
+    aLabel.font = { name: 'Arial', size: 12, bold: true };
+    aLabel.fill = afternoonFill;
+    aLabel.alignment = centerWrap;
+    aLabel.border = allBorders;
+
+    // COORDINACIÓN (AM + PM): 2 filas, label en B mergeado, subcat AM/PM en C
+    const coordAmRow = row;
+    const coordPmRow = row + 1;
+    ws.mergeCells(`B${coordAmRow}:B${coordPmRow}`);
+    const cLabel = ws.getCell(`B${coordAmRow}`);
+    cLabel.value = 'COORDINACIÓN';
+    cLabel.font = { name: 'Arial', size: 12, bold: true };
+    cLabel.fill = coordFill;
+    cLabel.alignment = centerWrap;
+    cLabel.border = allBorders;
+    ['AM', 'PM'].forEach((sub, idx) => {
+      const r = coordAmRow + idx;
+      const subCell = ws.getCell(`C${r}`);
+      subCell.value = sub;
+      subCell.font = { name: 'Arial', size: 11, bold: true };
+      subCell.fill = coordFill;
+      subCell.alignment = centerWrap;
+      subCell.border = allBorders;
+      const kind = idx === 0 ? 'coord_am' : 'coord_pm';
+      week.forEach((d, di) => {
+        const cell = ws.getCell(`${dayCols[di]}${r}`);
+        cell.value = labelOf(state.schedule[d.key]?.[kind]?.[0]);
+        cell.font = { name: 'Arial', size: 11 };
+        cell.fill = coordFill;
+        cell.alignment = centerWrap;
+        cell.border = allBorders;
+      });
+      ws.getRow(r).height = 24;
+    });
+    row = coordPmRow + 1;
+
+    // Fila vacía pequeña (separador, como en el original).
+    ws.getRow(row).height = 6; row++;
+
+    // SUSPENSIÓN TEMPORAL: una fila con los nombres separados por coma.
+    const suspRow = row;
+    ws.mergeCells(`B${suspRow}:C${suspRow}`);
+    const sLabel = ws.getCell(`B${suspRow}`);
+    sLabel.value = 'SUSPENSIÓN TEMPORAL';
+    sLabel.font = { name: 'Arial', size: 12, bold: true };
+    sLabel.fill = suspFill;
+    sLabel.alignment = centerWrap;
+    sLabel.border = allBorders;
+    // Una sola celda mergeada para mostrar todos los nombres.
+    ws.mergeCells(`D${suspRow}:J${suspRow}`);
+    const sCell = ws.getCell(`D${suspRow}`);
+    sCell.value = suspendedNames.length ? suspendedNames.join(', ') : '—';
+    sCell.font = { name: 'Arial', size: 11 };
+    sCell.fill = suspFill;
+    sCell.alignment = centerWrap;
+    sCell.border = allBorders;
+    ws.getRow(suspRow).height = 28;
+    row++;
+
+    // Fila vacía pequeña (separador).
+    ws.getRow(row).height = 6; row++;
+
+    // DESCANSO: una fila por persona; label en B mergeado verticalmente.
+    const restStart = row;
+    for (let i = 0; i < maxRest; i++, row++) {
+      week.forEach((d, idx) => {
+        const cell = ws.getCell(`${dayCols[idx]}${row}`);
+        cell.value = restByDay[idx][i] || '';
+        cell.font = { name: 'Arial', size: 11 };
+        cell.fill = restFill;
+        cell.alignment = centerWrap;
+        cell.border = allBorders;
+      });
+      ws.getRow(row).height = 22;
+    }
+    const restEnd = row - 1;
+    ws.mergeCells(`B${restStart}:C${restEnd}`);
+    const rLabel = ws.getCell(`B${restStart}`);
+    rLabel.value = 'DESCANSO';
+    rLabel.font = { name: 'Arial', size: 12, bold: true };
+    rLabel.fill = restFill;
+    rLabel.alignment = centerWrap;
+    rLabel.border = allBorders;
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `horario_${state.currentWeek}.csv`;
+    a.download = `horario_${state.currentWeek}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }

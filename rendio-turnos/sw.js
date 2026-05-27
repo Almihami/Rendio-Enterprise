@@ -6,7 +6,7 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v20';
+const CACHE_VERSION = 'rendio-turnos-v21';
 const APP_SHELL = [
   '/',
   '/index.html',
