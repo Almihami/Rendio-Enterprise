@@ -325,6 +325,204 @@
     return data;
   }
 
+  // -------------------- Strikes & suspensiones (Fase 2) --------------------
+
+  // Historial de strikes de un conductor (más reciente primero).
+  async function listDriverStrikes(profileId) {
+    const { data, error } = await sb
+      .from('driver_strikes')
+      .select('id, profile_id, reason, week_start_date, created_by, voided_at, voided_by, consumed_at, created_at')
+      .eq('profile_id', profileId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Conteo de strikes ACTIVOS (no anulados, no consumidos) por conductor.
+  // Devuelve Map profile_id -> count, para pintar badges en la lista de Personal.
+  async function getActiveStrikeCounts() {
+    const { data, error } = await sb
+      .from('driver_strikes')
+      .select('profile_id')
+      .is('voided_at', null)
+      .is('consumed_at', null);
+    if (error) throw error;
+    const m = new Map();
+    (data || []).forEach(r => m.set(r.profile_id, (m.get(r.profile_id) || 0) + 1));
+    return m;
+  }
+
+  // Registra un strike. La auto-suspensión (al 3º) la dispara el trigger en BD.
+  async function addStrike({ profileId, reason, weekStart, createdBy }) {
+    const row = { profile_id: profileId, reason: (reason || '').trim(), created_by: createdBy || null };
+    if (weekStart) row.week_start_date = weekStart;
+    const { data, error } = await sb.from('driver_strikes').insert(row).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  // Anula un strike (no cuenta; queda en historial).
+  async function voidStrike(id, voidedBy) {
+    const { error } = await sb
+      .from('driver_strikes')
+      .update({ voided_at: new Date().toISOString(), voided_by: voidedBy || null })
+      .eq('id', id);
+    if (error) throw error;
+  }
+
+  // Suspensiones VIGENTES (no levantadas) de una semana. Map profile_id -> row.
+  async function getWeekSuspensions(weekStart) {
+    const { data, error } = await sb
+      .from('driver_suspensions')
+      .select('id, profile_id, week_start_date, reason, source, lifted_at, created_at')
+      .eq('week_start_date', weekStart)
+      .is('lifted_at', null);
+    if (error) throw error;
+    const m = new Map();
+    (data || []).forEach(r => m.set(r.profile_id, r));
+    return m;
+  }
+
+  // ¿El conductor está suspendido esa semana? Devuelve la fila o null.
+  async function getMyWeekSuspension(profileId, weekStart) {
+    const { data, error } = await sb
+      .from('driver_suspensions')
+      .select('id, week_start_date, reason, source, lifted_at')
+      .eq('profile_id', profileId)
+      .eq('week_start_date', weekStart)
+      .is('lifted_at', null)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  // Suspensión manual de una semana (admin).
+  async function addManualSuspension({ profileId, weekStart, reason, createdBy }) {
+    const { error } = await sb.from('driver_suspensions').upsert({
+      profile_id: profileId, week_start_date: weekStart,
+      reason: reason || null, source: 'manual', created_by: createdBy || null,
+      lifted_at: null, lifted_by: null,
+    }, { onConflict: 'profile_id,week_start_date' });
+    if (error) throw error;
+  }
+
+  // Levanta (cancela) una suspensión de esa semana.
+  async function liftSuspension(id, liftedBy) {
+    const { error } = await sb
+      .from('driver_suspensions')
+      .update({ lifted_at: new Date().toISOString(), lifted_by: liftedBy || null })
+      .eq('id', id);
+    if (error) throw error;
+  }
+
+  // -------------------- Web Push (Fase 5) --------------------
+
+  async function savePushSubscription({ profileId, endpoint, p256dh, auth, userAgent }) {
+    const { error } = await sb.from('push_subscriptions').upsert({
+      profile_id: profileId, endpoint, p256dh, auth, user_agent: userAgent || null,
+    }, { onConflict: 'endpoint' });
+    if (error) throw error;
+  }
+
+  async function deletePushSubscription(endpoint) {
+    const { error } = await sb.from('push_subscriptions').delete().eq('endpoint', endpoint);
+    if (error) throw error;
+  }
+
+  // Dispara notificaciones vía Edge Function (best-effort: si no está desplegada,
+  // el caller ignora el error). profileIds: array de destinatarios.
+  async function sendPush({ profileIds, title, body, url }) {
+    const { data, error } = await sb.functions.invoke('send-push', {
+      body: { profileIds, title, body, url },
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  // -------------------- Reglas / parametrización (Fase 4) --------------------
+
+  // Todas las reglas (descansos fijos) de todos los conductores.
+  async function listDriverRules() {
+    const { data, error } = await sb
+      .from('driver_rules')
+      .select('id, profile_id, day_of_week, shift, note')
+      .order('profile_id');
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Convierte las filas a { profileId: Set('day-shift') } usando claves de día
+  // ('mon'..'sun') para que calce con Scheduler.ruleBlocked.
+  function rulesToMap(rows) {
+    const DAYS = Scheduler.DAYS;
+    const map = {};
+    (rows || []).forEach(r => {
+      const dayKey = DAYS[r.day_of_week];
+      if (!dayKey) return;
+      (map[r.profile_id] = map[r.profile_id] || new Set()).add(`${dayKey}-${r.shift}`);
+    });
+    return map;
+  }
+
+  async function addDriverRule({ profileId, dayOfWeek, shift, note, createdBy }) {
+    const { error } = await sb.from('driver_rules').upsert({
+      profile_id: profileId, day_of_week: dayOfWeek, shift, note: note || null, created_by: createdBy || null,
+    }, { onConflict: 'profile_id,day_of_week,shift' });
+    if (error) throw error;
+  }
+
+  async function deleteDriverRule({ profileId, dayOfWeek, shift }) {
+    const { error } = await sb.from('driver_rules')
+      .delete()
+      .eq('profile_id', profileId)
+      .eq('day_of_week', dayOfWeek)
+      .eq('shift', shift);
+    if (error) throw error;
+  }
+
+  // -------------------- Shift swaps (Fase 3) --------------------
+
+  // Swaps aceptados de una semana → se aplican como overlay al mostrar el horario.
+  async function listAcceptedSwaps(weekStart) {
+    const { data, error } = await sb
+      .from('shift_swaps')
+      .select('id, requester_id, target_id, from_day, from_shift, to_day, to_shift')
+      .eq('week_start_date', weekStart)
+      .eq('state', 'accepted');
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Swaps donde el conductor está involucrado (como solicitante o destinatario).
+  async function listMySwaps(profileId, weekStart) {
+    const { data, error } = await sb
+      .from('shift_swaps')
+      .select('id, requester_id, target_id, week_start_date, from_day, from_shift, to_day, to_shift, note, decided_note, state, decided_at, created_at')
+      .eq('week_start_date', weekStart)
+      .or(`requester_id.eq.${profileId},target_id.eq.${profileId}`)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function createSwap({ requesterId, targetId, weekStart, fromDay, fromShift, toDay, toShift, note }) {
+    const { data, error } = await sb.from('shift_swaps').insert({
+      requester_id: requesterId, target_id: targetId, week_start_date: weekStart,
+      from_day: fromDay, from_shift: fromShift, to_day: toDay, to_shift: toShift,
+      note: note || null, state: 'pending',
+    }).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  // B decide: 'accepted' | 'rejected'. A puede 'cancelled'.
+  async function decideSwap(id, decision, decidedNote) {
+    const { error } = await sb.from('shift_swaps').update({
+      state: decision, decided_note: decidedNote || null, decided_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) throw error;
+  }
+
   async function getSchedule(weekStart) {
     const { data, error } = await sb
       .from('weekly_schedules')
@@ -424,5 +622,10 @@
     getSchedule, saveSchedule, deleteSchedule, listPublishedSchedules,
     getSettings, saveSettings, setAvailabilityReopen,
     listMyApprovalRequests, listPendingApprovals, resolveApproval, runAutoResolve,
+    listDriverStrikes, getActiveStrikeCounts, addStrike, voidStrike,
+    getWeekSuspensions, getMyWeekSuspension, addManualSuspension, liftSuspension,
+    listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
+    listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
+    savePushSubscription, deletePushSubscription, sendPush,
   };
 })();

@@ -79,6 +79,9 @@ button, a, .shift-btn, .day-all-btn, .pref-btn, .state-pick-btn, .tab-btn { touc
 .avail-pill[data-state="available"]    { background-color: rgb(187 247 208); color: rgb(20 83 45); }
 .avail-pill[data-state="prefer_rest"]  { background-color: rgb(253 230 138); color: rgb(120 53 15); }
 .avail-pill[data-state="unavailable"]  { background-color: rgb(254 205 211); color: rgb(136 19 55); }
+/* Bloqueado por parametrización: gris pizarra con borde punteado (regla fija
+   del sistema, distinto del rosado "No disponible" que pide el conductor). */
+.avail-pill[data-state="blocked"]      { background-color: rgb(226 232 240); color: rgb(51 65 85); border-style: dashed; border-color: rgb(148 163 184); cursor: not-allowed; }
 
 /* ---------- Driver: day cards (mobile-first) ---------- */
 .day-card {
@@ -133,6 +136,15 @@ button, a, .shift-btn, .day-all-btn, .pref-btn, .state-pick-btn, .tab-btn { touc
 .shift-btn[data-state="prefer_rest"] .shift-btn-state { color: rgb(120 53 15); }
 .shift-btn[data-state="unavailable"]  { background: rgb(254 226 226); border-color: rgb(254 205 211); }
 .shift-btn[data-state="unavailable"] .shift-btn-state { color: rgb(136 19 55); }
+/* Bloqueado por parametrización (descanso fijo) — solo lectura. */
+.shift-btn[data-state="blocked"], .shift-btn-blocked {
+  background: rgb(241 245 249); border-color: rgb(203 213 225); border-style: dashed;
+  cursor: not-allowed; opacity: 0.92;
+}
+.shift-btn[data-state="blocked"] .shift-btn-state, .shift-btn-blocked .shift-btn-state { color: rgb(51 65 85); }
+.day-fixed-note {
+  margin: 6px 2px 0; font-size: 12px; font-weight: 600; color: rgb(71 85 105);
+}
 
 .day-all-btn {
   display: block;
@@ -290,6 +302,83 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .wk-coord-off  { border-color: rgb(203 213 225); color: rgb(100 116 139); }
 .wk-coord-off:hover  { background: rgb(241 245 249); }
 .wk-btn:disabled { opacity: 0.5; cursor: default; }
+/* ---------- Strikes (Fase 2) ---------- */
+.wk-strike     { border-color: rgb(245 158 11); color: rgb(146 64 14); }
+.wk-strike:hover     { background: rgb(245 158 11); color: white; }
+.wk-history    { border-color: rgb(148 163 184); color: rgb(71 85 105); }
+.wk-history:hover    { background: rgb(241 245 249); }
+.wk-strike-void { flex: 0 0 auto; border-color: rgb(148 163 184); color: rgb(71 85 105); font-size: 11px; padding: 4px 8px; }
+.worker-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.wk-strike-badge {
+  font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 999px;
+  background: rgb(254 243 199); color: rgb(146 64 14); border: 1px solid rgb(253 230 138);
+}
+.wk-susp-badge {
+  font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 999px;
+  background: rgb(254 226 226); color: rgb(153 27 27); border: 1px solid rgb(254 205 211);
+}
+/* Modal genérico (historial de strikes) */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 60;
+}
+.modal-card {
+  background: white; border-radius: 16px; width: 100%; max-width: 460px;
+  max-height: 80vh; overflow-y: auto; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+}
+.modal-head { margin-bottom: 12px; }
+.modal-title { font-size: 16px; font-weight: 800; color: rgb(15 23 42); }
+.modal-subtitle { font-size: 13px; color: rgb(100 116 139); margin-top: 2px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.strikes-list { display: flex; flex-direction: column; gap: 8px; }
+.strike-item {
+  display: flex; gap: 10px; justify-content: space-between; align-items: flex-start;
+  border: 1px solid rgb(226 232 240); border-radius: 10px; padding: 10px 12px;
+}
+.strike-item-reason { font-size: 13px; font-weight: 600; color: rgb(30 41 59); }
+.strike-item-meta { font-size: 11px; color: rgb(100 116 139); margin-top: 2px; }
+.strike-item-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.strike-tag { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.strike-tag-active   { background: rgb(254 243 199); color: rgb(146 64 14); }
+.strike-tag-void     { background: rgb(241 245 249); color: rgb(100 116 139); }
+.strike-tag-consumed { background: rgb(224 231 255); color: rgb(55 48 163); }
+
+/* ---------- Swaps / cambios de turno (Fase 3) ---------- */
+.swap-card {
+  background: white; border: 1px solid rgb(226 232 240); border-radius: 12px;
+  padding: 12px 14px; margin-bottom: 8px;
+}
+.swap-card[data-state="accepted"] { border-color: rgb(167 243 208); background: rgb(240 253 244); }
+.swap-card[data-state="rejected"] { border-color: rgb(254 205 211); background: rgb(254 242 242); }
+.swap-card[data-state="cancelled"] { opacity: 0.7; }
+.swap-card-title { font-size: 13px; font-weight: 700; color: rgb(30 41 59); }
+.swap-card-detail { font-size: 12px; color: rgb(71 85 105); margin-top: 4px; }
+.swap-card-note { font-size: 12px; color: rgb(100 116 139); font-style: italic; margin-top: 4px; }
+.swap-card-actions { display: flex; gap: 8px; margin-top: 10px; }
+.swap-field { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; font-size: 12px; font-weight: 700; color: rgb(71 85 105); }
+.swap-field select, .swap-field input {
+  font-size: 14px; font-weight: 500; padding: 9px 10px; border-radius: 9px;
+  border: 1.5px solid rgb(203 213 225); color: rgb(15 23 42); background: white;
+}
+
+/* ---------- Editor de reglas / descansos fijos (Fase 4) ---------- */
+.rules-grid { display: flex; flex-direction: column; gap: 6px; }
+.rule-row { display: flex; align-items: center; gap: 8px; }
+.rule-day { flex: 1; font-size: 13px; font-weight: 600; color: rgb(51 65 85); }
+.rule-cell {
+  flex: 0 0 84px; font-size: 12px; font-weight: 700; padding: 7px 8px; border-radius: 8px;
+  border: 1.5px solid rgb(203 213 225); background: white; color: rgb(100 116 139); cursor: pointer;
+}
+.rule-cell.rule-on { background: rgb(226 232 240); border-color: rgb(148 163 184); border-style: dashed; color: rgb(51 65 85); }
+.rule-cell:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------- Barra de activar notificaciones (Fase 5) ---------- */
+.push-bar {
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  background: rgb(255 247 237); border: 1px solid rgb(254 215 170);
+  color: rgb(154 52 18); font-size: 12px; font-weight: 600;
+  padding: 10px 14px; border-radius: 12px; margin: 10px;
+}
 
 /* ---------- Conflict modal (pre-Generar) ---------- */
 .conflict-group {

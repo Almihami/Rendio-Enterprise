@@ -68,6 +68,57 @@
     return now >= cut - 30 * 60 * 1000 && now < cut;
   }
 
+  // --- Reglas fijas por conductor (parametrización dura, hardcode por email) ---
+  // Un turno "bloqueado por parametrización" se trata como 'No disponible' en el
+  // generador Y se muestra como 🔒 (read-only) en la consolidada admin y en la
+  // vista del conductor, para que las tres cosas coincidan. Esta es la ÚNICA
+  // fuente de las reglas; el generador y las vistas la consultan vía
+  // Scheduler.ruleBlocked(driver, day, shift).
+  // NOTA: en la Fase 4 esto se mueve a la BD (tabla driver_rules); por ahora,
+  // hardcode por email. Para agregar a alguien (ej. Mary) añade su email y días.
+  const SPECIAL_EMAILS = {
+    JUAN_ANDRES: 'juan.mery@rendio.co',     // Juan Andres Mery Franco
+    CARDONA: 'andres.cardona@rendio.co',    // Andres Felipe Cardona Arias (NO Jefferson)
+    SEBAS: 'sebastian.gomez@rendio.co',     // Sebastian Gomez Ciro (solo tope semanal, sin bloqueo por día)
+  };
+
+  // ¿El conductor (por email) está bloqueado ese día/jornada por regla fija?
+  function ruleBlockedByEmail(email, day, shift) {
+    const em = (email || '').toLowerCase();
+    if (em === SPECIAL_EMAILS.JUAN_ANDRES) {
+      if (day === 'wed') return true;                   // siempre descansa miércoles
+      if (day === 'thu' && shift === 'pm') return true; // jueves descansa PM
+      if (day === 'tue' && shift === 'pm') return true; // martes solo madruga (AM)
+    }
+    if (em === SPECIAL_EMAILS.CARDONA) {
+      if (day === 'fri' || day === 'sat' || day === 'sun') return true; // solo lun-jue
+    }
+    // TODO Fase 4 / pendiente dato: parametrización de Mary (email + días).
+    return false;
+  }
+
+  // Reglas dinámicas cargadas desde la BD (Fase 4). Si están cargadas (no null),
+  // son AUTORITATIVAS y reemplazan al hardcode por email (así el admin puede
+  // agregar/quitar bloqueos desde la app). Mapa: { profileId: Set('day-shift') }.
+  let DYNAMIC_RULES = null;
+  function setRules(rulesByProfileId) {
+    DYNAMIC_RULES = rulesByProfileId || null;
+  }
+
+  // API pública: recibe el objeto driver ({ id, email, ... }) o un email suelto.
+  function ruleBlocked(driverOrEmail, day, shift) {
+    if (!driverOrEmail) return false;
+    // Si hay reglas dinámicas cargadas, mandan ellas (por id).
+    if (DYNAMIC_RULES) {
+      const id = typeof driverOrEmail === 'string' ? null : driverOrEmail.id;
+      if (id) return DYNAMIC_RULES[id] ? DYNAMIC_RULES[id].has(`${day}-${shift}`) : false;
+      // Sin id (email suelto) y con reglas dinámicas: no podemos resolver → false.
+      return false;
+    }
+    const email = typeof driverOrEmail === 'string' ? driverOrEmail : driverOrEmail.email;
+    return ruleBlockedByEmail(email, day, shift);
+  }
+
   function getRawState(availability, profileId, day, shift) {
     return availability?.[profileId]?.[day]?.[shift] || 'available';
   }
@@ -197,7 +248,7 @@
     return sorted.slice(0, count);
   }
 
-  function generateSchedule({ drivers, settings, availability, admins = [], flexCoordinatorId = null, weekStart = '', nonce = '' }) {
+  function generateSchedule({ drivers, settings, availability, admins = [], flexCoordinatorId = null, weekStart = '', nonce = '', seedPmIds = [] }) {
     const warnings = [];
     const workerLoads = new Map(drivers.map(d => [d.id, 0]));
     const coordLoads = new Map(admins.map(a => [a.id, 0]));
@@ -208,16 +259,11 @@
     const rng = mulberry32(hashSeed('rendio-turnos|' + (weekStart || '') + '|' + (nonce || '')));
     const driverRank = seededRankMap(drivers, rng);
 
-    // --- Reglas fijas por conductor (hardcode por email, como Daniel) ---
-    const SPECIAL = {
-      JUAN_ANDRES: 'juan.mery@rendio.co',      // Juan Andres Mery Franco
-      CARDONA: 'andres.cardona@rendio.co',     // Andres Felipe Cardona Arias (NO Jefferson)
-      SEBAS: 'sebastian.gomez@rendio.co',      // Sebastian Gomez Ciro
-    };
+    // --- Reglas fijas por conductor (fuente única: ruleBlocked, arriba) ---
     const byEmail = em => drivers.find(d => (d.email || '').toLowerCase() === em) || null;
-    const juanAndres = byEmail(SPECIAL.JUAN_ANDRES);
-    const cardona = byEmail(SPECIAL.CARDONA);
-    const sebas = byEmail(SPECIAL.SEBAS);
+    const juanAndres = byEmail(SPECIAL_EMAILS.JUAN_ANDRES);
+    const cardona = byEmail(SPECIAL_EMAILS.CARDONA);
+    const sebas = byEmail(SPECIAL_EMAILS.SEBAS);
 
     // Tope duro de días trabajados por semana (cada conductor toma a lo sumo
     // 1 turno/día, así que "días" == turnos asignados).
@@ -229,25 +275,14 @@
     // Para saber, dentro del pool de coordinadores, quién es conductor.
     const driverIds = new Set(drivers.map(d => d.id));
 
-    // Turnos bloqueados duro por regla (se tratan como 'No disponible').
-    function ruleBlocked(id, day, shift) {
-      if (juanAndres && id === juanAndres.id) {
-        if (day === 'wed') return true;                 // siempre descansa miércoles
-        if (day === 'thu' && shift === 'pm') return true; // jueves descansa PM
-        if (day === 'tue' && shift === 'pm') return true; // martes solo madruga (AM)
-      }
-      if (cardona && id === cardona.id) {
-        if (day === 'fri' || day === 'sat' || day === 'sun') return true; // solo lun-jue
-      }
-      return false;
-    }
     // Regla DURA "PM hoy ⇒ no AM mañana": un conductor que cerró el día anterior
     // a las ~2am no puede arrancar a las 2am del día siguiente. Se rastrea entre
-    // iteraciones del loop (los días van en orden lun→dom).
-    let prevPmIds = new Set();
+    // iteraciones del loop (los días van en orden lun→dom). `seedPmIds` arrastra
+    // el domingo PM de la semana ANTERIOR para que no madruguen el lunes (bug fix).
+    let prevPmIds = new Set(seedPmIds || []);
     const eligibleFor = (d, day, shift) =>
       getState(availability, d.id, day, shift) !== 'unavailable' &&
-      !ruleBlocked(d.id, day, shift) &&
+      !ruleBlocked(d, day, shift) &&
       !atCap(d.id) &&
       !(shift === 'am' && prevPmIds.has(d.id));
 
@@ -384,6 +419,88 @@
     return { schedule: result, warnings, loads: Object.fromEntries(workerLoads) };
   }
 
+  // ===================== Swaps entre conductores (Fase 3) =====================
+  const SLOT_OF = { am: 'morning', pm: 'afternoon' };
+
+  function replaceInArr(arr, from, to) {
+    return (arr || []).map(x => (x === from ? to : x));
+  }
+
+  // Aplica swaps 'accepted' como OVERLAY sobre el horario base (no muta el
+  // original; devuelve una copia). Cada swap intercambia el turno de A (from)
+  // con el de B (to). Si el horario cambió y ya no calzan, ese swap se ignora.
+  function applySwaps(data, swaps) {
+    if (!data || !swaps || !swaps.length) return data;
+    const out = JSON.parse(JSON.stringify(data));
+    swaps.forEach(s => {
+      const fromKey = DAYS[s.from_day], toKey = DAYS[s.to_day];
+      const fromSlot = SLOT_OF[s.from_shift], toSlot = SLOT_OF[s.to_shift];
+      if (!out[fromKey] || !out[toKey]) return;
+      const aInFrom = (out[fromKey][fromSlot] || []).includes(s.requester_id);
+      const bInTo = (out[toKey][toSlot] || []).includes(s.target_id);
+      if (!aInFrom || !bInTo) return; // swap obsoleto
+      out[fromKey][fromSlot] = replaceInArr(out[fromKey][fromSlot], s.requester_id, s.target_id);
+      out[toKey][toSlot] = replaceInArr(out[toKey][toSlot], s.target_id, s.requester_id);
+    });
+    return out;
+  }
+
+  // Mapa driverId -> { day -> Set(shift) } de turnos de MANEJO (morning/afternoon).
+  function drivingMap(data) {
+    const m = {};
+    DAYS.forEach(day => {
+      const d = data[day] || {};
+      (d.morning || []).forEach(id => { (m[id] = m[id] || {})[day] = (m[id][day] || new Set()).add('am'); });
+      (d.afternoon || []).forEach(id => { (m[id] = m[id] || {})[day] = (m[id][day] || new Set()).add('pm'); });
+    });
+    return m;
+  }
+
+  // Valida un swap propuesto sobre el horario PUBLICADO base.
+  // driversById: { id: { email, name } }. Devuelve { ok, reason }.
+  function validateSwap(data, swap, driversById = {}) {
+    const fromKey = DAYS[swap.from_day], toKey = DAYS[swap.to_day];
+    const a = swap.requester_id, b = swap.target_id;
+    const fromSlot = SLOT_OF[swap.from_shift], toSlot = SLOT_OF[swap.to_shift];
+    const aName = driversById[a]?.name || 'Solicitante';
+    const bName = driversById[b]?.name || 'Compañero';
+
+    // 1. Ambos deben tener hoy el turno que ofrecen.
+    if (!(data?.[fromKey]?.[fromSlot] || []).includes(a))
+      return { ok: false, reason: `${aName} ya no tiene ese turno en el horario.` };
+    if (!(data?.[toKey]?.[toSlot] || []).includes(b))
+      return { ok: false, reason: `${bName} ya no tiene ese turno en el horario.` };
+
+    // 2. Reglas fijas: el turno que cada uno RECIBE no puede estar bloqueado.
+    if (ruleBlocked(driversById[a], toKey, swap.to_shift))
+      return { ok: false, reason: `${aName} tiene descanso fijo (parametrización) en ${DAY_LABELS_ES[toKey]} ${swap.to_shift.toUpperCase()}.` };
+    if (ruleBlocked(driversById[b], fromKey, swap.from_shift))
+      return { ok: false, reason: `${bName} tiene descanso fijo (parametrización) en ${DAY_LABELS_ES[fromKey]} ${swap.from_shift.toUpperCase()}.` };
+
+    // 3. Construir el resultado y validar doble turno / PM→AM por persona.
+    const m = drivingMap(data);
+    const moveOut = (id, day, shift) => { if (m[id]?.[day]) { m[id][day].delete(shift); if (!m[id][day].size) delete m[id][day]; } };
+    const moveIn = (id, day, shift) => { (m[id] = m[id] || {})[day] = (m[id][day] || new Set()).add(shift); };
+    moveOut(a, fromKey, swap.from_shift); moveIn(a, toKey, swap.to_shift);
+    moveOut(b, toKey, swap.to_shift);     moveIn(b, fromKey, swap.from_shift);
+
+    for (const [id, label] of [[a, aName], [b, bName]]) {
+      const byDay = m[id] || {};
+      // Doble turno el mismo día.
+      for (const day of DAYS) {
+        const set = byDay[day];
+        if (set && set.has('am') && set.has('pm'))
+          return { ok: false, reason: `${label} quedaría con Mañana y Tarde el mismo día (${DAY_LABELS_ES[day]}).` };
+      }
+      // PM hoy ⇒ no AM mañana (dentro de la semana).
+      for (let i = 0; i < DAYS.length - 1; i++) {
+        if (byDay[DAYS[i]]?.has('pm') && byDay[DAYS[i + 1]]?.has('am'))
+          return { ok: false, reason: `${label} cerraría ${DAY_LABELS_ES[DAYS[i]]} PM y madrugaría ${DAY_LABELS_ES[DAYS[i + 1]]} AM (no permitido).` };
+      }
+    }
+    return { ok: true, reason: '' };
+  }
+
   function emptySchedule() {
     const r = {};
     DAYS.forEach(d => { r[d] = { morning: [], afternoon: [], rest: [], coord_am: [], coord_pm: [] }; });
@@ -395,5 +512,6 @@
     weekDates, startOfWeekISO, defaultWeekISO, addDays,
     availabilityCutoff, availabilityClosed, availabilityClosingSoon,
     generateSchedule, emptySchedule, getState, getRawState, getEffectiveState,
+    ruleBlocked, setRules, applySwaps, validateSwap,
   };
 })();

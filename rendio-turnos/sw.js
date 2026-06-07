@@ -6,7 +6,7 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v22';
+const CACHE_VERSION = 'rendio-turnos-v24';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
@@ -40,6 +40,35 @@ self.addEventListener('activate', (event) => {
     )
   );
   self.clients.claim();
+});
+
+// --- Web Push (Fase 5) ---
+// El servidor (Edge Function send-push) envía un payload JSON { title, body, url }.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = { body: event.data && event.data.text() }; }
+  const title = data.title || 'Rendio Turnos';
+  const options = {
+    body: data.body || '',
+    icon: '/assets/icon-192.png',
+    badge: '/assets/icon-192.png',
+    data: { url: data.url || '/' },
+    tag: data.tag || undefined,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) {
+        if ('focus' in w) { w.navigate ? w.navigate(url) : null; return w.focus(); }
+      }
+      return self.clients.openWindow ? self.clients.openWindow(url) : null;
+    })
+  );
 });
 
 self.addEventListener('fetch', (event) => {

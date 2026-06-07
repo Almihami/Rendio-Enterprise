@@ -292,6 +292,7 @@
     $('#role-label-mobile').textContent = state.profile.role === 'admin' ? 'Admin' : 'Conductor';
 
     state.settings = await Api.getSettings();
+    await loadRules();
 
     if (state.profile.role === 'admin') {
       $('#admin-nav').classList.remove('hidden');
@@ -310,6 +311,20 @@
       $('#screen-driver').classList.remove('hidden');
       $('#driver-save-bar').classList.remove('hidden');
       await refreshDriverView();
+    }
+    setupPushUI();
+  }
+
+  // Carga las reglas (descansos fijos) desde la BD y las inyecta al scheduler.
+  // Si la tabla 0020 aún no está aplicada, deja el fallback hardcode por email.
+  async function loadRules() {
+    try {
+      const rows = await Api.listDriverRules();
+      state.rules = rows;
+      Scheduler.setRules(Api.rulesToMap(rows));
+    } catch (e) {
+      state.rules = null;
+      Scheduler.setRules(null); // fallback: hardcode por email en scheduler.js
     }
   }
 
@@ -361,6 +376,20 @@
     $('#published-pill').classList.toggle('hidden', !sch?.published);
     renderSchedule();
     refreshPendingBadge();
+    // Aviso de cambios de turno aceptados entre conductores (post-publicación).
+    try {
+      const swaps = sch?.published ? await Api.listAcceptedSwaps(state.currentWeek) : [];
+      const box = $('#schedule-warnings');
+      if (swaps.length && box) {
+        const names = (sch.data && sch.data._names) || {};
+        const lbl = (d, s) => `${Scheduler.DAY_LABELS_ES[Scheduler.DAYS[d]]} ${s.toUpperCase()}`;
+        box.innerHTML = `<p class="text-indigo-700 font-semibold">🔄 ${swaps.length} cambio(s) de turno aceptado(s) entre conductores:</p>
+          <ul class="list-disc pl-5 mt-1">${swaps.map(s =>
+            `<li>${escapeHtml(names[s.requester_id] || '—')} (${lbl(s.from_day, s.from_shift)}) ⇄ ${escapeHtml(names[s.target_id] || '—')} (${lbl(s.to_day, s.to_shift)})</li>`).join('')}</ul>
+          <p class="text-xs text-slate-500 mt-1">Se reflejan en la vista de los conductores. Si regeneras y publicas, se reinician.</p>`;
+        box.classList.remove('hidden');
+      }
+    } catch (e) { /* sin aviso si falla */ }
   }
 
   function navigateWeek(deltaDays) {
@@ -547,6 +576,29 @@
       }
     }
 
+    // Suspendidos esta semana (por 3 strikes o manual): fuera del generador.
+    let suspendedThisWeek = [];
+    try {
+      const susp = await Api.getWeekSuspensions(state.currentWeek);
+      if (susp.size) {
+        suspendedThisWeek = pool.filter(d => susp.has(d.id));
+        pool = pool.filter(d => !susp.has(d.id));
+      }
+    } catch (e) { /* fail-safe: no excluir por suspensión si falla */ }
+
+    // Regla PM→AM entre semanas: quien cerró el DOMINGO PM de la semana
+    // anterior (manejo + coordinación) no puede madrugar el lunes de esta.
+    // Sembramos esos ids para que el generador los excluya del AM del lunes.
+    let seedPmIds = [];
+    try {
+      const prevWeek = Scheduler.addDays(state.currentWeek, -7);
+      const prev = await Api.getSchedule(prevWeek);
+      const sun = prev?.data?.sun;
+      if (sun) {
+        seedPmIds = [...(sun.afternoon || []), ...(sun.coord_pm || [])].filter(Boolean);
+      }
+    } catch (e) { /* sin semana previa: no se siembra (fail-safe) */ }
+
     const flexCand = flexCoordinator();
     const flexId = (flexCand && pool.some(d => d.id === flexCand.id)) ? flexCand.id : null;
     // Pool de coordinadores = admins con is_coordinator + conductores con
@@ -565,14 +617,18 @@
       // Nonce nuevo por clic: cada "Generar" baraja distinto (siempre válido).
       // Lo que el admin elija se fija al Guardar/Publicar.
       nonce: Date.now() + '-' + Math.random(),
+      seedPmIds,
     });
     state.schedule = schedule;
     const box = $('#schedule-warnings');
     const exclMsg = excluded.length
       ? `<p class="text-rose-700 font-semibold">⛔ ${excluded.length} conductor(es) fuera por no llenar disponibilidad antes del domingo 6:30 PM: ${excluded.map(d => escapeHtml(d.name)).join(', ')}</p>`
       : '';
-    if (warnings.length || exclMsg) {
-      box.innerHTML = exclMsg + (warnings.length
+    const suspMsg = suspendedThisWeek.length
+      ? `<p class="text-amber-700 font-semibold">🚫 ${suspendedThisWeek.length} conductor(es) suspendido(s) esta semana (3 strikes / manual): ${suspendedThisWeek.map(d => escapeHtml(d.name)).join(', ')}</p>`
+      : '';
+    if (warnings.length || exclMsg || suspMsg) {
+      box.innerHTML = exclMsg + suspMsg + (warnings.length
         ? '<strong>Advertencias:</strong><ul class="list-disc pl-5 mt-1">' +
           warnings.map(w => `<li>${w}</li>`).join('') + '</ul>'
         : '');
@@ -627,6 +683,10 @@
       await Api.saveSchedule(state.currentWeek, state.schedule, { published: publish, drivers: [...state.drivers, ...state.admins] });
       $('#published-pill').classList.toggle('hidden', !publish);
       refreshPendingBadge();
+      if (publish) {
+        notify(state.drivers.map(d => d.id), 'Horario publicado',
+          `Ya está disponible el horario de la semana del ${weekLabelES(state.currentWeek)}.`, '/');
+      }
       toast(publish ? 'Horario publicado.' : 'Horario guardado.');
     } catch (e) {
       alert('Error al guardar: ' + e.message);
@@ -857,14 +917,19 @@
       tr.innerHTML = `<td class="font-medium p-2">${escapeHtml(d.name)}</td>` +
         week.map(day => {
           const av = state.availability[d.id]?.[day.key] || { am: 'available', pm: 'available' };
-          const amTip = av.am_reason ? ` title="${escapeAttr(av.am_reason)}"` : '';
-          const pmTip = av.pm_reason ? ` title="${escapeAttr(av.pm_reason)}"` : '';
-          const amBadge = miniBadge(av.am_request);
-          const pmBadge = miniBadge(av.pm_request);
+          // Bloqueo por parametrización: se muestra 🔒 y NO se puede editar.
+          const amBlocked = Scheduler.ruleBlocked(d, day.key, 'am');
+          const pmBlocked = Scheduler.ruleBlocked(d, day.key, 'pm');
+          const amState = amBlocked ? 'blocked' : av.am;
+          const pmState = pmBlocked ? 'blocked' : av.pm;
+          const amTip = amBlocked ? ' title="Bloqueado por parametrización (descanso fijo)"' : (av.am_reason ? ` title="${escapeAttr(av.am_reason)}"` : '');
+          const pmTip = pmBlocked ? ' title="Bloqueado por parametrización (descanso fijo)"' : (av.pm_reason ? ` title="${escapeAttr(av.pm_reason)}"` : '');
+          const amBadge = amBlocked ? ' 🔒' : miniBadge(av.am_request);
+          const pmBadge = pmBlocked ? ' 🔒' : miniBadge(av.pm_request);
           return `<td class="p-1">
             <div class="flex gap-1 justify-center items-center">
-              <button data-id="${d.id}" data-day="${day.key}" data-shift="am" data-state="${av.am}" class="avail-pill"${amTip}>AM${amBadge}</button>
-              <button data-id="${d.id}" data-day="${day.key}" data-shift="pm" data-state="${av.pm}" class="avail-pill"${pmTip}>PM${pmBadge}</button>
+              <button data-id="${d.id}" data-day="${day.key}" data-shift="am" data-state="${amState}"${amBlocked ? ' data-blocked="1"' : ''} class="avail-pill"${amTip}>AM${amBadge}</button>
+              <button data-id="${d.id}" data-day="${day.key}" data-shift="pm" data-state="${pmState}"${pmBlocked ? ' data-blocked="1"' : ''} class="avail-pill"${pmTip}>PM${pmBadge}</button>
             </div>
           </td>`;
         }).join('');
@@ -890,6 +955,10 @@
   }
 
   async function rotateAvailPill(btn) {
+    if (btn.dataset.blocked === '1') {
+      toast('Bloqueado por parametrización. Se edita en las reglas del conductor.');
+      return;
+    }
     const order = ['available', 'prefer_rest', 'unavailable'];
     const next = order[(order.indexOf(btn.dataset.state) + 1) % order.length];
     const id = btn.dataset.id;
@@ -949,6 +1018,7 @@
           <p class="text-[10px] uppercase font-bold tracking-wider ${roleTxt} mt-0.5">${roleLabel}</p>
         </div>
       </div>
+      ${opts.badges ? `<div class="worker-badges">${opts.badges}</div>` : ''}
       ${opts.actions || ''}
     </div>`;
   }
@@ -956,13 +1026,18 @@
   async function renderWorkers() {
     const list = $('#workers-list');
     list.innerHTML = '<p class="text-sm text-slate-500">Cargando…</p>';
-    let admins, drivers;
+    let admins, drivers, strikeCounts, weekSusp;
     try {
-      [admins, drivers] = await Promise.all([Api.listAdmins(), Api.listAllDriversForAdmin()]);
+      [admins, drivers, strikeCounts, weekSusp] = await Promise.all([
+        Api.listAdmins(), Api.listAllDriversForAdmin(),
+        Api.getActiveStrikeCounts().catch(() => new Map()),
+        Api.getWeekSuspensions(state.currentWeek).catch(() => new Map()),
+      ]);
     } catch (e) {
       list.innerHTML = `<p class="text-sm text-rose-600">Error cargando personal: ${escapeHtml(e.message)}</p>`;
       return;
     }
+    state._strikeCounts = strikeCounts;
     const activeDrivers = drivers.filter(d => d.active);
     const suspended = drivers.filter(d => !d.active);
 
@@ -980,12 +1055,21 @@
 
     const activeCards = activeDrivers.map(d => {
       const dcoord = d.can_coordinate === true;
+      const strikes = strikeCounts.get(d.id) || 0;
+      const isSuspWeek = weekSusp.has(d.id);
+      const strikeBadge = strikes > 0
+        ? `<span class="wk-strike-badge" title="Strikes activos">⚠ ${strikes}/3</span>` : '';
+      const suspBadge = isSuspWeek
+        ? `<span class="wk-susp-badge" title="Suspendido esta semana">🚫 Suspendido (esta semana)</span>` : '';
       return workerCardHtml(d, {
         kind: 'driver',
+        badges: strikeBadge + suspBadge,
         actions: `<div class="worker-actions">
           <button data-act="${dcoord ? 'dcoord-off' : 'dcoord-on'}" data-id="${d.id}" data-name="${escapeHtml(d.name)}"
             class="wk-btn ${dcoord ? 'wk-coord-on' : 'wk-coord-off'}">
             ${dcoord ? '✓ Coordina' : '✕ No coordina'}</button>
+          <button data-act="strike" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-strike">⚠ Strike</button>
+          <button data-act="strikes-history" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-history">Historial</button>
           <button data-act="suspend" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-suspend">Suspender</button>
           <button data-act="delete" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-delete">Eliminar</button>
         </div>`,
@@ -1026,6 +1110,44 @@
     const id = btn.dataset.id;
     const name = btn.dataset.name;
     const act = btn.dataset.act;
+
+    // --- Strikes (Fase 2) ---
+    if (act === 'strike') {
+      const reason = prompt(`Razón del strike para ${name} (queda en el historial):`, '');
+      if (reason === null) return;
+      if (!reason.trim()) { toast('El strike necesita una razón.'); return; }
+      btn.disabled = true;
+      try {
+        const before = state._strikeCounts?.get(id) || 0;
+        await Api.addStrike({ profileId: id, reason: reason.trim(), weekStart: state.currentWeek, createdBy: state.profile.id });
+        const reaching3 = before + 1 >= 3;
+        notify([id], reaching3 ? 'Suspendido la próxima semana' : 'Recibiste un strike',
+          reaching3 ? 'Acumulaste 3 strikes: quedas suspendido la próxima semana.' : `Motivo: ${reason.trim()}`, '/');
+        await renderWorkers();
+        // Si era el 3º, el trigger ya creó la suspensión de la próxima semana.
+        if (reaching3) {
+          alert(`⚠ ${name} llegó a 3 strikes. Quedó SUSPENDIDO automáticamente la semana siguiente. Los strikes se reinician.`);
+        } else {
+          toast(`Strike registrado (${before + 1}/3).`);
+        }
+      } catch (e) {
+        alert('Error al registrar el strike: ' + e.message);
+        btn.disabled = false;
+      }
+      return;
+    }
+    if (act === 'strikes-history') {
+      btn.disabled = true;
+      try {
+        const strikes = await Api.listDriverStrikes(id);
+        openStrikesModal(name, id, strikes);
+      } catch (e) {
+        alert('Error al cargar el historial: ' + e.message);
+      }
+      btn.disabled = false;
+      return;
+    }
+
     if (act === 'delete' && !confirm(`¿Eliminar a ${name}? Desaparece del sistema y de la generación. Los horarios pasados donde aparece NO se borran.`)) return;
     if (act === 'suspend' && !confirm(`¿Suspender a ${name}? Saldrá de la generación de horarios hasta que lo reactives.`)) return;
     btn.disabled = true;
@@ -1053,12 +1175,128 @@
     }
   }
 
+  // Modal de historial de strikes (inyectado al vuelo).
+  function openStrikesModal(name, profileId, strikes) {
+    document.getElementById('strikes-modal')?.remove();
+    const fmt = iso => { try { return new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return iso; } };
+    const statusOf = s => s.voided_at ? '<span class="strike-tag strike-tag-void">Anulado</span>'
+      : s.consumed_at ? '<span class="strike-tag strike-tag-consumed">Consumido</span>'
+      : '<span class="strike-tag strike-tag-active">Activo</span>';
+    const rows = strikes.length ? strikes.map(s => `
+      <div class="strike-item">
+        <div class="strike-item-main">
+          <p class="strike-item-reason">${escapeHtml(s.reason)}</p>
+          <p class="strike-item-meta">${fmt(s.created_at)} · semana ${s.week_start_date}</p>
+        </div>
+        <div class="strike-item-side">
+          ${statusOf(s)}
+          ${(!s.voided_at && !s.consumed_at) ? `<button data-void-id="${s.id}" class="wk-btn wk-strike-void">Anular</button>` : ''}
+        </div>
+      </div>`).join('') : '<p class="text-sm text-slate-500">Sin strikes registrados.</p>';
+    const active = strikes.filter(s => !s.voided_at && !s.consumed_at).length;
+    const overlay = document.createElement('div');
+    overlay.id = 'strikes-modal';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3 class="modal-title">Strikes — ${escapeHtml(name)}</h3>
+          <p class="modal-subtitle">Activos: <strong>${active}/3</strong></p>
+        </div>
+        <div class="strikes-list">${rows}</div>
+        <div class="modal-actions">
+          <button id="strikes-modal-close" class="wk-btn">Cerrar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#strikes-modal-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelectorAll('[data-void-id]').forEach(b => {
+      b.addEventListener('click', async () => {
+        if (!confirm('¿Anular este strike? No contará para la suspensión (queda en historial).')) return;
+        b.disabled = true;
+        try {
+          await Api.voidStrike(b.dataset.voidId, state.profile.id);
+          overlay.remove();
+          await renderWorkers();
+          toast('Strike anulado.');
+        } catch (e) { alert('Error: ' + e.message); b.disabled = false; }
+      });
+    });
+  }
+
   function renderSettings() {
     $('#setting-morning-label').value = state.settings.morning_label;
     $('#setting-afternoon-label').value = state.settings.afternoon_label;
     $('#setting-morning-slots').value = state.settings.morning_slots;
     $('#setting-afternoon-slots').value = state.settings.afternoon_slots;
     renderPriorityList();
+    renderRulesEditor();
+  }
+
+  // --- Editor de parametrización: descansos fijos por conductor (Fase 4) ---
+  // Se inyecta dentro del panel de Ajustes, tras la lista de prioridad.
+  function renderRulesEditor() {
+    const prioBox = $('#priority-list');
+    if (!prioBox) return;
+    let box = document.getElementById('rules-editor');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'rules-editor';
+      box.className = 'mt-6';
+      // Lo colocamos como hermano del contenedor de prioridad.
+      (prioBox.closest('section, div') || prioBox.parentNode).appendChild(box);
+    }
+    const drivers = [...state.drivers].sort((a, b) => a.name.localeCompare(b.name));
+    if (!drivers.length) { box.innerHTML = ''; return; }
+    if (!state._rulesDriverId || !drivers.some(d => d.id === state._rulesDriverId)) {
+      state._rulesDriverId = drivers[0].id;
+    }
+    const sel = state._rulesDriverId;
+    const rulesFor = new Set((state.rules || [])
+      .filter(r => r.profile_id === sel)
+      .map(r => `${r.day_of_week}-${r.shift}`));
+
+    const opts = drivers.map(d => `<option value="${d.id}"${d.id === sel ? ' selected' : ''}>${escapeHtml(d.name)}</option>`).join('');
+    const rows = Scheduler.DAYS.map((dayKey, di) => {
+      const label = Scheduler.DAY_LABELS_ES[dayKey];
+      const cell = (shift) => {
+        const on = rulesFor.has(`${di}-${shift}`);
+        return `<button class="rule-cell ${on ? 'rule-on' : ''}" data-rule-day="${di}" data-rule-shift="${shift}">${shift.toUpperCase()}${on ? ' 🔒' : ''}</button>`;
+      };
+      return `<div class="rule-row"><span class="rule-day">${label}</span>${cell('am')}${cell('pm')}</div>`;
+    }).join('');
+
+    box.innerHTML = `
+      <h3 class="text-sm font-bold text-ink mb-1">Descansos fijos (parametrización)</h3>
+      <p class="text-xs text-slate-500 mb-3">Marca los días/jornadas que un conductor tiene SIEMPRE de descanso. Saldrán 🔒 bloqueados en el horario y en su vista.</p>
+      <select id="rules-driver-select" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm mb-3 w-full max-w-xs">${opts}</select>
+      <div class="rules-grid">${rows}</div>`;
+
+    box.querySelector('#rules-driver-select').addEventListener('change', e => {
+      state._rulesDriverId = e.target.value;
+      renderRulesEditor();
+    });
+    box.querySelectorAll('.rule-cell').forEach(b => {
+      b.addEventListener('click', () => onToggleRule(sel, parseInt(b.dataset.ruleDay, 10), b.dataset.ruleShift, b));
+    });
+  }
+
+  async function onToggleRule(profileId, dayOfWeek, shift, btn) {
+    const wasOn = btn.classList.contains('rule-on');
+    btn.disabled = true;
+    try {
+      if (wasOn) await Api.deleteDriverRule({ profileId, dayOfWeek, shift });
+      else await Api.addDriverRule({ profileId, dayOfWeek, shift, createdBy: state.profile.id });
+      await loadRules();          // recarga state.rules + Scheduler.setRules
+      renderRulesEditor();
+      // Si la consolidada está visible, refrescarla para reflejar el cambio.
+      if (state.activeTab === 'availability') refreshAvailabilityMatrix();
+      toast(wasOn ? 'Bloqueo quitado.' : 'Bloqueo agregado.');
+    } catch (e) {
+      alert('Error al guardar la regla: ' + e.message);
+      btn.disabled = false;
+    }
   }
 
   // Prioridad por antigüedad (1=nuevo, 2=con tiempo, 3=antiguo). Influye SUAVE
@@ -1536,9 +1774,12 @@
     // Refrescar settings: así el conductor ve si el jefe reabrió la semana.
     try { state.settings = await Api.getSettings(); } catch (e) { /* usa el cacheado */ }
     state.ownAvail = await Api.getMyWeeklyAvailability(state.profile.id, state.currentWeek);
+    try { state.weekSuspension = await Api.getMyWeekSuspension(state.profile.id, state.currentWeek); }
+    catch (e) { state.weekSuspension = null; }
     renderDriverDays();
     await renderDriverRequests();
     await renderDriverPublishedSchedule();
+    await renderDriverSwaps();
   }
 
   function updateDriverWeekLabel() {
@@ -1573,16 +1814,22 @@
       : (soon
         ? `<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 font-semibold">⚠ La disponibilidad de esta semana cierra HOY a las 6:30 PM. Guarda antes.</div>`
         : `<div class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 font-semibold">ℹ️ Tienes hasta el domingo 6:30 PM para guardar la disponibilidad de esta semana.</div>`)));
-    wrap.innerHTML = banner + week.map(d => {
+    const suspWeekBanner = state.weekSuspension
+      ? `<div class="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 font-semibold">🚫 Estás suspendido esta semana${state.weekSuspension.source === 'strikes' ? ' por acumular 3 strikes' : ''}. No entras en la generación de turnos. Habla con tu jefe.</div>`
+      : '';
+    wrap.innerHTML = banner + suspWeekBanner + week.map(d => {
       const av = state.ownAvail[d.key] || { am: 'available', pm: 'available', shift_pref: 'any' };
       const isWeekend = d.key === 'sat' || d.key === 'sun';
       const isToday = d.date === todayISO;
       const cls = ['day-card'];
       if (isWeekend) cls.push('is-weekend');
       if (isToday) cls.push('is-today');
+      // Bloqueo por parametrización del propio conductor: 🔒, solo lectura.
+      const amBlocked = Scheduler.ruleBlocked(state.profile, d.key, 'am');
+      const pmBlocked = Scheduler.ruleBlocked(state.profile, d.key, 'pm');
       // El selector AM/PM/Indistinto solo aparece si AM Y PM están disponibles
-      // (si pediste descanso/no disponible en alguna, la preferencia no aplica).
-      const bothAvailable = av.am === 'available' && av.pm === 'available';
+      // (si pediste descanso/no disponible o hay bloqueo, la preferencia no aplica).
+      const bothAvailable = av.am === 'available' && av.pm === 'available' && !amBlocked && !pmBlocked;
       const pref = av.shift_pref || 'any';
       const prefBtn = (val, label) => `<button class="pref-btn ${pref === val ? 'pref-on' : ''}" data-pref-day="${d.key}" data-pref-val="${val}">${label}</button>`;
       const prefRow = bothAvailable ? `<div class="day-pref-row">
@@ -1591,6 +1838,17 @@
         ${prefBtn('am', 'AM')}
         ${prefBtn('pm', 'PM')}
       </div>` : '';
+      const shiftBtn = (shift, label, blocked, state) => blocked
+        ? `<button class="shift-btn shift-btn-blocked" data-day="${d.key}" data-shift="${shift}" data-state="blocked" data-blocked="1" disabled title="Tu jefe configuró este día/jornada como descanso fijo">
+            <span class="shift-btn-label">${label}</span>
+            <span class="shift-btn-state">🔒 Bloqueado</span>
+          </button>`
+        : `<button class="shift-btn" data-day="${d.key}" data-shift="${shift}" data-state="${state}">
+            <span class="shift-btn-label">${label}</span>
+            <span class="shift-btn-state">${stateLabelShort(state)} ${approvalBadgeHtml(shift === 'am' ? av.am_request : av.pm_request)}</span>
+          </button>`;
+      const fixedNote = (amBlocked || pmBlocked)
+        ? `<p class="day-fixed-note">🔒 Descanso fijo configurado por tu jefe.</p>` : '';
       return `<div class="${cls.join(' ')}">
         <div class="day-card-header">
           <div>
@@ -1599,17 +1857,12 @@
           </div>
         </div>
         <div class="day-card-actions">
-          <button class="shift-btn" data-day="${d.key}" data-shift="am" data-state="${av.am}">
-            <span class="shift-btn-label">MAÑANA</span>
-            <span class="shift-btn-state">${stateLabelShort(av.am)} ${approvalBadgeHtml(av.am_request)}</span>
-          </button>
-          <button class="shift-btn" data-day="${d.key}" data-shift="pm" data-state="${av.pm}">
-            <span class="shift-btn-label">TARDE</span>
-            <span class="shift-btn-state">${stateLabelShort(av.pm)} ${approvalBadgeHtml(av.pm_request)}</span>
-          </button>
+          ${shiftBtn('am', 'MAÑANA', amBlocked, av.am)}
+          ${shiftBtn('pm', 'TARDE', pmBlocked, av.pm)}
         </div>
+        ${fixedNote}
         ${prefRow}
-        <button class="day-all-btn" data-day="${d.key}" data-shift="whole">Todo el día</button>
+        ${(amBlocked && pmBlocked) ? '' : `<button class="day-all-btn" data-day="${d.key}" data-shift="whole">Todo el día</button>`}
       </div>`;
     }).join('');
 
@@ -1658,6 +1911,10 @@
 
   let pickerContext = null;
 
+  function shiftBlockedForMe(day, shift) {
+    return Scheduler.ruleBlocked(state.profile, day, shift);
+  }
+
   function openStatePicker(day, shift) {
     if (isSuspended()) {
       toast('Tu cuenta está suspendida. Habla con tu admin para reactivarla.');
@@ -1665,6 +1922,11 @@
     }
     if (weekAvailClosed(state.currentWeek)) {
       toast('La disponibilidad de esta semana ya cerró (domingo 6:30 PM). Habla con tu jefe.');
+      return;
+    }
+    // Jornada con descanso fijo: no editable por el conductor.
+    if (shift !== 'whole' && shiftBlockedForMe(day, shift)) {
+      toast('Esta jornada es un descanso fijo configurado por tu jefe.');
       return;
     }
     pickerContext = { day, shift };
@@ -1693,10 +1955,8 @@
     }
     state.ownAvail[day] = state.ownAvail[day] || { am: 'available', pm: 'available' };
     if (shift === 'whole') {
-      state.ownAvail[day].am = value;
-      state.ownAvail[day].pm = value;
-      state.ownAvail[day].am_reason = null;
-      state.ownAvail[day].pm_reason = null;
+      if (!shiftBlockedForMe(day, 'am')) { state.ownAvail[day].am = value; state.ownAvail[day].am_reason = null; }
+      if (!shiftBlockedForMe(day, 'pm')) { state.ownAvail[day].pm = value; state.ownAvail[day].pm_reason = null; }
     } else {
       state.ownAvail[day][shift] = value;
       state.ownAvail[day][`${shift}_reason`] = null;
@@ -1731,10 +1991,8 @@
     const { day, shift } = reasonContext;
     state.ownAvail[day] = state.ownAvail[day] || { am: 'available', pm: 'available' };
     if (shift === 'whole') {
-      state.ownAvail[day].am = 'unavailable';
-      state.ownAvail[day].pm = 'unavailable';
-      state.ownAvail[day].am_reason = reason;
-      state.ownAvail[day].pm_reason = reason;
+      if (!shiftBlockedForMe(day, 'am')) { state.ownAvail[day].am = 'unavailable'; state.ownAvail[day].am_reason = reason; }
+      if (!shiftBlockedForMe(day, 'pm')) { state.ownAvail[day].pm = 'unavailable'; state.ownAvail[day].pm_reason = reason; }
     } else {
       state.ownAvail[day][shift] = 'unavailable';
       state.ownAvail[day][`${shift}_reason`] = reason;
@@ -1837,8 +2095,17 @@
       }
       return;
     }
+    // Overlay de swaps aceptados: el conductor ve el horario YA con los cambios.
+    try {
+      const accepted = await Api.listAcceptedSwaps(state.currentWeek);
+      if (accepted.length) sch.data = Scheduler.applySwaps(sch.data, accepted);
+    } catch (e) { /* sin overlay si falla */ }
+
     const driverNames = sch.data._names || {};
     if (!driverNames[state.profile.id]) driverNames[state.profile.id] = state.profile.full_name;
+    // Guardado para la sección de cambios de turno (swaps).
+    state.pubSched = sch.data;
+    state.pubNames = driverNames;
 
     const week = Scheduler.weekDates(state.currentWeek);
 
@@ -1912,6 +2179,193 @@
     container.innerHTML = html;
   }
 
+  // ====================== Cambios de turno entre conductores (Fase 3) ======================
+
+  const SHIFT_ES = { am: 'Mañana', pm: 'Tarde' };
+
+  // Turnos de MANEJO (morning/afternoon) de un conductor en el horario publicado.
+  function drivingShiftsOf(data, profileId) {
+    const out = [];
+    Scheduler.DAYS.forEach((day, di) => {
+      const d = data[day] || {};
+      if ((d.morning || []).includes(profileId)) out.push({ day, di, shift: 'am' });
+      if ((d.afternoon || []).includes(profileId)) out.push({ day, di, shift: 'pm' });
+    });
+    return out;
+  }
+
+  function swapStateLabel(s) {
+    return { pending: 'Pendiente', accepted: 'Aceptado', rejected: 'Rechazado', cancelled: 'Cancelado' }[s] || s;
+  }
+
+  async function renderDriverSwaps() {
+    // Contenedor (se inyecta antes del horario si no existe en el HTML).
+    let box = document.getElementById('driver-swaps-container');
+    if (!box) {
+      const schedWrap = document.getElementById('driver-schedule-container');
+      if (!schedWrap || !schedWrap.parentNode) return;
+      box = document.createElement('div');
+      box.id = 'driver-swaps-container';
+      box.className = 'mb-4';
+      schedWrap.parentNode.insertBefore(box, schedWrap);
+    }
+    const data = state.pubSched;
+    if (!data) { box.innerHTML = ''; return; }
+    const meId = state.profile.id;
+
+    let mySwaps = [];
+    try { mySwaps = await Api.listMySwaps(meId, state.currentWeek); } catch (e) { /* vacío */ }
+    const names = state.pubNames || {};
+    const label = (di, shift) => `${Scheduler.DAY_LABELS_ES[Scheduler.DAYS[di]]} · ${SHIFT_ES[shift]}`;
+
+    // Entrantes (yo soy el destinatario y está pendiente).
+    const incoming = mySwaps.filter(s => s.target_id === meId && s.state === 'pending');
+    const incomingHtml = incoming.map(s => `
+      <div class="swap-card" data-state="pending">
+        <p class="swap-card-title">${escapeHtml(names[s.requester_id] || 'Un compañero')} te propone un cambio</p>
+        <p class="swap-card-detail">Te daría: <strong>${label(s.from_day, s.from_shift)}</strong><br>A cambio de tu: <strong>${label(s.to_day, s.to_shift)}</strong></p>
+        ${s.note ? `<p class="swap-card-note">"${escapeHtml(s.note)}"</p>` : ''}
+        <div class="swap-card-actions">
+          <button data-swap-accept="${s.id}" class="wk-btn wk-coord-on">Aceptar</button>
+          <button data-swap-reject="${s.id}" class="wk-btn">Rechazar</button>
+        </div>
+      </div>`).join('');
+
+    // Salientes / historial (yo solicité, o ya resueltas).
+    const others = mySwaps.filter(s => !(s.target_id === meId && s.state === 'pending'));
+    const othersHtml = others.map(s => {
+      const mine = s.requester_id === meId;
+      const who = mine ? (names[s.target_id] || 'Compañero') : (names[s.requester_id] || 'Compañero');
+      return `<div class="swap-card" data-state="${s.state}">
+        <p class="swap-card-title">${mine ? 'Pediste a' : 'Te pidió'} ${escapeHtml(who)} · <strong>${swapStateLabel(s.state)}</strong></p>
+        <p class="swap-card-detail">${label(s.from_day, s.from_shift)} ⇄ ${label(s.to_day, s.to_shift)}</p>
+        ${(mine && s.state === 'pending') ? `<div class="swap-card-actions"><button data-swap-cancel="${s.id}" class="wk-btn">Cancelar</button></div>` : ''}
+      </div>`;
+    }).join('');
+
+    const canPropose = drivingShiftsOf(data, meId).length > 0 && !state.weekSuspension;
+    box.innerHTML = `
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-sm font-bold text-ink">Cambios de turno</h3>
+        ${canPropose ? '<button id="swap-propose-btn" class="wk-btn wk-coord-on" style="flex:0 0 auto;">+ Proponer cambio</button>' : ''}
+      </div>
+      ${incomingHtml || ''}
+      ${othersHtml || ''}
+      ${(!incoming.length && !others.length) ? '<p class="text-xs text-slate-500 bg-white border border-slate-200 rounded-xl p-3 text-center">No tienes cambios de turno esta semana.</p>' : ''}`;
+
+    document.getElementById('swap-propose-btn')?.addEventListener('click', openSwapModal);
+    box.querySelectorAll('[data-swap-accept]').forEach(b => b.addEventListener('click', () => onSwapDecision(b.dataset.swapAccept, 'accepted', b)));
+    box.querySelectorAll('[data-swap-reject]').forEach(b => b.addEventListener('click', () => onSwapDecision(b.dataset.swapReject, 'rejected', b)));
+    box.querySelectorAll('[data-swap-cancel]').forEach(b => b.addEventListener('click', () => onSwapDecision(b.dataset.swapCancel, 'cancelled', b)));
+  }
+
+  // Al aceptar: re-validar con el horario actual y el email del que acepta.
+  async function onSwapDecision(id, decision, btn) {
+    if (decision === 'cancelled' && !confirm('¿Cancelar esta solicitud de cambio?')) return;
+    if (decision === 'rejected' && !confirm('¿Rechazar este cambio?')) return;
+    btn.disabled = true;
+    try {
+      if (decision === 'accepted') {
+        const swaps = await Api.listMySwaps(state.profile.id, state.currentWeek);
+        const sw = swaps.find(s => s.id === id);
+        if (!sw) throw new Error('La solicitud ya no existe.');
+        // Validar de nuevo contra el horario actual (incluye ambas partes por id).
+        const fresh = await Api.getSchedule(state.currentWeek);
+        const dById = {
+          [sw.requester_id]: { id: sw.requester_id, name: (state.pubNames || {})[sw.requester_id] },
+          [state.profile.id]: { id: state.profile.id, name: state.profile.full_name, email: state.profile.email },
+        };
+        const v = Scheduler.validateSwap(fresh?.data || {}, sw, dById);
+        if (!v.ok) { alert('No se puede aceptar: ' + v.reason); btn.disabled = false; return; }
+      }
+      await Api.decideSwap(id, decision);
+      // Avisar al solicitante el resultado (si yo soy el destinatario que decide).
+      if (decision === 'accepted' || decision === 'rejected') {
+        const swaps2 = await Api.listMySwaps(state.profile.id, state.currentWeek).catch(() => []);
+        const sw2 = swaps2.find(s => s.id === id);
+        if (sw2 && sw2.requester_id !== state.profile.id) {
+          notify([sw2.requester_id], 'Cambio de turno',
+            `${state.profile.full_name} ${decision === 'accepted' ? 'aceptó' : 'rechazó'} tu cambio.`, '/');
+        }
+      }
+      await refreshDriverView();
+      toast({ accepted: 'Cambio aceptado.', rejected: 'Cambio rechazado.', cancelled: 'Solicitud cancelada.' }[decision]);
+    } catch (e) {
+      alert('Error: ' + e.message);
+      btn.disabled = false;
+    }
+  }
+
+  // Modal para proponer un cambio: elijo MI turno y el turno de un compañero.
+  function openSwapModal() {
+    document.getElementById('swap-modal')?.remove();
+    const data = state.pubSched, names = state.pubNames || {}, meId = state.profile.id;
+    const myShifts = drivingShiftsOf(data, meId);
+    // Turnos de los DEMÁS conductores (posibles destinos).
+    const otherShifts = [];
+    Scheduler.DAYS.forEach((day, di) => {
+      const d = data[day] || {};
+      (d.morning || []).forEach(id => { if (id && id !== meId) otherShifts.push({ id, di, shift: 'am' }); });
+      (d.afternoon || []).forEach(id => { if (id && id !== meId) otherShifts.push({ id, di, shift: 'pm' }); });
+    });
+    const lbl = (di, shift) => `${Scheduler.DAY_LABELS_ES[Scheduler.DAYS[di]]} · ${SHIFT_ES[shift]}`;
+    const myOpts = myShifts.map((s, i) => `<option value="${i}">${lbl(s.di, s.shift)}</option>`).join('');
+    const otherOpts = otherShifts.map((s, i) => `<option value="${i}">${escapeHtml(names[s.id] || 'Compañero')} — ${lbl(s.di, s.shift)}</option>`).join('');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'swap-modal';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3 class="modal-title">Proponer cambio de turno</h3>
+          <p class="modal-subtitle">Tu turno se intercambia con el de un compañero. Él debe aceptar.</p>
+        </div>
+        <label class="swap-field"><span>Cedo mi turno</span>
+          <select id="swap-from">${myOpts}</select></label>
+        <label class="swap-field"><span>A cambio del turno de</span>
+          <select id="swap-to">${otherOpts}</select></label>
+        <label class="swap-field"><span>Mensaje (opcional)</span>
+          <input id="swap-note" type="text" maxlength="140" placeholder="Ej: tengo una cita ese día"></label>
+        <div class="modal-actions">
+          <button id="swap-cancel-btn" class="wk-btn">Cancelar</button>
+          <button id="swap-send-btn" class="wk-btn wk-coord-on" style="flex:0 0 auto;">Enviar propuesta</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#swap-cancel-btn').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#swap-send-btn').addEventListener('click', async () => {
+      const fi = parseInt(overlay.querySelector('#swap-from').value, 10);
+      const ti = parseInt(overlay.querySelector('#swap-to').value, 10);
+      const mine = myShifts[fi], theirs = otherShifts[ti];
+      if (!mine || !theirs) { alert('Elige los dos turnos.'); return; }
+      const swap = {
+        requester_id: meId, target_id: theirs.id,
+        from_day: mine.di, from_shift: mine.shift, to_day: theirs.di, to_shift: theirs.shift,
+      };
+      const dById = {
+        [meId]: { id: meId, name: state.profile.full_name, email: state.profile.email },
+        [theirs.id]: { id: theirs.id, name: names[theirs.id] },
+      };
+      const v = Scheduler.validateSwap(data, swap, dById);
+      if (!v.ok) { alert('Ese cambio no es válido: ' + v.reason); return; }
+      const btn = overlay.querySelector('#swap-send-btn');
+      btn.disabled = true;
+      try {
+        await Api.createSwap({
+          requesterId: meId, targetId: theirs.id, weekStart: state.currentWeek,
+          fromDay: mine.di, fromShift: mine.shift, toDay: theirs.di, toShift: theirs.shift,
+          note: overlay.querySelector('#swap-note').value.trim() || null,
+        });
+        notify([theirs.id], 'Cambio de turno', `${state.profile.full_name} te propone un cambio de turno.`, '/');
+        overlay.remove();
+        await refreshDriverView();
+        toast('Propuesta enviada. Tu compañero debe aceptarla.');
+      } catch (e) { alert('Error al enviar: ' + e.message); btn.disabled = false; }
+    });
+  }
+
   // ====================================================================
   // UI helpers
   // ====================================================================
@@ -1981,6 +2435,89 @@
     t.classList.remove('hidden');
     clearTimeout(toast._t);
     toast._t = setTimeout(() => t.classList.add('hidden'), 2500);
+  }
+
+  // ====================================================================
+  // Web Push (Fase 5)
+  // ====================================================================
+
+  const VAPID_PUBLIC_KEY = (window.RENDIO_CONFIG && window.RENDIO_CONFIG.VAPID_PUBLIC_KEY) || '';
+
+  function pushSupported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && !!VAPID_PUBLIC_KEY;
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    const arr = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+
+  // Suscribe el dispositivo y guarda la suscripción en la BD.
+  async function enablePush() {
+    if (!pushSupported()) { toast('Las notificaciones no están disponibles en este dispositivo.'); return; }
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { toast('No autorizaste las notificaciones.'); return; }
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+      }
+      const json = sub.toJSON();
+      await Api.savePushSubscription({
+        profileId: state.profile.id,
+        endpoint: sub.endpoint,
+        p256dh: json.keys.p256dh,
+        auth: json.keys.auth,
+        userAgent: navigator.userAgent,
+      });
+      toast('🔔 Notificaciones activadas.');
+      setupPushUI(); // oculta el botón
+    } catch (e) {
+      toast('No se pudieron activar las notificaciones.');
+      console.error(e);
+    }
+  }
+
+  // Inyecta el botón "Activar notificaciones" si aplica (no soportado / ya
+  // suscrito / permiso denegado → no se muestra).
+  async function setupPushUI() {
+    const existing = document.getElementById('enable-push-bar');
+    if (!pushSupported() || Notification.permission === 'denied') { existing?.remove(); return; }
+    let alreadySub = false;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      alreadySub = !!(await reg.pushManager.getSubscription());
+    } catch (e) { /* ignore */ }
+    if (alreadySub) { existing?.remove(); return; }
+
+    // Contenedor según el rol.
+    const host = state.profile.role === 'admin'
+      ? document.getElementById('app-shell')
+      : document.getElementById('screen-driver');
+    if (!host) return;
+    if (existing) return; // ya está
+    const bar = document.createElement('div');
+    bar.id = 'enable-push-bar';
+    bar.className = 'push-bar';
+    bar.innerHTML = `<span>🔔 Activa las notificaciones para enterarte de cambios de turno, strikes y horarios.</span>
+      <button id="enable-push-btn" class="wk-btn wk-coord-on" style="flex:0 0 auto;">Activar</button>`;
+    host.insertBefore(bar, host.firstChild);
+    document.getElementById('enable-push-btn').addEventListener('click', enablePush);
+  }
+
+  // Notificación best-effort (si la Edge Function no está desplegada, ignora).
+  async function notify(profileIds, title, body, url) {
+    if (!profileIds || !profileIds.length) return;
+    try { await Api.sendPush({ profileIds, title, body, url: url || '/' }); }
+    catch (e) { /* push opcional: nunca rompe el flujo principal */ }
   }
 
   document.addEventListener('DOMContentLoaded', boot);

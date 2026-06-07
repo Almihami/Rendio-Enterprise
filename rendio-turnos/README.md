@@ -104,6 +104,39 @@ El `SUPABASE_ANON_KEY` y el `SUPABASE_URL` están en `config.js`. El anon key es
 
 ---
 
+## Funciones nuevas (mayo 2026)
+
+Estas requieren aplicar las migrations **0018–0021** (`cd ../rendio-backend && supabase db push`):
+
+- **Strikes (0018):** amonestaciones con razón. Al 3er strike activo, el conductor queda **suspendido automáticamente la semana siguiente** (tabla `driver_suspensions`, trigger `apply_strike_suspension`). Gestión desde *Personal*.
+- **Cambio de turno entre conductores (0019):** un driver propone a otro intercambiar dos turnos del horario publicado; el otro acepta/rechaza, sin admin. El sistema **valida** que no genere indisponibilidad (doble turno, PM→AM, descansos fijos). Se aplica como *overlay* al mostrar el horario; no muta `weekly_schedules`.
+- **Reglas editables (0020):** los descansos fijos por conductor (antes hardcodeados por email en `scheduler.js`) se mueven a la tabla `driver_rules`, editable desde *Ajustes → Descansos fijos*. La migration siembra las reglas existentes (Juan Andrés, Cardona). El hardcode queda como fallback si la tabla no responde.
+- **Notificaciones push (0021):** ver abajo.
+
+### Notificaciones push (PWA)
+
+1. Genera las llaves VAPID (una sola vez):
+
+   ```bash
+   npx web-push generate-vapid-keys
+   ```
+
+2. Pega la **public key** en `config.js` → `VAPID_PUBLIC_KEY`. Mientras esté vacía, la app oculta el botón de notificaciones y todo lo demás funciona igual.
+
+3. Configura los secrets de la Edge Function y despliégala:
+
+   ```bash
+   cd ../rendio-backend
+   supabase secrets set VAPID_PUBLIC_KEY=<public> VAPID_PRIVATE_KEY=<private> VAPID_SUBJECT=mailto:tu@correo.co
+   supabase functions deploy send-push --project-ref $SUPABASE_PROJECT_REF
+   ```
+
+4. En la app, cada usuario pulsa **Activar** en la barra 🔔. En **iPhone** solo funciona si la PWA está **instalada** en la pantalla de inicio (iOS 16.4+).
+
+Eventos que disparan push: propuesta/decisión de cambio de turno, strike/suspensión, y publicación del horario.
+
+---
+
 ## Integración futura con `rendio-admin-web`
 
 Cuando el panel admin oficial esté listo (React + TS + Tailwind v4):
