@@ -48,21 +48,21 @@
     });
   }
 
-  // --- Cierre de disponibilidad: domingo 6:30 PM hora Colombia ---
-  // (aviso 6:00, corte duro 6:30). Colombia es UTC-5 fijo (sin horario de
-  // verano) → 18:30 Bogotá = 23:30 UTC. Cálculo 100% en UTC para no depender
+  // --- Cierre de disponibilidad: domingo 2:00 PM hora Colombia ---
+  // (aviso 1:30, corte duro 2:00). Colombia es UTC-5 fijo (sin horario de
+  // verano) → 14:00 Bogotá = 19:00 UTC. Cálculo 100% en UTC para no depender
   // de la zona horaria de la máquina. El domingo es el de la víspera del
   // lunes en que arranca la semana objetivo.
   function availabilityCutoff(weekStartISO) {
     const d = new Date(weekStartISO + 'T00:00:00Z'); // lunes 00:00 UTC
     d.setUTCDate(d.getUTCDate() - 1);                 // domingo anterior
-    d.setUTCHours(23, 30, 0, 0);                      // 18:30 Bogotá
+    d.setUTCHours(19, 0, 0, 0);                       // 14:00 Bogotá (2:00 PM)
     return d;
   }
   function availabilityClosed(weekStartISO, now = Date.now()) {
     return now >= availabilityCutoff(weekStartISO).getTime();
   }
-  // Ventana de aviso: entre 6:00 y 6:30 PM del domingo (últimos 30 min).
+  // Ventana de aviso: entre 1:30 y 2:00 PM del domingo (últimos 30 min).
   function availabilityClosingSoon(weekStartISO, now = Date.now()) {
     const cut = availabilityCutoff(weekStartISO).getTime();
     return now >= cut - 30 * 60 * 1000 && now < cut;

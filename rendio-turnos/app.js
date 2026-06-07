@@ -560,7 +560,7 @@
   async function doGenerate() {
     state.availability = await Api.getWeeklyAvailability(state.currentWeek, state.drivers);
 
-    // Regla domingo 6:30 PM (hora Colombia): si el corte ya pasó, el conductor
+    // Regla domingo 2:00 PM (hora Colombia): si el corte ya pasó, el conductor
     // que NO guardó disponibilidad para esta semana queda FUERA del generador
     // (no maneja, no descansa, no coordina). El admin lo puede rescatar
     // llenándole la disponibilidad consolidada (no tiene candado).
@@ -622,7 +622,7 @@
     state.schedule = schedule;
     const box = $('#schedule-warnings');
     const exclMsg = excluded.length
-      ? `<p class="text-rose-700 font-semibold">⛔ ${excluded.length} conductor(es) fuera por no llenar disponibilidad antes del domingo 6:30 PM: ${excluded.map(d => escapeHtml(d.name)).join(', ')}</p>`
+      ? `<p class="text-rose-700 font-semibold">⛔ ${excluded.length} conductor(es) fuera por no llenar disponibilidad antes del domingo 2:00 PM: ${excluded.map(d => escapeHtml(d.name)).join(', ')}</p>`
       : '';
     const suspMsg = suspendedThisWeek.length
       ? `<p class="text-amber-700 font-semibold">🚫 ${suspendedThisWeek.length} conductor(es) suspendido(s) esta semana (3 strikes / manual): ${suspendedThisWeek.map(d => escapeHtml(d.name)).join(', ')}</p>`
@@ -1810,10 +1810,10 @@
       : (reopen.active
       ? `<div class="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 font-semibold">✅ El jefe reabrió esta semana hasta las ${hhmmCO(reopen.until)}. Corrige y guarda antes de esa hora.</div>`
       : (locked
-      ? `<div class="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 font-semibold">🔒 La disponibilidad de esta semana cerró el domingo 6:30 PM. Habla con tu jefe.</div>`
+      ? `<div class="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 font-semibold">🔒 La disponibilidad de esta semana cerró el domingo 2:00 PM. Habla con tu jefe.</div>`
       : (soon
-        ? `<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 font-semibold">⚠ La disponibilidad de esta semana cierra HOY a las 6:30 PM. Guarda antes.</div>`
-        : `<div class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 font-semibold">ℹ️ Tienes hasta el domingo 6:30 PM para guardar la disponibilidad de esta semana.</div>`)));
+        ? `<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 font-semibold">⚠ La disponibilidad de esta semana cierra HOY a las 2:00 PM. Guarda antes.</div>`
+        : `<div class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 font-semibold">ℹ️ Tienes hasta el domingo 2:00 PM para guardar la disponibilidad de esta semana.</div>`)));
     const suspWeekBanner = state.weekSuspension
       ? `<div class="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 font-semibold">🚫 Estás suspendido esta semana${state.weekSuspension.source === 'strikes' ? ' por acumular 3 strikes' : ''}. No entras en la generación de turnos. Habla con tu jefe.</div>`
       : '';
@@ -1921,7 +1921,7 @@
       return;
     }
     if (weekAvailClosed(state.currentWeek)) {
-      toast('La disponibilidad de esta semana ya cerró (domingo 6:30 PM). Habla con tu jefe.');
+      toast('La disponibilidad de esta semana ya cerró (domingo 2:00 PM). Habla con tu jefe.');
       return;
     }
     // Jornada con descanso fijo: no editable por el conductor.
@@ -2008,7 +2008,7 @@
       return;
     }
     if (weekAvailClosed(state.currentWeek)) {
-      $('#driver-save-state').textContent = 'Cerrado: la disponibilidad de esta semana cerró el domingo 6:30 PM.';
+      $('#driver-save-state').textContent = 'Cerrado: la disponibilidad de esta semana cerró el domingo 2:00 PM.';
       $('#driver-save-state').className = 'text-xs text-rose-600 flex-1';
       return;
     }
