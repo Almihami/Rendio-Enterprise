@@ -311,6 +311,8 @@
       $('#screen-driver').classList.remove('hidden');
       $('#driver-save-bar').classList.remove('hidden');
       await refreshDriverView();
+      // Inicio de turno (Etapa 1 módulo conductor) — card + wizard.
+      if (window.ShiftFlow) ShiftFlow.init(state.profile).catch(e => console.error(e));
     }
     setupPushUI();
   }

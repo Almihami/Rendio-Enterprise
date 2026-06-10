@@ -611,6 +611,124 @@
     if (error) throw error;
   }
 
+  // -------------------- Turno operativo (Etapa 1 módulo conductor) ----------
+  // Inicio de turno: vehículo + inspección pre-operacional + fotos + km.
+  // Tablas: shifts, inspections, inspection_photos, incidents (migration 0016)
+  // + RPCs start_shift / abort_shift (migration 0022).
+
+  // driver_profiles.id del usuario logueado (shifts.driver_id apunta ahí, no a profiles).
+  async function getMyDriverProfileId(profileId) {
+    const { data, error } = await sb
+      .from('driver_profiles')
+      .select('id')
+      .eq('profile_id', profileId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? data.id : null;
+  }
+
+  async function listVehiclesForShift() {
+    const { data, error } = await sb
+      .from('vehicles')
+      .select('id, internal_code, license_plate, brand, model, capacity, current_km, last_maintenance_km, maintenance_interval_km, status, soat_expires_at, tecnomec_expires_at')
+      .is('deleted_at', null)
+      .order('internal_code');
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Turno abierto (no cerrado) del conductor, con datos del vehículo embebidos.
+  async function getMyOpenShift(driverId) {
+    const { data, error } = await sb
+      .from('shifts')
+      .select('id, status, vehicle_id, start_at, opening_km, vehicles(internal_code, license_plate, brand, model)')
+      .eq('driver_id', driverId)
+      .neq('status', 'closed')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    return (data && data[0]) || null;
+  }
+
+  // Crea el shift en 'inspection_in_progress' (o reutiliza uno huérfano de un
+  // intento anterior interrumpido, para no dejar filas basura).
+  async function createShiftDraft({ driverId, organizationId, vehicleId, openingKm, reuseId }) {
+    if (reuseId) {
+      const { data, error } = await sb
+        .from('shifts')
+        .update({ vehicle_id: vehicleId, opening_km: openingKm, status: 'inspection_in_progress' })
+        .eq('id', reuseId)
+        .select('id')
+        .single();
+      if (!error && data) return data.id;
+      // si falla (p.ej. lo cerró un admin), cae a crear uno nuevo
+    }
+    const { data, error } = await sb
+      .from('shifts')
+      .insert({
+        driver_id: driverId,
+        organization_id: organizationId,
+        vehicle_id: vehicleId,
+        opening_km: openingKm,
+        status: 'inspection_in_progress',
+      })
+      .select('id')
+      .single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  // row debe incluir: id (uuid generado en cliente, para que el path de las
+  // fotos exista antes del insert), organization_id, shift_id, vehicle_id,
+  // driver_id, kind, odometer_km, checklist, has_damage, notes.
+  async function createInspection(row) {
+    const { data, error } = await sb.from('inspections').insert(row).select('id').single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  async function uploadInspectionPhoto(path, blob) {
+    const { error } = await sb.storage
+      .from('inspections')
+      .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+    if (error) throw error;
+    return path;
+  }
+
+  async function addInspectionPhotos(rows) {
+    const { error } = await sb.from('inspection_photos').insert(rows);
+    if (error) throw error;
+  }
+
+  async function addIncident({ organizationId, reporterId, shiftId, vehicleId, category, severity, description }) {
+    const { data, error } = await sb.from('incidents').insert({
+      organization_id: organizationId,
+      reporter_id: reporterId,
+      shift_id: shiftId || null,
+      vehicle_id: vehicleId || null,
+      category,
+      severity,
+      description,
+    }).select('id').single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  // SECURITY DEFINER: valida dueño + inspección + vehículo libre; marca in_use.
+  async function startShift(shiftId) {
+    const { data, error } = await sb.rpc('start_shift', { p_shift_id: shiftId });
+    if (error) throw error;
+    return data;
+  }
+
+  // SECURITY DEFINER: novedad grave → cierra el shift sin activar y deja el
+  // vehículo en 'maintenance' para revisión del admin.
+  async function abortShift(shiftId, reason) {
+    const { data, error } = await sb.rpc('abort_shift', { p_shift_id: shiftId, p_reason: reason || null });
+    if (error) throw error;
+    return data;
+  }
+
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
@@ -627,5 +745,8 @@
     listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
     savePushSubscription, deletePushSubscription, sendPush,
+    getMyDriverProfileId, listVehiclesForShift, getMyOpenShift,
+    createShiftDraft, createInspection, uploadInspectionPhoto, addInspectionPhotos,
+    addIncident, startShift, abortShift,
   };
 })();

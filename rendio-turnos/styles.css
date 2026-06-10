@@ -479,3 +479,10 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .pc .pc-btn.danger{color:var(--pc-red);border-color:color-mix(in srgb,var(--pc-red) 40%,var(--pc-line2))}
 .pc .pc-btn:disabled{opacity:.5;cursor:default}
 @media(max-width:900px){.pc .md{grid-template-columns:1fr}}
+
+/* ==================== Inicio de turno (shift-flow.js) ==================== */
+/* Stepper de 6 segmentos del wizard (espeja el diseño de /Visual). */
+.sf-stepper{display:flex;gap:6px}
+.sf-seg{flex:1;height:4px;border-radius:999px;background:#E2E8F0;transition:background .2s}
+.sf-seg.done{background:#F4791F}
+.sf-seg.active{background:#FAA260}

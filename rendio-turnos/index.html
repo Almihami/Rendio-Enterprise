@@ -158,6 +158,9 @@
           <p id="driver-greeting-sub" class="text-sm text-slate-500">—</p>
         </div>
 
+        <!-- Inicio de turno (Etapa 1 módulo conductor) — lo renderiza shift-flow.js -->
+        <div id="driver-shift-container"></div>
+
         <!-- Week selector -->
         <div class="bg-white border border-slate-200 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-card">
           <button id="driver-prev-week" class="px-3 py-2 rounded-lg hover:bg-slate-100 text-slate-600 active:scale-95 transition" aria-label="Semana anterior">
@@ -489,6 +492,9 @@
     </div>
   </div>
 
+  <!-- Wizard de inicio de turno (pantalla completa) — lo renderiza shift-flow.js -->
+  <div id="shift-wizard" class="hidden fixed inset-0 z-30 bg-slate-50 overflow-y-auto overscroll-contain"></div>
+
   <!-- Toast -->
   <div id="toast" class="hidden fixed bottom-20 md:bottom-4 left-1/2 -translate-x-1/2 z-40 bg-ink text-white px-4 py-2.5 rounded-full text-sm font-medium shadow-lg"></div>
 
@@ -496,6 +502,7 @@
   <script src="supabase-client.js"></script>
   <script src="scheduler.js"></script>
   <script src="api.js"></script>
+  <script src="shift-flow.js"></script>
   <script src="app.js"></script>
 
   <!-- PWA: registrar service worker + detectar updates -->
