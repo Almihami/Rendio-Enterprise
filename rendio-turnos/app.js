@@ -1026,84 +1026,159 @@
   async function renderWorkers() {
     const list = $('#workers-list');
     list.innerHTML = '<p class="text-sm text-slate-500">Cargando…</p>';
-    let admins, drivers, strikeCounts, weekSusp;
+    let admins, drivers, strikeCounts, weekSusp, rulesRows, sched;
     try {
-      [admins, drivers, strikeCounts, weekSusp] = await Promise.all([
+      [admins, drivers, strikeCounts, weekSusp, rulesRows, sched] = await Promise.all([
         Api.listAdmins(), Api.listAllDriversForAdmin(),
         Api.getActiveStrikeCounts().catch(() => new Map()),
         Api.getWeekSuspensions(state.currentWeek).catch(() => new Map()),
+        Api.listDriverRules().catch(() => []),
+        Api.getSchedule(state.currentWeek).catch(() => null),
       ]);
     } catch (e) {
       list.innerHTML = `<p class="text-sm text-rose-600">Error cargando personal: ${escapeHtml(e.message)}</p>`;
       return;
     }
     state._strikeCounts = strikeCounts;
-    const activeDrivers = drivers.filter(d => d.active);
-    const suspended = drivers.filter(d => !d.active);
+    // ---- Reskin dirección C (maestro-detalle). VISUAL ONLY: reusa onWorkerAction y Api.* ----
+    const rulesMap = Api.rulesToMap(rulesRows);              // { profileId: Set('day-shift') }
+    const DAYS = Scheduler.DAYS;                              // mon..sun
+    const DLABEL = { mon: 'Lun', tue: 'Mar', wed: 'Mié', thu: 'Jue', fri: 'Vie', sat: 'Sáb', sun: 'Dom' };
 
-    const adminCards = admins.map(a => {
-      const coord = a.is_coordinator !== false;
-      return workerCardHtml({ name: a.full_name, email: a.email }, {
-        kind: 'admin',
-        actions: `<div class="worker-actions">
-          <button data-act="${coord ? 'coord-off' : 'coord-on'}" data-id="${a.id}" data-name="${escapeHtml(a.full_name)}"
-            class="wk-btn ${coord ? 'wk-coord-on' : 'wk-coord-off'}">
-            ${coord ? '✓ Coordina' : '✕ No coordina'}</button>
-        </div>`,
-      });
-    }).join('');
-
-    const activeCards = activeDrivers.map(d => {
-      const dcoord = d.can_coordinate === true;
-      const strikes = strikeCounts.get(d.id) || 0;
-      const isSuspWeek = weekSusp.has(d.id);
-      const strikeBadge = strikes > 0
-        ? `<span class="wk-strike-badge" title="Strikes activos">⚠ ${strikes}/3</span>` : '';
-      const suspBadge = isSuspWeek
-        ? `<span class="wk-susp-badge" title="Suspendido esta semana">🚫 Suspendido (esta semana)</span>` : '';
-      return workerCardHtml(d, {
-        kind: 'driver',
-        badges: strikeBadge + suspBadge,
-        actions: `<div class="worker-actions">
-          <button data-act="${dcoord ? 'dcoord-off' : 'dcoord-on'}" data-id="${d.id}" data-name="${escapeHtml(d.name)}"
-            class="wk-btn ${dcoord ? 'wk-coord-on' : 'wk-coord-off'}">
-            ${dcoord ? '✓ Coordina' : '✕ No coordina'}</button>
-          <button data-act="strike" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-strike">⚠ Strike</button>
-          <button data-act="strikes-history" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-history">Historial</button>
-          <button data-act="suspend" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-suspend">Suspender</button>
-          <button data-act="delete" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-delete">Eliminar</button>
-        </div>`,
-      });
-    }).join('') || '<p class="text-sm text-slate-500">No hay conductores activos.</p>';
-
-    const suspendedSection = suspended.length ? `
-      <div>
-        <h3 class="text-sm font-bold text-ink mb-2 mt-4">Suspendidos <span class="text-slate-400">(${suspended.length})</span></h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          ${suspended.map(d => workerCardHtml(d, {
-            kind: 'suspended',
-            actions: `<div class="worker-actions">
-              <button data-act="reactivate" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-reactivate">Reactivar</button>
-              <button data-act="delete" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-delete">Eliminar</button>
-            </div>`,
-          })).join('')}
-        </div>
-      </div>` : '';
-
-    list.innerHTML = `
-      <div>
-        <h3 class="text-sm font-bold text-ink mb-2">Administradores</h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">${adminCards}</div>
-      </div>
-      <div>
-        <h3 class="text-sm font-bold text-ink mb-2 mt-4">Conductores activos <span class="text-slate-400">(${activeDrivers.length})</span></h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">${activeCards}</div>
-      </div>
-      ${suspendedSection}`;
-
-    list.querySelectorAll('button[data-act]').forEach(btn => {
-      btn.addEventListener('click', () => onWorkerAction(btn));
+    // Carga de la semana (solo lectura, desde el horario guardado si existe).
+    const loadOf = {};
+    const bump = (id, k) => { const o = loadOf[id] = loadOf[id] || { am: 0, pm: 0, co: 0, total: 0 }; o[k]++; if (k !== 'co') o.total++; };
+    if (sched && sched.data) DAYS.forEach(day => {
+      const d = sched.data[day]; if (!d) return;
+      (d.morning   || []).forEach(id => bump(id, 'am'));
+      (d.afternoon || []).forEach(id => bump(id, 'pm'));
+      (d.coord_am  || []).forEach(id => bump(id, 'co'));
+      (d.coord_pm  || []).forEach(id => bump(id, 'co'));
     });
+
+    const restText = (id) => {
+      const set = rulesMap[id]; if (!set || !set.size) return '';
+      const byDay = {};
+      [...set].forEach(k => { const [day, sh] = k.split('-'); (byDay[day] = byDay[day] || []).push(sh); });
+      return DAYS.filter(d => byDay[d]).map(d => {
+        const sh = byDay[d].sort(); const both = sh.includes('am') && sh.includes('pm');
+        return DLABEL[d] + (both ? '' : ' ' + sh.map(s => s.toUpperCase()).join('/'));
+      }).join(' · ');
+    };
+
+    const people = [
+      ...admins.map(a => ({ id: a.id, name: a.full_name, email: a.email, role: 'admin',
+        coord: a.is_coordinator !== false, active: true, strikes: 0, suspWeek: false, rest: '',
+        load: { am: 0, pm: 0, co: 0, total: 0 } })),
+      ...drivers.map(d => ({ id: d.id, name: d.name, email: d.email, role: 'driver',
+        coord: d.can_coordinate === true, active: d.active !== false,
+        strikes: strikeCounts.get(d.id) || 0, suspWeek: weekSusp.has(d.id),
+        rest: restText(d.id), load: loadOf[d.id] || { am: 0, pm: 0, co: 0, total: 0 } })),
+    ];
+    if (!state._pcSel || !people.find(p => p.id === state._pcSel)) state._pcSel = people[0] ? people[0].id : null;
+
+    const PAL = ['#3B82F6', '#0EA5A0', '#8B5CF6', '#2563A8', '#16936A', '#7C5CD6', '#D98A12', '#0EA5E9', '#9A8D7A'];
+    const colorOf = (p) => { if (p.role === 'admin') return '#F26522';
+      let h = 0; for (let i = 0; i < p.id.length; i++) h = (h * 31 + p.id.charCodeAt(i)) >>> 0; return PAL[h % PAL.length]; };
+    const initials = (n) => { const a = (n || '').trim().split(/\s+/); return (((a[0] || '')[0] || '') + ((a[1] || '')[0] || '')).toUpperCase() || '·'; };
+    const loadCls = (t) => t >= 5 ? 'hi' : t <= 2 ? 'lo' : '';
+    const statusInfo = (p) => !p.active ? { cls: 'sus', dot: 'sus', label: 'Suspendido' }
+      : p.suspWeek ? { cls: 'warn', dot: 'warn', label: 'Susp. esta semana' }
+      : p.strikes >= 3 ? { cls: 'risk', dot: 'risk', label: 'En riesgo' }
+      : { cls: '', dot: 'ok', label: 'Activo' };
+    const strikesEl = (p) => { const risk = p.strikes >= 3 ? 'risk' : ''; let d = '';
+      for (let i = 0; i < 3; i++) d += `<i class="${i < p.strikes ? 'f' : ''}"></i>`; return `<span class="strikes ${risk}">${d}</span>`; };
+    const SI = '<svg class="pc-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
+
+    list.classList.add('pc');
+    list.innerHTML = `<div class="md">
+      <div class="mdlist">
+        <div class="lh"><div class="pc-search">${SI}<input id="pc-q" placeholder="Buscar persona…" autocomplete="off"></div></div>
+        <div id="pc-rows"></div>
+      </div>
+      <div id="pc-detail"></div>
+    </div>`;
+    const rowsEl = list.querySelector('#pc-rows');
+    const detEl = list.querySelector('#pc-detail');
+
+    const rowHtml = (p) => {
+      const si = statusInfo(p);
+      return `<div class="mrow ${p.id === state._pcSel ? 'on' : ''} ${!p.active ? 'sus' : ''}" data-sel="${p.id}">
+        <span class="av" style="background:${colorOf(p)}">${initials(p.name)}</span>
+        <div class="nm"><b>${escapeHtml(p.name)}</b><span>${p.role === 'admin' ? 'Administrador' : (p.rest ? 'Descanso: ' + escapeHtml(p.rest) : 'Conductor')}</span></div>
+        ${p.role === 'admin'
+          ? `<span class="sdot ${si.dot}"></span>`
+          : `<span class="mini ${loadCls(p.load.total)}"><i style="width:${Math.min(p.load.total / 5 * 100, 100)}%"></i></span>`}
+      </div>`;
+    };
+
+    const detailHtml = (p) => {
+      if (!p) return '';
+      const si = statusInfo(p); const adm = p.role === 'admin'; const L = p.load;
+      const nm = escapeAttr(p.name);
+      return `<div class="detail">
+        <div class="dhead">
+          <span class="av" style="background:${colorOf(p)}">${initials(p.name)}</span>
+          <div style="flex:1;min-width:0">
+            <h2>${escapeHtml(p.name)}</h2><div class="mail">${escapeHtml(p.email || '')}</div>
+            <div class="chips">
+              <span class="statechip ${si.cls}"><span class="sdot ${si.dot}"></span>${si.label}</span>
+              ${p.coord ? '<span class="statechip coord">★ Coordina</span>' : ''}
+              <span class="statechip role">${adm ? 'Administrador' : 'Conductor'}</span>
+            </div>
+          </div>
+        </div>
+        <div class="dbody">
+          <div class="dblock">
+            <h3>Carga de la semana</h3>
+            ${adm ? '<p style="font-size:13px;color:var(--pc-ink2)">Los administradores no entran al reparto de turnos.</p>'
+              : `<div class="bigload ${loadCls(L.total)}"><span class="num">${L.total}<s>/5</s></span><span class="bar"><i style="width:${Math.min(L.total / 5 * 100, 100)}%"></i></span></div>
+                 <div class="breakdown"><div><b>${L.am}</b>AM</div><div><b>${L.pm}</b>PM</div><div><b>${L.co}</b>Coord</div></div>
+                 ${!sched ? '<p style="font-size:11px;color:var(--pc-ink3);margin-top:10px">Sin horario guardado esta semana.</p>' : ''}`}
+          </div>
+          <div class="dblock">
+            <h3>Reglas</h3>
+            <div class="ruleitem"><span class="t">Puede coordinar</span><span class="v">${p.coord ? 'Sí' : 'No'}</span></div>
+            <div class="ruleitem"><span class="t">Descanso fijo</span><span class="v ${p.rest ? 'lock' : ''}">${p.rest ? '🔒 ' + escapeHtml(p.rest) : '—'}</span></div>
+            ${p.suspWeek ? '<div class="ruleitem"><span class="t">Esta semana</span><span class="v">Suspendido</span></div>' : ''}
+          </div>
+          <div class="dblock full">
+            <h3>Confiabilidad — strikes (${p.strikes}/3)</h3>
+            ${adm ? '<p style="font-size:13px;color:var(--pc-ink2)">No aplica a administradores.</p>'
+              : (p.strikes === 0 ? '<p style="font-size:13px;color:var(--pc-ink2)">Sin strikes registrados. Historial limpio.</p>'
+                 : `<div style="display:flex;align-items:center;gap:12px">${strikesEl(p)}<span style="font-size:13px;color:var(--pc-ink2)">${p.strikes}/3 activos. Abre el historial para el detalle.</span></div>`)}
+          </div>
+        </div>
+        <div class="dactions">
+          <button class="pc-btn ${p.coord ? 'on' : ''}" data-act="${adm ? (p.coord ? 'coord-off' : 'coord-on') : (p.coord ? 'dcoord-off' : 'dcoord-on')}" data-id="${p.id}" data-name="${nm}">${p.coord ? '✓ Coordina' : '✕ No coordina'}</button>
+          ${adm ? '' : `<button class="pc-btn" data-act="strike" data-id="${p.id}" data-name="${nm}">⚠ Strike</button>
+          <button class="pc-btn" data-act="strikes-history" data-id="${p.id}" data-name="${nm}">Historial</button>
+          <div class="spacer"></div>
+          <button class="pc-btn" data-act="${p.active ? 'suspend' : 'reactivate'}" data-id="${p.id}" data-name="${nm}">${p.active ? 'Suspender' : 'Reactivar'}</button>
+          <button class="pc-btn danger" data-act="delete" data-id="${p.id}" data-name="${nm}">Eliminar</button>`}
+        </div>
+      </div>`;
+    };
+
+    const paint = () => {
+      const q = (list.querySelector('#pc-q')?.value || '').toLowerCase().trim();
+      const match = (p) => !q || p.name.toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
+      const adminRows = people.filter(p => p.role === 'admin' && match(p)).map(rowHtml).join('');
+      const drvRows = people.filter(p => p.role === 'driver' && match(p)).map(rowHtml).join('');
+      rowsEl.innerHTML =
+        ((adminRows ? `<div class="pc-secth">Administradores</div>${adminRows}` : '') +
+         (drvRows ? `<div class="pc-secth">Conductores</div>${drvRows}` : '')) ||
+        '<div style="padding:16px;color:var(--pc-ink3);font-size:13px">Sin coincidencias.</div>';
+      detEl.innerHTML = detailHtml(people.find(p => p.id === state._pcSel));
+      detEl.querySelectorAll('button[data-act]').forEach(btn => btn.addEventListener('click', () => onWorkerAction(btn)));
+    };
+
+    rowsEl.addEventListener('click', (e) => {
+      const r = e.target.closest('[data-sel]'); if (!r) return;
+      state._pcSel = r.dataset.sel; paint();
+    });
+    list.querySelector('#pc-q').addEventListener('input', paint);
+    paint();
   }
 
   async function onWorkerAction(btn) {
