@@ -573,28 +573,33 @@
 
   async function getSettings() {
     const sel = cols => sb.from('app_settings').select(cols).eq('id', 'singleton').maybeSingle();
-    // Fallback: si la migración 0014 (reopen_*) no está, lee sin esas columnas.
-    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until');
+    // Fallback en cascada: de más completo a más básico, así el código tolera
+    // migraciones no aplicadas (0014 reopen_*, 0025 coord_slots/shift_hours).
+    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours');
+    if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots'));
     if (error) throw error;
-    const base = { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2 };
+    const base = { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2, coord_slots: 1, shift_hours: 12 };
     return {
       ...base, ...(data || {}),
       reopen_week_start: (data && data.reopen_week_start) || null,
       reopen_until: (data && data.reopen_until) || null,
+      coord_slots: (data && data.coord_slots != null) ? data.coord_slots : 1,
+      shift_hours: (data && data.shift_hours != null) ? data.shift_hours : 12,
     };
   }
 
   async function saveSettings(s) {
-    const { error } = await sb
-      .from('app_settings')
-      .update({
-        morning_label: s.morning_label,
-        afternoon_label: s.afternoon_label,
-        morning_slots: s.morning_slots,
-        afternoon_slots: s.afternoon_slots,
-      })
-      .eq('id', 'singleton');
+    const base = {
+      morning_label: s.morning_label,
+      afternoon_label: s.afternoon_label,
+      morning_slots: s.morning_slots,
+      afternoon_slots: s.afternoon_slots,
+    };
+    const upd = cols => sb.from('app_settings').update(cols).eq('id', 'singleton');
+    // Intenta con las columnas nuevas; si la migración 0025 no está, guarda lo base.
+    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours });
+    if (error) ({ error } = await upd(base));
     if (error) throw error;
   }
 
@@ -729,6 +734,91 @@
     return data;
   }
 
+  // ====================================================================
+  // Inspecciones — revisión/aprobación (admin) + checklist configurable
+  // ====================================================================
+
+  // Cola de revisión: solo inspecciones INICIALES con novedad (has_damage).
+  // Las limpias se auto-aprueban (trigger 0024) y no entran a este módulo.
+  async function listInspectionsForReview(status) {
+    let q = sb.from('inspections')
+      .select('id,kind,has_damage,notes,odometer_km,review_status,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id,' +
+              'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
+              'driver_profiles(profiles(id,full_name,email))')
+      .eq('kind', 'initial').eq('has_damage', true)
+      .order('performed_at', { ascending: false });
+    if (status) q = q.eq('review_status', status);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function getInspectionDetail(id) {
+    const { data, error } = await sb.from('inspections')
+      .select('id,kind,has_damage,checklist,notes,odometer_km,review_status,reviewed_by,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id,' +
+              'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
+              'driver_profiles(profiles(id,full_name,email)),' +
+              'inspection_photos(photo_type,storage_path,size_bytes)')
+      .eq('id', id).single();
+    if (error) throw error;
+    return data;
+  }
+
+  // Las fotos viven en un bucket PRIVADO → URLs firmadas (temporales) para mostrarlas.
+  async function signedInspectionPhotoUrls(paths, expiresIn) {
+    if (!paths || !paths.length) return {};
+    const { data, error } = await sb.storage.from('inspections').createSignedUrls(paths, expiresIn || 3600);
+    if (error) throw error;
+    const map = {};
+    (data || []).forEach(r => { if (r.signedUrl && !r.error) map[r.path] = r.signedUrl; });
+    return map;
+  }
+
+  // Aprobar/rechazar vía RPC SECURITY DEFINER (valida admin; al rechazar abre incident).
+  async function reviewInspection(inspectionId, status, notes) {
+    const { data, error } = await sb.rpc('review_inspection',
+      { p_inspection_id: inspectionId, p_status: status, p_notes: notes || null });
+    if (error) throw error;
+    return data;
+  }
+
+  // ----- Checklist configurable (admin) -----
+  async function listChecklistItems(activeOnly) {
+    let q = sb.from('inspection_checklist_items')
+      .select('id,label,hint,sort_order,is_active').order('sort_order');
+    if (activeOnly) q = q.eq('is_active', true);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function createChecklistItem({ organizationId, label, hint, sortOrder }) {
+    const { data, error } = await sb.from('inspection_checklist_items')
+      .insert({ organization_id: organizationId, label, hint: hint || null, sort_order: sortOrder || 0 })
+      .select('id,label,hint,sort_order,is_active').single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function updateChecklistItem(id, fields) {
+    const { error } = await sb.from('inspection_checklist_items').update(fields).eq('id', id);
+    if (error) throw error;
+  }
+
+  async function deleteChecklistItem(id) {
+    const { error } = await sb.from('inspection_checklist_items').delete().eq('id', id);
+    if (error) throw error;
+  }
+
+  // Reescribe sort_order = posición (1-based). Pocos ítems → updates individuales.
+  async function reorderChecklistItems(idsInOrder) {
+    for (let i = 0; i < idsInOrder.length; i++) {
+      const { error } = await sb.from('inspection_checklist_items')
+        .update({ sort_order: i + 1 }).eq('id', idsInOrder[i]);
+      if (error) throw error;
+    }
+  }
+
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
@@ -748,5 +838,7 @@
     getMyDriverProfileId, listVehiclesForShift, getMyOpenShift,
     createShiftDraft, createInspection, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, startShift, abortShift,
+    listInspectionsForReview, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
+    listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
   };
 })();

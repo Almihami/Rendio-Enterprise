@@ -15,7 +15,7 @@
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmtKm = (n) => Number(n || 0).toLocaleString('es-CO');
 
-  const CHECKLIST_ITEMS = [
+  const CHECKLIST_FALLBACK = [
     { id: 'tires',         label: 'Llantas (4 + repuesto)',          detail: 'Presión y estado visual' },
     { id: 'lights_front',  label: 'Luces delanteras',                detail: 'Altas, bajas, exploradoras' },
     { id: 'lights_back',   label: 'Luces traseras y stops' },
@@ -29,6 +29,10 @@
     { id: 'docs',          label: 'SOAT, técnico-mecánica, tarjeta' },
     { id: 'road_kit',      label: 'Kit carretera + extintor' },
   ];
+
+  // Checklist activo: se carga desde la BD en init() (Api.listChecklistItems, 0024);
+  // fallback a los fijos si la migración no está o la organización no tiene ítems.
+  let ckItems = CHECKLIST_FALLBACK;
 
   // photo_type del enum inspection_photo_type (0016): front|left|right|rear|dashboard
   const PHOTO_SLOTS = [
@@ -79,6 +83,11 @@
       console.error(e);
       sf.driverId = null;
     }
+    // Checklist configurable (0024): los ítems los define el admin. Fallback a los fijos.
+    try {
+      const items = await Api.listChecklistItems(true);
+      if (items && items.length) ckItems = items.map(it => ({ id: it.id, label: it.label, detail: it.hint || '' }));
+    } catch (e) { /* sin 0024 o sin ítems: queda CHECKLIST_FALLBACK */ }
     await renderCard();
   }
 
@@ -252,7 +261,7 @@
   }
 
   function issueItems() {
-    return CHECKLIST_ITEMS.filter(i => sf.checklist[i.id] === 'issue');
+    return ckItems.filter(i => sf.checklist[i.id] === 'issue');
   }
 
   function maintenanceInfo(v) {
@@ -326,11 +335,11 @@
   // ---------- Paso 2: checklist ----------
 
   function renderChecklist(wiz) {
-    const completed = CHECKLIST_ITEMS.filter(i => sf.checklist[i.id]).length;
+    const completed = ckItems.filter(i => sf.checklist[i.id]).length;
     const issues = issueItems().length;
-    const allDone = completed === CHECKLIST_ITEMS.length;
+    const allDone = completed === ckItems.length;
 
-    const rows = CHECKLIST_ITEMS.map(item => {
+    const rows = ckItems.map(item => {
       const v = sf.checklist[item.id];
       return `<div class="flex items-stretch border ${v === 'issue' ? 'bg-amber-50 border-amber-400' : 'bg-white border-slate-200'} rounded-2xl overflow-hidden">
         <div class="flex-1 px-4 py-3 min-w-0">
@@ -349,17 +358,17 @@
       'Inspección pre-operacional',
       'Revisa cada punto. Marca ✓ si está bien o ⚠ si hay novedad.',
       `<div class="flex items-center justify-between mb-2">
-        <p class="text-xs text-slate-500">${completed} de ${CHECKLIST_ITEMS.length} revisados${issues ? ` · <span class="text-amber-600 font-semibold">${issues} con novedad</span>` : ''}</p>
+        <p class="text-xs text-slate-500">${completed} de ${ckItems.length} revisados${issues ? ` · <span class="text-amber-600 font-semibold">${issues} con novedad</span>` : ''}</p>
         <button id="sf-all-ok" class="text-xs font-bold text-brand-600">Marcar todos OK</button>
       </div>
       <div class="space-y-2">${rows}</div>`,
       `<button id="sf-next" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${allDone ? '' : 'disabled'}>
-        ${allDone ? 'Continuar a fotos →' : `Falta marcar ${CHECKLIST_ITEMS.length - completed}`}
+        ${allDone ? 'Continuar a fotos →' : `Falta marcar ${ckItems.length - completed}`}
       </button>`
     );
     bindChrome();
     $('#sf-all-ok').addEventListener('click', () => {
-      CHECKLIST_ITEMS.forEach(i => { if (!sf.checklist[i.id]) sf.checklist[i.id] = 'ok'; });
+      ckItems.forEach(i => { if (!sf.checklist[i.id]) sf.checklist[i.id] = 'ok'; });
       render();
     });
     wiz.querySelectorAll('[data-check]').forEach(btn => {
@@ -612,7 +621,7 @@
       blocked ? 'Hay una novedad grave: el turno no se inicia.' : 'Revisa el resumen y arranca el turno.',
       `<div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-card">
         ${row('🚗', 'Vehículo', `${esc(v.internal_code || v.license_plate)} · ${esc([v.brand, v.model].filter(Boolean).join(' '))}`, 'ok')}
-        ${row('✓', 'Inspección', issues.length ? `${CHECKLIST_ITEMS.length - issues.length} OK · ${issues.length} con novedad` : `${CHECKLIST_ITEMS.length} de ${CHECKLIST_ITEMS.length} OK`, issues.length ? 'warn' : 'ok')}
+        ${row('✓', 'Inspección', issues.length ? `${ckItems.length - issues.length} OK · ${issues.length} con novedad` : `${ckItems.length} de ${ckItems.length} OK`, issues.length ? 'warn' : 'ok')}
         ${row('📷', 'Fotos', `${Object.keys(sf.photos).length} de ${PHOTO_SLOTS.length} capturadas`, 'ok')}
         ${row('🛞', 'Kilometraje inicial', `${fmtKm(sf.km)} km`, 'ok')}
         ${issuesBlock}
@@ -686,7 +695,11 @@
         driver_id: sf.driverId,
         kind: 'initial',
         odometer_km: openingKm,
-        checklist: sf.checklist,
+        // Snapshot del checklist para auditoría (sobrevive a cambios futuros del admin):
+        checklist: {
+          severity: sf.severity || null,
+          items: ckItems.map(it => ({ id: it.id, label: it.label, hint: it.detail || null, result: sf.checklist[it.id] === 'issue' ? 'issue' : 'ok' })),
+        },
         has_damage: issues.length > 0,
         notes: sf.note || null,
       });

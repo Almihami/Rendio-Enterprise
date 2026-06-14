@@ -252,7 +252,7 @@
     const warnings = [];
     const workerLoads = new Map(drivers.map(d => [d.id, 0]));
     const coordLoads = new Map(admins.map(a => [a.id, 0]));
-    const COORD_SLOTS = 1; // 1 coordinador AM + 1 PM por día
+    const COORD_SLOTS = settings.coordSlots || 1; // nº coordinadores AM + PM por día (parametrizable; default 1)
     const result = {};
 
     // Orden de desempate barajado para esta generación.

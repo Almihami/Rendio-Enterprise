@@ -157,6 +157,14 @@
     $('#avail-prev-week')?.addEventListener('click', () => { setCurrentWeekManual(Scheduler.addDays(state.currentWeek, -7)); refreshAvailabilityMatrix(); });
     $('#avail-next-week')?.addEventListener('click', () => { setCurrentWeekManual(Scheduler.addDays(state.currentWeek, 7)); refreshAvailabilityMatrix(); });
 
+    // Solicitudes (paleta limpia): filtro Todas / Conflictos / Singletons.
+    $('#solic-filter')?.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-f]'); if (!b) return;
+      state._solicFilter = b.dataset.f;
+      $('#solic-filter').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      refreshApprovals();
+    });
+
     $('#cell-editor-cancel').addEventListener('click', closeCellEditor);
     $('#cell-editor-save').addEventListener('click', saveCellEditor);
     $('#cell-editor').addEventListener('click', (e) => {
@@ -324,6 +332,7 @@
       state.admins = (await Api.listAdmins()).map(a => ({ id: a.id, name: a.full_name, email: a.email, is_coordinator: a.is_coordinator !== false }));
       setTab('schedule');
       $('#driver-save-bar').classList.add('hidden');
+      refreshInspectionsBadge();
     } else {
       $('#admin-nav').classList.add('hidden');
       $('#admin-greeting-block').classList.add('hidden');
@@ -369,6 +378,280 @@
     if (name === 'workers') renderWorkers();
     if (name === 'settings') renderSettings();
     if (name === 'balance') renderBalance();
+    if (name === 'inspections') renderInspections();
+  }
+
+  // ====================================================================
+  // Inspecciones (admin) — revisión/aprobación + checklist configurable
+  // ====================================================================
+  const inspState = { items: [], filter: 'pending', current: null, checklist: [] };
+  const INSP_SEV = {
+    leve:  { cls: 'leve',  label: 'Leve',  text: 'Leve · informativo',       color: 'var(--green)' },
+    media: { cls: 'media', label: 'Media', text: 'Media · con cuidado',       color: 'var(--amber)' },
+    grave: { cls: 'grave', label: 'Grave', text: 'Grave · requiere atención', color: 'var(--red)' },
+  };
+  const INSP_ST = { pending: ['pend', 'Pendiente', 'i-warn'], approved: ['appr', 'Aprobada', 'i-check'], rejected: ['rej', 'Rechazada', 'i-x'] };
+  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero' };
+  const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard'];
+
+  function inspShowView(v) {
+    $$('#inspections-ui .view').forEach(s => s.classList.toggle('on', s.id === 'insp-v-' + v));
+    window.scrollTo(0, 0);
+  }
+  function inspChecklistOf(insp) {
+    const c = insp && insp.checklist;
+    return (c && Array.isArray(c.items)) ? c.items : [];
+  }
+  function inspSeverityOf(insp) {
+    const c = insp && insp.checklist;
+    return (c && c.severity) || 'media';
+  }
+  function inspFallas(insp) { return inspChecklistOf(insp).filter(i => i.result === 'issue').length; }
+  function inspDriverName(insp) {
+    return (insp.driver_profiles && insp.driver_profiles.profiles && insp.driver_profiles.profiles.full_name) || '—';
+  }
+  function inspDriverProfileId(insp) {
+    return insp.driver_profiles && insp.driver_profiles.profiles && insp.driver_profiles.profiles.id;
+  }
+  function inspWhen(insp) {
+    try {
+      return new Date(insp.performed_at).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
+    } catch (e) { return ''; }
+  }
+  function inspCounts() {
+    const c = { pending: 0, approved: 0, rejected: 0, all: inspState.items.length };
+    inspState.items.forEach(i => { if (c[i.review_status] != null) c[i.review_status]++; });
+    return c;
+  }
+
+  function refreshInspectionsBadge() {
+    const setBadge = (n) => { const b = $('#inspections-badge'); if (!b) return; b.textContent = n; b.classList.toggle('hidden', !n); };
+    if (inspState.items.length) { setBadge(inspCounts().pending); return; }
+    Api.listInspectionsForReview('pending').then(rows => setBadge(rows.length)).catch(() => {});
+  }
+
+  async function renderInspections() {
+    bindInspections();
+    inspShowView('cola');
+    const list = $('#insp-list');
+    if (list) list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    try {
+      inspState.items = await Api.listInspectionsForReview(); // las que tienen novedad
+    } catch (e) {
+      console.error(e);
+      if (list) list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>';
+      return;
+    }
+    renderInspList();
+  }
+
+  function renderInspList() {
+    const counts = inspCounts();
+    if ($('#insp-count')) $('#insp-count').textContent = counts.pending;
+    $$('#insp-filter .n').forEach(n => { n.textContent = counts[n.dataset.c] != null ? counts[n.dataset.c] : 0; });
+    const b = $('#inspections-badge'); if (b) { b.textContent = counts.pending; b.classList.toggle('hidden', !counts.pending); }
+    const shown = inspState.items.filter(it => inspState.filter === 'all' ? true : it.review_status === inspState.filter);
+    const list = $('#insp-list');
+    list.innerHTML = shown.length ? shown.map(inspCardHtml).join('')
+      : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Nada por aquí</h3><p>No hay inspecciones en este filtro.</p></div>`;
+  }
+
+  function inspThumbsHtml() {
+    return `<div class="thumbs">${PHOTO_ORDER.map(() => `<span class="thumb"><svg class="icon"><use href="#i-cam"/></svg></span>`).join('')}</div>`;
+  }
+  function inspCardHtml(it) {
+    const sev = INSP_SEV[inspSeverityOf(it)] || INSP_SEV.media;
+    const st = INSP_ST[it.review_status] || INSP_ST.pending;
+    const fallas = inspFallas(it);
+    const v = it.vehicles || {};
+    const veh = `${escapeHtml(v.internal_code || '—')} · ${escapeHtml(v.license_plate || '')}`;
+    const vehname = escapeHtml([v.brand, v.model].filter(Boolean).join(' '));
+    const actions = it.review_status === 'pending'
+      ? `<div class="qactions"><button class="rbtn no" data-insp-rej="${it.id}"><svg><use href="#i-x"/></svg>Rechazar</button><button class="rbtn ok" data-insp-ok="${it.id}"><svg><use href="#i-check"/></svg>Aprobar</button><button class="btn dark sm" data-insp-open="${it.id}">Revisar <svg class="icon" style="width:14px;height:14px"><use href="#i-chev"/></svg></button></div>`
+      : `<div class="qactions"><span class="st ${st[0]}"><svg><use href="#${st[2]}"/></svg>${st[1]}</span><button class="btn ghost sm" data-insp-open="${it.id}">Ver</button></div>`;
+    return `<div class="icard ${inspSeverityOf(it) === 'grave' ? 'grave' : ''}">
+      <span class="avt" style="background:${colorOfId(it.id)}">${escapeHtml(initialsOf(inspDriverName(it)))}</span>
+      <div class="who"><b>${escapeHtml(inspDriverName(it))}</b><div class="sub"><span class="veh">${veh}</span> ${vehname} <span class="when"><svg class="icon" style="width:12px;height:12px"><use href="#i-clock"/></svg>${escapeHtml(inspWhen(it))}</span></div></div>
+      <div class="right">
+        <div class="chips"><span class="chip ${sev.cls}"><svg><use href="#i-warn"/></svg>${sev.label}</span><span class="chip fallas">${fallas} ${fallas === 1 ? 'falla' : 'fallas'}</span></div>
+        ${inspThumbsHtml()}
+        ${actions}
+      </div>
+    </div>`;
+  }
+
+  async function openInspectionDetail(id) {
+    bindInspections();
+    const view = $('#insp-v-detalle');
+    view.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    inspShowView('detalle');
+    let insp;
+    try { insp = await Api.getInspectionDetail(id); }
+    catch (e) { console.error(e); view.innerHTML = '<button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver</button><div class="card">No se pudo cargar la inspección.</div>'; return; }
+    inspState.current = insp;
+    let urls = {};
+    try { urls = await Api.signedInspectionPhotoUrls((insp.inspection_photos || []).map(p => p.storage_path)); } catch (e) { console.error(e); }
+    renderInspectionDetail(insp, urls);
+  }
+
+  function renderInspectionDetail(insp, urls) {
+    const v = insp.vehicles || {};
+    const sev = INSP_SEV[inspSeverityOf(insp)] || INSP_SEV.media;
+    const st = INSP_ST[insp.review_status] || INSP_ST.pending;
+    const items = inspChecklistOf(insp);
+    const fallas = items.filter(i => i.result === 'issue').length;
+    const photos = (insp.inspection_photos || []).slice().sort((a, b) => PHOTO_ORDER.indexOf(a.photo_type) - PHOTO_ORDER.indexOf(b.photo_type));
+    const photosHtml = photos.length ? photos.map(p => {
+      const url = urls[p.storage_path];
+      const label = escapeHtml(PHOTO_LABELS[p.photo_type] || p.photo_type);
+      const inner = url ? `<img src="${url}" alt="${label}">` : `<svg class="icon"><use href="#i-cam"/></svg>`;
+      return `<div class="photo"${url ? ` data-insp-photo="${url}"` : ''}>${inner}<span class="plabel">${label}</span></div>`;
+    }).join('') : '<p style="color:var(--ink2);font-size:13px">Sin fotos.</p>';
+    const checklistHtml = items.length ? items.map(it => {
+      const bad = it.result === 'issue';
+      return `<div class="ckrow ${bad ? 'issue' : 'ok'}"><svg class="icon ci"><use href="#${bad ? 'i-warn' : 'i-check'}"/></svg><div><div class="lbl">${escapeHtml(it.label || '')}</div>${it.hint ? `<div class="hint">${escapeHtml(it.hint)}</div>` : ''}</div><span class="badge">${bad ? 'Con falla' : 'OK'}</span></div>`;
+    }).join('') : '<div class="ckrow ok"><span class="lbl" style="color:var(--ink2)">Sin checklist registrado.</span></div>';
+    const nextMaint = (v.last_maintenance_km != null && v.maintenance_interval_km) ? Math.max(0, (v.last_maintenance_km + v.maintenance_interval_km) - (v.current_km || 0)) : null;
+    const vehLine = `${v.status === 'available' ? 'Disponible' : (v.status || '—')}${nextMaint != null ? ` · mtto en ${nextMaint.toLocaleString('es-CO')} km` : ''}`;
+    const fmtDT = (s) => { try { return new Date(s).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }); } catch (e) { return ''; } };
+    const decision = insp.review_status === 'pending'
+      ? `<div class="card" id="insp-decision">
+           <h2>Decisión del admin</h2>
+           <p class="csub">Aprueba si la novedad es aceptable, o rechaza para dejar constancia y dar seguimiento.</p>
+           <div class="abar">
+             <button class="rbtn no" id="insp-rej-toggle"><svg><use href="#i-x"/></svg>Rechazar</button>
+             <button class="rbtn ok" id="insp-approve"><svg><use href="#i-check"/></svg>Aprobar inspección</button>
+           </div>
+           <div class="rejbox" id="insp-rejbox">
+             <label>Motivo del rechazo (lo verá el conductor)</label>
+             <textarea id="insp-rej-notes" placeholder="Ej: Los frenos no pueden quedar así. Lleva el carro al taller antes de seguir."></textarea>
+             <div class="abar" style="margin-top:10px"><button class="btn dark sm" id="insp-rej-confirm">Confirmar rechazo</button></div>
+             <div class="snapnote"><svg><use href="#i-info"/></svg><span><b>Al rechazar:</b> se notifica al conductor y se abre una novedad formal para seguimiento. El vehículo no se manda a mantenimiento automáticamente.</span></div>
+           </div>
+         </div>`
+      : `<div class="card"><h2>Revisión</h2>
+           <div class="kv"><span class="k">Estado</span><span class="v" style="color:${insp.review_status === 'approved' ? 'var(--green)' : 'var(--red)'}">${st[1]}</span></div>
+           ${insp.reviewed_at ? `<div class="kv"><span class="k">Revisada</span><span class="v">${escapeHtml(fmtDT(insp.reviewed_at))}</span></div>` : ''}
+           ${insp.review_notes ? `<div style="margin-top:10px"><div class="note"><b>Nota del admin:</b> ${escapeHtml(insp.review_notes)}</div></div>` : ''}</div>`;
+    $('#insp-v-detalle').innerHTML = `
+      <button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver a la cola</button>
+      <div class="card">
+        <div class="dhead">
+          <span class="avt" style="background:${colorOfId(insp.id)}">${escapeHtml(initialsOf(inspDriverName(insp)))}</span>
+          <div class="grow">
+            <h2>${escapeHtml(inspDriverName(insp))}</h2>
+            <div class="who"><div class="sub"><span class="veh">${escapeHtml(v.internal_code || '—')} · ${escapeHtml(v.license_plate || '')}</span> ${escapeHtml([v.brand, v.model].filter(Boolean).join(' '))} · ${escapeHtml(inspWhen(insp))}</div></div>
+          </div>
+          <span class="chip ${sev.cls}"><svg><use href="#i-warn"/></svg>Novedad ${sev.label.toLowerCase()}</span>
+          <span class="st ${st[0]}"><svg><use href="#${st[2]}"/></svg>${st[1]}</span>
+        </div>
+      </div>
+      <div class="cols">
+        <div class="card" style="margin-bottom:0">
+          <h2><svg class="icon"><use href="#i-cam"/></svg>Fotos de la inspección</h2>
+          <p class="csub">Capturadas por el conductor. Toca una para ampliar.</p>
+          <div class="pgrid">${photosHtml}</div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <h2><svg class="icon"><use href="#i-info"/></svg>Datos</h2>
+          <div style="margin-top:6px">
+            <div class="kv"><span class="k">Kilometraje de salida</span><span class="v mono">${insp.odometer_km != null ? insp.odometer_km.toLocaleString('es-CO') : '—'} km</span></div>
+            <div class="kv"><span class="k">Severidad reportada</span><span class="v" style="color:${sev.color}">${sev.text}</span></div>
+            <div class="kv"><span class="k">Vehículo</span><span class="v">${escapeHtml(vehLine)}</span></div>
+          </div>
+          ${insp.notes ? `<div style="margin-top:13px"><div class="note"><b>Nota del conductor:</b> ${escapeHtml(insp.notes)}</div></div>` : ''}
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2><svg class="icon"><use href="#i-check"/></svg>Checklist <span style="color:var(--ink3);font-weight:600;font-size:13px">(${items.length} ítems · ${fallas} con falla)</span></h2>
+        <p class="csub">Lo que el conductor revisó. En rojo, lo que marcó con problema.</p>
+        <div class="cklist">${checklistHtml}</div>
+      </div>
+      ${decision}`;
+  }
+
+  async function inspDoReview(id, status, notes) {
+    try {
+      await Api.reviewInspection(id, status, notes);
+      if (status === 'rejected') {
+        const pid = inspState.current ? inspDriverProfileId(inspState.current) : null;
+        if (pid) { try { await notify([pid], 'Inspección rechazada', notes || 'Tu inspección de inicio de turno fue rechazada.', '/'); } catch (e) {} }
+      }
+      const it = inspState.items.find(x => x.id === id);
+      if (it) { it.review_status = status; it.review_notes = notes || null; }
+      toast(status === 'approved' ? 'Inspección aprobada.' : 'Inspección rechazada.');
+      renderInspList();
+      inspShowView('cola');
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo guardar la revisión.');
+    }
+  }
+
+  async function openInspChecklist() {
+    bindInspections();
+    const view = $('#insp-v-config');
+    view.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    inspShowView('config');
+    try { inspState.checklist = await Api.listChecklistItems(false); }
+    catch (e) { console.error(e); view.innerHTML = '<button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver</button><div class="card">No se pudo cargar el checklist.</div>'; return; }
+    renderInspChecklist();
+  }
+
+  function renderInspChecklist() {
+    const rows = inspState.checklist.map((it, i) => `<div class="crow ${it.is_active ? '' : 'off'}" data-insp-ci="${it.id}">
+      <span class="grip">⠿</span>
+      <div class="ctxt"><b>${escapeHtml(it.label)}</b>${it.hint ? `<span>${escapeHtml(it.hint)}</span>` : ''}</div>
+      <button class="cfgbtn" title="Subir" data-insp-cmove="up"${i === 0 ? ' disabled' : ''}><svg class="icon" style="width:15px;height:15px;transform:rotate(-90deg)"><use href="#i-chev"/></svg></button>
+      <button class="cfgbtn" title="Bajar" data-insp-cmove="down"${i === inspState.checklist.length - 1 ? ' disabled' : ''}><svg class="icon" style="width:15px;height:15px;transform:rotate(90deg)"><use href="#i-chev"/></svg></button>
+      <button class="tg ${it.is_active ? 'on' : ''}" title="Activar/desactivar" data-insp-ctoggle></button>
+      <button class="cfgbtn" title="Editar" data-insp-cedit><svg class="icon" style="width:15px;height:15px"><use href="#i-edit"/></svg></button>
+      <button class="cfgbtn danger" title="Eliminar" data-insp-cdel><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
+    </div>`).join('');
+    $('#insp-v-config').innerHTML = `
+      <button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver a la cola</button>
+      <div class="phead"><div><h1>Configurar checklist</h1><p>Define qué revisa el conductor al iniciar turno. Agrega, edita, reordena o desactiva ítems. Aplica a toda la flota.</p></div></div>
+      <div class="card">
+        <h2><svg class="icon"><use href="#i-list"/></svg>Ítems de la inspección</h2>
+        <p class="csub">Usa las flechas para reordenar. Desactiva los que no apliquen sin perder el historial.</p>
+        <div id="insp-citems">${rows || '<p style="color:var(--ink2);font-size:13px">Sin ítems. Agrega el primero abajo.</p>'}</div>
+        <div class="additem">
+          <div class="f"><label>Nuevo ítem</label><input id="insp-new-label" placeholder="Ej: Estado de la carrocería"></div>
+          <div class="f"><label>Pista / ayuda (opcional)</label><input id="insp-new-hint" placeholder="Ej: Rayones, golpes visibles"></div>
+          <button class="btn sm" id="insp-add"><svg class="icon" style="width:15px;height:15px"><use href="#i-plus"/></svg>Agregar</button>
+        </div>
+        <div class="snapnote" style="margin-top:16px"><svg><use href="#i-info"/></svg><span><b>Auditoría:</b> cada inspección guarda una copia de los ítems tal como estaban ese día. Si cambias el checklist, las inspecciones viejas no se alteran.</span></div>
+      </div>`;
+  }
+
+  function bindInspections() {
+    const root = $('#inspections-ui');
+    if (!root || root._inspBound) return;
+    root._inspBound = true;
+    root.addEventListener('click', async (e) => {
+      const fb = e.target.closest('#insp-filter button');
+      if (fb) { inspState.filter = fb.dataset.f; $$('#insp-filter button').forEach(b => b.classList.toggle('on', b === fb)); renderInspList(); return; }
+      if (e.target.closest('#insp-to-config')) { openInspChecklist(); return; }
+      if (e.target.closest('[data-insp-back]')) { renderInspections(); return; }
+      const open = e.target.closest('[data-insp-open]'); if (open) { openInspectionDetail(open.dataset.inspOpen); return; }
+      const ok = e.target.closest('[data-insp-ok]'); if (ok) { inspState.current = inspState.items.find(x => x.id === ok.dataset.inspOk) || null; inspDoReview(ok.dataset.inspOk, 'approved', null); return; }
+      const rej = e.target.closest('[data-insp-rej]'); if (rej) { openInspectionDetail(rej.dataset.inspRej).then(() => { const tb = $('#insp-rejbox'); if (tb) tb.classList.add('show'); }); return; }
+      if (e.target.closest('#insp-approve')) { if (inspState.current) inspDoReview(inspState.current.id, 'approved', null); return; }
+      if (e.target.closest('#insp-rej-toggle')) { const tb = $('#insp-rejbox'); if (tb) tb.classList.toggle('show'); return; }
+      if (e.target.closest('#insp-rej-confirm')) { const n = (($('#insp-rej-notes') && $('#insp-rej-notes').value) || '').trim(); if (inspState.current) inspDoReview(inspState.current.id, 'rejected', n || null); return; }
+      const ph = e.target.closest('[data-insp-photo]'); if (ph) { const img = $('#insp-lbx-img'); if (img) { img.src = ph.dataset.inspPhoto; $('#insp-lbx').classList.add('show'); } return; }
+      const tg = e.target.closest('[data-insp-ctoggle]');
+      if (tg) { const row = tg.closest('[data-insp-ci]'); const it = inspState.checklist.find(x => x.id === row.dataset.inspCi); if (it) { const nv = !it.is_active; try { await Api.updateChecklistItem(it.id, { is_active: nv }); it.is_active = nv; renderInspChecklist(); } catch (err) { console.error(err); toast('No se pudo actualizar.'); } } return; }
+      const del = e.target.closest('[data-insp-cdel]');
+      if (del) { const row = del.closest('[data-insp-ci]'); const id = row.dataset.inspCi; if (!confirm('¿Eliminar este ítem del checklist?')) return; try { await Api.deleteChecklistItem(id); inspState.checklist = inspState.checklist.filter(x => x.id !== id); renderInspChecklist(); toast('Ítem eliminado.'); } catch (err) { console.error(err); toast('No se pudo eliminar.'); } return; }
+      const ed = e.target.closest('[data-insp-cedit]');
+      if (ed) { const row = ed.closest('[data-insp-ci]'); const it = inspState.checklist.find(x => x.id === row.dataset.inspCi); if (!it) return; const nv = prompt('Editar nombre del ítem:', it.label); if (nv && nv.trim() && nv.trim() !== it.label) { try { await Api.updateChecklistItem(it.id, { label: nv.trim() }); it.label = nv.trim(); renderInspChecklist(); } catch (err) { console.error(err); toast('No se pudo editar.'); } } return; }
+      const mv = e.target.closest('[data-insp-cmove]');
+      if (mv) { const row = mv.closest('[data-insp-ci]'); const idx = inspState.checklist.findIndex(x => x.id === row.dataset.inspCi); const j = idx + (mv.dataset.inspCmove === 'up' ? -1 : 1); if (j < 0 || j >= inspState.checklist.length) return; const arr = inspState.checklist; const tmp = arr[idx]; arr[idx] = arr[j]; arr[j] = tmp; renderInspChecklist(); try { await Api.reorderChecklistItems(arr.map(x => x.id)); } catch (err) { console.error(err); toast('No se pudo reordenar.'); } return; }
+      if (e.target.closest('#insp-add')) { const label = (($('#insp-new-label') && $('#insp-new-label').value) || '').trim(); if (!label) { toast('Escribe el nombre del ítem.'); return; } const hint = (($('#insp-new-hint') && $('#insp-new-hint').value) || '').trim(); try { const created = await Api.createChecklistItem({ organizationId: state.profile.organization_id, label, hint, sortOrder: inspState.checklist.length + 1 }); inspState.checklist.push(created); renderInspChecklist(); toast('Ítem agregado.'); } catch (err) { console.error(err); toast('No se pudo agregar.'); } return; }
+    });
+    const lbx = $('#insp-lbx');
+    if (lbx) lbx.addEventListener('click', (e) => { if (e.target.id === 'insp-lbx' || e.target.id === 'insp-lbx-close') lbx.classList.remove('show'); });
   }
 
   async function refreshPendingBadge() {
@@ -926,7 +1209,7 @@
     const { schedule, warnings } = Scheduler.generateSchedule({
       drivers: pool,
       admins: coordPool,
-      settings: { morningSlots: state.settings.morning_slots, afternoonSlots: state.settings.afternoon_slots },
+      settings: { morningSlots: state.settings.morning_slots, afternoonSlots: state.settings.afternoon_slots, coordSlots: state.settings.coord_slots || 1 },
       availability: state.availability,
       flexCoordinatorId: flexId,
       weekStart: state.currentWeek,
@@ -1104,7 +1387,8 @@
 
   async function refreshApprovals() {
     const container = $('#approvals-container');
-    container.innerHTML = '<p class="text-sm text-slate-500 p-4">Cargando…</p>';
+    const setT = (sel, v) => { const el = $(sel); if (el) el.textContent = v; };
+    container.innerHTML = '<div class="sol-empty"><p>Cargando…</p></div>';
     try {
       const driversById = {};
       state.drivers.forEach(d => { driversById[d.id] = d; });
@@ -1112,76 +1396,112 @@
       const items = (await Api.listPendingApprovals(state.currentWeek))
         .filter(r => driversById[r.profile_id]);
 
-      const groups = {};
+      const TOTAL = state.drivers.length;
+      const cupoOf = (shift) => ((shift === 'am' ? (state.settings && state.settings.morning_slots) : (state.settings && state.settings.afternoon_slots)) || 2);
+
+      // Agrupa por slot (día-jornada) y deriva el tipo según el cupo real:
+      // puedes liberar = (total - descansos fijos) - cupo. Si piden más → conflicto.
+      const map = {};
       items.forEach(r => {
         const key = `${r.day_of_week}-${r.shift}`;
-        groups[key] = groups[key] || { day_of_week: r.day_of_week, shift: r.shift, items: [] };
-        groups[key].items.push(r);
+        (map[key] = map[key] || { key, day_of_week: r.day_of_week, shift: r.shift, items: [] }).items.push(r);
       });
+      const groups = Object.values(map).map(g => {
+        const dayKey = Scheduler.DAYS[g.day_of_week];
+        const pend = g.items.filter(i => i.state === 'pending');
+        let fixed = 0;
+        state.drivers.forEach(d => { try { if (Scheduler.ruleBlocked(d, dayKey, g.shift)) fixed++; } catch (e) { /* */ } });
+        const cupo = cupoOf(g.shift);
+        const maxGrant = Math.max(0, (TOTAL - fixed) - cupo);
+        const atWheel = Math.max(cupo, TOTAL - fixed - pend.length);
+        let kind = 'single';
+        if (pend.length > maxGrant) kind = 'conflict';
+        else if (pend.length > 1) kind = 'review';
+        return { ...g, dayKey, pend, maxGrant, atWheel, kind };
+      }).filter(g => g.pend.length > 0)
+        .sort((a, b) => a.day_of_week - b.day_of_week || a.shift.localeCompare(b.shift));
 
-      const sortedKeys = Object.keys(groups).sort((a, b) => {
-        const ga = groups[a], gb = groups[b];
-        if (ga.day_of_week !== gb.day_of_week) return ga.day_of_week - gb.day_of_week;
-        return ga.shift.localeCompare(gb.shift);
-      });
+      const allPend = groups.reduce((a, g) => a + g.pend.length, 0);
+      const nConf = groups.filter(g => g.kind === 'conflict').reduce((a, g) => a + g.pend.length, 0);
+      const nSingle = groups.filter(g => g.kind === 'single').reduce((a, g) => a + g.pend.length, 0);
+      setT('#solic-count', allPend); setT('#solic-n-all', allPend); setT('#solic-n-conf', nConf); setT('#solic-n-single', nSingle);
 
-      if (!sortedKeys.length) {
-        container.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl p-8 text-center shadow-card">
-          <p class="text-slate-400 text-3xl mb-2">✓</p>
-          <p class="text-sm text-slate-600 font-medium">No hay solicitudes pendientes esta semana.</p>
-        </div>`;
+      if (allPend === 0) {
+        container.innerHTML = `<div class="sol-empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Todo al día</h3><p>No hay solicitudes pendientes esta semana.</p></div>`;
         refreshPendingBadge();
         return;
       }
 
-      container.innerHTML = sortedKeys.map(k => {
-        const g = groups[k];
-        const dayLabel = Scheduler.DAY_LABELS_ES[Scheduler.DAYS[g.day_of_week]] || '';
-        const pendingCount = g.items.filter(i => i.state === 'pending').length;
-        const conflict = pendingCount >= 2;
-        return `<div class="approval-card ${conflict ? 'has-conflict' : ''}">
-          <div class="flex items-center justify-between mb-1">
-            <h3 class="font-bold text-base text-ink">${dayLabel} · ${g.shift.toUpperCase()}</h3>
-            ${conflict ? '<span class="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-full">CONFLICTO</span>' : ''}
-          </div>
-          <p class="text-xs text-slate-500 mb-2">${pendingCount} pendiente${pendingCount !== 1 ? 's' : ''}</p>
-          ${g.items.map(i => approvalRowHtml(i, driversById)).join('')}
-        </div>`;
-      }).join('');
+      const filter = state._solicFilter || 'all';
+      const shown = groups.filter(g => filter === 'all' ? true : g.kind === filter);
+      container.innerHTML = shown.length
+        ? shown.map(g => approvalGroupHtml(g, driversById)).join('')
+        : `<div class="sol-empty"><h3>Sin solicitudes en este filtro</h3><p>Cambia de pestaña para ver el resto.</p></div>`;
 
-      container.querySelectorAll('button[data-action]').forEach(btn => {
-        btn.addEventListener('click', () => onApprovalAction(btn));
-      });
+      container.querySelectorAll('button[data-action]').forEach(btn => btn.addEventListener('click', () => onApprovalAction(btn)));
+      container.querySelectorAll('button[data-gok]').forEach(btn => btn.addEventListener('click', () => onApproveSlot(btn)));
     } catch (e) {
-      container.innerHTML = `<p class="text-sm text-rose-600 p-3">Error cargando solicitudes: ${e.message}</p>`;
+      container.innerHTML = `<div class="sol-empty"><h3>Error</h3><p>${escapeHtml(e.message)}</p></div>`;
     }
     refreshPendingBadge();
   }
 
-  function approvalRowHtml(r, driversById) {
-    const name = driversById[r.profile_id]?.name || 'Conductor eliminado';
-    const kindLabel = r.kind === 'unavailable' ? 'No disponible' : 'Descanso';
-    const stateBadge = approvalBadgeHtml(r);
-    const reasonLine = r.kind === 'unavailable'
-      ? `<p class="text-xs text-slate-700 mt-1"><strong>Razón:</strong> ${escapeHtml(r.reason || '(sin texto)')}</p>`
-      : '';
-    const adminNoteLine = r.admin_note ? `<p class="text-xs text-slate-500 mt-1 italic">Nota: ${escapeHtml(r.admin_note)}</p>` : '';
-    const actions = r.state === 'pending' ? `
-      <div class="flex gap-1.5 shrink-0 ml-2">
-        <button data-id="${r.id}" data-action="approve"
-                class="text-xs px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-semibold">Aprobar</button>
-        <button data-id="${r.id}" data-action="reject"
-                class="text-xs px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 font-semibold">Rechazar</button>
-      </div>` : '';
-    return `<div class="approval-row">
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-semibold text-ink">${escapeHtml(name)} ${stateBadge}</p>
-        <p class="text-xs text-slate-500">${kindLabel}</p>
-        ${reasonLine}
-        ${adminNoteLine}
+  function approvalGroupHtml(g, driversById) {
+    const dayLabel = Scheduler.DAY_LABELS_ES[g.dayKey] || '';
+    const tag = g.kind === 'conflict'
+      ? `<span class="sol-gtag conflict"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Conflicto · sobran ${g.pend.length - g.maxGrant}</span>`
+      : g.kind === 'single'
+        ? `<span class="sol-gtag single"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg>Singleton</span>`
+        : `<span class="sol-gtag review">${g.pend.length} pendientes</span>`;
+    const ga = g.kind === 'conflict' ? ''
+      : `<div class="sol-gactions"><button class="sol-minibtn green" data-gok="${g.key}" data-ids="${g.pend.map(r => r.id).join(',')}"><svg class="icon"><use href="#i-check"/></svg>Aprobar slot</button></div>`;
+    return `<div class="sol-group ${g.kind === 'conflict' ? 'conflict' : ''}">
+      <div class="sol-ghead">
+        <span class="sol-slot"><b>${dayLabel}</b><span class="band ${g.shift}">${g.shift.toUpperCase()}</span></span>
+        <span class="sol-cupoinfo">Piden <b>${g.pend.length}</b> · puedes liberar <b>${g.maxGrant}</b> · quedan <b>${g.atWheel}</b> al volante</span>
+        ${tag}${ga}
       </div>
-      ${actions}
+      ${g.items.map(r => approvalRowHtml(r, driversById)).join('')}
     </div>`;
+  }
+
+  function approvalRowHtml(r, driversById) {
+    const d = driversById[r.profile_id];
+    const name = (d && d.name) || 'Conductor eliminado';
+    const reasonTxt = r.kind === 'unavailable' ? (r.reason || '(sin texto)') : 'Descanso';
+    const avt = `<span class="sol-avt" style="background:${colorOfId(r.profile_id)}">${escapeHtml(initialsOf(name))}</span>`;
+    if (r.state !== 'pending') {
+      const ok = r.state === 'approved';
+      return `<div class="sol-req done">${avt}
+        <div class="sol-who"><b>${escapeHtml(name)}</b><div class="meta"><span class="rsn">${escapeHtml(reasonTxt)}</span></div></div>
+        <span class="sol-resolved ${ok ? 'ok' : 'no'}"><svg class="icon"><use href="#${ok ? 'i-check' : 'i-x'}"/></svg>${ok ? 'Aprobado' : 'Rechazado'}</span>
+      </div>`;
+    }
+    const prio = (d && d.priority) || 1;
+    const senior = `<span class="sol-senior s${prio}"><span class="dot"></span>${prio} · ${SR_LABELS[prio] || ''}</span>`;
+    const note = r.admin_note ? `<span class="rsn" style="color:var(--ink2);font-weight:400">· ${escapeHtml(r.admin_note)}</span>` : '';
+    return `<div class="sol-req">${avt}
+      <div class="sol-who"><b>${escapeHtml(name)}</b><div class="meta"><span class="rsn">${escapeHtml(reasonTxt)}</span>${note}</div></div>
+      ${senior}
+      <div class="sol-ractions">
+        <button class="sol-rbtn ok" data-action="approve" data-id="${r.id}"><svg class="icon"><use href="#i-check"/></svg>Aprobar</button>
+        <button class="sol-rbtn no" data-action="reject" data-id="${r.id}"><svg class="icon"><use href="#i-x"/></svg>Rechazar</button>
+      </div>
+    </div>`;
+  }
+
+  async function onApproveSlot(btn) {
+    const ids = (btn.dataset.ids || '').split(',').filter(Boolean);
+    if (!ids.length) return;
+    btn.disabled = true;
+    try {
+      for (const id of ids) await Api.resolveApproval(id, 'approved', null);
+      await refreshApprovals();
+      toast(`${ids.length} descanso(s) aprobado(s).`);
+    } catch (e) {
+      alert('Error: ' + e.message);
+      btn.disabled = false;
+    }
   }
 
   async function onApprovalAction(btn) {
@@ -1697,6 +2017,8 @@
     $('#setting-afternoon-label').value = state.settings.afternoon_label;
     $('#setting-morning-slots').value = state.settings.morning_slots;
     $('#setting-afternoon-slots').value = state.settings.afternoon_slots;
+    if ($('#setting-coord-slots')) $('#setting-coord-slots').value = state.settings.coord_slots != null ? state.settings.coord_slots : 1;
+    if ($('#setting-shift-hours')) $('#setting-shift-hours').value = state.settings.shift_hours != null ? state.settings.shift_hours : 12;
     renderPriorityList();
     renderRulesEditor();
   }
@@ -1879,6 +2201,8 @@
       afternoon_label: $('#setting-afternoon-label').value,
       morning_slots: Math.max(1, parseInt($('#setting-morning-slots').value, 10) || 2),
       afternoon_slots: Math.max(1, parseInt($('#setting-afternoon-slots').value, 10) || 2),
+      coord_slots: Math.max(1, parseInt($('#setting-coord-slots') && $('#setting-coord-slots').value, 10) || 1),
+      shift_hours: Math.max(1, parseInt($('#setting-shift-hours') && $('#setting-shift-hours').value, 10) || 12),
     };
     try {
       await Api.saveSettings(next);
@@ -1948,7 +2272,7 @@
       const total = am + pm + co;
       const name = liveName[id] || merged[id] || '(eliminado)';
       const role = adminIds.has(id) ? 'Admin' : (driverIds.has(id) ? 'Conductor' : '—');
-      return { id, name, email: liveMail[id] || '', role, am, pm, co, total, horas: total * 12 };
+      return { id, name, email: liveMail[id] || '', role, am, pm, co, total, horas: total * ((state.settings && state.settings.shift_hours) || 12) };
     }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
     return { weeks: rows.length, list };
   }
@@ -1973,7 +2297,8 @@
     const totPm = r.reduce((a, x) => a + x.pm, 0);
     const totCo = r.reduce((a, x) => a + x.co, 0);
     const totTurnos = totAm + totPm + totCo;
-    const totHoras = totTurnos * 12;
+    const TH = (state.settings && state.settings.shift_hours) || 12;
+    const totHoras = totTurnos * TH;
     const maxH = Math.max(...r.map(x => x.horas), 1);
     const avg = Math.round(totHoras / r.length);
     sum.innerHTML = `
@@ -1984,7 +2309,7 @@
     const pill = (v, cls) => `<span class="bal-pill ${v ? cls : 'z'}">${v}</span>`;
     box.innerHTML = `
       <div class="bal-report">
-        <div class="bal-rhead"><svg class="icon"><use href="#i-doc"/></svg><h2>Detalle por persona</h2><span class="period">${escapeHtml(fromV)} → ${escapeHtml(toV)} · ${agg.weeks} sem · turno = 12 h</span></div>
+        <div class="bal-rhead"><svg class="icon"><use href="#i-doc"/></svg><h2>Detalle por persona</h2><span class="period">${escapeHtml(fromV)} → ${escapeHtml(toV)} · ${agg.weeks} sem · turno = ${TH} h</span></div>
         <table class="bal-bt">
           <thead><tr><th>Persona</th><th class="num">AM</th><th class="num">PM</th><th class="num">Coord</th><th class="num">Turnos</th><th class="num" style="width:210px">Horas</th></tr></thead>
           <tbody>${r.map(p => `<tr>
@@ -2009,11 +2334,12 @@
     if (!bd || !bd.list.length) { toast('Genera primero un informe con datos.'); return; }
     const esc = v => { v = String(v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     const tot = k => bd.list.reduce((a, x) => a + x[k], 0);
+    const TH = (state.settings && state.settings.shift_hours) || 12;
     const lines = [
       `Balance de turnos;${bd.fromV} a ${bd.toV};${bd.weeks} semanas publicadas`,
-      ['Nombre', 'Email', 'Rol', 'AM', 'PM', 'Coordinacion', 'Total turnos', 'Horas (x12)'].join(';'),
+      ['Nombre', 'Email', 'Rol', 'AM', 'PM', 'Coordinacion', 'Total turnos', `Horas (x${TH})`].join(';'),
       ...bd.list.map(r => [r.name, r.email, r.role, r.am, r.pm, r.co, r.total, r.horas].map(esc).join(';')),
-      ['Total', '', '', tot('am'), tot('pm'), tot('co'), tot('total'), tot('total') * 12].map(esc).join(';'),
+      ['Total', '', '', tot('am'), tot('pm'), tot('co'), tot('total'), tot('total') * TH].map(esc).join(';'),
     ];
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
@@ -2660,7 +2986,7 @@
           <p class="text-sm text-slate-500 mt-1">No tienes turnos asignados esta semana.</p>
         </div>`;
       } else {
-        const horas = myShifts.length * 12;
+        const horas = myShifts.length * ((state.settings && state.settings.shift_hours) || 12);
         const items = myShifts.map(s => `<li class="flex items-center justify-between border-b border-slate-100 last:border-0 py-1.5">
           <span class="text-sm text-ink">${s.d.label} ${s.d.dayNum}</span>
           <span class="text-xs font-semibold text-slate-600">${s.shift}${s.kind === 'Coordinación' ? ' · Coord.' : ''}</span>
