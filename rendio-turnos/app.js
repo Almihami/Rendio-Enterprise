@@ -140,6 +140,23 @@
     $('#new-driver-gen-pw')?.addEventListener('click', onGenerateDriverPassword);
     $('#new-driver-create-btn')?.addEventListener('click', onCreateDriver);
 
+    // Disponibilidad (paleta limpia): búsqueda, filtro y navegación de semana.
+    $('#avail-search')?.addEventListener('input', renderAvailability);
+    $('#avail-filter')?.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-f]'); if (!b) return;
+      state._availFilter = b.dataset.f;
+      $('#avail-filter').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      renderAvailability();
+    });
+    $('#avail-summary')?.addEventListener('click', (e) => {
+      if (!e.target.closest('[data-jump="pending"]')) return;
+      state._availFilter = 'pending';
+      $('#avail-filter')?.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.f === 'pending'));
+      renderAvailability();
+    });
+    $('#avail-prev-week')?.addEventListener('click', () => { setCurrentWeekManual(Scheduler.addDays(state.currentWeek, -7)); refreshAvailabilityMatrix(); });
+    $('#avail-next-week')?.addEventListener('click', () => { setCurrentWeekManual(Scheduler.addDays(state.currentWeek, 7)); refreshAvailabilityMatrix(); });
+
     $('#cell-editor-cancel').addEventListener('click', closeCellEditor);
     $('#cell-editor-save').addEventListener('click', saveCellEditor);
     $('#cell-editor').addEventListener('click', (e) => {
@@ -150,6 +167,8 @@
     $('#driver-next-week').addEventListener('click', () => navigateDriverWeek(7));
     $('#driver-save-btn').addEventListener('click', onDriverSave);
     $('#driver-mark-all-available').addEventListener('click', onMarkAllAvailable);
+    $('#driver-availability-card')?.addEventListener('click', showDriverAvailability);
+    $('#driver-back-home')?.addEventListener('click', showDriverHome);
   }
 
   function onMarkAllAvailable() {
@@ -308,9 +327,8 @@
     } else {
       $('#admin-nav').classList.add('hidden');
       $('#admin-greeting-block').classList.add('hidden');
-      $('#screen-driver').classList.remove('hidden');
-      $('#driver-save-bar').classList.remove('hidden');
       await refreshDriverView();
+      showDriverHome(); // arranca en la home de 2 tarjetas, no en la disponibilidad
       // Inicio de turno (Etapa 1 módulo conductor) — card + wizard.
       if (window.ShiftFlow) ShiftFlow.init(state.profile).catch(e => console.error(e));
     }
@@ -370,12 +388,31 @@
   // Admin: schedule
   // ====================================================================
 
+  // Calcula quién queda FUERA del pool del board: no llenó disponibilidad (corte
+  // pasado) o está suspendido esta semana. Se guarda en state para que renderPool
+  // lo lea síncrono. Fail-safe: si una consulta falla, no excluye a nadie.
+  async function refreshExclusions() {
+    state._excludedIds = new Set();
+    state._suspendedIds = new Set();
+    try {
+      if (weekAvailClosed(state.currentWeek)) {
+        const submitted = await Api.listSubmittedDriverIds(state.currentWeek);
+        state.drivers.forEach(d => { if (!submitted.has(d.id)) state._excludedIds.add(d.id); });
+      }
+    } catch (e) { state._excludedIds = new Set(); }
+    try {
+      const susp = await Api.getWeekSuspensions(state.currentWeek);
+      if (susp && susp.size) state.drivers.forEach(d => { if (susp.has(d.id)) state._suspendedIds.add(d.id); });
+    } catch (e) { /* fail-safe */ }
+  }
+
   async function refreshScheduleData() {
     $('#week-start-input').value = state.currentWeek;
     state.availability = await Api.getWeeklyAvailability(state.currentWeek, state.drivers);
     const sch = await Api.getSchedule(state.currentWeek);
     state.schedule = sch ? sch.data : null;
     $('#published-pill').classList.toggle('hidden', !sch?.published);
+    await refreshExclusions();
     renderSchedule();
     refreshPendingBadge();
     // Aviso de cambios de turno aceptados entre conductores (post-publicación).
@@ -434,76 +471,353 @@
     return fc ? [...coordinatorAdmins(), fc] : coordinatorAdmins();
   };
 
-  function renderSchedule() {
-    const week = Scheduler.weekDates(state.currentWeek);
-    const header = $('#schedule-header');
-    header.innerHTML = '<th class="cell-label">FRANJA DE SERVICIO</th>' +
-      week.map(d => `<th>${d.label} ${d.dayNum}</th>`).join('');
+  // ====================================================================
+  // Admin: Horario — Tablero v4 (board drag & drop)
+  // El board reemplaza la tabla. Misma lógica/datos (state.schedule); solo
+  // cambia la presentación. Generar autollena; arrastrar ajusta a mano. La
+  // persistencia sigue siendo manual (Guardar/Publicar).
+  // ====================================================================
 
-    const settings = state.settings;
-    const sched = state.schedule;
-    const body = $('#schedule-body');
-    body.innerHTML = '';
+  let boardDrag = null;        // { id, src }  src = "day-kind-index" | "pool"
+  let boardJustPlaced = null;  // "day-kind-index": anima el último drop
+  let boardBound = false;      // bind de listeners una sola vez
+  let boardBadgeT = null;
 
-    for (let i = 0; i < settings.morning_slots; i++) {
-      const tr = document.createElement('tr');
-      tr.className = 'row-morning';
-      if (i === 0) {
-        tr.innerHTML = `<td class="cell-label" rowspan="${settings.morning_slots}">MAÑANA (${settings.morning_label})</td>` +
-          week.map(d => cellHtml(sched, d.key, 'morning', i)).join('');
-      } else {
-        tr.innerHTML = week.map(d => cellHtml(sched, d.key, 'morning', i)).join('');
-      }
-      body.appendChild(tr);
-    }
+  // Carriles del board derivados de settings + 2 de coordinación.
+  function boardLanes() {
+    const s = state.settings || { morning_slots: 2, afternoon_slots: 2 };
+    const lanes = [];
+    for (let i = 0; i < (s.morning_slots || 0); i++) lanes.push({ kind: 'morning', index: i, group: 'am' });
+    for (let i = 0; i < (s.afternoon_slots || 0); i++) lanes.push({ kind: 'afternoon', index: i, group: 'pm' });
+    lanes.push({ kind: 'coord_am', index: 0, group: 'co' });
+    lanes.push({ kind: 'coord_pm', index: 0, group: 'co' });
+    return lanes;
+  }
+  const BOARD_GROUP_LABEL = { am: 'Mañana', pm: 'Tarde', co: 'Coord' };
+  const laneShift = (kind) => (kind === 'morning' || kind === 'coord_am') ? 'am' : 'pm';
+  const laneLabel = (lane) => ({ morning: 'Mañana', afternoon: 'Tarde', coord_am: 'Coord AM', coord_pm: 'Coord PM' }[lane.kind] || lane.kind);
+  const laneShortLabel = (lane) => lane.group === 'am' ? 'AM' : lane.group === 'pm' ? 'PM' : (lane.kind === 'coord_am' ? 'Coord AM' : 'Coord PM');
+  const hardLabel = (k) => ({ unavailable: 'no disp.', rule: 'descanso fijo', double: 'doble turno' }[k] || 'conflicto');
 
-    for (let i = 0; i < settings.afternoon_slots; i++) {
-      const tr = document.createElement('tr');
-      tr.className = 'row-afternoon';
-      if (i === 0) {
-        tr.innerHTML = `<td class="cell-label" rowspan="${settings.afternoon_slots}">TARDE (${settings.afternoon_label})</td>` +
-          week.map(d => cellHtml(sched, d.key, 'afternoon', i)).join('');
-      } else {
-        tr.innerHTML = week.map(d => cellHtml(sched, d.key, 'afternoon', i)).join('');
-      }
-      body.appendChild(tr);
-    }
+  const isExcluded = (id) => !!(state._excludedIds && state._excludedIds.has(id));
+  const isSuspendedId = (id) => !!(state._suspendedIds && state._suspendedIds.has(id));
 
-    // Coordinación (admins) — 1 fila AM + 1 fila PM
-    [['coord_am', 'COORDINACIÓN AM'], ['coord_pm', 'COORDINACIÓN PM']].forEach(([kind, label]) => {
-      const tr = document.createElement('tr');
-      tr.className = 'row-coord';
-      tr.innerHTML = `<td class="cell-label">${label}</td>` +
-        week.map(d => cellHtml(sched, d.key, kind, 0)).join('');
-      body.appendChild(tr);
-    });
-
-    const restCount = Math.max(1, state.drivers.length - settings.morning_slots - settings.afternoon_slots);
-    for (let i = 0; i < restCount; i++) {
-      const tr = document.createElement('tr');
-      tr.className = 'row-rest';
-      if (i === 0) {
-        tr.innerHTML = `<td class="cell-label" rowspan="${restCount}">DESCANSO</td>` +
-          week.map(d => cellHtml(sched, d.key, 'rest', i)).join('');
-      } else {
-        tr.innerHTML = week.map(d => cellHtml(sched, d.key, 'rest', i)).join('');
-      }
-      body.appendChild(tr);
-    }
-
-    body.querySelectorAll('.shift-cell').forEach(cell => {
-      cell.addEventListener('click', () => openCellEditor(cell));
-    });
-
-    renderWorkerSummary();
+  function initialsOf(name) {
+    const p = String(name || '—').trim().split(/\s+/);
+    return ((p[0] || '')[0] || '') + ((p[1] || '')[0] || '');
+  }
+  function firstTwo(name) {
+    const p = String(name || '—').trim().split(/\s+/);
+    return p[0] + (p[1] ? ' ' + p[1][0] + '.' : '');
+  }
+  function colorOfId(id) {
+    const palette = ['#3B82F6', '#0EA5A0', '#8B5CF6', '#2563A8', '#16936A', '#7C5CD6', '#D98A12', '#0EA5E9', '#DB4B3F', '#F26522'];
+    let h = 0; const s = String(id);
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return palette[h % palette.length];
   }
 
-  function cellHtml(sched, day, kind, index) {
-    if (!sched) return `<td class="shift-cell text-slate-300" data-day="${day}" data-kind="${kind}" data-index="${index}">—</td>`;
-    const arr = sched[day]?.[kind];
-    const id = arr?.[index];
-    const label = id ? nameOf(id).toUpperCase() : '—';
-    return `<td class="shift-cell" data-day="${day}" data-kind="${kind}" data-index="${index}">${label}</td>`;
+  // Carga semanal (manejo + coordinación) de un id sobre state.schedule.
+  function boardLoadOf(id) {
+    if (!state.schedule) return 0;
+    let n = 0;
+    Scheduler.DAYS.forEach(day => {
+      const d = state.schedule[day]; if (!d) return;
+      ['morning', 'afternoon', 'coord_am', 'coord_pm'].forEach(k => { if ((d[k] || []).includes(id)) n++; });
+    });
+    return n;
+  }
+
+  // Conflicto DURO al tener `id` en day/kind: no disponible / descanso fijo / doble turno.
+  function dayConflict(day, id, kind) {
+    if (!id) return null;
+    const shift = laneShift(kind);
+    try { if (Scheduler.getState(state.availability, id, day, shift) === 'unavailable') return 'unavailable'; } catch (e) { /* */ }
+    const who = state.drivers.find(d => d.id === id) || state.admins.find(a => a.id === id);
+    try { if (who && Scheduler.ruleBlocked(who, day, shift)) return 'rule'; } catch (e) { /* */ }
+    const d = state.schedule?.[day] || {};
+    if (kind === 'morning' && (d.afternoon || []).includes(id)) return 'double';
+    if (kind === 'afternoon' && (d.morning || []).includes(id)) return 'double';
+    return null;
+  }
+  // Conflicto SUAVE: pidió descanso esa jornada (ámbar, no bloquea).
+  function daySoft(day, id, kind) {
+    if (!id || isCoordKind(kind)) return false;
+    try { return Scheduler.getState(state.availability, id, day, laneShift(kind)) === 'prefer_rest'; } catch (e) { return false; }
+  }
+  function conflictMsg(key, id, day) {
+    const nm = (nameOf(id) || '').split(' ')[0];
+    const dl = (Scheduler.DAY_LABELS_ES[day] || day).toLowerCase();
+    const why = { unavailable: 'no está disponible', rule: 'tiene descanso fijo', double: 'quedaría con doble turno' }[key] || 'tiene un conflicto';
+    return `${nm} ${why} el ${dl}. Queda marcado en rojo.`;
+  }
+
+  function dayCoverage(dayKey) {
+    const lanes = boardLanes();
+    const d = state.schedule?.[dayKey];
+    let filled = 0;
+    lanes.forEach(l => { if (d?.[l.kind]?.[l.index]) filled++; });
+    return { filled, total: lanes.length };
+  }
+
+  // ---- Render principal (reemplaza la tabla anterior) ----
+  function renderSchedule() {
+    renderBoardChrome();
+    renderKPIs();
+    renderPool();
+    renderBoardGrid();
+    renderWorkerSummary();
+    bindBoard();
+  }
+
+  function renderBoardChrome() {
+    let saved = null;
+    try { saved = localStorage.getItem('rendio-board-theme'); } catch (e) { /* */ }
+    applyBoardTheme(saved === 'dark' ? 'dark' : 'light');
+
+    const week = Scheduler.weekDates(state.currentWeek);
+    const lbl = $('#board-week-label');
+    if (lbl) {
+      let mon = '';
+      try { mon = new Date(state.currentWeek + 'T00:00:00').toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' }).replace('.', ''); } catch (e) { /* */ }
+      lbl.textContent = `${String(week[0].dayNum).padStart(2, '0')} – ${String(week[6].dayNum).padStart(2, '0')} ${mon}`.trim();
+    }
+    const chip = $('#board-cutoff-chip');
+    if (chip) {
+      const info = reopenInfo(state.currentWeek);
+      if (info.active) { chip.textContent = `Reabierta hasta ${hhmmCO(info.until)}`; chip.className = 'chip ok'; }
+      else if (weekAvailClosed(state.currentWeek)) { chip.textContent = 'Corte cerrado'; chip.className = 'chip'; }
+      else { chip.textContent = 'Disponibilidad abierta'; chip.className = 'chip ok'; }
+    }
+  }
+
+  function renderKPIs() {
+    const el = $('#kpis'); if (!el) return;
+    const week = Scheduler.weekDates(state.currentWeek);
+    let filled = 0, total = 0, coordDays = 0, conf = 0;
+    week.forEach(d => {
+      const cov = dayCoverage(d.key);
+      filled += cov.filled; total += cov.total;
+      const day = state.schedule?.[d.key];
+      if (day?.coord_am?.[0] && day?.coord_pm?.[0]) coordDays++;
+      boardLanes().forEach(l => {
+        const id = day?.[l.kind]?.[l.index];
+        if (id && dayConflict(d.key, id, l.kind)) conf++;
+      });
+    });
+    const huecos = total - filled;
+    const pct = total ? Math.round(filled / total * 100) : 0;
+    const loads = state.drivers.map(d => ({ id: d.id, l: boardLoadOf(d.id) }));
+    const maxL = loads.reduce((m, x) => Math.max(m, x.l), 0);
+    const top = loads.filter(x => x.l === maxL && maxL > 0).map(x => (nameOf(x.id) || '').split(' ')[0]);
+    const low = loads.filter(x => !isExcluded(x.id) && !isSuspendedId(x.id) && x.l <= 2).map(x => (nameOf(x.id) || '').split(' ')[0]);
+    const rc = pct >= 90 ? 'var(--green)' : pct >= 75 ? 'var(--amber)' : 'var(--red)';
+    const covClass = pct >= 90 ? 'ok' : pct >= 75 ? 'warn' : 'alert';
+    const dots = (n, cls) => { const k = Math.min(n, 7); return k ? Array.from({ length: k }).map(() => `<i class="${cls}"></i>`).join('') : '<i></i>'; };
+    el.innerHTML = `
+      <div class="k ${covClass}">
+        <div class="ring" style="--p:${pct};--rc:${rc}"><b>${pct}</b></div>
+        <div class="tx"><em>Cobertura</em><b>${filled}/${total}</b><span>cupos cubiertos</span></div>
+      </div>
+      <div class="k ${huecos ? 'warn' : 'ok'}"><div class="tx"><em>Huecos</em><b>${huecos}</b><span>${huecos ? 'por cubrir' : 'todo cubierto'}</span><div class="dotrow">${dots(huecos, 'w')}</div></div></div>
+      <div class="k ${conf ? 'alert' : 'ok'}"><div class="tx"><em>Conflictos</em><b>${conf}</b><span>${conf ? 'revisa el rojo' : 'sin conflictos'}</span><div class="dotrow">${dots(conf, 'e')}</div></div></div>
+      <div class="k ${coordDays < 7 ? 'warn' : 'ok'}"><div class="tx"><em>Coordinación</em><b>${coordDays}/7</b><span>días con guía</span></div></div>
+      <div class="k ${maxL >= 5 ? 'warn' : ''}"><div class="tx"><em>Balance</em><b>${top[0] || '—'}${maxL ? ' ' + maxL + '/5' : ''}</b><span>${low.length ? 'Carga baja: ' + low.slice(0, 2).join(', ') : 'reparto equilibrado'}</span></div></div>`;
+  }
+
+  function renderPool() {
+    const list = $('#plist'); if (!list) return;
+    const filter = (state._poolFilter || '').toLowerCase();
+    list.innerHTML = state.drivers.map(d => {
+      const out = isExcluded(d.id) || isSuspendedId(d.id);
+      const l = boardLoadOf(d.id);
+      const pct = Math.min(l / 5 * 100, 100);
+      const cls = out ? 'out' : l >= 5 ? 'hi' : l <= 2 ? 'lo' : '';
+      const mc = l >= 5 ? 'hi' : l <= 2 ? 'lo' : '';
+      const isFlex = (d.email || '').toLowerCase() === FLEX_COORD_EMAIL;
+      const sub = out ? (isSuspendedId(d.id) ? 'Suspendido' : 'Fuera del corte')
+        : (isFlex ? 'Coordina (flex)' : d.can_coordinate ? 'Coordina' : 'Disponible');
+      const hidden = filter && !(d.name || '').toLowerCase().includes(filter) ? ' hidden' : '';
+      return `<div class="pcard ${cls}"${out ? '' : ' draggable="true"'} data-driver="${d.id}" data-src="pool"${hidden}>
+        <span class="av" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span>
+        <div class="nm"><b>${escapeHtml(d.name)}</b><span>${escapeHtml(sub)}</span></div>
+        <div class="load"><b>${out ? '—' : l + '/5'}</b><div class="meter ${mc}"><i style="width:${out ? 0 : pct}%"></i></div></div>
+      </div>`;
+    }).join('');
+    const cnt = $('#poolcount');
+    if (cnt) cnt.textContent = String(state.drivers.filter(d => !isExcluded(d.id) && !isSuspendedId(d.id)).length);
+  }
+
+  function renderBoardGrid() {
+    const weekEl = $('#week'); if (!weekEl) return;
+    const week = Scheduler.weekDates(state.currentWeek);
+    const lanes = boardLanes();
+    const sched = state.schedule;
+    let todayISO = '';
+    try { todayISO = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }); } catch (e) { /* */ }
+
+    weekEl.style.gridTemplateRows = `auto ${lanes.map(() => 'minmax(46px,auto)').join(' ')}`;
+
+    let monAbbr = '';
+    try { monAbbr = new Date(state.currentWeek + 'T00:00:00').toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' }).replace('.', '').toUpperCase(); } catch (e) { /* */ }
+    let h = `<div class="corner">${escapeHtml(monAbbr)}</div>`;
+
+    week.forEach(d => {
+      const cov = dayCoverage(d.key);
+      const pct = cov.total ? Math.round(cov.filled / cov.total * 100) : 0;
+      const cls = cov.filled < cov.total ? (cov.total - cov.filled >= 2 ? 'alert' : 'warn') : '';
+      const today = d.date === todayISO ? 'today' : '';
+      h += `<div class="dhead ${cls} ${today}">
+          <div class="drow"><span class="dnum">${String(d.dayNum).padStart(2, '0')}</span><span class="dow">${escapeHtml(String(d.label).slice(0, 3))}</span></div>
+          <div class="cvbar"><i style="width:${pct}%"></i></div>
+          <div class="cvtx">${cov.filled}/${cov.total} cupos</div>
+        </div>`;
+    });
+
+    lanes.forEach(lane => {
+      h += `<div class="bl">${escapeHtml(laneLabel(lane))}</div>`;
+      week.forEach((d, di) => {
+        const wknd = di >= 5 ? 'wknd' : '';
+        const id = sched?.[d.key]?.[lane.kind]?.[lane.index] || null;
+        let inner;
+        if (id) {
+          const hard = dayConflict(d.key, id, lane.kind);
+          const soft = !hard && daySoft(d.key, id, lane.kind);
+          const cardCls = [
+            isCoordKind(lane.kind) ? 'coord' : '',
+            hard ? 'conf' : '',
+            soft ? 'soft' : '',
+            boardJustPlaced === `${d.key}-${lane.kind}-${lane.index}` ? 'just' : '',
+          ].filter(Boolean).join(' ');
+          const nm = nameOf(id);
+          const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isCoordKind(lane.kind) ? 'Coordina' : BOARD_GROUP_LABEL[lane.group]);
+          inner = `<div class="asg ${cardCls}" draggable="true" data-driver="${id}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
+              <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
+              <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(subtxt)}</span></div>
+              <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
+            </div>`;
+        } else {
+          inner = `<div class="drop" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">+ asignar<small>${escapeHtml(laneShortLabel(lane))}</small></div>`;
+        }
+        h += `<div class="zone ${wknd}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}"><div class="slot">${inner}</div></div>`;
+      });
+    });
+    weekEl.innerHTML = h;
+    boardJustPlaced = null;
+  }
+
+  // ---- Mutación del board (en memoria; persiste con Guardar/Publicar) ----
+  function ensureScheduleShape() {
+    state.schedule = state.schedule || Scheduler.emptySchedule();
+    Scheduler.DAYS.forEach(d => {
+      state.schedule[d] = state.schedule[d] || {};
+      ['morning', 'afternoon', 'rest', 'coord_am', 'coord_pm'].forEach(k => {
+        state.schedule[d][k] = state.schedule[d][k] || [];
+      });
+    });
+  }
+  function boardRemoveFrom(src) {
+    if (!src || src === 'pool' || !state.schedule) return;
+    const [day, kind, index] = src.split('-');
+    if (state.schedule[day] && state.schedule[day][kind]) {
+      state.schedule[day][kind][+index] = null;
+      if (!isCoordKind(kind)) rebuildRestRow(day);
+    }
+  }
+  function boardPlaceInto(day, kind, index, id, src) {
+    ensureScheduleShape();
+    if (isCoordKind(kind) && !coordPeople().some(p => p.id === id)) {
+      flashBoard('Solo coordinadores (admin o Daniel) pueden ir en Coordinación.');
+      return;
+    }
+    const scope = isCoordKind(kind) ? COORD_KINDS : ['morning', 'afternoon', 'rest'];
+    scope.forEach(k => { state.schedule[day][k] = (state.schedule[day][k] || []).filter(x => x !== id); });
+    if (src && src !== 'pool') boardRemoveFrom(src);
+    while (state.schedule[day][kind].length <= index) state.schedule[day][kind].push(null);
+    state.schedule[day][kind][index] = id;
+    if (!isCoordKind(kind)) rebuildRestRow(day);
+    boardJustPlaced = `${day}-${kind}-${index}`;
+    renderSchedule();
+    const c = dayConflict(day, id, kind);
+    if (c) flashBoard(conflictMsg(c, id, day));
+  }
+
+  function flashBoard(msg) {
+    const b = $('#badge'), t = $('#badgetx');
+    if (!b || !t) return;
+    t.textContent = msg;
+    b.classList.add('show');
+    clearTimeout(boardBadgeT);
+    boardBadgeT = setTimeout(() => b.classList.remove('show'), 3200);
+  }
+
+  function applyBoardTheme(theme) {
+    const b = $('#schedule-board'); if (!b) return;
+    b.setAttribute('data-theme', theme);
+    const use = b.querySelector('#board-theme-toggle .icon use');
+    if (use) use.setAttribute('href', theme === 'dark' ? '#i-sun' : '#i-moon');
+  }
+  function toggleBoardTheme() {
+    const b = $('#schedule-board'); if (!b) return;
+    const next = b.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyBoardTheme(next);
+    try { localStorage.setItem('rendio-board-theme', next); } catch (e) { /* */ }
+  }
+
+  // Listeners delegados en #schedule-board, una sola vez.
+  function bindBoard() {
+    if (boardBound) return;
+    const board = $('#schedule-board'); if (!board) return;
+    boardBound = true;
+
+    board.addEventListener('dragstart', e => {
+      const c = e.target.closest('[data-driver]'); if (!c) return;
+      if (c.classList.contains('out')) { e.preventDefault(); return; }
+      boardDrag = { id: c.dataset.driver, src: c.dataset.src || `${c.dataset.day}-${c.dataset.kind}-${c.dataset.index}` };
+      c.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', boardDrag.id); } catch (_) { /* */ }
+    });
+    board.addEventListener('dragend', () => {
+      board.querySelectorAll('.dragging').forEach(x => x.classList.remove('dragging'));
+      board.querySelectorAll('.zone.over').forEach(x => x.classList.remove('over'));
+      $('#poolzone')?.classList.remove('drophere');
+      boardDrag = null;
+    });
+    board.addEventListener('dragover', e => {
+      if (e.target.closest('.zone') || e.target.closest('#poolzone')) e.preventDefault();
+    });
+    board.addEventListener('dragenter', e => {
+      const z = e.target.closest('.zone');
+      if (z) { board.querySelectorAll('.zone.over').forEach(x => x.classList.remove('over')); z.classList.add('over'); $('#poolzone')?.classList.remove('drophere'); return; }
+      if (e.target.closest('#poolzone')) { $('#poolzone')?.classList.add('drophere'); board.querySelectorAll('.zone.over').forEach(x => x.classList.remove('over')); }
+    });
+    board.addEventListener('drop', e => {
+      if (!boardDrag) return;
+      const z = e.target.closest('.zone'), p = e.target.closest('#poolzone');
+      if (z) {
+        e.preventDefault();
+        boardPlaceInto(z.dataset.day, z.dataset.kind, +z.dataset.index, boardDrag.id, boardDrag.src);
+      } else if (p) {
+        e.preventDefault();
+        if (boardDrag.src && boardDrag.src !== 'pool') { boardRemoveFrom(boardDrag.src); renderSchedule(); }
+      }
+    });
+    // Click: X = quitar; celda = editor (también fallback táctil en móvil).
+    board.addEventListener('click', e => {
+      const x = e.target.closest('[data-remove]');
+      if (x) { e.stopPropagation(); boardRemoveFrom(x.dataset.remove); renderSchedule(); return; }
+      const cell = e.target.closest('.asg, .drop');
+      if (cell && cell.dataset.day) openCellEditor(cell);
+    });
+
+    $('#board-theme-toggle')?.addEventListener('click', toggleBoardTheme);
+    $('#pool-search')?.addEventListener('input', e => { state._poolFilter = e.target.value; renderPool(); });
+    $('#board-week-label')?.addEventListener('click', () => {
+      const inp = $('#week-start-input'); if (!inp) return;
+      if (inp.showPicker) { try { inp.showPicker(); return; } catch (_) { /* */ } }
+      inp.focus();
+    });
   }
 
   function renderWorkerSummary() {
@@ -622,6 +936,9 @@
       seedPmIds,
     });
     state.schedule = schedule;
+    // El pool del board atenúa a los excluidos/suspendidos de esta generación.
+    state._excludedIds = new Set(excluded.map(d => d.id));
+    state._suspendedIds = new Set(suspendedThisWeek.map(d => d.id));
     const box = $('#schedule-warnings');
     const exclMsg = excluded.length
       ? `<p class="text-rose-700 font-semibold">⛔ ${excluded.length} conductor(es) fuera por no llenar disponibilidad antes del domingo 2:00 PM: ${excluded.map(d => escapeHtml(d.name)).join(', ')}</p>`
@@ -908,39 +1225,112 @@
 
   async function refreshAvailabilityMatrix() {
     state.availability = await Api.getWeeklyAvailability(state.currentWeek, state.drivers);
+    renderAvailability();
+    refreshPendingBadge();
+  }
+
+  // Estado visual de un slot (paleta limpia) a partir del estado crudo +
+  // la solicitud de aprobación + el bloqueo por parametrización.
+  //   avail = trabaja · req = descanso pedido · off = aprobado · rej = rechazado · lock = fijo
+  function availVisual(av, shift, blocked) {
+    if (blocked) return 'lock';
+    if ((av[shift] || 'available') === 'available') return 'avail';
+    const req = av[`${shift}_request`];
+    if (req && req.state === 'approved') return 'off';
+    if (req && req.state === 'rejected') return 'rej';
+    return 'req';
+  }
+
+  // Render del matriz de disponibilidad (sin fetch). Lo llama
+  // refreshAvailabilityMatrix (tras traer datos) y los filtros/búsqueda.
+  function renderAvailability() {
+    const head = $('#avail-head'), body = $('#avail-body');
+    if (!head || !body) return;
     const week = Scheduler.weekDates(state.currentWeek);
-    const header = $('#availability-header');
-    header.innerHTML = '<th class="text-left p-2">Conductor</th>' +
-      week.map(d => `<th class="p-2">${d.label.slice(0,3)} ${d.dayNum}</th>`).join('');
-    const body = $('#availability-body');
-    body.innerHTML = '';
+    const WKND = [5, 6];
+    const MON = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const lbl = $('#avail-week-label');
+    if (lbl && week.length) {
+      const m0 = new Date(week[0].date + 'T00:00:00').getMonth();
+      const m6 = new Date(week[6].date + 'T00:00:00').getMonth();
+      lbl.textContent = m0 === m6
+        ? `${week[0].dayNum} – ${week[6].dayNum} ${MON[m6]}`
+        : `${week[0].dayNum} ${MON[m0]} – ${week[6].dayNum} ${MON[m6]}`;
+    }
+    const cupoAm = (state.settings && state.settings.morning_slots) || 2;
+    const cupoPm = (state.settings && state.settings.afternoon_slots) || 2;
+
+    // Mapa visual por driver/día/jornada.
+    const vis = {};
     state.drivers.forEach(d => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td class="font-medium p-2">${escapeHtml(d.name)}</td>` +
-        week.map(day => {
-          const av = state.availability[d.id]?.[day.key] || { am: 'available', pm: 'available' };
-          // Bloqueo por parametrización: se muestra 🔒 y NO se puede editar.
-          const amBlocked = Scheduler.ruleBlocked(d, day.key, 'am');
-          const pmBlocked = Scheduler.ruleBlocked(d, day.key, 'pm');
-          const amState = amBlocked ? 'blocked' : av.am;
-          const pmState = pmBlocked ? 'blocked' : av.pm;
-          const amTip = amBlocked ? ' title="Bloqueado por parametrización (descanso fijo)"' : (av.am_reason ? ` title="${escapeAttr(av.am_reason)}"` : '');
-          const pmTip = pmBlocked ? ' title="Bloqueado por parametrización (descanso fijo)"' : (av.pm_reason ? ` title="${escapeAttr(av.pm_reason)}"` : '');
-          const amBadge = amBlocked ? ' 🔒' : miniBadge(av.am_request);
-          const pmBadge = pmBlocked ? ' 🔒' : miniBadge(av.pm_request);
-          return `<td class="p-1">
-            <div class="flex gap-1 justify-center items-center">
-              <button data-id="${d.id}" data-day="${day.key}" data-shift="am" data-state="${amState}"${amBlocked ? ' data-blocked="1"' : ''} class="avail-pill"${amTip}>AM${amBadge}</button>
-              <button data-id="${d.id}" data-day="${day.key}" data-shift="pm" data-state="${pmState}"${pmBlocked ? ' data-blocked="1"' : ''} class="avail-pill"${pmTip}>PM${pmBadge}</button>
-            </div>
-          </td>`;
-        }).join('');
-      body.appendChild(tr);
+      vis[d.id] = {};
+      week.forEach(day => {
+        const av = state.availability[d.id]?.[day.key] || { am: 'available', pm: 'available' };
+        vis[d.id][day.key] = {
+          am: availVisual(av, 'am', Scheduler.ruleBlocked(d, day.key, 'am')),
+          pm: availVisual(av, 'pm', Scheduler.ruleBlocked(d, day.key, 'pm')),
+        };
+      });
     });
 
-    body.querySelectorAll('.avail-pill').forEach(btn => {
-      btn.addEventListener('click', () => rotateAvailPill(btn));
+    // Resumen.
+    let nReq = 0, nOff = 0, nLock = 0;
+    state.drivers.forEach(d => week.forEach(day => ['am', 'pm'].forEach(b => {
+      const v = vis[d.id][day.key][b];
+      if (v === 'req') nReq++; else if (v === 'off') nOff++; else if (v === 'lock') nLock++;
+    })));
+    const working = (dayKey, b) => state.drivers.filter(d => {
+      const v = vis[d.id][dayKey][b]; return v === 'avail' || v === 'rej';
+    }).length;
+    let underCupo = 0;
+    week.forEach(day => { if (working(day.key, 'am') < cupoAm) underCupo++; if (working(day.key, 'pm') < cupoPm) underCupo++; });
+    const sum = $('#avail-summary');
+    if (sum) sum.innerHTML = `
+      <div class="av-scard" data-jump="pending"><div class="ic blue"><svg class="icon"><use href="#i-clock"/></svg></div><div><div class="n">${nReq}</div><div class="l">Descansos pedidos</div></div></div>
+      <div class="av-scard"><div class="ic rest"><svg class="icon"><use href="#i-zzz"/></svg></div><div><div class="n">${nOff}</div><div class="l">Descansos aprobados</div></div></div>
+      <div class="av-scard"><div class="ic lock"><svg class="icon"><use href="#i-lock"/></svg></div><div><div class="n">${nLock}</div><div class="l">Descansos fijos</div></div></div>
+      <div class="av-scard"><div class="ic warn"><svg class="icon"><use href="#i-warn"/></svg></div><div><div class="n">${underCupo}</div><div class="l">Slots bajo cupo</div></div></div>`;
+
+    // Cabecera.
+    head.innerHTML = `<tr><th class="namehead">Conductor</th>${week.map((d, i) => `<th><div class="dcell${WKND.includes(i) ? ' wknd' : ''}"><div class="dow">${d.label.slice(0, 3)}</div><div class="dnum">${d.dayNum}</div></div></th>`).join('')}</tr>`;
+
+    // Filtro + búsqueda.
+    const filter = state._availFilter || 'all';
+    const q = ($('#avail-search') && $('#avail-search').value || '').toLowerCase().trim();
+    const isVisible = d => {
+      if (q && !d.name.toLowerCase().includes(q)) return false;
+      if (filter === 'all') return true;
+      let change = false, pend = false;
+      week.forEach(day => ['am', 'pm'].forEach(b => { const v = vis[d.id][day.key][b]; if (v !== 'avail') change = true; if (v === 'req') pend = true; }));
+      return filter === 'changes' ? change : pend;
+    };
+    const rows = state.drivers.filter(isVisible);
+
+    // Fila de cobertura + filas de conductores.
+    const pip = (n, cupo) => { const cls = n < cupo ? (n === 0 ? 'bad' : 'warn') : ''; return `<span class="covpip ${cls}"><span class="d"></span>${n}</span>`; };
+    let html = `<tr class="covrow"><td class="namehead2">Al volante / cupo</td>${week.map(d => `<td><div class="covcell">${pip(working(d.key, 'am'), cupoAm)}${pip(working(d.key, 'pm'), cupoPm)}</div></td>`).join('')}</tr>`;
+    if (!rows.length) html += `<tr><td class="name">—</td><td colspan="7" class="av-none">Sin coincidencias.</td></tr>`;
+    const ICON = { req: 'i-clock', off: 'i-zzz', rej: 'i-x', lock: 'i-lock' };
+    rows.forEach(d => {
+      const role = d.can_coordinate ? 'Coordina' : 'Conductor';
+      html += `<tr><td class="name"><div class="person"><span class="av-avt" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span><div><b>${escapeHtml(d.name)}</b><span>${role}</span></div></div></td>`;
+      week.forEach((day, i) => {
+        const av = state.availability[d.id]?.[day.key] || { am: 'available', pm: 'available' };
+        const cell = (b) => {
+          const v = vis[d.id][day.key][b];
+          const blocked = v === 'lock';
+          const rawState = blocked ? 'blocked' : (av[b] || 'available');
+          const reason = av[`${b}_reason`];
+          const ic = ICON[v] ? `<svg class="icon ic"><use href="#${ICON[v]}"/></svg>` : '';
+          const tip = blocked ? ' title="Descanso fijo (parametrización)"' : (reason ? ` title="${escapeAttr(reason)}"` : '');
+          return `<button class="av-slot ${v}" data-id="${d.id}" data-day="${day.key}" data-shift="${b}" data-state="${rawState}"${blocked ? ' data-blocked="1"' : ''}${tip}>${ic}<span class="lbl">${b.toUpperCase()}</span></button>`;
+        };
+        html += `<td class="daycell${WKND.includes(i) ? ' wknd' : ''}"><span class="slots">${cell('am')}${cell('pm')}</span></td>`;
+      });
+      html += '</tr>';
     });
+    body.innerHTML = html;
+    body.querySelectorAll('.av-slot').forEach(btn => btn.addEventListener('click', () => rotateAvailPill(btn)));
   }
 
   function escapeAttr(s) {
@@ -1312,55 +1702,47 @@
   }
 
   // --- Editor de parametrización: descansos fijos por conductor (Fase 4) ---
-  // Se inyecta dentro del panel de Ajustes, tras la lista de prioridad.
+  // Pinta sobre los elementos estáticos del panel de Ajustes (paleta limpia):
+  // <select #rules-driver-select> + grilla <div #rules-grid>.
   function renderRulesEditor() {
-    const prioBox = $('#priority-list');
-    if (!prioBox) return;
-    let box = document.getElementById('rules-editor');
-    if (!box) {
-      box = document.createElement('div');
-      box.id = 'rules-editor';
-      box.className = 'mt-6';
-      // Lo colocamos como hermano del contenedor de prioridad.
-      (prioBox.closest('section, div') || prioBox.parentNode).appendChild(box);
-    }
+    const sel = $('#rules-driver-select');
+    const grid = $('#rules-grid');
+    if (!sel || !grid) return;
     const drivers = [...state.drivers].sort((a, b) => a.name.localeCompare(b.name));
-    if (!drivers.length) { box.innerHTML = ''; return; }
+    if (!drivers.length) {
+      sel.innerHTML = '';
+      grid.innerHTML = '<p class="set-hint">No hay conductores activos.</p>';
+      return;
+    }
     if (!state._rulesDriverId || !drivers.some(d => d.id === state._rulesDriverId)) {
       state._rulesDriverId = drivers[0].id;
     }
-    const sel = state._rulesDriverId;
-    const rulesFor = new Set((state.rules || [])
-      .filter(r => r.profile_id === sel)
-      .map(r => `${r.day_of_week}-${r.shift}`));
+    const cur = state._rulesDriverId;
 
-    const opts = drivers.map(d => `<option value="${d.id}"${d.id === sel ? ' selected' : ''}>${escapeHtml(d.name)}</option>`).join('');
-    const rows = Scheduler.DAYS.map((dayKey, di) => {
+    sel.innerHTML = drivers.map(d => `<option value="${d.id}"${d.id === cur ? ' selected' : ''}>${escapeHtml(d.name)}</option>`).join('');
+    sel.onchange = (e) => { state._rulesDriverId = e.target.value; renderRulesEditor(); };
+
+    const rulesFor = new Set((state.rules || [])
+      .filter(r => r.profile_id === cur)
+      .map(r => `${r.day_of_week}-${r.shift}`));
+    grid.innerHTML = Scheduler.DAYS.map((dayKey, di) => {
       const label = Scheduler.DAY_LABELS_ES[dayKey];
+      const wknd = di >= 5 ? ' wknd' : '';
       const cell = (shift) => {
         const on = rulesFor.has(`${di}-${shift}`);
-        return `<button class="rule-cell ${on ? 'rule-on' : ''}" data-rule-day="${di}" data-rule-shift="${shift}">${shift.toUpperCase()}${on ? ' 🔒' : ''}</button>`;
+        const lock = on ? '<svg class="icon"><use href="#i-lock"/></svg>' : '';
+        return `<button class="set-tg${on ? ' on' : ''}" data-rule-day="${di}" data-rule-shift="${shift}">${lock}${shift.toUpperCase()}</button>`;
       };
-      return `<div class="rule-row"><span class="rule-day">${label}</span>${cell('am')}${cell('pm')}</div>`;
+      return `<div class="set-drow${wknd}"><span class="set-dname">${label}</span><div class="set-twin">${cell('am')}${cell('pm')}</div></div>`;
     }).join('');
 
-    box.innerHTML = `
-      <h3 class="text-sm font-bold text-ink mb-1">Descansos fijos (parametrización)</h3>
-      <p class="text-xs text-slate-500 mb-3">Marca los días/jornadas que un conductor tiene SIEMPRE de descanso. Saldrán 🔒 bloqueados en el horario y en su vista.</p>
-      <select id="rules-driver-select" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm mb-3 w-full max-w-xs">${opts}</select>
-      <div class="rules-grid">${rows}</div>`;
-
-    box.querySelector('#rules-driver-select').addEventListener('change', e => {
-      state._rulesDriverId = e.target.value;
-      renderRulesEditor();
-    });
-    box.querySelectorAll('.rule-cell').forEach(b => {
-      b.addEventListener('click', () => onToggleRule(sel, parseInt(b.dataset.ruleDay, 10), b.dataset.ruleShift, b));
+    grid.querySelectorAll('.set-tg').forEach(b => {
+      b.addEventListener('click', () => onToggleRule(cur, parseInt(b.dataset.ruleDay, 10), b.dataset.ruleShift, b));
     });
   }
 
   async function onToggleRule(profileId, dayOfWeek, shift, btn) {
-    const wasOn = btn.classList.contains('rule-on');
+    const wasOn = btn.classList.contains('on');
     btn.disabled = true;
     try {
       if (wasOn) await Api.deleteDriverRule({ profileId, dayOfWeek, shift });
@@ -1378,46 +1760,47 @@
 
   // Prioridad por antigüedad (1=nuevo, 2=con tiempo, 3=antiguo). Influye SUAVE
   // en la generación: ver scheduler.js (desempate por prioridad).
+  const SR_LABELS = { 1: 'Nuevo', 2: 'Con tiempo', 3: 'Antiguo' };
   function renderPriorityList() {
     const box = $('#priority-list');
     if (!box) return;
     const drivers = [...state.drivers].sort((a, b) => a.name.localeCompare(b.name));
     if (!drivers.length) {
-      box.innerHTML = '<p class="text-sm text-slate-500">No hay conductores activos.</p>';
+      box.innerHTML = '<p class="set-hint">No hay conductores activos.</p>';
       return;
     }
     box.innerHTML = drivers.map(d => {
       const p = d.priority || 1;
-      return `<div class="flex items-center justify-between gap-3 py-2 border-b border-slate-100 last:border-0">
-        <div class="min-w-0">
-          <p class="text-sm font-medium text-ink truncate">${escapeHtml(d.name)}</p>
-          <p class="text-xs text-slate-500 truncate">${escapeHtml(d.email || '')}</p>
-        </div>
-        <select data-prio-id="${d.id}" class="shrink-0 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none">
-          <option value="1"${p === 1 ? ' selected' : ''}>1 · Nuevo</option>
-          <option value="2"${p === 2 ? ' selected' : ''}>2 · Con tiempo</option>
-          <option value="3"${p === 3 ? ' selected' : ''}>3 · Antiguo</option>
-        </select>
+      const segs = [1, 2, 3].map(n =>
+        `<button data-srval="${n}" class="${p === n ? 'on s' + n : ''}"><span class="num">${n}</span>${p === n ? SR_LABELS[n] : ''}</button>`
+      ).join('');
+      return `<div class="set-prow">
+        <span class="set-avt" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span>
+        <div class="set-pinfo"><b>${escapeHtml(d.name)}</b><span>${escapeHtml(d.email || '')}</span></div>
+        <div class="set-seg3" data-prio-id="${d.id}">${segs}</div>
       </div>`;
     }).join('');
-    box.querySelectorAll('select[data-prio-id]').forEach(sel => {
-      sel.addEventListener('change', () => onChangePriority(sel));
+    box.querySelectorAll('.set-seg3').forEach(seg => {
+      seg.querySelectorAll('button[data-srval]').forEach(btn => {
+        btn.addEventListener('click', () => onChangePriority(seg.dataset.prioId, parseInt(btn.dataset.srval, 10)));
+      });
     });
   }
 
-  async function onChangePriority(sel) {
-    const id = sel.dataset.prioId;
-    const value = parseInt(sel.value, 10) || 1;
-    sel.disabled = true;
+  async function onChangePriority(id, rawValue) {
+    const value = parseInt(rawValue, 10) || 1;
+    const d = state.drivers.find(x => x.id === id);
+    if (d && d.priority === value) return;            // ya está en ese valor
+    const seg = document.querySelector(`.set-seg3[data-prio-id="${id}"]`);
+    if (seg) seg.querySelectorAll('button').forEach(b => (b.disabled = true));
     try {
       await Api.setDriverPriority(id, value);
-      const d = state.drivers.find(x => x.id === id);
       if (d) d.priority = value;
+      renderPriorityList();
       toast('Prioridad actualizada.');
     } catch (e) {
       alert('Error al guardar prioridad: ' + e.message);
-    } finally {
-      sel.disabled = false;
+      renderPriorityList();
     }
   }
 
@@ -1500,6 +1883,8 @@
     try {
       await Api.saveSettings(next);
       state.settings = { ...state.settings, ...next };
+      const saved = $('#set-saved-params');
+      if (saved) { saved.classList.add('show'); setTimeout(() => saved.classList.remove('show'), 1800); }
       toast('Ajustes guardados.');
     } catch (e) {
       alert('Error al guardar ajustes: ' + e.message);
@@ -1541,25 +1926,29 @@
       Scheduler.DAYS.forEach(dk => {
         const day = dataObj[dk];
         if (!day) return;
-        const drive = new Set([...(day.morning || []), ...(day.afternoon || [])]);
+        const morning = new Set(day.morning || []);
+        const afternoon = new Set(day.afternoon || []);
         const coord = new Set([...(day.coord_am || []), ...(day.coord_pm || [])]);
-        new Set([...drive, ...coord]).forEach(id => {
-          agg[id] = agg[id] || { manejo: 0, coord: 0 };
-          if (drive.has(id)) agg[id].manejo++;
-          else if (coord.has(id)) agg[id].coord++;
+        new Set([...morning, ...afternoon, ...coord]).forEach(id => {
+          agg[id] = agg[id] || { am: 0, pm: 0, co: 0 };
+          // 1 turno por día: manejar (AM/PM) tiene prioridad sobre coordinar.
+          if (morning.has(id)) agg[id].am++;
+          else if (afternoon.has(id)) agg[id].pm++;
+          else if (coord.has(id)) agg[id].co++;
         });
       });
     });
     const adminIds = new Set((state.admins || []).map(a => a.id));
-    const liveName = {};
-    (state.drivers || []).forEach(d => { liveName[d.id] = d.name; });
-    (state.admins || []).forEach(a => { liveName[a.id] = liveName[a.id] || a.name; });
     const driverIds = new Set((state.drivers || []).map(d => d.id));
+    const liveName = {}, liveMail = {};
+    (state.drivers || []).forEach(d => { liveName[d.id] = d.name; liveMail[d.id] = d.email || ''; });
+    (state.admins || []).forEach(a => { liveName[a.id] = liveName[a.id] || a.name; liveMail[a.id] = liveMail[a.id] || a.email || ''; });
     const list = Object.keys(agg).map(id => {
-      const manejo = agg[id].manejo, coord = agg[id].coord, total = manejo + coord;
+      const { am, pm, co } = agg[id];
+      const total = am + pm + co;
       const name = liveName[id] || merged[id] || '(eliminado)';
       const role = adminIds.has(id) ? 'Admin' : (driverIds.has(id) ? 'Conductor' : '—');
-      return { id, name, role, manejo, coord, total, horas: total * 12 };
+      return { id, name, email: liveMail[id] || '', role, am, pm, co, total, horas: total * 12 };
     }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
     return { weeks: rows.length, list };
   }
@@ -1567,41 +1956,64 @@
   async function onGenerateBalance() {
     const fromV = $('#balance-from').value, toV = $('#balance-to').value;
     const box = $('#balance-table'), sum = $('#balance-summary');
-    if (!fromV || !toV) { sum.textContent = 'Elige el rango (Desde / Hasta).'; box.innerHTML = ''; return; }
+    if (!fromV || !toV) { sum.innerHTML = ''; box.innerHTML = '<div class="bal-empty"><h3>Elige el rango</h3><p>Selecciona Desde y Hasta para generar el informe.</p></div>'; return; }
     const fromWk = Scheduler.startOfWeekISO(fromV), toWk = Scheduler.startOfWeekISO(toV);
-    sum.textContent = 'Calculando…'; box.innerHTML = '';
+    sum.innerHTML = ''; box.innerHTML = '<div class="bal-empty"><p>Calculando…</p></div>';
     let rows;
     try { rows = await Api.listPublishedSchedules(fromWk, toWk); }
-    catch (e) { sum.textContent = 'Error: ' + e.message; return; }
+    catch (e) { box.innerHTML = `<div class="bal-empty"><h3>Error</h3><p>${escapeHtml(e.message)}</p></div>`; return; }
     const agg = aggregateBalance(rows);
     state.balanceData = { ...agg, fromV, toV };
-    sum.textContent = `Período ${fromV} → ${toV} · ${agg.weeks} semana(s) publicada(s) · ${agg.list.length} persona(s). Cada turno = 12 h.`;
     if (!agg.list.length) {
-      box.innerHTML = '<p class="text-sm text-slate-500 py-4">No hay horarios publicados en ese rango.</p>';
+      box.innerHTML = '<div class="bal-empty"><h3>Sin datos</h3><p>No hay horarios publicados en ese rango.</p></div>';
       return;
     }
-    box.innerHTML = `<table class="w-full text-sm border-collapse">
-      <thead><tr class="text-left text-xs uppercase tracking-wide text-slate-500 border-b">
-        <th class="py-2 pr-3">Nombre</th><th class="py-2 pr-3">Rol</th>
-        <th class="py-2 pr-3 text-right">Manejo</th><th class="py-2 pr-3 text-right">Coord.</th>
-        <th class="py-2 pr-3 text-right">Total turnos</th><th class="py-2 text-right">Horas</th></tr></thead>
-      <tbody>${agg.list.map(r => `<tr class="border-b border-slate-100">
-        <td class="py-2 pr-3 font-medium text-ink">${escapeHtml(r.name)}</td>
-        <td class="py-2 pr-3 text-slate-500">${r.role}</td>
-        <td class="py-2 pr-3 text-right">${r.manejo}</td>
-        <td class="py-2 pr-3 text-right">${r.coord}</td>
-        <td class="py-2 pr-3 text-right font-semibold">${r.total}</td>
-        <td class="py-2 text-right font-semibold">${r.horas} h</td></tr>`).join('')}</tbody></table>`;
+    const r = agg.list;
+    const totAm = r.reduce((a, x) => a + x.am, 0);
+    const totPm = r.reduce((a, x) => a + x.pm, 0);
+    const totCo = r.reduce((a, x) => a + x.co, 0);
+    const totTurnos = totAm + totPm + totCo;
+    const totHoras = totTurnos * 12;
+    const maxH = Math.max(...r.map(x => x.horas), 1);
+    const avg = Math.round(totHoras / r.length);
+    sum.innerHTML = `
+      <div class="bal-scard accent"><div class="n">${totTurnos}</div><div class="l">Turnos publicados</div></div>
+      <div class="bal-scard"><div class="n">${totHoras}<s> h</s></div><div class="l">Horas totales</div></div>
+      <div class="bal-scard"><div class="n">${r.length}</div><div class="l">Personas con turno</div></div>
+      <div class="bal-scard"><div class="n">${avg}<s> h</s></div><div class="l">Promedio por persona</div></div>`;
+    const pill = (v, cls) => `<span class="bal-pill ${v ? cls : 'z'}">${v}</span>`;
+    box.innerHTML = `
+      <div class="bal-report">
+        <div class="bal-rhead"><svg class="icon"><use href="#i-doc"/></svg><h2>Detalle por persona</h2><span class="period">${escapeHtml(fromV)} → ${escapeHtml(toV)} · ${agg.weeks} sem · turno = 12 h</span></div>
+        <table class="bal-bt">
+          <thead><tr><th>Persona</th><th class="num">AM</th><th class="num">PM</th><th class="num">Coord</th><th class="num">Turnos</th><th class="num" style="width:210px">Horas</th></tr></thead>
+          <tbody>${r.map(p => `<tr>
+            <td><div class="person"><span class="bal-avt" style="background:${colorOfId(p.id)}">${escapeHtml(initialsOf(p.name))}</span><div><b>${escapeHtml(p.name)}</b><span>${escapeHtml(p.email || p.role)}</span></div></div></td>
+            <td class="num">${pill(p.am, 'am')}</td>
+            <td class="num">${pill(p.pm, 'pm')}</td>
+            <td class="num">${pill(p.co, 'co')}</td>
+            <td class="num"><b>${p.total}</b></td>
+            <td class="num"><div class="bal-hrs"><span class="bar"><i style="width:${Math.round(p.horas / maxH * 100)}%"></i></span><b>${p.horas} h</b></div></td>
+          </tr>`).join('')}</tbody>
+          <tfoot><tr>
+            <td>Total · ${r.length} personas</td>
+            <td class="num">${totAm}</td><td class="num">${totPm}</td><td class="num">${totCo}</td>
+            <td class="num">${totTurnos}</td><td class="num">${totHoras} h</td>
+          </tr></tfoot>
+        </table>
+      </div>`;
   }
 
   function onDownloadBalanceCsv() {
     const bd = state.balanceData;
     if (!bd || !bd.list.length) { toast('Genera primero un informe con datos.'); return; }
     const esc = v => { v = String(v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const tot = k => bd.list.reduce((a, x) => a + x[k], 0);
     const lines = [
       `Balance de turnos;${bd.fromV} a ${bd.toV};${bd.weeks} semanas publicadas`,
-      ['Nombre', 'Rol', 'Turnos manejo', 'Dias coordinacion', 'Total turnos', 'Horas (x12)'].join(';'),
-      ...bd.list.map(r => [r.name, r.role, r.manejo, r.coord, r.total, r.horas].map(esc).join(';')),
+      ['Nombre', 'Email', 'Rol', 'AM', 'PM', 'Coordinacion', 'Total turnos', 'Horas (x12)'].join(';'),
+      ...bd.list.map(r => [r.name, r.email, r.role, r.am, r.pm, r.co, r.total, r.horas].map(esc).join(';')),
+      ['Total', '', '', tot('am'), tot('pm'), tot('co'), tot('total'), tot('total') * 12].map(esc).join(';'),
     ];
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
@@ -1857,6 +2269,7 @@
     await renderDriverRequests();
     await renderDriverPublishedSchedule();
     await renderDriverSwaps();
+    updateDriverHome(); // mantiene fresco el sub de la tarjeta de disponibilidad en la home
   }
 
   function updateDriverWeekLabel() {
@@ -1872,6 +2285,50 @@
   function navigateDriverWeek(deltaDays) {
     setCurrentWeekManual(Scheduler.addDays(state.currentWeek, deltaDays));
     refreshDriverView();
+  }
+
+  // ---- Navegación del conductor: home (2 tarjetas) ↔ disponibilidad ----
+
+  function showDriverHome() {
+    $('#screen-driver-home')?.classList.remove('hidden');
+    $('#screen-driver').classList.add('hidden');
+    $('#driver-save-bar').classList.add('hidden'); // la barra de Guardar solo aplica en disponibilidad
+    updateDriverHome();
+    window.scrollTo(0, 0);
+  }
+
+  function showDriverAvailability() {
+    $('#screen-driver-home')?.classList.add('hidden');
+    $('#screen-driver').classList.remove('hidden');
+    $('#driver-save-bar').classList.remove('hidden');
+    window.scrollTo(0, 0);
+  }
+
+  // Saludo de la home ("Carlos · Martes 10 de junio") + estado de la tarjeta de disponibilidad.
+  function updateDriverHome() {
+    const sub = $('#driver-home-sub');
+    if (sub && state.profile) {
+      const name = firstNameOf(state.profile);
+      const today = new Date().toLocaleDateString('es-CO',
+        { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Bogota' });
+      sub.textContent = `${name} · ${today.charAt(0).toUpperCase()}${today.slice(1)}`;
+    }
+    const cardSub = $('#driver-availability-card-sub');
+    if (cardSub) cardSub.textContent = availabilitySummaryText();
+  }
+
+  function availabilitySummaryText() {
+    const own = state.ownAvail || {};
+    const week = Scheduler.weekDates(state.currentWeek);
+    const marked = week.filter(d => !!own[d.key]).length;
+    const total = week.length;
+    const range = weekLabelES(state.currentWeek);
+    if (marked === 0) return `Marca tus turnos para la semana del ${range}. El admin asigna y confirma.`;
+    if (marked < total) {
+      const missing = total - marked;
+      return `Te falta${missing === 1 ? '' : 'n'} ${missing} día${missing === 1 ? '' : 's'} por marcar para la semana del ${range}.`;
+    }
+    return `Disponibilidad lista para la semana del ${range}. Puedes ajustarla.`;
   }
 
   function renderDriverDays() {
@@ -2578,7 +3035,7 @@
     // Contenedor según el rol.
     const host = state.profile.role === 'admin'
       ? document.getElementById('app-shell')
-      : document.getElementById('screen-driver');
+      : document.getElementById('screen-driver-home');
     if (!host) return;
     if (existing) return; // ya está
     const bar = document.createElement('div');

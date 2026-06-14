@@ -23,7 +23,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -103,6 +103,34 @@
 
   <!-- ===========================  APP SHELL  ============================== -->
   <div id="app-shell" class="hidden min-h-screen flex flex-col">
+    <!-- Sprite SVG de íconos para el Tablero v4 (pestaña Horario) -->
+    <svg aria-hidden="true" style="position:absolute;width:0;height:0">
+      <symbol id="i-l" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+      <symbol id="i-r" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+      <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 7.5A9 9 0 1 1 12 3Z"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+      <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h11M19 6h1M4 12h1M9 12h11M4 18h7M15 18h5"/><circle cx="17" cy="6" r="2"/><circle cx="7" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></symbol>
+      <symbol id="i-zzz" viewBox="0 0 24 24"><path d="M5 7h7l-7 10h7"/><path d="M14 4h6l-6 7h6"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+      <symbol id="i-userplus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M18 8v6M15 11h6"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></symbol>
+      <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+      <symbol id="i-prev" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+      <symbol id="i-next" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24"><path d="m21 19-9-16-9 16Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></symbol>
+    </svg>
     <header class="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
       <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
         <a href="#" class="flex items-center gap-2 shrink-0">
@@ -152,14 +180,44 @@
     <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-5 md:py-6 pb-24 md:pb-6">
 
       <!-- =============== DRIVER VIEW =============== -->
+      <!-- HOME del conductor: "¿Cómo vas a operar hoy?" — dúo de tarjetas apiladas -->
+      <section id="screen-driver-home" class="hidden">
+        <div class="pt-1 pb-1">
+          <h2 class="text-[22px] font-extrabold text-ink leading-tight">¿Cómo vas a operar hoy?</h2>
+          <p id="driver-home-sub" class="text-sm text-slate-500 mt-1">—</p>
+        </div>
+
+        <div class="pt-3 space-y-3">
+          <!-- Tarjeta 1: Iniciar turno — la pinta shift-flow.js (estados: iniciar / continuar / turno activo) -->
+          <div id="driver-shift-container" class="pc-in d1"></div>
+
+          <!-- Tarjeta 2: Disponibilidad de horarios -->
+          <button id="driver-availability-card"
+                  class="pc-in d2 tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-white border-2 border-slate-200 shadow-card">
+            <div class="flex items-start justify-between">
+              <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl"><span class="float inline-block">📅</span></div>
+              <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-500 mt-1">Próxima semana</span>
+            </div>
+            <div class="mt-auto">
+              <p class="text-xl font-extrabold text-ink leading-tight">Disponibilidad de horarios</p>
+              <p id="driver-availability-card-sub" class="text-xs text-slate-500 mt-1">Marca tus turnos. El admin asigna y confirma.</p>
+            </div>
+            <div class="mt-3 flex items-center gap-1 text-sm font-bold text-brand-600">Marcar
+              <svg class="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
+            </div>
+          </button>
+        </div>
+      </section>
+
       <section id="screen-driver" class="hidden space-y-5">
+        <button id="driver-back-home" class="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-brand-600 active:scale-95 transition -ml-1">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+          Inicio
+        </button>
         <div>
           <h2 id="driver-greeting" class="text-xl md:text-2xl font-bold text-ink">—</h2>
           <p id="driver-greeting-sub" class="text-sm text-slate-500">—</p>
         </div>
-
-        <!-- Inicio de turno (Etapa 1 módulo conductor) — lo renderiza shift-flow.js -->
-        <div id="driver-shift-container"></div>
 
         <!-- Week selector -->
         <div class="bg-white border border-slate-200 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-card">
@@ -234,55 +292,118 @@
         <p id="admin-greeting-sub" class="text-sm text-slate-500">—</p>
       </div>
 
-      <!-- =============== ADMIN: SCHEDULE TAB =============== -->
-      <section data-panel="schedule" class="hidden space-y-4">
-        <div class="flex items-center gap-2 flex-wrap">
-          <input id="week-start-input" type="date" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm bg-white" />
-          <button id="prev-week" class="border border-slate-300 px-2.5 py-1.5 rounded-lg text-sm hover:bg-slate-100 bg-white">←</button>
-          <button id="next-week" class="border border-slate-300 px-2.5 py-1.5 rounded-lg text-sm hover:bg-slate-100 bg-white">→</button>
-          <span id="published-pill" class="hidden text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold">Publicado</span>
+      <!-- =============== ADMIN: SCHEDULE TAB (Tablero v4) =============== -->
+      <section data-panel="schedule" class="hidden">
+        <div id="schedule-board" data-theme="light">
+          <header class="top">
+            <div class="wm"><b>Rendio</b><i></i><s>Tablero</s></div>
+            <div class="weeknav">
+              <button id="prev-week" aria-label="Semana anterior"><svg class="icon"><use href="#i-l"/></svg></button>
+              <input id="week-start-input" type="date" class="sr-only" />
+              <span class="wk" id="board-week-label" title="Elegir semana">—</span>
+              <button id="next-week" aria-label="Semana siguiente"><svg class="icon"><use href="#i-r"/></svg></button>
+              <span class="chip" id="board-cutoff-chip"></span>
+              <span id="published-pill" class="chip ok hidden">Publicado</span>
+            </div>
+            <div class="acts">
+              <button class="iconbtn" id="board-theme-toggle" title="Cambiar tema"><svg class="icon"><use href="#i-moon"/></svg></button>
+              <button class="btn ghost" id="generate-btn"><svg class="icon"><use href="#i-refresh"/></svg>Generar</button>
+              <button class="btn ghost" id="save-btn"><svg class="icon"><use href="#i-save"/></svg>Guardar</button>
+              <button class="btn ghost" id="clear-schedule-btn"><svg class="icon"><use href="#i-trash"/></svg>Limpiar</button>
+              <button class="btn ghost" id="reopen-avail-btn" title="Reabre la disponibilidad de esta semana 2 horas para que los conductores corrijan"><svg class="icon"><use href="#i-clock"/></svg>Reabrir 2h</button>
+              <button class="btn ghost" id="download-schedule-btn"><svg class="icon"><use href="#i-download"/></svg>Excel</button>
+              <button class="btn" id="publish-btn"><svg class="icon"><use href="#i-send"/></svg>Publicar</button>
+            </div>
+          </header>
+
+          <section class="kpis" id="kpis"></section>
+
+          <div class="layout">
+            <main class="board">
+              <div class="board-h">
+                <div>
+                  <h1>Asignación de la semana</h1>
+                  <p>Genera el horario y ajústalo arrastrando conductores. La carga y la cobertura se recalculan al soltar. Guarda o publica para fijarlo.</p>
+                </div>
+                <div class="legend">
+                  <span><i></i>Asignado</span>
+                  <span><i class="h"></i>Sin cubrir</span>
+                  <span><i class="c"></i>Conflicto</span>
+                </div>
+              </div>
+              <div class="week" id="week"></div>
+            </main>
+
+            <aside class="pool" id="poolzone">
+              <div class="pool-h">
+                <h2>Disponibles <em id="poolcount">0</em></h2>
+                <p>Arrastra un conductor a una franja. Suéltalo aquí de nuevo para liberarlo.</p>
+              </div>
+              <div class="search"><svg class="icon"><use href="#i-search"/></svg><input id="pool-search" type="text" placeholder="Buscar conductor…" autocomplete="off" /></div>
+              <div class="plist" id="plist"></div>
+              <div class="pool-f" id="poolfoot">
+                <b><span class="av" style="width:18px;height:18px;font-size:9px;background:var(--green)">✓</span>Reparto justo</b>
+                <span id="poolhint">El generador prioriza a quien tiene menor carga. Arrastra para ajustar a mano.</span>
+              </div>
+            </aside>
+          </div>
+
+          <div class="conf-badge" id="badge"><span class="led"></span><span id="badgetx"></span></div>
         </div>
 
-        <div id="schedule-warnings" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800"></div>
+        <div id="schedule-warnings" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800 mt-4"></div>
 
-        <div id="schedule-container" class="bg-white rounded-2xl border border-slate-200 overflow-x-auto shadow-card">
-          <table id="schedule-table" class="w-full text-xs">
-            <caption class="text-base font-bold py-3">HORARIO SEMANAL</caption>
-            <thead><tr id="schedule-header" class="bg-white"></tr></thead>
-            <tbody id="schedule-body"></tbody>
-          </table>
-        </div>
-
-        <div class="flex items-center gap-2 flex-wrap">
-          <button id="save-btn" class="border border-slate-300 text-sm px-3 py-2 rounded-lg hover:bg-slate-100 bg-white">Guardar</button>
-          <button id="publish-btn" class="border border-emerald-300 text-emerald-700 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-emerald-50 bg-white">Publicar</button>
-          <button id="clear-schedule-btn" class="border border-slate-300 text-sm px-3 py-2 rounded-lg hover:bg-slate-100 bg-white">Limpiar</button>
-          <button id="reopen-avail-btn" class="border border-amber-300 text-amber-700 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-amber-50 bg-white" title="Reabre la disponibilidad de esta semana 2 horas para que los conductores corrijan">Reabrir disp. 2h</button>
-          <button id="download-schedule-btn" class="border border-emerald-300 text-emerald-700 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-emerald-50 bg-white">Descargar Excel</button>
-          <button id="generate-btn" class="ml-auto bg-brand text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-600 shadow-brand">Generar</button>
-        </div>
-
-        <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-card">
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-card mt-4">
           <h3 class="font-bold mb-2 text-sm">Resumen por trabajador</h3>
           <div id="worker-summary" class="text-sm space-y-1"></div>
         </div>
       </section>
 
-      <!-- =============== ADMIN: AVAILABILITY TAB =============== -->
-      <section data-panel="availability" class="hidden space-y-3">
-        <div>
-          <h2 class="text-xl md:text-2xl font-bold text-ink">Disponibilidad consolidada</h2>
-          <p class="text-sm text-slate-500">Lo que reportó cada conductor. Puedes editar cualquier celda; aprobar o rechazar se hace en <strong>Solicitudes</strong>.</p>
+      <!-- =============== ADMIN: AVAILABILITY TAB (paleta limpia) =============== -->
+      <!-- Rediseño visual scopeado bajo #avail-ui. Lógica intacta:
+           refreshAvailabilityMatrix / renderAvailability / rotateAvailPill en app.js.
+           Las celdas siguen siendo editables (clic rota el estado). -->
+      <section data-panel="availability" class="hidden">
+        <div id="avail-ui">
+          <div class="rl-phead av-phead">
+            <div>
+              <h1>Disponibilidad</h1>
+              <p>Cada jornada se divide en <b>AM</b> y <b>PM</b>. Verde = <b>trabaja</b>; lo que resalta es el <b>descanso</b>. Clic en una celda rota su estado; aprobar/rechazar se hace en Solicitudes.</p>
+            </div>
+            <div class="av-weeknav">
+              <button id="avail-prev-week" title="Semana anterior"><svg class="icon"><use href="#i-prev"/></svg></button>
+              <span class="wk" id="avail-week-label">—</span>
+              <button id="avail-next-week" title="Semana siguiente"><svg class="icon"><use href="#i-next"/></svg></button>
+            </div>
+          </div>
+
+          <div class="av-summary" id="avail-summary"></div>
+
+          <div class="av-toolbar">
+            <div class="av-search"><svg class="icon"><use href="#i-search"/></svg><input id="avail-search" placeholder="Buscar conductor…" /></div>
+            <div class="av-seg" id="avail-filter">
+              <button data-f="all" class="on">Todos</button>
+              <button data-f="changes">Con descanso</button>
+              <button data-f="pending">Pendientes</button>
+            </div>
+          </div>
+
+          <div class="av-board">
+            <table class="av-tbl" id="avail-table">
+              <thead id="avail-head"></thead>
+              <tbody id="avail-body"></tbody>
+            </table>
+          </div>
+
+          <div class="av-legend">
+            <span class="it"><span class="legkey avail">AM</span>Disponible (trabaja)</span>
+            <span class="it"><span class="legkey req">AM</span>Descanso pedido</span>
+            <span class="it"><span class="legkey off">AM</span>Descanso aprobado</span>
+            <span class="it"><span class="legkey rej">AM</span>Rechazado</span>
+            <span class="it"><span class="legkey lock">AM</span>Descanso fijo</span>
+            <span class="hint">Clic en un slot rota su estado</span>
+          </div>
         </div>
-        <div class="bg-white rounded-2xl border border-slate-200 overflow-x-auto shadow-card">
-          <table class="w-full text-xs" id="availability-table">
-            <thead class="bg-slate-50 text-slate-700">
-              <tr id="availability-header"></tr>
-            </thead>
-            <tbody id="availability-body"></tbody>
-          </table>
-        </div>
-        <p class="text-xs text-slate-500">Clic en AM o PM rota el estado. 🟦 = pendiente · ✅ = aprobado · ✖ = rechazado</p>
       </section>
 
       <!-- =============== ADMIN: APPROVALS TAB =============== -->
@@ -308,99 +429,108 @@
         <div id="workers-list" class="space-y-2"></div>
       </section>
 
-      <!-- =============== ADMIN: SETTINGS TAB =============== -->
-      <section data-panel="settings" class="hidden space-y-4">
-        <h2 class="text-xl md:text-2xl font-bold text-ink">Ajustes</h2>
-        <div class="bg-white border border-slate-200 rounded-2xl p-4 max-w-xl shadow-card">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            <label class="block">
-              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Horario Mañana</span>
-              <input id="setting-morning-label" type="text" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
-            </label>
-            <label class="block">
-              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Horario Tarde</span>
-              <input id="setting-afternoon-label" type="text" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
-            </label>
-            <label class="block">
-              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Cupos Mañana</span>
-              <input id="setting-morning-slots" type="number" min="1" max="6" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
-            </label>
-            <label class="block">
-              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Cupos Tarde</span>
-              <input id="setting-afternoon-slots" type="number" min="1" max="6" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
-            </label>
+      <!-- =============== ADMIN: SETTINGS TAB (paleta limpia) =============== -->
+      <!-- Rediseño visual al sistema "paleta limpia" (igual que Tablero v4),
+           scopeado bajo #settings-ui. La lógica NO cambia: la pintan
+           renderSettings / renderPriorityList / renderRulesEditor en app.js. -->
+      <section data-panel="settings" class="hidden">
+        <div id="settings-ui" data-theme="light">
+          <div class="set-head">
+            <h1>Ajustes</h1>
+            <p>Parámetros que alimentan al generador de turnos. La antigüedad y los descansos fijos se guardan al instante.</p>
           </div>
-          <button id="save-settings-btn" class="mt-4 bg-ink text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-ink-soft">Guardar</button>
-        </div>
 
-        <div class="bg-white border border-slate-200 rounded-2xl p-4 max-w-xl shadow-card">
-          <h3 class="text-sm font-bold text-ink">Prioridad por antigüedad</h3>
-          <p class="text-xs text-slate-500 mt-1 mb-3">1 = nuevo · 2 = con tiempo · 3 = más antiguo. El más antiguo tiene preferencia suave en turnos y descansos al generar el horario. Se guarda al instante.</p>
-          <div id="priority-list" class="divide-y divide-slate-100"></div>
-        </div>
-
-        <div class="bg-white border border-slate-200 rounded-2xl p-4 max-w-xl shadow-card">
-          <h3 class="text-sm font-bold text-ink">Crear conductor nuevo</h3>
-          <p class="text-xs text-slate-500 mt-1 mb-3">Crea la cuenta del conductor con su contraseña. Después podés cambiar prioridad o suspenderlo desde Personal.</p>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            <label class="block sm:col-span-2">
-              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Nombre completo</span>
-              <input id="new-driver-name" type="text" placeholder="Ej: Juan Pérez García"
-                     class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
-            </label>
-            <label class="block">
-              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Email</span>
-              <input id="new-driver-email" type="email" placeholder="conductor@rendio.co" autocomplete="off"
-                     class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
-            </label>
-            <label class="block">
-              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Contraseña</span>
-              <div class="mt-1 flex gap-1.5">
-                <input id="new-driver-password" type="text" placeholder="Mín. 8 caracteres" autocomplete="new-password"
-                       class="flex-1 border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
-                <button type="button" id="new-driver-gen-pw" class="text-xs px-2 py-2 rounded-lg border border-slate-300 hover:bg-slate-100 bg-white shrink-0" title="Generar contraseña aleatoria">Generar</button>
+          <!-- 1 · Parámetros del turno -->
+          <div class="set-card">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-clock"/></svg></div>
+              <div><h2>Parámetros del turno</h2><p>Horas de cada jornada y cuántos conductores deben quedar al volante por slot.</p></div>
+              <span class="set-saved" id="set-saved-params"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg>Guardado</span>
+            </div>
+            <div class="set-cb">
+              <div class="set-row2">
+                <div class="set-field"><label>Horario mañana</label><input id="setting-morning-label" class="set-input mono" type="text" /></div>
+                <div class="set-field"><label>Horario tarde</label><input id="setting-afternoon-label" class="set-input mono" type="text" /></div>
               </div>
-            </label>
-            <label class="block">
-              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Prioridad</span>
-              <select id="new-driver-priority" class="mt-1 w-full border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none">
-                <option value="1" selected>1 · Nuevo</option>
-                <option value="2">2 · Con tiempo</option>
-                <option value="3">3 · Antiguo</option>
-              </select>
-            </label>
-            <label class="block sm:col-span-2 flex items-center gap-2 pt-1">
-              <input id="new-driver-can-coord" type="checkbox" class="rounded border-slate-300 text-brand focus:ring-brand" />
-              <span class="text-sm text-slate-700">¿Puede coordinar? (entra al pool de coordinadores en la generación)</span>
-            </label>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Cupos mañana</label><input id="setting-morning-slots" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Mínimo de conductores al volante en AM.</div></div>
+                <div class="set-field"><label>Cupos tarde</label><input id="setting-afternoon-slots" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Mínimo de conductores al volante en PM.</div></div>
+              </div>
+              <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
+            </div>
           </div>
-          <div class="mt-4 flex items-center gap-3">
-            <button id="new-driver-create-btn" class="bg-brand text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-600 shadow-brand">Crear conductor</button>
-            <span id="new-driver-state" class="text-xs text-slate-500"></span>
+
+          <!-- 2 · antigüedad  +  3 · descansos fijos (lado a lado) -->
+          <div class="set-row2">
+            <div class="set-card" style="margin-bottom:0">
+              <div class="set-ch">
+                <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
+                <div><h2>Prioridad por antigüedad</h2><p>El más antiguo tiene preferencia suave en turnos y descansos. Se guarda al instante.</p></div>
+              </div>
+              <div class="set-cb" id="priority-list"></div>
+            </div>
+
+            <div class="set-card" style="margin-bottom:0">
+              <div class="set-ch">
+                <div class="set-ci"><svg class="icon"><use href="#i-zzz"/></svg></div>
+                <div><h2>Descansos fijos</h2><p>Jornadas en que un conductor SIEMPRE descansa. Salen bloqueadas en el horario y en su vista.</p></div>
+              </div>
+              <div class="set-cb">
+                <div class="set-field" style="margin-bottom:14px">
+                  <label>Conductor</label>
+                  <div class="set-selwrap"><select class="set-sel" id="rules-driver-select"></select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div>
+                </div>
+                <div id="rules-grid"></div>
+                <div class="set-dnote"><svg class="icon" style="width:13px;height:13px"><use href="#i-lock"/></svg>Marca AM o PM para fijar el descanso.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4 · Crear conductor -->
+          <div class="set-card" style="margin-top:16px">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-userplus"/></svg></div>
+              <div><h2>Crear conductor</h2><p>Crea la cuenta con su contraseña. Después puedes cambiar prioridad o suspenderlo desde Personal.</p></div>
+            </div>
+            <div class="set-cb">
+              <div class="set-field" style="margin-bottom:14px"><label>Nombre completo</label><input class="set-input" id="new-driver-name" type="text" placeholder="Ej: Juan Pérez García" /></div>
+              <div class="set-grid2">
+                <div class="set-field"><label>Email</label><input class="set-input" id="new-driver-email" type="email" autocomplete="off" placeholder="conductor@rendio.co" /></div>
+                <div class="set-field"><label>Contraseña</label><div class="set-pwwrap"><input class="set-input mono" id="new-driver-password" type="text" autocomplete="new-password" placeholder="Mín. 8 caracteres" /><button class="set-btn ghost" id="new-driver-gen-pw" type="button" title="Generar contraseña aleatoria">Generar</button></div></div>
+              </div>
+              <div class="set-grid2" style="margin-top:14px">
+                <div class="set-field"><label>Prioridad</label><div class="set-selwrap"><select class="set-sel" id="new-driver-priority"><option value="1" selected>1 · Nuevo</option><option value="2">2 · Con tiempo</option><option value="3">3 · Antiguo</option></select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
+                <div class="set-field"><label>&nbsp;</label>
+                  <label class="set-checkrow"><input type="checkbox" id="new-driver-can-coord" class="set-chk-input" /><span class="set-chk"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span><span>¿Puede coordinar? (entra al pool de coordinadores)</span></label>
+                </div>
+              </div>
+              <div class="set-foot"><button class="set-btn" id="new-driver-create-btn"><svg class="icon"><use href="#i-plus"/></svg>Crear conductor</button><span id="new-driver-state" class="set-cstate"></span></div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- =============== ADMIN: BALANCE TAB =============== -->
-      <section data-panel="balance" class="hidden space-y-4">
-        <h2 class="text-xl md:text-2xl font-bold text-ink">Balance de turnos</h2>
-        <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-card">
-          <p class="text-xs text-slate-500 mb-3">Cuenta turnos de horarios <strong>publicados</strong>. Cada turno (manejo o coordinación) = 12 h.</p>
-          <div class="flex flex-wrap items-end gap-3 text-sm">
-            <label class="block">
-              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Desde</span>
-              <input id="balance-from" type="date" class="mt-1 border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
-            </label>
-            <label class="block">
-              <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Hasta</span>
-              <input id="balance-to" type="date" class="mt-1 border border-slate-300 rounded-lg px-2 py-2 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none" />
-            </label>
-            <button id="balance-month" class="border border-slate-300 text-sm px-3 py-2 rounded-lg hover:bg-slate-100 bg-white">Mes actual</button>
-            <button id="balance-generate" class="bg-brand text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-brand-600 shadow-brand">Generar informe</button>
-            <button id="balance-csv" class="ml-auto border border-emerald-300 text-emerald-700 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-emerald-50 bg-white">Descargar CSV</button>
+      <!-- =============== ADMIN: BALANCE TAB (paleta limpia) =============== -->
+      <!-- Rediseño visual scopeado bajo #balance-ui. Lógica intacta:
+           renderBalance / onGenerateBalance / onDownloadBalanceCsv en app.js. -->
+      <section data-panel="balance" class="hidden">
+        <div id="balance-ui">
+          <div class="rl-phead">
+            <h1>Balance de turnos</h1>
+            <p>Cuenta turnos de horarios <b>publicados</b>. Cada turno (manejo o coordinación) = <b>12 h</b>.</p>
           </div>
-          <p id="balance-summary" class="text-xs text-slate-500 mt-3"></p>
-          <div id="balance-table" class="mt-2 overflow-x-auto"></div>
+
+          <div class="bal-controls">
+            <div class="rl-field"><label>Desde</label><input class="rl-input" type="date" id="balance-from" /></div>
+            <div class="rl-field"><label>Hasta</label><input class="rl-input" type="date" id="balance-to" /></div>
+            <button class="rl-btn ghost" id="balance-month">Mes actual</button>
+            <button class="rl-btn" id="balance-generate"><svg class="icon"><use href="#i-play"/></svg>Generar informe</button>
+            <div class="rl-spacer"></div>
+            <button class="rl-btn green" id="balance-csv"><svg class="icon"><use href="#i-download"/></svg>Descargar CSV</button>
+          </div>
+
+          <div class="bal-summary" id="balance-summary"></div>
+          <div id="balance-table"></div>
         </div>
       </section>
 

@@ -104,36 +104,34 @@
     if (open && (open.status === 'active' || open.status === 'closing')) {
       const v = open.vehicles || {};
       const since = new Date(open.start_at).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
-      box.innerHTML = `<div class="bg-white border-2 border-emerald-300 rounded-2xl p-4 shadow-card">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg shrink-0">🟢</div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-bold text-ink">Turno activo · ${esc(v.internal_code || v.license_plate || 'vehículo')}</p>
-            <p class="text-xs text-slate-500">${esc([v.brand, v.model].filter(Boolean).join(' '))} · desde las ${since} · salida ${fmtKm(open.opening_km)} km</p>
-          </div>
+      box.innerHTML = `<div class="rounded-2xl p-5 h-[200px] flex flex-col bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-card">
+        <div class="flex items-start justify-between">
+          <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl">🟢</div>
+          <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75 mt-1">En curso</span>
         </div>
-        <p class="text-xs text-slate-400 mt-2">El cierre de turno (inspección final) llega en la siguiente etapa.</p>
+        <div class="mt-auto">
+          <p class="text-xl font-extrabold leading-tight">Turno activo · ${esc(v.internal_code || v.license_plate || 'vehículo')}</p>
+          <p class="text-xs text-white/85 mt-1">${esc([v.brand, v.model].filter(Boolean).join(' '))} · desde las ${since} · salida ${fmtKm(open.opening_km)} km</p>
+        </div>
+        <p class="text-[11px] text-white/70 mt-3">El cierre de turno (inspección final) llega en la siguiente etapa.</p>
       </div>`;
       return;
     }
 
     sf.reuseShiftId = open ? open.id : null;
-    const resume = open
-      ? `<p class="text-xs text-amber-600 font-semibold mt-2">⚠ Tienes un inicio de turno sin terminar. Al continuar lo retomas con el mismo registro.</p>`
-      : '';
-    box.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-card">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center text-lg shrink-0">🚗</div>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-bold text-ink">Inicio de turno</p>
-          <p class="text-xs text-slate-500">Vehículo, inspección, fotos y kilometraje. Toma ~5 minutos.</p>
-        </div>
+    box.innerHTML = `<button id="sf-open-btn" class="sheen tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-brand">
+      <div class="flex items-start justify-between">
+        <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl"><span class="bob inline-block">🚗</span></div>
+        <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75 mt-1">${open ? 'Sin terminar' : 'Ahora'}</span>
       </div>
-      ${resume}
-      <button id="sf-open-btn" class="mt-3 w-full bg-brand text-white text-base font-bold py-3 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand">
-        ${open ? 'Continuar inicio de turno' : 'Iniciar turno'}
-      </button>
-    </div>`;
+      <div class="mt-auto">
+        <p class="text-xl font-extrabold leading-tight">${open ? 'Continuar inicio de turno' : 'Iniciar turno'}</p>
+        <p class="text-xs text-white/85 mt-1">${open ? 'Retomas el registro con el mismo turno, sin perder el avance.' : 'Turno único · inspección, fotos y kilometraje · ~5 min'}</p>
+      </div>
+      <div class="mt-3 flex items-center gap-1 text-sm font-bold">${open ? 'Continuar' : 'Empezar'}
+        <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
+      </div>
+    </button>`;
     $('#sf-open-btn').addEventListener('click', openWizard);
   }
 
