@@ -510,7 +510,7 @@
     grave: { cls: 'grave', label: 'Grave', text: 'Grave · requiere atención', color: 'var(--red)' },
   };
   const INSP_ST = { pending: ['pend', 'Pendiente', 'i-warn'], approved: ['appr', 'Aprobada', 'i-check'], rejected: ['rej', 'Rechazada', 'i-x'] };
-  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero' };
+  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero', damage: 'Golpe/daño' };
   const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard'];
 
   function inspShowView(v) {
@@ -676,7 +676,9 @@
           <div style="margin-top:6px">
             <div class="kv"><span class="k">Kilometraje de salida</span><span class="v mono">${insp.odometer_km != null ? insp.odometer_km.toLocaleString('es-CO') : '—'} km</span></div>
             <div class="kv"><span class="k">Severidad reportada</span><span class="v" style="color:${sev.color}">${sev.text}</span></div>
+            ${insp.is_apt != null ? `<div class="kv"><span class="k">Estado del vehículo</span><span class="v" style="color:${insp.is_apt ? 'var(--green)' : 'var(--red)'};font-weight:800">${insp.is_apt ? 'APTO PARA OPERAR' : 'NO APTO PARA OPERAR'}</span></div>` : ''}
             <div class="kv"><span class="k">Vehículo</span><span class="v">${escapeHtml(vehLine)}</span></div>
+            ${insp.signed_name ? `<div class="kv"><span class="k">Firma (conductor)</span><span class="v">${escapeHtml(insp.signed_name)}</span></div>` : ''}
           </div>
           ${insp.notes ? `<div style="margin-top:13px"><div class="note"><b>Nota del conductor:</b> ${escapeHtml(insp.notes)}</div></div>` : ''}
         </div>
@@ -717,25 +719,40 @@
     renderInspChecklist();
   }
 
+  const CHECKLIST_CATEGORIES = ['Exterior', 'Llantas', 'Niveles y motor', 'Seguridad', 'Operación', 'Documentación'];
+
   function renderInspChecklist() {
-    const rows = inspState.checklist.map((it, i) => `<div class="crow ${it.is_active ? '' : 'off'}" data-insp-ci="${it.id}">
+    const items = inspState.checklist;
+    const itemRow = (it, i) => `<div class="crow ${it.is_active ? '' : 'off'}" data-insp-ci="${it.id}">
       <span class="grip">⠿</span>
       <div class="ctxt"><b>${escapeHtml(it.label)}</b>${it.hint ? `<span>${escapeHtml(it.hint)}</span>` : ''}</div>
       <button class="cfgbtn" title="Subir" data-insp-cmove="up"${i === 0 ? ' disabled' : ''}><svg class="icon" style="width:15px;height:15px;transform:rotate(-90deg)"><use href="#i-chev"/></svg></button>
-      <button class="cfgbtn" title="Bajar" data-insp-cmove="down"${i === inspState.checklist.length - 1 ? ' disabled' : ''}><svg class="icon" style="width:15px;height:15px;transform:rotate(90deg)"><use href="#i-chev"/></svg></button>
+      <button class="cfgbtn" title="Bajar" data-insp-cmove="down"${i === items.length - 1 ? ' disabled' : ''}><svg class="icon" style="width:15px;height:15px;transform:rotate(90deg)"><use href="#i-chev"/></svg></button>
       <button class="tg ${it.is_active ? 'on' : ''}" title="Activar/desactivar" data-insp-ctoggle></button>
       <button class="cfgbtn" title="Editar" data-insp-cedit><svg class="icon" style="width:15px;height:15px"><use href="#i-edit"/></svg></button>
       <button class="cfgbtn danger" title="Eliminar" data-insp-cdel><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
-    </div>`).join('');
+    </div>`;
+    // Agrupar por sección, conservando el orden global (índice i para reordenar).
+    const order = [], byCat = new Map();
+    items.forEach((it, i) => {
+      const cat = it.category || 'Sin sección';
+      if (!byCat.has(cat)) { byCat.set(cat, []); order.push(cat); }
+      byCat.get(cat).push(itemRow(it, i));
+    });
+    const rows = order.map(cat =>
+      `<p class="csub" style="font-weight:800;color:var(--ink);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em;font-size:11px">${escapeHtml(cat)}</p>${byCat.get(cat).join('')}`
+    ).join('');
+    const catOptions = CHECKLIST_CATEGORIES.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
     $('#insp-v-config').innerHTML = `
       <button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver a la cola</button>
-      <div class="phead"><div><h1>Configurar checklist</h1><p>Define qué revisa el conductor al iniciar turno. Agrega, edita, reordena o desactiva ítems. Aplica a toda la flota.</p></div></div>
+      <div class="phead"><div><h1>Configurar checklist</h1><p>Define qué revisa el conductor al iniciar turno, agrupado por sección. Agrega, edita, reordena o desactiva ítems. Aplica a toda la flota.</p></div></div>
       <div class="card">
         <h2><svg class="icon"><use href="#i-list"/></svg>Ítems de la inspección</h2>
         <p class="csub">Usa las flechas para reordenar. Desactiva los que no apliquen sin perder el historial.</p>
         <div id="insp-citems">${rows || '<p style="color:var(--ink2);font-size:13px">Sin ítems. Agrega el primero abajo.</p>'}</div>
         <div class="additem">
           <div class="f"><label>Nuevo ítem</label><input id="insp-new-label" placeholder="Ej: Estado de la carrocería"></div>
+          <div class="f"><label>Sección</label><input id="insp-new-cat" list="insp-cat-list" placeholder="Ej: Exterior"><datalist id="insp-cat-list">${catOptions}</datalist></div>
           <div class="f"><label>Pista / ayuda (opcional)</label><input id="insp-new-hint" placeholder="Ej: Rayones, golpes visibles"></div>
           <button class="btn sm" id="insp-add"><svg class="icon" style="width:15px;height:15px"><use href="#i-plus"/></svg>Agregar</button>
         </div>
@@ -767,7 +784,7 @@
       if (ed) { const row = ed.closest('[data-insp-ci]'); const it = inspState.checklist.find(x => x.id === row.dataset.inspCi); if (!it) return; const nv = prompt('Editar nombre del ítem:', it.label); if (nv && nv.trim() && nv.trim() !== it.label) { try { await Api.updateChecklistItem(it.id, { label: nv.trim() }); it.label = nv.trim(); renderInspChecklist(); } catch (err) { console.error(err); toast('No se pudo editar.'); } } return; }
       const mv = e.target.closest('[data-insp-cmove]');
       if (mv) { const row = mv.closest('[data-insp-ci]'); const idx = inspState.checklist.findIndex(x => x.id === row.dataset.inspCi); const j = idx + (mv.dataset.inspCmove === 'up' ? -1 : 1); if (j < 0 || j >= inspState.checklist.length) return; const arr = inspState.checklist; const tmp = arr[idx]; arr[idx] = arr[j]; arr[j] = tmp; renderInspChecklist(); try { await Api.reorderChecklistItems(arr.map(x => x.id)); } catch (err) { console.error(err); toast('No se pudo reordenar.'); } return; }
-      if (e.target.closest('#insp-add')) { const label = (($('#insp-new-label') && $('#insp-new-label').value) || '').trim(); if (!label) { toast('Escribe el nombre del ítem.'); return; } const hint = (($('#insp-new-hint') && $('#insp-new-hint').value) || '').trim(); try { const created = await Api.createChecklistItem({ organizationId: state.profile.organization_id, label, hint, sortOrder: inspState.checklist.length + 1 }); inspState.checklist.push(created); renderInspChecklist(); toast('Ítem agregado.'); } catch (err) { console.error(err); toast('No se pudo agregar.'); } return; }
+      if (e.target.closest('#insp-add')) { const label = (($('#insp-new-label') && $('#insp-new-label').value) || '').trim(); if (!label) { toast('Escribe el nombre del ítem.'); return; } const hint = (($('#insp-new-hint') && $('#insp-new-hint').value) || '').trim(); const category = (($('#insp-new-cat') && $('#insp-new-cat').value) || '').trim() || null; try { const created = await Api.createChecklistItem({ organizationId: state.profile.organization_id, label, hint, category, sortOrder: inspState.checklist.length + 1 }); inspState.checklist.push(created); renderInspChecklist(); toast('Ítem agregado.'); } catch (err) { console.error(err); toast('No se pudo agregar.'); } return; }
     });
     const lbx = $('#insp-lbx');
     if (lbx) lbx.addEventListener('click', (e) => { if (e.target.id === 'insp-lbx' || e.target.id === 'insp-lbx-close') lbx.classList.remove('show'); });

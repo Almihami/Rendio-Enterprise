@@ -691,7 +691,12 @@
   // fotos exista antes del insert), organization_id, shift_id, vehicle_id,
   // driver_id, kind, odometer_km, checklist, has_damage, notes.
   async function createInspection(row) {
-    const { data, error } = await sb.from('inspections').insert(row).select('id').single();
+    let { data, error } = await sb.from('inspections').insert(row).select('id').single();
+    // Si la migración 0028 (is_apt/signed_name) no está aplicada, reintenta sin esos campos.
+    if (error && /is_apt|signed_name|column|schema cache/i.test(error.message || '')) {
+      const { is_apt, signed_name, ...legacy } = row;
+      ({ data, error } = await sb.from('inspections').insert(legacy).select('id').single());
+    }
     if (error) throw error;
     return data.id;
   }
@@ -780,12 +785,14 @@
   }
 
   async function getInspectionDetail(id) {
-    const { data, error } = await sb.from('inspections')
-      .select('id,kind,has_damage,checklist,notes,odometer_km,review_status,reviewed_by,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id,' +
-              'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
-              'driver_profiles(profiles(id,full_name,email)),' +
-              'inspection_photos(photo_type,storage_path,size_bytes)')
-      .eq('id', id).single();
+    const cols = extra =>
+      `id,kind,has_damage,checklist,notes,odometer_km,review_status,reviewed_by,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id${extra},` +
+      'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
+      'driver_profiles(profiles(id,full_name,email)),' +
+      'inspection_photos(photo_type,storage_path,size_bytes)';
+    // Cascada: con is_apt/signed_name (0028) → sin ellos (legado).
+    let { data, error } = await sb.from('inspections').select(cols(',is_apt,signed_name')).eq('id', id).single();
+    if (error) ({ data, error } = await sb.from('inspections').select(cols('')).eq('id', id).single());
     if (error) throw error;
     return data;
   }
@@ -810,18 +817,23 @@
 
   // ----- Checklist configurable (admin) -----
   async function listChecklistItems(activeOnly) {
-    let q = sb.from('inspection_checklist_items')
-      .select('id,label,hint,sort_order,is_active').order('sort_order');
-    if (activeOnly) q = q.eq('is_active', true);
-    const { data, error } = await q;
+    // Cascada: con category (0028) → sin category (legado), tolera migración no aplicada.
+    const sel = cols => {
+      let q = sb.from('inspection_checklist_items').select(cols).order('sort_order');
+      if (activeOnly) q = q.eq('is_active', true);
+      return q;
+    };
+    let { data, error } = await sel('id,label,hint,category,sort_order,is_active');
+    if (error) ({ data, error } = await sel('id,label,hint,sort_order,is_active'));
     if (error) throw error;
     return data || [];
   }
 
-  async function createChecklistItem({ organizationId, label, hint, sortOrder }) {
-    const { data, error } = await sb.from('inspection_checklist_items')
-      .insert({ organization_id: organizationId, label, hint: hint || null, sort_order: sortOrder || 0 })
-      .select('id,label,hint,sort_order,is_active').single();
+  async function createChecklistItem({ organizationId, label, hint, category, sortOrder }) {
+    const base = { organization_id: organizationId, label, hint: hint || null, sort_order: sortOrder || 0 };
+    const ins = row => sb.from('inspection_checklist_items').insert(row).select('id,label,hint,category,sort_order,is_active').single();
+    let { data, error } = await ins({ ...base, category: category || null });
+    if (error) ({ data, error } = await sb.from('inspection_checklist_items').insert(base).select('id,label,hint,sort_order,is_active').single());
     if (error) throw error;
     return data;
   }

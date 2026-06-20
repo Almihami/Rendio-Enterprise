@@ -15,19 +15,36 @@
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmtKm = (n) => Number(n || 0).toLocaleString('es-CO');
 
+  // Checklist diario OFICIAL (27 ítems, 6 secciones). Es el respaldo si la BD no
+  // responde; normalmente se cargan desde inspection_checklist_items (0024+0028).
   const CHECKLIST_FALLBACK = [
-    { id: 'tires',         label: 'Llantas (4 + repuesto)',          detail: 'Presión y estado visual' },
-    { id: 'lights_front',  label: 'Luces delanteras',                detail: 'Altas, bajas, exploradoras' },
-    { id: 'lights_back',   label: 'Luces traseras y stops' },
-    { id: 'turn_signals',  label: 'Direccionales' },
-    { id: 'brakes',        label: 'Frenos',                          detail: 'Pedal firme, sin ruidos' },
-    { id: 'horn_belts',    label: 'Pito y cinturones' },
-    { id: 'oil',           label: 'Nivel de aceite' },
-    { id: 'coolant',       label: 'Refrigerante' },
-    { id: 'wipers',        label: 'Limpiaparabrisas y agua' },
-    { id: 'mirrors',       label: 'Espejos y vidrios' },
-    { id: 'docs',          label: 'SOAT, técnico-mecánica, tarjeta' },
-    { id: 'road_kit',      label: 'Kit carretera + extintor' },
+    { id: 'ext_golpes',   category: 'Exterior',        label: 'No presenta golpes o daños nuevos', detail: 'Si hay golpe, adjunta una foto del daño.' },
+    { id: 'ext_vidrios',  category: 'Exterior',        label: 'Vidrios y espejos en buen estado' },
+    { id: 'ext_luz_del',  category: 'Exterior',        label: 'Luces delanteras funcionando' },
+    { id: 'ext_luz_tra',  category: 'Exterior',        label: 'Luces traseras funcionando' },
+    { id: 'ext_direcc',   category: 'Exterior',        label: 'Direccionales funcionando' },
+    { id: 'ext_freno',    category: 'Exterior',        label: 'Luces de freno funcionando' },
+    { id: 'ext_placa',    category: 'Exterior',        label: 'Placa visible y en buen estado' },
+    { id: 'lla_repuesto', category: 'Llantas',         label: 'Llanta de repuesto disponible' },
+    { id: 'lla_estado',   category: 'Llantas',         label: 'Llantas sin cortes, deformaciones o desgaste excesivo' },
+    { id: 'niv_aceite',   category: 'Niveles y motor', label: 'Nivel de aceite correcto' },
+    { id: 'niv_refrig',   category: 'Niveles y motor', label: 'Nivel de refrigerante correcto' },
+    { id: 'niv_frenos',   category: 'Niveles y motor', label: 'Nivel de líquido de frenos correcto' },
+    { id: 'niv_fugas',    category: 'Niveles y motor', label: 'Sin fugas visibles debajo del vehículo' },
+    { id: 'niv_bateria',  category: 'Niveles y motor', label: 'Batería en buen estado visiblemente' },
+    { id: 'seg_extintor', category: 'Seguridad',       label: 'Extintor vigente y accesible' },
+    { id: 'seg_kit',      category: 'Seguridad',       label: 'Kit de carretera visiblemente completo' },
+    { id: 'seg_cintur',   category: 'Seguridad',       label: 'Cinturones de seguridad funcionando' },
+    { id: 'seg_pito',     category: 'Seguridad',       label: 'Pito funcionando' },
+    { id: 'ope_frenos',   category: 'Operación',       label: 'Frenos responden correctamente' },
+    { id: 'ope_direcc',   category: 'Operación',       label: 'Dirección sin anomalías' },
+    { id: 'ope_aire',     category: 'Operación',       label: 'Aire acondicionado funcionando' },
+    { id: 'ope_tablero',  category: 'Operación',       label: 'Tablero sin alertas encendidas' },
+    { id: 'ope_combust',  category: 'Operación',       label: 'Combustible suficiente para la jornada' },
+    { id: 'doc_soat',     category: 'Documentación',   label: 'SOAT vigente' },
+    { id: 'doc_tecno',    category: 'Documentación',   label: 'Revisión técnico-mecánica vigente' },
+    { id: 'doc_tarjeta',  category: 'Documentación',   label: 'Tarjeta de propiedad disponible' },
+    { id: 'doc_empresa',  category: 'Documentación',   label: 'Documentos requeridos por la empresa disponibles' },
   ];
 
   // Checklist activo: se carga desde la BD en init() (Api.listChecklistItems, 0024);
@@ -57,6 +74,8 @@
     km: '',
     severity: null,       // 'leve' | 'media' | 'grave'
     note: '',
+    isApt: true,          // estado oficial: APTO (true) / NO APTO (false)
+    signed: false,        // firma digital: el conductor confirmó veracidad
     saving: false,
     done: null,           // 'started' | 'aborted'
     _slot: null,          // slot pendiente de captura
@@ -86,7 +105,7 @@
     // Checklist configurable (0024): los ítems los define el admin. Fallback a los fijos.
     try {
       const items = await Api.listChecklistItems(true);
-      if (items && items.length) ckItems = items.map(it => ({ id: it.id, label: it.label, detail: it.hint || '' }));
+      if (items && items.length) ckItems = items.map(it => ({ id: it.id, label: it.label, detail: it.hint || '', category: it.category || 'General' }));
     } catch (e) { /* sin 0024 o sin ítems: queda CHECKLIST_FALLBACK */ }
     await renderCard();
   }
@@ -157,6 +176,8 @@
     sf.km = '';
     sf.severity = null;
     sf.note = '';
+    sf.isApt = true;
+    sf.signed = false;
     sf.saving = false;
     sf.done = null;
 
@@ -264,6 +285,31 @@
     return ckItems.filter(i => sf.checklist[i.id] === 'issue');
   }
 
+  // ¿El conductor marcó un golpe/daño? (ítem cuyo texto menciona golpe o daño,
+  // marcado con novedad). El oficial pide adjuntar foto del golpe.
+  function hasGolpe() {
+    return ckItems.some(i => /golpe|dañ/i.test(i.label) && sf.checklist[i.id] === 'issue');
+  }
+
+  // Slot de foto del golpe (photo_type 'damage', enum ampliado en 0028). Opcional,
+  // solo aparece si hay golpe marcado.
+  const DAMAGE_SLOT = { id: 'damage', label: 'Foto del golpe / daño', detail: 'Acerca la cámara al daño reportado' };
+  function activePhotoSlots() {
+    return hasGolpe() ? [...PHOTO_SLOTS, DAMAGE_SLOT] : PHOTO_SLOTS;
+  }
+
+  // Ítems del checklist agrupados por sección, conservando el orden de ckItems.
+  function checklistBySection() {
+    const groups = [];
+    const byCat = new Map();
+    for (const it of ckItems) {
+      const cat = it.category || 'General';
+      if (!byCat.has(cat)) { byCat.set(cat, []); groups.push({ category: cat, items: byCat.get(cat) }); }
+      byCat.get(cat).push(it);
+    }
+    return groups;
+  }
+
   function maintenanceInfo(v) {
     const interval = v.maintenance_interval_km || 7000;
     const driven = (v.current_km || 0) - (v.last_maintenance_km || 0);
@@ -339,7 +385,7 @@
     const issues = issueItems().length;
     const allDone = completed === ckItems.length;
 
-    const rows = ckItems.map(item => {
+    const itemRow = (item) => {
       const v = sf.checklist[item.id];
       return `<div class="flex items-stretch border ${v === 'issue' ? 'bg-amber-50 border-amber-400' : 'bg-white border-slate-200'} rounded-2xl overflow-hidden">
         <div class="flex-1 px-4 py-3 min-w-0">
@@ -351,17 +397,22 @@
         <button data-check="${item.id}" data-val="issue" aria-label="${esc(item.label)} con novedad"
           class="w-12 border-l border-slate-200 flex items-center justify-center text-lg ${v === 'issue' ? 'bg-amber-500 text-white' : 'text-slate-300'}">⚠</button>
       </div>`;
-    }).join('');
+    };
+    const rows = checklistBySection().map(g => `
+      <div class="mt-4 first:mt-0">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-brand-600 mb-1.5 px-1">${esc(g.category)}</p>
+        <div class="space-y-2">${g.items.map(itemRow).join('')}</div>
+      </div>`).join('');
 
     wiz.innerHTML = shellHtml(
       `Inicio de turno · Paso 2 de ${TOTAL_STEPS}`,
       'Inspección pre-operacional',
-      'Revisa cada punto. Marca ✓ si está bien o ⚠ si hay novedad.',
-      `<div class="flex items-center justify-between mb-2">
+      'Revisa cada punto por sección. Marca ✓ si está bien o ⚠ si hay novedad.',
+      `<div class="flex items-center justify-between mb-1">
         <p class="text-xs text-slate-500">${completed} de ${ckItems.length} revisados${issues ? ` · <span class="text-amber-600 font-semibold">${issues} con novedad</span>` : ''}</p>
         <button id="sf-all-ok" class="text-xs font-bold text-brand-600">Marcar todos OK</button>
       </div>
-      <div class="space-y-2">${rows}</div>`,
+      ${rows}`,
       `<button id="sf-next" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${allDone ? '' : 'disabled'}>
         ${allDone ? 'Continuar a fotos →' : `Falta marcar ${ckItems.length - completed}`}
       </button>`
@@ -407,35 +458,40 @@
   }
 
   function renderPhotos(wiz) {
-    const taken = Object.keys(sf.photos).length;
-    const allTaken = PHOTO_SLOTS.every(s => sf.photos[s.id]);
+    // Las 5 fijas son obligatorias; la del golpe es opcional y solo aparece si
+    // se marcó un golpe en el checklist.
+    const takenFixed = PHOTO_SLOTS.filter(s => sf.photos[s.id]).length;
+    const allTaken = takenFixed === PHOTO_SLOTS.length;
+    const showDamage = hasGolpe();
 
-    const cells = PHOTO_SLOTS.map((s, i) => {
+    const cell = (s, badge, optional) => {
       const p = sf.photos[s.id];
-      return `<button data-slot="${s.id}" class="text-left bg-white border-2 ${p ? 'border-brand' : 'border-slate-200'} rounded-2xl overflow-hidden active:scale-[0.99] transition">
+      return `<button data-slot="${s.id}" class="text-left bg-white border-2 ${p ? 'border-brand' : optional ? 'border-amber-400' : 'border-slate-200'} rounded-2xl overflow-hidden active:scale-[0.99] transition">
         <div class="aspect-[4/3] relative bg-slate-100 flex items-center justify-center">
           ${p
             ? `<img src="${p.url}" alt="${esc(s.label)}" class="absolute inset-0 w-full h-full object-cover" />
                <span class="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-brand text-white text-xs flex items-center justify-center font-bold">✓</span>`
             : `<span class="text-2xl text-slate-300">📷</span>
-               <span class="absolute top-1.5 right-1.5 text-[10px] font-bold bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5 text-slate-500">${i + 1}/5</span>`}
+               <span class="absolute top-1.5 right-1.5 text-[10px] font-bold ${optional ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-slate-50 border-slate-200 text-slate-500'} border rounded-full px-2 py-0.5">${badge}</span>`}
         </div>
         <div class="px-3 py-2">
           <p class="text-sm font-semibold text-ink">${esc(s.label)}</p>
-          <p class="text-[11px] text-slate-400">${p ? 'Capturada · toca para repetir' : esc(s.detail)}</p>
+          <p class="text-[11px] ${optional && !p ? 'text-amber-600' : 'text-slate-400'}">${p ? 'Capturada · toca para repetir' : esc(s.detail)}</p>
         </div>
       </button>`;
-    }).join('');
+    };
+    const cells = PHOTO_SLOTS.map((s, i) => cell(s, `${i + 1}/5`)).join('')
+      + (showDamage ? cell(DAMAGE_SLOT, 'golpe', true) : '');
 
     wiz.innerHTML = shellHtml(
       `Inicio de turno · Paso 3 de ${TOTAL_STEPS}`,
       'Fotos del vehículo',
-      '5 ángulos. Toca cada uno para capturar con la cámara.',
+      showDamage ? '5 ángulos + la foto del golpe que reportaste.' : '5 ángulos. Toca cada uno para capturar con la cámara.',
       `<div class="grid grid-cols-2 gap-2.5">${cells}</div>
        <input id="sf-photo-input" type="file" accept="image/*" capture="environment" class="hidden" />
        <p id="sf-photo-state" class="text-xs text-slate-400 mt-3"></p>`,
       `<button id="sf-next" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${allTaken ? '' : 'disabled'}>
-        ${allTaken ? 'Continuar a kilometraje →' : `Faltan ${PHOTO_SLOTS.length - taken} foto${PHOTO_SLOTS.length - taken === 1 ? '' : 's'}`}
+        ${allTaken ? 'Continuar a kilometraje →' : `Faltan ${PHOTO_SLOTS.length - takenFixed} foto${PHOTO_SLOTS.length - takenFixed === 1 ? '' : 's'}`}
       </button>`
     );
     bindChrome();
@@ -596,8 +652,11 @@
   function renderConfirm(wiz) {
     const v = selectedVehicle();
     const issues = issueItems();
-    const blocked = sf.severity === 'grave';
+    if (sf.severity === 'grave') sf.isApt = false; // novedad grave obliga NO APTO
+    const apt = sf.isApt;
+    const blocked = !apt;
     const sevLabel = { leve: 'Leve — operación normal', media: 'Media — con seguimiento', grave: 'Grave — bloquea operación' }[sf.severity] || '';
+    const driverName = (sf.profile && sf.profile.full_name) || 'Conductor';
 
     const row = (icon, label, value, tone) => `<div class="flex items-center gap-3 px-4 py-3.5 border-b border-slate-100 last:border-0">
       <div class="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">${icon}</div>
@@ -612,30 +671,59 @@
       ? `<div class="px-4 py-3 border-b border-slate-100">
           <p class="text-xs text-slate-400 mb-1.5">Novedades</p>
           <div class="flex flex-wrap gap-1.5 mb-1.5">${issues.map(i => `<span class="text-xs font-semibold bg-amber-100 text-amber-800 rounded-full px-2.5 py-0.5">${esc(i.label)}</span>`).join('')}</div>
-          <p class="text-xs text-slate-500">Gravedad: <strong class="${blocked ? 'text-rose-600' : sf.severity === 'media' ? 'text-amber-600' : 'text-emerald-600'}">${esc(sevLabel)}</strong></p>
+          <p class="text-xs text-slate-500">Gravedad: <strong class="${sf.severity === 'grave' ? 'text-rose-600' : sf.severity === 'media' ? 'text-amber-600' : 'text-emerald-600'}">${esc(sevLabel)}</strong></p>
         </div>` : '';
+
+    const aptBlock = `
+      <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mt-4 mb-2">Estado del vehículo</p>
+      <div class="grid grid-cols-2 gap-2">
+        <button data-apt="yes" ${sf.severity === 'grave' ? 'disabled' : ''} class="rounded-2xl border-2 p-3 text-left transition ${apt ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white'} ${sf.severity === 'grave' ? 'opacity-40 pointer-events-none' : 'active:scale-[0.99]'}">
+          <span class="block text-[15px] font-extrabold ${apt ? 'text-emerald-700' : 'text-ink'}">APTO</span>
+          <span class="block text-[11px] text-slate-500">Para operar</span>
+        </button>
+        <button data-apt="no" class="rounded-2xl border-2 p-3 text-left transition active:scale-[0.99] ${!apt ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-white'}">
+          <span class="block text-[15px] font-extrabold ${!apt ? 'text-rose-700' : 'text-ink'}">NO APTO</span>
+          <span class="block text-[11px] text-slate-500">No operar · suspende</span>
+        </button>
+      </div>
+      ${sf.severity === 'grave' ? `<p class="text-[11px] text-rose-600 mt-1.5">La novedad grave obliga a marcar NO APTO.</p>` : ''}`;
+
+    const signBlock = `
+      <label class="mt-4 flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-white cursor-pointer">
+        <input type="checkbox" id="sf-sign" class="mt-0.5 w-5 h-5 accent-brand shrink-0" ${sf.signed ? 'checked' : ''} />
+        <span class="text-sm text-slate-600">Confirmo que la información de esta inspección es veraz. <span class="block font-semibold text-ink mt-0.5">${esc(driverName)} · ${esc(new Date().toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }))}</span></span>
+      </label>`;
 
     wiz.innerHTML = shellHtml(
       `Inicio de turno · Paso 6 de ${TOTAL_STEPS}`,
       'Confirma e inicia',
-      blocked ? 'Hay una novedad grave: el turno no se inicia.' : 'Revisa el resumen y arranca el turno.',
+      blocked ? 'Marcaste NO APTO: el turno no se inicia y el vehículo queda en revisión.' : 'Revisa el resumen, marca el estado y firma para arrancar.',
       `<div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-card">
         ${row('🚗', 'Vehículo', `${esc(v.internal_code || v.license_plate)} · ${esc([v.brand, v.model].filter(Boolean).join(' '))}`, 'ok')}
         ${row('✓', 'Inspección', issues.length ? `${ckItems.length - issues.length} OK · ${issues.length} con novedad` : `${ckItems.length} de ${ckItems.length} OK`, issues.length ? 'warn' : 'ok')}
-        ${row('📷', 'Fotos', `${Object.keys(sf.photos).length} de ${PHOTO_SLOTS.length} capturadas`, 'ok')}
+        ${row('📷', 'Fotos', `${PHOTO_SLOTS.filter(s => sf.photos[s.id]).length} de ${PHOTO_SLOTS.length}${sf.photos.damage ? ' + golpe' : ''} capturadas`, 'ok')}
         ${row('🛞', 'Kilometraje inicial', `${fmtKm(sf.km)} km`, 'ok')}
         ${issuesBlock}
       </div>
+      ${aptBlock}
+      ${signBlock}
       <div class="mt-3 p-3 rounded-xl bg-slate-100 text-xs text-slate-500 flex gap-2 items-start">
         <span>🔒</span>
         <span>Al confirmar registramos la inspección con tu usuario y la hora exacta. Necesitas señal para enviar las fotos.</span>
       </div>
       <p id="sf-save-state" class="text-sm text-slate-500 mt-3 text-center"></p>`,
       blocked
-        ? `<button id="sf-confirm" class="w-full bg-rose-600 text-white text-base font-bold py-3.5 rounded-xl hover:bg-rose-700 active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none">Registrar novedad y suspender</button>`
-        : `<button id="sf-confirm" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none">⚡ Iniciar turno</button>`
+        ? `<button id="sf-confirm" class="w-full bg-rose-600 text-white text-base font-bold py-3.5 rounded-xl hover:bg-rose-700 active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none" ${sf.signed ? '' : 'disabled'}>Registrar NO APTO y suspender</button>`
+        : `<button id="sf-confirm" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${sf.signed ? '' : 'disabled'}>⚡ Iniciar turno</button>`
     );
     bindChrome();
+    wiz.querySelectorAll('[data-apt]').forEach(btn => {
+      btn.addEventListener('click', () => { sf.isApt = btn.dataset.apt === 'yes'; render(); });
+    });
+    $('#sf-sign')?.addEventListener('change', (e) => {
+      sf.signed = e.target.checked;
+      const c = $('#sf-confirm'); if (c) c.disabled = !sf.signed;
+    });
     $('#sf-confirm').addEventListener('click', onConfirm);
   }
 
@@ -649,7 +737,7 @@
 
     const v = selectedVehicle();
     const issues = issueItems();
-    const blocked = sf.severity === 'grave';
+    const blocked = !sf.isApt; // NO APTO → no se inicia el turno
     const org = sf.profile.organization_id;
     const openingKm = Number(sf.km);
 
@@ -670,7 +758,7 @@
         });
       const today = new Date().toISOString().slice(0, 10);
 
-      const slots = PHOTO_SLOTS.filter(s => sf.photos[s.id]);
+      const slots = activePhotoSlots().filter(s => sf.photos[s.id]);
       const photoRows = [];
       for (let i = 0; i < slots.length; i++) {
         const s = slots[i];
@@ -698,9 +786,11 @@
         // Snapshot del checklist para auditoría (sobrevive a cambios futuros del admin):
         checklist: {
           severity: sf.severity || null,
-          items: ckItems.map(it => ({ id: it.id, label: it.label, hint: it.detail || null, result: sf.checklist[it.id] === 'issue' ? 'issue' : 'ok' })),
+          items: ckItems.map(it => ({ id: it.id, label: it.label, hint: it.detail || null, category: it.category || null, result: sf.checklist[it.id] === 'issue' ? 'issue' : 'ok' })),
         },
         has_damage: issues.length > 0,
+        is_apt: sf.isApt,
+        signed_name: (sf.profile && sf.profile.full_name) || null,
         notes: sf.note || null,
       });
       await Api.addInspectionPhotos(photoRows);
@@ -722,7 +812,10 @@
 
       if (blocked) {
         setState('Suspendiendo turno…');
-        await Api.abortShift(shiftId, `${issues.map(i => i.label).join(', ')} — ${sf.note || 'sin detalle'}`);
+        const reason = issues.length
+          ? `NO APTO — ${issues.map(i => i.label).join(', ')} — ${sf.note || 'sin detalle'}`
+          : `NO APTO — ${sf.note || 'marcado por el conductor'}`;
+        await Api.abortShift(shiftId, reason);
         sf.done = 'aborted';
       } else {
         setState('Iniciando turno…');
