@@ -510,7 +510,7 @@
     grave: { cls: 'grave', label: 'Grave', text: 'Grave · requiere atención', color: 'var(--red)' },
   };
   const INSP_ST = { pending: ['pend', 'Pendiente', 'i-warn'], approved: ['appr', 'Aprobada', 'i-check'], rejected: ['rej', 'Rechazada', 'i-x'] };
-  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero', damage: 'Golpe/daño' };
+  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero', damage: 'Golpe/daño', extra: 'Adicional' };
   const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard'];
 
   function inspShowView(v) {
@@ -619,7 +619,9 @@
     const st = INSP_ST[insp.review_status] || INSP_ST.pending;
     const items = inspChecklistOf(insp);
     const fallas = items.filter(i => i.result === 'issue').length;
-    const photos = (insp.inspection_photos || []).slice().sort((a, b) => PHOTO_ORDER.indexOf(a.photo_type) - PHOTO_ORDER.indexOf(b.photo_type));
+    // Orden: los 5 ángulos fijos primero (en orden), luego golpe y adicionales.
+    const photoRank = (t) => { const i = PHOTO_ORDER.indexOf(t); return i === -1 ? 99 : i; };
+    const photos = (insp.inspection_photos || []).slice().sort((a, b) => photoRank(a.photo_type) - photoRank(b.photo_type));
     const photosHtml = photos.length ? photos.map(p => {
       const url = urls[p.storage_path];
       const label = escapeHtml(PHOTO_LABELS[p.photo_type] || p.photo_type);

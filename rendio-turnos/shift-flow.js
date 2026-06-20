@@ -71,6 +71,7 @@
     reuseShiftId: null,   // shift huérfano de un intento interrumpido
     checklist: {},        // itemId -> 'ok' | 'issue'
     photos: {},           // slotId -> { blob, url, size }
+    extraPhotos: [],      // fotos adicionales libres: [{ blob, url, size }]
     km: '',
     severity: null,       // 'leve' | 'media' | 'grave'
     note: '',
@@ -173,6 +174,8 @@
     sf.checklist = {};
     Object.values(sf.photos).forEach(p => p && p.url && URL.revokeObjectURL(p.url));
     sf.photos = {};
+    sf.extraPhotos.forEach(p => p && p.url && URL.revokeObjectURL(p.url));
+    sf.extraPhotos = [];
     sf.km = '';
     sf.severity = null;
     sf.note = '';
@@ -483,11 +486,31 @@
     const cells = PHOTO_SLOTS.map((s, i) => cell(s, `${i + 1}/5`)).join('')
       + (showDamage ? cell(DAMAGE_SLOT, 'golpe', true) : '');
 
+    // Fotos adicionales libres, a criterio del conductor.
+    const extraThumbs = sf.extraPhotos.map((p, i) => `
+      <div class="relative aspect-square rounded-2xl overflow-hidden border-2 border-brand">
+        <img src="${p.url}" alt="Foto adicional ${i + 1}" class="w-full h-full object-cover" />
+        <button data-extra-rm="${i}" aria-label="Quitar foto adicional" class="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white text-sm flex items-center justify-center active:scale-95">✕</button>
+      </div>`).join('');
+    const extraSection = `
+      <div class="mt-5">
+        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Fotos adicionales · opcional</p>
+        <div class="grid grid-cols-3 gap-2">
+          ${extraThumbs}
+          <button data-add-extra class="aspect-square rounded-2xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 active:scale-[0.99] transition">
+            <span class="text-2xl leading-none">＋</span>
+            <span class="text-[11px] font-semibold mt-1">Agregar foto</span>
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1.5">Si ves algo que valga la pena registrar, agrégalo (las que quieras).</p>
+      </div>`;
+
     wiz.innerHTML = shellHtml(
       `Inicio de turno · Paso 3 de ${TOTAL_STEPS}`,
       'Fotos del vehículo',
       showDamage ? '5 ángulos + la foto del golpe que reportaste.' : '5 ángulos. Toca cada uno para capturar con la cámara.',
       `<div class="grid grid-cols-2 gap-2.5">${cells}</div>
+       ${extraSection}
        <input id="sf-photo-input" type="file" accept="image/*" capture="environment" class="hidden" />
        <p id="sf-photo-state" class="text-xs text-slate-400 mt-3"></p>`,
       `<button id="sf-next" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${allTaken ? '' : 'disabled'}>
@@ -499,6 +522,16 @@
     wiz.querySelectorAll('[data-slot]').forEach(btn => {
       btn.addEventListener('click', () => { sf._slot = btn.dataset.slot; input.click(); });
     });
+    wiz.querySelector('[data-add-extra]')?.addEventListener('click', () => { sf._slot = '__extra__'; input.click(); });
+    wiz.querySelectorAll('[data-extra-rm]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const i = parseInt(btn.dataset.extraRm, 10);
+        const p = sf.extraPhotos[i];
+        if (p && p.url) URL.revokeObjectURL(p.url);
+        sf.extraPhotos.splice(i, 1);
+        render();
+      });
+    });
     input.addEventListener('change', async () => {
       const file = input.files && input.files[0];
       input.value = '';
@@ -507,9 +540,14 @@
       if (stateEl) stateEl.textContent = 'Procesando foto…';
       try {
         const blob = await compressPhoto(file);
-        const prev = sf.photos[sf._slot];
-        if (prev && prev.url) URL.revokeObjectURL(prev.url);
-        sf.photos[sf._slot] = { blob, url: URL.createObjectURL(blob), size: blob.size };
+        if (sf._slot === '__extra__') {
+          sf.extraPhotos.push({ blob, url: URL.createObjectURL(blob), size: blob.size });
+        } else {
+          const prev = sf.photos[sf._slot];
+          if (prev && prev.url) URL.revokeObjectURL(prev.url);
+          sf.photos[sf._slot] = { blob, url: URL.createObjectURL(blob), size: blob.size };
+        }
+        sf._slot = null;
         render();
       } catch (e) {
         console.error(e);
@@ -701,7 +739,7 @@
       `<div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-card">
         ${row('🚗', 'Vehículo', `${esc(v.internal_code || v.license_plate)} · ${esc([v.brand, v.model].filter(Boolean).join(' '))}`, 'ok')}
         ${row('✓', 'Inspección', issues.length ? `${ckItems.length - issues.length} OK · ${issues.length} con novedad` : `${ckItems.length} de ${ckItems.length} OK`, issues.length ? 'warn' : 'ok')}
-        ${row('📷', 'Fotos', `${PHOTO_SLOTS.filter(s => sf.photos[s.id]).length} de ${PHOTO_SLOTS.length}${sf.photos.damage ? ' + golpe' : ''} capturadas`, 'ok')}
+        ${row('📷', 'Fotos', `${PHOTO_SLOTS.filter(s => sf.photos[s.id]).length} de ${PHOTO_SLOTS.length}${sf.photos.damage ? ' + golpe' : ''}${sf.extraPhotos.length ? ` + ${sf.extraPhotos.length} adicional${sf.extraPhotos.length === 1 ? '' : 'es'}` : ''} capturadas`, 'ok')}
         ${row('🛞', 'Kilometraje inicial', `${fmtKm(sf.km)} km`, 'ok')}
         ${issuesBlock}
       </div>
@@ -771,6 +809,21 @@
           photo_type: s.id,
           storage_path: path,
           size_bytes: sf.photos[s.id].size,
+        });
+      }
+
+      // Fotos adicionales (a criterio del conductor): photo_type 'extra', path único.
+      for (let i = 0; i < sf.extraPhotos.length; i++) {
+        const ep = sf.extraPhotos[i];
+        setState(`Subiendo foto adicional (${i + 1}/${sf.extraPhotos.length})…`);
+        const path = `${org}/${v.id}/${today}/${inspectionId}/extra-${i + 1}.jpg`;
+        await Api.uploadInspectionPhoto(path, ep.blob);
+        photoRows.push({
+          inspection_id: inspectionId,
+          organization_id: org,
+          photo_type: 'extra',
+          storage_path: path,
+          size_bytes: ep.size,
         });
       }
 
@@ -859,6 +912,8 @@
     $('#sf-done-btn').addEventListener('click', () => {
       Object.values(sf.photos).forEach(p => p && p.url && URL.revokeObjectURL(p.url));
       sf.photos = {};
+      sf.extraPhotos.forEach(p => p && p.url && URL.revokeObjectURL(p.url));
+      sf.extraPhotos = [];
       closeWizard();
       renderCard();
     });
