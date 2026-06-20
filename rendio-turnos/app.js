@@ -503,7 +503,7 @@
   // ====================================================================
   // Inspecciones (admin) — revisión/aprobación + checklist configurable
   // ====================================================================
-  const inspState = { items: [], filter: 'pending', current: null, checklist: [] };
+  const inspState = { items: [], filter: 'pending', current: null, checklist: [], vehicles: [], autoVehicleId: null, autoItems: [], adminPhoto: null };
   const INSP_SEV = {
     leve:  { cls: 'leve',  label: 'Leve',  text: 'Leve · informativo',       color: 'var(--green)' },
     media: { cls: 'media', label: 'Media', text: 'Media · con cuidado',       color: 'var(--amber)' },
@@ -569,10 +569,46 @@
     if ($('#insp-count')) $('#insp-count').textContent = counts.pending;
     $$('#insp-filter .n').forEach(n => { n.textContent = counts[n.dataset.c] != null ? counts[n.dataset.c] : 0; });
     const b = $('#inspections-badge'); if (b) { b.textContent = counts.pending; b.classList.toggle('hidden', !counts.pending); }
+    const autosBar = $('#insp-autos-bar');
+    if (inspState.filter === 'autos') { renderAutosView(); return; }
+    if (autosBar) autosBar.classList.add('hidden');
     const shown = inspState.items.filter(it => inspState.filter === 'all' ? true : it.review_status === inspState.filter);
     const list = $('#insp-list');
     list.innerHTML = shown.length ? shown.map(inspCardHtml).join('')
       : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Nada por aquí</h3><p>No hay inspecciones en este filtro.</p></div>`;
+  }
+
+  // --- Filtro "Autos": elige un vehículo y ve todas sus inspecciones ---
+  async function renderAutosView() {
+    const bar = $('#insp-autos-bar');
+    if (bar) bar.classList.remove('hidden');
+    if (!inspState.vehicles.length) {
+      try { inspState.vehicles = await Api.listVehiclesForShift(); } catch (e) { console.error(e); }
+    }
+    const opts = inspState.vehicles.map(v =>
+      `<option value="${v.id}"${v.id === inspState.autoVehicleId ? ' selected' : ''}>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}${v.license_plate ? ' · ' + escapeHtml(v.license_plate) : ''}</option>`
+    ).join('');
+    if (bar) bar.innerHTML = `<div class="autosel"><label>Auto</label><select id="insp-auto-sel"><option value="">Elige un auto…</option>${opts}</select></div>`;
+    $('#insp-auto-sel')?.addEventListener('change', (e) => { inspState.autoVehicleId = e.target.value || null; loadAutoList(); });
+    loadAutoList();
+  }
+
+  async function loadAutoList() {
+    const list = $('#insp-list');
+    if (!list) return;
+    if (!inspState.autoVehicleId) {
+      list.innerHTML = `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-list"/></svg></div><h3>Elige un auto</h3><p>Selecciona un vehículo arriba para ver sus inspecciones.</p></div>`;
+      return;
+    }
+    list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    try { inspState.autoItems = await Api.listInspectionsByVehicle(inspState.autoVehicleId); }
+    catch (e) { console.error(e); list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>'; return; }
+    list.innerHTML = inspState.autoItems.length ? inspState.autoItems.map(inspCardHtml).join('')
+      : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Sin registros</h3><p>Este auto aún no tiene inspecciones.</p></div>`;
+  }
+
+  function inspFindItem(id) {
+    return inspState.items.find(x => x.id === id) || inspState.autoItems.find(x => x.id === id) || (inspState.current && inspState.current.id === id ? inspState.current : null);
   }
 
   function inspThumbsHtml() {
@@ -588,11 +624,14 @@
     const actions = it.review_status === 'pending'
       ? `<div class="qactions"><button class="rbtn no" data-insp-rej="${it.id}"><svg><use href="#i-x"/></svg>Rechazar</button><button class="rbtn ok" data-insp-ok="${it.id}"><svg><use href="#i-check"/></svg>Aprobar</button><button class="btn dark sm" data-insp-open="${it.id}">Revisar <svg class="icon" style="width:14px;height:14px"><use href="#i-chev"/></svg></button></div>`
       : `<div class="qactions"><span class="st ${st[0]}"><svg><use href="#${st[2]}"/></svg>${st[1]}</span><button class="btn ghost sm" data-insp-open="${it.id}">Ver</button></div>`;
-    return `<div class="icard ${inspSeverityOf(it) === 'grave' ? 'grave' : ''}">
+    const chips = it.has_damage
+      ? `<span class="chip ${sev.cls}"><svg><use href="#i-warn"/></svg>${sev.label}</span><span class="chip fallas">${fallas} ${fallas === 1 ? 'falla' : 'fallas'}</span>`
+      : `<span class="chip"><svg><use href="#i-check"/></svg>Sin novedad</span>`;
+    return `<div class="icard ${it.has_damage && inspSeverityOf(it) === 'grave' ? 'grave' : ''}">
       <span class="avt" style="background:${colorOfId(it.id)}">${escapeHtml(initialsOf(inspDriverName(it)))}</span>
       <div class="who"><b>${escapeHtml(inspDriverName(it))}</b><div class="sub"><span class="veh">${veh}</span> ${vehname} <span class="when"><svg class="icon" style="width:12px;height:12px"><use href="#i-clock"/></svg>${escapeHtml(inspWhen(it))}</span></div></div>
       <div class="right">
-        <div class="chips"><span class="chip ${sev.cls}"><svg><use href="#i-warn"/></svg>${sev.label}</span><span class="chip fallas">${fallas} ${fallas === 1 ? 'falla' : 'fallas'}</span></div>
+        <div class="chips">${chips}</div>
         ${inspThumbsHtml()}
         ${actions}
       </div>
@@ -601,6 +640,8 @@
 
   async function openInspectionDetail(id) {
     bindInspections();
+    if (inspState.adminPhoto && inspState.adminPhoto.url) URL.revokeObjectURL(inspState.adminPhoto.url);
+    inspState.adminPhoto = null;
     const view = $('#insp-v-detalle');
     view.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
     inspShowView('detalle');
@@ -637,18 +678,20 @@
     const fmtDT = (s) => { try { return new Date(s).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }); } catch (e) { return ''; } };
     const decision = insp.review_status === 'pending'
       ? `<div class="card" id="insp-decision">
-           <h2>Decisión del admin</h2>
-           <p class="csub">Aprueba si la novedad es aceptable, o rechaza para dejar constancia y dar seguimiento.</p>
-           <div class="abar">
-             <button class="rbtn no" id="insp-rej-toggle"><svg><use href="#i-x"/></svg>Rechazar</button>
-             <button class="rbtn ok" id="insp-approve"><svg><use href="#i-check"/></svg>Aprobar inspección</button>
+           <h2>Resolver inspección</h2>
+           <p class="csub">Deja una nota con la solución y, si hace falta, adjunta una foto. Luego aprueba o rechaza.</p>
+           <label>Nota / solución (la verá el conductor)</label>
+           <textarea id="insp-resolve-note" placeholder="Ej: Se revisó el golpe, autorizado para operar. / Llevar a taller antes de seguir."></textarea>
+           <div class="adminphoto">
+             <button class="btn ghost sm" id="insp-admin-photo-btn" type="button"><svg class="icon"><use href="#i-cam"/></svg>Adjuntar foto (opcional)</button>
+             <input id="insp-admin-photo-input" type="file" accept="image/*" class="hidden">
+             <div id="insp-admin-photo-preview"></div>
            </div>
-           <div class="rejbox" id="insp-rejbox">
-             <label>Motivo del rechazo (lo verá el conductor)</label>
-             <textarea id="insp-rej-notes" placeholder="Ej: Los frenos no pueden quedar así. Lleva el carro al taller antes de seguir."></textarea>
-             <div class="abar" style="margin-top:10px"><button class="btn dark sm" id="insp-rej-confirm">Confirmar rechazo</button></div>
-             <div class="snapnote"><svg><use href="#i-info"/></svg><span><b>Al rechazar:</b> se notifica al conductor y se abre una novedad formal para seguimiento. El vehículo no se manda a mantenimiento automáticamente.</span></div>
+           <div class="abar" style="margin-top:12px">
+             <button class="rbtn no" id="insp-reject-btn"><svg><use href="#i-x"/></svg>Rechazar</button>
+             <button class="rbtn ok" id="insp-approve-btn"><svg><use href="#i-check"/></svg>Aprobar</button>
            </div>
+           <div class="snapnote"><svg><use href="#i-info"/></svg><span>La nota y la foto quedan guardadas en la inspección. Al <b>rechazar</b> se notifica al conductor y se abre una novedad (el rechazo exige nota).</span></div>
          </div>`
       : `<div class="card"><h2>Revisión</h2>
            <div class="kv"><span class="k">Estado</span><span class="v" style="color:${insp.review_status === 'approved' ? 'var(--green)' : 'var(--red)'}">${st[1]}</span></div>
@@ -708,6 +751,68 @@
     } catch (e) {
       console.error(e);
       toast('No se pudo guardar la revisión.');
+    }
+  }
+
+  // Comprime una imagen a JPEG (máx 1280px) para no pasar el límite del bucket.
+  async function compressImage(file, maxDim = 1280, quality = 0.8) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('No se pudo leer la imagen')); i.src = url; });
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+      if (!blob) throw new Error('No se pudo comprimir');
+      return blob;
+    } finally { URL.revokeObjectURL(url); }
+  }
+
+  async function onAdminPhotoPicked(input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      const blob = await compressImage(file);
+      if (inspState.adminPhoto && inspState.adminPhoto.url) URL.revokeObjectURL(inspState.adminPhoto.url);
+      inspState.adminPhoto = { blob, url: URL.createObjectURL(blob), size: blob.size };
+      const prev = $('#insp-admin-photo-preview');
+      if (prev) prev.innerHTML = `<div class="adminphoto-prev"><img src="${inspState.adminPhoto.url}" alt="Foto del admin"><button class="x" id="insp-admin-photo-rm" type="button">✕</button></div>`;
+      $('#insp-admin-photo-rm')?.addEventListener('click', () => {
+        if (inspState.adminPhoto && inspState.adminPhoto.url) URL.revokeObjectURL(inspState.adminPhoto.url);
+        inspState.adminPhoto = null;
+        if (prev) prev.innerHTML = '';
+      });
+    } catch (e) { console.error(e); toast('No se pudo procesar la foto.'); }
+  }
+
+  // Resolver una inspección pendiente: nota (review_notes) + foto opcional del admin.
+  async function resolveInspection(status) {
+    const insp = inspState.current;
+    if (!insp) return;
+    const note = (($('#insp-resolve-note') && $('#insp-resolve-note').value) || '').trim();
+    if (status === 'rejected' && !note) { toast('Escribe el motivo del rechazo.'); return; }
+    const btn = status === 'approved' ? $('#insp-approve-btn') : $('#insp-reject-btn');
+    if (btn) btn.disabled = true;
+    try {
+      // 1) Subir la foto del admin (si adjuntó) y enlazarla a la inspección.
+      if (inspState.adminPhoto) {
+        const org = state.profile.organization_id;
+        const today = new Date().toISOString().slice(0, 10);
+        const path = `${org}/${insp.vehicle_id}/${today}/${insp.id}/admin-${Date.now()}.jpg`;
+        await Api.uploadInspectionPhoto(path, inspState.adminPhoto.blob);
+        await Api.addInspectionPhotos([{ inspection_id: insp.id, organization_id: org, photo_type: 'admin', storage_path: path, size_bytes: inspState.adminPhoto.size }]);
+        if (inspState.adminPhoto.url) URL.revokeObjectURL(inspState.adminPhoto.url);
+        inspState.adminPhoto = null;
+      }
+      // 2) Aprobar/rechazar con la nota (notifica al conductor si se rechaza).
+      await inspDoReview(insp.id, status, note || null);
+    } catch (e) {
+      console.error(e);
+      if (btn) btn.disabled = false;
+      toast('No se pudo resolver: ' + (e.message || 'error'));
     }
   }
 
@@ -772,11 +877,11 @@
       if (e.target.closest('#insp-to-config')) { openInspChecklist(); return; }
       if (e.target.closest('[data-insp-back]')) { renderInspections(); return; }
       const open = e.target.closest('[data-insp-open]'); if (open) { openInspectionDetail(open.dataset.inspOpen); return; }
-      const ok = e.target.closest('[data-insp-ok]'); if (ok) { inspState.current = inspState.items.find(x => x.id === ok.dataset.inspOk) || null; inspDoReview(ok.dataset.inspOk, 'approved', null); return; }
-      const rej = e.target.closest('[data-insp-rej]'); if (rej) { openInspectionDetail(rej.dataset.inspRej).then(() => { const tb = $('#insp-rejbox'); if (tb) tb.classList.add('show'); }); return; }
-      if (e.target.closest('#insp-approve')) { if (inspState.current) inspDoReview(inspState.current.id, 'approved', null); return; }
-      if (e.target.closest('#insp-rej-toggle')) { const tb = $('#insp-rejbox'); if (tb) tb.classList.toggle('show'); return; }
-      if (e.target.closest('#insp-rej-confirm')) { const n = (($('#insp-rej-notes') && $('#insp-rej-notes').value) || '').trim(); if (inspState.current) inspDoReview(inspState.current.id, 'rejected', n || null); return; }
+      const ok = e.target.closest('[data-insp-ok]'); if (ok) { inspState.current = inspFindItem(ok.dataset.inspOk); inspDoReview(ok.dataset.inspOk, 'approved', null); return; }
+      const rej = e.target.closest('[data-insp-rej]'); if (rej) { openInspectionDetail(rej.dataset.inspRej); return; }
+      if (e.target.closest('#insp-admin-photo-btn')) { $('#insp-admin-photo-input')?.click(); return; }
+      if (e.target.closest('#insp-approve-btn')) { resolveInspection('approved'); return; }
+      if (e.target.closest('#insp-reject-btn')) { resolveInspection('rejected'); return; }
       const ph = e.target.closest('[data-insp-photo]'); if (ph) { const img = $('#insp-lbx-img'); if (img) { img.src = ph.dataset.inspPhoto; $('#insp-lbx').classList.add('show'); } return; }
       const tg = e.target.closest('[data-insp-ctoggle]');
       if (tg) { const row = tg.closest('[data-insp-ci]'); const it = inspState.checklist.find(x => x.id === row.dataset.inspCi); if (it) { const nv = !it.is_active; try { await Api.updateChecklistItem(it.id, { is_active: nv }); it.is_active = nv; renderInspChecklist(); } catch (err) { console.error(err); toast('No se pudo actualizar.'); } } return; }
@@ -807,6 +912,10 @@
       const mv = e.target.closest('[data-insp-cmove]');
       if (mv) { const row = mv.closest('[data-insp-ci]'); const idx = inspState.checklist.findIndex(x => x.id === row.dataset.inspCi); const j = idx + (mv.dataset.inspCmove === 'up' ? -1 : 1); if (j < 0 || j >= inspState.checklist.length) return; const arr = inspState.checklist; const tmp = arr[idx]; arr[idx] = arr[j]; arr[j] = tmp; renderInspChecklist(); try { await Api.reorderChecklistItems(arr.map(x => x.id)); } catch (err) { console.error(err); toast('No se pudo reordenar.'); } return; }
       if (e.target.closest('#insp-add')) { const label = (($('#insp-new-label') && $('#insp-new-label').value) || '').trim(); if (!label) { toast('Escribe el nombre del ítem.'); return; } const hint = (($('#insp-new-hint') && $('#insp-new-hint').value) || '').trim(); const category = (($('#insp-new-cat') && $('#insp-new-cat').value) || '').trim() || null; try { const created = await Api.createChecklistItem({ organizationId: state.profile.organization_id, label, hint, category, sortOrder: inspState.checklist.length + 1 }); inspState.checklist.push(created); renderInspChecklist(); toast('Ítem agregado.'); } catch (err) { console.error(err); toast('No se pudo agregar.'); } return; }
+    });
+    // Foto que adjunta el admin al resolver (input file → cambia, no click).
+    root.addEventListener('change', (e) => {
+      if (e.target && e.target.id === 'insp-admin-photo-input') onAdminPhotoPicked(e.target);
     });
     const lbx = $('#insp-lbx');
     if (lbx) lbx.addEventListener('click', (e) => { if (e.target.id === 'insp-lbx' || e.target.id === 'insp-lbx-close') lbx.classList.remove('show'); });

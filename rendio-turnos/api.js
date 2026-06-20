@@ -784,6 +784,18 @@
     return data || [];
   }
 
+  // Todas las inspecciones de un vehículo (para el filtro "Autos" del admin).
+  async function listInspectionsByVehicle(vehicleId) {
+    const { data, error } = await sb.from('inspections')
+      .select('id,kind,has_damage,notes,odometer_km,review_status,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id,checklist,' +
+              'vehicles(internal_code,license_plate,brand,model,status),' +
+              'driver_profiles(profiles(id,full_name,email))')
+      .eq('vehicle_id', vehicleId)
+      .order('performed_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
   async function getInspectionDetail(id) {
     const cols = extra =>
       `id,kind,has_damage,checklist,notes,odometer_km,review_status,reviewed_by,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id${extra},` +
@@ -882,7 +894,7 @@
     getMyDriverProfileId, listVehiclesForShift, getMyOpenShift,
     createShiftDraft, createInspection, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, startShift, abortShift, listActiveShifts, forceCloseShift,
-    listInspectionsForReview, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
+    listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
   };
 })();

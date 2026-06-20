@@ -1131,3 +1131,16 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #shifts-ui .sh-empty .icon{width:34px;height:34px;color:var(--ink3);margin:0 auto 10px}
 #shifts-ui .sh-empty h3{font-size:16px;font-weight:800;color:var(--ink)}
 #shifts-ui .sh-empty p{font-size:13px;margin-top:4px}
+
+/* Inspecciones — filtro "Autos" (selector de vehículo) + resolución con foto del admin */
+#inspections-ui .autosel{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#inspections-ui .autosel label{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
+#inspections-ui .autosel select{height:40px;min-width:230px;border:1px solid var(--line2);border-radius:11px;padding:0 12px;font-family:var(--font);font-size:13px;background:var(--panel);color:var(--ink);outline:none;cursor:pointer}
+#inspections-ui .autosel select:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+#inspections-ui #insp-decision label{display:block;font-size:12px;font-weight:700;color:var(--ink2);margin:0 0 6px 2px}
+#inspections-ui #insp-decision textarea{width:100%;min-height:74px;border:1px solid var(--line2);border-radius:11px;padding:10px 12px;font-family:var(--font);font-size:13px;color:var(--ink);background:var(--panel);resize:vertical;outline:none}
+#inspections-ui #insp-decision textarea:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+#inspections-ui .adminphoto{margin-top:12px}
+#inspections-ui .adminphoto-prev{position:relative;display:inline-block;margin-top:10px}
+#inspections-ui .adminphoto-prev img{width:120px;height:90px;object-fit:cover;border-radius:11px;border:1px solid var(--line2);display:block}
+#inspections-ui .adminphoto-prev .x{position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;border:0;background:var(--ink);color:#fff;font-size:13px;cursor:pointer;line-height:1}
