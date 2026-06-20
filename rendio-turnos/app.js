@@ -781,7 +781,27 @@
       const del = e.target.closest('[data-insp-cdel]');
       if (del) { const row = del.closest('[data-insp-ci]'); const id = row.dataset.inspCi; if (!confirm('¿Eliminar este ítem del checklist?')) return; try { await Api.deleteChecklistItem(id); inspState.checklist = inspState.checklist.filter(x => x.id !== id); renderInspChecklist(); toast('Ítem eliminado.'); } catch (err) { console.error(err); toast('No se pudo eliminar.'); } return; }
       const ed = e.target.closest('[data-insp-cedit]');
-      if (ed) { const row = ed.closest('[data-insp-ci]'); const it = inspState.checklist.find(x => x.id === row.dataset.inspCi); if (!it) return; const nv = prompt('Editar nombre del ítem:', it.label); if (nv && nv.trim() && nv.trim() !== it.label) { try { await Api.updateChecklistItem(it.id, { label: nv.trim() }); it.label = nv.trim(); renderInspChecklist(); } catch (err) { console.error(err); toast('No se pudo editar.'); } } return; }
+      if (ed) {
+        const row = ed.closest('[data-insp-ci]');
+        const it = inspState.checklist.find(x => x.id === row.dataset.inspCi);
+        if (!it) return;
+        // Edición completa: nombre, sección y ayuda (Cancelar en el nombre aborta).
+        const nv = prompt('Nombre del ítem:', it.label);
+        if (nv === null) return;
+        const label = nv.trim() || it.label;
+        const nc = prompt('Sección (' + CHECKLIST_CATEGORIES.join(', ') + '):', it.category || '');
+        const category = nc === null ? (it.category || null) : (nc.trim() || null);
+        const nh = prompt('Pista / ayuda (opcional):', it.hint || '');
+        const hint = nh === null ? (it.hint || null) : (nh.trim() || null);
+        const fields = {};
+        if (label !== it.label) fields.label = label;
+        if (category !== (it.category || null)) fields.category = category;
+        if (hint !== (it.hint || null)) fields.hint = hint;
+        if (!Object.keys(fields).length) return;
+        try { await Api.updateChecklistItem(it.id, fields); Object.assign(it, fields); renderInspChecklist(); toast('Ítem actualizado.'); }
+        catch (err) { console.error(err); toast('No se pudo editar.'); }
+        return;
+      }
       const mv = e.target.closest('[data-insp-cmove]');
       if (mv) { const row = mv.closest('[data-insp-ci]'); const idx = inspState.checklist.findIndex(x => x.id === row.dataset.inspCi); const j = idx + (mv.dataset.inspCmove === 'up' ? -1 : 1); if (j < 0 || j >= inspState.checklist.length) return; const arr = inspState.checklist; const tmp = arr[idx]; arr[idx] = arr[j]; arr[j] = tmp; renderInspChecklist(); try { await Api.reorderChecklistItems(arr.map(x => x.id)); } catch (err) { console.error(err); toast('No se pudo reordenar.'); } return; }
       if (e.target.closest('#insp-add')) { const label = (($('#insp-new-label') && $('#insp-new-label').value) || '').trim(); if (!label) { toast('Escribe el nombre del ítem.'); return; } const hint = (($('#insp-new-hint') && $('#insp-new-hint').value) || '').trim(); const category = (($('#insp-new-cat') && $('#insp-new-cat').value) || '').trim() || null; try { const created = await Api.createChecklistItem({ organizationId: state.profile.organization_id, label, hint, category, sortOrder: inspState.checklist.length + 1 }); inspState.checklist.push(created); renderInspChecklist(); toast('Ítem agregado.'); } catch (err) { console.error(err); toast('No se pudo agregar.'); } return; }

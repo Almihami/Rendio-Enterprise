@@ -839,7 +839,13 @@
   }
 
   async function updateChecklistItem(id, fields) {
-    const { error } = await sb.from('inspection_checklist_items').update(fields).eq('id', id);
+    let { error } = await sb.from('inspection_checklist_items').update(fields).eq('id', id);
+    // Si la columna category (0028) no está, reintenta sin ella.
+    if (error && /category|column|schema cache/i.test(error.message || '') && 'category' in fields) {
+      const { category, ...rest } = fields;
+      if (Object.keys(rest).length) ({ error } = await sb.from('inspection_checklist_items').update(rest).eq('id', id));
+      else error = null;
+    }
     if (error) throw error;
   }
 
