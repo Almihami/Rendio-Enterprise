@@ -675,6 +675,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
   --orange:#F26522; --orange-soft:#FCE4D6;
   --green:#16936A; --green-soft:#E0F1E8;
   --amber:#D98A12; --amber-soft:#FBEBCF;
+  --red:#DB4B3F; --red-soft:#FADFDC;
   --rest:#586273; --rest-soft:#EAECEF;
   --shadow:0 6px 18px rgba(33,29,24,.07);
   --font:"Hanken Grotesk",system-ui,sans-serif; --mono:"Space Mono",ui-monospace,monospace;
@@ -1144,3 +1145,16 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #inspections-ui .adminphoto-prev{position:relative;display:inline-block;margin-top:10px}
 #inspections-ui .adminphoto-prev img{width:120px;height:90px;object-fit:cover;border-radius:11px;border:1px solid var(--line2);display:block}
 #inspections-ui .adminphoto-prev .x{position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;border:0;background:var(--ink);color:#fff;font-size:13px;cursor:pointer;line-height:1}
+
+/* Ajustes — gestión de vehículos (flota) */
+#settings-ui .set-divider{height:1px;background:var(--line);border:0}
+#settings-ui .veh-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);margin-bottom:8px}
+#settings-ui .veh-info{flex:1;min-width:0}
+#settings-ui .veh-info b{display:block;font-size:14px;font-weight:800;color:var(--ink)}
+#settings-ui .veh-info span{display:block;font-size:12px;color:var(--ink2);margin-top:1px}
+#settings-ui .veh-stat{font-size:11px;font-weight:800;border-radius:999px;padding:3px 10px;background:var(--panel2);color:var(--ink2);white-space:nowrap}
+#settings-ui .veh-stat.st-available{background:var(--green-soft);color:var(--green)}
+#settings-ui .veh-stat.st-in_use{background:var(--amber-soft);color:var(--amber)}
+#settings-ui .veh-stat.st-maintenance,#settings-ui .veh-stat.st-blocked{background:var(--red-soft);color:var(--red)}
+#settings-ui .veh-del{flex:0 0 auto;width:34px;height:34px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--red);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:.14s}
+#settings-ui .veh-del:hover{background:var(--red);color:#fff;border-color:var(--red)}

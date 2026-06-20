@@ -537,6 +537,36 @@
               <div class="set-foot"><button class="set-btn" id="new-driver-create-btn"><svg class="icon"><use href="#i-plus"/></svg>Crear conductor</button><span id="new-driver-state" class="set-cstate"></span></div>
             </div>
           </div>
+
+          <!-- 5 · Vehículos / Flota -->
+          <div class="set-card" style="margin-top:16px">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-list"/></svg></div>
+              <div><h2>Vehículos</h2><p>Agrega o elimina los autos de la flota. Los conductores eligen de aquí al iniciar turno.</p></div>
+            </div>
+            <div class="set-cb">
+              <div id="vehicles-list"></div>
+              <div class="set-divider" style="margin:16px 0 4px"></div>
+              <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Agregar vehículo</p>
+              <div class="set-grid2">
+                <div class="set-field"><label>Código interno</label><input class="set-input" id="new-veh-code" type="text" placeholder="Ej: V-04" /></div>
+                <div class="set-field"><label>Placa</label><input class="set-input mono" id="new-veh-plate" type="text" placeholder="Ej: ABC123" /></div>
+              </div>
+              <div class="set-grid2" style="margin-top:14px">
+                <div class="set-field"><label>Marca</label><input class="set-input" id="new-veh-brand" type="text" placeholder="Ej: Toyota" /></div>
+                <div class="set-field"><label>Modelo</label><input class="set-input" id="new-veh-model" type="text" placeholder="Ej: Hiace" /></div>
+              </div>
+              <div class="set-grid2" style="margin-top:14px">
+                <div class="set-field"><label>Capacidad (pasajeros)</label><input class="set-input" id="new-veh-capacity" type="number" min="1" max="4" value="4" /></div>
+                <div class="set-field"><label>Kilometraje actual</label><input class="set-input" id="new-veh-km" type="number" min="0" value="0" /></div>
+              </div>
+              <div class="set-grid2" style="margin-top:14px">
+                <div class="set-field"><label>SOAT vence (opcional)</label><input class="set-input" id="new-veh-soat" type="date" /></div>
+                <div class="set-field"><label>Técnico-mecánica vence (opcional)</label><input class="set-input" id="new-veh-tecno" type="date" /></div>
+              </div>
+              <div class="set-foot"><button class="set-btn" id="new-veh-create-btn"><svg class="icon"><use href="#i-plus"/></svg>Agregar vehículo</button><span id="new-veh-state" class="set-cstate"></span></div>
+            </div>
+          </div>
         </div>
       </section>
 

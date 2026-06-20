@@ -646,6 +646,19 @@
     return data || [];
   }
 
+  // Alta de vehículo (admin, parametrizable desde Ajustes). RLS: p_vehicles_admin_mutate.
+  async function createVehicle(v) {
+    const { data, error } = await sb.from('vehicles').insert(v).select('id').single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  // Baja lógica (soft delete): conserva el historial de turnos/inspecciones.
+  async function softDeleteVehicle(id) {
+    const { error } = await sb.from('vehicles').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  }
+
   // Turno abierto (no cerrado) del conductor, con datos del vehículo embebidos.
   async function getMyOpenShift(driverId) {
     const { data, error } = await sb
@@ -891,7 +904,7 @@
     listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
     savePushSubscription, deletePushSubscription, sendPush,
-    getMyDriverProfileId, listVehiclesForShift, getMyOpenShift,
+    getMyDriverProfileId, listVehiclesForShift, createVehicle, softDeleteVehicle, getMyOpenShift,
     createShiftDraft, createInspection, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, startShift, abortShift, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,

@@ -140,6 +140,9 @@
     $('#new-driver-gen-pw')?.addEventListener('click', onGenerateDriverPassword);
     $('#new-driver-create-btn')?.addEventListener('click', onCreateDriver);
 
+    $('#new-veh-create-btn')?.addEventListener('click', onCreateVehicle);
+    $('#vehicles-list')?.addEventListener('click', (e) => { const d = e.target.closest('[data-veh-del]'); if (d) onDeleteVehicle(d.dataset.vehDel); });
+
     // Disponibilidad (paleta limpia): búsqueda, filtro y navegación de semana.
     $('#avail-search')?.addEventListener('input', renderAvailability);
     $('#avail-filter')?.addEventListener('click', (e) => {
@@ -2289,7 +2292,67 @@
     if ($('#setting-auto-close-hours')) $('#setting-auto-close-hours').value = state.settings.auto_close_hours != null ? state.settings.auto_close_hours : 14;
     renderPriorityList();
     renderRulesEditor();
+    renderVehiclesSettings();
   }
+
+  // --- Vehículos (admin) — alta/baja de la flota desde Ajustes ---
+  const VEH_STATUS_ES = { available: 'Disponible', in_use: 'En uso', maintenance: 'Mantenimiento', blocked: 'Bloqueado' };
+  async function renderVehiclesSettings() {
+    const box = $('#vehicles-list');
+    if (!box) return;
+    box.innerHTML = '<p class="set-hint">Cargando…</p>';
+    let vehs = [];
+    try { vehs = await Api.listVehiclesForShift(); }
+    catch (e) { console.error(e); box.innerHTML = '<p class="set-hint">No se pudieron cargar los vehículos.</p>'; return; }
+    if (!vehs.length) { box.innerHTML = '<p class="set-hint">Aún no hay vehículos. Agrega el primero abajo.</p>'; return; }
+    box.innerHTML = vehs.map(v => `<div class="veh-row" data-veh="${v.id}">
+      <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km</span></div>
+      <span class="veh-stat st-${v.status}">${VEH_STATUS_ES[v.status] || escapeHtml(v.status || '')}</span>
+      <button class="veh-del" data-veh-del="${v.id}" title="Eliminar vehículo"><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
+    </div>`).join('');
+  }
+
+  async function onCreateVehicle() {
+    const code = ($('#new-veh-code') && $('#new-veh-code').value || '').trim();
+    const plate = ($('#new-veh-plate') && $('#new-veh-plate').value || '').trim();
+    if (!code || !plate) { toast('Código interno y placa son obligatorios.'); return; }
+    const veh = {
+      organization_id: state.profile.organization_id,
+      internal_code: code,
+      license_plate: plate.toUpperCase(),
+      brand: ($('#new-veh-brand').value || '').trim() || null,
+      model: ($('#new-veh-model').value || '').trim() || null,
+      capacity: Math.min(4, Math.max(1, parseInt($('#new-veh-capacity').value, 10) || 4)),
+      current_km: Math.max(0, parseInt($('#new-veh-km').value, 10) || 0),
+      soat_expires_at: $('#new-veh-soat').value || null,
+      tecnomec_expires_at: $('#new-veh-tecno').value || null,
+    };
+    const btn = $('#new-veh-create-btn'); const st = $('#new-veh-state');
+    btn.disabled = true; if (st) st.textContent = 'Creando…';
+    try {
+      await Api.createVehicle(veh);
+      ['code', 'plate', 'brand', 'model'].forEach(f => { const el = $('#new-veh-' + f); if (el) el.value = ''; });
+      $('#new-veh-capacity').value = '4'; $('#new-veh-km').value = '0';
+      $('#new-veh-soat').value = ''; $('#new-veh-tecno').value = '';
+      if (st) st.textContent = '';
+      toast('Vehículo agregado.');
+      renderVehiclesSettings();
+    } catch (e) {
+      console.error(e);
+      if (st) st.textContent = '';
+      const msg = /unique|duplicate/i.test(e.message || '') ? 'Ya existe un vehículo con ese código o placa.' : (e.message || 'error');
+      alert('No se pudo agregar: ' + msg);
+    } finally { btn.disabled = false; }
+  }
+
+  async function onDeleteVehicle(id) {
+    const v = (await safeVehicles()).find(x => x.id === id);
+    if (v && v.status === 'in_use' && !confirm('Este vehículo está EN USO en un turno activo. ¿Eliminarlo igual? Mejor espera a que el turno cierre.')) return;
+    if (!confirm('¿Eliminar este vehículo? Dejará de aparecer para los conductores. El historial de turnos e inspecciones se conserva.')) return;
+    try { await Api.softDeleteVehicle(id); toast('Vehículo eliminado.'); renderVehiclesSettings(); }
+    catch (e) { console.error(e); alert('No se pudo eliminar: ' + (e.message || 'error')); }
+  }
+  async function safeVehicles() { try { return await Api.listVehiclesForShift(); } catch (e) { return []; } }
 
   // --- Editor de parametrización: descansos fijos por conductor (Fase 4) ---
   // Pinta sobre los elementos estáticos del panel de Ajustes (paleta limpia):
