@@ -7,5 +7,5 @@ window.RENDIO_CONFIG = {
   // Stack LOCAL (para probar Etapa 1 del módulo conductor):
   // SUPABASE_URL: 'http://127.0.0.1:54321',
   // SUPABASE_ANON_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
-  VAPID_PUBLIC_KEY: '',
+  VAPID_PUBLIC_KEY: 'BDbSeYdp1m3324kEA_t4naZMFm_T-iPMmjsSaMkrIcsnZ2jvXEhOarlP6sztOGTySex8gP1FQ0zMFwv96bpvUTE',
 };
