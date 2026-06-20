@@ -1094,3 +1094,40 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .insp-lbx img{max-width:92vw;max-height:86vh;border-radius:14px;box-shadow:0 22px 44px rgba(0,0,0,.5);background:#222}
 .insp-lbx .x{position:absolute;top:18px;right:20px;color:#fff;background:rgba(255,255,255,.16);border:0;width:40px;height:40px;border-radius:50%;font-size:22px;cursor:pointer;line-height:1}
 @media(max-width:680px){#inspections-ui .icard{grid-template-columns:42px 1fr}#inspections-ui .icard .right{grid-column:1/-1;align-items:flex-start}#inspections-ui .qactions{justify-content:flex-start}}
+
+/* =====================================================================
+   Turnos activos (admin) — red de seguridad de cierre de turno.
+   ===================================================================== */
+#shifts-ui{
+  --bg:#F4EEE6; --panel:#FFFDFA; --ink:#211D18; --ink2:#6B6258; --ink3:#A39A8D;
+  --line:#E7DECF; --line2:#D8CDBA;
+  --orange:#F26522; --orange-soft:#FCE4D6;
+  --amber:#D98A12; --amber-soft:#FBEBCF;
+  --red:#DB4B3F; --red-soft:#FADFDC;
+  --font:"Hanken Grotesk",system-ui,sans-serif; --mono:"Space Mono",ui-monospace,monospace;
+  font-family:var(--font); color:var(--ink);
+}
+#shifts-ui *{box-sizing:border-box}
+#shifts-ui .icon{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
+#shifts-ui .sh-phead{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:18px}
+#shifts-ui .sh-phead h1{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;display:flex;align-items:center;gap:11px;color:var(--ink)}
+#shifts-ui .sh-phead h1 .sh-ct{font-size:13px;font-weight:800;font-family:var(--mono);background:var(--amber-soft);color:var(--amber);border-radius:999px;padding:3px 11px}
+#shifts-ui .sh-phead p{font-size:13px;color:var(--ink2);margin-top:8px;max-width:640px;line-height:1.5}
+#shifts-ui .sh-phead p b{color:var(--ink);font-weight:700}
+#shifts-ui .set-btn{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 9px 22px rgba(242,101,34,.26)}
+#shifts-ui .set-btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:none}
+#shifts-ui .set-btn.dark{background:var(--ink);color:var(--panel);box-shadow:none}
+#shifts-ui .set-btn:disabled{opacity:.55;cursor:not-allowed}
+#shifts-ui #shifts-list{display:grid;gap:10px}
+#shifts-ui .shift-row{display:flex;align-items:center;gap:14px;justify-content:space-between;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+#shifts-ui .shift-row.stale{border-color:var(--red);background:var(--red-soft)}
+#shifts-ui .shift-main{min-width:0}
+#shifts-ui .shift-main b{font-size:15px;font-weight:800;color:var(--ink)}
+#shifts-ui .shift-sub{font-size:13px;color:var(--ink2);margin-top:2px}
+#shifts-ui .shift-sub .shift-st{font-weight:700;color:var(--ink)}
+#shifts-ui .shift-meta{font-size:11.5px;color:var(--ink3);margin-top:3px}
+#shifts-ui .shift-flag{color:var(--red);font-weight:800}
+#shifts-ui .sh-empty{text-align:center;padding:46px 20px;color:var(--ink2)}
+#shifts-ui .sh-empty .icon{width:34px;height:34px;color:var(--ink3);margin:0 auto 10px}
+#shifts-ui .sh-empty h3{font-size:16px;font-weight:800;color:var(--ink)}
+#shifts-ui .sh-empty p{font-size:13px;margin-top:4px}

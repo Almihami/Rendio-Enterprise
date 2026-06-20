@@ -574,18 +574,20 @@
   async function getSettings() {
     const sel = cols => sb.from('app_settings').select(cols).eq('id', 'singleton').maybeSingle();
     // Fallback en cascada: de más completo a más básico, así el código tolera
-    // migraciones no aplicadas (0014 reopen_*, 0025 coord_slots/shift_hours).
-    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours');
+    // migraciones no aplicadas (0014 reopen_*, 0025 coord_slots/shift_hours, 0027 auto_close_hours).
+    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours');
+    if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots'));
     if (error) throw error;
-    const base = { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2, coord_slots: 1, shift_hours: 12 };
+    const base = { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2, coord_slots: 1, shift_hours: 12, auto_close_hours: 14 };
     return {
       ...base, ...(data || {}),
       reopen_week_start: (data && data.reopen_week_start) || null,
       reopen_until: (data && data.reopen_until) || null,
       coord_slots: (data && data.coord_slots != null) ? data.coord_slots : 1,
       shift_hours: (data && data.shift_hours != null) ? data.shift_hours : 12,
+      auto_close_hours: (data && data.auto_close_hours != null) ? data.auto_close_hours : 14,
     };
   }
 
@@ -597,8 +599,10 @@
       afternoon_slots: s.afternoon_slots,
     };
     const upd = cols => sb.from('app_settings').update(cols).eq('id', 'singleton');
-    // Intenta con las columnas nuevas; si la migración 0025 no está, guarda lo base.
-    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours });
+    // Intenta con las columnas nuevas; cae en cascada si la migración no está
+    // (0027 auto_close_hours → 0025 coord_slots/shift_hours → base).
+    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours });
+    if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours }));
     if (error) ({ error } = await upd(base));
     if (error) throw error;
   }
@@ -734,6 +738,28 @@
     return data;
   }
 
+  // Turnos en curso (no cerrados) para el panel admin "Turnos activos".
+  // Incluye las etapas previas a 'active' por si quedó algo a medias.
+  async function listActiveShifts() {
+    const { data, error } = await sb
+      .from('shifts')
+      .select('id, status, start_at, opening_km, vehicle_id, ' +
+              'vehicles(internal_code, license_plate, brand, model, status), ' +
+              'driver_profiles(profiles(id, full_name, email))')
+      .neq('status', 'closed')
+      .order('start_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // SECURITY DEFINER (solo admin): cierra un turno colgado y libera el vehículo
+  // (in_use → available). Para olvidos del conductor; el cierre normal llega en Etapa 2.
+  async function forceCloseShift(shiftId, reason) {
+    const { data, error } = await sb.rpc('force_close_shift', { p_shift_id: shiftId, p_reason: reason || null });
+    if (error) throw error;
+    return data;
+  }
+
   // ====================================================================
   // Inspecciones — revisión/aprobación (admin) + checklist configurable
   // ====================================================================
@@ -837,7 +863,7 @@
     savePushSubscription, deletePushSubscription, sendPush,
     getMyDriverProfileId, listVehiclesForShift, getMyOpenShift,
     createShiftDraft, createInspection, uploadInspectionPhoto, addInspectionPhotos,
-    addIncident, startShift, abortShift,
+    addIncident, startShift, abortShift, listActiveShifts, forceCloseShift,
     listInspectionsForReview, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
   };

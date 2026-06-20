@@ -179,6 +179,10 @@
             Inspecciones
             <span id="inspections-badge" class="hidden absolute top-1 -right-1 bg-rose-600 text-white text-[10px] rounded-full px-1.5 py-0.5 font-bold">0</span>
           </button>
+          <button data-tab="shifts" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent relative">
+            Turnos activos
+            <span id="shifts-badge" class="hidden absolute top-1 -right-1 bg-rose-600 text-white text-[10px] rounded-full px-1.5 py-0.5 font-bold">0</span>
+          </button>
           <button data-tab="workers" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Personal</button>
           <button data-tab="settings" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Ajustes</button>
           <button data-tab="balance" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Balance</button>
@@ -478,6 +482,10 @@
                 <div class="set-field"><label>Coordinadores por jornada</label><input id="setting-coord-slots" class="set-input" type="number" min="1" max="4" /><div class="set-hint">Cuántos coordinadores se asignan en AM y en PM.</div></div>
                 <div class="set-field"><label>Horas por turno</label><input id="setting-shift-hours" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Para el cálculo de horas en Balance.</div></div>
               </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Auto-cierre de turno (horas)</label><input id="setting-auto-close-hours" class="set-input" type="number" min="1" max="72" /><div class="set-hint">Si un turno sigue activo más de X horas, se cierra solo y libera el vehículo (red de seguridad).</div></div>
+                <div class="set-field"></div>
+              </div>
               <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
             </div>
           </div>
@@ -585,6 +593,20 @@
           <div class="view" id="insp-v-config"></div>
         </div>
         <div class="insp-lbx" id="insp-lbx"><button class="x" id="insp-lbx-close" aria-label="Cerrar">&times;</button><img id="insp-lbx-img" alt="Foto de inspección"></div>
+      </section>
+
+      <!-- ADMIN: Turnos activos (red de seguridad de cierre) -->
+      <section data-panel="shifts" class="hidden">
+        <div id="shifts-ui" data-theme="light">
+          <div class="sh-phead">
+            <div>
+              <h1>Turnos activos <span class="sh-ct" id="shifts-count">0</span></h1>
+              <p>Turnos en curso ahora mismo. Si un conductor olvidó cerrar, puedes <b>forzar el cierre</b>: se cierra el turno y el vehículo vuelve a quedar disponible. Los que pasan del límite se cierran solos (Ajustes → Auto-cierre de turno).</p>
+            </div>
+            <button class="set-btn ghost" id="shifts-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+          </div>
+          <div id="shifts-list"></div>
+        </div>
       </section>
 
     </main>
