@@ -499,6 +499,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
   --green:#16936A; --green-soft:#E0F1E8;
   --amber:#D98A12; --amber-soft:#FBEBCF;
   --red:#DB4B3F; --red-soft:#FADFDC;
+  --am-zone:#DBEAFE; --pm-zone:#BAE6FD; --co-zone:#DCFCE7;
   --shadow:0 8px 20px rgba(33,29,24,.08); --shadow-lg:0 22px 44px rgba(33,29,24,.20);
   --font:"Hanken Grotesk",system-ui,sans-serif; --serif:"Newsreader",Georgia,serif; --mono:"Space Mono",ui-monospace,monospace;
   font-family:var(--font); color:var(--ink); background:var(--bg);
@@ -512,6 +513,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
   --green:#2ED391; --green-soft:#10271E;
   --amber:#F5B53D; --amber-soft:#2C2212;
   --red:#FF5E4F; --red-soft:#2E1512;
+  --am-zone:#16202E; --pm-zone:#102530; --co-zone:#12251B;
   --shadow:0 8px 20px rgba(0,0,0,.4); --shadow-lg:0 22px 44px rgba(0,0,0,.55);
 }
 #schedule-board *{box-sizing:border-box;margin:0;padding:0}
@@ -610,6 +612,10 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #schedule-board .dhead.today .dnum{color:var(--orange)}
 #schedule-board .zone{background:var(--panel);padding:7px;display:grid;gap:6px;align-content:start;min-height:0;transition:background .15s,box-shadow .15s}
 #schedule-board .zone.wknd{background:var(--panel2)}
+/* Color por jornada: AM azul, PM cian, Coordinación verde (diferencia visual). */
+#schedule-board .zone[data-kind="morning"]{background:var(--am-zone)}
+#schedule-board .zone[data-kind="afternoon"]{background:var(--pm-zone)}
+#schedule-board .zone[data-kind^="coord"]{background:var(--co-zone)}
 #schedule-board .zone.over{background:var(--orange-soft);box-shadow:inset 0 0 0 2px var(--orange)}
 #schedule-board .slot{min-height:42px;display:grid}
 #schedule-board .asg{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;background:var(--panel);border:1px solid var(--line);box-shadow:0 2px 5px rgba(33,29,24,.05);cursor:grab;transition:transform .12s,box-shadow .15s,opacity .15s}
@@ -715,6 +721,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #settings-ui .set-seg3 button{height:30px;min-width:34px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:var(--ink2);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer;transition:.14s;display:inline-flex;align-items:center;gap:6px}
 #settings-ui .set-seg3 button .num{font-family:var(--mono);font-size:11px}
 #settings-ui .set-seg3 button.on{background:var(--ink);color:#fff}
+#settings-ui .set-seg3 button.on.s4{background:var(--orange)}
 #settings-ui .set-seg3 button.on.s3{background:var(--green)}
 #settings-ui .set-seg3 button.on.s2{background:var(--amber)}
 #settings-ui .set-seg3 button.on.s1{background:var(--rest)}

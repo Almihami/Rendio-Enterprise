@@ -68,55 +68,23 @@
     return now >= cut - 30 * 60 * 1000 && now < cut;
   }
 
-  // --- Reglas fijas por conductor (parametrización dura, hardcode por email) ---
-  // Un turno "bloqueado por parametrización" se trata como 'No disponible' en el
-  // generador Y se muestra como 🔒 (read-only) en la consolidada admin y en la
-  // vista del conductor, para que las tres cosas coincidan. Esta es la ÚNICA
-  // fuente de las reglas; el generador y las vistas la consultan vía
-  // Scheduler.ruleBlocked(driver, day, shift).
-  // NOTA: en la Fase 4 esto se mueve a la BD (tabla driver_rules); por ahora,
-  // hardcode por email. Para agregar a alguien (ej. Mary) añade su email y días.
-  const SPECIAL_EMAILS = {
-    JUAN_ANDRES: 'juan.mery@rendio.co',     // Juan Andres Mery Franco
-    CARDONA: 'andres.cardona@rendio.co',    // Andres Felipe Cardona Arias (NO Jefferson)
-    SEBAS: 'sebastian.gomez@rendio.co',     // Sebastian Gomez Ciro (solo tope semanal, sin bloqueo por día)
-  };
-
-  // ¿El conductor (por email) está bloqueado ese día/jornada por regla fija?
-  function ruleBlockedByEmail(email, day, shift) {
-    const em = (email || '').toLowerCase();
-    if (em === SPECIAL_EMAILS.JUAN_ANDRES) {
-      if (day === 'wed') return true;                   // siempre descansa miércoles
-      if (day === 'thu' && shift === 'pm') return true; // jueves descansa PM
-      if (day === 'tue' && shift === 'pm') return true; // martes solo madruga (AM)
-    }
-    if (em === SPECIAL_EMAILS.CARDONA) {
-      if (day === 'fri' || day === 'sat' || day === 'sun') return true; // solo lun-jue
-    }
-    // TODO Fase 4 / pendiente dato: parametrización de Mary (email + días).
-    return false;
-  }
-
-  // Reglas dinámicas cargadas desde la BD (Fase 4). Si están cargadas (no null),
-  // son AUTORITATIVAS y reemplazan al hardcode por email (así el admin puede
-  // agregar/quitar bloqueos desde la app). Mapa: { profileId: Set('day-shift') }.
+  // --- Reglas fijas por conductor (parametrizadas por el admin desde Ajustes) ---
+  // El admin configura los descansos fijos por conductor (tabla driver_rules,
+  // editor "Descansos fijos" en Ajustes). Un turno bloqueado se trata como 'No
+  // disponible' en el generador y se muestra como 🔒 en la consolidada admin y en
+  // la vista del conductor. NO hay reglas hardcodeadas: la ÚNICA fuente es lo que
+  // el admin parametriza. Mapa cargado desde la BD: { profileId: Set('day-shift') }.
   let DYNAMIC_RULES = null;
   function setRules(rulesByProfileId) {
     DYNAMIC_RULES = rulesByProfileId || null;
   }
 
-  // API pública: recibe el objeto driver ({ id, email, ... }) o un email suelto.
+  // API pública: recibe el objeto driver ({ id, ... }). Sin reglas cargadas → false.
   function ruleBlocked(driverOrEmail, day, shift) {
-    if (!driverOrEmail) return false;
-    // Si hay reglas dinámicas cargadas, mandan ellas (por id).
-    if (DYNAMIC_RULES) {
-      const id = typeof driverOrEmail === 'string' ? null : driverOrEmail.id;
-      if (id) return DYNAMIC_RULES[id] ? DYNAMIC_RULES[id].has(`${day}-${shift}`) : false;
-      // Sin id (email suelto) y con reglas dinámicas: no podemos resolver → false.
-      return false;
-    }
-    const email = typeof driverOrEmail === 'string' ? driverOrEmail : driverOrEmail.email;
-    return ruleBlockedByEmail(email, day, shift);
+    if (!driverOrEmail || !DYNAMIC_RULES) return false;
+    const id = typeof driverOrEmail === 'string' ? null : driverOrEmail.id;
+    if (!id) return false;
+    return DYNAMIC_RULES[id] ? DYNAMIC_RULES[id].has(`${day}-${shift}`) : false;
   }
 
   function getRawState(availability, profileId, day, shift) {
@@ -195,13 +163,16 @@
     const sorted = [...eligibles].sort((a, b) => {
       const loadA = workerLoads.get(a.id) || 0;
       const loadB = workerLoads.get(b.id) || 0;
-      if (loadA !== loadB) return loadA - loadB;
       const prefA = getState(availability, a.id, day, shift) === 'prefer_rest' ? 1 : 0;
       const prefB = getState(availability, b.id, day, shift) === 'prefer_rest' ? 1 : 0;
+      // Antigüedad 4 (DURA): entre quienes NO pidieron descanso, el conductor de
+      // máxima prioridad (Julián) entra SIEMPRE primero, por encima de la carga.
+      const topA = (a.priority || 1) >= 4 && prefA === 0 ? 1 : 0;
+      const topB = (b.priority || 1) >= 4 && prefB === 0 ? 1 : 0;
+      if (topA !== topB) return topB - topA;
+      if (loadA !== loadB) return loadA - loadB;
       if (prefA !== prefB) return prefA - prefB;
-      // Prioridad por antigüedad (1=nuevo … 3=antiguo). Pesa MÁS que la
-      // preferencia AM/PM: el antiguo entra primero aunque el nuevo haya
-      // marcado preferencia por esta jornada.
+      // Prioridad por antigüedad 1–3 (desempate SUAVE).
       const prioA = a.priority || 1;
       const prioB = b.priority || 1;
       if (prioA !== prioB) {
@@ -210,8 +181,7 @@
         // conserva su descanso "si quiere pedir muchos, los tendrá").
         return prefA === 1 ? (prioA - prioB) : (prioB - prioA);
       }
-      // Preferencia AM/PM: solo desempata cuando hay igual carga, igual
-      // estado de descanso e igual antigüedad. Sesgo SUAVE.
+      // Preferencia AM/PM: sesgo SUAVE.
       const spA = shiftPrefBias(availability, a.id, day, shift);
       const spB = shiftPrefBias(availability, b.id, day, shift);
       if (spA !== spB) return spA - spB;
@@ -259,19 +229,6 @@
     const rng = mulberry32(hashSeed('rendio-turnos|' + (weekStart || '') + '|' + (nonce || '')));
     const driverRank = seededRankMap(drivers, rng);
 
-    // --- Reglas fijas por conductor (fuente única: ruleBlocked, arriba) ---
-    const byEmail = em => drivers.find(d => (d.email || '').toLowerCase() === em) || null;
-    const juanAndres = byEmail(SPECIAL_EMAILS.JUAN_ANDRES);
-    const cardona = byEmail(SPECIAL_EMAILS.CARDONA);
-    const sebas = byEmail(SPECIAL_EMAILS.SEBAS);
-
-    // Tope duro de días trabajados por semana (cada conductor toma a lo sumo
-    // 1 turno/día, así que "días" == turnos asignados).
-    const dayCap = new Map();
-    if (cardona) dayCap.set(cardona.id, 2);
-    if (sebas) dayCap.set(sebas.id, 2);
-    const daysWorked = new Map(drivers.map(d => [d.id, 0]));
-    const atCap = id => dayCap.has(id) && (daysWorked.get(id) || 0) >= dayCap.get(id);
     // Para saber, dentro del pool de coordinadores, quién es conductor.
     const driverIds = new Set(drivers.map(d => d.id));
 
@@ -283,7 +240,6 @@
     const eligibleFor = (d, day, shift) =>
       getState(availability, d.id, day, shift) !== 'unavailable' &&
       !ruleBlocked(d, day, shift) &&
-      !atCap(d.id) &&
       !(shift === 'am' && prevPmIds.has(d.id));
 
     for (const day of DAYS) {
@@ -312,16 +268,10 @@
       const morningEligible = drivers.filter(d =>
         !coordDriversToday.has(d.id) && eligibleFor(d, day, 'am')
       );
-      let morning = pickForShift(morningEligible, workerLoads, availability, day, 'am', settings.morningSlots, driverRank);
-      // Regla dura Juan Andrés: martes SIEMPRE madruga (turno AM garantizado).
-      if (day === 'tue' && juanAndres && !morning.some(d => d.id === juanAndres.id)) {
-        morning = [juanAndres, ...morning.filter(d => d.id !== juanAndres.id)]
-          .slice(0, settings.morningSlots);
-      }
+      const morning = pickForShift(morningEligible, workerLoads, availability, day, 'am', settings.morningSlots, driverRank);
       morning.forEach(d => {
         usedToday.add(d.id);
         workerLoads.set(d.id, (workerLoads.get(d.id) || 0) + 1);
-        daysWorked.set(d.id, (daysWorked.get(d.id) || 0) + 1);
       });
       if (morning.length < settings.morningSlots) {
         warnings.push(`Faltan ${settings.morningSlots - morning.length} cupos de Mañana en ${DAY_LABELS_ES[day]}.`);
@@ -334,7 +284,6 @@
       afternoon.forEach(d => {
         usedToday.add(d.id);
         workerLoads.set(d.id, (workerLoads.get(d.id) || 0) + 1);
-        daysWorked.set(d.id, (daysWorked.get(d.id) || 0) + 1);
       });
       if (afternoon.length < settings.afternoonSlots) {
         warnings.push(`Faltan ${settings.afternoonSlots - afternoon.length} cupos de Tarde en ${DAY_LABELS_ES[day]}.`);

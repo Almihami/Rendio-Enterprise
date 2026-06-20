@@ -2080,9 +2080,9 @@
     }
   }
 
-  // Prioridad por antigüedad (1=nuevo, 2=con tiempo, 3=antiguo). Influye SUAVE
-  // en la generación: ver scheduler.js (desempate por prioridad).
-  const SR_LABELS = { 1: 'Nuevo', 2: 'Con tiempo', 3: 'Antiguo' };
+  // Prioridad por antigüedad. 1=nuevo, 2=con tiempo, 3=antiguo (desempate SUAVE);
+  // 4=máxima (Julián): prioridad DURA, entra siempre primero (ver scheduler.js).
+  const SR_LABELS = { 1: 'Nuevo', 2: 'Con tiempo', 3: 'Antiguo', 4: 'Máxima' };
   function renderPriorityList() {
     const box = $('#priority-list');
     if (!box) return;
@@ -2093,7 +2093,7 @@
     }
     box.innerHTML = drivers.map(d => {
       const p = d.priority || 1;
-      const segs = [1, 2, 3].map(n =>
+      const segs = [1, 2, 3, 4].map(n =>
         `<button data-srval="${n}" class="${p === n ? 'on s' + n : ''}"><span class="num">${n}</span>${p === n ? SR_LABELS[n] : ''}</button>`
       ).join('');
       return `<div class="set-prow">

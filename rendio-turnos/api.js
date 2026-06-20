@@ -46,7 +46,7 @@
   }
 
   async function setDriverPriority(profileId, value) {
-    const v = Math.min(3, Math.max(1, parseInt(value, 10) || 1));
+    const v = Math.min(4, Math.max(1, parseInt(value, 10) || 1));
     const { error } = await sb
       .from('profiles')
       .update({ priority: v })
