@@ -4,5 +4,5 @@
 window.RENDIO_CONFIG = {
   SUPABASE_URL: 'https://wvuurnfdrrdondrbbkhd.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_u9QZT5XbV3vYF7G_Am0Ffg_Ia8q8IFC',
-  VAPID_PUBLIC_KEY: '',
+  VAPID_PUBLIC_KEY: 'BBc3nfT77VmmxRKXGkhcER_Ti8ZWch-12S8WjZuYcn6LpRKyAktgN9Yzu6u4J3IFfWDThcncb09O6e-0UdYJ7uE',
 };
