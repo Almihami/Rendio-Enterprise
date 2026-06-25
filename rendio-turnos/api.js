@@ -46,7 +46,7 @@
   }
 
   async function setDriverPriority(profileId, value) {
-    const v = Math.min(3, Math.max(1, parseInt(value, 10) || 1));
+    const v = Math.min(4, Math.max(1, parseInt(value, 10) || 1));
     const { error } = await sb
       .from('profiles')
       .update({ priority: v })
@@ -573,28 +573,37 @@
 
   async function getSettings() {
     const sel = cols => sb.from('app_settings').select(cols).eq('id', 'singleton').maybeSingle();
-    // Fallback: si la migración 0014 (reopen_*) no está, lee sin esas columnas.
-    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until');
+    // Fallback en cascada: de más completo a más básico, así el código tolera
+    // migraciones no aplicadas (0014 reopen_*, 0025 coord_slots/shift_hours, 0027 auto_close_hours).
+    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours');
+    if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours'));
+    if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots'));
     if (error) throw error;
-    const base = { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2 };
+    const base = { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2, coord_slots: 1, shift_hours: 12, auto_close_hours: 14 };
     return {
       ...base, ...(data || {}),
       reopen_week_start: (data && data.reopen_week_start) || null,
       reopen_until: (data && data.reopen_until) || null,
+      coord_slots: (data && data.coord_slots != null) ? data.coord_slots : 1,
+      shift_hours: (data && data.shift_hours != null) ? data.shift_hours : 12,
+      auto_close_hours: (data && data.auto_close_hours != null) ? data.auto_close_hours : 14,
     };
   }
 
   async function saveSettings(s) {
-    const { error } = await sb
-      .from('app_settings')
-      .update({
-        morning_label: s.morning_label,
-        afternoon_label: s.afternoon_label,
-        morning_slots: s.morning_slots,
-        afternoon_slots: s.afternoon_slots,
-      })
-      .eq('id', 'singleton');
+    const base = {
+      morning_label: s.morning_label,
+      afternoon_label: s.afternoon_label,
+      morning_slots: s.morning_slots,
+      afternoon_slots: s.afternoon_slots,
+    };
+    const upd = cols => sb.from('app_settings').update(cols).eq('id', 'singleton');
+    // Intenta con las columnas nuevas; cae en cascada si la migración no está
+    // (0027 auto_close_hours → 0025 coord_slots/shift_hours → base).
+    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours });
+    if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours }));
+    if (error) ({ error } = await upd(base));
     if (error) throw error;
   }
 
@@ -609,6 +618,274 @@
       })
       .eq('id', 'singleton');
     if (error) throw error;
+  }
+
+  // -------------------- Turno operativo (Etapa 1 módulo conductor) ----------
+  // Inicio de turno: vehículo + inspección pre-operacional + fotos + km.
+  // Tablas: shifts, inspections, inspection_photos, incidents (migration 0016)
+  // + RPCs start_shift / abort_shift (migration 0022).
+
+  // driver_profiles.id del usuario logueado (shifts.driver_id apunta ahí, no a profiles).
+  async function getMyDriverProfileId(profileId) {
+    const { data, error } = await sb
+      .from('driver_profiles')
+      .select('id')
+      .eq('profile_id', profileId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? data.id : null;
+  }
+
+  async function listVehiclesForShift() {
+    const { data, error } = await sb
+      .from('vehicles')
+      .select('id, internal_code, license_plate, brand, model, capacity, current_km, last_maintenance_km, maintenance_interval_km, status, soat_expires_at, tecnomec_expires_at')
+      .is('deleted_at', null)
+      .order('internal_code');
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Alta de vehículo (admin, parametrizable desde Ajustes). RLS: p_vehicles_admin_mutate.
+  async function createVehicle(v) {
+    const { data, error } = await sb.from('vehicles').insert(v).select('id').single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  // Baja lógica (soft delete): conserva el historial de turnos/inspecciones.
+  async function softDeleteVehicle(id) {
+    const { error } = await sb.from('vehicles').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  }
+
+  // Turno abierto (no cerrado) del conductor, con datos del vehículo embebidos.
+  async function getMyOpenShift(driverId) {
+    const { data, error } = await sb
+      .from('shifts')
+      .select('id, status, vehicle_id, start_at, opening_km, vehicles(internal_code, license_plate, brand, model)')
+      .eq('driver_id', driverId)
+      .neq('status', 'closed')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    return (data && data[0]) || null;
+  }
+
+  // Crea el shift en 'inspection_in_progress' (o reutiliza uno huérfano de un
+  // intento anterior interrumpido, para no dejar filas basura).
+  async function createShiftDraft({ driverId, organizationId, vehicleId, openingKm, reuseId }) {
+    if (reuseId) {
+      const { data, error } = await sb
+        .from('shifts')
+        .update({ vehicle_id: vehicleId, opening_km: openingKm, status: 'inspection_in_progress' })
+        .eq('id', reuseId)
+        .select('id')
+        .single();
+      if (!error && data) return data.id;
+      // si falla (p.ej. lo cerró un admin), cae a crear uno nuevo
+    }
+    const { data, error } = await sb
+      .from('shifts')
+      .insert({
+        driver_id: driverId,
+        organization_id: organizationId,
+        vehicle_id: vehicleId,
+        opening_km: openingKm,
+        status: 'inspection_in_progress',
+      })
+      .select('id')
+      .single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  // row debe incluir: id (uuid generado en cliente, para que el path de las
+  // fotos exista antes del insert), organization_id, shift_id, vehicle_id,
+  // driver_id, kind, odometer_km, checklist, has_damage, notes.
+  async function createInspection(row) {
+    let { data, error } = await sb.from('inspections').insert(row).select('id').single();
+    // Si la migración 0028 (is_apt/signed_name) no está aplicada, reintenta sin esos campos.
+    if (error && /is_apt|signed_name|column|schema cache/i.test(error.message || '')) {
+      const { is_apt, signed_name, ...legacy } = row;
+      ({ data, error } = await sb.from('inspections').insert(legacy).select('id').single());
+    }
+    if (error) throw error;
+    return data.id;
+  }
+
+  async function uploadInspectionPhoto(path, blob) {
+    const { error } = await sb.storage
+      .from('inspections')
+      .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+    if (error) throw error;
+    return path;
+  }
+
+  async function addInspectionPhotos(rows) {
+    const { error } = await sb.from('inspection_photos').insert(rows);
+    if (error) throw error;
+  }
+
+  async function addIncident({ organizationId, reporterId, shiftId, vehicleId, category, severity, description }) {
+    const { data, error } = await sb.from('incidents').insert({
+      organization_id: organizationId,
+      reporter_id: reporterId,
+      shift_id: shiftId || null,
+      vehicle_id: vehicleId || null,
+      category,
+      severity,
+      description,
+    }).select('id').single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  // SECURITY DEFINER: valida dueño + inspección + vehículo libre; marca in_use.
+  async function startShift(shiftId) {
+    const { data, error } = await sb.rpc('start_shift', { p_shift_id: shiftId });
+    if (error) throw error;
+    return data;
+  }
+
+  // SECURITY DEFINER: novedad grave → cierra el shift sin activar y deja el
+  // vehículo en 'maintenance' para revisión del admin.
+  async function abortShift(shiftId, reason) {
+    const { data, error } = await sb.rpc('abort_shift', { p_shift_id: shiftId, p_reason: reason || null });
+    if (error) throw error;
+    return data;
+  }
+
+  // Turnos en curso (no cerrados) para el panel admin "Turnos activos".
+  // Incluye las etapas previas a 'active' por si quedó algo a medias.
+  async function listActiveShifts() {
+    const { data, error } = await sb
+      .from('shifts')
+      .select('id, status, start_at, opening_km, vehicle_id, ' +
+              'vehicles(internal_code, license_plate, brand, model, status), ' +
+              'driver_profiles(profiles(id, full_name, email))')
+      .neq('status', 'closed')
+      .order('start_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // SECURITY DEFINER (solo admin): cierra un turno colgado y libera el vehículo
+  // (in_use → available). Para olvidos del conductor; el cierre normal llega en Etapa 2.
+  async function forceCloseShift(shiftId, reason) {
+    const { data, error } = await sb.rpc('force_close_shift', { p_shift_id: shiftId, p_reason: reason || null });
+    if (error) throw error;
+    return data;
+  }
+
+  // ====================================================================
+  // Inspecciones — revisión/aprobación (admin) + checklist configurable
+  // ====================================================================
+
+  // Cola de revisión: solo inspecciones INICIALES con novedad (has_damage).
+  // Las limpias se auto-aprueban (trigger 0024) y no entran a este módulo.
+  async function listInspectionsForReview(status) {
+    let q = sb.from('inspections')
+      .select('id,kind,has_damage,notes,odometer_km,review_status,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id,' +
+              'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
+              'driver_profiles(profiles(id,full_name,email))')
+      .eq('kind', 'initial').eq('has_damage', true)
+      .order('performed_at', { ascending: false });
+    if (status) q = q.eq('review_status', status);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Todas las inspecciones de un vehículo (para el filtro "Autos" del admin).
+  async function listInspectionsByVehicle(vehicleId) {
+    const { data, error } = await sb.from('inspections')
+      .select('id,kind,has_damage,notes,odometer_km,review_status,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id,checklist,' +
+              'vehicles(internal_code,license_plate,brand,model,status),' +
+              'driver_profiles(profiles(id,full_name,email))')
+      .eq('vehicle_id', vehicleId)
+      .order('performed_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function getInspectionDetail(id) {
+    const cols = extra =>
+      `id,kind,has_damage,checklist,notes,odometer_km,review_status,reviewed_by,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id${extra},` +
+      'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
+      'driver_profiles(profiles(id,full_name,email)),' +
+      'inspection_photos(photo_type,storage_path,size_bytes)';
+    // Cascada: con is_apt/signed_name (0028) → sin ellos (legado).
+    let { data, error } = await sb.from('inspections').select(cols(',is_apt,signed_name')).eq('id', id).single();
+    if (error) ({ data, error } = await sb.from('inspections').select(cols('')).eq('id', id).single());
+    if (error) throw error;
+    return data;
+  }
+
+  // Las fotos viven en un bucket PRIVADO → URLs firmadas (temporales) para mostrarlas.
+  async function signedInspectionPhotoUrls(paths, expiresIn) {
+    if (!paths || !paths.length) return {};
+    const { data, error } = await sb.storage.from('inspections').createSignedUrls(paths, expiresIn || 3600);
+    if (error) throw error;
+    const map = {};
+    (data || []).forEach(r => { if (r.signedUrl && !r.error) map[r.path] = r.signedUrl; });
+    return map;
+  }
+
+  // Aprobar/rechazar vía RPC SECURITY DEFINER (valida admin; al rechazar abre incident).
+  async function reviewInspection(inspectionId, status, notes) {
+    const { data, error } = await sb.rpc('review_inspection',
+      { p_inspection_id: inspectionId, p_status: status, p_notes: notes || null });
+    if (error) throw error;
+    return data;
+  }
+
+  // ----- Checklist configurable (admin) -----
+  async function listChecklistItems(activeOnly) {
+    // Cascada: con category (0028) → sin category (legado), tolera migración no aplicada.
+    const sel = cols => {
+      let q = sb.from('inspection_checklist_items').select(cols).order('sort_order');
+      if (activeOnly) q = q.eq('is_active', true);
+      return q;
+    };
+    let { data, error } = await sel('id,label,hint,category,sort_order,is_active');
+    if (error) ({ data, error } = await sel('id,label,hint,sort_order,is_active'));
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function createChecklistItem({ organizationId, label, hint, category, sortOrder }) {
+    const base = { organization_id: organizationId, label, hint: hint || null, sort_order: sortOrder || 0 };
+    const ins = row => sb.from('inspection_checklist_items').insert(row).select('id,label,hint,category,sort_order,is_active').single();
+    let { data, error } = await ins({ ...base, category: category || null });
+    if (error) ({ data, error } = await sb.from('inspection_checklist_items').insert(base).select('id,label,hint,sort_order,is_active').single());
+    if (error) throw error;
+    return data;
+  }
+
+  async function updateChecklistItem(id, fields) {
+    let { error } = await sb.from('inspection_checklist_items').update(fields).eq('id', id);
+    // Si la columna category (0028) no está, reintenta sin ella.
+    if (error && /category|column|schema cache/i.test(error.message || '') && 'category' in fields) {
+      const { category, ...rest } = fields;
+      if (Object.keys(rest).length) ({ error } = await sb.from('inspection_checklist_items').update(rest).eq('id', id));
+      else error = null;
+    }
+    if (error) throw error;
+  }
+
+  async function deleteChecklistItem(id) {
+    const { error } = await sb.from('inspection_checklist_items').delete().eq('id', id);
+    if (error) throw error;
+  }
+
+  // Reescribe sort_order = posición (1-based). Pocos ítems → updates individuales.
+  async function reorderChecklistItems(idsInOrder) {
+    for (let i = 0; i < idsInOrder.length; i++) {
+      const { error } = await sb.from('inspection_checklist_items')
+        .update({ sort_order: i + 1 }).eq('id', idsInOrder[i]);
+      if (error) throw error;
+    }
   }
 
   window.Api = {
@@ -627,5 +904,10 @@
     listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
     savePushSubscription, deletePushSubscription, sendPush,
+    getMyDriverProfileId, listVehiclesForShift, createVehicle, softDeleteVehicle, getMyOpenShift,
+    createShiftDraft, createInspection, uploadInspectionPhoto, addInspectionPhotos,
+    addIncident, startShift, abortShift, listActiveShifts, forceCloseShift,
+    listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
+    listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
   };
 })();

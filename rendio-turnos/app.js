@@ -16,6 +16,8 @@
     schedule: null,
     activeTab: 'schedule',
     ownAvail: null,
+    driverTab: 'home',
+    driverNavRevealed: false, // la barra inferior aparece al entrar a un módulo
   };
 
   // ====================================================================
@@ -140,6 +142,34 @@
     $('#new-driver-gen-pw')?.addEventListener('click', onGenerateDriverPassword);
     $('#new-driver-create-btn')?.addEventListener('click', onCreateDriver);
 
+    $('#new-veh-create-btn')?.addEventListener('click', onCreateVehicle);
+    $('#vehicles-list')?.addEventListener('click', (e) => { const d = e.target.closest('[data-veh-del]'); if (d) onDeleteVehicle(d.dataset.vehDel); });
+
+    // Disponibilidad (paleta limpia): búsqueda, filtro y navegación de semana.
+    $('#avail-search')?.addEventListener('input', renderAvailability);
+    $('#avail-filter')?.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-f]'); if (!b) return;
+      state._availFilter = b.dataset.f;
+      $('#avail-filter').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      renderAvailability();
+    });
+    $('#avail-summary')?.addEventListener('click', (e) => {
+      if (!e.target.closest('[data-jump="pending"]')) return;
+      state._availFilter = 'pending';
+      $('#avail-filter')?.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.f === 'pending'));
+      renderAvailability();
+    });
+    $('#avail-prev-week')?.addEventListener('click', () => { setCurrentWeekManual(Scheduler.addDays(state.currentWeek, -7)); refreshAvailabilityMatrix(); });
+    $('#avail-next-week')?.addEventListener('click', () => { setCurrentWeekManual(Scheduler.addDays(state.currentWeek, 7)); refreshAvailabilityMatrix(); });
+
+    // Solicitudes (paleta limpia): filtro Todas / Conflictos / Singletons.
+    $('#solic-filter')?.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-f]'); if (!b) return;
+      state._solicFilter = b.dataset.f;
+      $('#solic-filter').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      refreshApprovals();
+    });
+
     $('#cell-editor-cancel').addEventListener('click', closeCellEditor);
     $('#cell-editor-save').addEventListener('click', saveCellEditor);
     $('#cell-editor').addEventListener('click', (e) => {
@@ -150,6 +180,9 @@
     $('#driver-next-week').addEventListener('click', () => navigateDriverWeek(7));
     $('#driver-save-btn').addEventListener('click', onDriverSave);
     $('#driver-mark-all-available').addEventListener('click', onMarkAllAvailable);
+    $('#driver-availability-card')?.addEventListener('click', showDriverAvailability);
+    $('#driver-back-home')?.addEventListener('click', showDriverHome);
+    $('#driver-nav')?.addEventListener('click', (e) => { const b = e.target.closest('[data-dtab]'); if (b) setDriverTab(b.dataset.dtab); });
   }
 
   function onMarkAllAvailable() {
@@ -305,12 +338,20 @@
       state.admins = (await Api.listAdmins()).map(a => ({ id: a.id, name: a.full_name, email: a.email, is_coordinator: a.is_coordinator !== false }));
       setTab('schedule');
       $('#driver-save-bar').classList.add('hidden');
+      refreshInspectionsBadge();
+      refreshShiftsBadge();
     } else {
       $('#admin-nav').classList.add('hidden');
       $('#admin-greeting-block').classList.add('hidden');
-      $('#screen-driver').classList.remove('hidden');
-      $('#driver-save-bar').classList.remove('hidden');
+      $('#driver-tabs-root')?.classList.remove('hidden');
+      // La barra inferior NO se muestra al inicio: aparece al entrar a un módulo.
+      state.driverNavRevealed = false;
+      $('#driver-nav')?.classList.remove('show');
+      $('#driver-tabs-root')?.classList.remove('nav-on');
       await refreshDriverView();
+      setDriverTab('home'); // arranca en las 2 tarjetas
+      // Inicio de turno (Etapa 1 módulo conductor) — card + wizard.
+      if (window.ShiftFlow) ShiftFlow.init(state.profile).catch(e => console.error(e));
     }
     setupPushUI();
   }
@@ -334,7 +375,8 @@
 
   function setTab(name) {
     state.activeTab = name;
-    $('#screen-driver').classList.add('hidden');
+    $('#driver-tabs-root')?.classList.add('hidden');
+    $('#driver-nav')?.classList.remove('show');
     $$('#admin-nav .tab-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.tab === name);
     });
@@ -349,6 +391,546 @@
     if (name === 'workers') renderWorkers();
     if (name === 'settings') renderSettings();
     if (name === 'balance') renderBalance();
+    if (name === 'inspections') renderInspections();
+    if (name === 'shifts') renderShifts();
+  }
+
+  // ====================================================================
+  // Turnos activos (admin) — red de seguridad: forzar cierre de un turno
+  // colgado (libera el vehículo). El cierre normal del conductor (Etapa 2)
+  // aún no existe; mientras tanto, el auto-cierre por cron + este botón evitan
+  // que un turno quede activo para siempre.
+  // ====================================================================
+  const shiftsState = { items: [] };
+  const SHIFT_ST_ES = {
+    vehicle_selected: 'Eligiendo vehículo',
+    inspection_in_progress: 'Inspección en curso',
+    active: 'Activo',
+    closing: 'Cerrando',
+  };
+
+  function shiftDriverName(s) {
+    return (s.driver_profiles && s.driver_profiles.profiles && s.driver_profiles.profiles.full_name) || 'Conductor';
+  }
+  function shiftHoursActive(s) {
+    if (!s.start_at) return 0;
+    return (Date.now() - new Date(s.start_at).getTime()) / 3600000;
+  }
+  function fmtShiftAgo(s) {
+    const h = shiftHoursActive(s);
+    if (h < 1) return `${Math.max(0, Math.round(h * 60))} min`;
+    if (h < 48) return `${h.toFixed(1)} h`;
+    return `${Math.round(h / 24)} días`;
+  }
+  function shiftWhen(s) {
+    try {
+      return new Date(s.start_at).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
+    } catch (e) { return ''; }
+  }
+  function staleThreshold() {
+    return (state.settings && state.settings.auto_close_hours != null) ? state.settings.auto_close_hours : 14;
+  }
+
+  async function refreshShiftsBadge() {
+    if (state.profile?.role !== 'admin') return;
+    try {
+      const rows = await Api.listActiveShifts();
+      shiftsState.items = rows;
+      const stale = rows.filter(s => shiftHoursActive(s) >= staleThreshold()).length;
+      const b = $('#shifts-badge');
+      if (b) { b.textContent = String(stale); b.classList.toggle('hidden', !stale); }
+    } catch (e) { /* silencioso: es solo el badge */ }
+  }
+
+  async function renderShifts() {
+    bindShifts();
+    const list = $('#shifts-list');
+    if (list) list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    try {
+      shiftsState.items = await Api.listActiveShifts();
+    } catch (e) {
+      console.error(e);
+      if (list) list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar los turnos.</p>';
+      return;
+    }
+    renderShiftsList();
+  }
+
+  function renderShiftsList() {
+    const list = $('#shifts-list');
+    if (!list) return;
+    const thr = staleThreshold();
+    const items = shiftsState.items;
+    if ($('#shifts-count')) $('#shifts-count').textContent = items.length;
+    const stale = items.filter(s => shiftHoursActive(s) >= thr).length;
+    const b = $('#shifts-badge'); if (b) { b.textContent = String(stale); b.classList.toggle('hidden', !stale); }
+    if (!items.length) {
+      list.innerHTML = `<div class="sh-empty"><svg class="icon"><use href="#i-check"/></svg><h3>Sin turnos abiertos</h3><p>No hay turnos en curso ahora mismo.</p></div>`;
+      return;
+    }
+    list.innerHTML = items.map(s => {
+      const v = s.vehicles || {};
+      const veh = `${escapeHtml(v.internal_code || '—')}${v.license_plate ? ' · ' + escapeHtml(v.license_plate) : ''}`;
+      const isStale = shiftHoursActive(s) >= thr;
+      const st = SHIFT_ST_ES[s.status] || escapeHtml(s.status);
+      return `<div class="shift-row${isStale ? ' stale' : ''}" data-shift-row="${s.id}">
+        <div class="shift-main">
+          <b>${escapeHtml(shiftDriverName(s))}</b>
+          <div class="shift-sub">${veh} · <span class="shift-st">${st}</span></div>
+          <div class="shift-meta">Inicio ${escapeHtml(shiftWhen(s))} · activo hace ${escapeHtml(fmtShiftAgo(s))}${isStale ? ' <span class="shift-flag">⚠ colgado</span>' : ''}</div>
+        </div>
+        <button class="set-btn dark" data-shift-close="${s.id}">Forzar cierre</button>
+      </div>`;
+    }).join('');
+  }
+
+  function bindShifts() {
+    const root = $('#shifts-ui');
+    if (!root || root._shiftsBound) return;
+    root._shiftsBound = true;
+    root.addEventListener('click', async (e) => {
+      if (e.target.closest('#shifts-refresh')) { renderShifts(); return; }
+      const cb = e.target.closest('[data-shift-close]');
+      if (cb) {
+        const id = cb.dataset.shiftClose;
+        const s = shiftsState.items.find(x => x.id === id);
+        const who = s ? shiftDriverName(s) : 'este conductor';
+        if (!confirm(`¿Forzar el cierre del turno de ${who}? Se cerrará el turno y el vehículo quedará disponible.`)) return;
+        cb.disabled = true;
+        try {
+          await Api.forceCloseShift(id, 'Cierre manual desde Turnos activos');
+          toast('Turno cerrado y vehículo liberado.');
+          shiftsState.items = shiftsState.items.filter(x => x.id !== id);
+          renderShiftsList();
+        } catch (err) {
+          console.error(err);
+          cb.disabled = false;
+          alert('No se pudo cerrar el turno: ' + (err.message || 'error'));
+        }
+        return;
+      }
+    });
+  }
+
+  // ====================================================================
+  // Inspecciones (admin) — revisión/aprobación + checklist configurable
+  // ====================================================================
+  const inspState = { items: [], filter: 'pending', current: null, checklist: [], vehicles: [], autoVehicleId: null, autoItems: [], adminPhoto: null };
+  const INSP_SEV = {
+    leve:  { cls: 'leve',  label: 'Leve',  text: 'Leve · informativo',       color: 'var(--green)' },
+    media: { cls: 'media', label: 'Media', text: 'Media · con cuidado',       color: 'var(--amber)' },
+    grave: { cls: 'grave', label: 'Grave', text: 'Grave · requiere atención', color: 'var(--red)' },
+  };
+  const INSP_ST = { pending: ['pend', 'Pendiente', 'i-warn'], approved: ['appr', 'Aprobada', 'i-check'], rejected: ['rej', 'Rechazada', 'i-x'] };
+  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero', damage: 'Golpe/daño', extra: 'Adicional' };
+  const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard'];
+
+  function inspShowView(v) {
+    $$('#inspections-ui .view').forEach(s => s.classList.toggle('on', s.id === 'insp-v-' + v));
+    window.scrollTo(0, 0);
+  }
+  function inspChecklistOf(insp) {
+    const c = insp && insp.checklist;
+    return (c && Array.isArray(c.items)) ? c.items : [];
+  }
+  function inspSeverityOf(insp) {
+    const c = insp && insp.checklist;
+    return (c && c.severity) || 'media';
+  }
+  function inspFallas(insp) { return inspChecklistOf(insp).filter(i => i.result === 'issue').length; }
+  function inspDriverName(insp) {
+    return (insp.driver_profiles && insp.driver_profiles.profiles && insp.driver_profiles.profiles.full_name) || '—';
+  }
+  function inspDriverProfileId(insp) {
+    return insp.driver_profiles && insp.driver_profiles.profiles && insp.driver_profiles.profiles.id;
+  }
+  function inspWhen(insp) {
+    try {
+      return new Date(insp.performed_at).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
+    } catch (e) { return ''; }
+  }
+  function inspCounts() {
+    const c = { pending: 0, approved: 0, rejected: 0, all: inspState.items.length };
+    inspState.items.forEach(i => { if (c[i.review_status] != null) c[i.review_status]++; });
+    return c;
+  }
+
+  function refreshInspectionsBadge() {
+    const setBadge = (n) => { const b = $('#inspections-badge'); if (!b) return; b.textContent = n; b.classList.toggle('hidden', !n); };
+    if (inspState.items.length) { setBadge(inspCounts().pending); return; }
+    Api.listInspectionsForReview('pending').then(rows => setBadge(rows.length)).catch(() => {});
+  }
+
+  async function renderInspections() {
+    bindInspections();
+    inspShowView('cola');
+    const list = $('#insp-list');
+    if (list) list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    try {
+      inspState.items = await Api.listInspectionsForReview(); // las que tienen novedad
+    } catch (e) {
+      console.error(e);
+      if (list) list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>';
+      return;
+    }
+    renderInspList();
+  }
+
+  function renderInspList() {
+    const counts = inspCounts();
+    if ($('#insp-count')) $('#insp-count').textContent = counts.pending;
+    $$('#insp-filter .n').forEach(n => { n.textContent = counts[n.dataset.c] != null ? counts[n.dataset.c] : 0; });
+    const b = $('#inspections-badge'); if (b) { b.textContent = counts.pending; b.classList.toggle('hidden', !counts.pending); }
+    const autosBar = $('#insp-autos-bar');
+    if (inspState.filter === 'autos') { renderAutosView(); return; }
+    if (autosBar) autosBar.classList.add('hidden');
+    const shown = inspState.items.filter(it => inspState.filter === 'all' ? true : it.review_status === inspState.filter);
+    const list = $('#insp-list');
+    list.innerHTML = shown.length ? shown.map(inspCardHtml).join('')
+      : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Nada por aquí</h3><p>No hay inspecciones en este filtro.</p></div>`;
+  }
+
+  // --- Filtro "Autos": elige un vehículo y ve todas sus inspecciones ---
+  async function renderAutosView() {
+    const bar = $('#insp-autos-bar');
+    if (bar) bar.classList.remove('hidden');
+    if (!inspState.vehicles.length) {
+      try { inspState.vehicles = await Api.listVehiclesForShift(); } catch (e) { console.error(e); }
+    }
+    const opts = inspState.vehicles.map(v =>
+      `<option value="${v.id}"${v.id === inspState.autoVehicleId ? ' selected' : ''}>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}${v.license_plate ? ' · ' + escapeHtml(v.license_plate) : ''}</option>`
+    ).join('');
+    if (bar) bar.innerHTML = `<div class="autosel"><label>Auto</label><select id="insp-auto-sel"><option value="">Elige un auto…</option>${opts}</select></div>`;
+    $('#insp-auto-sel')?.addEventListener('change', (e) => { inspState.autoVehicleId = e.target.value || null; loadAutoList(); });
+    loadAutoList();
+  }
+
+  async function loadAutoList() {
+    const list = $('#insp-list');
+    if (!list) return;
+    if (!inspState.autoVehicleId) {
+      list.innerHTML = `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-list"/></svg></div><h3>Elige un auto</h3><p>Selecciona un vehículo arriba para ver sus inspecciones.</p></div>`;
+      return;
+    }
+    list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    try { inspState.autoItems = await Api.listInspectionsByVehicle(inspState.autoVehicleId); }
+    catch (e) { console.error(e); list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>'; return; }
+    list.innerHTML = inspState.autoItems.length ? inspState.autoItems.map(inspCardHtml).join('')
+      : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Sin registros</h3><p>Este auto aún no tiene inspecciones.</p></div>`;
+  }
+
+  function inspFindItem(id) {
+    return inspState.items.find(x => x.id === id) || inspState.autoItems.find(x => x.id === id) || (inspState.current && inspState.current.id === id ? inspState.current : null);
+  }
+
+  function inspThumbsHtml() {
+    return `<div class="thumbs">${PHOTO_ORDER.map(() => `<span class="thumb"><svg class="icon"><use href="#i-cam"/></svg></span>`).join('')}</div>`;
+  }
+  function inspCardHtml(it) {
+    const sev = INSP_SEV[inspSeverityOf(it)] || INSP_SEV.media;
+    const st = INSP_ST[it.review_status] || INSP_ST.pending;
+    const fallas = inspFallas(it);
+    const v = it.vehicles || {};
+    const veh = `${escapeHtml(v.internal_code || '—')} · ${escapeHtml(v.license_plate || '')}`;
+    const vehname = escapeHtml([v.brand, v.model].filter(Boolean).join(' '));
+    const actions = it.review_status === 'pending'
+      ? `<div class="qactions"><button class="rbtn no" data-insp-rej="${it.id}"><svg><use href="#i-x"/></svg>Rechazar</button><button class="rbtn ok" data-insp-ok="${it.id}"><svg><use href="#i-check"/></svg>Aprobar</button><button class="btn dark sm" data-insp-open="${it.id}">Revisar <svg class="icon" style="width:14px;height:14px"><use href="#i-chev"/></svg></button></div>`
+      : `<div class="qactions"><span class="st ${st[0]}"><svg><use href="#${st[2]}"/></svg>${st[1]}</span><button class="btn ghost sm" data-insp-open="${it.id}">Ver</button></div>`;
+    const chips = it.has_damage
+      ? `<span class="chip ${sev.cls}"><svg><use href="#i-warn"/></svg>${sev.label}</span><span class="chip fallas">${fallas} ${fallas === 1 ? 'falla' : 'fallas'}</span>`
+      : `<span class="chip"><svg><use href="#i-check"/></svg>Sin novedad</span>`;
+    return `<div class="icard ${it.has_damage && inspSeverityOf(it) === 'grave' ? 'grave' : ''}">
+      <span class="avt" style="background:${colorOfId(it.id)}">${escapeHtml(initialsOf(inspDriverName(it)))}</span>
+      <div class="who"><b>${escapeHtml(inspDriverName(it))}</b><div class="sub"><span class="veh">${veh}</span> ${vehname} <span class="when"><svg class="icon" style="width:12px;height:12px"><use href="#i-clock"/></svg>${escapeHtml(inspWhen(it))}</span></div></div>
+      <div class="right">
+        <div class="chips">${chips}</div>
+        ${inspThumbsHtml()}
+        ${actions}
+      </div>
+    </div>`;
+  }
+
+  async function openInspectionDetail(id) {
+    bindInspections();
+    if (inspState.adminPhoto && inspState.adminPhoto.url) URL.revokeObjectURL(inspState.adminPhoto.url);
+    inspState.adminPhoto = null;
+    const view = $('#insp-v-detalle');
+    view.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    inspShowView('detalle');
+    let insp;
+    try { insp = await Api.getInspectionDetail(id); }
+    catch (e) { console.error(e); view.innerHTML = '<button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver</button><div class="card">No se pudo cargar la inspección.</div>'; return; }
+    inspState.current = insp;
+    let urls = {};
+    try { urls = await Api.signedInspectionPhotoUrls((insp.inspection_photos || []).map(p => p.storage_path)); } catch (e) { console.error(e); }
+    renderInspectionDetail(insp, urls);
+  }
+
+  function renderInspectionDetail(insp, urls) {
+    const v = insp.vehicles || {};
+    const sev = INSP_SEV[inspSeverityOf(insp)] || INSP_SEV.media;
+    const st = INSP_ST[insp.review_status] || INSP_ST.pending;
+    const items = inspChecklistOf(insp);
+    const fallas = items.filter(i => i.result === 'issue').length;
+    // Orden: los 5 ángulos fijos primero (en orden), luego golpe y adicionales.
+    const photoRank = (t) => { const i = PHOTO_ORDER.indexOf(t); return i === -1 ? 99 : i; };
+    const photos = (insp.inspection_photos || []).slice().sort((a, b) => photoRank(a.photo_type) - photoRank(b.photo_type));
+    const photosHtml = photos.length ? photos.map(p => {
+      const url = urls[p.storage_path];
+      const label = escapeHtml(PHOTO_LABELS[p.photo_type] || p.photo_type);
+      const inner = url ? `<img src="${url}" alt="${label}">` : `<svg class="icon"><use href="#i-cam"/></svg>`;
+      return `<div class="photo"${url ? ` data-insp-photo="${url}"` : ''}>${inner}<span class="plabel">${label}</span></div>`;
+    }).join('') : '<p style="color:var(--ink2);font-size:13px">Sin fotos.</p>';
+    const checklistHtml = items.length ? items.map(it => {
+      const bad = it.result === 'issue';
+      return `<div class="ckrow ${bad ? 'issue' : 'ok'}"><svg class="icon ci"><use href="#${bad ? 'i-warn' : 'i-check'}"/></svg><div><div class="lbl">${escapeHtml(it.label || '')}</div>${it.hint ? `<div class="hint">${escapeHtml(it.hint)}</div>` : ''}</div><span class="badge">${bad ? 'Con falla' : 'OK'}</span></div>`;
+    }).join('') : '<div class="ckrow ok"><span class="lbl" style="color:var(--ink2)">Sin checklist registrado.</span></div>';
+    const nextMaint = (v.last_maintenance_km != null && v.maintenance_interval_km) ? Math.max(0, (v.last_maintenance_km + v.maintenance_interval_km) - (v.current_km || 0)) : null;
+    const vehLine = `${v.status === 'available' ? 'Disponible' : (v.status || '—')}${nextMaint != null ? ` · mtto en ${nextMaint.toLocaleString('es-CO')} km` : ''}`;
+    const fmtDT = (s) => { try { return new Date(s).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }); } catch (e) { return ''; } };
+    const decision = insp.review_status === 'pending'
+      ? `<div class="card" id="insp-decision">
+           <h2>Resolver inspección</h2>
+           <p class="csub">Deja una nota con la solución y, si hace falta, adjunta una foto. Luego aprueba o rechaza.</p>
+           <label>Nota / solución (la verá el conductor)</label>
+           <textarea id="insp-resolve-note" placeholder="Ej: Se revisó el golpe, autorizado para operar. / Llevar a taller antes de seguir."></textarea>
+           <div class="adminphoto">
+             <button class="btn ghost sm" id="insp-admin-photo-btn" type="button"><svg class="icon"><use href="#i-cam"/></svg>Adjuntar foto (opcional)</button>
+             <input id="insp-admin-photo-input" type="file" accept="image/*" class="hidden">
+             <div id="insp-admin-photo-preview"></div>
+           </div>
+           <div class="abar" style="margin-top:12px">
+             <button class="rbtn no" id="insp-reject-btn"><svg><use href="#i-x"/></svg>Rechazar</button>
+             <button class="rbtn ok" id="insp-approve-btn"><svg><use href="#i-check"/></svg>Aprobar</button>
+           </div>
+           <div class="snapnote"><svg><use href="#i-info"/></svg><span>La nota y la foto quedan guardadas en la inspección. Al <b>rechazar</b> se notifica al conductor y se abre una novedad (el rechazo exige nota).</span></div>
+         </div>`
+      : `<div class="card"><h2>Revisión</h2>
+           <div class="kv"><span class="k">Estado</span><span class="v" style="color:${insp.review_status === 'approved' ? 'var(--green)' : 'var(--red)'}">${st[1]}</span></div>
+           ${insp.reviewed_at ? `<div class="kv"><span class="k">Revisada</span><span class="v">${escapeHtml(fmtDT(insp.reviewed_at))}</span></div>` : ''}
+           ${insp.review_notes ? `<div style="margin-top:10px"><div class="note"><b>Nota del admin:</b> ${escapeHtml(insp.review_notes)}</div></div>` : ''}</div>`;
+    $('#insp-v-detalle').innerHTML = `
+      <button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver a la cola</button>
+      <div class="card">
+        <div class="dhead">
+          <span class="avt" style="background:${colorOfId(insp.id)}">${escapeHtml(initialsOf(inspDriverName(insp)))}</span>
+          <div class="grow">
+            <h2>${escapeHtml(inspDriverName(insp))}</h2>
+            <div class="who"><div class="sub"><span class="veh">${escapeHtml(v.internal_code || '—')} · ${escapeHtml(v.license_plate || '')}</span> ${escapeHtml([v.brand, v.model].filter(Boolean).join(' '))} · ${escapeHtml(inspWhen(insp))}</div></div>
+          </div>
+          <span class="chip ${sev.cls}"><svg><use href="#i-warn"/></svg>Novedad ${sev.label.toLowerCase()}</span>
+          <span class="st ${st[0]}"><svg><use href="#${st[2]}"/></svg>${st[1]}</span>
+        </div>
+      </div>
+      <div class="cols">
+        <div class="card" style="margin-bottom:0">
+          <h2><svg class="icon"><use href="#i-cam"/></svg>Fotos de la inspección</h2>
+          <p class="csub">Capturadas por el conductor. Toca una para ampliar.</p>
+          <div class="pgrid">${photosHtml}</div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <h2><svg class="icon"><use href="#i-info"/></svg>Datos</h2>
+          <div style="margin-top:6px">
+            <div class="kv"><span class="k">Kilometraje de salida</span><span class="v mono">${insp.odometer_km != null ? insp.odometer_km.toLocaleString('es-CO') : '—'} km</span></div>
+            <div class="kv"><span class="k">Severidad reportada</span><span class="v" style="color:${sev.color}">${sev.text}</span></div>
+            ${insp.is_apt != null ? `<div class="kv"><span class="k">Estado del vehículo</span><span class="v" style="color:${insp.is_apt ? 'var(--green)' : 'var(--red)'};font-weight:800">${insp.is_apt ? 'APTO PARA OPERAR' : 'NO APTO PARA OPERAR'}</span></div>` : ''}
+            <div class="kv"><span class="k">Vehículo</span><span class="v">${escapeHtml(vehLine)}</span></div>
+            ${insp.signed_name ? `<div class="kv"><span class="k">Firma (conductor)</span><span class="v">${escapeHtml(insp.signed_name)}</span></div>` : ''}
+          </div>
+          ${insp.notes ? `<div style="margin-top:13px"><div class="note"><b>Nota del conductor:</b> ${escapeHtml(insp.notes)}</div></div>` : ''}
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2><svg class="icon"><use href="#i-check"/></svg>Checklist <span style="color:var(--ink3);font-weight:600;font-size:13px">(${items.length} ítems · ${fallas} con falla)</span></h2>
+        <p class="csub">Lo que el conductor revisó. En rojo, lo que marcó con problema.</p>
+        <div class="cklist">${checklistHtml}</div>
+      </div>
+      ${decision}`;
+  }
+
+  async function inspDoReview(id, status, notes) {
+    try {
+      await Api.reviewInspection(id, status, notes);
+      if (status === 'rejected') {
+        const pid = inspState.current ? inspDriverProfileId(inspState.current) : null;
+        if (pid) { try { await notify([pid], 'Inspección rechazada', notes || 'Tu inspección de inicio de turno fue rechazada.', '/'); } catch (e) {} }
+      }
+      const it = inspState.items.find(x => x.id === id);
+      if (it) { it.review_status = status; it.review_notes = notes || null; }
+      toast(status === 'approved' ? 'Inspección aprobada.' : 'Inspección rechazada.');
+      renderInspList();
+      inspShowView('cola');
+    } catch (e) {
+      console.error(e);
+      toast('No se pudo guardar la revisión.');
+    }
+  }
+
+  // Comprime una imagen a JPEG (máx 1280px) para no pasar el límite del bucket.
+  async function compressImage(file, maxDim = 1280, quality = 0.8) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('No se pudo leer la imagen')); i.src = url; });
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+      if (!blob) throw new Error('No se pudo comprimir');
+      return blob;
+    } finally { URL.revokeObjectURL(url); }
+  }
+
+  async function onAdminPhotoPicked(input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      const blob = await compressImage(file);
+      if (inspState.adminPhoto && inspState.adminPhoto.url) URL.revokeObjectURL(inspState.adminPhoto.url);
+      inspState.adminPhoto = { blob, url: URL.createObjectURL(blob), size: blob.size };
+      const prev = $('#insp-admin-photo-preview');
+      if (prev) prev.innerHTML = `<div class="adminphoto-prev"><img src="${inspState.adminPhoto.url}" alt="Foto del admin"><button class="x" id="insp-admin-photo-rm" type="button">✕</button></div>`;
+      $('#insp-admin-photo-rm')?.addEventListener('click', () => {
+        if (inspState.adminPhoto && inspState.adminPhoto.url) URL.revokeObjectURL(inspState.adminPhoto.url);
+        inspState.adminPhoto = null;
+        if (prev) prev.innerHTML = '';
+      });
+    } catch (e) { console.error(e); toast('No se pudo procesar la foto.'); }
+  }
+
+  // Resolver una inspección pendiente: nota (review_notes) + foto opcional del admin.
+  async function resolveInspection(status) {
+    const insp = inspState.current;
+    if (!insp) return;
+    const note = (($('#insp-resolve-note') && $('#insp-resolve-note').value) || '').trim();
+    if (status === 'rejected' && !note) { toast('Escribe el motivo del rechazo.'); return; }
+    const btn = status === 'approved' ? $('#insp-approve-btn') : $('#insp-reject-btn');
+    if (btn) btn.disabled = true;
+    try {
+      // 1) Subir la foto del admin (si adjuntó) y enlazarla a la inspección.
+      if (inspState.adminPhoto) {
+        const org = state.profile.organization_id;
+        const today = new Date().toISOString().slice(0, 10);
+        const path = `${org}/${insp.vehicle_id}/${today}/${insp.id}/admin-${Date.now()}.jpg`;
+        await Api.uploadInspectionPhoto(path, inspState.adminPhoto.blob);
+        await Api.addInspectionPhotos([{ inspection_id: insp.id, organization_id: org, photo_type: 'admin', storage_path: path, size_bytes: inspState.adminPhoto.size }]);
+        if (inspState.adminPhoto.url) URL.revokeObjectURL(inspState.adminPhoto.url);
+        inspState.adminPhoto = null;
+      }
+      // 2) Aprobar/rechazar con la nota (notifica al conductor si se rechaza).
+      await inspDoReview(insp.id, status, note || null);
+    } catch (e) {
+      console.error(e);
+      if (btn) btn.disabled = false;
+      toast('No se pudo resolver: ' + (e.message || 'error'));
+    }
+  }
+
+  async function openInspChecklist() {
+    bindInspections();
+    const view = $('#insp-v-config');
+    view.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    inspShowView('config');
+    try { inspState.checklist = await Api.listChecklistItems(false); }
+    catch (e) { console.error(e); view.innerHTML = '<button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver</button><div class="card">No se pudo cargar el checklist.</div>'; return; }
+    renderInspChecklist();
+  }
+
+  const CHECKLIST_CATEGORIES = ['Exterior', 'Llantas', 'Niveles y motor', 'Seguridad', 'Operación', 'Documentación'];
+
+  function renderInspChecklist() {
+    const items = inspState.checklist;
+    const itemRow = (it, i) => `<div class="crow ${it.is_active ? '' : 'off'}" data-insp-ci="${it.id}">
+      <span class="grip">⠿</span>
+      <div class="ctxt"><b>${escapeHtml(it.label)}</b>${it.hint ? `<span>${escapeHtml(it.hint)}</span>` : ''}</div>
+      <button class="cfgbtn" title="Subir" data-insp-cmove="up"${i === 0 ? ' disabled' : ''}><svg class="icon" style="width:15px;height:15px;transform:rotate(-90deg)"><use href="#i-chev"/></svg></button>
+      <button class="cfgbtn" title="Bajar" data-insp-cmove="down"${i === items.length - 1 ? ' disabled' : ''}><svg class="icon" style="width:15px;height:15px;transform:rotate(90deg)"><use href="#i-chev"/></svg></button>
+      <button class="tg ${it.is_active ? 'on' : ''}" title="Activar/desactivar" data-insp-ctoggle></button>
+      <button class="cfgbtn" title="Editar" data-insp-cedit><svg class="icon" style="width:15px;height:15px"><use href="#i-edit"/></svg></button>
+      <button class="cfgbtn danger" title="Eliminar" data-insp-cdel><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
+    </div>`;
+    // Agrupar por sección, conservando el orden global (índice i para reordenar).
+    const order = [], byCat = new Map();
+    items.forEach((it, i) => {
+      const cat = it.category || 'Sin sección';
+      if (!byCat.has(cat)) { byCat.set(cat, []); order.push(cat); }
+      byCat.get(cat).push(itemRow(it, i));
+    });
+    const rows = order.map(cat =>
+      `<p class="csub" style="font-weight:800;color:var(--ink);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em;font-size:11px">${escapeHtml(cat)}</p>${byCat.get(cat).join('')}`
+    ).join('');
+    const catOptions = CHECKLIST_CATEGORIES.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+    $('#insp-v-config').innerHTML = `
+      <button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver a la cola</button>
+      <div class="phead"><div><h1>Configurar checklist</h1><p>Define qué revisa el conductor al iniciar turno, agrupado por sección. Agrega, edita, reordena o desactiva ítems. Aplica a toda la flota.</p></div></div>
+      <div class="card">
+        <h2><svg class="icon"><use href="#i-list"/></svg>Ítems de la inspección</h2>
+        <p class="csub">Usa las flechas para reordenar. Desactiva los que no apliquen sin perder el historial.</p>
+        <div id="insp-citems">${rows || '<p style="color:var(--ink2);font-size:13px">Sin ítems. Agrega el primero abajo.</p>'}</div>
+        <div class="additem">
+          <div class="f"><label>Nuevo ítem</label><input id="insp-new-label" placeholder="Ej: Estado de la carrocería"></div>
+          <div class="f"><label>Sección</label><input id="insp-new-cat" list="insp-cat-list" placeholder="Ej: Exterior"><datalist id="insp-cat-list">${catOptions}</datalist></div>
+          <div class="f"><label>Pista / ayuda (opcional)</label><input id="insp-new-hint" placeholder="Ej: Rayones, golpes visibles"></div>
+          <button class="btn sm" id="insp-add"><svg class="icon" style="width:15px;height:15px"><use href="#i-plus"/></svg>Agregar</button>
+        </div>
+        <div class="snapnote" style="margin-top:16px"><svg><use href="#i-info"/></svg><span><b>Auditoría:</b> cada inspección guarda una copia de los ítems tal como estaban ese día. Si cambias el checklist, las inspecciones viejas no se alteran.</span></div>
+      </div>`;
+  }
+
+  function bindInspections() {
+    const root = $('#inspections-ui');
+    if (!root || root._inspBound) return;
+    root._inspBound = true;
+    root.addEventListener('click', async (e) => {
+      const fb = e.target.closest('#insp-filter button');
+      if (fb) { inspState.filter = fb.dataset.f; $$('#insp-filter button').forEach(b => b.classList.toggle('on', b === fb)); renderInspList(); return; }
+      if (e.target.closest('#insp-to-config')) { openInspChecklist(); return; }
+      if (e.target.closest('[data-insp-back]')) { renderInspections(); return; }
+      const open = e.target.closest('[data-insp-open]'); if (open) { openInspectionDetail(open.dataset.inspOpen); return; }
+      const ok = e.target.closest('[data-insp-ok]'); if (ok) { inspState.current = inspFindItem(ok.dataset.inspOk); inspDoReview(ok.dataset.inspOk, 'approved', null); return; }
+      const rej = e.target.closest('[data-insp-rej]'); if (rej) { openInspectionDetail(rej.dataset.inspRej); return; }
+      if (e.target.closest('#insp-admin-photo-btn')) { $('#insp-admin-photo-input')?.click(); return; }
+      if (e.target.closest('#insp-approve-btn')) { resolveInspection('approved'); return; }
+      if (e.target.closest('#insp-reject-btn')) { resolveInspection('rejected'); return; }
+      const ph = e.target.closest('[data-insp-photo]'); if (ph) { const img = $('#insp-lbx-img'); if (img) { img.src = ph.dataset.inspPhoto; $('#insp-lbx').classList.add('show'); } return; }
+      const tg = e.target.closest('[data-insp-ctoggle]');
+      if (tg) { const row = tg.closest('[data-insp-ci]'); const it = inspState.checklist.find(x => x.id === row.dataset.inspCi); if (it) { const nv = !it.is_active; try { await Api.updateChecklistItem(it.id, { is_active: nv }); it.is_active = nv; renderInspChecklist(); } catch (err) { console.error(err); toast('No se pudo actualizar.'); } } return; }
+      const del = e.target.closest('[data-insp-cdel]');
+      if (del) { const row = del.closest('[data-insp-ci]'); const id = row.dataset.inspCi; if (!confirm('¿Eliminar este ítem del checklist?')) return; try { await Api.deleteChecklistItem(id); inspState.checklist = inspState.checklist.filter(x => x.id !== id); renderInspChecklist(); toast('Ítem eliminado.'); } catch (err) { console.error(err); toast('No se pudo eliminar.'); } return; }
+      const ed = e.target.closest('[data-insp-cedit]');
+      if (ed) {
+        const row = ed.closest('[data-insp-ci]');
+        const it = inspState.checklist.find(x => x.id === row.dataset.inspCi);
+        if (!it) return;
+        // Edición completa: nombre, sección y ayuda (Cancelar en el nombre aborta).
+        const nv = prompt('Nombre del ítem:', it.label);
+        if (nv === null) return;
+        const label = nv.trim() || it.label;
+        const nc = prompt('Sección (' + CHECKLIST_CATEGORIES.join(', ') + '):', it.category || '');
+        const category = nc === null ? (it.category || null) : (nc.trim() || null);
+        const nh = prompt('Pista / ayuda (opcional):', it.hint || '');
+        const hint = nh === null ? (it.hint || null) : (nh.trim() || null);
+        const fields = {};
+        if (label !== it.label) fields.label = label;
+        if (category !== (it.category || null)) fields.category = category;
+        if (hint !== (it.hint || null)) fields.hint = hint;
+        if (!Object.keys(fields).length) return;
+        try { await Api.updateChecklistItem(it.id, fields); Object.assign(it, fields); renderInspChecklist(); toast('Ítem actualizado.'); }
+        catch (err) { console.error(err); toast('No se pudo editar.'); }
+        return;
+      }
+      const mv = e.target.closest('[data-insp-cmove]');
+      if (mv) { const row = mv.closest('[data-insp-ci]'); const idx = inspState.checklist.findIndex(x => x.id === row.dataset.inspCi); const j = idx + (mv.dataset.inspCmove === 'up' ? -1 : 1); if (j < 0 || j >= inspState.checklist.length) return; const arr = inspState.checklist; const tmp = arr[idx]; arr[idx] = arr[j]; arr[j] = tmp; renderInspChecklist(); try { await Api.reorderChecklistItems(arr.map(x => x.id)); } catch (err) { console.error(err); toast('No se pudo reordenar.'); } return; }
+      if (e.target.closest('#insp-add')) { const label = (($('#insp-new-label') && $('#insp-new-label').value) || '').trim(); if (!label) { toast('Escribe el nombre del ítem.'); return; } const hint = (($('#insp-new-hint') && $('#insp-new-hint').value) || '').trim(); const category = (($('#insp-new-cat') && $('#insp-new-cat').value) || '').trim() || null; try { const created = await Api.createChecklistItem({ organizationId: state.profile.organization_id, label, hint, category, sortOrder: inspState.checklist.length + 1 }); inspState.checklist.push(created); renderInspChecklist(); toast('Ítem agregado.'); } catch (err) { console.error(err); toast('No se pudo agregar.'); } return; }
+    });
+    // Foto que adjunta el admin al resolver (input file → cambia, no click).
+    root.addEventListener('change', (e) => {
+      if (e.target && e.target.id === 'insp-admin-photo-input') onAdminPhotoPicked(e.target);
+    });
+    const lbx = $('#insp-lbx');
+    if (lbx) lbx.addEventListener('click', (e) => { if (e.target.id === 'insp-lbx' || e.target.id === 'insp-lbx-close') lbx.classList.remove('show'); });
   }
 
   async function refreshPendingBadge() {
@@ -368,12 +950,31 @@
   // Admin: schedule
   // ====================================================================
 
+  // Calcula quién queda FUERA del pool del board: no llenó disponibilidad (corte
+  // pasado) o está suspendido esta semana. Se guarda en state para que renderPool
+  // lo lea síncrono. Fail-safe: si una consulta falla, no excluye a nadie.
+  async function refreshExclusions() {
+    state._excludedIds = new Set();
+    state._suspendedIds = new Set();
+    try {
+      if (weekAvailClosed(state.currentWeek)) {
+        const submitted = await Api.listSubmittedDriverIds(state.currentWeek);
+        state.drivers.forEach(d => { if (!submitted.has(d.id)) state._excludedIds.add(d.id); });
+      }
+    } catch (e) { state._excludedIds = new Set(); }
+    try {
+      const susp = await Api.getWeekSuspensions(state.currentWeek);
+      if (susp && susp.size) state.drivers.forEach(d => { if (susp.has(d.id)) state._suspendedIds.add(d.id); });
+    } catch (e) { /* fail-safe */ }
+  }
+
   async function refreshScheduleData() {
     $('#week-start-input').value = state.currentWeek;
     state.availability = await Api.getWeeklyAvailability(state.currentWeek, state.drivers);
     const sch = await Api.getSchedule(state.currentWeek);
     state.schedule = sch ? sch.data : null;
     $('#published-pill').classList.toggle('hidden', !sch?.published);
+    await refreshExclusions();
     renderSchedule();
     refreshPendingBadge();
     // Aviso de cambios de turno aceptados entre conductores (post-publicación).
@@ -432,76 +1033,353 @@
     return fc ? [...coordinatorAdmins(), fc] : coordinatorAdmins();
   };
 
-  function renderSchedule() {
-    const week = Scheduler.weekDates(state.currentWeek);
-    const header = $('#schedule-header');
-    header.innerHTML = '<th class="cell-label">FRANJA DE SERVICIO</th>' +
-      week.map(d => `<th>${d.label} ${d.dayNum}</th>`).join('');
+  // ====================================================================
+  // Admin: Horario — Tablero v4 (board drag & drop)
+  // El board reemplaza la tabla. Misma lógica/datos (state.schedule); solo
+  // cambia la presentación. Generar autollena; arrastrar ajusta a mano. La
+  // persistencia sigue siendo manual (Guardar/Publicar).
+  // ====================================================================
 
-    const settings = state.settings;
-    const sched = state.schedule;
-    const body = $('#schedule-body');
-    body.innerHTML = '';
+  let boardDrag = null;        // { id, src }  src = "day-kind-index" | "pool"
+  let boardJustPlaced = null;  // "day-kind-index": anima el último drop
+  let boardBound = false;      // bind de listeners una sola vez
+  let boardBadgeT = null;
 
-    for (let i = 0; i < settings.morning_slots; i++) {
-      const tr = document.createElement('tr');
-      tr.className = 'row-morning';
-      if (i === 0) {
-        tr.innerHTML = `<td class="cell-label" rowspan="${settings.morning_slots}">MAÑANA (${settings.morning_label})</td>` +
-          week.map(d => cellHtml(sched, d.key, 'morning', i)).join('');
-      } else {
-        tr.innerHTML = week.map(d => cellHtml(sched, d.key, 'morning', i)).join('');
-      }
-      body.appendChild(tr);
-    }
+  // Carriles del board derivados de settings + 2 de coordinación.
+  function boardLanes() {
+    const s = state.settings || { morning_slots: 2, afternoon_slots: 2 };
+    const lanes = [];
+    for (let i = 0; i < (s.morning_slots || 0); i++) lanes.push({ kind: 'morning', index: i, group: 'am' });
+    for (let i = 0; i < (s.afternoon_slots || 0); i++) lanes.push({ kind: 'afternoon', index: i, group: 'pm' });
+    lanes.push({ kind: 'coord_am', index: 0, group: 'co' });
+    lanes.push({ kind: 'coord_pm', index: 0, group: 'co' });
+    return lanes;
+  }
+  const BOARD_GROUP_LABEL = { am: 'Mañana', pm: 'Tarde', co: 'Líder' };
+  const laneShift = (kind) => (kind === 'morning' || kind === 'coord_am') ? 'am' : 'pm';
+  const laneLabel = (lane) => ({ morning: 'Mañana', afternoon: 'Tarde', coord_am: 'Líder AM', coord_pm: 'Líder PM' }[lane.kind] || lane.kind);
+  const laneShortLabel = (lane) => lane.group === 'am' ? 'AM' : lane.group === 'pm' ? 'PM' : (lane.kind === 'coord_am' ? 'Líder AM' : 'Líder PM');
+  const hardLabel = (k) => ({ unavailable: 'no disp.', rule: 'descanso fijo', double: 'doble turno' }[k] || 'conflicto');
 
-    for (let i = 0; i < settings.afternoon_slots; i++) {
-      const tr = document.createElement('tr');
-      tr.className = 'row-afternoon';
-      if (i === 0) {
-        tr.innerHTML = `<td class="cell-label" rowspan="${settings.afternoon_slots}">TARDE (${settings.afternoon_label})</td>` +
-          week.map(d => cellHtml(sched, d.key, 'afternoon', i)).join('');
-      } else {
-        tr.innerHTML = week.map(d => cellHtml(sched, d.key, 'afternoon', i)).join('');
-      }
-      body.appendChild(tr);
-    }
+  const isExcluded = (id) => !!(state._excludedIds && state._excludedIds.has(id));
+  const isSuspendedId = (id) => !!(state._suspendedIds && state._suspendedIds.has(id));
 
-    // Coordinación (admins) — 1 fila AM + 1 fila PM
-    [['coord_am', 'COORDINACIÓN AM'], ['coord_pm', 'COORDINACIÓN PM']].forEach(([kind, label]) => {
-      const tr = document.createElement('tr');
-      tr.className = 'row-coord';
-      tr.innerHTML = `<td class="cell-label">${label}</td>` +
-        week.map(d => cellHtml(sched, d.key, kind, 0)).join('');
-      body.appendChild(tr);
-    });
-
-    const restCount = Math.max(1, state.drivers.length - settings.morning_slots - settings.afternoon_slots);
-    for (let i = 0; i < restCount; i++) {
-      const tr = document.createElement('tr');
-      tr.className = 'row-rest';
-      if (i === 0) {
-        tr.innerHTML = `<td class="cell-label" rowspan="${restCount}">DESCANSO</td>` +
-          week.map(d => cellHtml(sched, d.key, 'rest', i)).join('');
-      } else {
-        tr.innerHTML = week.map(d => cellHtml(sched, d.key, 'rest', i)).join('');
-      }
-      body.appendChild(tr);
-    }
-
-    body.querySelectorAll('.shift-cell').forEach(cell => {
-      cell.addEventListener('click', () => openCellEditor(cell));
-    });
-
-    renderWorkerSummary();
+  function initialsOf(name) {
+    const p = String(name || '—').trim().split(/\s+/);
+    return ((p[0] || '')[0] || '') + ((p[1] || '')[0] || '');
+  }
+  function firstTwo(name) {
+    const p = String(name || '—').trim().split(/\s+/);
+    return p[0] + (p[1] ? ' ' + p[1][0] + '.' : '');
+  }
+  function colorOfId(id) {
+    const palette = ['#3B82F6', '#0EA5A0', '#8B5CF6', '#2563A8', '#16936A', '#7C5CD6', '#D98A12', '#0EA5E9', '#DB4B3F', '#F26522'];
+    let h = 0; const s = String(id);
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return palette[h % palette.length];
   }
 
-  function cellHtml(sched, day, kind, index) {
-    if (!sched) return `<td class="shift-cell text-slate-300" data-day="${day}" data-kind="${kind}" data-index="${index}">—</td>`;
-    const arr = sched[day]?.[kind];
-    const id = arr?.[index];
-    const label = id ? nameOf(id).toUpperCase() : '—';
-    return `<td class="shift-cell" data-day="${day}" data-kind="${kind}" data-index="${index}">${label}</td>`;
+  // Carga semanal (manejo + coordinación) de un id sobre state.schedule.
+  function boardLoadOf(id) {
+    if (!state.schedule) return 0;
+    let n = 0;
+    Scheduler.DAYS.forEach(day => {
+      const d = state.schedule[day]; if (!d) return;
+      ['morning', 'afternoon', 'coord_am', 'coord_pm'].forEach(k => { if ((d[k] || []).includes(id)) n++; });
+    });
+    return n;
+  }
+
+  // Conflicto DURO al tener `id` en day/kind: no disponible / descanso fijo / doble turno.
+  function dayConflict(day, id, kind) {
+    if (!id) return null;
+    const shift = laneShift(kind);
+    try { if (Scheduler.getState(state.availability, id, day, shift) === 'unavailable') return 'unavailable'; } catch (e) { /* */ }
+    const who = state.drivers.find(d => d.id === id) || state.admins.find(a => a.id === id);
+    try { if (who && Scheduler.ruleBlocked(who, day, shift)) return 'rule'; } catch (e) { /* */ }
+    const d = state.schedule?.[day] || {};
+    if (kind === 'morning' && (d.afternoon || []).includes(id)) return 'double';
+    if (kind === 'afternoon' && (d.morning || []).includes(id)) return 'double';
+    return null;
+  }
+  // Conflicto SUAVE: pidió descanso esa jornada (ámbar, no bloquea).
+  function daySoft(day, id, kind) {
+    if (!id || isCoordKind(kind)) return false;
+    try { return Scheduler.getState(state.availability, id, day, laneShift(kind)) === 'prefer_rest'; } catch (e) { return false; }
+  }
+  function conflictMsg(key, id, day) {
+    const nm = (nameOf(id) || '').split(' ')[0];
+    const dl = (Scheduler.DAY_LABELS_ES[day] || day).toLowerCase();
+    const why = { unavailable: 'no está disponible', rule: 'tiene descanso fijo', double: 'quedaría con doble turno' }[key] || 'tiene un conflicto';
+    return `${nm} ${why} el ${dl}. Queda marcado en rojo.`;
+  }
+
+  function dayCoverage(dayKey) {
+    const lanes = boardLanes();
+    const d = state.schedule?.[dayKey];
+    let filled = 0;
+    lanes.forEach(l => { if (d?.[l.kind]?.[l.index]) filled++; });
+    return { filled, total: lanes.length };
+  }
+
+  // ---- Render principal (reemplaza la tabla anterior) ----
+  function renderSchedule() {
+    renderBoardChrome();
+    renderKPIs();
+    renderPool();
+    renderBoardGrid();
+    renderWorkerSummary();
+    bindBoard();
+  }
+
+  function renderBoardChrome() {
+    let saved = null;
+    try { saved = localStorage.getItem('rendio-board-theme'); } catch (e) { /* */ }
+    applyBoardTheme(saved === 'dark' ? 'dark' : 'light');
+
+    const week = Scheduler.weekDates(state.currentWeek);
+    const lbl = $('#board-week-label');
+    if (lbl) {
+      let mon = '';
+      try { mon = new Date(state.currentWeek + 'T00:00:00').toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' }).replace('.', ''); } catch (e) { /* */ }
+      lbl.textContent = `${String(week[0].dayNum).padStart(2, '0')} – ${String(week[6].dayNum).padStart(2, '0')} ${mon}`.trim();
+    }
+    const chip = $('#board-cutoff-chip');
+    if (chip) {
+      const info = reopenInfo(state.currentWeek);
+      if (info.active) { chip.textContent = `Reabierta hasta ${hhmmCO(info.until)}`; chip.className = 'chip ok'; }
+      else if (weekAvailClosed(state.currentWeek)) { chip.textContent = 'Corte cerrado'; chip.className = 'chip'; }
+      else { chip.textContent = 'Disponibilidad abierta'; chip.className = 'chip ok'; }
+    }
+  }
+
+  function renderKPIs() {
+    const el = $('#kpis'); if (!el) return;
+    const week = Scheduler.weekDates(state.currentWeek);
+    let filled = 0, total = 0, coordDays = 0, conf = 0;
+    week.forEach(d => {
+      const cov = dayCoverage(d.key);
+      filled += cov.filled; total += cov.total;
+      const day = state.schedule?.[d.key];
+      if (day?.coord_am?.[0] && day?.coord_pm?.[0]) coordDays++;
+      boardLanes().forEach(l => {
+        const id = day?.[l.kind]?.[l.index];
+        if (id && dayConflict(d.key, id, l.kind)) conf++;
+      });
+    });
+    const huecos = total - filled;
+    const pct = total ? Math.round(filled / total * 100) : 0;
+    const loads = state.drivers.map(d => ({ id: d.id, l: boardLoadOf(d.id) }));
+    const maxL = loads.reduce((m, x) => Math.max(m, x.l), 0);
+    const top = loads.filter(x => x.l === maxL && maxL > 0).map(x => (nameOf(x.id) || '').split(' ')[0]);
+    const low = loads.filter(x => !isExcluded(x.id) && !isSuspendedId(x.id) && x.l <= 2).map(x => (nameOf(x.id) || '').split(' ')[0]);
+    const rc = pct >= 90 ? 'var(--green)' : pct >= 75 ? 'var(--amber)' : 'var(--red)';
+    const covClass = pct >= 90 ? 'ok' : pct >= 75 ? 'warn' : 'alert';
+    const dots = (n, cls) => { const k = Math.min(n, 7); return k ? Array.from({ length: k }).map(() => `<i class="${cls}"></i>`).join('') : '<i></i>'; };
+    el.innerHTML = `
+      <div class="k ${covClass}">
+        <div class="ring" style="--p:${pct};--rc:${rc}"><b>${pct}</b></div>
+        <div class="tx"><em>Cobertura</em><b>${filled}/${total}</b><span>cupos cubiertos</span></div>
+      </div>
+      <div class="k ${huecos ? 'warn' : 'ok'}"><div class="tx"><em>Huecos</em><b>${huecos}</b><span>${huecos ? 'por cubrir' : 'todo cubierto'}</span><div class="dotrow">${dots(huecos, 'w')}</div></div></div>
+      <div class="k ${conf ? 'alert' : 'ok'}"><div class="tx"><em>Conflictos</em><b>${conf}</b><span>${conf ? 'revisa el rojo' : 'sin conflictos'}</span><div class="dotrow">${dots(conf, 'e')}</div></div></div>
+      <div class="k ${coordDays < 7 ? 'warn' : 'ok'}"><div class="tx"><em>Liderazgo</em><b>${coordDays}/7</b><span>días con líder</span></div></div>
+      <div class="k ${maxL >= 5 ? 'warn' : ''}"><div class="tx"><em>Balance</em><b>${top[0] || '—'}${maxL ? ' ' + maxL + '/5' : ''}</b><span>${low.length ? 'Carga baja: ' + low.slice(0, 2).join(', ') : 'reparto equilibrado'}</span></div></div>`;
+  }
+
+  function renderPool() {
+    const list = $('#plist'); if (!list) return;
+    const filter = (state._poolFilter || '').toLowerCase();
+    list.innerHTML = state.drivers.map(d => {
+      const out = isExcluded(d.id) || isSuspendedId(d.id);
+      const l = boardLoadOf(d.id);
+      const pct = Math.min(l / 5 * 100, 100);
+      const cls = out ? 'out' : l >= 5 ? 'hi' : l <= 2 ? 'lo' : '';
+      const mc = l >= 5 ? 'hi' : l <= 2 ? 'lo' : '';
+      const isFlex = (d.email || '').toLowerCase() === FLEX_COORD_EMAIL;
+      const sub = out ? (isSuspendedId(d.id) ? 'Suspendido' : 'Fuera del corte')
+        : (isFlex ? 'Lidera (flex)' : d.can_coordinate ? 'Lidera' : 'Disponible');
+      const hidden = filter && !(d.name || '').toLowerCase().includes(filter) ? ' hidden' : '';
+      return `<div class="pcard ${cls}"${out ? '' : ' draggable="true"'} data-driver="${d.id}" data-src="pool"${hidden}>
+        <span class="av" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span>
+        <div class="nm"><b>${escapeHtml(d.name)}</b><span>${escapeHtml(sub)}</span></div>
+        <div class="load"><b>${out ? '—' : l + '/5'}</b><div class="meter ${mc}"><i style="width:${out ? 0 : pct}%"></i></div></div>
+      </div>`;
+    }).join('');
+    const cnt = $('#poolcount');
+    if (cnt) cnt.textContent = String(state.drivers.filter(d => !isExcluded(d.id) && !isSuspendedId(d.id)).length);
+  }
+
+  function renderBoardGrid() {
+    const weekEl = $('#week'); if (!weekEl) return;
+    const week = Scheduler.weekDates(state.currentWeek);
+    const lanes = boardLanes();
+    const sched = state.schedule;
+    let todayISO = '';
+    try { todayISO = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }); } catch (e) { /* */ }
+
+    weekEl.style.gridTemplateRows = `auto ${lanes.map(() => 'minmax(46px,auto)').join(' ')}`;
+
+    let monAbbr = '';
+    try { monAbbr = new Date(state.currentWeek + 'T00:00:00').toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' }).replace('.', '').toUpperCase(); } catch (e) { /* */ }
+    let h = `<div class="corner">${escapeHtml(monAbbr)}</div>`;
+
+    week.forEach(d => {
+      const cov = dayCoverage(d.key);
+      const pct = cov.total ? Math.round(cov.filled / cov.total * 100) : 0;
+      const cls = cov.filled < cov.total ? (cov.total - cov.filled >= 2 ? 'alert' : 'warn') : '';
+      const today = d.date === todayISO ? 'today' : '';
+      h += `<div class="dhead ${cls} ${today}">
+          <div class="drow"><span class="dnum">${String(d.dayNum).padStart(2, '0')}</span><span class="dow">${escapeHtml(String(d.label).slice(0, 3))}</span></div>
+          <div class="cvbar"><i style="width:${pct}%"></i></div>
+          <div class="cvtx">${cov.filled}/${cov.total} cupos</div>
+        </div>`;
+    });
+
+    lanes.forEach(lane => {
+      h += `<div class="bl">${escapeHtml(laneLabel(lane))}</div>`;
+      week.forEach((d, di) => {
+        const wknd = di >= 5 ? 'wknd' : '';
+        const id = sched?.[d.key]?.[lane.kind]?.[lane.index] || null;
+        let inner;
+        if (id) {
+          const hard = dayConflict(d.key, id, lane.kind);
+          const soft = !hard && daySoft(d.key, id, lane.kind);
+          const cardCls = [
+            isCoordKind(lane.kind) ? 'coord' : '',
+            hard ? 'conf' : '',
+            soft ? 'soft' : '',
+            boardJustPlaced === `${d.key}-${lane.kind}-${lane.index}` ? 'just' : '',
+          ].filter(Boolean).join(' ');
+          const nm = nameOf(id);
+          const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isCoordKind(lane.kind) ? 'Lidera' : BOARD_GROUP_LABEL[lane.group]);
+          inner = `<div class="asg ${cardCls}" draggable="true" data-driver="${id}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
+              <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
+              <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(subtxt)}</span></div>
+              <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
+            </div>`;
+        } else {
+          inner = `<div class="drop" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">+ asignar<small>${escapeHtml(laneShortLabel(lane))}</small></div>`;
+        }
+        h += `<div class="zone ${wknd}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}"><div class="slot">${inner}</div></div>`;
+      });
+    });
+    weekEl.innerHTML = h;
+    boardJustPlaced = null;
+  }
+
+  // ---- Mutación del board (en memoria; persiste con Guardar/Publicar) ----
+  function ensureScheduleShape() {
+    state.schedule = state.schedule || Scheduler.emptySchedule();
+    Scheduler.DAYS.forEach(d => {
+      state.schedule[d] = state.schedule[d] || {};
+      ['morning', 'afternoon', 'rest', 'coord_am', 'coord_pm'].forEach(k => {
+        state.schedule[d][k] = state.schedule[d][k] || [];
+      });
+    });
+  }
+  function boardRemoveFrom(src) {
+    if (!src || src === 'pool' || !state.schedule) return;
+    const [day, kind, index] = src.split('-');
+    if (state.schedule[day] && state.schedule[day][kind]) {
+      state.schedule[day][kind][+index] = null;
+      if (!isCoordKind(kind)) rebuildRestRow(day);
+    }
+  }
+  function boardPlaceInto(day, kind, index, id, src) {
+    ensureScheduleShape();
+    if (isCoordKind(kind) && !coordPeople().some(p => p.id === id)) {
+      flashBoard('Solo líderes de turno (admin o Daniel) pueden ir en Líder de turno.');
+      return;
+    }
+    const scope = isCoordKind(kind) ? COORD_KINDS : ['morning', 'afternoon', 'rest'];
+    scope.forEach(k => { state.schedule[day][k] = (state.schedule[day][k] || []).filter(x => x !== id); });
+    if (src && src !== 'pool') boardRemoveFrom(src);
+    while (state.schedule[day][kind].length <= index) state.schedule[day][kind].push(null);
+    state.schedule[day][kind][index] = id;
+    if (!isCoordKind(kind)) rebuildRestRow(day);
+    boardJustPlaced = `${day}-${kind}-${index}`;
+    renderSchedule();
+    const c = dayConflict(day, id, kind);
+    if (c) flashBoard(conflictMsg(c, id, day));
+  }
+
+  function flashBoard(msg) {
+    const b = $('#badge'), t = $('#badgetx');
+    if (!b || !t) return;
+    t.textContent = msg;
+    b.classList.add('show');
+    clearTimeout(boardBadgeT);
+    boardBadgeT = setTimeout(() => b.classList.remove('show'), 3200);
+  }
+
+  function applyBoardTheme(theme) {
+    const b = $('#schedule-board'); if (!b) return;
+    b.setAttribute('data-theme', theme);
+    const use = b.querySelector('#board-theme-toggle .icon use');
+    if (use) use.setAttribute('href', theme === 'dark' ? '#i-sun' : '#i-moon');
+  }
+  function toggleBoardTheme() {
+    const b = $('#schedule-board'); if (!b) return;
+    const next = b.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyBoardTheme(next);
+    try { localStorage.setItem('rendio-board-theme', next); } catch (e) { /* */ }
+  }
+
+  // Listeners delegados en #schedule-board, una sola vez.
+  function bindBoard() {
+    if (boardBound) return;
+    const board = $('#schedule-board'); if (!board) return;
+    boardBound = true;
+
+    board.addEventListener('dragstart', e => {
+      const c = e.target.closest('[data-driver]'); if (!c) return;
+      if (c.classList.contains('out')) { e.preventDefault(); return; }
+      boardDrag = { id: c.dataset.driver, src: c.dataset.src || `${c.dataset.day}-${c.dataset.kind}-${c.dataset.index}` };
+      c.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', boardDrag.id); } catch (_) { /* */ }
+    });
+    board.addEventListener('dragend', () => {
+      board.querySelectorAll('.dragging').forEach(x => x.classList.remove('dragging'));
+      board.querySelectorAll('.zone.over').forEach(x => x.classList.remove('over'));
+      $('#poolzone')?.classList.remove('drophere');
+      boardDrag = null;
+    });
+    board.addEventListener('dragover', e => {
+      if (e.target.closest('.zone') || e.target.closest('#poolzone')) e.preventDefault();
+    });
+    board.addEventListener('dragenter', e => {
+      const z = e.target.closest('.zone');
+      if (z) { board.querySelectorAll('.zone.over').forEach(x => x.classList.remove('over')); z.classList.add('over'); $('#poolzone')?.classList.remove('drophere'); return; }
+      if (e.target.closest('#poolzone')) { $('#poolzone')?.classList.add('drophere'); board.querySelectorAll('.zone.over').forEach(x => x.classList.remove('over')); }
+    });
+    board.addEventListener('drop', e => {
+      if (!boardDrag) return;
+      const z = e.target.closest('.zone'), p = e.target.closest('#poolzone');
+      if (z) {
+        e.preventDefault();
+        boardPlaceInto(z.dataset.day, z.dataset.kind, +z.dataset.index, boardDrag.id, boardDrag.src);
+      } else if (p) {
+        e.preventDefault();
+        if (boardDrag.src && boardDrag.src !== 'pool') { boardRemoveFrom(boardDrag.src); renderSchedule(); }
+      }
+    });
+    // Click: X = quitar; celda = editor (también fallback táctil en móvil).
+    board.addEventListener('click', e => {
+      const x = e.target.closest('[data-remove]');
+      if (x) { e.stopPropagation(); boardRemoveFrom(x.dataset.remove); renderSchedule(); return; }
+      const cell = e.target.closest('.asg, .drop');
+      if (cell && cell.dataset.day) openCellEditor(cell);
+    });
+
+    $('#board-theme-toggle')?.addEventListener('click', toggleBoardTheme);
+    $('#pool-search')?.addEventListener('input', e => { state._poolFilter = e.target.value; renderPool(); });
+    $('#board-week-label')?.addEventListener('click', () => {
+      const inp = $('#week-start-input'); if (!inp) return;
+      if (inp.showPicker) { try { inp.showPicker(); return; } catch (_) { /* */ } }
+      inp.focus();
+    });
   }
 
   function renderWorkerSummary() {
@@ -610,7 +1488,7 @@
     const { schedule, warnings } = Scheduler.generateSchedule({
       drivers: pool,
       admins: coordPool,
-      settings: { morningSlots: state.settings.morning_slots, afternoonSlots: state.settings.afternoon_slots },
+      settings: { morningSlots: state.settings.morning_slots, afternoonSlots: state.settings.afternoon_slots, coordSlots: state.settings.coord_slots || 1 },
       availability: state.availability,
       flexCoordinatorId: flexId,
       weekStart: state.currentWeek,
@@ -620,6 +1498,9 @@
       seedPmIds,
     });
     state.schedule = schedule;
+    // El pool del board atenúa a los excluidos/suspendidos de esta generación.
+    state._excludedIds = new Set(excluded.map(d => d.id));
+    state._suspendedIds = new Set(suspendedThisWeek.map(d => d.id));
     const box = $('#schedule-warnings');
     const exclMsg = excluded.length
       ? `<p class="text-rose-700 font-semibold">⛔ ${excluded.length} conductor(es) fuera por no llenar disponibilidad antes del domingo 2:00 PM: ${excluded.map(d => escapeHtml(d.name)).join(', ')}</p>`
@@ -732,7 +1613,7 @@
   }
 
   function kindLabel(k) {
-    return { morning: 'Mañana', afternoon: 'Tarde', rest: 'Descanso', coord_am: 'Coordinación AM', coord_pm: 'Coordinación PM' }[k] || k;
+    return { morning: 'Mañana', afternoon: 'Tarde', rest: 'Descanso', coord_am: 'Líder de turno AM', coord_pm: 'Líder de turno PM' }[k] || k;
   }
 
   function closeCellEditor() {
@@ -785,7 +1666,8 @@
 
   async function refreshApprovals() {
     const container = $('#approvals-container');
-    container.innerHTML = '<p class="text-sm text-slate-500 p-4">Cargando…</p>';
+    const setT = (sel, v) => { const el = $(sel); if (el) el.textContent = v; };
+    container.innerHTML = '<div class="sol-empty"><p>Cargando…</p></div>';
     try {
       const driversById = {};
       state.drivers.forEach(d => { driversById[d.id] = d; });
@@ -793,76 +1675,112 @@
       const items = (await Api.listPendingApprovals(state.currentWeek))
         .filter(r => driversById[r.profile_id]);
 
-      const groups = {};
+      const TOTAL = state.drivers.length;
+      const cupoOf = (shift) => ((shift === 'am' ? (state.settings && state.settings.morning_slots) : (state.settings && state.settings.afternoon_slots)) || 2);
+
+      // Agrupa por slot (día-jornada) y deriva el tipo según el cupo real:
+      // puedes liberar = (total - descansos fijos) - cupo. Si piden más → conflicto.
+      const map = {};
       items.forEach(r => {
         const key = `${r.day_of_week}-${r.shift}`;
-        groups[key] = groups[key] || { day_of_week: r.day_of_week, shift: r.shift, items: [] };
-        groups[key].items.push(r);
+        (map[key] = map[key] || { key, day_of_week: r.day_of_week, shift: r.shift, items: [] }).items.push(r);
       });
+      const groups = Object.values(map).map(g => {
+        const dayKey = Scheduler.DAYS[g.day_of_week];
+        const pend = g.items.filter(i => i.state === 'pending');
+        let fixed = 0;
+        state.drivers.forEach(d => { try { if (Scheduler.ruleBlocked(d, dayKey, g.shift)) fixed++; } catch (e) { /* */ } });
+        const cupo = cupoOf(g.shift);
+        const maxGrant = Math.max(0, (TOTAL - fixed) - cupo);
+        const atWheel = Math.max(cupo, TOTAL - fixed - pend.length);
+        let kind = 'single';
+        if (pend.length > maxGrant) kind = 'conflict';
+        else if (pend.length > 1) kind = 'review';
+        return { ...g, dayKey, pend, maxGrant, atWheel, kind };
+      }).filter(g => g.pend.length > 0)
+        .sort((a, b) => a.day_of_week - b.day_of_week || a.shift.localeCompare(b.shift));
 
-      const sortedKeys = Object.keys(groups).sort((a, b) => {
-        const ga = groups[a], gb = groups[b];
-        if (ga.day_of_week !== gb.day_of_week) return ga.day_of_week - gb.day_of_week;
-        return ga.shift.localeCompare(gb.shift);
-      });
+      const allPend = groups.reduce((a, g) => a + g.pend.length, 0);
+      const nConf = groups.filter(g => g.kind === 'conflict').reduce((a, g) => a + g.pend.length, 0);
+      const nSingle = groups.filter(g => g.kind === 'single').reduce((a, g) => a + g.pend.length, 0);
+      setT('#solic-count', allPend); setT('#solic-n-all', allPend); setT('#solic-n-conf', nConf); setT('#solic-n-single', nSingle);
 
-      if (!sortedKeys.length) {
-        container.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl p-8 text-center shadow-card">
-          <p class="text-slate-400 text-3xl mb-2">✓</p>
-          <p class="text-sm text-slate-600 font-medium">No hay solicitudes pendientes esta semana.</p>
-        </div>`;
+      if (allPend === 0) {
+        container.innerHTML = `<div class="sol-empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Todo al día</h3><p>No hay solicitudes pendientes esta semana.</p></div>`;
         refreshPendingBadge();
         return;
       }
 
-      container.innerHTML = sortedKeys.map(k => {
-        const g = groups[k];
-        const dayLabel = Scheduler.DAY_LABELS_ES[Scheduler.DAYS[g.day_of_week]] || '';
-        const pendingCount = g.items.filter(i => i.state === 'pending').length;
-        const conflict = pendingCount >= 2;
-        return `<div class="approval-card ${conflict ? 'has-conflict' : ''}">
-          <div class="flex items-center justify-between mb-1">
-            <h3 class="font-bold text-base text-ink">${dayLabel} · ${g.shift.toUpperCase()}</h3>
-            ${conflict ? '<span class="text-xs font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-full">CONFLICTO</span>' : ''}
-          </div>
-          <p class="text-xs text-slate-500 mb-2">${pendingCount} pendiente${pendingCount !== 1 ? 's' : ''}</p>
-          ${g.items.map(i => approvalRowHtml(i, driversById)).join('')}
-        </div>`;
-      }).join('');
+      const filter = state._solicFilter || 'all';
+      const shown = groups.filter(g => filter === 'all' ? true : g.kind === filter);
+      container.innerHTML = shown.length
+        ? shown.map(g => approvalGroupHtml(g, driversById)).join('')
+        : `<div class="sol-empty"><h3>Sin solicitudes en este filtro</h3><p>Cambia de pestaña para ver el resto.</p></div>`;
 
-      container.querySelectorAll('button[data-action]').forEach(btn => {
-        btn.addEventListener('click', () => onApprovalAction(btn));
-      });
+      container.querySelectorAll('button[data-action]').forEach(btn => btn.addEventListener('click', () => onApprovalAction(btn)));
+      container.querySelectorAll('button[data-gok]').forEach(btn => btn.addEventListener('click', () => onApproveSlot(btn)));
     } catch (e) {
-      container.innerHTML = `<p class="text-sm text-rose-600 p-3">Error cargando solicitudes: ${e.message}</p>`;
+      container.innerHTML = `<div class="sol-empty"><h3>Error</h3><p>${escapeHtml(e.message)}</p></div>`;
     }
     refreshPendingBadge();
   }
 
-  function approvalRowHtml(r, driversById) {
-    const name = driversById[r.profile_id]?.name || 'Conductor eliminado';
-    const kindLabel = r.kind === 'unavailable' ? 'No disponible' : 'Descanso';
-    const stateBadge = approvalBadgeHtml(r);
-    const reasonLine = r.kind === 'unavailable'
-      ? `<p class="text-xs text-slate-700 mt-1"><strong>Razón:</strong> ${escapeHtml(r.reason || '(sin texto)')}</p>`
-      : '';
-    const adminNoteLine = r.admin_note ? `<p class="text-xs text-slate-500 mt-1 italic">Nota: ${escapeHtml(r.admin_note)}</p>` : '';
-    const actions = r.state === 'pending' ? `
-      <div class="flex gap-1.5 shrink-0 ml-2">
-        <button data-id="${r.id}" data-action="approve"
-                class="text-xs px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-semibold">Aprobar</button>
-        <button data-id="${r.id}" data-action="reject"
-                class="text-xs px-3 py-1.5 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 font-semibold">Rechazar</button>
-      </div>` : '';
-    return `<div class="approval-row">
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-semibold text-ink">${escapeHtml(name)} ${stateBadge}</p>
-        <p class="text-xs text-slate-500">${kindLabel}</p>
-        ${reasonLine}
-        ${adminNoteLine}
+  function approvalGroupHtml(g, driversById) {
+    const dayLabel = Scheduler.DAY_LABELS_ES[g.dayKey] || '';
+    const tag = g.kind === 'conflict'
+      ? `<span class="sol-gtag conflict"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Conflicto · sobran ${g.pend.length - g.maxGrant}</span>`
+      : g.kind === 'single'
+        ? `<span class="sol-gtag single"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg>Singleton</span>`
+        : `<span class="sol-gtag review">${g.pend.length} pendientes</span>`;
+    const ga = g.kind === 'conflict' ? ''
+      : `<div class="sol-gactions"><button class="sol-minibtn green" data-gok="${g.key}" data-ids="${g.pend.map(r => r.id).join(',')}"><svg class="icon"><use href="#i-check"/></svg>Aprobar slot</button></div>`;
+    return `<div class="sol-group ${g.kind === 'conflict' ? 'conflict' : ''}">
+      <div class="sol-ghead">
+        <span class="sol-slot"><b>${dayLabel}</b><span class="band ${g.shift}">${g.shift.toUpperCase()}</span></span>
+        <span class="sol-cupoinfo">Piden <b>${g.pend.length}</b> · puedes liberar <b>${g.maxGrant}</b> · quedan <b>${g.atWheel}</b> al volante</span>
+        ${tag}${ga}
       </div>
-      ${actions}
+      ${g.items.map(r => approvalRowHtml(r, driversById)).join('')}
     </div>`;
+  }
+
+  function approvalRowHtml(r, driversById) {
+    const d = driversById[r.profile_id];
+    const name = (d && d.name) || 'Conductor eliminado';
+    const reasonTxt = r.kind === 'unavailable' ? (r.reason || '(sin texto)') : 'Descanso';
+    const avt = `<span class="sol-avt" style="background:${colorOfId(r.profile_id)}">${escapeHtml(initialsOf(name))}</span>`;
+    if (r.state !== 'pending') {
+      const ok = r.state === 'approved';
+      return `<div class="sol-req done">${avt}
+        <div class="sol-who"><b>${escapeHtml(name)}</b><div class="meta"><span class="rsn">${escapeHtml(reasonTxt)}</span></div></div>
+        <span class="sol-resolved ${ok ? 'ok' : 'no'}"><svg class="icon"><use href="#${ok ? 'i-check' : 'i-x'}"/></svg>${ok ? 'Aprobado' : 'Rechazado'}</span>
+      </div>`;
+    }
+    const prio = (d && d.priority) || 1;
+    const senior = `<span class="sol-senior s${prio}"><span class="dot"></span>${prio} · ${SR_LABELS[prio] || ''}</span>`;
+    const note = r.admin_note ? `<span class="rsn" style="color:var(--ink2);font-weight:400">· ${escapeHtml(r.admin_note)}</span>` : '';
+    return `<div class="sol-req">${avt}
+      <div class="sol-who"><b>${escapeHtml(name)}</b><div class="meta"><span class="rsn">${escapeHtml(reasonTxt)}</span>${note}</div></div>
+      ${senior}
+      <div class="sol-ractions">
+        <button class="sol-rbtn ok" data-action="approve" data-id="${r.id}"><svg class="icon"><use href="#i-check"/></svg>Aprobar</button>
+        <button class="sol-rbtn no" data-action="reject" data-id="${r.id}"><svg class="icon"><use href="#i-x"/></svg>Rechazar</button>
+      </div>
+    </div>`;
+  }
+
+  async function onApproveSlot(btn) {
+    const ids = (btn.dataset.ids || '').split(',').filter(Boolean);
+    if (!ids.length) return;
+    btn.disabled = true;
+    try {
+      for (const id of ids) await Api.resolveApproval(id, 'approved', null);
+      await refreshApprovals();
+      toast(`${ids.length} descanso(s) aprobado(s).`);
+    } catch (e) {
+      alert('Error: ' + e.message);
+      btn.disabled = false;
+    }
   }
 
   async function onApprovalAction(btn) {
@@ -906,39 +1824,112 @@
 
   async function refreshAvailabilityMatrix() {
     state.availability = await Api.getWeeklyAvailability(state.currentWeek, state.drivers);
+    renderAvailability();
+    refreshPendingBadge();
+  }
+
+  // Estado visual de un slot (paleta limpia) a partir del estado crudo +
+  // la solicitud de aprobación + el bloqueo por parametrización.
+  //   avail = trabaja · req = descanso pedido · off = aprobado · rej = rechazado · lock = fijo
+  function availVisual(av, shift, blocked) {
+    if (blocked) return 'lock';
+    if ((av[shift] || 'available') === 'available') return 'avail';
+    const req = av[`${shift}_request`];
+    if (req && req.state === 'approved') return 'off';
+    if (req && req.state === 'rejected') return 'rej';
+    return 'req';
+  }
+
+  // Render del matriz de disponibilidad (sin fetch). Lo llama
+  // refreshAvailabilityMatrix (tras traer datos) y los filtros/búsqueda.
+  function renderAvailability() {
+    const head = $('#avail-head'), body = $('#avail-body');
+    if (!head || !body) return;
     const week = Scheduler.weekDates(state.currentWeek);
-    const header = $('#availability-header');
-    header.innerHTML = '<th class="text-left p-2">Conductor</th>' +
-      week.map(d => `<th class="p-2">${d.label.slice(0,3)} ${d.dayNum}</th>`).join('');
-    const body = $('#availability-body');
-    body.innerHTML = '';
+    const WKND = [5, 6];
+    const MON = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const lbl = $('#avail-week-label');
+    if (lbl && week.length) {
+      const m0 = new Date(week[0].date + 'T00:00:00').getMonth();
+      const m6 = new Date(week[6].date + 'T00:00:00').getMonth();
+      lbl.textContent = m0 === m6
+        ? `${week[0].dayNum} – ${week[6].dayNum} ${MON[m6]}`
+        : `${week[0].dayNum} ${MON[m0]} – ${week[6].dayNum} ${MON[m6]}`;
+    }
+    const cupoAm = (state.settings && state.settings.morning_slots) || 2;
+    const cupoPm = (state.settings && state.settings.afternoon_slots) || 2;
+
+    // Mapa visual por driver/día/jornada.
+    const vis = {};
     state.drivers.forEach(d => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td class="font-medium p-2">${escapeHtml(d.name)}</td>` +
-        week.map(day => {
-          const av = state.availability[d.id]?.[day.key] || { am: 'available', pm: 'available' };
-          // Bloqueo por parametrización: se muestra 🔒 y NO se puede editar.
-          const amBlocked = Scheduler.ruleBlocked(d, day.key, 'am');
-          const pmBlocked = Scheduler.ruleBlocked(d, day.key, 'pm');
-          const amState = amBlocked ? 'blocked' : av.am;
-          const pmState = pmBlocked ? 'blocked' : av.pm;
-          const amTip = amBlocked ? ' title="Bloqueado por parametrización (descanso fijo)"' : (av.am_reason ? ` title="${escapeAttr(av.am_reason)}"` : '');
-          const pmTip = pmBlocked ? ' title="Bloqueado por parametrización (descanso fijo)"' : (av.pm_reason ? ` title="${escapeAttr(av.pm_reason)}"` : '');
-          const amBadge = amBlocked ? ' 🔒' : miniBadge(av.am_request);
-          const pmBadge = pmBlocked ? ' 🔒' : miniBadge(av.pm_request);
-          return `<td class="p-1">
-            <div class="flex gap-1 justify-center items-center">
-              <button data-id="${d.id}" data-day="${day.key}" data-shift="am" data-state="${amState}"${amBlocked ? ' data-blocked="1"' : ''} class="avail-pill"${amTip}>AM${amBadge}</button>
-              <button data-id="${d.id}" data-day="${day.key}" data-shift="pm" data-state="${pmState}"${pmBlocked ? ' data-blocked="1"' : ''} class="avail-pill"${pmTip}>PM${pmBadge}</button>
-            </div>
-          </td>`;
-        }).join('');
-      body.appendChild(tr);
+      vis[d.id] = {};
+      week.forEach(day => {
+        const av = state.availability[d.id]?.[day.key] || { am: 'available', pm: 'available' };
+        vis[d.id][day.key] = {
+          am: availVisual(av, 'am', Scheduler.ruleBlocked(d, day.key, 'am')),
+          pm: availVisual(av, 'pm', Scheduler.ruleBlocked(d, day.key, 'pm')),
+        };
+      });
     });
 
-    body.querySelectorAll('.avail-pill').forEach(btn => {
-      btn.addEventListener('click', () => rotateAvailPill(btn));
+    // Resumen.
+    let nReq = 0, nOff = 0, nLock = 0;
+    state.drivers.forEach(d => week.forEach(day => ['am', 'pm'].forEach(b => {
+      const v = vis[d.id][day.key][b];
+      if (v === 'req') nReq++; else if (v === 'off') nOff++; else if (v === 'lock') nLock++;
+    })));
+    const working = (dayKey, b) => state.drivers.filter(d => {
+      const v = vis[d.id][dayKey][b]; return v === 'avail' || v === 'rej';
+    }).length;
+    let underCupo = 0;
+    week.forEach(day => { if (working(day.key, 'am') < cupoAm) underCupo++; if (working(day.key, 'pm') < cupoPm) underCupo++; });
+    const sum = $('#avail-summary');
+    if (sum) sum.innerHTML = `
+      <div class="av-scard" data-jump="pending"><div class="ic blue"><svg class="icon"><use href="#i-clock"/></svg></div><div><div class="n">${nReq}</div><div class="l">Descansos pedidos</div></div></div>
+      <div class="av-scard"><div class="ic rest"><svg class="icon"><use href="#i-zzz"/></svg></div><div><div class="n">${nOff}</div><div class="l">Descansos aprobados</div></div></div>
+      <div class="av-scard"><div class="ic lock"><svg class="icon"><use href="#i-lock"/></svg></div><div><div class="n">${nLock}</div><div class="l">Descansos fijos</div></div></div>
+      <div class="av-scard"><div class="ic warn"><svg class="icon"><use href="#i-warn"/></svg></div><div><div class="n">${underCupo}</div><div class="l">Slots bajo cupo</div></div></div>`;
+
+    // Cabecera.
+    head.innerHTML = `<tr><th class="namehead">Conductor</th>${week.map((d, i) => `<th><div class="dcell${WKND.includes(i) ? ' wknd' : ''}"><div class="dow">${d.label.slice(0, 3)}</div><div class="dnum">${d.dayNum}</div></div></th>`).join('')}</tr>`;
+
+    // Filtro + búsqueda.
+    const filter = state._availFilter || 'all';
+    const q = ($('#avail-search') && $('#avail-search').value || '').toLowerCase().trim();
+    const isVisible = d => {
+      if (q && !d.name.toLowerCase().includes(q)) return false;
+      if (filter === 'all') return true;
+      let change = false, pend = false;
+      week.forEach(day => ['am', 'pm'].forEach(b => { const v = vis[d.id][day.key][b]; if (v !== 'avail') change = true; if (v === 'req') pend = true; }));
+      return filter === 'changes' ? change : pend;
+    };
+    const rows = state.drivers.filter(isVisible);
+
+    // Fila de cobertura + filas de conductores.
+    const pip = (n, cupo) => { const cls = n < cupo ? (n === 0 ? 'bad' : 'warn') : ''; return `<span class="covpip ${cls}"><span class="d"></span>${n}</span>`; };
+    let html = `<tr class="covrow"><td class="namehead2">Al volante / cupo</td>${week.map(d => `<td><div class="covcell">${pip(working(d.key, 'am'), cupoAm)}${pip(working(d.key, 'pm'), cupoPm)}</div></td>`).join('')}</tr>`;
+    if (!rows.length) html += `<tr><td class="name">—</td><td colspan="7" class="av-none">Sin coincidencias.</td></tr>`;
+    const ICON = { req: 'i-clock', off: 'i-zzz', rej: 'i-x', lock: 'i-lock' };
+    rows.forEach(d => {
+      const role = d.can_coordinate ? 'Líder de turno' : 'Conductor';
+      html += `<tr><td class="name"><div class="person"><span class="av-avt" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span><div><b>${escapeHtml(d.name)}</b><span>${role}</span></div></div></td>`;
+      week.forEach((day, i) => {
+        const av = state.availability[d.id]?.[day.key] || { am: 'available', pm: 'available' };
+        const cell = (b) => {
+          const v = vis[d.id][day.key][b];
+          const blocked = v === 'lock';
+          const rawState = blocked ? 'blocked' : (av[b] || 'available');
+          const reason = av[`${b}_reason`];
+          const ic = ICON[v] ? `<svg class="icon ic"><use href="#${ICON[v]}"/></svg>` : '';
+          const tip = blocked ? ' title="Descanso fijo (parametrización)"' : (reason ? ` title="${escapeAttr(reason)}"` : '');
+          return `<button class="av-slot ${v}" data-id="${d.id}" data-day="${day.key}" data-shift="${b}" data-state="${rawState}"${blocked ? ' data-blocked="1"' : ''}${tip}>${ic}<span class="lbl">${b.toUpperCase()}</span></button>`;
+        };
+        html += `<td class="daycell${WKND.includes(i) ? ' wknd' : ''}"><span class="slots">${cell('am')}${cell('pm')}</span></td>`;
+      });
+      html += '</tr>';
     });
+    body.innerHTML = html;
+    body.querySelectorAll('.av-slot').forEach(btn => btn.addEventListener('click', () => rotateAvailPill(btn)));
   }
 
   function escapeAttr(s) {
@@ -1026,84 +2017,159 @@
   async function renderWorkers() {
     const list = $('#workers-list');
     list.innerHTML = '<p class="text-sm text-slate-500">Cargando…</p>';
-    let admins, drivers, strikeCounts, weekSusp;
+    let admins, drivers, strikeCounts, weekSusp, rulesRows, sched;
     try {
-      [admins, drivers, strikeCounts, weekSusp] = await Promise.all([
+      [admins, drivers, strikeCounts, weekSusp, rulesRows, sched] = await Promise.all([
         Api.listAdmins(), Api.listAllDriversForAdmin(),
         Api.getActiveStrikeCounts().catch(() => new Map()),
         Api.getWeekSuspensions(state.currentWeek).catch(() => new Map()),
+        Api.listDriverRules().catch(() => []),
+        Api.getSchedule(state.currentWeek).catch(() => null),
       ]);
     } catch (e) {
       list.innerHTML = `<p class="text-sm text-rose-600">Error cargando personal: ${escapeHtml(e.message)}</p>`;
       return;
     }
     state._strikeCounts = strikeCounts;
-    const activeDrivers = drivers.filter(d => d.active);
-    const suspended = drivers.filter(d => !d.active);
+    // ---- Reskin dirección C (maestro-detalle). VISUAL ONLY: reusa onWorkerAction y Api.* ----
+    const rulesMap = Api.rulesToMap(rulesRows);              // { profileId: Set('day-shift') }
+    const DAYS = Scheduler.DAYS;                              // mon..sun
+    const DLABEL = { mon: 'Lun', tue: 'Mar', wed: 'Mié', thu: 'Jue', fri: 'Vie', sat: 'Sáb', sun: 'Dom' };
 
-    const adminCards = admins.map(a => {
-      const coord = a.is_coordinator !== false;
-      return workerCardHtml({ name: a.full_name, email: a.email }, {
-        kind: 'admin',
-        actions: `<div class="worker-actions">
-          <button data-act="${coord ? 'coord-off' : 'coord-on'}" data-id="${a.id}" data-name="${escapeHtml(a.full_name)}"
-            class="wk-btn ${coord ? 'wk-coord-on' : 'wk-coord-off'}">
-            ${coord ? '✓ Coordina' : '✕ No coordina'}</button>
-        </div>`,
-      });
-    }).join('');
-
-    const activeCards = activeDrivers.map(d => {
-      const dcoord = d.can_coordinate === true;
-      const strikes = strikeCounts.get(d.id) || 0;
-      const isSuspWeek = weekSusp.has(d.id);
-      const strikeBadge = strikes > 0
-        ? `<span class="wk-strike-badge" title="Strikes activos">⚠ ${strikes}/3</span>` : '';
-      const suspBadge = isSuspWeek
-        ? `<span class="wk-susp-badge" title="Suspendido esta semana">🚫 Suspendido (esta semana)</span>` : '';
-      return workerCardHtml(d, {
-        kind: 'driver',
-        badges: strikeBadge + suspBadge,
-        actions: `<div class="worker-actions">
-          <button data-act="${dcoord ? 'dcoord-off' : 'dcoord-on'}" data-id="${d.id}" data-name="${escapeHtml(d.name)}"
-            class="wk-btn ${dcoord ? 'wk-coord-on' : 'wk-coord-off'}">
-            ${dcoord ? '✓ Coordina' : '✕ No coordina'}</button>
-          <button data-act="strike" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-strike">⚠ Strike</button>
-          <button data-act="strikes-history" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-history">Historial</button>
-          <button data-act="suspend" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-suspend">Suspender</button>
-          <button data-act="delete" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-delete">Eliminar</button>
-        </div>`,
-      });
-    }).join('') || '<p class="text-sm text-slate-500">No hay conductores activos.</p>';
-
-    const suspendedSection = suspended.length ? `
-      <div>
-        <h3 class="text-sm font-bold text-ink mb-2 mt-4">Suspendidos <span class="text-slate-400">(${suspended.length})</span></h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          ${suspended.map(d => workerCardHtml(d, {
-            kind: 'suspended',
-            actions: `<div class="worker-actions">
-              <button data-act="reactivate" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-reactivate">Reactivar</button>
-              <button data-act="delete" data-id="${d.id}" data-name="${escapeHtml(d.name)}" class="wk-btn wk-delete">Eliminar</button>
-            </div>`,
-          })).join('')}
-        </div>
-      </div>` : '';
-
-    list.innerHTML = `
-      <div>
-        <h3 class="text-sm font-bold text-ink mb-2">Administradores</h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">${adminCards}</div>
-      </div>
-      <div>
-        <h3 class="text-sm font-bold text-ink mb-2 mt-4">Conductores activos <span class="text-slate-400">(${activeDrivers.length})</span></h3>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">${activeCards}</div>
-      </div>
-      ${suspendedSection}`;
-
-    list.querySelectorAll('button[data-act]').forEach(btn => {
-      btn.addEventListener('click', () => onWorkerAction(btn));
+    // Carga de la semana (solo lectura, desde el horario guardado si existe).
+    const loadOf = {};
+    const bump = (id, k) => { const o = loadOf[id] = loadOf[id] || { am: 0, pm: 0, co: 0, total: 0 }; o[k]++; if (k !== 'co') o.total++; };
+    if (sched && sched.data) DAYS.forEach(day => {
+      const d = sched.data[day]; if (!d) return;
+      (d.morning   || []).forEach(id => bump(id, 'am'));
+      (d.afternoon || []).forEach(id => bump(id, 'pm'));
+      (d.coord_am  || []).forEach(id => bump(id, 'co'));
+      (d.coord_pm  || []).forEach(id => bump(id, 'co'));
     });
+
+    const restText = (id) => {
+      const set = rulesMap[id]; if (!set || !set.size) return '';
+      const byDay = {};
+      [...set].forEach(k => { const [day, sh] = k.split('-'); (byDay[day] = byDay[day] || []).push(sh); });
+      return DAYS.filter(d => byDay[d]).map(d => {
+        const sh = byDay[d].sort(); const both = sh.includes('am') && sh.includes('pm');
+        return DLABEL[d] + (both ? '' : ' ' + sh.map(s => s.toUpperCase()).join('/'));
+      }).join(' · ');
+    };
+
+    const people = [
+      ...admins.map(a => ({ id: a.id, name: a.full_name, email: a.email, role: 'admin',
+        coord: a.is_coordinator !== false, active: true, strikes: 0, suspWeek: false, rest: '',
+        load: { am: 0, pm: 0, co: 0, total: 0 } })),
+      ...drivers.map(d => ({ id: d.id, name: d.name, email: d.email, role: 'driver',
+        coord: d.can_coordinate === true, active: d.active !== false,
+        strikes: strikeCounts.get(d.id) || 0, suspWeek: weekSusp.has(d.id),
+        rest: restText(d.id), load: loadOf[d.id] || { am: 0, pm: 0, co: 0, total: 0 } })),
+    ];
+    if (!state._pcSel || !people.find(p => p.id === state._pcSel)) state._pcSel = people[0] ? people[0].id : null;
+
+    const PAL = ['#3B82F6', '#0EA5A0', '#8B5CF6', '#2563A8', '#16936A', '#7C5CD6', '#D98A12', '#0EA5E9', '#9A8D7A'];
+    const colorOf = (p) => { if (p.role === 'admin') return '#F26522';
+      let h = 0; for (let i = 0; i < p.id.length; i++) h = (h * 31 + p.id.charCodeAt(i)) >>> 0; return PAL[h % PAL.length]; };
+    const initials = (n) => { const a = (n || '').trim().split(/\s+/); return (((a[0] || '')[0] || '') + ((a[1] || '')[0] || '')).toUpperCase() || '·'; };
+    const loadCls = (t) => t >= 5 ? 'hi' : t <= 2 ? 'lo' : '';
+    const statusInfo = (p) => !p.active ? { cls: 'sus', dot: 'sus', label: 'Suspendido' }
+      : p.suspWeek ? { cls: 'warn', dot: 'warn', label: 'Susp. esta semana' }
+      : p.strikes >= 3 ? { cls: 'risk', dot: 'risk', label: 'En riesgo' }
+      : { cls: '', dot: 'ok', label: 'Activo' };
+    const strikesEl = (p) => { const risk = p.strikes >= 3 ? 'risk' : ''; let d = '';
+      for (let i = 0; i < 3; i++) d += `<i class="${i < p.strikes ? 'f' : ''}"></i>`; return `<span class="strikes ${risk}">${d}</span>`; };
+    const SI = '<svg class="pc-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
+
+    list.classList.add('pc');
+    list.innerHTML = `<div class="md">
+      <div class="mdlist">
+        <div class="lh"><div class="pc-search">${SI}<input id="pc-q" placeholder="Buscar persona…" autocomplete="off"></div></div>
+        <div id="pc-rows"></div>
+      </div>
+      <div id="pc-detail"></div>
+    </div>`;
+    const rowsEl = list.querySelector('#pc-rows');
+    const detEl = list.querySelector('#pc-detail');
+
+    const rowHtml = (p) => {
+      const si = statusInfo(p);
+      return `<div class="mrow ${p.id === state._pcSel ? 'on' : ''} ${!p.active ? 'sus' : ''}" data-sel="${p.id}">
+        <span class="av" style="background:${colorOf(p)}">${initials(p.name)}</span>
+        <div class="nm"><b>${escapeHtml(p.name)}</b><span>${p.role === 'admin' ? 'Administrador' : (p.rest ? 'Descanso: ' + escapeHtml(p.rest) : 'Conductor')}</span></div>
+        ${p.role === 'admin'
+          ? `<span class="sdot ${si.dot}"></span>`
+          : `<span class="mini ${loadCls(p.load.total)}"><i style="width:${Math.min(p.load.total / 5 * 100, 100)}%"></i></span>`}
+      </div>`;
+    };
+
+    const detailHtml = (p) => {
+      if (!p) return '';
+      const si = statusInfo(p); const adm = p.role === 'admin'; const L = p.load;
+      const nm = escapeAttr(p.name);
+      return `<div class="detail">
+        <div class="dhead">
+          <span class="av" style="background:${colorOf(p)}">${initials(p.name)}</span>
+          <div style="flex:1;min-width:0">
+            <h2>${escapeHtml(p.name)}</h2><div class="mail">${escapeHtml(p.email || '')}</div>
+            <div class="chips">
+              <span class="statechip ${si.cls}"><span class="sdot ${si.dot}"></span>${si.label}</span>
+              ${p.coord ? '<span class="statechip coord">★ Líder</span>' : ''}
+              <span class="statechip role">${adm ? 'Administrador' : 'Conductor'}</span>
+            </div>
+          </div>
+        </div>
+        <div class="dbody">
+          <div class="dblock">
+            <h3>Carga de la semana</h3>
+            ${adm ? '<p style="font-size:13px;color:var(--pc-ink2)">Los administradores no entran al reparto de turnos.</p>'
+              : `<div class="bigload ${loadCls(L.total)}"><span class="num">${L.total}<s>/5</s></span><span class="bar"><i style="width:${Math.min(L.total / 5 * 100, 100)}%"></i></span></div>
+                 <div class="breakdown"><div><b>${L.am}</b>AM</div><div><b>${L.pm}</b>PM</div><div><b>${L.co}</b>Coord</div></div>
+                 ${!sched ? '<p style="font-size:11px;color:var(--pc-ink3);margin-top:10px">Sin horario guardado esta semana.</p>' : ''}`}
+          </div>
+          <div class="dblock">
+            <h3>Reglas</h3>
+            <div class="ruleitem"><span class="t">Puede liderar</span><span class="v">${p.coord ? 'Sí' : 'No'}</span></div>
+            <div class="ruleitem"><span class="t">Descanso fijo</span><span class="v ${p.rest ? 'lock' : ''}">${p.rest ? '🔒 ' + escapeHtml(p.rest) : '—'}</span></div>
+            ${p.suspWeek ? '<div class="ruleitem"><span class="t">Esta semana</span><span class="v">Suspendido</span></div>' : ''}
+          </div>
+          <div class="dblock full">
+            <h3>Confiabilidad — strikes (${p.strikes}/3)</h3>
+            ${adm ? '<p style="font-size:13px;color:var(--pc-ink2)">No aplica a administradores.</p>'
+              : (p.strikes === 0 ? '<p style="font-size:13px;color:var(--pc-ink2)">Sin strikes registrados. Historial limpio.</p>'
+                 : `<div style="display:flex;align-items:center;gap:12px">${strikesEl(p)}<span style="font-size:13px;color:var(--pc-ink2)">${p.strikes}/3 activos. Abre el historial para el detalle.</span></div>`)}
+          </div>
+        </div>
+        <div class="dactions">
+          <button class="pc-btn ${p.coord ? 'on' : ''}" data-act="${adm ? (p.coord ? 'coord-off' : 'coord-on') : (p.coord ? 'dcoord-off' : 'dcoord-on')}" data-id="${p.id}" data-name="${nm}">${p.coord ? '✓ Lidera' : '✕ No lidera'}</button>
+          ${adm ? '' : `<button class="pc-btn" data-act="strike" data-id="${p.id}" data-name="${nm}">⚠ Strike</button>
+          <button class="pc-btn" data-act="strikes-history" data-id="${p.id}" data-name="${nm}">Historial</button>
+          <div class="spacer"></div>
+          <button class="pc-btn" data-act="${p.active ? 'suspend' : 'reactivate'}" data-id="${p.id}" data-name="${nm}">${p.active ? 'Suspender' : 'Reactivar'}</button>
+          <button class="pc-btn danger" data-act="delete" data-id="${p.id}" data-name="${nm}">Eliminar</button>`}
+        </div>
+      </div>`;
+    };
+
+    const paint = () => {
+      const q = (list.querySelector('#pc-q')?.value || '').toLowerCase().trim();
+      const match = (p) => !q || p.name.toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
+      const adminRows = people.filter(p => p.role === 'admin' && match(p)).map(rowHtml).join('');
+      const drvRows = people.filter(p => p.role === 'driver' && match(p)).map(rowHtml).join('');
+      rowsEl.innerHTML =
+        ((adminRows ? `<div class="pc-secth">Administradores</div>${adminRows}` : '') +
+         (drvRows ? `<div class="pc-secth">Conductores</div>${drvRows}` : '')) ||
+        '<div style="padding:16px;color:var(--pc-ink3);font-size:13px">Sin coincidencias.</div>';
+      detEl.innerHTML = detailHtml(people.find(p => p.id === state._pcSel));
+      detEl.querySelectorAll('button[data-act]').forEach(btn => btn.addEventListener('click', () => onWorkerAction(btn)));
+    };
+
+    rowsEl.addEventListener('click', (e) => {
+      const r = e.target.closest('[data-sel]'); if (!r) return;
+      state._pcSel = r.dataset.sel; paint();
+    });
+    list.querySelector('#pc-q').addEventListener('input', paint);
+    paint();
   }
 
   async function onWorkerAction(btn) {
@@ -1154,8 +2220,8 @@
     const msg = {
       suspend: 'Conductor suspendido.', reactivate: 'Conductor reactivado.',
       delete: 'Conductor eliminado.',
-      'coord-off': `${name} ya no entra en Coordinación.`, 'coord-on': `${name} ahora entra en Coordinación.`,
-      'dcoord-off': `${name} ya no entra en Coordinación.`, 'dcoord-on': `${name} ahora puede coordinar.`,
+      'coord-off': `${name} ya no entra como Líder de turno.`, 'coord-on': `${name} ahora entra como Líder de turno.`,
+      'dcoord-off': `${name} ya no entra como Líder de turno.`, 'dcoord-on': `${name} ahora puede liderar.`,
     };
     try {
       if (act === 'suspend') await Api.setProfileActive(id, false);
@@ -1230,60 +2296,115 @@
     $('#setting-afternoon-label').value = state.settings.afternoon_label;
     $('#setting-morning-slots').value = state.settings.morning_slots;
     $('#setting-afternoon-slots').value = state.settings.afternoon_slots;
+    if ($('#setting-coord-slots')) $('#setting-coord-slots').value = state.settings.coord_slots != null ? state.settings.coord_slots : 1;
+    if ($('#setting-shift-hours')) $('#setting-shift-hours').value = state.settings.shift_hours != null ? state.settings.shift_hours : 12;
+    if ($('#setting-auto-close-hours')) $('#setting-auto-close-hours').value = state.settings.auto_close_hours != null ? state.settings.auto_close_hours : 14;
     renderPriorityList();
     renderRulesEditor();
+    renderVehiclesSettings();
   }
 
+  // --- Vehículos (admin) — alta/baja de la flota desde Ajustes ---
+  const VEH_STATUS_ES = { available: 'Disponible', in_use: 'En uso', maintenance: 'Mantenimiento', blocked: 'Bloqueado' };
+  async function renderVehiclesSettings() {
+    const box = $('#vehicles-list');
+    if (!box) return;
+    box.innerHTML = '<p class="set-hint">Cargando…</p>';
+    let vehs = [];
+    try { vehs = await Api.listVehiclesForShift(); }
+    catch (e) { console.error(e); box.innerHTML = '<p class="set-hint">No se pudieron cargar los vehículos.</p>'; return; }
+    if (!vehs.length) { box.innerHTML = '<p class="set-hint">Aún no hay vehículos. Agrega el primero abajo.</p>'; return; }
+    box.innerHTML = vehs.map(v => `<div class="veh-row" data-veh="${v.id}">
+      <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km</span></div>
+      <span class="veh-stat st-${v.status}">${VEH_STATUS_ES[v.status] || escapeHtml(v.status || '')}</span>
+      <button class="veh-del" data-veh-del="${v.id}" title="Eliminar vehículo"><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
+    </div>`).join('');
+  }
+
+  async function onCreateVehicle() {
+    const code = ($('#new-veh-code') && $('#new-veh-code').value || '').trim();
+    const plate = ($('#new-veh-plate') && $('#new-veh-plate').value || '').trim();
+    if (!code || !plate) { toast('Código interno y placa son obligatorios.'); return; }
+    const veh = {
+      organization_id: state.profile.organization_id,
+      internal_code: code,
+      license_plate: plate.toUpperCase(),
+      brand: ($('#new-veh-brand').value || '').trim() || null,
+      model: ($('#new-veh-model').value || '').trim() || null,
+      capacity: Math.min(4, Math.max(1, parseInt($('#new-veh-capacity').value, 10) || 4)),
+      current_km: Math.max(0, parseInt($('#new-veh-km').value, 10) || 0),
+      soat_expires_at: $('#new-veh-soat').value || null,
+      tecnomec_expires_at: $('#new-veh-tecno').value || null,
+    };
+    const btn = $('#new-veh-create-btn'); const st = $('#new-veh-state');
+    btn.disabled = true; if (st) st.textContent = 'Creando…';
+    try {
+      await Api.createVehicle(veh);
+      ['code', 'plate', 'brand', 'model'].forEach(f => { const el = $('#new-veh-' + f); if (el) el.value = ''; });
+      $('#new-veh-capacity').value = '4'; $('#new-veh-km').value = '0';
+      $('#new-veh-soat').value = ''; $('#new-veh-tecno').value = '';
+      if (st) st.textContent = '';
+      toast('Vehículo agregado.');
+      renderVehiclesSettings();
+    } catch (e) {
+      console.error(e);
+      if (st) st.textContent = '';
+      const msg = /unique|duplicate/i.test(e.message || '') ? 'Ya existe un vehículo con ese código o placa.' : (e.message || 'error');
+      alert('No se pudo agregar: ' + msg);
+    } finally { btn.disabled = false; }
+  }
+
+  async function onDeleteVehicle(id) {
+    const v = (await safeVehicles()).find(x => x.id === id);
+    if (v && v.status === 'in_use' && !confirm('Este vehículo está EN USO en un turno activo. ¿Eliminarlo igual? Mejor espera a que el turno cierre.')) return;
+    if (!confirm('¿Eliminar este vehículo? Dejará de aparecer para los conductores. El historial de turnos e inspecciones se conserva.')) return;
+    try { await Api.softDeleteVehicle(id); toast('Vehículo eliminado.'); renderVehiclesSettings(); }
+    catch (e) { console.error(e); alert('No se pudo eliminar: ' + (e.message || 'error')); }
+  }
+  async function safeVehicles() { try { return await Api.listVehiclesForShift(); } catch (e) { return []; } }
+
   // --- Editor de parametrización: descansos fijos por conductor (Fase 4) ---
-  // Se inyecta dentro del panel de Ajustes, tras la lista de prioridad.
+  // Pinta sobre los elementos estáticos del panel de Ajustes (paleta limpia):
+  // <select #rules-driver-select> + grilla <div #rules-grid>.
   function renderRulesEditor() {
-    const prioBox = $('#priority-list');
-    if (!prioBox) return;
-    let box = document.getElementById('rules-editor');
-    if (!box) {
-      box = document.createElement('div');
-      box.id = 'rules-editor';
-      box.className = 'mt-6';
-      // Lo colocamos como hermano del contenedor de prioridad.
-      (prioBox.closest('section, div') || prioBox.parentNode).appendChild(box);
-    }
+    const sel = $('#rules-driver-select');
+    const grid = $('#rules-grid');
+    if (!sel || !grid) return;
     const drivers = [...state.drivers].sort((a, b) => a.name.localeCompare(b.name));
-    if (!drivers.length) { box.innerHTML = ''; return; }
+    if (!drivers.length) {
+      sel.innerHTML = '';
+      grid.innerHTML = '<p class="set-hint">No hay conductores activos.</p>';
+      return;
+    }
     if (!state._rulesDriverId || !drivers.some(d => d.id === state._rulesDriverId)) {
       state._rulesDriverId = drivers[0].id;
     }
-    const sel = state._rulesDriverId;
-    const rulesFor = new Set((state.rules || [])
-      .filter(r => r.profile_id === sel)
-      .map(r => `${r.day_of_week}-${r.shift}`));
+    const cur = state._rulesDriverId;
 
-    const opts = drivers.map(d => `<option value="${d.id}"${d.id === sel ? ' selected' : ''}>${escapeHtml(d.name)}</option>`).join('');
-    const rows = Scheduler.DAYS.map((dayKey, di) => {
+    sel.innerHTML = drivers.map(d => `<option value="${d.id}"${d.id === cur ? ' selected' : ''}>${escapeHtml(d.name)}</option>`).join('');
+    sel.onchange = (e) => { state._rulesDriverId = e.target.value; renderRulesEditor(); };
+
+    const rulesFor = new Set((state.rules || [])
+      .filter(r => r.profile_id === cur)
+      .map(r => `${r.day_of_week}-${r.shift}`));
+    grid.innerHTML = Scheduler.DAYS.map((dayKey, di) => {
       const label = Scheduler.DAY_LABELS_ES[dayKey];
+      const wknd = di >= 5 ? ' wknd' : '';
       const cell = (shift) => {
         const on = rulesFor.has(`${di}-${shift}`);
-        return `<button class="rule-cell ${on ? 'rule-on' : ''}" data-rule-day="${di}" data-rule-shift="${shift}">${shift.toUpperCase()}${on ? ' 🔒' : ''}</button>`;
+        const lock = on ? '<svg class="icon"><use href="#i-lock"/></svg>' : '';
+        return `<button class="set-tg${on ? ' on' : ''}" data-rule-day="${di}" data-rule-shift="${shift}">${lock}${shift.toUpperCase()}</button>`;
       };
-      return `<div class="rule-row"><span class="rule-day">${label}</span>${cell('am')}${cell('pm')}</div>`;
+      return `<div class="set-drow${wknd}"><span class="set-dname">${label}</span><div class="set-twin">${cell('am')}${cell('pm')}</div></div>`;
     }).join('');
 
-    box.innerHTML = `
-      <h3 class="text-sm font-bold text-ink mb-1">Descansos fijos (parametrización)</h3>
-      <p class="text-xs text-slate-500 mb-3">Marca los días/jornadas que un conductor tiene SIEMPRE de descanso. Saldrán 🔒 bloqueados en el horario y en su vista.</p>
-      <select id="rules-driver-select" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm mb-3 w-full max-w-xs">${opts}</select>
-      <div class="rules-grid">${rows}</div>`;
-
-    box.querySelector('#rules-driver-select').addEventListener('change', e => {
-      state._rulesDriverId = e.target.value;
-      renderRulesEditor();
-    });
-    box.querySelectorAll('.rule-cell').forEach(b => {
-      b.addEventListener('click', () => onToggleRule(sel, parseInt(b.dataset.ruleDay, 10), b.dataset.ruleShift, b));
+    grid.querySelectorAll('.set-tg').forEach(b => {
+      b.addEventListener('click', () => onToggleRule(cur, parseInt(b.dataset.ruleDay, 10), b.dataset.ruleShift, b));
     });
   }
 
   async function onToggleRule(profileId, dayOfWeek, shift, btn) {
-    const wasOn = btn.classList.contains('rule-on');
+    const wasOn = btn.classList.contains('on');
     btn.disabled = true;
     try {
       if (wasOn) await Api.deleteDriverRule({ profileId, dayOfWeek, shift });
@@ -1299,48 +2420,49 @@
     }
   }
 
-  // Prioridad por antigüedad (1=nuevo, 2=con tiempo, 3=antiguo). Influye SUAVE
-  // en la generación: ver scheduler.js (desempate por prioridad).
+  // Prioridad por antigüedad. 1=nuevo, 2=con tiempo, 3=antiguo (desempate SUAVE);
+  // 4=máxima (Julián): prioridad DURA, entra siempre primero (ver scheduler.js).
+  const SR_LABELS = { 1: 'Nuevo', 2: 'Con tiempo', 3: 'Antiguo', 4: 'Máxima' };
   function renderPriorityList() {
     const box = $('#priority-list');
     if (!box) return;
     const drivers = [...state.drivers].sort((a, b) => a.name.localeCompare(b.name));
     if (!drivers.length) {
-      box.innerHTML = '<p class="text-sm text-slate-500">No hay conductores activos.</p>';
+      box.innerHTML = '<p class="set-hint">No hay conductores activos.</p>';
       return;
     }
     box.innerHTML = drivers.map(d => {
       const p = d.priority || 1;
-      return `<div class="flex items-center justify-between gap-3 py-2 border-b border-slate-100 last:border-0">
-        <div class="min-w-0">
-          <p class="text-sm font-medium text-ink truncate">${escapeHtml(d.name)}</p>
-          <p class="text-xs text-slate-500 truncate">${escapeHtml(d.email || '')}</p>
-        </div>
-        <select data-prio-id="${d.id}" class="shrink-0 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none">
-          <option value="1"${p === 1 ? ' selected' : ''}>1 · Nuevo</option>
-          <option value="2"${p === 2 ? ' selected' : ''}>2 · Con tiempo</option>
-          <option value="3"${p === 3 ? ' selected' : ''}>3 · Antiguo</option>
-        </select>
+      const segs = [1, 2, 3, 4].map(n =>
+        `<button data-srval="${n}" class="${p === n ? 'on s' + n : ''}"><span class="num">${n}</span>${p === n ? SR_LABELS[n] : ''}</button>`
+      ).join('');
+      return `<div class="set-prow">
+        <span class="set-avt" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span>
+        <div class="set-pinfo"><b>${escapeHtml(d.name)}</b><span>${escapeHtml(d.email || '')}</span></div>
+        <div class="set-seg3" data-prio-id="${d.id}">${segs}</div>
       </div>`;
     }).join('');
-    box.querySelectorAll('select[data-prio-id]').forEach(sel => {
-      sel.addEventListener('change', () => onChangePriority(sel));
+    box.querySelectorAll('.set-seg3').forEach(seg => {
+      seg.querySelectorAll('button[data-srval]').forEach(btn => {
+        btn.addEventListener('click', () => onChangePriority(seg.dataset.prioId, parseInt(btn.dataset.srval, 10)));
+      });
     });
   }
 
-  async function onChangePriority(sel) {
-    const id = sel.dataset.prioId;
-    const value = parseInt(sel.value, 10) || 1;
-    sel.disabled = true;
+  async function onChangePriority(id, rawValue) {
+    const value = parseInt(rawValue, 10) || 1;
+    const d = state.drivers.find(x => x.id === id);
+    if (d && d.priority === value) return;            // ya está en ese valor
+    const seg = document.querySelector(`.set-seg3[data-prio-id="${id}"]`);
+    if (seg) seg.querySelectorAll('button').forEach(b => (b.disabled = true));
     try {
       await Api.setDriverPriority(id, value);
-      const d = state.drivers.find(x => x.id === id);
       if (d) d.priority = value;
+      renderPriorityList();
       toast('Prioridad actualizada.');
     } catch (e) {
       alert('Error al guardar prioridad: ' + e.message);
-    } finally {
-      sel.disabled = false;
+      renderPriorityList();
     }
   }
 
@@ -1419,10 +2541,15 @@
       afternoon_label: $('#setting-afternoon-label').value,
       morning_slots: Math.max(1, parseInt($('#setting-morning-slots').value, 10) || 2),
       afternoon_slots: Math.max(1, parseInt($('#setting-afternoon-slots').value, 10) || 2),
+      coord_slots: Math.max(1, parseInt($('#setting-coord-slots') && $('#setting-coord-slots').value, 10) || 1),
+      shift_hours: Math.max(1, parseInt($('#setting-shift-hours') && $('#setting-shift-hours').value, 10) || 12),
+      auto_close_hours: Math.min(72, Math.max(1, parseInt($('#setting-auto-close-hours') && $('#setting-auto-close-hours').value, 10) || 14)),
     };
     try {
       await Api.saveSettings(next);
       state.settings = { ...state.settings, ...next };
+      const saved = $('#set-saved-params');
+      if (saved) { saved.classList.add('show'); setTimeout(() => saved.classList.remove('show'), 1800); }
       toast('Ajustes guardados.');
     } catch (e) {
       alert('Error al guardar ajustes: ' + e.message);
@@ -1464,25 +2591,29 @@
       Scheduler.DAYS.forEach(dk => {
         const day = dataObj[dk];
         if (!day) return;
-        const drive = new Set([...(day.morning || []), ...(day.afternoon || [])]);
+        const morning = new Set(day.morning || []);
+        const afternoon = new Set(day.afternoon || []);
         const coord = new Set([...(day.coord_am || []), ...(day.coord_pm || [])]);
-        new Set([...drive, ...coord]).forEach(id => {
-          agg[id] = agg[id] || { manejo: 0, coord: 0 };
-          if (drive.has(id)) agg[id].manejo++;
-          else if (coord.has(id)) agg[id].coord++;
+        new Set([...morning, ...afternoon, ...coord]).forEach(id => {
+          agg[id] = agg[id] || { am: 0, pm: 0, co: 0 };
+          // 1 turno por día: manejar (AM/PM) tiene prioridad sobre coordinar.
+          if (morning.has(id)) agg[id].am++;
+          else if (afternoon.has(id)) agg[id].pm++;
+          else if (coord.has(id)) agg[id].co++;
         });
       });
     });
     const adminIds = new Set((state.admins || []).map(a => a.id));
-    const liveName = {};
-    (state.drivers || []).forEach(d => { liveName[d.id] = d.name; });
-    (state.admins || []).forEach(a => { liveName[a.id] = liveName[a.id] || a.name; });
     const driverIds = new Set((state.drivers || []).map(d => d.id));
+    const liveName = {}, liveMail = {};
+    (state.drivers || []).forEach(d => { liveName[d.id] = d.name; liveMail[d.id] = d.email || ''; });
+    (state.admins || []).forEach(a => { liveName[a.id] = liveName[a.id] || a.name; liveMail[a.id] = liveMail[a.id] || a.email || ''; });
     const list = Object.keys(agg).map(id => {
-      const manejo = agg[id].manejo, coord = agg[id].coord, total = manejo + coord;
+      const { am, pm, co } = agg[id];
+      const total = am + pm + co;
       const name = liveName[id] || merged[id] || '(eliminado)';
       const role = adminIds.has(id) ? 'Admin' : (driverIds.has(id) ? 'Conductor' : '—');
-      return { id, name, role, manejo, coord, total, horas: total * 12 };
+      return { id, name, email: liveMail[id] || '', role, am, pm, co, total, horas: total * ((state.settings && state.settings.shift_hours) || 12) };
     }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
     return { weeks: rows.length, list };
   }
@@ -1490,41 +2621,66 @@
   async function onGenerateBalance() {
     const fromV = $('#balance-from').value, toV = $('#balance-to').value;
     const box = $('#balance-table'), sum = $('#balance-summary');
-    if (!fromV || !toV) { sum.textContent = 'Elige el rango (Desde / Hasta).'; box.innerHTML = ''; return; }
+    if (!fromV || !toV) { sum.innerHTML = ''; box.innerHTML = '<div class="bal-empty"><h3>Elige el rango</h3><p>Selecciona Desde y Hasta para generar el informe.</p></div>'; return; }
     const fromWk = Scheduler.startOfWeekISO(fromV), toWk = Scheduler.startOfWeekISO(toV);
-    sum.textContent = 'Calculando…'; box.innerHTML = '';
+    sum.innerHTML = ''; box.innerHTML = '<div class="bal-empty"><p>Calculando…</p></div>';
     let rows;
     try { rows = await Api.listPublishedSchedules(fromWk, toWk); }
-    catch (e) { sum.textContent = 'Error: ' + e.message; return; }
+    catch (e) { box.innerHTML = `<div class="bal-empty"><h3>Error</h3><p>${escapeHtml(e.message)}</p></div>`; return; }
     const agg = aggregateBalance(rows);
     state.balanceData = { ...agg, fromV, toV };
-    sum.textContent = `Período ${fromV} → ${toV} · ${agg.weeks} semana(s) publicada(s) · ${agg.list.length} persona(s). Cada turno = 12 h.`;
     if (!agg.list.length) {
-      box.innerHTML = '<p class="text-sm text-slate-500 py-4">No hay horarios publicados en ese rango.</p>';
+      box.innerHTML = '<div class="bal-empty"><h3>Sin datos</h3><p>No hay horarios publicados en ese rango.</p></div>';
       return;
     }
-    box.innerHTML = `<table class="w-full text-sm border-collapse">
-      <thead><tr class="text-left text-xs uppercase tracking-wide text-slate-500 border-b">
-        <th class="py-2 pr-3">Nombre</th><th class="py-2 pr-3">Rol</th>
-        <th class="py-2 pr-3 text-right">Manejo</th><th class="py-2 pr-3 text-right">Coord.</th>
-        <th class="py-2 pr-3 text-right">Total turnos</th><th class="py-2 text-right">Horas</th></tr></thead>
-      <tbody>${agg.list.map(r => `<tr class="border-b border-slate-100">
-        <td class="py-2 pr-3 font-medium text-ink">${escapeHtml(r.name)}</td>
-        <td class="py-2 pr-3 text-slate-500">${r.role}</td>
-        <td class="py-2 pr-3 text-right">${r.manejo}</td>
-        <td class="py-2 pr-3 text-right">${r.coord}</td>
-        <td class="py-2 pr-3 text-right font-semibold">${r.total}</td>
-        <td class="py-2 text-right font-semibold">${r.horas} h</td></tr>`).join('')}</tbody></table>`;
+    const r = agg.list;
+    const totAm = r.reduce((a, x) => a + x.am, 0);
+    const totPm = r.reduce((a, x) => a + x.pm, 0);
+    const totCo = r.reduce((a, x) => a + x.co, 0);
+    const totTurnos = totAm + totPm + totCo;
+    const TH = (state.settings && state.settings.shift_hours) || 12;
+    const totHoras = totTurnos * TH;
+    const maxH = Math.max(...r.map(x => x.horas), 1);
+    const avg = Math.round(totHoras / r.length);
+    sum.innerHTML = `
+      <div class="bal-scard accent"><div class="n">${totTurnos}</div><div class="l">Turnos publicados</div></div>
+      <div class="bal-scard"><div class="n">${totHoras}<s> h</s></div><div class="l">Horas totales</div></div>
+      <div class="bal-scard"><div class="n">${r.length}</div><div class="l">Personas con turno</div></div>
+      <div class="bal-scard"><div class="n">${avg}<s> h</s></div><div class="l">Promedio por persona</div></div>`;
+    const pill = (v, cls) => `<span class="bal-pill ${v ? cls : 'z'}">${v}</span>`;
+    box.innerHTML = `
+      <div class="bal-report">
+        <div class="bal-rhead"><svg class="icon"><use href="#i-doc"/></svg><h2>Detalle por persona</h2><span class="period">${escapeHtml(fromV)} → ${escapeHtml(toV)} · ${agg.weeks} sem · turno = ${TH} h</span></div>
+        <table class="bal-bt">
+          <thead><tr><th>Persona</th><th class="num">AM</th><th class="num">PM</th><th class="num">Coord</th><th class="num">Turnos</th><th class="num" style="width:210px">Horas</th></tr></thead>
+          <tbody>${r.map(p => `<tr>
+            <td><div class="person"><span class="bal-avt" style="background:${colorOfId(p.id)}">${escapeHtml(initialsOf(p.name))}</span><div><b>${escapeHtml(p.name)}</b><span>${escapeHtml(p.email || p.role)}</span></div></div></td>
+            <td class="num">${pill(p.am, 'am')}</td>
+            <td class="num">${pill(p.pm, 'pm')}</td>
+            <td class="num">${pill(p.co, 'co')}</td>
+            <td class="num"><b>${p.total}</b></td>
+            <td class="num"><div class="bal-hrs"><span class="bar"><i style="width:${Math.round(p.horas / maxH * 100)}%"></i></span><b>${p.horas} h</b></div></td>
+          </tr>`).join('')}</tbody>
+          <tfoot><tr>
+            <td>Total · ${r.length} personas</td>
+            <td class="num">${totAm}</td><td class="num">${totPm}</td><td class="num">${totCo}</td>
+            <td class="num">${totTurnos}</td><td class="num">${totHoras} h</td>
+          </tr></tfoot>
+        </table>
+      </div>`;
   }
 
   function onDownloadBalanceCsv() {
     const bd = state.balanceData;
     if (!bd || !bd.list.length) { toast('Genera primero un informe con datos.'); return; }
     const esc = v => { v = String(v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const tot = k => bd.list.reduce((a, x) => a + x[k], 0);
+    const TH = (state.settings && state.settings.shift_hours) || 12;
     const lines = [
       `Balance de turnos;${bd.fromV} a ${bd.toV};${bd.weeks} semanas publicadas`,
-      ['Nombre', 'Rol', 'Turnos manejo', 'Dias coordinacion', 'Total turnos', 'Horas (x12)'].join(';'),
-      ...bd.list.map(r => [r.name, r.role, r.manejo, r.coord, r.total, r.horas].map(esc).join(';')),
+      ['Nombre', 'Email', 'Rol', 'AM', 'PM', 'Liderazgo', 'Total turnos', `Horas (x${TH})`].join(';'),
+      ...bd.list.map(r => [r.name, r.email, r.role, r.am, r.pm, r.co, r.total, r.horas].map(esc).join(';')),
+      ['Total', '', '', tot('am'), tot('pm'), tot('co'), tot('total'), tot('total') * TH].map(esc).join(';'),
     ];
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
@@ -1780,6 +2936,7 @@
     await renderDriverRequests();
     await renderDriverPublishedSchedule();
     await renderDriverSwaps();
+    updateDriverHome(); // mantiene fresco el sub de la tarjeta de disponibilidad en la home
   }
 
   function updateDriverWeekLabel() {
@@ -1795,6 +2952,60 @@
   function navigateDriverWeek(deltaDays) {
     setCurrentWeekManual(Scheduler.addDays(state.currentWeek, deltaDays));
     refreshDriverView();
+  }
+
+  // ---- Navegación del conductor: pestañas inferiores (home/avail/schedule/requests) ----
+
+  // Muestra la barra inferior (la primera vez que el conductor entra a un módulo).
+  function revealDriverNav() {
+    if (state.driverNavRevealed) return;
+    state.driverNavRevealed = true;
+    $('#driver-nav')?.classList.add('show');
+    $('#driver-tabs-root')?.classList.add('nav-on');
+  }
+
+  function setDriverTab(name) {
+    state.driverTab = name;
+    if (name !== 'home') revealDriverNav(); // entrar a un módulo revela la barra
+    $$('#driver-tabs-root .driver-panel').forEach(p => p.classList.toggle('hidden', p.dataset.dtab !== name));
+    $$('#driver-nav .dnav-btn').forEach(b => b.classList.toggle('active', b.dataset.dtab === name));
+    // Barra de semana: solo en Disponibilidad y Mi horario.
+    $('#driver-week-bar')?.classList.toggle('hidden', !(name === 'avail' || name === 'schedule'));
+    // Barra de Guardar: solo en Disponibilidad.
+    $('#driver-save-bar')?.classList.toggle('hidden', name !== 'avail');
+    if (name === 'home') updateDriverHome();
+    window.scrollTo(0, 0);
+  }
+
+  // Aliases para llamadas existentes.
+  function showDriverHome() { setDriverTab('home'); }
+  function showDriverAvailability() { setDriverTab('avail'); }
+
+  // Saludo de la home ("Carlos · Martes 10 de junio") + estado de la tarjeta de disponibilidad.
+  function updateDriverHome() {
+    const sub = $('#driver-home-sub');
+    if (sub && state.profile) {
+      const name = firstNameOf(state.profile);
+      const today = new Date().toLocaleDateString('es-CO',
+        { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Bogota' });
+      sub.textContent = `${name} · ${today.charAt(0).toUpperCase()}${today.slice(1)}`;
+    }
+    const cardSub = $('#driver-availability-card-sub');
+    if (cardSub) cardSub.textContent = availabilitySummaryText();
+  }
+
+  function availabilitySummaryText() {
+    const own = state.ownAvail || {};
+    const week = Scheduler.weekDates(state.currentWeek);
+    const marked = week.filter(d => !!own[d.key]).length;
+    const total = week.length;
+    const range = weekLabelES(state.currentWeek);
+    if (marked === 0) return `Marca tus turnos para la semana del ${range}. El admin asigna y confirma.`;
+    if (marked < total) {
+      const missing = total - marked;
+      return `Te falta${missing === 1 ? '' : 'n'} ${missing} día${missing === 1 ? '' : 's'} por marcar para la semana del ${range}.`;
+    }
+    return `Disponibilidad lista para la semana del ${range}. Puedes ajustarla.`;
   }
 
   function renderDriverDays() {
@@ -2116,8 +3327,8 @@
       const meId = state.profile.id;
       if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Manejo' });
       if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Manejo' });
-      if ((day.coord_am || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Coordinación' });
-      if ((day.coord_pm || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Coordinación' });
+      if ((day.coord_am || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Líder de turno' });
+      if ((day.coord_pm || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Líder de turno' });
     });
     if (summaryBox) {
       if (!myShifts.length) {
@@ -2126,10 +3337,10 @@
           <p class="text-sm text-slate-500 mt-1">No tienes turnos asignados esta semana.</p>
         </div>`;
       } else {
-        const horas = myShifts.length * 12;
+        const horas = myShifts.length * ((state.settings && state.settings.shift_hours) || 12);
         const items = myShifts.map(s => `<li class="flex items-center justify-between border-b border-slate-100 last:border-0 py-1.5">
           <span class="text-sm text-ink">${s.d.label} ${s.d.dayNum}</span>
-          <span class="text-xs font-semibold text-slate-600">${s.shift}${s.kind === 'Coordinación' ? ' · Coord.' : ''}</span>
+          <span class="text-xs font-semibold text-slate-600">${s.shift}${s.kind === 'Líder de turno' ? ' · Líder' : ''}</span>
         </li>`).join('');
         summaryBox.innerHTML = `<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
           <p class="text-sm font-bold text-ink">Mi semana</p>
@@ -2498,10 +3709,10 @@
     } catch (e) { /* ignore */ }
     if (alreadySub) { existing?.remove(); return; }
 
-    // Contenedor según el rol.
+    // Contenedor según el rol (conductor: dentro de la pestaña Inicio).
     const host = state.profile.role === 'admin'
       ? document.getElementById('app-shell')
-      : document.getElementById('screen-driver');
+      : document.querySelector('#driver-tabs-root [data-dtab="home"]');
     if (!host) return;
     if (existing) return; // ya está
     const bar = document.createElement('div');
@@ -2509,7 +3720,9 @@
     bar.className = 'push-bar';
     bar.innerHTML = `<span>🔔 Activa las notificaciones para enterarte de cambios de turno, strikes y horarios.</span>
       <button id="enable-push-btn" class="wk-btn wk-coord-on" style="flex:0 0 auto;">Activar</button>`;
-    host.insertBefore(bar, host.firstChild);
+    // Admin: arriba del shell. Conductor: al final del Inicio (debajo de las 2 tarjetas).
+    if (state.profile.role === 'admin') host.insertBefore(bar, host.firstChild);
+    else host.appendChild(bar);
     document.getElementById('enable-push-btn').addEventListener('click', enablePush);
   }
 
