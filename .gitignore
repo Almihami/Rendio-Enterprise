@@ -28,6 +28,12 @@ __pycache__/
 .venv/
 venv/
 
+# Node (scripts auxiliares)
+node_modules/
+
+# PII real — NUNCA commitear (datos reales de conductores: cédulas, celulares)
+scripts/seed-turnos-users.json
+
 # psql temp
 *.bak
 *.tmp
