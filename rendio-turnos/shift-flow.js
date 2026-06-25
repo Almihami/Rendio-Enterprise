@@ -187,6 +187,12 @@
     const wiz = $('#shift-wizard');
     wiz.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
+    // El wizard es pantalla completa: oculta la barra inferior del conductor (si está)
+    // para que no tape el botón Continuar. Se restaura al cerrar.
+    const nav = document.getElementById('driver-nav');
+    sf._navWasShown = !!(nav && nav.classList.contains('show'));
+    if (sf._navWasShown) nav.classList.remove('show');
+    document.getElementById('driver-save-bar')?.classList.add('hidden');
     wiz.innerHTML = `<div class="min-h-screen flex items-center justify-center text-sm text-slate-500">Cargando vehículos…</div>`;
     try {
       sf.vehicles = await Api.listVehiclesForShift();
@@ -207,6 +213,9 @@
   function closeWizard() {
     $('#shift-wizard').classList.add('hidden');
     document.body.style.overflow = '';
+    // Restaura la barra inferior si estaba visible antes de abrir el wizard.
+    if (sf._navWasShown) document.getElementById('driver-nav')?.classList.add('show');
+    sf._navWasShown = false;
   }
 
   function tryExit() {

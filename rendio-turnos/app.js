@@ -16,6 +16,8 @@
     schedule: null,
     activeTab: 'schedule',
     ownAvail: null,
+    driverTab: 'home',
+    driverNavRevealed: false, // la barra inferior aparece al entrar a un módulo
   };
 
   // ====================================================================
@@ -180,6 +182,7 @@
     $('#driver-mark-all-available').addEventListener('click', onMarkAllAvailable);
     $('#driver-availability-card')?.addEventListener('click', showDriverAvailability);
     $('#driver-back-home')?.addEventListener('click', showDriverHome);
+    $('#driver-nav')?.addEventListener('click', (e) => { const b = e.target.closest('[data-dtab]'); if (b) setDriverTab(b.dataset.dtab); });
   }
 
   function onMarkAllAvailable() {
@@ -340,8 +343,13 @@
     } else {
       $('#admin-nav').classList.add('hidden');
       $('#admin-greeting-block').classList.add('hidden');
+      $('#driver-tabs-root')?.classList.remove('hidden');
+      // La barra inferior NO se muestra al inicio: aparece al entrar a un módulo.
+      state.driverNavRevealed = false;
+      $('#driver-nav')?.classList.remove('show');
+      $('#driver-tabs-root')?.classList.remove('nav-on');
       await refreshDriverView();
-      showDriverHome(); // arranca en la home de 2 tarjetas, no en la disponibilidad
+      setDriverTab('home'); // arranca en las 2 tarjetas
       // Inicio de turno (Etapa 1 módulo conductor) — card + wizard.
       if (window.ShiftFlow) ShiftFlow.init(state.profile).catch(e => console.error(e));
     }
@@ -367,7 +375,8 @@
 
   function setTab(name) {
     state.activeTab = name;
-    $('#screen-driver').classList.add('hidden');
+    $('#driver-tabs-root')?.classList.add('hidden');
+    $('#driver-nav')?.classList.remove('show');
     $$('#admin-nav .tab-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.tab === name);
     });
@@ -1046,10 +1055,10 @@
     lanes.push({ kind: 'coord_pm', index: 0, group: 'co' });
     return lanes;
   }
-  const BOARD_GROUP_LABEL = { am: 'Mañana', pm: 'Tarde', co: 'Coord' };
+  const BOARD_GROUP_LABEL = { am: 'Mañana', pm: 'Tarde', co: 'Líder' };
   const laneShift = (kind) => (kind === 'morning' || kind === 'coord_am') ? 'am' : 'pm';
-  const laneLabel = (lane) => ({ morning: 'Mañana', afternoon: 'Tarde', coord_am: 'Coord AM', coord_pm: 'Coord PM' }[lane.kind] || lane.kind);
-  const laneShortLabel = (lane) => lane.group === 'am' ? 'AM' : lane.group === 'pm' ? 'PM' : (lane.kind === 'coord_am' ? 'Coord AM' : 'Coord PM');
+  const laneLabel = (lane) => ({ morning: 'Mañana', afternoon: 'Tarde', coord_am: 'Líder AM', coord_pm: 'Líder PM' }[lane.kind] || lane.kind);
+  const laneShortLabel = (lane) => lane.group === 'am' ? 'AM' : lane.group === 'pm' ? 'PM' : (lane.kind === 'coord_am' ? 'Líder AM' : 'Líder PM');
   const hardLabel = (k) => ({ unavailable: 'no disp.', rule: 'descanso fijo', double: 'doble turno' }[k] || 'conflicto');
 
   const isExcluded = (id) => !!(state._excludedIds && state._excludedIds.has(id));
@@ -1174,7 +1183,7 @@
       </div>
       <div class="k ${huecos ? 'warn' : 'ok'}"><div class="tx"><em>Huecos</em><b>${huecos}</b><span>${huecos ? 'por cubrir' : 'todo cubierto'}</span><div class="dotrow">${dots(huecos, 'w')}</div></div></div>
       <div class="k ${conf ? 'alert' : 'ok'}"><div class="tx"><em>Conflictos</em><b>${conf}</b><span>${conf ? 'revisa el rojo' : 'sin conflictos'}</span><div class="dotrow">${dots(conf, 'e')}</div></div></div>
-      <div class="k ${coordDays < 7 ? 'warn' : 'ok'}"><div class="tx"><em>Coordinación</em><b>${coordDays}/7</b><span>días con guía</span></div></div>
+      <div class="k ${coordDays < 7 ? 'warn' : 'ok'}"><div class="tx"><em>Liderazgo</em><b>${coordDays}/7</b><span>días con líder</span></div></div>
       <div class="k ${maxL >= 5 ? 'warn' : ''}"><div class="tx"><em>Balance</em><b>${top[0] || '—'}${maxL ? ' ' + maxL + '/5' : ''}</b><span>${low.length ? 'Carga baja: ' + low.slice(0, 2).join(', ') : 'reparto equilibrado'}</span></div></div>`;
   }
 
@@ -1189,7 +1198,7 @@
       const mc = l >= 5 ? 'hi' : l <= 2 ? 'lo' : '';
       const isFlex = (d.email || '').toLowerCase() === FLEX_COORD_EMAIL;
       const sub = out ? (isSuspendedId(d.id) ? 'Suspendido' : 'Fuera del corte')
-        : (isFlex ? 'Coordina (flex)' : d.can_coordinate ? 'Coordina' : 'Disponible');
+        : (isFlex ? 'Lidera (flex)' : d.can_coordinate ? 'Lidera' : 'Disponible');
       const hidden = filter && !(d.name || '').toLowerCase().includes(filter) ? ' hidden' : '';
       return `<div class="pcard ${cls}"${out ? '' : ' draggable="true"'} data-driver="${d.id}" data-src="pool"${hidden}>
         <span class="av" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span>
@@ -1243,7 +1252,7 @@
             boardJustPlaced === `${d.key}-${lane.kind}-${lane.index}` ? 'just' : '',
           ].filter(Boolean).join(' ');
           const nm = nameOf(id);
-          const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isCoordKind(lane.kind) ? 'Coordina' : BOARD_GROUP_LABEL[lane.group]);
+          const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isCoordKind(lane.kind) ? 'Lidera' : BOARD_GROUP_LABEL[lane.group]);
           inner = `<div class="asg ${cardCls}" draggable="true" data-driver="${id}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
               <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
               <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(subtxt)}</span></div>
@@ -1280,7 +1289,7 @@
   function boardPlaceInto(day, kind, index, id, src) {
     ensureScheduleShape();
     if (isCoordKind(kind) && !coordPeople().some(p => p.id === id)) {
-      flashBoard('Solo coordinadores (admin o Daniel) pueden ir en Coordinación.');
+      flashBoard('Solo líderes de turno (admin o Daniel) pueden ir en Líder de turno.');
       return;
     }
     const scope = isCoordKind(kind) ? COORD_KINDS : ['morning', 'afternoon', 'rest'];
@@ -1604,7 +1613,7 @@
   }
 
   function kindLabel(k) {
-    return { morning: 'Mañana', afternoon: 'Tarde', rest: 'Descanso', coord_am: 'Coordinación AM', coord_pm: 'Coordinación PM' }[k] || k;
+    return { morning: 'Mañana', afternoon: 'Tarde', rest: 'Descanso', coord_am: 'Líder de turno AM', coord_pm: 'Líder de turno PM' }[k] || k;
   }
 
   function closeCellEditor() {
@@ -1902,7 +1911,7 @@
     if (!rows.length) html += `<tr><td class="name">—</td><td colspan="7" class="av-none">Sin coincidencias.</td></tr>`;
     const ICON = { req: 'i-clock', off: 'i-zzz', rej: 'i-x', lock: 'i-lock' };
     rows.forEach(d => {
-      const role = d.can_coordinate ? 'Coordina' : 'Conductor';
+      const role = d.can_coordinate ? 'Líder de turno' : 'Conductor';
       html += `<tr><td class="name"><div class="person"><span class="av-avt" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span><div><b>${escapeHtml(d.name)}</b><span>${role}</span></div></div></td>`;
       week.forEach((day, i) => {
         const av = state.availability[d.id]?.[day.key] || { am: 'available', pm: 'available' };
@@ -2105,7 +2114,7 @@
             <h2>${escapeHtml(p.name)}</h2><div class="mail">${escapeHtml(p.email || '')}</div>
             <div class="chips">
               <span class="statechip ${si.cls}"><span class="sdot ${si.dot}"></span>${si.label}</span>
-              ${p.coord ? '<span class="statechip coord">★ Coordina</span>' : ''}
+              ${p.coord ? '<span class="statechip coord">★ Líder</span>' : ''}
               <span class="statechip role">${adm ? 'Administrador' : 'Conductor'}</span>
             </div>
           </div>
@@ -2120,7 +2129,7 @@
           </div>
           <div class="dblock">
             <h3>Reglas</h3>
-            <div class="ruleitem"><span class="t">Puede coordinar</span><span class="v">${p.coord ? 'Sí' : 'No'}</span></div>
+            <div class="ruleitem"><span class="t">Puede liderar</span><span class="v">${p.coord ? 'Sí' : 'No'}</span></div>
             <div class="ruleitem"><span class="t">Descanso fijo</span><span class="v ${p.rest ? 'lock' : ''}">${p.rest ? '🔒 ' + escapeHtml(p.rest) : '—'}</span></div>
             ${p.suspWeek ? '<div class="ruleitem"><span class="t">Esta semana</span><span class="v">Suspendido</span></div>' : ''}
           </div>
@@ -2132,7 +2141,7 @@
           </div>
         </div>
         <div class="dactions">
-          <button class="pc-btn ${p.coord ? 'on' : ''}" data-act="${adm ? (p.coord ? 'coord-off' : 'coord-on') : (p.coord ? 'dcoord-off' : 'dcoord-on')}" data-id="${p.id}" data-name="${nm}">${p.coord ? '✓ Coordina' : '✕ No coordina'}</button>
+          <button class="pc-btn ${p.coord ? 'on' : ''}" data-act="${adm ? (p.coord ? 'coord-off' : 'coord-on') : (p.coord ? 'dcoord-off' : 'dcoord-on')}" data-id="${p.id}" data-name="${nm}">${p.coord ? '✓ Lidera' : '✕ No lidera'}</button>
           ${adm ? '' : `<button class="pc-btn" data-act="strike" data-id="${p.id}" data-name="${nm}">⚠ Strike</button>
           <button class="pc-btn" data-act="strikes-history" data-id="${p.id}" data-name="${nm}">Historial</button>
           <div class="spacer"></div>
@@ -2211,8 +2220,8 @@
     const msg = {
       suspend: 'Conductor suspendido.', reactivate: 'Conductor reactivado.',
       delete: 'Conductor eliminado.',
-      'coord-off': `${name} ya no entra en Coordinación.`, 'coord-on': `${name} ahora entra en Coordinación.`,
-      'dcoord-off': `${name} ya no entra en Coordinación.`, 'dcoord-on': `${name} ahora puede coordinar.`,
+      'coord-off': `${name} ya no entra como Líder de turno.`, 'coord-on': `${name} ahora entra como Líder de turno.`,
+      'dcoord-off': `${name} ya no entra como Líder de turno.`, 'dcoord-on': `${name} ahora puede liderar.`,
     };
     try {
       if (act === 'suspend') await Api.setProfileActive(id, false);
@@ -2669,7 +2678,7 @@
     const TH = (state.settings && state.settings.shift_hours) || 12;
     const lines = [
       `Balance de turnos;${bd.fromV} a ${bd.toV};${bd.weeks} semanas publicadas`,
-      ['Nombre', 'Email', 'Rol', 'AM', 'PM', 'Coordinacion', 'Total turnos', `Horas (x${TH})`].join(';'),
+      ['Nombre', 'Email', 'Rol', 'AM', 'PM', 'Liderazgo', 'Total turnos', `Horas (x${TH})`].join(';'),
       ...bd.list.map(r => [r.name, r.email, r.role, r.am, r.pm, r.co, r.total, r.horas].map(esc).join(';')),
       ['Total', '', '', tot('am'), tot('pm'), tot('co'), tot('total'), tot('total') * TH].map(esc).join(';'),
     ];
@@ -2945,22 +2954,32 @@
     refreshDriverView();
   }
 
-  // ---- Navegación del conductor: home (2 tarjetas) ↔ disponibilidad ----
+  // ---- Navegación del conductor: pestañas inferiores (home/avail/schedule/requests) ----
 
-  function showDriverHome() {
-    $('#screen-driver-home')?.classList.remove('hidden');
-    $('#screen-driver').classList.add('hidden');
-    $('#driver-save-bar').classList.add('hidden'); // la barra de Guardar solo aplica en disponibilidad
-    updateDriverHome();
+  // Muestra la barra inferior (la primera vez que el conductor entra a un módulo).
+  function revealDriverNav() {
+    if (state.driverNavRevealed) return;
+    state.driverNavRevealed = true;
+    $('#driver-nav')?.classList.add('show');
+    $('#driver-tabs-root')?.classList.add('nav-on');
+  }
+
+  function setDriverTab(name) {
+    state.driverTab = name;
+    if (name !== 'home') revealDriverNav(); // entrar a un módulo revela la barra
+    $$('#driver-tabs-root .driver-panel').forEach(p => p.classList.toggle('hidden', p.dataset.dtab !== name));
+    $$('#driver-nav .dnav-btn').forEach(b => b.classList.toggle('active', b.dataset.dtab === name));
+    // Barra de semana: solo en Disponibilidad y Mi horario.
+    $('#driver-week-bar')?.classList.toggle('hidden', !(name === 'avail' || name === 'schedule'));
+    // Barra de Guardar: solo en Disponibilidad.
+    $('#driver-save-bar')?.classList.toggle('hidden', name !== 'avail');
+    if (name === 'home') updateDriverHome();
     window.scrollTo(0, 0);
   }
 
-  function showDriverAvailability() {
-    $('#screen-driver-home')?.classList.add('hidden');
-    $('#screen-driver').classList.remove('hidden');
-    $('#driver-save-bar').classList.remove('hidden');
-    window.scrollTo(0, 0);
-  }
+  // Aliases para llamadas existentes.
+  function showDriverHome() { setDriverTab('home'); }
+  function showDriverAvailability() { setDriverTab('avail'); }
 
   // Saludo de la home ("Carlos · Martes 10 de junio") + estado de la tarjeta de disponibilidad.
   function updateDriverHome() {
@@ -3308,8 +3327,8 @@
       const meId = state.profile.id;
       if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Manejo' });
       if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Manejo' });
-      if ((day.coord_am || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Coordinación' });
-      if ((day.coord_pm || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Coordinación' });
+      if ((day.coord_am || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Líder de turno' });
+      if ((day.coord_pm || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Líder de turno' });
     });
     if (summaryBox) {
       if (!myShifts.length) {
@@ -3321,7 +3340,7 @@
         const horas = myShifts.length * ((state.settings && state.settings.shift_hours) || 12);
         const items = myShifts.map(s => `<li class="flex items-center justify-between border-b border-slate-100 last:border-0 py-1.5">
           <span class="text-sm text-ink">${s.d.label} ${s.d.dayNum}</span>
-          <span class="text-xs font-semibold text-slate-600">${s.shift}${s.kind === 'Coordinación' ? ' · Coord.' : ''}</span>
+          <span class="text-xs font-semibold text-slate-600">${s.shift}${s.kind === 'Líder de turno' ? ' · Líder' : ''}</span>
         </li>`).join('');
         summaryBox.innerHTML = `<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
           <p class="text-sm font-bold text-ink">Mi semana</p>
@@ -3690,10 +3709,10 @@
     } catch (e) { /* ignore */ }
     if (alreadySub) { existing?.remove(); return; }
 
-    // Contenedor según el rol.
+    // Contenedor según el rol (conductor: dentro de la pestaña Inicio).
     const host = state.profile.role === 'admin'
       ? document.getElementById('app-shell')
-      : document.getElementById('screen-driver-home');
+      : document.querySelector('#driver-tabs-root [data-dtab="home"]');
     if (!host) return;
     if (existing) return; // ya está
     const bar = document.createElement('div');
@@ -3701,7 +3720,9 @@
     bar.className = 'push-bar';
     bar.innerHTML = `<span>🔔 Activa las notificaciones para enterarte de cambios de turno, strikes y horarios.</span>
       <button id="enable-push-btn" class="wk-btn wk-coord-on" style="flex:0 0 auto;">Activar</button>`;
-    host.insertBefore(bar, host.firstChild);
+    // Admin: arriba del shell. Conductor: al final del Inicio (debajo de las 2 tarjetas).
+    if (state.profile.role === 'admin') host.insertBefore(bar, host.firstChild);
+    else host.appendChild(bar);
     document.getElementById('enable-push-btn').addEventListener('click', enablePush);
   }
 

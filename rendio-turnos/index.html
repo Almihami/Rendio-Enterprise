@@ -62,7 +62,7 @@
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body class="bg-[#F6F2EA] text-slate-900 min-h-screen font-sans antialiased">
+<body class="bg-[#F8FAFC] text-slate-900 min-h-screen font-sans antialiased">
 
   <!-- ===========================  SPLASH SCREEN  ========================== -->
   <section id="screen-splash" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-white via-slate-50 to-brand-50">
@@ -136,7 +136,7 @@
       <symbol id="i-warn" viewBox="0 0 24 24"><path d="m21 19-9-16-9 16Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
       <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></symbol>
     </svg>
-    <header class="bg-[#FCFAF6] border-b border-[#E7DECF] sticky top-0 z-20 shadow-sm">
+    <header class="bg-white border-b border-[#E2E8F0] sticky top-0 z-20 shadow-sm">
       <div class="max-w-[1680px] mx-auto px-4 py-3 flex items-center justify-between gap-3">
         <a href="#" class="flex items-center gap-2 shrink-0">
           <img src="assets/logo-icon.png" alt="Rendio" class="h-8 w-8 md:hidden" />
@@ -167,7 +167,7 @@
       </div>
 
       <!-- Admin tabs: scrolleables en mobile -->
-      <nav id="admin-nav" class="hidden border-t border-[#E7DECF] bg-[#FCFAF6]">
+      <nav id="admin-nav" class="hidden border-t border-[#E2E8F0] bg-white">
         <div class="max-w-[1680px] mx-auto px-2 md:px-4 flex gap-1 overflow-x-auto no-scrollbar">
           <button data-tab="schedule" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Horario</button>
           <button data-tab="availability" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Disponibilidad</button>
@@ -194,46 +194,11 @@
 
       <!-- =============== DRIVER VIEW =============== -->
       <!-- HOME del conductor: "¿Cómo vas a operar hoy?" — dúo de tarjetas apiladas -->
-      <section id="screen-driver-home" class="hidden">
-        <div class="pt-1 pb-1">
-          <h2 class="text-[22px] font-extrabold text-ink leading-tight">¿Cómo vas a operar hoy?</h2>
-          <p id="driver-home-sub" class="text-sm text-slate-500 mt-1">—</p>
-        </div>
+      <!-- =============== DRIVER: contenido por pestañas =============== -->
+      <div id="driver-tabs-root" class="hidden">
 
-        <div class="pt-3 space-y-3">
-          <!-- Tarjeta 1: Iniciar turno — la pinta shift-flow.js (estados: iniciar / continuar / turno activo) -->
-          <div id="driver-shift-container" class="pc-in d1"></div>
-
-          <!-- Tarjeta 2: Disponibilidad de horarios -->
-          <button id="driver-availability-card"
-                  class="pc-in d2 tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-white border-2 border-slate-200 shadow-card">
-            <div class="flex items-start justify-between">
-              <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl"><span class="float inline-block">📅</span></div>
-              <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-500 mt-1">Próxima semana</span>
-            </div>
-            <div class="mt-auto">
-              <p class="text-xl font-extrabold text-ink leading-tight">Disponibilidad de horarios</p>
-              <p id="driver-availability-card-sub" class="text-xs text-slate-500 mt-1">Marca tus turnos. El admin asigna y confirma.</p>
-            </div>
-            <div class="mt-3 flex items-center gap-1 text-sm font-bold text-brand-600">Marcar
-              <svg class="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
-            </div>
-          </button>
-        </div>
-      </section>
-
-      <section id="screen-driver" class="hidden space-y-5">
-        <button id="driver-back-home" class="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-brand-600 active:scale-95 transition -ml-1">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
-          Inicio
-        </button>
-        <div>
-          <h2 id="driver-greeting" class="text-xl md:text-2xl font-bold text-ink">—</h2>
-          <p id="driver-greeting-sub" class="text-sm text-slate-500">—</p>
-        </div>
-
-        <!-- Week selector -->
-        <div class="bg-white border border-slate-200 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-card">
+        <!-- Barra de semana (compartida: Disponibilidad y Mi horario) -->
+        <div id="driver-week-bar" class="hidden bg-white border border-slate-200 rounded-2xl p-3 flex items-center justify-between gap-2 shadow-card mb-4">
           <button id="driver-prev-week" class="px-3 py-2 rounded-lg hover:bg-slate-100 text-slate-600 active:scale-95 transition" aria-label="Semana anterior">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
           </button>
@@ -247,57 +212,121 @@
           </button>
         </div>
 
-        <!-- Quick action: mark whole week as available -->
-        <button id="driver-mark-all-available"
-                class="w-full bg-white border-2 border-brand text-brand-700 font-bold py-3 rounded-xl hover:bg-brand hover:text-white active:scale-[0.99] transition shadow-brand flex items-center justify-center gap-2">
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-          </svg>
-          Disponible toda la semana
-        </button>
-
-        <!-- Day cards -->
-        <div id="driver-days" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
-
-        <!-- Legend -->
-        <div class="bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
-          <p class="font-semibold text-slate-700 mb-1">¿Qué significa cada estado?</p>
-          <p class="flex items-center gap-2"><span class="state-dot state-available"></span> <strong>Disponible</strong> — puedes trabajar. Opcional: marca preferencia AM, PM o Indistinto.</p>
-          <p class="flex items-center gap-2"><span class="state-dot state-prefer-rest"></span> <strong>Descanso</strong> — preferís descansar; el admin lo respeta si hay con quién cubrir.</p>
-          <p class="flex items-center gap-2"><span class="state-dot state-unavailable"></span> <strong>No disponible</strong> — requiere razón. Siempre pasa por aprobación del admin.</p>
-        </div>
-
-        <!-- Mis solicitudes -->
-        <div>
-          <h3 class="text-base font-bold text-ink mb-2">Mis solicitudes</h3>
-          <div id="driver-requests-container" class="space-y-2"></div>
-        </div>
-
-        <!-- Mi semana (resumen de turnos cuando hay horario publicado) -->
-        <div id="driver-week-summary"></div>
-
-        <!-- Horario completo del equipo (colapsable) -->
-        <details class="bg-white border border-slate-200 rounded-2xl shadow-card overflow-hidden group">
-          <summary class="cursor-pointer px-4 py-3 text-base font-bold text-ink hover:bg-slate-50 flex items-center justify-between list-none">
-            <span>📋 Horario completo del equipo</span>
-            <span class="details-chevron text-slate-400 text-sm">▼</span>
-          </summary>
-          <div class="border-t border-slate-200 p-3">
-            <p class="text-xs text-slate-500 mb-2">Tus turnos aparecen resaltados en naranja para que los ubiques rápido.</p>
-            <div id="driver-schedule-container" class="overflow-x-auto"></div>
+        <!-- Pestaña: Inicio -->
+        <section data-dtab="home" class="driver-panel">
+          <div class="pt-1 pb-1">
+            <h2 class="text-[22px] font-extrabold text-ink leading-tight">¿Cómo vas a operar hoy?</h2>
+            <p id="driver-home-sub" class="text-sm text-slate-500 mt-1">—</p>
           </div>
-        </details>
-      </section>
+          <div class="pt-3 space-y-3">
+            <!-- Tarjeta 1: Iniciar turno — la pinta shift-flow.js (iniciar / continuar / turno activo) -->
+            <div id="driver-shift-container"></div>
 
-      <!-- Save sticky bottom bar (driver) — safe-area-bottom para iPhones con home indicator -->
-      <div id="driver-save-bar" class="driver-save-bar-safe hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-20 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:static md:bg-transparent md:border-0 md:shadow-none md:px-0 md:pb-0 md:pt-3">
-        <div class="max-w-[1680px] mx-auto flex items-center justify-between gap-3">
+            <!-- Tarjeta 2: Disponibilidad — entra al módulo y revela la barra inferior -->
+            <button id="driver-availability-card"
+                    class="tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-white border-2 border-slate-200 shadow-card">
+              <div class="flex items-start justify-between">
+                <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl"><span class="float inline-block">📅</span></div>
+                <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-500 mt-1">Próxima semana</span>
+              </div>
+              <div class="mt-auto">
+                <p class="text-xl font-extrabold text-ink leading-tight">Disponibilidad de horarios</p>
+                <p id="driver-availability-card-sub" class="text-xs text-slate-500 mt-1">Marca tus turnos. El admin asigna y confirma.</p>
+              </div>
+              <div class="mt-3 flex items-center gap-1 text-sm font-bold text-brand-600">Marcar
+                <svg class="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
+              </div>
+            </button>
+          </div>
+        </section>
+
+        <!-- Pestaña: Disponibilidad -->
+        <section data-dtab="avail" class="driver-panel hidden space-y-5">
+          <div>
+            <h2 id="driver-greeting" class="text-xl font-bold text-ink">Disponibilidad</h2>
+            <p id="driver-greeting-sub" class="text-sm text-slate-500">Marca tus turnos de la semana. El admin asigna y confirma.</p>
+          </div>
+
+          <!-- Quick action: mark whole week as available -->
+          <button id="driver-mark-all-available"
+                  class="w-full bg-white border-2 border-brand text-brand-700 font-bold py-3 rounded-xl hover:bg-brand hover:text-white active:scale-[0.99] transition shadow-brand flex items-center justify-center gap-2">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+            </svg>
+            Disponible toda la semana
+          </button>
+
+          <!-- Day cards -->
+          <div id="driver-days" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+
+          <!-- Legend -->
+          <div class="bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
+            <p class="font-semibold text-slate-700 mb-1">¿Qué significa cada estado?</p>
+            <p class="flex items-center gap-2"><span class="state-dot state-available"></span> <strong>Disponible</strong> — puedes trabajar. Opcional: marca preferencia AM, PM o Indistinto.</p>
+            <p class="flex items-center gap-2"><span class="state-dot state-prefer-rest"></span> <strong>Descanso</strong> — preferís descansar; el admin lo respeta si hay con quién cubrir.</p>
+            <p class="flex items-center gap-2"><span class="state-dot state-unavailable"></span> <strong>No disponible</strong> — requiere razón. Siempre pasa por aprobación del admin.</p>
+          </div>
+        </section>
+
+        <!-- Pestaña: Mi horario -->
+        <section data-dtab="schedule" class="driver-panel hidden space-y-5">
+          <div>
+            <h2 class="text-xl font-bold text-ink">Mi horario</h2>
+            <p class="text-sm text-slate-500">Tus turnos de la semana y el horario del equipo.</p>
+          </div>
+
+          <!-- Mi semana (resumen de turnos cuando hay horario publicado) -->
+          <div id="driver-week-summary"></div>
+
+          <!-- Horario completo del equipo (colapsable) -->
+          <details class="bg-white border border-slate-200 rounded-2xl shadow-card overflow-hidden group">
+            <summary class="cursor-pointer px-4 py-3 text-base font-bold text-ink hover:bg-slate-50 flex items-center justify-between list-none">
+              <span>📋 Horario completo del equipo</span>
+              <span class="details-chevron text-slate-400 text-sm">▼</span>
+            </summary>
+            <div class="border-t border-slate-200 p-3">
+              <p class="text-xs text-slate-500 mb-2">Tus turnos aparecen resaltados en naranja para que los ubiques rápido.</p>
+              <div id="driver-schedule-container" class="overflow-x-auto"></div>
+            </div>
+          </details>
+        </section>
+
+        <!-- Pestaña: Solicitudes y cambios -->
+        <section data-dtab="requests" class="driver-panel hidden space-y-5">
+          <div>
+            <h2 class="text-xl font-bold text-ink">Solicitudes y cambios</h2>
+            <p class="text-sm text-slate-500">Tus solicitudes de disponibilidad y los cambios de turno.</p>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-ink mb-2">Mis solicitudes</h3>
+            <div id="driver-requests-container" class="space-y-2"></div>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-ink mb-2">Cambios de turno</h3>
+            <div id="driver-swaps-container"></div>
+          </div>
+        </section>
+
+      </div>
+      <!-- /driver-tabs-root -->
+
+      <!-- Save sticky bottom bar (driver) — se ubica SOBRE la barra de pestañas (ver CSS #driver-save-bar) -->
+      <div id="driver-save-bar" class="hidden fixed left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-30 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+        <div class="max-w-lg mx-auto flex items-center justify-between gap-3">
           <span id="driver-save-state" class="text-xs text-slate-500 flex-1"></span>
           <button id="driver-save-btn" class="bg-brand text-white text-base font-bold px-6 py-3 rounded-xl hover:bg-brand-600 active:scale-[0.98] transition shadow-brand">
             Guardar
           </button>
         </div>
       </div>
+
+      <!-- Barra de navegación inferior (solo conductor) -->
+      <nav id="driver-nav">
+        <button data-dtab="home" class="dnav-btn"><span class="dnav-ic">🏠</span><span>Inicio</span></button>
+        <button data-dtab="avail" class="dnav-btn"><span class="dnav-ic">📅</span><span>Disponib.</span></button>
+        <button data-dtab="schedule" class="dnav-btn"><span class="dnav-ic">🗓️</span><span>Mi horario</span></button>
+        <button data-dtab="requests" class="dnav-btn"><span class="dnav-ic">🔁</span><span>Solicitudes</span></button>
+      </nav>
 
       <!-- =============== ADMIN GREETING (sibling de los paneles) =============== -->
       <div id="admin-greeting-block" class="hidden mb-5">
@@ -479,7 +508,7 @@
                 <div class="set-field"><label>Cupos tarde</label><input id="setting-afternoon-slots" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Mínimo de conductores al volante en PM.</div></div>
               </div>
               <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Coordinadores por jornada</label><input id="setting-coord-slots" class="set-input" type="number" min="1" max="4" /><div class="set-hint">Cuántos coordinadores se asignan en AM y en PM.</div></div>
+                <div class="set-field"><label>Líderes de turno por jornada</label><input id="setting-coord-slots" class="set-input" type="number" min="1" max="4" /><div class="set-hint">Cuántos líderes de turno se asignan en AM y en PM.</div></div>
                 <div class="set-field"><label>Horas por turno</label><input id="setting-shift-hours" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Para el cálculo de horas en Balance.</div></div>
               </div>
               <div class="set-row2" style="margin-top:14px">
@@ -531,7 +560,7 @@
               <div class="set-grid2" style="margin-top:14px">
                 <div class="set-field"><label>Prioridad</label><div class="set-selwrap"><select class="set-sel" id="new-driver-priority"><option value="1" selected>1 · Nuevo</option><option value="2">2 · Con tiempo</option><option value="3">3 · Antiguo</option><option value="4">4 · Máxima</option></select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
                 <div class="set-field"><label>&nbsp;</label>
-                  <label class="set-checkrow"><input type="checkbox" id="new-driver-can-coord" class="set-chk-input" /><span class="set-chk"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span><span>¿Puede coordinar? (entra al pool de coordinadores)</span></label>
+                  <label class="set-checkrow"><input type="checkbox" id="new-driver-can-coord" class="set-chk-input" /><span class="set-chk"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span><span>¿Puede ser líder de turno? (entra al pool de líderes)</span></label>
                 </div>
               </div>
               <div class="set-foot"><button class="set-btn" id="new-driver-create-btn"><svg class="icon"><use href="#i-plus"/></svg>Crear conductor</button><span id="new-driver-state" class="set-cstate"></span></div>
@@ -577,7 +606,7 @@
         <div id="balance-ui">
           <div class="rl-phead">
             <h1>Balance de turnos</h1>
-            <p>Cuenta turnos de horarios <b>publicados</b>. Cada turno (manejo o coordinación) = <b>12 h</b>.</p>
+            <p>Cuenta turnos de horarios <b>publicados</b>. Cada turno (manejo o liderazgo) = <b>12 h</b>.</p>
           </div>
 
           <div class="bal-controls">

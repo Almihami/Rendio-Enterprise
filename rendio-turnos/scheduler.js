@@ -258,8 +258,8 @@
       const excludePm = admins.length > 1 ? usedCoord : new Set();
       const coordPm = pickCoordinators(admins, coordLoads, COORD_SLOTS, excludePm, dayAdminRank, availability, day, 'pm');
       coordPm.forEach(a => { coordLoads.set(a.id, (coordLoads.get(a.id) || 0) + 1); });
-      if (coordAm.length < COORD_SLOTS) warnings.push(`Falta coordinador AM en ${DAY_LABELS_ES[day]} (todos pidieron descanso o no disponibilidad).`);
-      if (coordPm.length < COORD_SLOTS) warnings.push(`Falta coordinador PM en ${DAY_LABELS_ES[day]} (todos pidieron descanso o no disponibilidad).`);
+      if (coordAm.length < COORD_SLOTS) warnings.push(`Falta líder de turno AM en ${DAY_LABELS_ES[day]} (todos pidieron descanso o no disponibilidad).`);
+      if (coordPm.length < COORD_SLOTS) warnings.push(`Falta líder de turno PM en ${DAY_LABELS_ES[day]} (todos pidieron descanso o no disponibilidad).`);
       // Si un CONDUCTOR coordina hoy: ese día NO maneja ni descansa (como Daniel).
       const coordDriversToday = new Set(
         [...coordAm, ...coordPm].map(a => a.id).filter(id => driverIds.has(id))
@@ -345,7 +345,7 @@
               )
               .sort((a, b) => (driverRank.get(a.id) ?? 0) - (driverRank.get(b.id) ?? 0))[0];
             if (!cand) {
-              warnings.push(`Falta cubrir un cupo de ${shift === 'am' ? 'Mañana' : 'Tarde'} en ${DAY_LABELS_ES[day]} (Daniel coordina ese día).`);
+              warnings.push(`Falta cubrir un cupo de ${shift === 'am' ? 'Mañana' : 'Tarde'} en ${DAY_LABELS_ES[day]} (Daniel lidera ese día).`);
               break;
             }
             arr.push(cand.id);
