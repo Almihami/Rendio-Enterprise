@@ -2308,7 +2308,7 @@
   }
 
   // --- Vehículos (admin) — alta/baja de la flota desde Ajustes ---
-  const VEH_STATUS_ES = { available: 'Disponible', in_use: 'En uso', maintenance: 'Mantenimiento', blocked: 'Bloqueado' };
+  const VEH_STATUS_ES = { available: 'Disponible', in_use: 'En uso', reserved: 'Reservado', maintenance: 'Mantenimiento', blocked: 'Bloqueado' };
   async function renderVehiclesSettings() {
     const box = $('#vehicles-list');
     if (!box) return;
