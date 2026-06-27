@@ -1123,9 +1123,10 @@
   }
   async function resolveRedemption(id, status, notes) {
     const session = await getSession();
-    const { error } = await sb.from('reward_redemptions')
-      .update({ status, notes: notes || null, resolved_at: new Date().toISOString(), resolved_by: session ? session.user.id : null })
-      .eq('id', id);
+    const patch = (status === 'pending')
+      ? { status, notes: notes || null, resolved_at: null, resolved_by: null } // deshacer
+      : { status, notes: notes || null, resolved_at: new Date().toISOString(), resolved_by: session ? session.user.id : null };
+    const { error } = await sb.from('reward_redemptions').update(patch).eq('id', id);
     if (error) throw error;
   }
   // Admin: turnos cerrados de toda la org (para km acumulado por conductor).

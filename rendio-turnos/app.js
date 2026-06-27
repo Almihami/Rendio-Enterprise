@@ -3082,117 +3082,116 @@
   function showDriverAvailability() { setDriverTab('avail'); }
 
   // ====================================================================
-  // Admin: Recompensas (catálogo + solicitudes de redención + km por conductor)
+  // Admin: Recompensas (diseño UX/UI) — solicitudes + catálogo + agregar/editar
+  // (km por conductor vive ahora en Personal)
   // ====================================================================
-  const rewardsAdminState = { editId: null };
-  const REDEEM_ST = { pending: ['Pendiente', 'var(--amber)'], approved: ['Aprobada', 'var(--green)'], delivered: ['Entregada', 'var(--green)'], rejected: ['Rechazada', 'var(--red)'] };
+  const rewardsAdminState = { editId: null, data: { rewards: [], redemptions: [] } };
+  const RW_LEVELS = { plata: { label: 'Plata', icon: 'i-medal' }, oro: { label: 'Oro', icon: 'i-medal' }, diamante: { label: 'Diamante', icon: 'i-gem' } };
+  function rwTierEmblem(level, sm) { const L = RW_LEVELS[level] || RW_LEVELS.plata; return `<span class="tier ${level}${sm ? ' sm' : ''}"><svg class="icon"><use href="#${L.icon}"/></svg></span>`; }
+  function rwInitials(n) { const p = (n || '').trim().split(/\s+/); return (((p[0] || '')[0] || '') + ((p[1] || p[0] || '')[0] || '')).toUpperCase() || '·'; }
 
   async function renderRewardsAdmin() {
     const box = $('#rewards-ui'); if (!box) return;
-    box.innerHTML = '<p class="set-hint" style="padding:16px">Cargando…</p>';
-    let rewards = [], redemptions = [], closed = [];
+    box.innerHTML = '<p style="padding:24px;color:var(--ink2)">Cargando…</p>';
+    let rewards = [], redemptions = [];
     try {
-      [rewards, redemptions, closed] = await Promise.all([
+      [rewards, redemptions] = await Promise.all([
         Api.listAllRewards().catch(() => []),
         Api.listRedemptionsAdmin().catch(() => []),
-        Api.listClosedShiftsAdmin().catch(() => []),
       ]);
     } catch (e) { console.error(e); }
-    rewardsAdminState.data = { rewards, redemptions, closed };
+    rewardsAdminState.data = { rewards, redemptions };
     drawRewardsAdmin();
   }
 
   function drawRewardsAdmin() {
     const box = $('#rewards-ui'); if (!box) return;
-    const { rewards, redemptions, closed } = rewardsAdminState.data || { rewards: [], redemptions: [], closed: [] };
+    const { rewards, redemptions } = rewardsAdminState.data;
     const esc = escapeHtml;
-
-    // --- Km acumulado por conductor ---
-    const kmMap = new Map();
-    (closed || []).forEach(s => {
-      const name = (s.driver_profiles && s.driver_profiles.profiles && s.driver_profiles.profiles.full_name) || '—';
-      const km = Math.max(0, (s.closing_km || 0) - (s.opening_km || 0));
-      const cur = kmMap.get(s.driver_id) || { name, km: 0, turns: 0 };
-      cur.km += km; cur.turns += 1; kmMap.set(s.driver_id, cur);
-    });
-    const kmRows = [...kmMap.values()].sort((a, b) => b.km - a.km).map(r =>
-      `<div class="veh-row"><div class="veh-info"><b>${esc(r.name)}</b><span>${r.turns} turno(s) cerrado(s)</span></div><span class="veh-stat" style="font-family:var(--mono)">${r.km.toLocaleString('es-CO')} km</span></div>`).join('') || '<p class="set-hint">Aún no hay turnos cerrados.</p>';
+    const fmtWhen = (s) => { try { return new Date(s).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }); } catch (e) { return ''; } };
 
     // --- Solicitudes de redención ---
-    const pend = (redemptions || []).filter(r => r.status === 'pending');
-    const others = (redemptions || []).filter(r => r.status !== 'pending');
-    const redCard = (r) => {
-      const st = REDEEM_ST[r.status] || REDEEM_ST.pending;
-      const who = (r.driver_profiles && r.driver_profiles.profiles && r.driver_profiles.profiles.full_name) || '—';
-      const rw = r.rewards || {};
-      const when = (() => { try { return new Date(r.requested_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }); } catch (e) { return ''; } })();
-      const actions = r.status === 'pending'
-        ? `<div style="display:flex;gap:8px;margin-top:8px">
-             <button class="set-btn dark" data-redeem-deliver="${r.id}">Marcar entregada</button>
-             <button class="veh-del" data-redeem-reject="${r.id}" title="Rechazar" style="width:auto;padding:0 12px;color:var(--red)">Rechazar</button>
-           </div>`
-        : `<span class="veh-stat" style="color:${st[1]}">${st[0]}</span>`;
-      return `<div class="veh-row" style="flex-wrap:wrap;align-items:flex-start">
-          <div class="veh-info"><b>${esc(who)} — ${esc(rw.title || 'Recompensa')}</b><span>${esc(TIER_META[rw.tier] ? TIER_META[rw.tier].label : (rw.tier || ''))} · ${(rw.km_threshold || 0).toLocaleString('es-CO')} km · pedido ${esc(when)} · al pedir tenía ${(r.km_at_request || 0).toLocaleString('es-CO')} km</span></div>
-          ${actions}
+    const pend = (redemptions || []).filter(r => r.status === 'pending').length;
+    const redListHtml = (redemptions || []).length ? (redemptions || []).map(r => {
+      const prof = r.driver_profiles && r.driver_profiles.profiles;
+      const who = (prof && prof.full_name) || '—';
+      const rw = r.rewards || { title: '—', tier: 'plata', km_threshold: 0 };
+      const color = colorOfId((prof && prof.id) || r.id);
+      if (r.status !== 'pending') {
+        const isOk = r.status === 'delivered' || r.status === 'approved';
+        return `<div class="redrow done">
+          <span class="avt" style="background:${color}">${esc(rwInitials(who))}</span>
+          <div class="rwho"><b>${esc(who)}</b><div class="meta"><span class="rw">${rwTierEmblem(rw.tier, true)}${esc(rw.title)}</span></div></div>
+          <span class="kmtag">${(rw.km_threshold || 0).toLocaleString('es-CO')} km</span>
+          <span class="resolved ${isOk ? 'ok' : 'no'}"><svg class="icon"><use href="#${isOk ? 'i-check' : 'i-x'}"/></svg>${isOk ? 'Entregado' : 'Rechazado'} <button class="undo" data-undo="${r.id}">Deshacer</button></span>
         </div>`;
-    };
-    const redemHtml = (pend.length || others.length)
-      ? `${pend.map(redCard).join('')}${others.length ? `<details style="margin-top:8px"><summary class="set-hint" style="cursor:pointer">Historial (${others.length})</summary><div style="margin-top:8px">${others.map(redCard).join('')}</div></details>` : ''}`
-      : '<p class="set-hint">No hay solicitudes de redención.</p>';
+      }
+      return `<div class="redrow">
+        <span class="avt" style="background:${color}">${esc(rwInitials(who))}</span>
+        <div class="rwho"><b>${esc(who)}</b><div class="meta"><span class="rw">${rwTierEmblem(rw.tier, true)}${esc(rw.title)}</span><span class="when"><svg class="icon" style="width:12px;height:12px"><use href="#i-clock"/></svg>${esc(fmtWhen(r.requested_at))}</span></div></div>
+        <span class="kmtag">${(rw.km_threshold || 0).toLocaleString('es-CO')} km</span>
+        <div class="ractions">
+          <button class="rbtn no" data-red="rejected" data-id="${r.id}"><svg><use href="#i-x"/></svg>Rechazar</button>
+          <button class="rbtn ok" data-red="delivered" data-id="${r.id}"><svg><use href="#i-check"/></svg>Entregar</button>
+        </div>
+      </div>`;
+    }).join('') : `<div class="emptyrow"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><b>No hay solicitudes de redención</b><span>Cuando un conductor pida canjear un premio, aparecerá aquí.</span></div>`;
 
-    // --- Catálogo (CRUD) ---
+    // --- Catálogo ---
+    const sorted = [...(rewards || [])].sort((a, b) => a.km_threshold - b.km_threshold);
     const ed = rewardsAdminState.editId ? (rewards || []).find(r => r.id === rewardsAdminState.editId) : null;
-    const rewardRows = (rewards || []).map(r =>
-      `<div class="veh-row">
-        <div class="veh-info"><b>${TIER_META[r.tier] ? TIER_META[r.tier].emoji : '🎁'} ${esc(r.title)} <span style="font-weight:600;color:var(--ink2)">· ${(r.km_threshold).toLocaleString('es-CO')} km</span></b><span>${esc(TIER_META[r.tier] ? TIER_META[r.tier].label : r.tier)}${r.description ? ' · ' + esc(r.description) : ''}</span></div>
-        <button class="veh-stat ${r.active ? 'st-available' : ''}" data-reward-toggle="${r.id}" title="Activar/desactivar" style="cursor:pointer">${r.active ? 'Activa' : 'Inactiva'}</button>
-        <button class="set-btn ghost sm" data-reward-edit="${r.id}" style="height:34px">Editar</button>
-        <button class="veh-del" data-reward-del="${r.id}" title="Eliminar"><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
-      </div>`).join('') || '<p class="set-hint">Aún no hay recompensas. Crea la primera abajo.</p>';
+    const catHtml = sorted.length ? sorted.map(c => `<div class="rwd ${c.active ? '' : 'off'}">
+        ${rwTierEmblem(c.tier)}
+        <div class="rinfo"><div class="rtop"><b>${esc(c.title)}</b><span class="levelchip ${c.tier}">${(RW_LEVELS[c.tier] || {}).label || c.tier}</span><span class="km">${(c.km_threshold || 0).toLocaleString('es-CO')} km</span></div><div class="desc">${esc(c.description || '')}</div></div>
+        <div class="rctl">
+          <span class="tglabel ${c.active ? 'on' : ''}">${c.active ? 'Activa' : 'Off'}</span>
+          <button class="tg ${c.active ? 'on' : ''}" data-tg="${c.id}" title="Activar / desactivar"></button>
+          <button class="cfgbtn" data-edit="${c.id}" title="Editar"><svg class="icon" style="width:15px;height:15px"><use href="#i-edit"/></svg></button>
+          <button class="cfgbtn danger" data-del="${c.id}" title="Eliminar"><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
+        </div>
+      </div>`).join('') : `<div class="emptyrow"><div class="circle" style="background:var(--orange-soft);color:var(--orange)"><svg class="icon"><use href="#i-gift"/></svg></div><b>Aún no hay recompensas</b><span>Crea la primera abajo.</span></div>`;
 
     box.innerHTML = `
-      <div class="rl-phead"><h1>Recompensas</h1><p>Define los premios por kilometraje y atiende las solicitudes de los conductores.</p></div>
+      <div class="phead"><h1>Recompensas</h1><p>Define los premios por kilometraje y atiende las solicitudes de redención de los conductores.</p></div>
 
-      <div class="set-card"><h2 class="set-h2">Solicitudes de redención${pend.length ? ` · ${pend.length} pendiente(s)` : ''}</h2>
-        <div class="veh-list">${redemHtml}</div>
+      <div class="card">
+        <div class="ch"><div class="ci"><svg class="icon"><use href="#i-inbox"/></svg></div><div><h2>Solicitudes de redención</h2><p>Premios que un conductor pidió canjear. Entrégalos o recházalos.</p></div><span class="count${pend ? ' alert' : ''}">${pend}</span></div>
+        <div class="cbody flush">${redListHtml}</div>
       </div>
 
-      <div class="set-card"><h2 class="set-h2">Catálogo de recompensas</h2>
-        <div class="veh-list">${rewardRows}</div>
-        <div class="set-divider"></div>
-        <h3 class="set-h3">${ed ? 'Editar recompensa' : 'Agregar recompensa'}</h3>
-        <div class="set-grid2">
-          <div class="rl-field"><label>Título</label><input class="rl-input" id="rw-title" placeholder="Bono de gasolina" value="${ed ? esc(ed.title) : ''}"></div>
-          <div class="rl-field"><label>Km para desbloquear</label><input class="rl-input" id="rw-km" type="number" min="0" placeholder="5000" value="${ed ? ed.km_threshold : ''}"></div>
-          <div class="rl-field"><label>Nivel</label><select class="rl-input" id="rw-tier">
-            <option value="plata"${ed && ed.tier === 'plata' ? ' selected' : ''}>Plata</option>
-            <option value="oro"${ed && ed.tier === 'oro' ? ' selected' : ''}>Oro</option>
-            <option value="diamante"${ed && ed.tier === 'diamante' ? ' selected' : ''}>Diamante</option>
-          </select></div>
-          <div class="rl-field"><label>Descripción</label><input class="rl-input" id="rw-desc" placeholder="$50.000 en combustible" value="${ed ? esc(ed.description || '') : ''}"></div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <button class="set-btn" id="rw-save">${ed ? 'Guardar cambios' : 'Agregar recompensa'}</button>
-          ${ed ? '<button class="set-btn ghost" id="rw-cancel">Cancelar</button>' : ''}
-          <span id="rw-state" class="set-hint" style="align-self:center"></span>
-        </div>
+      <div class="card">
+        <div class="ch"><div class="ci"><svg class="icon"><use href="#i-gift"/></svg></div><div><h2>Catálogo de recompensas</h2><p>Premios disponibles, ordenados por kilometraje. Desactiva sin perder el historial.</p></div><span class="count">${(rewards || []).filter(c => c.active).length} activas</span></div>
+        <div class="cbody flush">${catHtml}</div>
       </div>
 
-      <div class="set-card"><h2 class="set-h2">Kilometraje por conductor</h2>
-        <p class="set-hint">Acumulado de km recorridos (suma de turnos cerrados).</p>
-        <div class="veh-list">${kmRows}</div>
+      <div class="card" style="margin-bottom:0">
+        <div class="ch"><div class="ci"><svg class="icon"><use href="#i-plus"/></svg></div><div><h2>${ed ? 'Editar recompensa' : 'Agregar recompensa'}</h2><p>${ed ? 'Modifica el premio y guarda los cambios.' : 'Crea un nuevo premio. Aparece de inmediato en la app del conductor.'}</p></div></div>
+        <div class="cbody">
+          <div class="grid2">
+            <div class="field"><label>Título</label><input class="input" id="rw-title" placeholder="Ej: Bono de gasolina" value="${ed ? esc(ed.title) : ''}"></div>
+            <div class="field"><label>Km para desbloquear</label><input class="input mono" id="rw-km" type="number" min="0" step="500" placeholder="5000" value="${ed ? ed.km_threshold : ''}"></div>
+          </div>
+          <div class="grid2" style="margin-top:14px">
+            <div class="field"><label>Nivel</label><div class="selwrap"><select class="sel" id="rw-tier">
+              <option value="plata"${ed && ed.tier === 'plata' ? ' selected' : ''}>Plata</option>
+              <option value="oro"${ed && ed.tier === 'oro' ? ' selected' : ''}>Oro</option>
+              <option value="diamante"${ed && ed.tier === 'diamante' ? ' selected' : ''}>Diamante</option>
+            </select><span class="chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
+            <div class="field"><label>Descripción</label><input class="input" id="rw-desc" placeholder="Ej: $50.000 en combustible" value="${ed ? esc(ed.description || '') : ''}"></div>
+          </div>
+          <div class="formfoot"><button class="btn" id="rw-save"><svg class="icon"><use href="#i-plus"/></svg>${ed ? 'Guardar cambios' : 'Agregar recompensa'}</button>${ed ? '<button class="btn ghost" id="rw-cancel">Cancelar</button>' : ''}<span id="rw-state" style="font-size:12px;color:var(--ink2)"></span></div>
+        </div>
       </div>`;
     bindRewardsAdmin();
   }
 
   function bindRewardsAdmin() {
-    const box = $('#rewards-ui'); if (!box || box._rwBound) { /* rebind delegated below */ }
-    box.querySelectorAll('[data-redeem-deliver]').forEach(b => b.addEventListener('click', () => resolveRedeem(b.dataset.redeemDeliver, 'delivered')));
-    box.querySelectorAll('[data-redeem-reject]').forEach(b => b.addEventListener('click', () => resolveRedeem(b.dataset.redeemReject, 'rejected')));
-    box.querySelectorAll('[data-reward-del]').forEach(b => b.addEventListener('click', () => onDeleteReward(b.dataset.rewardDel)));
-    box.querySelectorAll('[data-reward-edit]').forEach(b => b.addEventListener('click', () => { rewardsAdminState.editId = b.dataset.rewardEdit; drawRewardsAdmin(); }));
-    box.querySelectorAll('[data-reward-toggle]').forEach(b => b.addEventListener('click', () => onToggleReward(b.dataset.rewardToggle)));
+    const box = $('#rewards-ui'); if (!box) return;
+    box.querySelectorAll('[data-red]').forEach(b => b.addEventListener('click', () => resolveRedeem(b.dataset.id, b.dataset.red)));
+    box.querySelectorAll('[data-undo]').forEach(b => b.addEventListener('click', () => resolveRedeem(b.dataset.undo, 'pending')));
+    box.querySelectorAll('[data-tg]').forEach(b => b.addEventListener('click', () => onToggleReward(b.dataset.tg)));
+    box.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => { rewardsAdminState.editId = b.dataset.edit; drawRewardsAdmin(); }));
+    box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => onDeleteReward(b.dataset.del)));
     $('#rw-save')?.addEventListener('click', onSaveReward);
     $('#rw-cancel')?.addEventListener('click', () => { rewardsAdminState.editId = null; drawRewardsAdmin(); });
   }
@@ -3203,7 +3202,8 @@
     const tier = $('#rw-tier')?.value || 'plata';
     const desc = ($('#rw-desc')?.value || '').trim() || null;
     const st = $('#rw-state');
-    if (!title || !(km >= 0)) { if (st) st.textContent = 'Falta título o km.'; return; }
+    if (!title) { if (st) st.textContent = 'Escribe un título.'; return; }
+    if (!(km >= 0)) { if (st) st.textContent = 'Indica los km para desbloquear.'; return; }
     try {
       if (rewardsAdminState.editId) {
         await Api.updateReward(rewardsAdminState.editId, { title, km_threshold: km, tier, description: desc });
@@ -3211,7 +3211,7 @@
         toast('Recompensa actualizada.');
       } else {
         await Api.createReward({ organization_id: state.profile.organization_id, title, km_threshold: km, tier, description: desc });
-        toast('Recompensa agregada.');
+        toast('“' + title + '” agregada al catálogo.');
       }
       renderRewardsAdmin();
     } catch (e) { console.error(e); if (st) st.textContent = 'No se pudo guardar: ' + (e.message || 'error'); }
@@ -3223,13 +3223,15 @@
   }
   async function onToggleReward(id) {
     const r = (rewardsAdminState.data.rewards || []).find(x => x.id === id); if (!r) return;
-    try { await Api.updateReward(id, { active: !r.active }); renderRewardsAdmin(); }
+    try { await Api.updateReward(id, { active: !r.active }); toast(r.title + (r.active ? ' desactivada.' : ' activada.')); renderRewardsAdmin(); }
     catch (e) { console.error(e); toast('No se pudo cambiar el estado.'); }
   }
   async function resolveRedeem(id, status) {
-    const label = status === 'delivered' ? 'marcar como ENTREGADA' : 'RECHAZAR';
-    if (!confirm(`¿${label} esta solicitud?`)) return;
-    try { await Api.resolveRedemption(id, status, null); toast('Solicitud actualizada.'); renderRewardsAdmin(); }
+    if (status !== 'pending') {
+      const label = status === 'delivered' ? 'marcar como ENTREGADA' : 'RECHAZAR';
+      if (!confirm(`¿${label} esta solicitud?`)) return;
+    }
+    try { await Api.resolveRedemption(id, status, null); renderRewardsAdmin(); }
     catch (e) { console.error(e); toast('No se pudo actualizar: ' + (e.message || 'error')); }
   }
 
