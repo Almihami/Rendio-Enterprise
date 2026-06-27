@@ -1183,6 +1183,132 @@
     renderBoardGrid();
     renderWorkerSummary();
     bindBoard();
+    renderScheduleMobile();   // vista móvil de solo lectura (responsive del Horario)
+  }
+
+  // ====================================================================
+  // Horario — vista MÓVIL de solo lectura (diseño UX). Misma data que el
+  // Tablero (state.schedule); en computador se usa el Tablero drag&drop.
+  // ====================================================================
+  const smState = { sel: 0, mode: 'dia', open: new Set(), weekKey: null };
+  const SM_DOW = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
+  const SM_DOWLONG = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  function smFname(id) { const p = (nameOf(id) || '').trim().split(/\s+/); return p[0] + (p[1] ? ' ' + p[1][0] + '.' : ''); }
+  function smTodayIndex() {
+    try { const monday = new Date(state.currentWeek + 'T00:00:00'); const n = new Date(); const t = new Date(n.getFullYear(), n.getMonth(), n.getDate()); const diff = Math.round((t - monday) / 86400000); return (diff >= 0 && diff <= 6) ? diff : -1; } catch (e) { return -1; }
+  }
+  function smBands() {
+    const s = state.settings || {};
+    return [
+      { k: 'morning', label: 'Mañana', short: 'AM', icon: 'i-sunrise', slots: Math.max(0, s.morning_slots || 0) },
+      { k: 'afternoon', label: 'Tarde', short: 'PM', icon: 'i-sunset', slots: Math.max(0, s.afternoon_slots || 0) },
+    ];
+  }
+  function smCoordMembers(dayKey) {
+    const d = (state.schedule && state.schedule[dayKey]) || {};
+    return [
+      { id: (d.coord_am || [])[0] || null, kind: 'coord_am', label: 'Líder AM' },
+      { id: (d.coord_pm || [])[0] || null, kind: 'coord_pm', label: 'Líder PM' },
+    ];
+  }
+  const smCov = (di) => dayCoverage(Scheduler.DAYS[di]);
+  const smCovClass = (f, t) => f >= t ? '' : (t - f >= 2 ? 'alert' : 'warn');
+  function smDayConfCount(di) {
+    const dayKey = Scheduler.DAYS[di]; const d = (state.schedule && state.schedule[dayKey]) || {}; let n = 0;
+    smBands().forEach(b => (d[b.k] || []).forEach(id => { if (id && dayConflict(dayKey, id, b.k)) n++; }));
+    smCoordMembers(dayKey).forEach(m => { if (m.id && dayConflict(dayKey, m.id, m.kind)) n++; });
+    return n;
+  }
+  function smTotals() { let f = 0, t = 0, conf = 0; for (let i = 0; i < 7; i++) { const c = smCov(i); f += c.filled; t += c.total; conf += smDayConfCount(i); } return { f, t, huecos: t - f, conf }; }
+
+  function smArow(dayKey, id, kind, bandLabel) {
+    if (!id) return `<div class="empty"><span class="ei"><svg class="icon" style="width:14px;height:14px"><use href="#i-plus"/></svg></span><div><b>Sin cubrir</b><span>${escapeHtml(bandLabel)} · cupo libre</span></div></div>`;
+    const conf = dayConflict(dayKey, id, kind); const soft = daySoft(dayKey, id, kind); const isCoord = isCoordKind(kind);
+    const tag = conf ? `<span class="tag conf"><svg class="icon" style="width:11px;height:11px"><use href="#i-alert"/></svg>Conflicto</span>`
+      : isCoord ? `<span class="tag coord">Coordina</span>`
+        : (soft ? `<span class="tag" style="background:var(--amber-soft);color:var(--amber)">Pidió descanso</span>` : '');
+    const sub = conf ? (conf === 'rule' ? 'Descanso fijo este día' : conf === 'unavailable' ? 'No disponible este día' : 'Doble turno este día') : bandLabel;
+    return `<div class="arow ${conf ? 'conf' : ''}"><span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nameOf(id)))}</span><div class="nm"><b>${escapeHtml(nameOf(id))}</b><span>${escapeHtml(sub)}</span></div>${tag}</div>`;
+  }
+  function smBandBlock(di, b) {
+    const dayKey = Scheduler.DAYS[di]; const d = (state.schedule && state.schedule[dayKey]) || {};
+    const members = []; for (let i = 0; i < b.slots; i++) members.push((d[b.k] || [])[i] || null);
+    const filled = members.filter(Boolean).length; const cl = smCovClass(filled, b.slots || 0);
+    return `<div class="band"><div class="band-h"><span class="bi"><svg class="icon"><use href="#${b.icon}"/></svg></span><div><div class="bt">${b.label}</div><div class="bsub">Turno de ${b.short}</div></div><span class="cvpill ${cl}">${filled}/${b.slots}</span></div><div class="band-b">${members.map(id => smArow(dayKey, id, b.k, b.label)).join('')}</div></div>`;
+  }
+  function smCoordBlock(di) {
+    const dayKey = Scheduler.DAYS[di]; const mem = smCoordMembers(dayKey);
+    const filled = mem.filter(m => m.id).length; const cl = smCovClass(filled, mem.length);
+    return `<div class="band"><div class="band-h"><span class="bi"><svg class="icon"><use href="#i-star"/></svg></span><div><div class="bt">Coordinación</div><div class="bsub">Líder del día</div></div><span class="cvpill ${cl}">${filled}/${mem.length}</span></div><div class="band-b">${mem.map(m => smArow(dayKey, m.id, m.kind, m.label)).join('')}</div></div>`;
+  }
+  function smRenderKpis() {
+    const el = $('#sm-kpis'); if (!el) return;
+    const T = smTotals(); const pct = T.t ? Math.round(T.f / T.t * 100) : 0; const cc = pct >= 90 ? 'ok' : pct >= 75 ? 'warn' : 'alert';
+    el.innerHTML = `<div class="kpi ${cc}"><em>Cobertura</em><b>${pct}%</b><span>${T.f}/${T.t} cupos</span></div>
+      <div class="kpi ${T.huecos ? 'warn' : 'ok'}"><em>Huecos</em><b>${T.huecos}</b><span>${T.huecos ? 'por cubrir' : 'completo'}</span></div>
+      <div class="kpi ${T.conf ? 'alert' : 'ok'}"><em>Conflictos</em><b>${T.conf}</b><span>${T.conf ? 'revisar' : 'sin alertas'}</span></div>`;
+  }
+  function smRenderStrip() {
+    const el = $('#sm-strip'); if (!el) return; const wk = Scheduler.weekDates(state.currentWeek); const ti = smTodayIndex();
+    el.innerHTML = wk.map((dd, di) => { const c = smCov(di); const pct = c.total ? Math.round(c.filled / c.total * 100) : 0;
+      return `<div class="dcell ${smCovClass(c.filled, c.total)} ${di === ti ? 'today' : ''} ${di === smState.sel ? 'sel' : ''}" data-sm-day="${di}"><div class="dow">${SM_DOW[di]}</div><div class="dnum">${String(dd.dayNum).padStart(2, '0')}</div><div class="cv"><i style="width:${pct}%"></i></div></div>`;
+    }).join('');
+  }
+  function smRenderDia() {
+    const el = $('#sm-scroll'); if (!el) return; const di = smState.sel; const ti = smTodayIndex(); const c = smCov(di); const wk = Scheduler.weekDates(state.currentWeek);
+    el.innerHTML = `<div class="daytitle"><b>${SM_DOWLONG[di]}</b><span>${String(wk[di].dayNum).padStart(2, '0')}</span>${di === ti ? '<span class="tnow">Hoy</span>' : ''}</div>
+      ${smBands().map(b => smBandBlock(di, b)).join('')}${smCoordBlock(di)}
+      <div class="footnote">Asignación de la semana · <b>${c.filled}/${c.total} cupos</b> cubiertos este día.<br>Para editar el horario, abre el Tablero desde un computador.</div>`;
+  }
+  function smRenderSemana() {
+    const el = $('#sm-scroll'); if (!el) return; const ti = smTodayIndex(); const wk = Scheduler.weekDates(state.currentWeek);
+    el.innerHTML = wk.map((dd, di) => {
+      const c = smCov(di); const cl = smCovClass(c.filled, c.total); const dayKey = Scheduler.DAYS[di]; const d = (state.schedule && state.schedule[dayKey]) || {};
+      const bandRows = smBands().map(b => {
+        let chips = ''; for (let i = 0; i < b.slots; i++) { const id = (d[b.k] || [])[i] || null;
+          chips += id ? `<span class="nchip ${dayConflict(dayKey, id, b.k) ? 'conf' : ''}"><span class="dd" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nameOf(id)))}</span>${escapeHtml(smFname(id))}</span>` : `<span class="nchip gap">Hueco</span>`; }
+        return `<div class="brow"><span class="blab">${b.short}</span><div class="chips">${chips}</div></div>`;
+      }).join('');
+      const coordChips = smCoordMembers(dayKey).map(m => m.id ? `<span class="nchip coord ${dayConflict(dayKey, m.id, m.kind) ? 'conf' : ''}"><span class="dd" style="background:${colorOfId(m.id)}">${escapeHtml(initialsOf(nameOf(m.id)))}</span>${escapeHtml(smFname(m.id))}</span>` : `<span class="nchip gap">Hueco</span>`).join('');
+      return `<div class="wkcard ${di === ti ? 'today' : ''} ${smState.open.has(di) ? 'open' : ''}" data-sm-wk="${di}"><div class="wkc-h" data-sm-toggle="${di}"><div class="wd"><b>${String(dd.dayNum).padStart(2, '0')}</b><span>${SM_DOW[di]}</span></div>${di === ti ? '<span class="tag coord" style="margin-left:8px">Hoy</span>' : ''}<span class="cvpill ${cl}">${c.filled}/${c.total}</span><span class="chev"><svg class="icon"><use href="#i-chev"/></svg></span></div><div class="wkc-b">${bandRows}<div class="brow"><span class="blab">Coord</span><div class="chips">${coordChips}</div></div></div></div>`;
+    }).join('') + `<div class="footnote">Toca un día para ver el detalle. Para editar, usa el Tablero en computador.</div>`;
+  }
+  function smRenderBody() { smState.mode === 'dia' ? smRenderDia() : smRenderSemana(); }
+
+  function renderScheduleMobile() {
+    const box = $('#schedule-mobile'); if (!box) return;
+    if (smState.weekKey !== state.currentWeek) { smState.weekKey = state.currentWeek; const ti = smTodayIndex(); smState.sel = ti >= 0 ? ti : 0; smState.open = new Set([smState.sel]); }
+    if (smState.sel > 6 || smState.sel < 0) smState.sel = 0;
+    let mon = ''; try { mon = new Date(state.currentWeek + 'T00:00:00').toLocaleDateString('es-CO', { month: 'short', timeZone: 'America/Bogota' }).replace('.', ''); } catch (e) { /* */ }
+    let yr = ''; try { yr = String(new Date(state.currentWeek + 'T00:00:00').getFullYear()); } catch (e) { /* */ }
+    const wk = Scheduler.weekDates(state.currentWeek);
+    const range = `${String(wk[0].dayNum).padStart(2, '0')} – ${String(wk[6].dayNum).padStart(2, '0')} ${mon}${yr ? ' · ' + yr : ''}`.trim();
+    const cut = weekAvailClosed(state.currentWeek) ? 'Corte cerrado' : 'Disponibilidad abierta';
+    box.innerHTML = `
+      <div class="sm-wknav">
+        <button id="sm-prev" aria-label="Semana anterior"><svg class="icon"><use href="#i-l"/></svg></button>
+        <div class="wk"><b>${range}</b><span><i></i>${cut}</span></div>
+        <button id="sm-next" aria-label="Semana siguiente"><svg class="icon"><use href="#i-r"/></svg></button>
+      </div>
+      <div class="kpis" id="sm-kpis"></div>
+      <div class="strip" id="sm-strip"></div>
+      <div class="modebar">
+        <div class="seg" id="sm-modeseg"><button data-m="dia" class="${smState.mode === 'dia' ? 'on' : ''}">Día</button><button data-m="semana" class="${smState.mode === 'semana' ? 'on' : ''}">Semana</button></div>
+        <div class="leg"><span><i></i>Asignado</span><span><i class="h"></i>Hueco</span><span><i class="c"></i>Conflicto</span></div>
+      </div>
+      <div class="scroll" id="sm-scroll"></div>`;
+    smRenderKpis(); smRenderStrip(); smRenderBody();
+    bindScheduleMobile();
+  }
+  function bindScheduleMobile() {
+    const box = $('#schedule-mobile'); if (!box || box._smBound) return; box._smBound = true;
+    box.addEventListener('click', (e) => {
+      const dc = e.target.closest('[data-sm-day]'); if (dc) { smState.sel = +dc.dataset.smDay; smState.mode = 'dia'; renderScheduleMobile(); return; }
+      const ms = e.target.closest('#sm-modeseg button'); if (ms) { smState.mode = ms.dataset.m; $('#sm-modeseg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b === ms)); smRenderBody(); return; }
+      const tg = e.target.closest('[data-sm-toggle]'); if (tg) { const di = +tg.dataset.smToggle; smState.open.has(di) ? smState.open.delete(di) : smState.open.add(di); smRenderSemana(); return; }
+      if (e.target.closest('#sm-prev')) { navigateWeek(-7); return; }
+      if (e.target.closest('#sm-next')) { navigateWeek(7); return; }
+    });
   }
 
   function renderBoardChrome() {

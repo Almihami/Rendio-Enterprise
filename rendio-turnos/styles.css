@@ -1254,6 +1254,104 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #rewards-ui .btn:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:760px){#rewards-ui .grid2{grid-template-columns:1fr}#rewards-ui .redrow{grid-template-columns:38px 1fr;row-gap:10px}#rewards-ui .redrow .kmtag{grid-column:2}#rewards-ui .redrow .ractions{grid-column:1/-1;justify-content:flex-end}}
 
+/* ===== Horario: vista MÓVIL de solo lectura (diseño UX, scopeado #schedule-mobile) ===== */
+/* En computador se ve el Tablero drag&drop; en celular, esta vista. */
+#schedule-mobile{display:none}
+@media(max-width:768px){
+  section[data-panel="schedule"] #schedule-board{display:none !important}
+  #schedule-mobile{display:block}
+  #admin-greeting-block{display:none}
+}
+#schedule-mobile{
+  --plata:#7E8794;--plata-soft:#ECEEF1;
+  --bg:#F8FAFC;--panel:#FFFFFF;--panel2:#F1F5F9;--ink:#211D18;--ink2:#6B6258;--ink3:#A39A8D;
+  --line:#E2E8F0;--line2:#CBD5E1;--orange:#F26522;--orange-soft:#FCE4D6;--green:#16936A;--green-soft:#E0F1E8;
+  --amber:#D98A12;--amber-soft:#FBEBCF;--red:#DB4B3F;--red-soft:#FADFDC;--shadow:0 6px 18px rgba(33,29,24,.07);
+  --font:"Hanken Grotesk",system-ui,sans-serif;--mono:"Space Mono",ui-monospace,monospace;
+  color:var(--ink);font-family:var(--font);max-width:480px;margin:0 auto
+}
+#schedule-mobile .icon{width:16px;height:16px;flex:0 0 auto;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;fill:none}
+#schedule-mobile .sm-wknav{display:flex;align-items:center;gap:10px;padding:4px 0 12px}
+#schedule-mobile .sm-wknav button{width:36px;height:36px;border:1px solid var(--line2);background:var(--panel);border-radius:10px;color:var(--ink2);display:grid;place-items:center;cursor:pointer;flex:0 0 auto}
+#schedule-mobile .sm-wknav .wk{flex:1;text-align:center}
+#schedule-mobile .sm-wknav .wk b{font-size:15px;font-weight:800;letter-spacing:-.01em;display:block;line-height:1.1;color:var(--ink)}
+#schedule-mobile .sm-wknav .wk span{font-size:11px;color:var(--ink2);font-weight:700;display:inline-flex;align-items:center;gap:5px;margin-top:2px}
+#schedule-mobile .sm-wknav .wk span i{width:6px;height:6px;border-radius:99px;background:var(--amber)}
+#schedule-mobile .kpis{display:flex;gap:8px;margin-bottom:12px}
+#schedule-mobile .kpi{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:10px 11px;min-width:0}
+#schedule-mobile .kpi em{font-style:normal;font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);display:block}
+#schedule-mobile .kpi b{font-size:20px;font-weight:800;letter-spacing:-.02em;line-height:1;display:block;margin-top:5px;font-variant-numeric:tabular-nums}
+#schedule-mobile .kpi span{font-size:10px;color:var(--ink2);display:block;margin-top:3px;line-height:1.2}
+#schedule-mobile .kpi.ok b{color:var(--green)}#schedule-mobile .kpi.warn b{color:var(--amber)}#schedule-mobile .kpi.alert b{color:var(--red)}
+#schedule-mobile .strip{display:flex;gap:7px;overflow-x:auto;margin-bottom:12px;scrollbar-width:none}
+#schedule-mobile .strip::-webkit-scrollbar{display:none}
+#schedule-mobile .dcell{flex:0 0 auto;width:50px;padding:8px 6px;border-radius:13px;border:1.5px solid var(--line);background:var(--panel);text-align:center;cursor:pointer}
+#schedule-mobile .dcell .dow{font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)}
+#schedule-mobile .dcell .dnum{font-size:17px;font-weight:800;letter-spacing:-.02em;margin-top:2px;font-variant-numeric:tabular-nums;color:var(--ink)}
+#schedule-mobile .dcell .cv{height:4px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px}
+#schedule-mobile .dcell .cv i{display:block;height:100%;border-radius:99px;background:var(--green)}
+#schedule-mobile .dcell.warn .cv i{background:var(--amber)}#schedule-mobile .dcell.alert .cv i{background:var(--red)}
+#schedule-mobile .dcell.today{border-color:var(--orange-soft)}#schedule-mobile .dcell.today .dnum{color:var(--orange)}
+#schedule-mobile .dcell.sel{border-color:var(--orange);background:var(--orange-soft);box-shadow:0 0 0 3px rgba(242,101,34,.12)}
+#schedule-mobile .dcell.sel .dnum{color:var(--orange)}
+#schedule-mobile .modebar{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+#schedule-mobile .seg{display:inline-flex;background:var(--panel);border:1px solid var(--line2);border-radius:11px;padding:3px;gap:2px}
+#schedule-mobile .seg button{height:32px;padding:0 15px;border:0;border-radius:8px;background:transparent;color:var(--ink2);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer}
+#schedule-mobile .seg button.on{background:var(--ink);color:var(--panel)}
+#schedule-mobile .modebar .leg{margin-left:auto;display:flex;gap:11px;font-size:10.5px;color:var(--ink2)}
+#schedule-mobile .modebar .leg span{display:inline-flex;align-items:center;gap:5px}
+#schedule-mobile .modebar .leg i{width:9px;height:9px;border-radius:3px;background:var(--green)}
+#schedule-mobile .modebar .leg i.h{background:transparent;border:1.4px dashed var(--line2)}#schedule-mobile .modebar .leg i.c{background:var(--red)}
+#schedule-mobile .daytitle{display:flex;align-items:baseline;gap:9px;margin:2px 2px 12px}
+#schedule-mobile .daytitle b{font-size:21px;font-weight:800;letter-spacing:-.03em;color:var(--ink)}
+#schedule-mobile .daytitle span{font-size:12px;font-weight:700;color:var(--ink2)}
+#schedule-mobile .daytitle .tnow{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--orange);background:var(--orange-soft);padding:3px 9px;border-radius:999px;margin-left:auto}
+#schedule-mobile .band{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);margin-bottom:12px;overflow:hidden}
+#schedule-mobile .band-h{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--line);background:var(--panel2)}
+#schedule-mobile .band-h .bi{width:30px;height:30px;border-radius:9px;background:var(--panel);border:1px solid var(--line);display:grid;place-items:center;color:var(--ink2)}
+#schedule-mobile .band-h .bt{font-size:14px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
+#schedule-mobile .band-h .bsub{font-size:11px;color:var(--ink2);margin-top:1px}
+#schedule-mobile .band-h .cvpill{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 11px;border-radius:999px;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;background:var(--green-soft);color:var(--green)}
+#schedule-mobile .band-h .cvpill.warn{background:var(--amber-soft);color:var(--amber)}#schedule-mobile .band-h .cvpill.alert{background:var(--red-soft);color:var(--red)}
+#schedule-mobile .band-b{padding:9px 13px 13px;display:grid;gap:8px}
+#schedule-mobile .arow{display:flex;align-items:center;gap:11px;padding:8px 6px 8px 4px}
+#schedule-mobile .arow+.arow{border-top:1px solid var(--line)}
+#schedule-mobile .av{width:38px;height:38px;border-radius:999px;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;flex:0 0 auto}
+#schedule-mobile .arow .nm{min-width:0;flex:1}
+#schedule-mobile .arow .nm b{font-size:14px;font-weight:700;letter-spacing:-.01em;display:block;line-height:1.2;color:var(--ink)}
+#schedule-mobile .arow .nm span{font-size:11.5px;color:var(--ink2);display:block;margin-top:1px}
+#schedule-mobile .tag{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:3px 9px;border-radius:999px;flex:0 0 auto}
+#schedule-mobile .tag.coord{background:var(--orange-soft);color:var(--orange)}
+#schedule-mobile .tag.conf{background:var(--red);color:#fff;display:inline-flex;align-items:center;gap:4px}
+#schedule-mobile .arow.conf .nm b{color:var(--red)}
+#schedule-mobile .empty{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1.4px dashed var(--line2);border-radius:11px;color:var(--ink3);background:var(--panel2)}
+#schedule-mobile .empty .ei{width:30px;height:30px;border-radius:999px;border:1.4px dashed var(--line2);display:grid;place-items:center;flex:0 0 auto}
+#schedule-mobile .empty b{font-size:13px;font-weight:700;color:var(--amber)}
+#schedule-mobile .empty span{font-size:11px;color:var(--ink3);display:block}
+#schedule-mobile .wkcard{background:var(--panel);border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow);margin-bottom:10px;overflow:hidden}
+#schedule-mobile .wkcard.today{border-color:var(--orange-soft);box-shadow:0 0 0 2px var(--orange-soft),var(--shadow)}
+#schedule-mobile .wkc-h{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+#schedule-mobile .wkc-h .wd{display:flex;align-items:baseline;gap:8px}
+#schedule-mobile .wkc-h .wd b{font-size:16px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--ink)}
+#schedule-mobile .wkc-h .wd span{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)}
+#schedule-mobile .wkc-h .cvpill{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;font-size:11.5px;font-weight:800;font-variant-numeric:tabular-nums;background:var(--green-soft);color:var(--green)}
+#schedule-mobile .wkc-h .cvpill.warn{background:var(--amber-soft);color:var(--amber)}#schedule-mobile .wkc-h .cvpill.alert{background:var(--red-soft);color:var(--red)}
+#schedule-mobile .wkc-h .chev{color:var(--ink3);transition:transform .2s}
+#schedule-mobile .wkcard.open .wkc-h .chev{transform:rotate(90deg)}
+#schedule-mobile .wkc-b{display:none;padding:6px 14px 12px}
+#schedule-mobile .wkcard.open .wkc-b{display:block}
+#schedule-mobile .brow{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+#schedule-mobile .brow:last-child{border-bottom:0}
+#schedule-mobile .blab{font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--ink3);width:46px;flex:0 0 auto;padding-top:5px}
+#schedule-mobile .chips{display:flex;flex-wrap:wrap;gap:6px;flex:1}
+#schedule-mobile .nchip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px 0 4px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);font-size:12px;font-weight:600;color:var(--ink)}
+#schedule-mobile .nchip .dd{width:20px;height:20px;border-radius:999px;display:grid;place-items:center;font-size:8.5px;font-weight:800;color:#fff}
+#schedule-mobile .nchip.coord{background:var(--orange-soft);border-color:transparent;color:var(--orange);font-weight:700}
+#schedule-mobile .nchip.conf{background:var(--red-soft);border-color:var(--red);color:var(--red);font-weight:700}
+#schedule-mobile .nchip.gap{background:transparent;border:1.4px dashed var(--line2);color:var(--amber);font-weight:700;padding:0 11px}
+#schedule-mobile .footnote{text-align:center;font-size:11px;color:var(--ink3);padding:8px 4px 4px;line-height:1.5}
+#schedule-mobile .footnote b{color:var(--ink2)}
+
 /* =====================================================================
    Conductor — barra de navegación inferior (pestañas) + ajustes de layout
    ===================================================================== */

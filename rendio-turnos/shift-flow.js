@@ -1045,7 +1045,9 @@
   function closeKmNum() { const d = String(sf.close.km).replace(/\D/g, ''); return d ? parseInt(d, 10) : 0; }
   function closeOpenKm() { return Number(sf.activeShift && sf.activeShift.opening_km) || 0; }
   function closeKmValid() { const n = closeKmNum(); return n > 0 && n >= closeOpenKm(); }
-  function receiptsValid() { return sf.close.receipts.every(r => (r.amount || 0) > 0); }
+  // Comprobante de tanqueo OBLIGATORIO: al menos uno, y cada uno con valor > 0.
+  // No se habilita "Confirmar cierre" hasta cumplirlo.
+  function receiptsValid() { return sf.close.receipts.length >= 1 && sf.close.receipts.every(r => (r.amount || 0) > 0); }
   function novedadValid() { return !sf.close.novedad || sf.close.novedadText.trim().length > 0; }
   function closeAllValid() { return closeKmValid() && sf.close.attest && novedadValid() && receiptsValid(); }
   function fuelTotal() { return sf.close.receipts.reduce((s, r) => s + (r.amount || 0), 0); }
@@ -1197,10 +1199,10 @@
 
         <section>
           <div class="flex items-center justify-between mb-2">
-            <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">Comprobantes de tanqueo</h3>
+            <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">Comprobantes de tanqueo <span class="text-rose-500">*</span></h3>
             <span id="cl-fuel-total" class="text-[12px] font-bold text-slate-400">$${fuelTotal().toLocaleString('es-CO')}</span>
           </div>
-          <p class="text-[12px] text-slate-500 mb-3 -mt-1">Adjunta los recibos de gasolina pagados en el turno (foto + valor).</p>
+          <p class="text-[12px] ${sf.close.receipts.length ? 'text-slate-500' : 'text-rose-600 font-semibold'} mb-3 -mt-1">${sf.close.receipts.length ? 'Adjunta los recibos de gasolina pagados en el turno (foto + valor).' : 'Obligatorio: adjunta al menos un recibo de gasolina (foto + valor) para cerrar el turno.'}</p>
           <div class="space-y-2.5">${receiptRows}</div>
           <button id="cl-add-receipt" class="mt-2.5 w-full rounded-xl border-2 border-dashed border-brand-300 bg-brand-50 text-brand-700 font-bold py-3 text-sm flex items-center justify-center gap-2 active:scale-[.98]">＋ Agregar comprobante</button>
           <input id="cl-file-receipt" type="file" accept="image/*" capture="environment" class="hidden">
