@@ -1172,7 +1172,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
   --plata:#7E8794;--plata-soft:#ECEEF1;--oro:#C9810F;--oro-soft:#FBEBCF;--diamante:#1E91A6;--diamante-soft:#DEF0F3;
   --shadow:0 6px 18px rgba(33,29,24,.07);
   --font:"Hanken Grotesk",system-ui,sans-serif;--mono:"Space Mono",ui-monospace,monospace;
-  color:var(--ink);max-width:1100px;margin:0 auto;padding:24px 24px 64px;font-family:var(--font)
+  color:var(--ink);padding:4px 0 48px;font-family:var(--font)
 }
 #rewards-ui .icon{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
 #rewards-ui .phead{margin-bottom:20px}
@@ -1252,7 +1252,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #rewards-ui .btn{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 9px 22px rgba(226,85,26,.26)}
 #rewards-ui .btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:none}
 #rewards-ui .btn:disabled{opacity:.5;cursor:not-allowed}
-@media(max-width:760px){#rewards-ui{padding:16px 16px 48px}#rewards-ui .grid2{grid-template-columns:1fr}#rewards-ui .redrow{grid-template-columns:38px 1fr;row-gap:10px}#rewards-ui .redrow .kmtag{grid-column:2}#rewards-ui .redrow .ractions{grid-column:1/-1;justify-content:flex-end}}
+@media(max-width:760px){#rewards-ui .grid2{grid-template-columns:1fr}#rewards-ui .redrow{grid-template-columns:38px 1fr;row-gap:10px}#rewards-ui .redrow .kmtag{grid-column:2}#rewards-ui .redrow .ractions{grid-column:1/-1;justify-content:flex-end}}
 
 /* =====================================================================
    Conductor — barra de navegación inferior (pestañas) + ajustes de layout
