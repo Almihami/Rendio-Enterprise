@@ -524,6 +524,10 @@
               </div>
               <div class="set-row2" style="margin-top:14px">
                 <div class="set-field"><label>Auto-cierre de turno (horas)</label><input id="setting-auto-close-hours" class="set-input" type="number" min="1" max="72" /><div class="set-hint">Si un turno sigue activo más de X horas, se cierra solo y libera el vehículo (red de seguridad).</div></div>
+                <div class="set-field"><label>Liberar reserva abandonada (min)</label><input id="setting-reservation-idle" class="set-input" type="number" min="5" max="240" /><div class="set-hint">Si un conductor empieza la inspección y no avanza en X minutos, su reserva del vehículo se libera.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Strikes para suspender</label><input id="setting-strike-limit" class="set-input" type="number" min="1" max="10" /><div class="set-hint">Al acumular esta cantidad de strikes, el conductor queda suspendido la semana siguiente (automático).</div></div>
                 <div class="set-field"></div>
               </div>
               <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
@@ -599,6 +603,10 @@
               <div class="set-grid2" style="margin-top:14px">
                 <div class="set-field"><label>Capacidad (pasajeros)</label><input class="set-input" id="new-veh-capacity" type="number" min="1" max="4" value="4" /></div>
                 <div class="set-field"><label>Kilometraje actual</label><input class="set-input" id="new-veh-km" type="number" min="0" value="0" /></div>
+              </div>
+              <div class="set-grid2" style="margin-top:14px">
+                <div class="set-field"><label>Intervalo de mantenimiento (km)</label><input class="set-input" id="new-veh-interval" type="number" min="500" step="500" value="7000" /><div class="set-hint">Cada cuántos km el carro entra a mantenimiento.</div></div>
+                <div class="set-field"><label>Último mantenimiento (km)</label><input class="set-input" id="new-veh-lastmaint" type="number" min="0" placeholder="(usa el km actual)" /><div class="set-hint">Déjalo vacío para tomar el km actual.</div></div>
               </div>
               <div class="set-grid2" style="margin-top:14px">
                 <div class="set-field"><label>SOAT vence (opcional)</label><input class="set-input" id="new-veh-soat" type="date" /></div>

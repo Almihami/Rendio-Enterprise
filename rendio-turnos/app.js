@@ -144,6 +144,7 @@
 
     $('#new-veh-create-btn')?.addEventListener('click', onCreateVehicle);
     $('#vehicles-list')?.addEventListener('click', (e) => {
+      const ed = e.target.closest('[data-veh-edit]'); if (ed) { onEditVehicle(ed.dataset.vehEdit); return; }
       const r = e.target.closest('[data-veh-restore]'); if (r) { onRestoreVehicle(r.dataset.vehRestore); return; }
       const d = e.target.closest('[data-veh-del]'); if (d) { onDeleteVehicle(d.dataset.vehDel); return; }
     });
@@ -2369,13 +2370,17 @@
     if ($('#setting-coord-slots')) $('#setting-coord-slots').value = state.settings.coord_slots != null ? state.settings.coord_slots : 1;
     if ($('#setting-shift-hours')) $('#setting-shift-hours').value = state.settings.shift_hours != null ? state.settings.shift_hours : 12;
     if ($('#setting-auto-close-hours')) $('#setting-auto-close-hours').value = state.settings.auto_close_hours != null ? state.settings.auto_close_hours : 14;
+    if ($('#setting-reservation-idle')) $('#setting-reservation-idle').value = state.settings.reservation_idle_minutes != null ? state.settings.reservation_idle_minutes : 60;
+    if ($('#setting-strike-limit')) $('#setting-strike-limit').value = state.settings.strike_limit != null ? state.settings.strike_limit : 3;
     renderPriorityList();
     renderRulesEditor();
     renderVehiclesSettings();
   }
 
-  // --- Vehículos (admin) — alta/baja de la flota desde Ajustes ---
+  // --- Vehículos (admin) — alta/baja/edición de la flota desde Ajustes ---
   const VEH_STATUS_ES = { available: 'Disponible', in_use: 'En uso', reserved: 'Reservado', maintenance: 'Mantenimiento', blocked: 'Bloqueado' };
+  let vehiclesEditId = null;       // si está editando un vehículo existente
+  let vehiclesCache = [];          // para poblar el form al editar
   async function renderVehiclesSettings() {
     const box = $('#vehicles-list');
     if (!box) return;
@@ -2383,19 +2388,44 @@
     let vehs = [];
     try { vehs = await Api.listVehiclesForShift(); }
     catch (e) { console.error(e); box.innerHTML = '<p class="set-hint">No se pudieron cargar los vehículos.</p>'; return; }
+    vehiclesCache = vehs;
     if (!vehs.length) { box.innerHTML = '<p class="set-hint">Aún no hay vehículos. Agrega el primero abajo.</p>'; return; }
     box.innerHTML = vehs.map(v => {
       const offService = v.status === 'maintenance' || v.status === 'blocked';
       const restoreBtn = offService
         ? `<button class="set-btn dark" data-veh-restore="${v.id}" title="Regresar a servicio">Regresar a servicio</button>`
         : '';
+      const intv = v.maintenance_interval_km ? ` · mantto c/${(v.maintenance_interval_km).toLocaleString('es-CO')} km` : '';
       return `<div class="veh-row" data-veh="${v.id}">
-      <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km</span></div>
+      <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km${intv}</span></div>
       <span class="veh-stat st-${v.status}">${VEH_STATUS_ES[v.status] || escapeHtml(v.status || '')}</span>
       ${restoreBtn}
+      <button class="set-btn ghost" data-veh-edit="${v.id}" title="Editar" style="height:34px">Editar</button>
       <button class="veh-del" data-veh-del="${v.id}" title="Eliminar vehículo"><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
     </div>`;
     }).join('');
+  }
+
+  function onEditVehicle(id) {
+    const v = vehiclesCache.find(x => x.id === id); if (!v) return;
+    vehiclesEditId = id;
+    const set = (f, val) => { const el = $('#new-veh-' + f); if (el) el.value = val != null ? val : ''; };
+    set('code', v.internal_code); set('plate', v.license_plate); set('brand', v.brand); set('model', v.model);
+    set('capacity', v.capacity || 4); set('km', v.current_km || 0);
+    set('interval', v.maintenance_interval_km || 7000); set('lastmaint', v.last_maintenance_km != null ? v.last_maintenance_km : '');
+    set('soat', v.soat_expires_at || ''); set('tecno', v.tecnomec_expires_at || '');
+    const btn = $('#new-veh-create-btn'); if (btn) btn.innerHTML = '<svg class="icon"><use href="#i-check"/></svg>Guardar cambios';
+    const st = $('#new-veh-state'); if (st) st.textContent = `Editando ${v.internal_code || v.license_plate || ''}…`;
+    $('#new-veh-code')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  function resetVehicleForm() {
+    vehiclesEditId = null;
+    ['code', 'plate', 'brand', 'model', 'soat', 'tecno', 'lastmaint'].forEach(f => { const el = $('#new-veh-' + f); if (el) el.value = ''; });
+    if ($('#new-veh-capacity')) $('#new-veh-capacity').value = '4';
+    if ($('#new-veh-km')) $('#new-veh-km').value = '0';
+    if ($('#new-veh-interval')) $('#new-veh-interval').value = '7000';
+    const btn = $('#new-veh-create-btn'); if (btn) btn.innerHTML = '<svg class="icon"><use href="#i-plus"/></svg>Agregar vehículo';
+    const st = $('#new-veh-state'); if (st) st.textContent = '';
   }
 
   async function onCreateVehicle() {
@@ -2403,6 +2433,10 @@
     const plate = ($('#new-veh-plate') && $('#new-veh-plate').value || '').trim();
     if (!code || !plate) { toast('Código interno y placa son obligatorios.'); return; }
     const km = Math.max(0, parseInt($('#new-veh-km').value, 10) || 0);
+    const interval = Math.max(500, parseInt($('#new-veh-interval') && $('#new-veh-interval').value, 10) || 7000);
+    const lastRaw = ($('#new-veh-lastmaint') && $('#new-veh-lastmaint').value) || '';
+    // Baseline de mantto: si lo dejan vacío, usa el km actual (evita bug 4).
+    const lastMaint = (lastRaw !== '' && !isNaN(parseInt(lastRaw, 10))) ? Math.max(0, parseInt(lastRaw, 10)) : km;
     const veh = {
       organization_id: state.profile.organization_id,
       internal_code: code,
@@ -2411,28 +2445,30 @@
       model: ($('#new-veh-model').value || '').trim() || null,
       capacity: Math.min(4, Math.max(1, parseInt($('#new-veh-capacity').value, 10) || 4)),
       current_km: km,
-      // Baseline de mantenimiento = odómetro actual al darlo de alta. Si se deja
-      // en 0 (default), el vehículo se bloquearía al primer cierre de turno con km
-      // real (bug 4). start_shift también lo inicializa como red de seguridad.
-      last_maintenance_km: km,
+      last_maintenance_km: lastMaint,
+      maintenance_interval_km: interval,
       soat_expires_at: $('#new-veh-soat').value || null,
       tecnomec_expires_at: $('#new-veh-tecno').value || null,
     };
     const btn = $('#new-veh-create-btn'); const st = $('#new-veh-state');
-    btn.disabled = true; if (st) st.textContent = 'Creando…';
+    const editing = !!vehiclesEditId;
+    btn.disabled = true; if (st) st.textContent = editing ? 'Guardando…' : 'Creando…';
     try {
-      await Api.createVehicle(veh);
-      ['code', 'plate', 'brand', 'model'].forEach(f => { const el = $('#new-veh-' + f); if (el) el.value = ''; });
-      $('#new-veh-capacity').value = '4'; $('#new-veh-km').value = '0';
-      $('#new-veh-soat').value = ''; $('#new-veh-tecno').value = '';
-      if (st) st.textContent = '';
-      toast('Vehículo agregado.');
+      if (editing) {
+        const { organization_id, ...patch } = veh;   // no se cambia la organización
+        await Api.updateVehicle(vehiclesEditId, patch);
+        toast('Vehículo actualizado.');
+      } else {
+        await Api.createVehicle(veh);
+        toast('Vehículo agregado.');
+      }
+      resetVehicleForm();
       renderVehiclesSettings();
     } catch (e) {
       console.error(e);
       if (st) st.textContent = '';
       const msg = /unique|duplicate/i.test(e.message || '') ? 'Ya existe un vehículo con ese código o placa.' : (e.message || 'error');
-      alert('No se pudo agregar: ' + msg);
+      alert((editing ? 'No se pudo actualizar: ' : 'No se pudo agregar: ') + msg);
     } finally { btn.disabled = false; }
   }
 
@@ -2643,6 +2679,8 @@
       coord_slots: Math.max(1, parseInt($('#setting-coord-slots') && $('#setting-coord-slots').value, 10) || 1),
       shift_hours: Math.max(1, parseInt($('#setting-shift-hours') && $('#setting-shift-hours').value, 10) || 12),
       auto_close_hours: Math.min(72, Math.max(1, parseInt($('#setting-auto-close-hours') && $('#setting-auto-close-hours').value, 10) || 14)),
+      reservation_idle_minutes: Math.min(240, Math.max(5, parseInt($('#setting-reservation-idle') && $('#setting-reservation-idle').value, 10) || 60)),
+      strike_limit: Math.min(10, Math.max(1, parseInt($('#setting-strike-limit') && $('#setting-strike-limit').value, 10) || 3)),
     };
     try {
       await Api.saveSettings(next);

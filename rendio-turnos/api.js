@@ -575,7 +575,8 @@
     const sel = cols => sb.from('app_settings').select(cols).eq('id', 'singleton').maybeSingle();
     // Fallback en cascada: de más completo a más básico, así el código tolera
     // migraciones no aplicadas (0014 reopen_*, 0025 coord_slots/shift_hours, 0027 auto_close_hours).
-    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours');
+    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit');
+    if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots'));
@@ -588,6 +589,8 @@
       coord_slots: (data && data.coord_slots != null) ? data.coord_slots : 1,
       shift_hours: (data && data.shift_hours != null) ? data.shift_hours : 12,
       auto_close_hours: (data && data.auto_close_hours != null) ? data.auto_close_hours : 14,
+      reservation_idle_minutes: (data && data.reservation_idle_minutes != null) ? data.reservation_idle_minutes : 60,
+      strike_limit: (data && data.strike_limit != null) ? data.strike_limit : 3,
     };
   }
 
@@ -600,10 +603,17 @@
     };
     const upd = cols => sb.from('app_settings').update(cols).eq('id', 'singleton');
     // Intenta con las columnas nuevas; cae en cascada si la migración no está
-    // (0027 auto_close_hours → 0025 coord_slots/shift_hours → base).
-    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours });
+    // (0037 reservation_idle/strike_limit → 0027 auto_close_hours → 0025 coord/shift → base).
+    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit });
+    if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours }));
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours }));
     if (error) ({ error } = await upd(base));
+    if (error) throw error;
+  }
+
+  // Actualiza un vehículo (admin). RLS: p_vehicles_admin_mutate.
+  async function updateVehicle(id, patch) {
+    const { error } = await sb.from('vehicles').update(patch).eq('id', id);
     if (error) throw error;
   }
 
@@ -1156,7 +1166,7 @@
     listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
     savePushSubscription, deletePushSubscription, sendPush,
-    getMyDriverProfileId, listVehiclesForShift, createVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
+    getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, startShift, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
