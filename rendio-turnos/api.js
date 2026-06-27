@@ -783,6 +783,65 @@
     if (error) throw error;
   }
 
+  // ---- Cierre de turno (Etapa 2) ----
+
+  // Subida genérica al bucket privado 'inspections' (fotos de cierre, video de
+  // novedad, comprobantes de tanqueo). contentType según el blob.
+  async function uploadShiftFile(path, blob, contentType) {
+    const { error } = await sb.storage
+      .from('inspections')
+      .upload(path, blob, { contentType: contentType || blob.type || 'application/octet-stream', upsert: true });
+    if (error) throw error;
+    return path;
+  }
+
+  // Inserta comprobantes de tanqueo de forma idempotente (no duplica en reintento).
+  async function addFuelReceipts(rows) {
+    if (!rows || !rows.length) return;
+    const shiftId = rows[0].shift_id;
+    const { data: existing } = await sb.from('fuel_receipts').select('storage_path').eq('shift_id', shiftId);
+    const have = new Set((existing || []).map(r => r.storage_path));
+    const fresh = rows.filter(r => !have.has(r.storage_path));
+    if (!fresh.length) return;
+    const { error } = await sb.from('fuel_receipts').insert(fresh);
+    if (error) throw error;
+  }
+
+  // SECURITY DEFINER: cierra el turno (inspección final + libera vehículo + novedad).
+  async function closeShift(shiftId, { closingKm, hasNovedad, novedadText, severity, mediaPaths } = {}) {
+    const { data, error } = await sb.rpc('close_shift', {
+      p_shift_id: shiftId,
+      p_closing_km: closingKm,
+      p_has_novedad: !!hasNovedad,
+      p_novedad_text: novedadText || null,
+      p_severity: severity || 'low',
+      p_media_paths: mediaPaths || [],
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  // Admin: todas las inspecciones de un turno (inicial + final) para la tarjeta.
+  async function listInspectionsByShift(shiftId) {
+    const { data, error } = await sb.from('inspections')
+      .select('id,kind,has_damage,checklist,notes,odometer_km,review_status,performed_at,' +
+              'inspection_photos(photo_type,storage_path,size_bytes)')
+      .eq('shift_id', shiftId)
+      .order('kind', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Comprobantes de tanqueo de un turno (conductor: los suyos; admin: de su org).
+  async function listFuelReceiptsForShift(shiftId) {
+    const { data, error } = await sb.from('fuel_receipts')
+      .select('id, amount_cop, storage_path, created_at')
+      .eq('shift_id', shiftId)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
   async function addIncident({ organizationId, reporterId, shiftId, vehicleId, category, severity, description }) {
     const { data, error } = await sb.from('incidents').insert({
       organization_id: organizationId,
@@ -977,7 +1036,7 @@
     savePushSubscription, deletePushSubscription, sendPush,
     getMyDriverProfileId, listVehiclesForShift, createVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
-    addIncident, startShift, abortShift, listActiveShifts, forceCloseShift,
+    addIncident, startShift, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
   };

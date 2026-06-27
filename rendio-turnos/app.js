@@ -664,12 +664,27 @@
     try { insp = await Api.getInspectionDetail(id); }
     catch (e) { console.error(e); view.innerHTML = '<button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver</button><div class="card">No se pudo cargar la inspección.</div>'; return; }
     inspState.current = insp;
+    // Cierre del mismo turno (inspección final + comprobantes de tanqueo) para
+    // anexarlo a esta tarjeta y dar el ciclo completo del turno al admin.
+    let closeData = null;
+    try {
+      if (insp.shift_id) {
+        const [byShift, receipts] = await Promise.all([
+          Api.listInspectionsByShift(insp.shift_id).catch(() => []),
+          Api.listFuelReceiptsForShift(insp.shift_id).catch(() => []),
+        ]);
+        const final = (byShift || []).find(i => i.kind === 'final') || null;
+        if (final || (receipts && receipts.length)) closeData = { final, receipts: receipts || [] };
+      }
+    } catch (e) { console.error(e); }
+    const paths = (insp.inspection_photos || []).map(p => p.storage_path);
+    if (closeData) (closeData.receipts || []).forEach(r => paths.push(r.storage_path));
     let urls = {};
-    try { urls = await Api.signedInspectionPhotoUrls((insp.inspection_photos || []).map(p => p.storage_path)); } catch (e) { console.error(e); }
-    renderInspectionDetail(insp, urls);
+    try { urls = await Api.signedInspectionPhotoUrls(paths); } catch (e) { console.error(e); }
+    renderInspectionDetail(insp, urls, closeData);
   }
 
-  function renderInspectionDetail(insp, urls) {
+  function renderInspectionDetail(insp, urls, closeData) {
     const v = insp.vehicles || {};
     const sev = INSP_SEV[inspSeverityOf(insp)] || INSP_SEV.media;
     const st = INSP_ST[insp.review_status] || INSP_ST.pending;
@@ -748,7 +763,40 @@
         <p class="csub">Lo que el conductor revisó. En rojo, lo que marcó con problema.</p>
         <div class="cklist">${checklistHtml}</div>
       </div>
+      ${closeCardHtml(insp, urls, closeData)}
       ${decision}`;
+  }
+
+  // Tarjeta de CIERRE de turno anexada al detalle (km final, novedad, comprobantes
+  // de tanqueo con foto ampliable). Vacía mientras el turno no se haya cerrado.
+  function closeCardHtml(insp, urls, closeData) {
+    if (!closeData) {
+      return `<div class="card" style="margin-top:16px"><h2><svg class="icon"><use href="#i-clock"/></svg>Cierre de turno</h2>
+        <p class="csub">El turno aún no se ha cerrado. Aquí aparecerán el kilometraje final, las novedades y los comprobantes de tanqueo cuando el conductor cierre.</p></div>`;
+    }
+    const f = closeData.final;
+    const receipts = closeData.receipts || [];
+    const total = receipts.reduce((s, r) => s + (Number(r.amount_cop) || 0), 0);
+    const driven = (f && f.odometer_km != null && insp.odometer_km != null) ? (f.odometer_km - insp.odometer_km) : null;
+    const fmtDT2 = (s) => { try { return new Date(s).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }); } catch (e) { return ''; } };
+    const kmRows = `
+      <div class="kv"><span class="k">Kilometraje final</span><span class="v mono">${f && f.odometer_km != null ? f.odometer_km.toLocaleString('es-CO') : '—'} km</span></div>
+      <div class="kv"><span class="k">Km recorridos</span><span class="v mono" style="color:var(--green)">${driven != null ? '+' + driven.toLocaleString('es-CO') : '—'} km</span></div>
+      ${f && f.performed_at ? `<div class="kv"><span class="k">Cerrado</span><span class="v">${escapeHtml(fmtDT2(f.performed_at))}</span></div>` : ''}
+      ${f && f.notes ? `<div style="margin-top:10px"><div class="note"><b>Novedad de cierre:</b> ${escapeHtml(f.notes)}</div></div>` : ''}`;
+    const receiptsHtml = receipts.length ? `
+      <div style="margin-top:14px">
+        <div class="kv"><span class="k">Comprobantes de tanqueo</span><span class="v mono" style="font-weight:800">$${total.toLocaleString('es-CO')}</span></div>
+        <div class="pgrid" style="margin-top:8px">
+          ${receipts.map(r => { const u = urls[r.storage_path]; return `<div class="photo"${u ? ` data-insp-photo="${u}"` : ''}>${u ? `<img src="${u}" alt="comprobante">` : `<svg class="icon"><use href="#i-cam"/></svg>`}<span class="plabel">$${(Number(r.amount_cop) || 0).toLocaleString('es-CO')}</span></div>`; }).join('')}
+        </div>
+      </div>` : '<p class="csub" style="margin-top:10px">Sin comprobantes de tanqueo.</p>';
+    return `<div class="card" style="margin-top:16px">
+      <h2><svg class="icon"><use href="#i-check"/></svg>Cierre de turno</h2>
+      <p class="csub">Información registrada por el conductor al cerrar el turno.</p>
+      <div style="margin-top:6px">${kmRows}</div>
+      ${receiptsHtml}
+    </div>`;
   }
 
   async function inspDoReview(id, status, notes) {

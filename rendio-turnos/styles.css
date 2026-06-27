@@ -663,6 +663,8 @@ details[open] .details-chevron { transform: rotate(180deg); }
 @keyframes sheen{0%,55%{left:-80%}88%,100%{left:135%}}
 @keyframes bob{0%,100%{transform:translateX(0)}50%{transform:translateX(5px)}}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@media (prefers-reduced-motion: no-preference){ .sf-livedot{animation:sfLivedot 1.6s ease-in-out infinite} }
+@keyframes sfLivedot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}
 
 /* =====================================================================
    Ajustes — paleta limpia. VISUAL ONLY. Scopeado bajo #settings-ui.
