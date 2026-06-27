@@ -3376,6 +3376,8 @@
       } else {
         await Api.createReward({ organization_id: state.profile.organization_id, title, km_threshold: km, tier, description: desc });
         toast('“' + title + '” agregada al catálogo.');
+        // Avisar a los conductores que hay una recompensa nueva.
+        try { await notify((state.drivers || []).map(d => d.id), '🎁 Nueva recompensa', `Ya puedes ganar "${title}" con tus kilómetros (${km.toLocaleString('es-CO')} km).`, '/'); } catch (e) { /* push best-effort */ }
       }
       renderRewardsAdmin();
     } catch (e) { console.error(e); if (st) st.textContent = 'No se pudo guardar: ' + (e.message || 'error'); }
@@ -3395,8 +3397,24 @@
       const label = status === 'delivered' ? 'marcar como ENTREGADA' : 'RECHAZAR';
       if (!confirm(`¿${label} esta solicitud?`)) return;
     }
-    try { await Api.resolveRedemption(id, status, null); renderRewardsAdmin(); }
-    catch (e) { console.error(e); toast('No se pudo actualizar: ' + (e.message || 'error')); }
+    try {
+      await Api.resolveRedemption(id, status, null);
+      // Push al conductor cuando se resuelve (no en "deshacer").
+      if (status === 'delivered' || status === 'rejected') {
+        const r = (rewardsAdminState.data.redemptions || []).find(x => x.id === id);
+        const pid = r && r.driver_profiles && r.driver_profiles.profiles && r.driver_profiles.profiles.id;
+        const title = (r && r.rewards && r.rewards.title) || 'tu recompensa';
+        if (pid) {
+          try {
+            await notify([pid],
+              status === 'delivered' ? '🎁 Recompensa entregada' : 'Recompensa no aprobada',
+              status === 'delivered' ? `Tu recompensa "${title}" fue entregada. ¡Disfrútala!` : `Tu solicitud de "${title}" no fue aprobada. Habla con tu administrador.`,
+              '/');
+          } catch (e) { /* push best-effort */ }
+        }
+      }
+      renderRewardsAdmin();
+    } catch (e) { console.error(e); toast('No se pudo actualizar: ' + (e.message || 'error')); }
   }
 
   // ====================================================================
