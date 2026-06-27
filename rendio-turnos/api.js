@@ -700,15 +700,35 @@
     return data.id;
   }
 
-  // row debe incluir: id (uuid generado en cliente, para que el path de las
-  // fotos exista antes del insert), organization_id, shift_id, vehicle_id,
+  // Devuelve el id de la inspección 'initial' de un turno si ya existe (null si no).
+  // Clave para la idempotencia del inicio de turno: si un intento anterior quedó
+  // a medias (red caída, vehículo recién ocupado, etc.) el turno se reutiliza y
+  // su inspección ya existe; reusamos su id en vez de crear otra y chocar contra
+  // inspections_one_kind_per_shift (UNIQUE shift_id+kind).
+  async function getExistingInitialInspectionId(shiftId) {
+    if (!shiftId) return null;
+    const { data, error } = await sb
+      .from('inspections')
+      .select('id')
+      .eq('shift_id', shiftId)
+      .eq('kind', 'initial')
+      .limit(1);
+    if (error) return null; // ante la duda, que el flujo genere uno nuevo
+    return (data && data[0]) ? data[0].id : null;
+  }
+
+  // row debe incluir: id (uuid generado/reusado en cliente, para que el path de
+  // las fotos exista antes del insert), organization_id, shift_id, vehicle_id,
   // driver_id, kind, odometer_km, checklist, has_damage, notes.
+  // Idempotente: upsert por PK (id). En reintentos el id se reutiliza (ver
+  // getExistingInitialInspectionId), así que actualiza la misma fila en vez de
+  // violar inspections_one_kind_per_shift.
   async function createInspection(row) {
-    let { data, error } = await sb.from('inspections').insert(row).select('id').single();
+    let { data, error } = await sb.from('inspections').upsert(row, { onConflict: 'id' }).select('id').single();
     // Si la migración 0028 (is_apt/signed_name) no está aplicada, reintenta sin esos campos.
     if (error && /is_apt|signed_name|column|schema cache/i.test(error.message || '')) {
       const { is_apt, signed_name, ...legacy } = row;
-      ({ data, error } = await sb.from('inspections').insert(legacy).select('id').single());
+      ({ data, error } = await sb.from('inspections').upsert(legacy, { onConflict: 'id' }).select('id').single());
     }
     if (error) throw error;
     return data.id;
@@ -722,8 +742,25 @@
     return path;
   }
 
+  // Idempotente: no reinserta fotos que ya existen (reintento tras fallo parcial).
+  // - ángulos fijos: índice único parcial (inspection_id, photo_type) → se omite
+  //   si ya hay una de ese tipo (aunque cambie el path) para no violar la unicidad.
+  // - damage/extra/admin: pueden ser varias → se deduplican por storage_path.
   async function addInspectionPhotos(rows) {
-    const { error } = await sb.from('inspection_photos').insert(rows);
+    if (!rows || !rows.length) return;
+    const FIXED = ['front', 'left', 'right', 'rear', 'dashboard'];
+    const inspId = rows[0].inspection_id;
+    const { data: existing } = await sb
+      .from('inspection_photos')
+      .select('photo_type,storage_path')
+      .eq('inspection_id', inspId);
+    const havePath = new Set((existing || []).map(r => r.storage_path));
+    const haveFixed = new Set((existing || []).filter(r => FIXED.includes(r.photo_type)).map(r => r.photo_type));
+    const fresh = rows.filter(r =>
+      !havePath.has(r.storage_path) && !(FIXED.includes(r.photo_type) && haveFixed.has(r.photo_type))
+    );
+    if (!fresh.length) return;
+    const { error } = await sb.from('inspection_photos').insert(fresh);
     if (error) throw error;
   }
 
@@ -778,19 +815,34 @@
     return data;
   }
 
+  // SECURITY DEFINER (solo admin): regresa un vehículo a servicio
+  // (maintenance/blocked → available) y reinicia el contador de mantto. Para
+  // liberar carros que quedaron bloqueados tras un NO APTO o por el trigger de
+  // mantenimiento, ya que el panel de vehículos no tenía cómo desbloquearlos.
+  async function returnVehicleToService(vehicleId, reason) {
+    const { data, error } = await sb.rpc('return_vehicle_to_service', { p_vehicle_id: vehicleId, p_reason: reason || null });
+    if (error) throw error;
+    return data;
+  }
+
   // ====================================================================
   // Inspecciones — revisión/aprobación (admin) + checklist configurable
   // ====================================================================
 
   // Cola de revisión: solo inspecciones INICIALES con novedad (has_damage).
-  // Las limpias se auto-aprueban (trigger 0024) y no entran a este módulo.
+  // Cola admin de inspecciones. Antes filtraba has_damage=true (solo novedades) y
+  // por eso las inspecciones limpias —auto-aprobadas por el trigger 0024— no
+  // aparecían en Admin→Inspecciones. Ahora trae TODAS las 'initial'; los filtros
+  // de la UI (Pendientes/Aprobadas/Rechazadas/Todas) hacen el resto. Las que
+  // requieren acción siguen siendo las 'pending' (solo las que tienen novedad).
   async function listInspectionsForReview(status) {
     let q = sb.from('inspections')
       .select('id,kind,has_damage,notes,odometer_km,review_status,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id,' +
               'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
               'driver_profiles(profiles(id,full_name,email))')
-      .eq('kind', 'initial').eq('has_damage', true)
-      .order('performed_at', { ascending: false });
+      .eq('kind', 'initial')
+      .order('performed_at', { ascending: false })
+      .limit(300);
     if (status) q = q.eq('review_status', status);
     const { data, error } = await q;
     if (error) throw error;
@@ -904,8 +956,8 @@
     listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
     savePushSubscription, deletePushSubscription, sendPush,
-    getMyDriverProfileId, listVehiclesForShift, createVehicle, softDeleteVehicle, getMyOpenShift,
-    createShiftDraft, createInspection, uploadInspectionPhoto, addInspectionPhotos,
+    getMyDriverProfileId, listVehiclesForShift, createVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
+    createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, startShift, abortShift, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
