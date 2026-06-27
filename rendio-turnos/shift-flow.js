@@ -799,10 +799,18 @@
       });
       sf.reuseShiftId = shiftId; // si algo falla más adelante, el retry lo reutiliza
 
-      const inspectionId = (crypto.randomUUID && crypto.randomUUID()) ||
-        'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-          const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-        });
+      // Idempotencia: si este turno ya tiene inspección inicial (intento previo
+      // interrumpido), reusamos su id en vez de generar otro y chocar contra
+      // inspections_one_kind_per_shift. Así el retry actualiza, no duplica.
+      let inspectionId = null;
+      try { inspectionId = await Api.getExistingInitialInspectionId(shiftId); }
+      catch (e) { /* sin conexión/permiso: seguimos con uno nuevo */ }
+      if (!inspectionId) {
+        inspectionId = (crypto.randomUUID && crypto.randomUUID()) ||
+          'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+          });
+      }
       const today = new Date().toISOString().slice(0, 10);
 
       const slots = activePhotoSlots().filter(s => sf.photos[s.id]);

@@ -143,7 +143,10 @@
     $('#new-driver-create-btn')?.addEventListener('click', onCreateDriver);
 
     $('#new-veh-create-btn')?.addEventListener('click', onCreateVehicle);
-    $('#vehicles-list')?.addEventListener('click', (e) => { const d = e.target.closest('[data-veh-del]'); if (d) onDeleteVehicle(d.dataset.vehDel); });
+    $('#vehicles-list')?.addEventListener('click', (e) => {
+      const r = e.target.closest('[data-veh-restore]'); if (r) { onRestoreVehicle(r.dataset.vehRestore); return; }
+      const d = e.target.closest('[data-veh-del]'); if (d) { onDeleteVehicle(d.dataset.vehDel); return; }
+    });
 
     // Disponibilidad (paleta limpia): búsqueda, filtro y navegación de semana.
     $('#avail-search')?.addEventListener('input', renderAvailability);
@@ -567,7 +570,7 @@
     const list = $('#insp-list');
     if (list) list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
     try {
-      inspState.items = await Api.listInspectionsForReview(); // las que tienen novedad
+      inspState.items = await Api.listInspectionsForReview(); // todas las iniciales (limpias + con novedad)
     } catch (e) {
       console.error(e);
       if (list) list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>';
@@ -2314,11 +2317,18 @@
     try { vehs = await Api.listVehiclesForShift(); }
     catch (e) { console.error(e); box.innerHTML = '<p class="set-hint">No se pudieron cargar los vehículos.</p>'; return; }
     if (!vehs.length) { box.innerHTML = '<p class="set-hint">Aún no hay vehículos. Agrega el primero abajo.</p>'; return; }
-    box.innerHTML = vehs.map(v => `<div class="veh-row" data-veh="${v.id}">
+    box.innerHTML = vehs.map(v => {
+      const offService = v.status === 'maintenance' || v.status === 'blocked';
+      const restoreBtn = offService
+        ? `<button class="set-btn dark" data-veh-restore="${v.id}" title="Regresar a servicio">Regresar a servicio</button>`
+        : '';
+      return `<div class="veh-row" data-veh="${v.id}">
       <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km</span></div>
       <span class="veh-stat st-${v.status}">${VEH_STATUS_ES[v.status] || escapeHtml(v.status || '')}</span>
+      ${restoreBtn}
       <button class="veh-del" data-veh-del="${v.id}" title="Eliminar vehículo"><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
-    </div>`).join('');
+    </div>`;
+    }).join('');
   }
 
   async function onCreateVehicle() {
@@ -2360,6 +2370,23 @@
     if (!confirm('¿Eliminar este vehículo? Dejará de aparecer para los conductores. El historial de turnos e inspecciones se conserva.')) return;
     try { await Api.softDeleteVehicle(id); toast('Vehículo eliminado.'); renderVehiclesSettings(); }
     catch (e) { console.error(e); alert('No se pudo eliminar: ' + (e.message || 'error')); }
+  }
+
+  async function onRestoreVehicle(id) {
+    const v = (await safeVehicles()).find(x => x.id === id);
+    const label = v ? (v.internal_code || v.license_plate || 'este vehículo') : 'este vehículo';
+    if (!confirm(`¿Regresar ${label} a servicio? Quedará Disponible para los conductores.`)) return;
+    try {
+      await Api.returnVehicleToService(id, 'Regreso a servicio desde Ajustes');
+      toast('Vehículo disponible.');
+      renderVehiclesSettings();
+    } catch (e) {
+      console.error(e);
+      const msg = /VEHICLE_HAS_ACTIVE_SHIFT/.test(e.message || '')
+        ? 'Hay un turno en curso con ese vehículo. Ciérralo primero en Turnos activos.'
+        : (e.message || 'error');
+      alert('No se pudo regresar a servicio: ' + msg);
+    }
   }
   async function safeVehicles() { try { return await Api.listVehiclesForShift(); } catch (e) { return []; } }
 
