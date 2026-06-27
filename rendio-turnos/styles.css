@@ -1162,7 +1162,18 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #settings-ui .veh-del:hover{background:var(--red);color:#fff;border-color:var(--red)}
 
 /* ===== Admin: Recompensas — diseño UX/UI, scopeado #rewards-ui ===== */
-#rewards-ui{--plata:#7E8794;--plata-soft:#ECEEF1;--oro:#C9810F;--oro-soft:#FBEBCF;--diamante:#1E91A6;--diamante-soft:#DEF0F3;--amber:#C9810F;--amber-soft:#FBEBCF;--red:#D6473B;--red-soft:#FADFDC;color:var(--ink);max-width:1100px;margin:0 auto;padding:24px 24px 64px;font-family:var(--font)}
+#rewards-ui{
+  --bg:#F8FAFC;--panel:#FFFFFF;--panel2:#F1F5F9;--ink:#211D18;--ink2:#6B6258;--ink3:#A39A8D;
+  --line:#E2E8F0;--line2:#CBD5E1;
+  --orange:#F26522;--orange-soft:#FCE4D6;
+  --green:#16936A;--green-soft:#E0F1E8;
+  --amber:#D98A12;--amber-soft:#FBEBCF;
+  --red:#DB4B3F;--red-soft:#FADFDC;
+  --plata:#7E8794;--plata-soft:#ECEEF1;--oro:#C9810F;--oro-soft:#FBEBCF;--diamante:#1E91A6;--diamante-soft:#DEF0F3;
+  --shadow:0 6px 18px rgba(33,29,24,.07);
+  --font:"Hanken Grotesk",system-ui,sans-serif;--mono:"Space Mono",ui-monospace,monospace;
+  color:var(--ink);max-width:1100px;margin:0 auto;padding:24px 24px 64px;font-family:var(--font)
+}
 #rewards-ui .icon{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
 #rewards-ui .phead{margin-bottom:20px}
 #rewards-ui .phead h1{font-size:28px;font-weight:800;letter-spacing:-.03em;line-height:1}
