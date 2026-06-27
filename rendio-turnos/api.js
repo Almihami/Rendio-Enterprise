@@ -1018,6 +1018,125 @@
     }
   }
 
+  // ====================================================================
+  // Perfil del conductor (Fase B)
+  // ====================================================================
+  async function getMyFullProfile() {
+    const session = await getSession();
+    if (!session) return null;
+    const { data: p, error } = await sb.from('profiles')
+      .select('id, full_name, email, role, organization_id, is_active, phone, avatar_url, document_id, home_base')
+      .eq('id', session.user.id).single();
+    if (error) throw error;
+    let dp = null;
+    try {
+      const r = await sb.from('driver_profiles')
+        .select('id, license_number, license_expires_at, eps_provider, arl_provider')
+        .eq('profile_id', session.user.id).limit(1);
+      dp = (r.data && r.data[0]) || null;
+    } catch (e) { /* sin driver_profile */ }
+    return Object.assign({}, p, { driver: dp });
+  }
+
+  // Sube el avatar al bucket público 'profiles' (nombre = {uid}.jpg) y guarda la URL.
+  async function uploadMyAvatar(blob) {
+    const session = await getSession();
+    if (!session) throw new Error('NO_SESSION');
+    const path = `${session.user.id}.jpg`;
+    const { error } = await sb.storage.from('profiles').upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+    if (error) throw error;
+    const { data } = sb.storage.from('profiles').getPublicUrl(path);
+    const url = (data.publicUrl || '') + '?t=' + Date.now(); // cache-bust
+    const { error: e2 } = await sb.from('profiles').update({ avatar_url: url }).eq('id', session.user.id);
+    if (e2) throw e2;
+    return url;
+  }
+
+  // ====================================================================
+  // Recompensas por km (Fase D)
+  // ====================================================================
+  async function listRewards() {
+    const { data, error } = await sb.from('rewards')
+      .select('id, tier, km_threshold, title, description, active, sort_order')
+      .eq('active', true).order('km_threshold', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Turnos cerrados del conductor (para "Mi kilometraje" + total acumulado).
+  async function listMyClosedShifts(driverId) {
+    const { data, error } = await sb.from('shifts')
+      .select('id, start_at, end_at, opening_km, closing_km, vehicles(internal_code, license_plate)')
+      .eq('driver_id', driverId).eq('status', 'closed')
+      .not('closing_km', 'is', null)
+      .order('end_at', { ascending: false }).limit(90);
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function redeemReward({ rewardId, organizationId, driverId, kmAtRequest }) {
+    const { data, error } = await sb.from('reward_redemptions')
+      .insert({ organization_id: organizationId, driver_id: driverId, reward_id: rewardId, km_at_request: kmAtRequest || 0 })
+      .select('id').single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  async function listMyRedemptions(driverId) {
+    const { data, error } = await sb.from('reward_redemptions')
+      .select('id, reward_id, status, requested_at, resolved_at')
+      .eq('driver_id', driverId).order('requested_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // ----- Admin: recompensas -----
+  async function createReward(row) {
+    const { data, error } = await sb.from('rewards').insert(row).select('id').single();
+    if (error) throw error;
+    return data.id;
+  }
+  async function updateReward(id, patch) {
+    const { error } = await sb.from('rewards').update(patch).eq('id', id);
+    if (error) throw error;
+  }
+  async function deleteReward(id) {
+    const { error } = await sb.from('rewards').delete().eq('id', id);
+    if (error) throw error;
+  }
+  async function listAllRewards() {
+    const { data, error } = await sb.from('rewards')
+      .select('id, tier, km_threshold, title, description, active, sort_order')
+      .order('km_threshold', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+  async function listRedemptionsAdmin(status) {
+    let q = sb.from('reward_redemptions')
+      .select('id, status, km_at_request, requested_at, resolved_at, notes, reward_id, ' +
+              'rewards(title, tier, km_threshold), driver_profiles(profiles(id, full_name))')
+      .order('requested_at', { ascending: false });
+    if (status) q = q.eq('status', status);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  }
+  async function resolveRedemption(id, status, notes) {
+    const session = await getSession();
+    const { error } = await sb.from('reward_redemptions')
+      .update({ status, notes: notes || null, resolved_at: new Date().toISOString(), resolved_by: session ? session.user.id : null })
+      .eq('id', id);
+    if (error) throw error;
+  }
+  // Admin: turnos cerrados de toda la org (para km acumulado por conductor).
+  async function listClosedShiftsAdmin() {
+    const { data, error } = await sb.from('shifts')
+      .select('driver_id, opening_km, closing_km, driver_profiles(profiles(full_name))')
+      .eq('status', 'closed').not('closing_km', 'is', null);
+    if (error) throw error;
+    return data || [];
+  }
+
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
@@ -1039,5 +1158,8 @@
     addIncident, startShift, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
+    getMyFullProfile, uploadMyAvatar,
+    listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
+    createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
   };
 })();

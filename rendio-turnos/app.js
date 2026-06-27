@@ -396,6 +396,7 @@
     if (name === 'balance') renderBalance();
     if (name === 'inspections') renderInspections();
     if (name === 'shifts') renderShifts();
+    if (name === 'rewards') renderRewardsAdmin();
   }
 
   // ====================================================================
@@ -3054,12 +3055,415 @@
     // Barra de Guardar: solo en Disponibilidad.
     $('#driver-save-bar')?.classList.toggle('hidden', name !== 'avail');
     if (name === 'home') updateDriverHome();
+    if (name === 'perfil') renderDriverProfile();
     window.scrollTo(0, 0);
   }
 
   // Aliases para llamadas existentes.
   function showDriverHome() { setDriverTab('home'); }
   function showDriverAvailability() { setDriverTab('avail'); }
+
+  // ====================================================================
+  // Admin: Recompensas (catálogo + solicitudes de redención + km por conductor)
+  // ====================================================================
+  const rewardsAdminState = { editId: null };
+  const REDEEM_ST = { pending: ['Pendiente', 'var(--amber)'], approved: ['Aprobada', 'var(--green)'], delivered: ['Entregada', 'var(--green)'], rejected: ['Rechazada', 'var(--red)'] };
+
+  async function renderRewardsAdmin() {
+    const box = $('#rewards-ui'); if (!box) return;
+    box.innerHTML = '<p class="set-hint" style="padding:16px">Cargando…</p>';
+    let rewards = [], redemptions = [], closed = [];
+    try {
+      [rewards, redemptions, closed] = await Promise.all([
+        Api.listAllRewards().catch(() => []),
+        Api.listRedemptionsAdmin().catch(() => []),
+        Api.listClosedShiftsAdmin().catch(() => []),
+      ]);
+    } catch (e) { console.error(e); }
+    rewardsAdminState.data = { rewards, redemptions, closed };
+    drawRewardsAdmin();
+  }
+
+  function drawRewardsAdmin() {
+    const box = $('#rewards-ui'); if (!box) return;
+    const { rewards, redemptions, closed } = rewardsAdminState.data || { rewards: [], redemptions: [], closed: [] };
+    const esc = escapeHtml;
+
+    // --- Km acumulado por conductor ---
+    const kmMap = new Map();
+    (closed || []).forEach(s => {
+      const name = (s.driver_profiles && s.driver_profiles.profiles && s.driver_profiles.profiles.full_name) || '—';
+      const km = Math.max(0, (s.closing_km || 0) - (s.opening_km || 0));
+      const cur = kmMap.get(s.driver_id) || { name, km: 0, turns: 0 };
+      cur.km += km; cur.turns += 1; kmMap.set(s.driver_id, cur);
+    });
+    const kmRows = [...kmMap.values()].sort((a, b) => b.km - a.km).map(r =>
+      `<div class="veh-row"><div class="veh-info"><b>${esc(r.name)}</b><span>${r.turns} turno(s) cerrado(s)</span></div><span class="veh-stat" style="font-family:var(--mono)">${r.km.toLocaleString('es-CO')} km</span></div>`).join('') || '<p class="set-hint">Aún no hay turnos cerrados.</p>';
+
+    // --- Solicitudes de redención ---
+    const pend = (redemptions || []).filter(r => r.status === 'pending');
+    const others = (redemptions || []).filter(r => r.status !== 'pending');
+    const redCard = (r) => {
+      const st = REDEEM_ST[r.status] || REDEEM_ST.pending;
+      const who = (r.driver_profiles && r.driver_profiles.profiles && r.driver_profiles.profiles.full_name) || '—';
+      const rw = r.rewards || {};
+      const when = (() => { try { return new Date(r.requested_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }); } catch (e) { return ''; } })();
+      const actions = r.status === 'pending'
+        ? `<div style="display:flex;gap:8px;margin-top:8px">
+             <button class="set-btn dark" data-redeem-deliver="${r.id}">Marcar entregada</button>
+             <button class="veh-del" data-redeem-reject="${r.id}" title="Rechazar" style="width:auto;padding:0 12px;color:var(--red)">Rechazar</button>
+           </div>`
+        : `<span class="veh-stat" style="color:${st[1]}">${st[0]}</span>`;
+      return `<div class="veh-row" style="flex-wrap:wrap;align-items:flex-start">
+          <div class="veh-info"><b>${esc(who)} — ${esc(rw.title || 'Recompensa')}</b><span>${esc(TIER_META[rw.tier] ? TIER_META[rw.tier].label : (rw.tier || ''))} · ${(rw.km_threshold || 0).toLocaleString('es-CO')} km · pedido ${esc(when)} · al pedir tenía ${(r.km_at_request || 0).toLocaleString('es-CO')} km</span></div>
+          ${actions}
+        </div>`;
+    };
+    const redemHtml = (pend.length || others.length)
+      ? `${pend.map(redCard).join('')}${others.length ? `<details style="margin-top:8px"><summary class="set-hint" style="cursor:pointer">Historial (${others.length})</summary><div style="margin-top:8px">${others.map(redCard).join('')}</div></details>` : ''}`
+      : '<p class="set-hint">No hay solicitudes de redención.</p>';
+
+    // --- Catálogo (CRUD) ---
+    const ed = rewardsAdminState.editId ? (rewards || []).find(r => r.id === rewardsAdminState.editId) : null;
+    const rewardRows = (rewards || []).map(r =>
+      `<div class="veh-row">
+        <div class="veh-info"><b>${TIER_META[r.tier] ? TIER_META[r.tier].emoji : '🎁'} ${esc(r.title)} <span style="font-weight:600;color:var(--ink2)">· ${(r.km_threshold).toLocaleString('es-CO')} km</span></b><span>${esc(TIER_META[r.tier] ? TIER_META[r.tier].label : r.tier)}${r.description ? ' · ' + esc(r.description) : ''}</span></div>
+        <button class="veh-stat ${r.active ? 'st-available' : ''}" data-reward-toggle="${r.id}" title="Activar/desactivar" style="cursor:pointer">${r.active ? 'Activa' : 'Inactiva'}</button>
+        <button class="set-btn ghost sm" data-reward-edit="${r.id}" style="height:34px">Editar</button>
+        <button class="veh-del" data-reward-del="${r.id}" title="Eliminar"><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
+      </div>`).join('') || '<p class="set-hint">Aún no hay recompensas. Crea la primera abajo.</p>';
+
+    box.innerHTML = `
+      <div class="rl-phead"><h1>Recompensas</h1><p>Define los premios por kilometraje y atiende las solicitudes de los conductores.</p></div>
+
+      <div class="set-card"><h2 class="set-h2">Solicitudes de redención${pend.length ? ` · ${pend.length} pendiente(s)` : ''}</h2>
+        <div class="veh-list">${redemHtml}</div>
+      </div>
+
+      <div class="set-card"><h2 class="set-h2">Catálogo de recompensas</h2>
+        <div class="veh-list">${rewardRows}</div>
+        <div class="set-divider"></div>
+        <h3 class="set-h3">${ed ? 'Editar recompensa' : 'Agregar recompensa'}</h3>
+        <div class="set-grid2">
+          <div class="rl-field"><label>Título</label><input class="rl-input" id="rw-title" placeholder="Bono de gasolina" value="${ed ? esc(ed.title) : ''}"></div>
+          <div class="rl-field"><label>Km para desbloquear</label><input class="rl-input" id="rw-km" type="number" min="0" placeholder="5000" value="${ed ? ed.km_threshold : ''}"></div>
+          <div class="rl-field"><label>Nivel</label><select class="rl-input" id="rw-tier">
+            <option value="plata"${ed && ed.tier === 'plata' ? ' selected' : ''}>Plata</option>
+            <option value="oro"${ed && ed.tier === 'oro' ? ' selected' : ''}>Oro</option>
+            <option value="diamante"${ed && ed.tier === 'diamante' ? ' selected' : ''}>Diamante</option>
+          </select></div>
+          <div class="rl-field"><label>Descripción</label><input class="rl-input" id="rw-desc" placeholder="$50.000 en combustible" value="${ed ? esc(ed.description || '') : ''}"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="set-btn" id="rw-save">${ed ? 'Guardar cambios' : 'Agregar recompensa'}</button>
+          ${ed ? '<button class="set-btn ghost" id="rw-cancel">Cancelar</button>' : ''}
+          <span id="rw-state" class="set-hint" style="align-self:center"></span>
+        </div>
+      </div>
+
+      <div class="set-card"><h2 class="set-h2">Kilometraje por conductor</h2>
+        <p class="set-hint">Acumulado de km recorridos (suma de turnos cerrados).</p>
+        <div class="veh-list">${kmRows}</div>
+      </div>`;
+    bindRewardsAdmin();
+  }
+
+  function bindRewardsAdmin() {
+    const box = $('#rewards-ui'); if (!box || box._rwBound) { /* rebind delegated below */ }
+    box.querySelectorAll('[data-redeem-deliver]').forEach(b => b.addEventListener('click', () => resolveRedeem(b.dataset.redeemDeliver, 'delivered')));
+    box.querySelectorAll('[data-redeem-reject]').forEach(b => b.addEventListener('click', () => resolveRedeem(b.dataset.redeemReject, 'rejected')));
+    box.querySelectorAll('[data-reward-del]').forEach(b => b.addEventListener('click', () => onDeleteReward(b.dataset.rewardDel)));
+    box.querySelectorAll('[data-reward-edit]').forEach(b => b.addEventListener('click', () => { rewardsAdminState.editId = b.dataset.rewardEdit; drawRewardsAdmin(); }));
+    box.querySelectorAll('[data-reward-toggle]').forEach(b => b.addEventListener('click', () => onToggleReward(b.dataset.rewardToggle)));
+    $('#rw-save')?.addEventListener('click', onSaveReward);
+    $('#rw-cancel')?.addEventListener('click', () => { rewardsAdminState.editId = null; drawRewardsAdmin(); });
+  }
+
+  async function onSaveReward() {
+    const title = ($('#rw-title')?.value || '').trim();
+    const km = parseInt($('#rw-km')?.value, 10);
+    const tier = $('#rw-tier')?.value || 'plata';
+    const desc = ($('#rw-desc')?.value || '').trim() || null;
+    const st = $('#rw-state');
+    if (!title || !(km >= 0)) { if (st) st.textContent = 'Falta título o km.'; return; }
+    try {
+      if (rewardsAdminState.editId) {
+        await Api.updateReward(rewardsAdminState.editId, { title, km_threshold: km, tier, description: desc });
+        rewardsAdminState.editId = null;
+        toast('Recompensa actualizada.');
+      } else {
+        await Api.createReward({ organization_id: state.profile.organization_id, title, km_threshold: km, tier, description: desc });
+        toast('Recompensa agregada.');
+      }
+      renderRewardsAdmin();
+    } catch (e) { console.error(e); if (st) st.textContent = 'No se pudo guardar: ' + (e.message || 'error'); }
+  }
+  async function onDeleteReward(id) {
+    if (!confirm('¿Eliminar esta recompensa? Las solicitudes ya hechas se conservan.')) return;
+    try { await Api.deleteReward(id); toast('Recompensa eliminada.'); renderRewardsAdmin(); }
+    catch (e) { console.error(e); toast('No se pudo eliminar: ' + (e.message || 'error')); }
+  }
+  async function onToggleReward(id) {
+    const r = (rewardsAdminState.data.rewards || []).find(x => x.id === id); if (!r) return;
+    try { await Api.updateReward(id, { active: !r.active }); renderRewardsAdmin(); }
+    catch (e) { console.error(e); toast('No se pudo cambiar el estado.'); }
+  }
+  async function resolveRedeem(id, status) {
+    const label = status === 'delivered' ? 'marcar como ENTREGADA' : 'RECHAZAR';
+    if (!confirm(`¿${label} esta solicitud?`)) return;
+    try { await Api.resolveRedemption(id, status, null); toast('Solicitud actualizada.'); renderRewardsAdmin(); }
+    catch (e) { console.error(e); toast('No se pudo actualizar: ' + (e.message || 'error')); }
+  }
+
+  // ====================================================================
+  // Perfil del conductor (Fase B/C/D): datos, foto, strikes, recompensas
+  // ====================================================================
+  const TIER_META = { plata: { label: 'Plata', emoji: '🥈' }, oro: { label: 'Oro', emoji: '🥇' }, diamante: { label: 'Diamante', emoji: '💎' } };
+
+  function nextWeekMondayISO() {
+    const d = new Date();
+    const dow = (d.getDay() + 6) % 7;          // 0 = lunes
+    d.setDate(d.getDate() - dow + 7);          // lunes de la próxima semana
+    return d.toISOString().slice(0, 10);
+  }
+  function kmDrivenOf(sh) { return Math.max(0, (sh.closing_km || 0) - (sh.opening_km || 0)); }
+
+  async function renderDriverProfile() {
+    const box = $('#driver-profile-container'); if (!box) return;
+    if (!state.profileView) state.profileView = 'main';
+    box.innerHTML = '<p class="text-sm text-slate-500 p-4">Cargando perfil…</p>';
+    try {
+      if (!state.driverId) { try { state.driverId = await Api.getMyDriverProfileId(state.profile.id); } catch (e) { /* */ } }
+      const did = state.driverId;
+      const [prof, strikes, closed, rewards, redemptions, openShift, susp] = await Promise.all([
+        Api.getMyFullProfile().catch(() => state.profile),
+        Api.listDriverStrikes(state.profile.id).catch(() => []),
+        did ? Api.listMyClosedShifts(did).catch(() => []) : Promise.resolve([]),
+        Api.listRewards().catch(() => []),
+        did ? Api.listMyRedemptions(did).catch(() => []) : Promise.resolve([]),
+        did ? Api.getMyOpenShift(did).catch(() => null) : Promise.resolve(null),
+        Api.getMyWeekSuspension(state.profile.id, nextWeekMondayISO()).catch(() => null),
+      ]);
+      const activeStrikes = (strikes || []).filter(s => !s.voided_at && !s.consumed_at);
+      const kmTotal = (closed || []).reduce((s, sh) => s + kmDrivenOf(sh), 0);
+      state.profileData = { prof: prof || state.profile, strikes: strikes || [], activeStrikes, closed: closed || [], rewards: rewards || [], redemptions: redemptions || [], openShift, susp, kmTotal };
+      drawProfileView();
+    } catch (e) {
+      console.error(e);
+      box.innerHTML = '<p class="text-sm text-rose-500 p-4">No se pudo cargar el perfil.</p>';
+    }
+  }
+
+  function drawProfileView() {
+    const box = $('#driver-profile-container'); if (!box) return;
+    const v = state.profileView || 'main';
+    box.innerHTML = v === 'rewards' ? rewardsViewHtml() : v === 'strikes' ? strikesViewHtml() : profileMainHtml();
+    bindProfile();
+    box.scrollTop = 0; window.scrollTo(0, 0);
+  }
+
+  function profileMainHtml() {
+    const d = state.profileData; const p = d.prof; const dp = p.driver || {};
+    const av = p.avatar_url;
+    const lic = dp.license_number ? `${escapeHtml(dp.license_number)}${dp.license_expires_at ? ' · vence ' + new Date(dp.license_expires_at).getFullYear() : ''}` : '—';
+    const sc = d.activeStrikes.length;
+    const strikeCard = strikeCardHtml(sc, d.susp);
+    const next = d.rewards.find(r => r.km_threshold > d.kmTotal);
+    const faltan = next ? next.km_threshold - d.kmTotal : 0;
+    const ov = d.openShift && d.openShift.vehicles ? d.openShift.vehicles : null;
+    return `
+      <div class="pt-1 pb-2"><h2 class="text-[22px] font-extrabold text-ink leading-tight">Perfil</h2></div>
+      <div class="space-y-5 pb-6">
+        <div class="flex items-center gap-4">
+          <button id="pf-avatar-btn" class="relative w-20 h-20 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-white text-2xl font-extrabold flex items-center justify-center shadow-brand ring-4 ring-white overflow-hidden active:scale-95">
+            ${av ? `<img src="${escapeHtml(av)}" class="w-full h-full object-cover">` : escapeHtml(initialsOf(p.full_name || 'Conductor'))}
+            <span class="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-white text-brand-600 border-2 border-white flex items-center justify-center text-[11px]">✎</span>
+          </button>
+          <input id="pf-avatar-input" type="file" accept="image/*" class="hidden">
+          <div>
+            <p class="text-xl font-extrabold text-ink">${escapeHtml(p.full_name || 'Conductor')}</p>
+            <p class="text-sm text-slate-500">Conductor${p.home_base ? ' · ' + escapeHtml(p.home_base) : ''}</p>
+            ${p.is_active === false ? '<p class="text-[11px] text-rose-600 font-bold mt-1">Cuenta suspendida</p>' : '<p class="text-[11px] text-emerald-600 font-bold mt-1 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Activo</p>'}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          ${pfField('Cédula', p.document_id || '—')}
+          ${pfField('Teléfono', p.phone || '—')}
+          ${pfField('Licencia', lic)}
+          ${pfField('Base', p.home_base || '—')}
+        </div>
+
+        ${strikeCard}
+
+        <button id="pf-rewards-btn" class="sheen w-full text-left rounded-2xl p-5 bg-gradient-to-br from-brand-500 to-brand-600 text-white shadow-brand active:scale-[.99] transition">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-white/85">🎁 Recompensas</span>
+            ${currentTier(d.kmTotal, d.rewards) ? `<span class="text-[10px] font-bold bg-white/20 rounded-full px-2 py-0.5">Nivel ${TIER_META[currentTier(d.kmTotal, d.rewards)].label}</span>` : ''}
+          </div>
+          <p class="text-3xl font-extrabold mt-2 tabular-nums">${d.kmTotal.toLocaleString('es-CO')} <span class="text-base font-bold text-white/80">km</span></p>
+          <p class="text-[12px] text-white/85 mt-2">${next ? `Te faltan ${faltan.toLocaleString('es-CO')} km para ${escapeHtml(next.title)}` : (d.rewards.length ? '¡Todo desbloqueado!' : 'Aún no hay recompensas configuradas')}</p>
+          <span class="inline-flex items-center gap-1 mt-3 text-sm font-bold">Ver recompensas →</span>
+        </button>
+
+        <div class="rounded-2xl bg-white border border-slate-200 shadow-card flex items-center gap-3 px-4 py-3.5">
+          <span class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-lg shrink-0">🚐</span>
+          <div class="flex-1"><p class="text-sm font-semibold text-ink">Vehículo actual</p><p class="text-[11px] text-slate-400">${ov ? escapeHtml((ov.internal_code || ov.license_plate || '') + ' · ' + [ov.brand, ov.model].filter(Boolean).join(' ')) : 'Sin turno activo'}</p></div>
+        </div>
+
+        <button id="pf-logout" class="w-full text-center text-sm font-bold text-rose-500 py-2">Cerrar sesión</button>
+      </div>`;
+  }
+  function pfField(label, val) {
+    return `<div class="rounded-2xl bg-white border border-slate-200 p-3.5"><p class="text-[10px] text-slate-400 font-bold uppercase tracking-wide">${escapeHtml(label)}</p><p class="text-sm font-bold text-ink mt-0.5">${escapeHtml(String(val))}</p></div>`;
+  }
+  function currentTier(km, rewards) {
+    const unlocked = rewards.filter(r => km >= r.km_threshold);
+    if (!unlocked.length) return null;
+    const top = unlocked[unlocked.length - 1];
+    return top.tier in TIER_META ? top.tier : null;
+  }
+  function strikeCardHtml(count, susp) {
+    let cls, icon, titleCol, title, sub;
+    if (susp) { cls = 'bg-rose-50 border-2 border-rose-300'; icon = '🚫'; titleCol = 'text-rose-700'; title = 'Suspendido la próxima semana'; sub = 'Por acumular 3 strikes'; }
+    else if (count >= 2) { cls = 'bg-rose-50 border-2 border-rose-200'; icon = '🚨'; titleCol = 'text-rose-700'; title = `${count} de 3 strikes`; sub = '¡Cuidado! Un strike más y te suspenden'; }
+    else if (count === 1) { cls = 'bg-amber-50 border-2 border-amber-200'; icon = '⚠️'; titleCol = 'text-amber-700'; title = '1 de 3 strikes'; sub = 'Revisa el motivo y cuida tu operación'; }
+    else { cls = 'bg-white border border-slate-200 shadow-card'; icon = '✅'; titleCol = 'text-emerald-700'; title = 'Sin strikes'; sub = 'Buen historial — sigue así'; }
+    const dotCol = count >= 2 || susp ? 'bg-rose-500' : (count === 1 ? 'bg-amber-500' : 'bg-emerald-500');
+    const dots = [1, 2, 3].map(i => `<div class="w-6 h-1.5 rounded-full ${i <= count ? dotCol : 'bg-slate-200'}"></div>`).join('');
+    return `<button id="pf-strikes-btn" class="w-full text-left rounded-2xl p-4 ${cls} active:scale-[.99] transition">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-xl shrink-0 shadow-sm">${icon}</div>
+        <div class="flex-1 min-w-0"><p class="text-sm font-extrabold ${titleCol}">${title}</p><p class="text-xs text-slate-500">${sub}</p></div>
+        <span class="${titleCol} font-bold">›</span>
+      </div>
+      <div class="flex gap-1.5 mt-3">${dots}</div>
+    </button>`;
+  }
+
+  function strikesViewHtml() {
+    const d = state.profileData;
+    const susp = d.susp;
+    // Detalle: strikes no anulados (incluye los "consumidos" del ciclo que generó
+    // la suspensión, para que un conductor suspendido vea por qué).
+    const shown = (d.strikes || []).filter(s => !s.voided_at);
+    const count = susp ? 3 : d.activeStrikes.length;
+    const fmtD = (s) => { try { return new Date(s + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { return s; } };
+    const list = shown.slice(0, 3).map((s, i) => `<div class="rounded-2xl bg-white border border-slate-200 p-4 flex gap-3">
+        <div class="w-8 h-8 rounded-full bg-rose-100 text-rose-700 font-extrabold flex items-center justify-center shrink-0 text-sm">${Math.min(shown.length, 3) - i}</div>
+        <div class="flex-1 min-w-0"><p class="text-sm font-bold text-ink">${escapeHtml(s.reason || 'Strike')}</p><p class="text-[11px] text-slate-400 mt-1">Semana ${escapeHtml(fmtD(s.week_start_date))} · asignado por el administrador</p></div>
+      </div>`).join('') || '<p class="text-sm text-slate-500">No tienes strikes activos. 🎉</p>';
+    const suspBlock = susp ? `<div class="rounded-3xl bg-gradient-to-br from-rose-600 to-rose-700 text-white p-6 text-center shadow-lg mb-4">
+        <div class="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-3xl mx-auto mb-3">🚫</div>
+        <p class="text-xl font-extrabold">Suspensión activa</p>
+        <p class="text-sm text-white/85 mt-1.5">La próxima semana no podrás iniciar turnos ni marcar disponibilidad. La levanta tu administrador.</p>
+      </div>` : '';
+    return `
+      <button id="pf-back" class="flex items-center gap-1 text-sm font-bold text-slate-600 py-2 mb-1">‹ Volver al perfil</button>
+      <h2 class="text-[22px] font-extrabold text-ink leading-tight mb-3">Strikes</h2>
+      ${suspBlock}
+      <div class="rounded-3xl bg-white border-2 ${count >= 2 || susp ? 'border-rose-200' : count === 1 ? 'border-amber-200' : 'border-emerald-200'} p-5 text-center shadow-card mb-4">
+        <p class="text-[11px] font-bold uppercase tracking-wider ${count >= 2 || susp ? 'text-rose-600' : count === 1 ? 'text-amber-600' : 'text-emerald-600'}">Strikes acumulados</p>
+        <p class="text-5xl font-extrabold text-ink mt-1">${count}<span class="text-2xl text-slate-300"> / 3</span></p>
+      </div>
+      <div class="rounded-2xl bg-slate-100 p-4 mb-4"><p class="text-sm font-bold text-ink">¿Qué pasa al llegar a 3 strikes?</p><p class="text-xs text-slate-500 mt-1">Tu cuenta se suspende la semana siguiente: no podrás iniciar turnos ni marcar disponibilidad hasta que el administrador lo resuelva.</p></div>
+      <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500 mb-2">Detalle</h3>
+      <div class="space-y-2.5 pb-6">${list}</div>`;
+  }
+
+  function rewardsViewHtml() {
+    const d = state.profileData;
+    const km = d.kmTotal;
+    const next = d.rewards.find(r => r.km_threshold > km);
+    const faltan = next ? next.km_threshold - km : 0;
+    const base = (() => { const prev = [...d.rewards].reverse().find(r => r.km_threshold <= km); return prev ? prev.km_threshold : 0; })();
+    const pct = next ? Math.min(100, Math.round((km - base) / (next.km_threshold - base) * 100)) : 100;
+    const redByReward = {}; (d.redemptions || []).forEach(r => { if (!redByReward[r.reward_id] || r.status !== 'rejected') redByReward[r.reward_id] = r; });
+    const cards = d.rewards.length ? d.rewards.map(r => {
+      const unlocked = km >= r.km_threshold;
+      const red = redByReward[r.id];
+      const requested = red && red.status !== 'rejected';
+      const tm = TIER_META[r.tier] || { label: r.tier, emoji: '🎁' };
+      const foot = !unlocked
+        ? `<div class="mt-3"><div class="h-2 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-brand-300 rounded-full" style="width:${Math.min(100, Math.round(km / r.km_threshold * 100))}%"></div></div><p class="text-[11px] text-slate-400 mt-1.5 text-center">🔒 Faltan ${(r.km_threshold - km).toLocaleString('es-CO')} km</p></div>`
+        : requested
+          ? `<button disabled class="mt-3 w-full bg-emerald-50 text-emerald-700 font-bold py-2.5 rounded-xl text-sm">${red.status === 'delivered' ? '✓ Entregado' : '⏳ Solicitado'}</button>`
+          : `<button data-redeem="${r.id}" class="mt-3 w-full bg-brand text-white font-bold py-2.5 rounded-xl shadow-brand active:scale-[.98] text-sm">Redimir</button>`;
+      return `<div class="snap-start shrink-0 w-[240px] rounded-2xl bg-white border-2 overflow-hidden flex flex-col ${unlocked && !requested ? 'border-emerald-200 shadow-card' : 'border-slate-200'}">
+          <div class="h-24 flex items-center justify-center text-5xl ${unlocked ? 'bg-gradient-to-br from-brand-50 to-brand-100' : 'bg-slate-100 grayscale opacity-70'}">${tm.emoji}</div>
+          <div class="p-4 flex-1 flex flex-col">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] font-bold uppercase tracking-wide rounded-full px-2 py-0.5 ${unlocked ? (requested ? 'text-slate-500 bg-slate-100' : 'text-emerald-700 bg-emerald-50') : 'text-slate-400 bg-slate-100'}">${unlocked ? (requested ? 'Solicitado' : 'Disponible') : 'Bloqueado'}</span>
+              <span class="text-[11px] font-bold text-slate-400">${r.km_threshold.toLocaleString('es-CO')} km</span>
+            </div>
+            <p class="text-[15px] font-extrabold text-ink mt-2 leading-tight">${escapeHtml(r.title)}</p>
+            <p class="text-xs text-slate-500 mt-0.5 flex-1">${escapeHtml(r.description || '')}</p>
+            ${foot}
+          </div>
+        </div>`;
+    }).join('') : '<div class="px-1 text-sm text-slate-500">Aún no hay recompensas configuradas. Tu administrador las definirá pronto.</div>';
+    const hist = d.closed.length ? d.closed.map(sh => {
+      const k = kmDrivenOf(sh); const veh = sh.vehicles ? (sh.vehicles.internal_code || sh.vehicles.license_plate || '') : '';
+      const date = sh.end_at ? new Date(sh.end_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }) : '';
+      return `<div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 last:border-0">
+          <div class="flex items-center gap-3"><div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-sm">🚐</div><div><p class="text-sm font-semibold text-ink">${escapeHtml(date)}</p><p class="text-[11px] text-slate-400">${escapeHtml(veh || 'Turno')}</p></div></div>
+          <span class="text-sm font-bold tabular-nums text-emerald-600">+${k.toLocaleString('es-CO')} km</span>
+        </div>`;
+    }).join('') : '<div class="px-4 py-4 text-sm text-slate-500">Aún no has cerrado turnos.</div>';
+    return `
+      <button id="pf-back" class="flex items-center gap-1 text-sm font-bold text-slate-600 py-2 mb-1">‹ Volver al perfil</button>
+      <h2 class="text-[22px] font-extrabold text-ink leading-tight mb-3">Recompensas</h2>
+      <div class="rounded-3xl bg-gradient-to-br from-brand-500 to-brand-700 text-white p-5 shadow-brand">
+        <p class="text-xs uppercase tracking-wider text-white/80 font-bold">Kilómetros acumulados</p>
+        <p class="text-4xl font-extrabold mt-1 tabular-nums">${km.toLocaleString('es-CO')} <span class="text-lg font-bold text-white/80">km</span></p>
+        <div class="mt-4">
+          <div class="flex justify-between text-[11px] font-semibold text-white/85 mb-1.5"><span>${next ? 'Próxima: ' + escapeHtml(next.title) : '¡Todo desbloqueado!'}</span><span>${next ? next.km_threshold.toLocaleString('es-CO') + ' km' : ''}</span></div>
+          <div class="h-2.5 rounded-full bg-white/25 overflow-hidden"><div class="h-full bg-white rounded-full transition-all" style="width:${pct}%"></div></div>
+          ${next ? `<p class="text-[11px] text-white/85 mt-1.5">Te faltan ${faltan.toLocaleString('es-CO')} km</p>` : ''}
+        </div>
+      </div>
+      <div class="flex items-center justify-between pt-5 mb-3"><h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">Canjea tus kilómetros</h3><span class="text-[11px] font-semibold text-slate-400">desliza →</span></div>
+      <div class="flex gap-3 overflow-x-auto pb-1 snap-x" style="scrollbar-width:none">${cards}</div>
+      <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500 pt-6 mb-2">Mi kilometraje</h3>
+      <div class="rounded-2xl bg-white border border-slate-200 shadow-card overflow-hidden mb-2"><div class="flex items-center justify-between px-4 py-3 bg-slate-50"><span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Turnos cerrados</span><span class="text-sm font-extrabold text-ink">${d.closed.length}</span></div>${hist}</div>
+      <p class="text-[11px] text-slate-400 text-center mt-3 pb-6">Acumulado total: <strong class="text-ink">${km.toLocaleString('es-CO')} km</strong></p>`;
+  }
+
+  function bindProfile() {
+    const box = $('#driver-profile-container'); if (!box) return;
+    $('#pf-rewards-btn')?.addEventListener('click', () => { state.profileView = 'rewards'; drawProfileView(); });
+    $('#pf-strikes-btn')?.addEventListener('click', () => { state.profileView = 'strikes'; drawProfileView(); });
+    $('#pf-back')?.addEventListener('click', () => { state.profileView = 'main'; drawProfileView(); });
+    $('#pf-logout')?.addEventListener('click', onLogout);
+    $('#pf-avatar-btn')?.addEventListener('click', () => $('#pf-avatar-input')?.click());
+    $('#pf-avatar-input')?.addEventListener('change', onPickAvatar);
+    box.querySelectorAll('[data-redeem]').forEach(b => b.addEventListener('click', () => onRedeem(b.dataset.redeem)));
+  }
+
+  async function onPickAvatar(input) {
+    const file = input.files && input.files[0]; input.value = '';
+    if (!file) return;
+    try {
+      toast('Subiendo foto…');
+      const blob = await compressImage(file, 512, 0.85);
+      const url = await Api.uploadMyAvatar(blob);
+      if (state.profile) state.profile.avatar_url = url;
+      if (state.profileData && state.profileData.prof) state.profileData.prof.avatar_url = url;
+      drawProfileView();
+      toast('Foto actualizada.');
+    } catch (e) { console.error(e); toast('No se pudo subir la foto.'); }
+  }
+
+  async function onRedeem(rewardId) {
+    const d = state.profileData; const r = d.rewards.find(x => x.id === rewardId);
+    if (!r) return;
+    if (!confirm(`¿Redimir "${r.title}"? Se enviará una solicitud a tu administrador.`)) return;
+    try {
+      await Api.redeemReward({ rewardId, organizationId: state.profile.organization_id, driverId: state.driverId, kmAtRequest: d.kmTotal });
+      toast('¡Solicitud enviada! Tu administrador la revisará.');
+      await renderDriverProfile();
+    } catch (e) { console.error(e); toast('No se pudo redimir: ' + (e.message || 'error')); }
+  }
 
   // Saludo de la home ("Carlos · Martes 10 de junio") + estado de la tarjeta de disponibilidad.
   function updateDriverHome() {

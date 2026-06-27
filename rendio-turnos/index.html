@@ -186,6 +186,7 @@
           <button data-tab="workers" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Personal</button>
           <button data-tab="settings" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Ajustes</button>
           <button data-tab="balance" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Balance</button>
+          <button data-tab="rewards" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Recompensas</button>
         </div>
       </nav>
     </header>
@@ -224,7 +225,7 @@
 
             <!-- Tarjeta 2: Disponibilidad — entra al módulo y revela la barra inferior -->
             <button id="driver-availability-card"
-                    class="tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-white border-2 border-slate-200 shadow-card">
+                    class="pc-in d2 tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-white border-2 border-slate-200 shadow-card">
               <div class="flex items-start justify-between">
                 <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl"><span class="float inline-block">📅</span></div>
                 <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-500 mt-1">Próxima semana</span>
@@ -307,6 +308,11 @@
           </div>
         </section>
 
+        <!-- Pestaña: Perfil -->
+        <section data-dtab="perfil" class="driver-panel hidden">
+          <div id="driver-profile-container"></div>
+        </section>
+
       </div>
       <!-- /driver-tabs-root -->
 
@@ -326,6 +332,7 @@
         <button data-dtab="avail" class="dnav-btn"><span class="dnav-ic">📅</span><span>Disponib.</span></button>
         <button data-dtab="schedule" class="dnav-btn"><span class="dnav-ic">🗓️</span><span>Mi horario</span></button>
         <button data-dtab="requests" class="dnav-btn"><span class="dnav-ic">🔁</span><span>Solicitudes</span></button>
+        <button data-dtab="perfil" class="dnav-btn"><span class="dnav-ic">👤</span><span>Perfil</span></button>
       </nav>
 
       <!-- =============== ADMIN GREETING (sibling de los paneles) =============== -->
@@ -621,6 +628,11 @@
           <div class="bal-summary" id="balance-summary"></div>
           <div id="balance-table"></div>
         </div>
+      </section>
+
+      <!-- =============== ADMIN: RECOMPENSAS TAB =============== -->
+      <section data-panel="rewards" class="hidden">
+        <div id="rewards-ui" data-theme="light"><p class="set-hint" style="padding:16px">Cargando…</p></div>
       </section>
 
       <!-- =============== ADMIN: INSPECCIONES TAB (paleta limpia) ===============

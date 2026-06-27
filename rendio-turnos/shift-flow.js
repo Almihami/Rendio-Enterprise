@@ -191,7 +191,7 @@
 
     sf.reuseShiftId = open ? open.id : null;
     sf.myReservedVehicleId = open ? open.vehicle_id : null; // vehículo ya reservado en el draft
-    box.innerHTML = `<button id="sf-open-btn" class="sheen tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-brand">
+    box.innerHTML = `<button id="sf-open-btn" class="pc-in d1 sheen tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-brand">
       <div class="flex items-start justify-between">
         <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl"><span class="bob inline-block">🚗</span></div>
         <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75 mt-1">${open ? 'Sin terminar' : 'Ahora'}</span>

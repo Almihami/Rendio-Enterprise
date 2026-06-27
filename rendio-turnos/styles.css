@@ -1161,11 +1161,38 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #settings-ui .veh-del{flex:0 0 auto;width:34px;height:34px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--red);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:.14s}
 #settings-ui .veh-del:hover{background:var(--red);color:#fff;border-color:var(--red)}
 
+/* ===== Admin: Recompensas (scopeado #rewards-ui, tokens del tema admin) ===== */
+#rewards-ui{padding:16px;max-width:780px;margin:0 auto;color:var(--ink)}
+#rewards-ui .set-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:14px;box-shadow:var(--shadow)}
+#rewards-ui .set-h2{font-size:15px;font-weight:800;margin-bottom:10px;color:var(--ink)}
+#rewards-ui .set-h3{font-size:13px;font-weight:800;margin:8px 0;color:var(--ink)}
+#rewards-ui .set-divider{height:1px;background:var(--line);margin:14px 0}
+#rewards-ui .set-hint{font-size:12px;color:var(--ink2)}
+#rewards-ui .veh-list{display:flex;flex-direction:column;gap:8px}
+#rewards-ui .veh-row{display:flex;align-items:center;gap:10px;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+#rewards-ui .veh-info{flex:1;min-width:0}
+#rewards-ui .veh-info b{display:block;font-size:14px;font-weight:700;color:var(--ink)}
+#rewards-ui .veh-info span{display:block;font-size:12px;color:var(--ink2);margin-top:1px}
+#rewards-ui .veh-stat{font-size:11px;font-weight:800;border-radius:999px;padding:4px 11px;background:var(--panel2);color:var(--ink2);white-space:nowrap;border:0;font-family:inherit}
+#rewards-ui .veh-stat.st-available{background:var(--green-soft);color:var(--green)}
+#rewards-ui .veh-del{flex:0 0 auto;height:34px;min-width:34px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--red);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0 8px;font-family:inherit;font-size:13px;font-weight:700}
+#rewards-ui .set-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#rewards-ui .rl-phead h1{font-size:20px;font-weight:800;color:var(--ink)}
+#rewards-ui .rl-phead p{font-size:13px;color:var(--ink2);margin-top:2px}
+#rewards-ui .rl-field{display:flex;flex-direction:column;gap:4px}
+#rewards-ui .rl-field label{font-size:11px;font-weight:700;color:var(--ink2)}
+#rewards-ui .rl-input{height:38px;border:1px solid var(--line2);border-radius:10px;padding:0 12px;font-family:inherit;font-size:13px;background:var(--panel);color:var(--ink)}
+#rewards-ui .set-btn{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer}
+#rewards-ui .set-btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2)}
+#rewards-ui .set-btn.dark{background:var(--ink);color:#fff}
+#rewards-ui .set-btn.sm{height:34px;padding:0 12px}
+@media(max-width:760px){#rewards-ui .set-grid2{grid-template-columns:1fr}}
+
 /* =====================================================================
    Conductor — barra de navegación inferior (pestañas) + ajustes de layout
    ===================================================================== */
 #driver-nav{position:fixed;bottom:0;left:0;right:0;z-index:40;display:none;background:#fff;border-top:1px solid #E2E8F0;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -4px 16px rgba(33,29,24,.06)}
-#driver-nav.show{display:grid;grid-template-columns:repeat(4,1fr)}
+#driver-nav.show{display:grid;grid-template-columns:repeat(5,1fr)}
 #driver-nav .dnav-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 4px 8px;background:none;border:0;cursor:pointer;color:#94A3B8;font-family:inherit;font-size:11px;font-weight:700;transition:color .12s}
 #driver-nav .dnav-btn .dnav-ic{font-size:20px;line-height:1;filter:grayscale(.4);opacity:.7;transition:.12s}
 #driver-nav .dnav-btn.active{color:#F26522}
