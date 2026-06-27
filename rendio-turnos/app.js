@@ -2069,20 +2069,30 @@
   async function renderWorkers() {
     const list = $('#workers-list');
     list.innerHTML = '<p class="text-sm text-slate-500">Cargando…</p>';
-    let admins, drivers, strikeCounts, weekSusp, rulesRows, sched;
+    let admins, drivers, strikeCounts, weekSusp, rulesRows, sched, closedShifts;
     try {
-      [admins, drivers, strikeCounts, weekSusp, rulesRows, sched] = await Promise.all([
+      [admins, drivers, strikeCounts, weekSusp, rulesRows, sched, closedShifts] = await Promise.all([
         Api.listAdmins(), Api.listAllDriversForAdmin(),
         Api.getActiveStrikeCounts().catch(() => new Map()),
         Api.getWeekSuspensions(state.currentWeek).catch(() => new Map()),
         Api.listDriverRules().catch(() => []),
         Api.getSchedule(state.currentWeek).catch(() => null),
+        Api.listClosedShiftsAdmin().catch(() => []),
       ]);
     } catch (e) {
       list.innerHTML = `<p class="text-sm text-rose-600">Error cargando personal: ${escapeHtml(e.message)}</p>`;
       return;
     }
     state._strikeCounts = strikeCounts;
+    // Km acumulado por persona (profile_id) desde los turnos cerrados.
+    const kmByProfile = new Map();
+    (closedShifts || []).forEach(s => {
+      const pid = s.driver_profiles && s.driver_profiles.profile_id;
+      if (!pid) return;
+      const km = Math.max(0, (s.closing_km || 0) - (s.opening_km || 0));
+      const cur = kmByProfile.get(pid) || { km: 0, turns: 0 };
+      cur.km += km; cur.turns += 1; kmByProfile.set(pid, cur);
+    });
     // ---- Reskin dirección C (maestro-detalle). VISUAL ONLY: reusa onWorkerAction y Api.* ----
     const rulesMap = Api.rulesToMap(rulesRows);              // { profileId: Set('day-shift') }
     const DAYS = Scheduler.DAYS;                              // mon..sun
@@ -2116,6 +2126,7 @@
       ...drivers.map(d => ({ id: d.id, name: d.name, email: d.email, role: 'driver',
         coord: d.can_coordinate === true, active: d.active !== false,
         strikes: strikeCounts.get(d.id) || 0, suspWeek: weekSusp.has(d.id),
+        km: (kmByProfile.get(d.id) || {}).km || 0, turns: (kmByProfile.get(d.id) || {}).turns || 0,
         rest: restText(d.id), load: loadOf[d.id] || { am: 0, pm: 0, co: 0, total: 0 } })),
     ];
     if (!state._pcSel || !people.find(p => p.id === state._pcSel)) state._pcSel = people[0] ? people[0].id : null;
@@ -2191,6 +2202,13 @@
               : (p.strikes === 0 ? '<p style="font-size:13px;color:var(--pc-ink2)">Sin strikes registrados. Historial limpio.</p>'
                  : `<div style="display:flex;align-items:center;gap:12px">${strikesEl(p)}<span style="font-size:13px;color:var(--pc-ink2)">${p.strikes}/3 activos. Abre el historial para el detalle.</span></div>`)}
           </div>
+          ${adm ? '' : `<div class="dblock full">
+            <h3>Kilometraje acumulado</h3>
+            <div style="display:flex;align-items:baseline;gap:10px">
+              <span style="font-size:24px;font-weight:800;color:var(--pc-ink)">${(p.km || 0).toLocaleString('es-CO')}<span style="font-size:13px;font-weight:600;color:var(--pc-ink2)"> km</span></span>
+              <span style="font-size:13px;color:var(--pc-ink2)">· ${p.turns || 0} turno(s) cerrado(s)</span>
+            </div>
+          </div>`}
         </div>
         <div class="dactions">
           <button class="pc-btn ${p.coord ? 'on' : ''}" data-act="${adm ? (p.coord ? 'coord-off' : 'coord-on') : (p.coord ? 'dcoord-off' : 'dcoord-on')}" data-id="${p.id}" data-name="${nm}">${p.coord ? '✓ Lidera' : '✕ No lidera'}</button>

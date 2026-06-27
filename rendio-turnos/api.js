@@ -1129,9 +1129,11 @@
     if (error) throw error;
   }
   // Admin: turnos cerrados de toda la org (para km acumulado por conductor).
+  // Incluye driver_profiles.profile_id para poder agrupar por persona (la lista de
+  // Personal usa profile_id; los turnos usan driver_id = driver_profiles.id).
   async function listClosedShiftsAdmin() {
     const { data, error } = await sb.from('shifts')
-      .select('driver_id, opening_km, closing_km, driver_profiles(profiles(full_name))')
+      .select('driver_id, opening_km, closing_km, driver_profiles(profile_id, profiles(full_name))')
       .eq('status', 'closed').not('closing_km', 'is', null);
     if (error) throw error;
     return data || [];
