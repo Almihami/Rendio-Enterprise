@@ -720,15 +720,23 @@
   // row debe incluir: id (uuid generado/reusado en cliente, para que el path de
   // las fotos exista antes del insert), organization_id, shift_id, vehicle_id,
   // driver_id, kind, odometer_km, checklist, has_damage, notes.
-  // Idempotente: upsert por PK (id). En reintentos el id se reutiliza (ver
-  // getExistingInitialInspectionId), así que actualiza la misma fila en vez de
-  // violar inspections_one_kind_per_shift.
+  // Idempotente vía INSERT + captura del duplicado (NO upsert): si este turno ya
+  // tiene su inspección inicial (reintento tras un fallo parcial), el INSERT choca
+  // con inspections_one_kind_per_shift; eso no es un error real → devolvemos la
+  // existente. Se usa insert+catch en vez de upsert porque el upsert dispara la
+  // policy UPDATE de RLS, que para el conductor no aplica y rebotaría el reintento.
   async function createInspection(row) {
-    let { data, error } = await sb.from('inspections').upsert(row, { onConflict: 'id' }).select('id').single();
+    let { data, error } = await sb.from('inspections').insert(row).select('id').single();
     // Si la migración 0028 (is_apt/signed_name) no está aplicada, reintenta sin esos campos.
     if (error && /is_apt|signed_name|column|schema cache/i.test(error.message || '')) {
       const { is_apt, signed_name, ...legacy } = row;
-      ({ data, error } = await sb.from('inspections').upsert(legacy, { onConflict: 'id' }).select('id').single());
+      ({ data, error } = await sb.from('inspections').insert(legacy).select('id').single());
+    }
+    // Reintento idempotente: la inicial ya existe → recuperamos su id sin fallar.
+    if (error && /duplicate key|unique|23505|one_kind_per_shift/i.test(error.message || '')) {
+      const { data: ex } = await sb.from('inspections')
+        .select('id').eq('shift_id', row.shift_id).eq('kind', row.kind).limit(1);
+      if (ex && ex[0]) return ex[0].id;
     }
     if (error) throw error;
     return data.id;
