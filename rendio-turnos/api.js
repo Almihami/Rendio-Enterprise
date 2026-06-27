@@ -672,6 +672,17 @@
     return (data && data[0]) || null;
   }
 
+  // SECURITY DEFINER (conductor): reserva dura del vehículo al entrar a la
+  // inspección. Crea/reusa el draft del conductor y marca el vehículo 'reserved'
+  // para que otro no lo tome. Lanza VEHICLE_RESERVED_BY_ANOTHER / VEHICLE_IN_USE /
+  // VEHICLE_NOT_OPERABLE / ALREADY_ON_SHIFT según el caso. Devuelve { shift_id }.
+  async function reserveVehicleForShift(vehicleId, openingKm) {
+    const { data, error } = await sb.rpc('reserve_vehicle_for_shift',
+      { p_vehicle_id: vehicleId, p_opening_km: (openingKm != null ? openingKm : null) });
+    if (error) throw error;
+    return data;
+  }
+
   // Crea el shift en 'inspection_in_progress' (o reutiliza uno huérfano de un
   // intento anterior interrumpido, para no dejar filas basura).
   async function createShiftDraft({ driverId, organizationId, vehicleId, openingKm, reuseId }) {
@@ -965,7 +976,7 @@
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
     savePushSubscription, deletePushSubscription, sendPush,
     getMyDriverProfileId, listVehiclesForShift, createVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
-    createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
+    reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, startShift, abortShift, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,

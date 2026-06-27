@@ -1154,7 +1154,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #settings-ui .veh-info span{display:block;font-size:12px;color:var(--ink2);margin-top:1px}
 #settings-ui .veh-stat{font-size:11px;font-weight:800;border-radius:999px;padding:3px 10px;background:var(--panel2);color:var(--ink2);white-space:nowrap}
 #settings-ui .veh-stat.st-available{background:var(--green-soft);color:var(--green)}
-#settings-ui .veh-stat.st-in_use{background:var(--amber-soft);color:var(--amber)}
+#settings-ui .veh-stat.st-in_use,#settings-ui .veh-stat.st-reserved{background:var(--amber-soft);color:var(--amber)}
 #settings-ui .veh-stat.st-maintenance,#settings-ui .veh-stat.st-blocked{background:var(--red-soft);color:var(--red)}
 #settings-ui .veh-del{flex:0 0 auto;width:34px;height:34px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--red);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:.14s}
 #settings-ui .veh-del:hover{background:var(--red);color:#fff;border-color:var(--red)}

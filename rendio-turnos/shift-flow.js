@@ -69,6 +69,7 @@
     vehicles: [],
     vehicleId: null,
     reuseShiftId: null,   // shift huérfano de un intento interrumpido
+    myReservedVehicleId: null, // vehículo que este conductor ya tiene reservado (draft abierto)
     checklist: {},        // itemId -> 'ok' | 'issue'
     photos: {},           // slotId -> { blob, url, size }
     extraPhotos: [],      // fotos adicionales libres: [{ blob, url, size }]
@@ -148,6 +149,7 @@
     }
 
     sf.reuseShiftId = open ? open.id : null;
+    sf.myReservedVehicleId = open ? open.vehicle_id : null; // vehículo ya reservado en el draft
     box.innerHTML = `<button id="sf-open-btn" class="sheen tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-brand">
       <div class="flex items-start justify-between">
         <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl"><span class="bob inline-block">🚗</span></div>
@@ -170,7 +172,8 @@
 
   async function openWizard() {
     sf.step = 0;
-    sf.vehicleId = null;
+    // Si el conductor retoma un draft, preselecciona el vehículo que ya reservó.
+    sf.vehicleId = sf.myReservedVehicleId || null;
     sf.checklist = {};
     Object.values(sf.photos).forEach(p => p && p.url && URL.revokeObjectURL(p.url));
     sf.photos = {};
@@ -339,7 +342,7 @@
     return null;
   }
 
-  const STATUS_ES = { available: null, in_use: 'En uso', maintenance: 'En mantenimiento', blocked: 'Bloqueado' };
+  const STATUS_ES = { available: null, in_use: 'En uso', reserved: 'Reservado', maintenance: 'En mantenimiento', blocked: 'Bloqueado' };
 
   // ---------- Paso 1: vehículo ----------
 
@@ -350,14 +353,17 @@
         : 'bg-emerald-100 text-emerald-700';
       return `<span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${cls}">${esc(label)}</span>`;
     };
+    const rank = v => (v.status === 'available' || v.id === sf.myReservedVehicleId) ? 0 : 1;
     const rows = sf.vehicles
       .slice()
-      .sort((a, b) => (a.status === 'available' ? 0 : 1) - (b.status === 'available' ? 0 : 1))
+      .sort((a, b) => rank(a) - rank(b))
       .map(v => {
-        const disabled = v.status !== 'available';
+        const isMine = v.id === sf.myReservedVehicleId;       // mi propia reserva: seleccionable
+        const disabled = v.status !== 'available' && !isMine;
         const isSel = sf.vehicleId === v.id;
         const chips = [];
-        if (STATUS_ES[v.status]) chips.push(chip('rose', STATUS_ES[v.status]));
+        if (isMine) chips.push(chip('emerald', 'Tu reserva'));
+        else if (STATUS_ES[v.status]) chips.push(chip('rose', STATUS_ES[v.status]));
         const mi = maintenanceInfo(v); if (mi) chips.push(chip(mi.tone, mi.label));
         const si = soatInfo(v); if (si) chips.push(chip(si.tone, si.label));
         return `<button data-vehicle="${v.id}" ${disabled ? 'disabled' : ''}
@@ -387,7 +393,49 @@
     wiz.querySelectorAll('[data-vehicle]').forEach(btn => {
       btn.addEventListener('click', () => { sf.vehicleId = btn.dataset.vehicle; render(); });
     });
-    $('#sf-next').addEventListener('click', goNext);
+    $('#sf-next').addEventListener('click', reserveAndAdvance);
+  }
+
+  // Reserva dura: al avanzar a la inspección, reserva el vehículo para que otro
+  // conductor no lo tome mientras inspeccionas. Si alguien lo tomó primero,
+  // avisa y refresca la lista para elegir otro.
+  async function reserveAndAdvance() {
+    const v = selectedVehicle();
+    if (!v) return;
+    const btn = $('#sf-next');
+    const prev = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Reservando vehículo…'; }
+    try {
+      const res = await Api.reserveVehicleForShift(v.id);
+      sf.reuseShiftId = (res && res.shift_id) || sf.reuseShiftId;
+      const prevReserved = sf.myReservedVehicleId;
+      sf.myReservedVehicleId = v.id;
+      // Reflejar el cambio en la lista en caché (sin otra llamada de red).
+      sf.vehicles.forEach(x => {
+        if (x.id === v.id) x.status = 'reserved';
+        else if (x.id === prevReserved && x.status === 'reserved') x.status = 'available';
+      });
+      goNext();
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = prev; }
+      const msg = (e && e.message) || '';
+      if (/RESERVED_BY_ANOTHER|IN_USE_BY_ANOTHER|VEHICLE_IN_USE/.test(msg)) {
+        sfToast('Otro conductor acaba de tomar ese vehículo. Elige otro.');
+      } else if (/NOT_OPERABLE/.test(msg)) {
+        sfToast('Ese vehículo quedó fuera de servicio. Elige otro.');
+      } else if (/ALREADY_ON_SHIFT/.test(msg)) {
+        sfToast('Ya tienes un turno activo.');
+      } else if (/Failed to fetch|NetworkError/.test(msg)) {
+        sfToast('Sin conexión. Verifica tu señal e inténtalo de nuevo.');
+        return;
+      } else {
+        sfToast('No se pudo reservar el vehículo: ' + msg);
+      }
+      // En conflicto: deselecciona y refresca la lista para ver el estado real.
+      sf.vehicleId = null;
+      try { sf.vehicles = await Api.listVehiclesForShift(); } catch (_) { /* */ }
+      render();
+    }
   }
 
   // ---------- Paso 2: checklist ----------
