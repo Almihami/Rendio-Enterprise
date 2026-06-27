@@ -2335,6 +2335,7 @@
     const code = ($('#new-veh-code') && $('#new-veh-code').value || '').trim();
     const plate = ($('#new-veh-plate') && $('#new-veh-plate').value || '').trim();
     if (!code || !plate) { toast('Código interno y placa son obligatorios.'); return; }
+    const km = Math.max(0, parseInt($('#new-veh-km').value, 10) || 0);
     const veh = {
       organization_id: state.profile.organization_id,
       internal_code: code,
@@ -2342,7 +2343,11 @@
       brand: ($('#new-veh-brand').value || '').trim() || null,
       model: ($('#new-veh-model').value || '').trim() || null,
       capacity: Math.min(4, Math.max(1, parseInt($('#new-veh-capacity').value, 10) || 4)),
-      current_km: Math.max(0, parseInt($('#new-veh-km').value, 10) || 0),
+      current_km: km,
+      // Baseline de mantenimiento = odómetro actual al darlo de alta. Si se deja
+      // en 0 (default), el vehículo se bloquearía al primer cierre de turno con km
+      // real (bug 4). start_shift también lo inicializa como red de seguridad.
+      last_maintenance_km: km,
       soat_expires_at: $('#new-veh-soat').value || null,
       tecnomec_expires_at: $('#new-veh-tecno').value || null,
     };
