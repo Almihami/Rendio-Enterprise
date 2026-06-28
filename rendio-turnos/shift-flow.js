@@ -405,7 +405,8 @@
         const chips = [];
         if (isMine) chips.push(chip('emerald', 'Tu reserva'));
         else if (STATUS_ES[v.status]) chips.push(chip('rose', STATUS_ES[v.status]));
-        const mi = maintenanceInfo(v); if (mi) chips.push(chip(mi.tone, mi.label));
+        // El chip de estado ya dice "Cambio de aceite" si está bloqueado; evita duplicar.
+        const mi = (v.status === 'blocked') ? null : maintenanceInfo(v); if (mi) chips.push(chip(mi.tone, mi.label));
         const si = soatInfo(v); if (si) chips.push(chip(si.tone, si.label));
         return `<button data-vehicle="${v.id}" ${disabled ? 'disabled' : ''}
           class="w-full text-left bg-white border-2 ${isSel ? 'border-brand' : 'border-slate-200'} rounded-2xl p-4 flex gap-3 items-start transition ${disabled ? 'opacity-50' : 'active:scale-[0.99]'}">
@@ -421,11 +422,15 @@
         </button>`;
       }).join('');
 
+    const anyAvail = sf.vehicles.some(v => v.status === 'available' || v.id === sf.myReservedVehicleId);
+    const noAvailNote = (sf.vehicles.length && !anyAvail)
+      ? `<div class="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-2.5 text-[12px] text-amber-800 mb-2.5">No hay vehículos disponibles ahora (en cambio de aceite, en revisión o en uso). Avísale a tu administrador.</div>`
+      : '';
     wiz.innerHTML = shellHtml(
       `Inicio de turno · Paso 1 de ${TOTAL_STEPS}`,
       'Selecciona tu vehículo',
       'Elige el vehículo con el que vas a operar hoy.',
-      `<div class="space-y-2.5">${rows}</div>`,
+      `${noAvailNote}<div class="space-y-2.5">${rows}</div>`,
       `<button id="sf-next" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${sf.vehicleId ? '' : 'disabled'}>
         Continuar a inspección →
       </button>`
@@ -1276,12 +1281,16 @@
       const res = await Api.closeShift(sh.id, {
         closingKm, hasNovedad: sf.close.novedad, novedadText: sf.close.novedadText, severity: sf.close.severity, mediaPaths,
       });
+      // ¿El vehículo quedó en cambio de aceite al cerrar? (para avisarle al conductor)
+      let vehBlocked = false;
+      try { vehBlocked = (await Api.getVehicleStatus(sh.vehicle_id)) === 'blocked'; } catch (e) { /* */ }
       sf.close.summary = {
         kmDriven: (res && res.km_driven != null) ? res.km_driven : Math.max(0, closingKm - (Number(sh.opening_km) || 0)),
         duration: fmtElapsed(sh.start_at),
         novedad: sf.close.novedad,
         receipts: sf.close.receipts.length,
         fuel: fuelTotal(),
+        vehBlocked,
       };
       sf.close.done = true;
       sf.activeShift = null;
@@ -1305,6 +1314,7 @@
       <div class="w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 text-4xl flex items-center justify-center mb-5">✓</div>
       <h1 class="text-2xl font-extrabold text-ink">Turno cerrado</h1>
       <p class="text-[15px] text-slate-500 mt-2 leading-relaxed max-w-xs">${esc(s.duration || '')} en ruta. Tu reporte de cierre se envió al administrador.</p>
+      ${s.vehBlocked ? `<div class="mt-5 w-full max-w-xs rounded-xl bg-amber-50 border border-amber-300 px-4 py-3 text-[13px] text-amber-800 text-left flex gap-2"><span>🛢️</span><span>El vehículo entró a <b>cambio de aceite</b>. No estará disponible para iniciar turno hasta que el administrador lo registre.</span></div>` : ''}
       <div class="mt-6 w-full max-w-xs rounded-2xl bg-white border border-slate-200 shadow-card divide-y divide-slate-100 text-left">
         <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Km recorridos</span><span class="font-bold text-emerald-600">+${(s.kmDriven || 0).toLocaleString('es-CO')} km</span></div>
         <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Duración</span><span class="font-bold text-ink">${esc(s.duration || '—')}</span></div>

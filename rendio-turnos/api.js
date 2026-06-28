@@ -763,6 +763,13 @@
     return data.id;
   }
 
+  // Estado actual de un vehículo (para saber si quedó en "cambio de aceite" al cerrar).
+  async function getVehicleStatus(id) {
+    const { data, error } = await sb.from('vehicles').select('status').eq('id', id).limit(1);
+    if (error) return null;
+    return (data && data[0]) ? data[0].status : null;
+  }
+
   async function uploadInspectionPhoto(path, blob) {
     const { error } = await sb.storage
       .from('inspections')
@@ -1167,7 +1174,7 @@
     savePushSubscription, deletePushSubscription, sendPush,
     getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
-    addIncident, startShift, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, listActiveShifts, forceCloseShift,
+    addIncident, startShift, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
     getMyFullProfile, uploadMyAvatar,
