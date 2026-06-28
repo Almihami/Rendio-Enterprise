@@ -1084,12 +1084,11 @@
     return data || [];
   }
 
-  async function redeemReward({ rewardId, organizationId, driverId, kmAtRequest }) {
-    const { data, error } = await sb.from('reward_redemptions')
-      .insert({ organization_id: organizationId, driver_id: driverId, reward_id: rewardId, km_at_request: kmAtRequest || 0 })
-      .select('id').single();
+  // Redención validada en servidor (km, recompensa activa, sin duplicado).
+  async function redeemReward(rewardId) {
+    const { data, error } = await sb.rpc('redeem_reward', { p_reward_id: rewardId });
     if (error) throw error;
-    return data.id;
+    return data;
   }
 
   async function listMyRedemptions(driverId) {

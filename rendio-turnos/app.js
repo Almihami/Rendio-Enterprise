@@ -3662,10 +3662,17 @@
     if (!r) return;
     if (!confirm(`¿Redimir "${r.title}"? Se enviará una solicitud a tu administrador.`)) return;
     try {
-      await Api.redeemReward({ rewardId, organizationId: state.profile.organization_id, driverId: state.driverId, kmAtRequest: d.kmTotal });
+      await Api.redeemReward(rewardId);
       toast('¡Solicitud enviada! Tu administrador la revisará.');
       await renderDriverProfile();
-    } catch (e) { console.error(e); toast('No se pudo redimir: ' + (e.message || 'error')); }
+    } catch (e) {
+      console.error(e);
+      const m = (e && e.message) || '';
+      if (/NOT_ENOUGH_KM/.test(m)) toast('Aún no tienes los km suficientes para esta recompensa.');
+      else if (/ALREADY_REQUESTED/.test(m)) toast('Ya solicitaste esta recompensa.');
+      else if (/REWARD_INACTIVE/.test(m)) toast('Esa recompensa ya no está disponible.');
+      else toast('No se pudo redimir: ' + m);
+    }
   }
 
   // Saludo de la home ("Carlos · Martes 10 de junio") + estado de la tarjeta de disponibilidad.
