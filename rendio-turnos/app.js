@@ -706,7 +706,7 @@
       return `<div class="ckrow ${bad ? 'issue' : 'ok'}"><svg class="icon ci"><use href="#${bad ? 'i-warn' : 'i-check'}"/></svg><div><div class="lbl">${escapeHtml(it.label || '')}</div>${it.hint ? `<div class="hint">${escapeHtml(it.hint)}</div>` : ''}</div><span class="badge">${bad ? 'Con falla' : 'OK'}</span></div>`;
     }).join('') : '<div class="ckrow ok"><span class="lbl" style="color:var(--ink2)">Sin checklist registrado.</span></div>';
     const nextMaint = (v.last_maintenance_km != null && v.maintenance_interval_km) ? Math.max(0, (v.last_maintenance_km + v.maintenance_interval_km) - (v.current_km || 0)) : null;
-    const vehLine = `${v.status === 'available' ? 'Disponible' : (v.status || '—')}${nextMaint != null ? ` · mtto en ${nextMaint.toLocaleString('es-CO')} km` : ''}`;
+    const vehLine = `${v.status === 'available' ? 'Disponible' : (VEH_STATUS_ES[v.status] || v.status || '—')}${nextMaint != null ? ` · cambio de aceite en ${nextMaint.toLocaleString('es-CO')} km` : ''}`;
     const fmtDT = (s) => { try { return new Date(s).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }); } catch (e) { return ''; } };
     const decision = insp.review_status === 'pending'
       ? `<div class="card" id="insp-decision">
@@ -2505,7 +2505,7 @@
   }
 
   // --- Vehículos (admin) — alta/baja/edición de la flota desde Ajustes ---
-  const VEH_STATUS_ES = { available: 'Disponible', in_use: 'En uso', reserved: 'Reservado', maintenance: 'Mantenimiento', blocked: 'Bloqueado' };
+  const VEH_STATUS_ES = { available: 'Disponible', in_use: 'En uso', reserved: 'Reservado', maintenance: 'En revisión', blocked: 'Cambio de aceite' };
   let vehiclesEditId = null;       // si está editando un vehículo existente
   let vehiclesCache = [];          // para poblar el form al editar
   async function renderVehiclesSettings() {
@@ -2520,9 +2520,9 @@
     box.innerHTML = vehs.map(v => {
       const offService = v.status === 'maintenance' || v.status === 'blocked';
       const restoreBtn = offService
-        ? `<button class="set-btn dark" data-veh-restore="${v.id}" title="Regresar a servicio">Regresar a servicio</button>`
+        ? `<button class="set-btn dark" data-veh-restore="${v.id}" title="Regresar a servicio">${v.status === 'blocked' ? 'Cambio de aceite hecho' : 'Regresar a servicio'}</button>`
         : '';
-      const intv = v.maintenance_interval_km ? ` · mantto c/${(v.maintenance_interval_km).toLocaleString('es-CO')} km` : '';
+      const intv = v.maintenance_interval_km ? ` · aceite c/${(v.maintenance_interval_km).toLocaleString('es-CO')} km` : '';
       return `<div class="veh-row" data-veh="${v.id}">
       <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km${intv}</span></div>
       <span class="veh-stat st-${v.status}">${VEH_STATUS_ES[v.status] || escapeHtml(v.status || '')}</span>
@@ -2610,9 +2610,13 @@
   async function onRestoreVehicle(id) {
     const v = (await safeVehicles()).find(x => x.id === id);
     const label = v ? (v.internal_code || v.license_plate || 'este vehículo') : 'este vehículo';
-    if (!confirm(`¿Regresar ${label} a servicio? Quedará Disponible para los conductores.`)) return;
+    const oil = v && v.status === 'blocked';
+    const msg = oil
+      ? `¿Registrar el cambio de aceite de ${label}? Quedará Disponible y se reinicia el contador de km.`
+      : `¿Regresar ${label} a servicio? Quedará Disponible para los conductores.`;
+    if (!confirm(msg)) return;
     try {
-      await Api.returnVehicleToService(id, 'Regreso a servicio desde Ajustes');
+      await Api.returnVehicleToService(id, oil ? 'Cambio de aceite realizado' : 'Regreso a servicio desde Ajustes');
       toast('Vehículo disponible.');
       renderVehiclesSettings();
     } catch (e) {

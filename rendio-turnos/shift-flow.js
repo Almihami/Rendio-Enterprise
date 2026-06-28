@@ -370,8 +370,8 @@
     const interval = v.maintenance_interval_km || 7000;
     const driven = (v.current_km || 0) - (v.last_maintenance_km || 0);
     const remaining = interval - driven;
-    if (remaining <= 0)  return { tone: 'rose',  label: 'Mantenimiento vencido' };
-    if (remaining <= 500) return { tone: 'amber', label: `Mantto en ${fmtKm(remaining)} km` };
+    if (remaining <= 0)  return { tone: 'rose',  label: 'Cambio de aceite vencido' };
+    if (remaining <= 500) return { tone: 'amber', label: `Cambio de aceite en ${fmtKm(remaining)} km` };
     return null;
   }
 
@@ -383,7 +383,7 @@
     return null;
   }
 
-  const STATUS_ES = { available: null, in_use: 'En uso', reserved: 'Reservado', maintenance: 'En mantenimiento', blocked: 'Bloqueado' };
+  const STATUS_ES = { available: null, in_use: 'En uso', reserved: 'Reservado', maintenance: 'En revisión', blocked: 'Cambio de aceite' };
 
   // ---------- Paso 1: vehículo ----------
 
