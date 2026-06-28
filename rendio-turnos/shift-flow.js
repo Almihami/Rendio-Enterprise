@@ -81,7 +81,16 @@
     saving: false,
     done: null,           // 'started' | 'aborted'
     _slot: null,          // slot pendiente de captura
+    activeShift: null,    // turno activo (para timer + cierre)
+    _timer: null,         // intervalo del cronómetro en vivo
+    close: null,          // estado del flujo de cierre (ver newCloseState)
+    settings: null,       // ajustes (ventana/plazo de inicio diferido)
+    completing: false,    // completando la inspección diferida de un turno activo
   };
+
+  function newCloseState() {
+    return { km: '', novedad: false, novedadText: '', severity: 'media', media: [], receipts: [], attest: false, saving: false, done: null };
+  }
 
   function sfToast(msg) {
     const t = $('#toast');
@@ -90,6 +99,34 @@
     t.classList.remove('hidden');
     clearTimeout(sfToast._t);
     sfToast._t = setTimeout(() => t.classList.add('hidden'), 3000);
+  }
+
+  // ---------- cronómetro del turno activo ----------
+  function fmtElapsed(startAt) {
+    const ms = Date.now() - new Date(startAt).getTime();
+    if (!(ms >= 0)) return '0h 00m';
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return `${h}h ${String(m).padStart(2, '0')}m`;
+  }
+  function fmtInspLeft(due) {
+    const ms = new Date(due).getTime() - Date.now();
+    if (!(ms > 0)) return '· vencida';
+    const m = Math.ceil(ms / 60000);
+    return m >= 60 ? `· faltan ${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `· faltan ${m} min`;
+  }
+  function startElapsedTimer(startAt) {
+    stopElapsedTimer();
+    sf._timer = setInterval(() => {
+      const el = $('#sf-elapsed');
+      if (!el) { stopElapsedTimer(); return; }
+      el.textContent = fmtElapsed(startAt);
+      const il = $('#sf-insp-left');
+      if (il && sf.activeShift && sf.activeShift.inspection_due_at) il.textContent = fmtInspLeft(sf.activeShift.inspection_due_at);
+    }, 30000);
+  }
+  function stopElapsedTimer() {
+    if (sf._timer) { clearInterval(sf._timer); sf._timer = null; }
   }
 
   // ====================================================================
@@ -109,6 +146,8 @@
       const items = await Api.listChecklistItems(true);
       if (items && items.length) ckItems = items.map(it => ({ id: it.id, label: it.label, detail: it.hint || '', category: it.category || 'General' }));
     } catch (e) { /* sin 0024 o sin ítems: queda CHECKLIST_FALLBACK */ }
+    // Ajustes (ventana/plazo del inicio diferido). Si falla, el botón no aparece.
+    try { sf.settings = await Api.getSettings(); } catch (e) { sf.settings = null; }
     await renderCard();
   }
 
@@ -132,25 +171,45 @@
     catch (e) { console.error(e); }
 
     if (open && (open.status === 'active' || open.status === 'closing')) {
+      sf.activeShift = open;
       const v = open.vehicles || {};
       const since = new Date(open.start_at).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
-      box.innerHTML = `<div class="rounded-2xl p-5 h-[200px] flex flex-col bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-card">
+      box.innerHTML = `<div class="rounded-2xl p-5 flex flex-col bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-card overflow-hidden">
         <div class="flex items-start justify-between">
-          <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl">🟢</div>
-          <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75 mt-1">En curso</span>
+          <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl">🚐</div>
+          <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/90 mt-1">
+            <span class="sf-livedot w-1.5 h-1.5 rounded-full bg-white inline-block"></span> En curso
+          </span>
         </div>
-        <div class="mt-auto">
-          <p class="text-xl font-extrabold leading-tight">Turno activo · ${esc(v.internal_code || v.license_plate || 'vehículo')}</p>
-          <p class="text-xs text-white/85 mt-1">${esc([v.brand, v.model].filter(Boolean).join(' '))} · desde las ${since} · salida ${fmtKm(open.opening_km)} km</p>
+        <div class="mt-4">
+          <p class="text-xl font-extrabold leading-tight">Turno en curso · ${esc(v.internal_code || v.license_plate || 'vehículo')}</p>
+          <p class="text-xs text-white/85 mt-1">${esc([v.brand, v.model].filter(Boolean).join(' '))} · inició ${since} · salida ${fmtKm(open.opening_km)} km</p>
         </div>
-        <p class="text-[11px] text-white/70 mt-3">El cierre de turno (inspección final) llega en la siguiente etapa.</p>
+        <div class="mt-3 flex items-center gap-2 text-sm font-bold tabular-nums">
+          <svg class="w-4 h-4 text-white/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path stroke-linecap="round" d="M12 7v5l3 2"></path></svg>
+          <span id="sf-elapsed">${fmtElapsed(open.start_at)}</span>
+          <span class="text-white/60 font-medium">trabajado</span>
+        </div>
+        ${open.inspection_due_at ? `<div class="mt-3 rounded-xl bg-white/15 border border-white/30 p-3">
+          <p class="text-[13px] font-extrabold flex items-center gap-1.5">⏳ Inspección pendiente <span id="sf-insp-left" class="font-extrabold">${fmtInspLeft(open.inspection_due_at)}</span></p>
+          <p class="text-[11px] text-white/85 mt-0.5">Hazla antes de que se venza o será un strike.</p>
+          <button id="sf-do-insp" class="tap w-full mt-2 bg-white text-emerald-700 text-sm font-extrabold py-2.5 rounded-lg active:scale-[.98]">Hacer inspección ahora</button>
+        </div>` : ''}
+        <div class="mt-4 pt-4 border-t border-white/20">
+          <button id="sf-close-btn" class="tap w-full bg-white text-emerald-700 text-base font-extrabold py-3.5 rounded-xl shadow-sm active:scale-[.98]">Cerrar turno</button>
+          <p class="text-[11px] text-white/80 text-center mt-2">Kilometraje final, novedades y comprobantes de tanqueo.</p>
+        </div>
       </div>`;
+      startElapsedTimer(open.start_at);
+      $('#sf-close-btn').addEventListener('click', () => openClose(open));
+      $('#sf-do-insp')?.addEventListener('click', () => openCompletion(open));
       return;
     }
+    stopElapsedTimer();
 
     sf.reuseShiftId = open ? open.id : null;
     sf.myReservedVehicleId = open ? open.vehicle_id : null; // vehículo ya reservado en el draft
-    box.innerHTML = `<button id="sf-open-btn" class="sheen tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-brand">
+    box.innerHTML = `<button id="sf-open-btn" class="pc-in d1 sheen tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-brand">
       <div class="flex items-start justify-between">
         <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl"><span class="bob inline-block">🚗</span></div>
         <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75 mt-1">${open ? 'Sin terminar' : 'Ahora'}</span>
@@ -172,6 +231,7 @@
 
   async function openWizard() {
     sf.step = 0;
+    sf.completing = false;   // inicio normal (no es completar una inspección diferida)
     // Si el conductor retoma un draft, preselecciona el vehículo que ya reservó.
     sf.vehicleId = sf.myReservedVehicleId || null;
     sf.checklist = {};
@@ -230,7 +290,7 @@
   }
 
   function goBack() {
-    if (sf.step === 0) { tryExit(); return; }
+    if (sf.step === 0 || (sf.completing && sf.step === 1)) { tryExit(); return; }
     sf.step -= 1;
     render();
   }
@@ -329,8 +389,8 @@
     const interval = v.maintenance_interval_km || 7000;
     const driven = (v.current_km || 0) - (v.last_maintenance_km || 0);
     const remaining = interval - driven;
-    if (remaining <= 0)  return { tone: 'rose',  label: 'Mantenimiento vencido' };
-    if (remaining <= 500) return { tone: 'amber', label: `Mantto en ${fmtKm(remaining)} km` };
+    if (remaining <= 0)  return { tone: 'rose',  label: 'Cambio de aceite vencido' };
+    if (remaining <= 500) return { tone: 'amber', label: `Cambio de aceite en ${fmtKm(remaining)} km` };
     return null;
   }
 
@@ -342,7 +402,7 @@
     return null;
   }
 
-  const STATUS_ES = { available: null, in_use: 'En uso', reserved: 'Reservado', maintenance: 'En mantenimiento', blocked: 'Bloqueado' };
+  const STATUS_ES = { available: null, in_use: 'En uso', reserved: 'Reservado', maintenance: 'En revisión', blocked: 'Cambio de aceite' };
 
   // ---------- Paso 1: vehículo ----------
 
@@ -364,7 +424,8 @@
         const chips = [];
         if (isMine) chips.push(chip('emerald', 'Tu reserva'));
         else if (STATUS_ES[v.status]) chips.push(chip('rose', STATUS_ES[v.status]));
-        const mi = maintenanceInfo(v); if (mi) chips.push(chip(mi.tone, mi.label));
+        // El chip de estado ya dice "Cambio de aceite" si está bloqueado; evita duplicar.
+        const mi = (v.status === 'blocked') ? null : maintenanceInfo(v); if (mi) chips.push(chip(mi.tone, mi.label));
         const si = soatInfo(v); if (si) chips.push(chip(si.tone, si.label));
         return `<button data-vehicle="${v.id}" ${disabled ? 'disabled' : ''}
           class="w-full text-left bg-white border-2 ${isSel ? 'border-brand' : 'border-slate-200'} rounded-2xl p-4 flex gap-3 items-start transition ${disabled ? 'opacity-50' : 'active:scale-[0.99]'}">
@@ -380,20 +441,27 @@
         </button>`;
       }).join('');
 
+    const anyAvail = sf.vehicles.some(v => v.status === 'available' || v.id === sf.myReservedVehicleId);
+    const noAvailNote = (sf.vehicles.length && !anyAvail)
+      ? `<div class="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-2.5 text-[12px] text-amber-800 mb-2.5">No hay vehículos disponibles ahora (en cambio de aceite, en revisión o en uso). Avísale a tu administrador.</div>`
+      : '';
     wiz.innerHTML = shellHtml(
       `Inicio de turno · Paso 1 de ${TOTAL_STEPS}`,
       'Selecciona tu vehículo',
       'Elige el vehículo con el que vas a operar hoy.',
-      `<div class="space-y-2.5">${rows}</div>`,
+      `${noAvailNote}<div class="space-y-2.5">${rows}</div>`,
       `<button id="sf-next" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${sf.vehicleId ? '' : 'disabled'}>
         Continuar a inspección →
-      </button>`
+      </button>${fastStartEligible() ? `
+      <button id="sf-fast" class="w-full mt-2 bg-white border-2 border-brand text-brand-700 text-sm font-bold py-3 rounded-xl active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none" ${sf.vehicleId ? '' : 'disabled'}>⚡ Iniciar ahora · inspección después</button>
+      <p class="text-[11px] text-slate-400 text-center mt-1.5">Cambio de turno apurado: arranca ya y haz la inspección dentro del plazo.</p>` : ''}`
     );
     bindChrome();
     wiz.querySelectorAll('[data-vehicle]').forEach(btn => {
       btn.addEventListener('click', () => { sf.vehicleId = btn.dataset.vehicle; render(); });
     });
     $('#sf-next').addEventListener('click', reserveAndAdvance);
+    $('#sf-fast')?.addEventListener('click', onFastStart);
   }
 
   // Reserva dura: al avanzar a la inspección, reserva el vehículo para que otro
@@ -808,8 +876,8 @@
       </div>
       <p id="sf-save-state" class="text-sm text-slate-500 mt-3 text-center"></p>`,
       blocked
-        ? `<button id="sf-confirm" class="w-full bg-rose-600 text-white text-base font-bold py-3.5 rounded-xl hover:bg-rose-700 active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none" ${sf.signed ? '' : 'disabled'}>Registrar NO APTO y suspender</button>`
-        : `<button id="sf-confirm" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${sf.signed ? '' : 'disabled'}>⚡ Iniciar turno</button>`
+        ? `<button id="sf-confirm" class="w-full bg-rose-600 text-white text-base font-bold py-3.5 rounded-xl hover:bg-rose-700 active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none" ${sf.signed ? '' : 'disabled'}>${sf.completing ? 'Registrar NO APTO' : 'Registrar NO APTO y suspender'}</button>`
+        : `<button id="sf-confirm" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${sf.signed ? '' : 'disabled'}>${sf.completing ? '✓ Guardar inspección' : '⚡ Iniciar turno'}</button>`
     );
     bindChrome();
     wiz.querySelectorAll('[data-apt]').forEach(btn => {
@@ -837,15 +905,21 @@
     const openingKm = Number(sf.km);
 
     try {
-      setState('Creando el turno…');
-      const shiftId = await Api.createShiftDraft({
-        driverId: sf.driverId,
-        organizationId: org,
-        vehicleId: v.id,
-        openingKm,
-        reuseId: sf.reuseShiftId,
-      });
-      sf.reuseShiftId = shiftId; // si algo falla más adelante, el retry lo reutiliza
+      let shiftId;
+      if (sf.completing) {
+        // Turno ya activo (arrancó diferido): solo registramos la inspección.
+        shiftId = sf.reuseShiftId;
+      } else {
+        setState('Creando el turno…');
+        shiftId = await Api.createShiftDraft({
+          driverId: sf.driverId,
+          organizationId: org,
+          vehicleId: v.id,
+          openingKm,
+          reuseId: sf.reuseShiftId,
+        });
+        sf.reuseShiftId = shiftId; // si algo falla más adelante, el retry lo reutiliza
+      }
 
       // Idempotencia: si este turno ya tiene inspección inicial (intento previo
       // interrumpido), reusamos su id en vez de generar otro y chocar contra
@@ -928,7 +1002,12 @@
         });
       }
 
-      if (blocked) {
+      if (sf.completing) {
+        // La inspección quedó registrada; limpiamos el plazo. El turno sigue activo.
+        setState('Guardando inspección…');
+        try { await Api.clearInspectionDue(shiftId); } catch (e) { /* el cron igual la ve hecha */ }
+        sf.done = blocked ? 'completed-noapt' : 'completed';
+      } else if (blocked) {
         setState('Suspendiendo turno…');
         const reason = issues.length
           ? `NO APTO — ${issues.map(i => i.label).join(', ')} — ${sf.note || 'sin detalle'}`
@@ -941,6 +1020,7 @@
         sf.done = 'started';
       }
       sf.reuseShiftId = null;
+      sf.completing = false;
       render();
     } catch (e) {
       console.error(e);
@@ -958,30 +1038,444 @@
   // ---------- pantalla final ----------
 
   function renderDone(wiz) {
-    const aborted = sf.done === 'aborted';
+    const d = sf.done;
     const v = selectedVehicle();
+    const veh = esc(v ? (v.internal_code || v.license_plate) : 'vehículo');
+    const dueTime = sf.fastDue ? new Date(sf.fastDue).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }) : '';
+    let icon, iconCls, title, body, btnCls;
+    if (d === 'aborted') {
+      icon = '⚠'; iconCls = 'bg-rose-100 text-rose-600'; title = 'Turno suspendido';
+      body = 'La novedad quedó registrada y el vehículo pasó a revisión. El admin te indicará cómo proceder.'; btnCls = 'bg-ink text-white';
+    } else if (d === 'deferred') {
+      icon = '⚡'; iconCls = 'bg-amber-100 text-amber-600'; title = '¡En ruta! Inspección pendiente';
+      body = `Iniciaste con el ${veh}.${dueTime ? ` Tienes hasta las ${dueTime} para hacer la inspección` : ' Haz la inspección dentro del plazo'} — hazla desde la tarjeta del turno. Si no, será un strike.`; btnCls = 'bg-brand text-white shadow-brand';
+    } else if (d === 'completed') {
+      icon = '✓'; iconCls = 'bg-emerald-100 text-emerald-600'; title = 'Inspección lista';
+      body = 'Tu inspección quedó registrada. Sigue tu turno con tranquilidad.'; btnCls = 'bg-brand text-white shadow-brand';
+    } else if (d === 'completed-noapt') {
+      icon = '⚠'; iconCls = 'bg-rose-100 text-rose-600'; title = 'Inspección registrada · NO APTO';
+      body = 'Registramos el vehículo como NO APTO. El administrador queda notificado; detén la operación según te indique.'; btnCls = 'bg-ink text-white';
+    } else {
+      icon = '✓'; iconCls = 'bg-brand-50 text-brand-600'; title = '¡Listo, en ruta!';
+      body = `Turno activo con el ${veh} desde ${fmtKm(sf.km)} km. Maneja con calma.`; btnCls = 'bg-brand text-white shadow-brand';
+    }
     wiz.innerHTML = `<div class="max-w-lg mx-auto min-h-screen flex flex-col items-center justify-center text-center px-8 bg-slate-50">
-      <div class="w-20 h-20 rounded-full ${aborted ? 'bg-rose-100 text-rose-600' : 'bg-brand-50 text-brand-600'} text-4xl flex items-center justify-center mb-5">
-        ${aborted ? '⚠' : '✓'}
-      </div>
-      <h1 class="text-2xl font-extrabold text-ink">${aborted ? 'Turno suspendido' : '¡Listo, en ruta!'}</h1>
-      <p class="text-[15px] text-slate-500 mt-2 leading-relaxed max-w-xs">
-        ${aborted
-          ? 'La novedad quedó registrada y el vehículo pasó a revisión. El admin te indicará cómo proceder.'
-          : `Turno activo con el ${esc(v ? (v.internal_code || v.license_plate) : 'vehículo')} desde ${fmtKm(sf.km)} km. Maneja con calma.`}
-      </p>
-      <button id="sf-done-btn" class="mt-8 px-6 py-3 rounded-xl ${aborted ? 'bg-ink text-white' : 'bg-brand text-white shadow-brand'} font-bold active:scale-[0.98] transition">
-        Volver al inicio
-      </button>
+      <div class="w-20 h-20 rounded-full ${iconCls} text-4xl flex items-center justify-center mb-5">${icon}</div>
+      <h1 class="text-2xl font-extrabold text-ink">${title}</h1>
+      <p class="text-[15px] text-slate-500 mt-2 leading-relaxed max-w-xs">${body}</p>
+      <button id="sf-done-btn" class="mt-8 px-6 py-3 rounded-xl ${btnCls} font-bold active:scale-[0.98] transition">Volver al inicio</button>
     </div>`;
     $('#sf-done-btn').addEventListener('click', () => {
       Object.values(sf.photos).forEach(p => p && p.url && URL.revokeObjectURL(p.url));
       sf.photos = {};
       sf.extraPhotos.forEach(p => p && p.url && URL.revokeObjectURL(p.url));
       sf.extraPhotos = [];
+      sf.completing = false;
       closeWizard();
       renderCard();
     });
+  }
+
+  // ====================================================================
+  // Cierre de turno (Etapa 2)
+  // ====================================================================
+  function openClose(shift) {
+    stopElapsedTimer();
+    sf.activeShift = shift;
+    sf.close = newCloseState();
+    const wiz = $('#shift-wizard');
+    wiz.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    const nav = document.getElementById('driver-nav');
+    sf._navWasShown = !!(nav && nav.classList.contains('show'));
+    if (sf._navWasShown) nav.classList.remove('show');
+    document.getElementById('driver-save-bar')?.classList.add('hidden');
+    renderClose();
+  }
+
+  function closeKmNum() { const d = String(sf.close.km).replace(/\D/g, ''); return d ? parseInt(d, 10) : 0; }
+  function closeOpenKm() { return Number(sf.activeShift && sf.activeShift.opening_km) || 0; }
+  function closeKmValid() { const n = closeKmNum(); return n > 0 && n >= closeOpenKm(); }
+  // Comprobante de tanqueo OBLIGATORIO: al menos uno, y cada uno con valor > 0.
+  // No se habilita "Confirmar cierre" hasta cumplirlo.
+  function receiptsValid() { return sf.close.receipts.length >= 1 && sf.close.receipts.every(r => (r.amount || 0) > 0); }
+  function novedadValid() { return !sf.close.novedad || sf.close.novedadText.trim().length > 0; }
+  function closeAllValid() { return closeKmValid() && sf.close.attest && novedadValid() && receiptsValid(); }
+  function fuelTotal() { return sf.close.receipts.reduce((s, r) => s + (r.amount || 0), 0); }
+
+  function updateCloseConfirm() {
+    const btn = $('#cl-confirm'); if (btn) btn.disabled = !closeAllValid() || sf.close.saving;
+    const tot = $('#cl-fuel-total'); if (tot) tot.textContent = '$' + fuelTotal().toLocaleString('es-CO');
+  }
+
+  function onCloseKm(inp) {
+    const d = inp.value.replace(/\D/g, '');
+    const n = d ? parseInt(d, 10) : 0;
+    inp.value = d ? n.toLocaleString('es-CO') : '';
+    sf.close.km = d;
+    const openKm = closeOpenKm();
+    const delta = n - openKm;
+    const dEl = $('#cl-km-delta'), hint = $('#cl-km-hint');
+    if (!d) {
+      if (dEl) { dEl.textContent = '—'; dEl.className = 'text-[12px] font-bold text-slate-400'; }
+      if (hint) { hint.textContent = 'Ingresa el odómetro actual del vehículo.'; hint.className = 'text-[12px] text-slate-400 mt-2'; }
+    } else if (delta < 0) {
+      if (dEl) { dEl.textContent = 'Revisar'; dEl.className = 'text-[12px] font-bold text-rose-500'; }
+      if (hint) { hint.textContent = `El km final no puede ser menor a ${openKm.toLocaleString('es-CO')}.`; hint.className = 'text-[12px] text-rose-500 mt-2'; }
+    } else {
+      if (dEl) { dEl.textContent = '+' + delta.toLocaleString('es-CO') + ' km'; dEl.className = 'text-[12px] font-bold text-emerald-600'; }
+      if (hint) {
+        const warn = delta > 1500 ? ' · <span class="text-amber-600 font-semibold">¿km muy alto? verifica</span>' : ' · <span class="text-brand-600 font-semibold">suma a tus recompensas 🎁</span>';
+        hint.innerHTML = `+<strong>${delta.toLocaleString('es-CO')} km</strong> recorridos${warn}`;
+        hint.className = 'text-[12px] text-slate-500 mt-2';
+      }
+    }
+    updateCloseConfirm();
+  }
+
+  function setCloseNovedad(on) { sf.close.novedad = on; if (!on) { sf.close.novedadText = ''; } renderClose(); }
+
+  async function onAddCloseMedia(input, kind) {
+    const f = input.files && input.files[0]; input.value = '';
+    if (!f) return;
+    try {
+      if (kind === 'photo') {
+        const blob = await compressPhoto(f);
+        sf.close.media.push({ kind: 'photo', blob, url: URL.createObjectURL(blob), size: blob.size });
+      } else {
+        if (f.size > 25 * 1024 * 1024) { sfToast('El video es muy pesado. Graba uno más corto.'); return; }
+        sf.close.media.push({ kind: 'video', blob: f, url: URL.createObjectURL(f), size: f.size });
+      }
+      renderClose();
+    } catch (e) { console.error(e); sfToast('No se pudo agregar la evidencia.'); }
+  }
+  function rmCloseMedia(i) { const m = sf.close.media[i]; if (m && m.url) URL.revokeObjectURL(m.url); sf.close.media.splice(i, 1); renderClose(); }
+
+  async function onAddReceipt(input) {
+    const f = input.files && input.files[0]; input.value = '';
+    if (!f) return;
+    try {
+      const blob = await compressPhoto(f);
+      sf.close.receipts.push({ blob, url: URL.createObjectURL(blob), amount: 0 });
+      renderClose();
+    } catch (e) { console.error(e); sfToast('No se pudo agregar el comprobante.'); }
+  }
+  function onReceiptAmount(i, inp) {
+    const d = inp.value.replace(/\D/g, '');
+    const n = d ? parseInt(d, 10) : 0;
+    inp.value = n ? n.toLocaleString('es-CO') : '';
+    if (sf.close.receipts[i]) sf.close.receipts[i].amount = n;
+    updateCloseConfirm();
+  }
+  function rmReceipt(i) { const r = sf.close.receipts[i]; if (r && r.url) URL.revokeObjectURL(r.url); sf.close.receipts.splice(i, 1); renderClose(); }
+
+  function renderClose() {
+    if (sf.close.done) { renderCloseDone(); return; }
+    const wiz = $('#shift-wizard');
+    const sh = sf.activeShift || {};
+    const v = sh.vehicles || {};
+    const openKm = closeOpenKm();
+
+    const mediaThumbs = sf.close.media.map((m, i) => `
+      <div class="relative aspect-square rounded-xl overflow-hidden border border-slate-200">
+        ${m.kind === 'photo' ? `<img src="${m.url}" class="w-full h-full object-cover">`
+          : `<video src="${m.url}" class="w-full h-full object-cover" muted></video><span class="absolute inset-0 flex items-center justify-center text-white text-xl pointer-events-none">▶</span>`}
+        <button data-rm-media="${i}" class="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-[11px] leading-none flex items-center justify-center">✕</button>
+      </div>`).join('');
+
+    const receiptRows = sf.close.receipts.map((r, i) => `
+      <div class="flex gap-3 items-center rounded-xl bg-white border border-slate-200 p-2.5">
+        <img src="${r.url}" class="w-14 h-14 rounded-lg object-cover border border-slate-200 shrink-0">
+        <div class="flex-1 min-w-0">
+          <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Valor pagado</p>
+          <div class="flex items-center gap-1 mt-0.5"><span class="text-slate-400 font-bold text-sm">$</span>
+            <input type="tel" inputmode="numeric" placeholder="0" data-receipt-amt="${i}" value="${r.amount ? r.amount.toLocaleString('es-CO') : ''}"
+              class="w-full text-base font-extrabold text-ink bg-transparent focus:outline-none placeholder:text-slate-300 tabular-nums"></div>
+        </div>
+        <button data-rm-receipt="${i}" class="w-8 h-8 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center shrink-0 active:scale-95">🗑</button>
+      </div>`).join('');
+
+    wiz.innerHTML = `<div class="max-w-lg mx-auto min-h-screen flex flex-col bg-slate-50">
+      <div class="px-5 pt-4 pb-2" style="padding-top:calc(16px + env(safe-area-inset-top));">
+        <div class="flex items-center justify-between mb-3">
+          <button id="cl-back" class="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 active:scale-95">✕</button>
+          <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-600">Cierre de turno</span>
+          <span class="w-9"></span>
+        </div>
+        <h1 class="text-2xl font-extrabold text-ink leading-tight">Cerrar turno</h1>
+        <p class="text-sm text-slate-500 mt-1">${esc(v.internal_code || v.license_plate || 'Vehículo')} · ${fmtElapsed(sh.start_at)} trabajado</p>
+      </div>
+      <div class="flex-1 px-5 py-3 pb-40 space-y-5">
+
+        <section>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">Kilometraje final</h3>
+            <span id="cl-km-delta" class="text-[12px] font-bold text-slate-400">—</span>
+          </div>
+          <div class="rounded-2xl bg-white border border-slate-200 p-4">
+            <div class="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-slate-400"><span>Inicio del turno</span><span>Ahora</span></div>
+            <div class="flex items-center gap-3 mt-1.5">
+              <span class="text-base text-slate-400 tabular-nums">${openKm.toLocaleString('es-CO')}</span>
+              <div class="flex-1 border-t-2 border-dashed border-slate-200"></div>
+              <div class="flex items-baseline gap-1">
+                <input id="cl-km" type="tel" inputmode="numeric" placeholder="${(openKm + 280).toLocaleString('es-CO')}" value="${sf.close.km ? Number(sf.close.km).toLocaleString('es-CO') : ''}"
+                  class="w-28 text-right text-2xl font-extrabold text-ink bg-transparent focus:outline-none placeholder:text-slate-300 tabular-nums border-b-2 border-brand-200 focus:border-brand-500">
+                <span class="text-sm font-bold text-slate-400">km</span>
+              </div>
+            </div>
+            <p id="cl-km-hint" class="text-[12px] text-slate-400 mt-2">Ingresa el odómetro actual del vehículo.</p>
+          </div>
+        </section>
+
+        <section>
+          <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500 mb-2">¿Tuviste alguna novedad?</h3>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="cl-nov-no" class="rounded-xl border-2 py-3 text-sm font-bold flex items-center justify-center gap-2 ${!sf.close.novedad ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'}">✓ Sin novedades</button>
+            <button id="cl-nov-si" class="rounded-xl border-2 py-3 text-sm font-bold flex items-center justify-center gap-2 ${sf.close.novedad ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-slate-200 bg-white text-slate-500'}">⚠ Reportar</button>
+          </div>
+          ${sf.close.novedad ? `<div class="pt-3 space-y-3">
+            <textarea id="cl-nov-text" rows="3" placeholder="Describe la novedad: qué pasó, cuándo y dónde…" class="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:border-brand-400 resize-none">${esc(sf.close.novedadText)}</textarea>
+            <div>
+              <p class="text-[12px] font-semibold text-slate-500 mb-2">Evidencia (foto o video corto)</p>
+              <div class="grid grid-cols-4 gap-2">
+                ${mediaThumbs}
+                <button id="cl-add-photo" class="aspect-square rounded-xl border-2 border-dashed border-slate-300 bg-white flex flex-col items-center justify-center gap-1 text-slate-400 active:scale-95"><span class="text-lg">📷</span><span class="text-[9px] font-bold">Foto</span></button>
+                <button id="cl-add-video" class="aspect-square rounded-xl border-2 border-dashed border-slate-300 bg-white flex flex-col items-center justify-center gap-1 text-slate-400 active:scale-95"><span class="text-lg">🎥</span><span class="text-[9px] font-bold">Video</span></button>
+              </div>
+              <input id="cl-file-photo" type="file" accept="image/*" capture="environment" class="hidden">
+              <input id="cl-file-video" type="file" accept="video/*" capture="environment" class="hidden">
+            </div>
+          </div>` : ''}
+        </section>
+
+        <section>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">Comprobantes de tanqueo <span class="text-rose-500">*</span></h3>
+            <span id="cl-fuel-total" class="text-[12px] font-bold text-slate-400">$${fuelTotal().toLocaleString('es-CO')}</span>
+          </div>
+          <p class="text-[12px] ${sf.close.receipts.length ? 'text-slate-500' : 'text-rose-600 font-semibold'} mb-3 -mt-1">${sf.close.receipts.length ? 'Adjunta los recibos de gasolina pagados en el turno (foto + valor).' : 'Obligatorio: adjunta al menos un recibo de gasolina (foto + valor) para cerrar el turno.'}</p>
+          <div class="space-y-2.5">${receiptRows}</div>
+          <button id="cl-add-receipt" class="mt-2.5 w-full rounded-xl border-2 border-dashed border-brand-300 bg-brand-50 text-brand-700 font-bold py-3 text-sm flex items-center justify-center gap-2 active:scale-[.98]">＋ Agregar comprobante</button>
+          <input id="cl-file-receipt" type="file" accept="image/*" capture="environment" class="hidden">
+        </section>
+
+        <label class="flex gap-3 items-start rounded-xl bg-white border border-slate-200 px-3.5 py-3 cursor-pointer">
+          <input id="cl-attest" type="checkbox" class="mt-0.5 w-5 h-5 accent-brand-600 shrink-0" ${sf.close.attest ? 'checked' : ''}>
+          <span class="text-[12.5px] text-slate-600 leading-snug">Confirmo que la información del cierre (kilometraje, novedades y comprobantes) es correcta.</span>
+        </label>
+      </div>
+      <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-5 py-3 z-10" style="padding-bottom:calc(12px + env(safe-area-inset-bottom));">
+        <div class="max-w-lg mx-auto">
+          <p id="cl-state" class="text-xs text-slate-500 text-center mb-1.5"></p>
+          <button id="cl-confirm" class="w-full bg-brand text-white text-base font-extrabold py-3.5 rounded-xl shadow-brand active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none" disabled>Confirmar cierre de turno</button>
+        </div>
+      </div>
+    </div>`;
+
+    $('#cl-back').addEventListener('click', () => { stopElapsedTimer(); closeWizard(); renderCard(); });
+    $('#cl-km').addEventListener('input', (e) => onCloseKm(e.target));
+    $('#cl-nov-no').addEventListener('click', () => setCloseNovedad(false));
+    $('#cl-nov-si').addEventListener('click', () => setCloseNovedad(true));
+    $('#cl-attest').addEventListener('change', (e) => { sf.close.attest = e.target.checked; updateCloseConfirm(); });
+    $('#cl-confirm').addEventListener('click', submitClose);
+    const ntext = $('#cl-nov-text'); if (ntext) ntext.addEventListener('input', (e) => { sf.close.novedadText = e.target.value; updateCloseConfirm(); });
+    const ap = $('#cl-add-photo'); if (ap) ap.addEventListener('click', () => $('#cl-file-photo').click());
+    const av = $('#cl-add-video'); if (av) av.addEventListener('click', () => $('#cl-file-video').click());
+    const fp = $('#cl-file-photo'); if (fp) fp.addEventListener('change', (e) => onAddCloseMedia(e.target, 'photo'));
+    const fv = $('#cl-file-video'); if (fv) fv.addEventListener('change', (e) => onAddCloseMedia(e.target, 'video'));
+    $('#cl-add-receipt').addEventListener('click', () => $('#cl-file-receipt').click());
+    $('#cl-file-receipt').addEventListener('change', (e) => onAddReceipt(e.target));
+    wiz.querySelectorAll('[data-rm-media]').forEach(b => b.addEventListener('click', () => rmCloseMedia(Number(b.dataset.rmMedia))));
+    wiz.querySelectorAll('[data-rm-receipt]').forEach(b => b.addEventListener('click', () => rmReceipt(Number(b.dataset.rmReceipt))));
+    wiz.querySelectorAll('[data-receipt-amt]').forEach(inp => inp.addEventListener('input', (e) => onReceiptAmount(Number(inp.dataset.receiptAmt), e.target)));
+    updateCloseConfirm();
+  }
+
+  async function submitClose() {
+    if (!closeAllValid() || sf.close.saving) return;
+    sf.close.saving = true;
+    const btn = $('#cl-confirm'); if (btn) btn.disabled = true;
+    const setState = (t) => { const e = $('#cl-state'); if (e) e.textContent = t; };
+    const sh = sf.activeShift;
+    const org = sf.profile.organization_id;
+    const today = new Date().toISOString().slice(0, 10);
+    const closingKm = closeKmNum();
+    try {
+      const mediaPaths = [];
+      if (sf.close.novedad) {
+        for (let i = 0; i < sf.close.media.length; i++) {
+          const m = sf.close.media[i];
+          setState(`Subiendo evidencia (${i + 1}/${sf.close.media.length})…`);
+          const ext = m.kind === 'video' ? 'mp4' : 'jpg';
+          const path = `${org}/${sh.vehicle_id}/${today}/close-${sh.id}/media-${i + 1}.${ext}`;
+          await Api.uploadShiftFile(path, m.blob, m.kind === 'video' ? (m.blob.type || 'video/mp4') : 'image/jpeg');
+          mediaPaths.push(path);
+        }
+      }
+      if (sf.close.receipts.length) {
+        const rows = [];
+        for (let i = 0; i < sf.close.receipts.length; i++) {
+          const r = sf.close.receipts[i];
+          setState(`Subiendo comprobante (${i + 1}/${sf.close.receipts.length})…`);
+          const path = `${org}/${sh.vehicle_id}/${today}/close-${sh.id}/receipt-${i + 1}.jpg`;
+          await Api.uploadShiftFile(path, r.blob, 'image/jpeg');
+          rows.push({ organization_id: org, shift_id: sh.id, vehicle_id: sh.vehicle_id, driver_id: sf.driverId, amount_cop: r.amount, storage_path: path });
+        }
+        await Api.addFuelReceipts(rows);
+      }
+      setState('Cerrando turno…');
+      const res = await Api.closeShift(sh.id, {
+        closingKm, hasNovedad: sf.close.novedad, novedadText: sf.close.novedadText, severity: sf.close.severity, mediaPaths,
+      });
+      // ¿El vehículo quedó en cambio de aceite al cerrar? (para avisarle al conductor)
+      let vehBlocked = false;
+      try { vehBlocked = (await Api.getVehicleStatus(sh.vehicle_id)) === 'blocked'; } catch (e) { /* */ }
+      sf.close.summary = {
+        kmDriven: (res && res.km_driven != null) ? res.km_driven : Math.max(0, closingKm - (Number(sh.opening_km) || 0)),
+        duration: fmtElapsed(sh.start_at),
+        novedad: sf.close.novedad,
+        receipts: sf.close.receipts.length,
+        fuel: fuelTotal(),
+        vehBlocked,
+      };
+      sf.close.done = true;
+      sf.activeShift = null;
+      renderClose();
+    } catch (e) {
+      console.error(e);
+      sf.close.saving = false;
+      if (btn) btn.disabled = false;
+      setState('');
+      const msg = (e && e.message) || 'error';
+      if (/CLOSING_KM_LT_OPENING/.test(msg)) sfToast('El km final no puede ser menor al de apertura.');
+      else if (/Failed to fetch|NetworkError/.test(msg)) sfToast('Sin conexión. Verifica tu señal y toca de nuevo: el avance se conserva.');
+      else sfToast('No se pudo cerrar el turno: ' + msg);
+    }
+  }
+
+  function renderCloseDone() {
+    const wiz = $('#shift-wizard');
+    const s = sf.close.summary || {};
+    wiz.innerHTML = `<div class="max-w-lg mx-auto min-h-screen flex flex-col items-center justify-center text-center px-8 bg-slate-50">
+      <div class="w-20 h-20 rounded-full bg-emerald-100 text-emerald-600 text-4xl flex items-center justify-center mb-5">✓</div>
+      <h1 class="text-2xl font-extrabold text-ink">Turno cerrado</h1>
+      <p class="text-[15px] text-slate-500 mt-2 leading-relaxed max-w-xs">${esc(s.duration || '')} en ruta. Tu reporte de cierre se envió al administrador.</p>
+      ${s.vehBlocked ? `<div class="mt-5 w-full max-w-xs rounded-xl bg-amber-50 border border-amber-300 px-4 py-3 text-[13px] text-amber-800 text-left flex gap-2"><span>🛢️</span><span>El vehículo entró a <b>cambio de aceite</b>. No estará disponible para iniciar turno hasta que el administrador lo registre.</span></div>` : ''}
+      <div class="mt-6 w-full max-w-xs rounded-2xl bg-white border border-slate-200 shadow-card divide-y divide-slate-100 text-left">
+        <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Km recorridos</span><span class="font-bold text-emerald-600">+${(s.kmDriven || 0).toLocaleString('es-CO')} km</span></div>
+        <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Duración</span><span class="font-bold text-ink">${esc(s.duration || '—')}</span></div>
+        <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Novedades</span><span class="font-bold text-ink">${s.novedad ? '1 reportada' : 'Ninguna'}</span></div>
+        <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Comprobantes</span><span class="font-bold text-ink">${s.receipts || 0}${s.fuel ? ' · $' + s.fuel.toLocaleString('es-CO') : ''}</span></div>
+      </div>
+      <button id="cl-done-btn" class="mt-8 px-6 py-3 rounded-xl bg-brand text-white shadow-brand font-bold active:scale-[0.98] transition">Volver al inicio</button>
+    </div>`;
+    $('#cl-done-btn').addEventListener('click', () => {
+      sf.close.media.forEach(m => m && m.url && URL.revokeObjectURL(m.url));
+      sf.close.receipts.forEach(r => r && r.url && URL.revokeObjectURL(r.url));
+      sf.close = newCloseState();
+      closeWizard();
+      renderCard();
+    });
+  }
+
+  // ====================================================================
+  // Inicio diferido (inspección después) — ventana horaria + plazo
+  // ====================================================================
+  function fmtGrace(min) {
+    const m = Number(min) || 90;
+    return m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}` : `${m} min`;
+  }
+  function fastStartEligible() {
+    const s = sf.settings; if (!s || s.fast_start_enabled === false) return false;
+    const from = s.fast_start_from_hour != null ? s.fast_start_from_hour : 12;
+    const to = s.fast_start_to_hour != null ? s.fast_start_to_hour : 16;
+    const h = new Date().getHours();          // hora del dispositivo (el servidor revalida)
+    return h >= from && h < to;
+  }
+
+  async function onFastStart() {
+    const v = selectedVehicle(); if (!v) return;
+    const btn = $('#sf-fast'); if (btn) { btn.disabled = true; btn.textContent = 'Reservando…'; }
+    try {
+      const res = await Api.reserveVehicleForShift(v.id);
+      sf.reuseShiftId = (res && res.shift_id) || sf.reuseShiftId;
+      sf.myReservedVehicleId = v.id;
+      renderFastKm();
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = '⚡ Iniciar ahora · inspección después'; }
+      const msg = (e && e.message) || '';
+      if (/RESERVED_BY_ANOTHER|IN_USE/.test(msg)) { sfToast('Otro conductor tomó ese vehículo. Elige otro.'); sf.vehicleId = null; try { sf.vehicles = await Api.listVehiclesForShift(); } catch (_) { /* */ } render(); }
+      else sfToast('No se pudo iniciar: ' + msg);
+    }
+  }
+
+  function renderFastKm() {
+    const wiz = $('#shift-wizard'); const v = selectedVehicle() || {};
+    const grace = fmtGrace(sf.settings && sf.settings.inspection_grace_minutes);
+    wiz.innerHTML = `<div class="max-w-lg mx-auto min-h-screen flex flex-col bg-slate-50">
+      <div class="px-5 pt-4 pb-2" style="padding-top:calc(16px + env(safe-area-inset-top));">
+        <div class="flex items-center justify-between mb-3">
+          <button id="fk-back" class="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 active:scale-95">←</button>
+          <span class="text-[11px] font-bold uppercase tracking-wider text-brand-600">Inicio rápido</span><span class="w-9"></span>
+        </div>
+        <h1 class="text-2xl font-extrabold text-ink leading-tight">Iniciar ahora</h1>
+        <p class="text-sm text-slate-500 mt-1">${esc(v.internal_code || v.license_plate || 'Vehículo')} · la inspección la haces en ${esc(grace)}.</p>
+      </div>
+      <div class="flex-1 px-5 py-3 space-y-4">
+        <div class="rounded-2xl bg-white border border-slate-200 p-4">
+          <label class="block text-[13px] font-bold text-slate-500 mb-2">Kilometraje de salida</label>
+          <div class="flex items-baseline gap-1"><input id="fk-km" type="tel" inputmode="numeric" placeholder="Ej: 128.450" class="w-full text-2xl font-extrabold text-ink bg-transparent focus:outline-none placeholder:text-slate-300 tabular-nums border-b-2 border-brand-200 focus:border-brand-500"><span class="text-sm font-bold text-slate-400">km</span></div>
+        </div>
+        <div class="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-2.5 text-[12.5px] text-amber-800 flex gap-2"><span>⏳</span><span>Tendrás <b>${esc(grace)}</b> para hacer la inspección. Si no la haces a tiempo, será un strike.</span></div>
+      </div>
+      <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-5 py-3 z-10" style="padding-bottom:calc(12px + env(safe-area-inset-bottom));">
+        <div class="max-w-lg mx-auto"><p id="fk-state" class="text-xs text-slate-500 text-center mb-1.5"></p>
+        <button id="fk-confirm" class="w-full bg-brand text-white text-base font-extrabold py-3.5 rounded-xl shadow-brand active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none" disabled>Iniciar turno</button></div>
+      </div>
+    </div>`;
+    const kmEl = $('#fk-km'); const cf = $('#fk-confirm');
+    kmEl.addEventListener('input', () => { const d = kmEl.value.replace(/\D/g, ''); kmEl.value = d ? Number(d).toLocaleString('es-CO') : ''; sf.km = d; if (cf) cf.disabled = !(d && Number(d) > 0); });
+    $('#fk-back').addEventListener('click', () => { sf.step = 0; render(); });
+    cf.addEventListener('click', submitFastStart);
+  }
+
+  async function submitFastStart() {
+    const km = Number(String(sf.km).replace(/\D/g, '')); if (!(km > 0) || sf.saving) return;
+    sf.saving = true;
+    const cf = $('#fk-confirm'); if (cf) cf.disabled = true;
+    const setState = (t) => { const e = $('#fk-state'); if (e) e.textContent = t; };
+    try {
+      setState('Iniciando turno…');
+      const res = await Api.startShiftDeferred(sf.reuseShiftId, km);
+      sf.reuseShiftId = null; sf.saving = false;
+      sf.fastDue = res && res.inspection_due_at;
+      sf.done = 'deferred';
+      render();
+    } catch (e) {
+      sf.saving = false; if (cf) cf.disabled = false; setState('');
+      const msg = (e && e.message) || '';
+      if (/NOT_ALLOWED_NOW/.test(msg)) sfToast('El inicio rápido solo está disponible en la franja configurada.');
+      else if (/DISABLED/.test(msg)) sfToast('El inicio rápido no está habilitado por el admin.');
+      else if (/VEHICLE_IN_USE|NOT_OPERABLE/.test(msg)) sfToast('El vehículo ya no está disponible.');
+      else sfToast('No se pudo iniciar: ' + msg);
+    }
+  }
+
+  // Completar la inspección de un turno que arrancó diferido (turno ya activo).
+  async function openCompletion(shift) {
+    stopElapsedTimer();
+    sf.completing = true;
+    sf.reuseShiftId = shift.id;
+    sf.km = String(shift.opening_km || '');
+    const vv = shift.vehicles || {};
+    sf.vehicles = [{ id: shift.vehicle_id, internal_code: vv.internal_code, license_plate: vv.license_plate, brand: vv.brand, model: vv.model }];
+    sf.vehicleId = shift.vehicle_id;
+    sf.checklist = {}; sf.photos = {}; sf.extraPhotos = []; sf.severity = null; sf.note = ''; sf.isApt = true; sf.signed = false; sf.saving = false; sf.done = null;
+    const wiz = $('#shift-wizard'); wiz.classList.remove('hidden'); document.body.style.overflow = 'hidden';
+    const nav = document.getElementById('driver-nav'); sf._navWasShown = !!(nav && nav.classList.contains('show')); if (sf._navWasShown) nav.classList.remove('show');
+    document.getElementById('driver-save-bar')?.classList.add('hidden');
+    sf.step = 1; // arranca en el checklist (el vehículo ya está)
+    render();
   }
 
   window.ShiftFlow = { init, refresh: renderCard };

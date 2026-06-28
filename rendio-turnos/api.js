@@ -575,7 +575,9 @@
     const sel = cols => sb.from('app_settings').select(cols).eq('id', 'singleton').maybeSingle();
     // Fallback en cascada: de más completo a más básico, así el código tolera
     // migraciones no aplicadas (0014 reopen_*, 0025 coord_slots/shift_hours, 0027 auto_close_hours).
-    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours');
+    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes');
+    if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit'));
+    if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots'));
@@ -588,6 +590,12 @@
       coord_slots: (data && data.coord_slots != null) ? data.coord_slots : 1,
       shift_hours: (data && data.shift_hours != null) ? data.shift_hours : 12,
       auto_close_hours: (data && data.auto_close_hours != null) ? data.auto_close_hours : 14,
+      reservation_idle_minutes: (data && data.reservation_idle_minutes != null) ? data.reservation_idle_minutes : 60,
+      strike_limit: (data && data.strike_limit != null) ? data.strike_limit : 3,
+      fast_start_enabled: (data && data.fast_start_enabled != null) ? data.fast_start_enabled : true,
+      fast_start_from_hour: (data && data.fast_start_from_hour != null) ? data.fast_start_from_hour : 12,
+      fast_start_to_hour: (data && data.fast_start_to_hour != null) ? data.fast_start_to_hour : 16,
+      inspection_grace_minutes: (data && data.inspection_grace_minutes != null) ? data.inspection_grace_minutes : 90,
     };
   }
 
@@ -600,10 +608,18 @@
     };
     const upd = cols => sb.from('app_settings').update(cols).eq('id', 'singleton');
     // Intenta con las columnas nuevas; cae en cascada si la migración no está
-    // (0027 auto_close_hours → 0025 coord_slots/shift_hours → base).
-    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours });
+    // (0037 reservation_idle/strike_limit → 0027 auto_close_hours → 0025 coord/shift → base).
+    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit, fast_start_enabled: s.fast_start_enabled, fast_start_from_hour: s.fast_start_from_hour, fast_start_to_hour: s.fast_start_to_hour, inspection_grace_minutes: s.inspection_grace_minutes });
+    if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit }));
+    if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours }));
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours }));
     if (error) ({ error } = await upd(base));
+    if (error) throw error;
+  }
+
+  // Actualiza un vehículo (admin). RLS: p_vehicles_admin_mutate.
+  async function updateVehicle(id, patch) {
+    const { error } = await sb.from('vehicles').update(patch).eq('id', id);
     if (error) throw error;
   }
 
@@ -663,7 +679,7 @@
   async function getMyOpenShift(driverId) {
     const { data, error } = await sb
       .from('shifts')
-      .select('id, status, vehicle_id, start_at, opening_km, vehicles(internal_code, license_plate, brand, model)')
+      .select('id, status, vehicle_id, start_at, opening_km, inspection_due_at, vehicles(internal_code, license_plate, brand, model)')
       .eq('driver_id', driverId)
       .neq('status', 'closed')
       .order('created_at', { ascending: false })
@@ -753,6 +769,13 @@
     return data.id;
   }
 
+  // Estado actual de un vehículo (para saber si quedó en "cambio de aceite" al cerrar).
+  async function getVehicleStatus(id) {
+    const { data, error } = await sb.from('vehicles').select('status').eq('id', id).limit(1);
+    if (error) return null;
+    return (data && data[0]) ? data[0].status : null;
+  }
+
   async function uploadInspectionPhoto(path, blob) {
     const { error } = await sb.storage
       .from('inspections')
@@ -783,6 +806,65 @@
     if (error) throw error;
   }
 
+  // ---- Cierre de turno (Etapa 2) ----
+
+  // Subida genérica al bucket privado 'inspections' (fotos de cierre, video de
+  // novedad, comprobantes de tanqueo). contentType según el blob.
+  async function uploadShiftFile(path, blob, contentType) {
+    const { error } = await sb.storage
+      .from('inspections')
+      .upload(path, blob, { contentType: contentType || blob.type || 'application/octet-stream', upsert: true });
+    if (error) throw error;
+    return path;
+  }
+
+  // Inserta comprobantes de tanqueo de forma idempotente (no duplica en reintento).
+  async function addFuelReceipts(rows) {
+    if (!rows || !rows.length) return;
+    const shiftId = rows[0].shift_id;
+    const { data: existing } = await sb.from('fuel_receipts').select('storage_path').eq('shift_id', shiftId);
+    const have = new Set((existing || []).map(r => r.storage_path));
+    const fresh = rows.filter(r => !have.has(r.storage_path));
+    if (!fresh.length) return;
+    const { error } = await sb.from('fuel_receipts').insert(fresh);
+    if (error) throw error;
+  }
+
+  // SECURITY DEFINER: cierra el turno (inspección final + libera vehículo + novedad).
+  async function closeShift(shiftId, { closingKm, hasNovedad, novedadText, severity, mediaPaths } = {}) {
+    const { data, error } = await sb.rpc('close_shift', {
+      p_shift_id: shiftId,
+      p_closing_km: closingKm,
+      p_has_novedad: !!hasNovedad,
+      p_novedad_text: novedadText || null,
+      p_severity: severity || 'low',
+      p_media_paths: mediaPaths || [],
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  // Admin: todas las inspecciones de un turno (inicial + final) para la tarjeta.
+  async function listInspectionsByShift(shiftId) {
+    const { data, error } = await sb.from('inspections')
+      .select('id,kind,has_damage,checklist,notes,odometer_km,review_status,performed_at,' +
+              'inspection_photos(photo_type,storage_path,size_bytes)')
+      .eq('shift_id', shiftId)
+      .order('kind', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Comprobantes de tanqueo de un turno (conductor: los suyos; admin: de su org).
+  async function listFuelReceiptsForShift(shiftId) {
+    const { data, error } = await sb.from('fuel_receipts')
+      .select('id, amount_cop, storage_path, created_at')
+      .eq('shift_id', shiftId)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
   async function addIncident({ organizationId, reporterId, shiftId, vehicleId, category, severity, description }) {
     const { data, error } = await sb.from('incidents').insert({
       organization_id: organizationId,
@@ -802,6 +884,20 @@
     const { data, error } = await sb.rpc('start_shift', { p_shift_id: shiftId });
     if (error) throw error;
     return data;
+  }
+
+  // SECURITY DEFINER: inicia el turno SIN inspección (diferida), con plazo. Valida
+  // la ventana horaria con la hora del servidor.
+  async function startShiftDeferred(shiftId, openingKm) {
+    const { data, error } = await sb.rpc('start_shift_deferred', { p_shift_id: shiftId, p_opening_km: openingKm });
+    if (error) throw error;
+    return data;
+  }
+
+  // Limpia el plazo de inspección de un turno (al completar la inspección diferida).
+  async function clearInspectionDue(shiftId) {
+    const { error } = await sb.from('shifts').update({ inspection_due_at: null }).eq('id', shiftId);
+    if (error) throw error;
   }
 
   // SECURITY DEFINER: novedad grave → cierra el shift sin activar y deja el
@@ -959,6 +1055,127 @@
     }
   }
 
+  // ====================================================================
+  // Perfil del conductor (Fase B)
+  // ====================================================================
+  async function getMyFullProfile() {
+    const session = await getSession();
+    if (!session) return null;
+    const { data: p, error } = await sb.from('profiles')
+      .select('id, full_name, email, role, organization_id, is_active, phone, avatar_url, document_id, home_base')
+      .eq('id', session.user.id).single();
+    if (error) throw error;
+    let dp = null;
+    try {
+      const r = await sb.from('driver_profiles')
+        .select('id, license_number, license_expires_at, eps_provider, arl_provider')
+        .eq('profile_id', session.user.id).limit(1);
+      dp = (r.data && r.data[0]) || null;
+    } catch (e) { /* sin driver_profile */ }
+    return Object.assign({}, p, { driver: dp });
+  }
+
+  // Sube el avatar al bucket público 'profiles' (nombre = {uid}.jpg) y guarda la URL.
+  async function uploadMyAvatar(blob) {
+    const session = await getSession();
+    if (!session) throw new Error('NO_SESSION');
+    const path = `${session.user.id}.jpg`;
+    const { error } = await sb.storage.from('profiles').upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+    if (error) throw error;
+    const { data } = sb.storage.from('profiles').getPublicUrl(path);
+    const url = (data.publicUrl || '') + '?t=' + Date.now(); // cache-bust
+    const { error: e2 } = await sb.from('profiles').update({ avatar_url: url }).eq('id', session.user.id);
+    if (e2) throw e2;
+    return url;
+  }
+
+  // ====================================================================
+  // Recompensas por km (Fase D)
+  // ====================================================================
+  async function listRewards() {
+    const { data, error } = await sb.from('rewards')
+      .select('id, tier, km_threshold, title, description, active, sort_order')
+      .eq('active', true).order('km_threshold', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Turnos cerrados del conductor (para "Mi kilometraje" + total acumulado).
+  async function listMyClosedShifts(driverId) {
+    const { data, error } = await sb.from('shifts')
+      .select('id, start_at, end_at, opening_km, closing_km, vehicles(internal_code, license_plate)')
+      .eq('driver_id', driverId).eq('status', 'closed')
+      .not('closing_km', 'is', null)
+      .order('end_at', { ascending: false }).limit(90);
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Redención validada en servidor (km, recompensa activa, sin duplicado).
+  async function redeemReward(rewardId) {
+    const { data, error } = await sb.rpc('redeem_reward', { p_reward_id: rewardId });
+    if (error) throw error;
+    return data;
+  }
+
+  async function listMyRedemptions(driverId) {
+    const { data, error } = await sb.from('reward_redemptions')
+      .select('id, reward_id, status, requested_at, resolved_at')
+      .eq('driver_id', driverId).order('requested_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // ----- Admin: recompensas -----
+  async function createReward(row) {
+    const { data, error } = await sb.from('rewards').insert(row).select('id').single();
+    if (error) throw error;
+    return data.id;
+  }
+  async function updateReward(id, patch) {
+    const { error } = await sb.from('rewards').update(patch).eq('id', id);
+    if (error) throw error;
+  }
+  async function deleteReward(id) {
+    const { error } = await sb.from('rewards').delete().eq('id', id);
+    if (error) throw error;
+  }
+  async function listAllRewards() {
+    const { data, error } = await sb.from('rewards')
+      .select('id, tier, km_threshold, title, description, active, sort_order')
+      .order('km_threshold', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+  async function listRedemptionsAdmin(status) {
+    let q = sb.from('reward_redemptions')
+      .select('id, status, km_at_request, requested_at, resolved_at, notes, reward_id, ' +
+              'rewards(title, tier, km_threshold), driver_profiles(profiles(id, full_name))')
+      .order('requested_at', { ascending: false });
+    if (status) q = q.eq('status', status);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  }
+  async function resolveRedemption(id, status, notes) {
+    const session = await getSession();
+    const patch = (status === 'pending')
+      ? { status, notes: notes || null, resolved_at: null, resolved_by: null } // deshacer
+      : { status, notes: notes || null, resolved_at: new Date().toISOString(), resolved_by: session ? session.user.id : null };
+    const { error } = await sb.from('reward_redemptions').update(patch).eq('id', id);
+    if (error) throw error;
+  }
+  // Admin: turnos cerrados de toda la org (para km acumulado por conductor).
+  // Incluye driver_profiles.profile_id para poder agrupar por persona (la lista de
+  // Personal usa profile_id; los turnos usan driver_id = driver_profiles.id).
+  async function listClosedShiftsAdmin() {
+    const { data, error } = await sb.from('shifts')
+      .select('driver_id, opening_km, closing_km, driver_profiles(profile_id, profiles(full_name))')
+      .eq('status', 'closed').not('closing_km', 'is', null);
+    if (error) throw error;
+    return data || [];
+  }
+
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
@@ -975,10 +1192,13 @@
     listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
     savePushSubscription, deletePushSubscription, sendPush,
-    getMyDriverProfileId, listVehiclesForShift, createVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
+    getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
-    addIncident, startShift, abortShift, listActiveShifts, forceCloseShift,
+    addIncident, startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
+    getMyFullProfile, uploadMyAvatar,
+    listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
+    createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
   };
 })();

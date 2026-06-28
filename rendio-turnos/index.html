@@ -114,6 +114,10 @@
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
       <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
       <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+      <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5 6l-3 6v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3-6a2 2 0 0 0-1.8-1H6.8A2 2 0 0 0 5 6z"/></symbol>
+      <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M12 8S10.5 3 8 3a2.5 2.5 0 0 0 0 5zM12 8s1.5-5 4-5a2.5 2.5 0 0 1 0 5z"/></symbol>
+      <symbol id="i-medal" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6"/><path d="M12 11.5l1.2 2.4 2.6.4-1.9 1.8.4 2.6-2.3-1.2-2.3 1.2.4-2.6-1.9-1.8 2.6-.4z"/><path d="M8.5 8 6 3M15.5 8 18 3"/></symbol>
+      <symbol id="i-gem" viewBox="0 0 24 24"><path d="M6 3h12l3 6-9 12L3 9z"/><path d="M3 9h18M9 3 7.5 9 12 21M15 3l1.5 6L12 21"/></symbol>
       <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 7.5A9 9 0 1 1 12 3Z"/></symbol>
@@ -186,6 +190,7 @@
           <button data-tab="workers" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Personal</button>
           <button data-tab="settings" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Ajustes</button>
           <button data-tab="balance" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Balance</button>
+          <button data-tab="rewards" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Recompensas</button>
         </div>
       </nav>
     </header>
@@ -224,7 +229,7 @@
 
             <!-- Tarjeta 2: Disponibilidad — entra al módulo y revela la barra inferior -->
             <button id="driver-availability-card"
-                    class="tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-white border-2 border-slate-200 shadow-card">
+                    class="pc-in d2 tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-white border-2 border-slate-200 shadow-card">
               <div class="flex items-start justify-between">
                 <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl"><span class="float inline-block">📅</span></div>
                 <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-500 mt-1">Próxima semana</span>
@@ -307,6 +312,11 @@
           </div>
         </section>
 
+        <!-- Pestaña: Perfil -->
+        <section data-dtab="perfil" class="driver-panel hidden">
+          <div id="driver-profile-container"></div>
+        </section>
+
       </div>
       <!-- /driver-tabs-root -->
 
@@ -326,6 +336,7 @@
         <button data-dtab="avail" class="dnav-btn"><span class="dnav-ic">📅</span><span>Disponib.</span></button>
         <button data-dtab="schedule" class="dnav-btn"><span class="dnav-ic">🗓️</span><span>Mi horario</span></button>
         <button data-dtab="requests" class="dnav-btn"><span class="dnav-ic">🔁</span><span>Solicitudes</span></button>
+        <button data-dtab="perfil" class="dnav-btn"><span class="dnav-ic">👤</span><span>Perfil</span></button>
       </nav>
 
       <!-- =============== ADMIN GREETING (sibling de los paneles) =============== -->
@@ -336,6 +347,9 @@
 
       <!-- =============== ADMIN: SCHEDULE TAB (Tablero v4) =============== -->
       <section data-panel="schedule" class="hidden">
+        <!-- Vista MÓVIL de solo lectura (responsive del Horario). En computador se
+             oculta y se usa el Tablero drag&drop de abajo. La pinta renderScheduleMobile(). -->
+        <div id="schedule-mobile" data-theme="light"></div>
         <div id="schedule-board" data-theme="light">
           <header class="top">
             <div class="wm"><b>Rendio</b><i></i><s>Tablero</s></div>
@@ -513,6 +527,21 @@
               </div>
               <div class="set-row2" style="margin-top:14px">
                 <div class="set-field"><label>Auto-cierre de turno (horas)</label><input id="setting-auto-close-hours" class="set-input" type="number" min="1" max="72" /><div class="set-hint">Si un turno sigue activo más de X horas, se cierra solo y libera el vehículo (red de seguridad).</div></div>
+                <div class="set-field"><label>Liberar reserva abandonada (min)</label><input id="setting-reservation-idle" class="set-input" type="number" min="5" max="240" /><div class="set-hint">Si un conductor empieza la inspección y no avanza en X minutos, su reserva del vehículo se libera.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Strikes para suspender</label><input id="setting-strike-limit" class="set-input" type="number" min="1" max="10" /><div class="set-hint">Al acumular esta cantidad de strikes, el conductor queda suspendido la semana siguiente (automático).</div></div>
+                <div class="set-field"></div>
+              </div>
+              <div class="set-divider" style="margin:16px 0 4px"></div>
+              <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Inicio rápido (inspección diferida)</p>
+              <label class="set-field" style="flex-direction:row;align-items:center;gap:10px;cursor:pointer"><input id="setting-fast-start-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Permitir iniciar turno sin inspección (la hace dentro del plazo)</span></label>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Franja: desde (hora)</label><input id="setting-fast-start-from" class="set-input" type="number" min="0" max="23" /><div class="set-hint">Hora de inicio de la franja (0–23). Default 12.</div></div>
+                <div class="set-field"><label>Franja: hasta (hora)</label><input id="setting-fast-start-to" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Fin de la franja (exclusivo). Default 16 (4 p.m.).</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Plazo para la inspección (min)</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint">Si no la hace en este tiempo → strike automático. Default 90.</div></div>
                 <div class="set-field"></div>
               </div>
               <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
@@ -590,6 +619,10 @@
                 <div class="set-field"><label>Kilometraje actual</label><input class="set-input" id="new-veh-km" type="number" min="0" value="0" /></div>
               </div>
               <div class="set-grid2" style="margin-top:14px">
+                <div class="set-field"><label>Cambio de aceite cada (km)</label><input class="set-input" id="new-veh-interval" type="number" min="500" step="500" value="7000" /><div class="set-hint">Cada cuántos km toca cambio de aceite. Al cumplirse, el carro se bloquea hasta que se registre.</div></div>
+                <div class="set-field"><label>Último cambio de aceite (km)</label><input class="set-input" id="new-veh-lastmaint" type="number" min="0" placeholder="(usa el km actual)" /><div class="set-hint">Déjalo vacío para tomar el km actual.</div></div>
+              </div>
+              <div class="set-grid2" style="margin-top:14px">
                 <div class="set-field"><label>SOAT vence (opcional)</label><input class="set-input" id="new-veh-soat" type="date" /></div>
                 <div class="set-field"><label>Técnico-mecánica vence (opcional)</label><input class="set-input" id="new-veh-tecno" type="date" /></div>
               </div>
@@ -621,6 +654,11 @@
           <div class="bal-summary" id="balance-summary"></div>
           <div id="balance-table"></div>
         </div>
+      </section>
+
+      <!-- =============== ADMIN: RECOMPENSAS TAB =============== -->
+      <section data-panel="rewards" class="hidden">
+        <div id="rewards-ui" data-theme="light"><p class="set-hint" style="padding:16px">Cargando…</p></div>
       </section>
 
       <!-- =============== ADMIN: INSPECCIONES TAB (paleta limpia) ===============
