@@ -1183,7 +1183,8 @@
     renderBoardGrid();
     renderWorkerSummary();
     bindBoard();
-    renderScheduleMobile();   // vista móvil de solo lectura (responsive del Horario)
+    // Vista móvil de solo lectura (responsive). Aislada: si fallara, no rompe el Tablero.
+    try { renderScheduleMobile(); } catch (e) { console.error('schedule mobile render', e); }
   }
 
   // ====================================================================
