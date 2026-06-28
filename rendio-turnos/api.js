@@ -575,7 +575,8 @@
     const sel = cols => sb.from('app_settings').select(cols).eq('id', 'singleton').maybeSingle();
     // Fallback en cascada: de más completo a más básico, así el código tolera
     // migraciones no aplicadas (0014 reopen_*, 0025 coord_slots/shift_hours, 0027 auto_close_hours).
-    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit');
+    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes');
+    if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until'));
@@ -591,6 +592,10 @@
       auto_close_hours: (data && data.auto_close_hours != null) ? data.auto_close_hours : 14,
       reservation_idle_minutes: (data && data.reservation_idle_minutes != null) ? data.reservation_idle_minutes : 60,
       strike_limit: (data && data.strike_limit != null) ? data.strike_limit : 3,
+      fast_start_enabled: (data && data.fast_start_enabled != null) ? data.fast_start_enabled : true,
+      fast_start_from_hour: (data && data.fast_start_from_hour != null) ? data.fast_start_from_hour : 12,
+      fast_start_to_hour: (data && data.fast_start_to_hour != null) ? data.fast_start_to_hour : 16,
+      inspection_grace_minutes: (data && data.inspection_grace_minutes != null) ? data.inspection_grace_minutes : 90,
     };
   }
 
@@ -604,7 +609,8 @@
     const upd = cols => sb.from('app_settings').update(cols).eq('id', 'singleton');
     // Intenta con las columnas nuevas; cae en cascada si la migración no está
     // (0037 reservation_idle/strike_limit → 0027 auto_close_hours → 0025 coord/shift → base).
-    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit });
+    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit, fast_start_enabled: s.fast_start_enabled, fast_start_from_hour: s.fast_start_from_hour, fast_start_to_hour: s.fast_start_to_hour, inspection_grace_minutes: s.inspection_grace_minutes });
+    if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit }));
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours }));
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours }));
     if (error) ({ error } = await upd(base));
@@ -673,7 +679,7 @@
   async function getMyOpenShift(driverId) {
     const { data, error } = await sb
       .from('shifts')
-      .select('id, status, vehicle_id, start_at, opening_km, vehicles(internal_code, license_plate, brand, model)')
+      .select('id, status, vehicle_id, start_at, opening_km, inspection_due_at, vehicles(internal_code, license_plate, brand, model)')
       .eq('driver_id', driverId)
       .neq('status', 'closed')
       .order('created_at', { ascending: false })
@@ -878,6 +884,20 @@
     const { data, error } = await sb.rpc('start_shift', { p_shift_id: shiftId });
     if (error) throw error;
     return data;
+  }
+
+  // SECURITY DEFINER: inicia el turno SIN inspección (diferida), con plazo. Valida
+  // la ventana horaria con la hora del servidor.
+  async function startShiftDeferred(shiftId, openingKm) {
+    const { data, error } = await sb.rpc('start_shift_deferred', { p_shift_id: shiftId, p_opening_km: openingKm });
+    if (error) throw error;
+    return data;
+  }
+
+  // Limpia el plazo de inspección de un turno (al completar la inspección diferida).
+  async function clearInspectionDue(shiftId) {
+    const { error } = await sb.from('shifts').update({ inspection_due_at: null }).eq('id', shiftId);
+    if (error) throw error;
   }
 
   // SECURITY DEFINER: novedad grave → cierra el shift sin activar y deja el
@@ -1174,7 +1194,7 @@
     savePushSubscription, deletePushSubscription, sendPush,
     getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
-    addIncident, startShift, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
+    addIncident, startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
     getMyFullProfile, uploadMyAvatar,

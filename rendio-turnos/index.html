@@ -533,6 +533,17 @@
                 <div class="set-field"><label>Strikes para suspender</label><input id="setting-strike-limit" class="set-input" type="number" min="1" max="10" /><div class="set-hint">Al acumular esta cantidad de strikes, el conductor queda suspendido la semana siguiente (automático).</div></div>
                 <div class="set-field"></div>
               </div>
+              <div class="set-divider" style="margin:16px 0 4px"></div>
+              <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Inicio rápido (inspección diferida)</p>
+              <label class="set-field" style="flex-direction:row;align-items:center;gap:10px;cursor:pointer"><input id="setting-fast-start-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Permitir iniciar turno sin inspección (la hace dentro del plazo)</span></label>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Franja: desde (hora)</label><input id="setting-fast-start-from" class="set-input" type="number" min="0" max="23" /><div class="set-hint">Hora de inicio de la franja (0–23). Default 12.</div></div>
+                <div class="set-field"><label>Franja: hasta (hora)</label><input id="setting-fast-start-to" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Fin de la franja (exclusivo). Default 16 (4 p.m.).</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Plazo para la inspección (min)</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint">Si no la hace en este tiempo → strike automático. Default 90.</div></div>
+                <div class="set-field"></div>
+              </div>
               <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
             </div>
           </div>

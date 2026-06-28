@@ -2499,6 +2499,10 @@
     if ($('#setting-auto-close-hours')) $('#setting-auto-close-hours').value = state.settings.auto_close_hours != null ? state.settings.auto_close_hours : 14;
     if ($('#setting-reservation-idle')) $('#setting-reservation-idle').value = state.settings.reservation_idle_minutes != null ? state.settings.reservation_idle_minutes : 60;
     if ($('#setting-strike-limit')) $('#setting-strike-limit').value = state.settings.strike_limit != null ? state.settings.strike_limit : 3;
+    if ($('#setting-fast-start-enabled')) $('#setting-fast-start-enabled').checked = state.settings.fast_start_enabled !== false;
+    if ($('#setting-fast-start-from')) $('#setting-fast-start-from').value = state.settings.fast_start_from_hour != null ? state.settings.fast_start_from_hour : 12;
+    if ($('#setting-fast-start-to')) $('#setting-fast-start-to').value = state.settings.fast_start_to_hour != null ? state.settings.fast_start_to_hour : 16;
+    if ($('#setting-inspection-grace')) $('#setting-inspection-grace').value = state.settings.inspection_grace_minutes != null ? state.settings.inspection_grace_minutes : 90;
     renderPriorityList();
     renderRulesEditor();
     renderVehiclesSettings();
@@ -2812,6 +2816,10 @@
       auto_close_hours: Math.min(72, Math.max(1, parseInt($('#setting-auto-close-hours') && $('#setting-auto-close-hours').value, 10) || 14)),
       reservation_idle_minutes: Math.min(240, Math.max(5, parseInt($('#setting-reservation-idle') && $('#setting-reservation-idle').value, 10) || 60)),
       strike_limit: Math.min(10, Math.max(1, parseInt($('#setting-strike-limit') && $('#setting-strike-limit').value, 10) || 3)),
+      fast_start_enabled: !!($('#setting-fast-start-enabled') && $('#setting-fast-start-enabled').checked),
+      fast_start_from_hour: Math.min(23, Math.max(0, parseInt($('#setting-fast-start-from') && $('#setting-fast-start-from').value, 10) || 12)),
+      fast_start_to_hour: Math.min(24, Math.max(1, parseInt($('#setting-fast-start-to') && $('#setting-fast-start-to').value, 10) || 16)),
+      inspection_grace_minutes: Math.min(480, Math.max(15, parseInt($('#setting-inspection-grace') && $('#setting-inspection-grace').value, 10) || 90)),
     };
     try {
       await Api.saveSettings(next);
