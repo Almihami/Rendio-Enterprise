@@ -260,13 +260,15 @@
       coordPm.forEach(a => { coordLoads.set(a.id, (coordLoads.get(a.id) || 0) + 1); });
       if (coordAm.length < COORD_SLOTS) warnings.push(`Falta líder de turno AM en ${DAY_LABELS_ES[day]} (todos pidieron descanso o no disponibilidad).`);
       if (coordPm.length < COORD_SLOTS) warnings.push(`Falta líder de turno PM en ${DAY_LABELS_ES[day]} (todos pidieron descanso o no disponibilidad).`);
-      // Si un CONDUCTOR coordina hoy: ese día NO maneja ni descansa (como Daniel).
+      // Un CONDUCTOR que lidera hoy SÍ puede además manejar (liderar ya no excluye
+      // conducir). Pero liderar tampoco es "descansar": el set se usa solo para que
+      // un líder que no maneja no caiga en el descanso (ver `rest` abajo).
       const coordDriversToday = new Set(
         [...coordAm, ...coordPm].map(a => a.id).filter(id => driverIds.has(id))
       );
 
       const morningEligible = drivers.filter(d =>
-        !coordDriversToday.has(d.id) && eligibleFor(d, day, 'am')
+        eligibleFor(d, day, 'am')
       );
       const morning = pickForShift(morningEligible, workerLoads, availability, day, 'am', settings.morningSlots, driverRank);
       morning.forEach(d => {
@@ -278,7 +280,7 @@
       }
 
       const afternoonEligible = drivers.filter(d =>
-        !usedToday.has(d.id) && !coordDriversToday.has(d.id) && eligibleFor(d, day, 'pm')
+        !usedToday.has(d.id) && eligibleFor(d, day, 'pm')
       );
       const afternoon = pickForShift(afternoonEligible, workerLoads, availability, day, 'pm', settings.afternoonSlots, driverRank);
       afternoon.forEach(d => {

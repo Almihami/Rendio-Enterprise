@@ -674,7 +674,10 @@
                 <h1>Inspecciones <span class="ct" id="insp-count">0</span></h1>
                 <p>Inspecciones de inicio de turno con <b>novedad reportada</b>. Las que salen sin problemas se aprueban solas — es revisión posterior, no frena al conductor.</p>
               </div>
-              <button class="btn ghost" id="insp-to-config"><svg class="icon"><use href="#i-sliders"/></svg>Configurar checklist</button>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn ghost" id="insp-to-novedades"><svg class="icon"><use href="#i-warn"/></svg>Novedades <span class="ct" id="insp-nov-ct">0</span></button>
+                <button class="btn ghost" id="insp-to-config"><svg class="icon"><use href="#i-sliders"/></svg>Configurar checklist</button>
+              </div>
             </div>
             <div class="seg" id="insp-filter">
               <button data-f="pending" class="on"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Pendientes <span class="n" data-c="pending">0</span></button>
@@ -690,6 +693,8 @@
           <div class="view" id="insp-v-detalle"></div>
           <!-- Vista: configurar checklist (la pinta renderInspChecklist) -->
           <div class="view" id="insp-v-config"></div>
+          <!-- Vista: novedades reportadas / incidents (la pinta renderNovedades) -->
+          <div class="view" id="insp-v-novedades"></div>
         </div>
         <div class="insp-lbx" id="insp-lbx"><button class="x" id="insp-lbx-close" aria-label="Cerrar">&times;</button><img id="insp-lbx-img" alt="Foto de inspección"></div>
       </section>

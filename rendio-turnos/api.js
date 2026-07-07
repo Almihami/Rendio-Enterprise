@@ -879,6 +879,46 @@
     return data.id;
   }
 
+  // Novedades/incidents para el admin: cola con estado + evidencia. `status`:
+  // 'open' | 'in_progress' | 'resolved' | 'all' (o nada = todas). Cascada por si el
+  // embed del reporter falla (dos FKs a profiles → hint por columna reporter_id).
+  async function listIncidents(status) {
+    const base = 'id,shift_id,vehicle_id,reporter_id,category,severity,status,description,' +
+      'photo_paths,resolution_notes,resolved_at,created_at,' +
+      'vehicles(internal_code,license_plate,brand,model)';
+    const run = (sel) => {
+      let q = sb.from('incidents').select(sel).order('created_at', { ascending: false }).limit(300);
+      if (status && status !== 'all') q = q.eq('status', status);
+      return q;
+    };
+    let { data, error } = await run(base + ',reporter:profiles!reporter_id(id,full_name)');
+    if (error) ({ data, error } = await run(base));
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Conteo rápido de novedades ABIERTAS (para el badge de la pestaña).
+  async function countOpenIncidents() {
+    const { count, error } = await sb.from('incidents')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'open');
+    if (error) throw error;
+    return count || 0;
+  }
+
+  // Cambia el estado de una novedad. Al resolver sella resolved_at + notas; al reabrir los limpia.
+  async function updateIncidentStatus(id, status, resolutionNotes) {
+    const patch = { status };
+    if (status === 'resolved') {
+      patch.resolved_at = new Date().toISOString();
+      if (resolutionNotes != null) patch.resolution_notes = resolutionNotes;
+    } else {
+      patch.resolved_at = null;
+    }
+    const { error } = await sb.from('incidents').update(patch).eq('id', id);
+    if (error) throw error;
+  }
+
   // SECURITY DEFINER: valida dueño + inspección + vehículo libre; marca in_use.
   async function startShift(shiftId) {
     const { data, error } = await sb.rpc('start_shift', { p_shift_id: shiftId });
@@ -1194,7 +1234,7 @@
     savePushSubscription, deletePushSubscription, sendPush,
     getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
-    addIncident, startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
+    addIncident, listIncidents, countOpenIncidents, updateIncidentStatus, startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
     getMyFullProfile, uploadMyAvatar,
