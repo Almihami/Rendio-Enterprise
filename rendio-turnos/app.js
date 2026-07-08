@@ -1297,6 +1297,9 @@
     const lanes = [];
     for (let i = 0; i < (s.morning_slots || 0); i++) lanes.push({ kind: 'morning', index: i, group: 'am' });
     for (let i = 0; i < (s.afternoon_slots || 0); i++) lanes.push({ kind: 'afternoon', index: i, group: 'pm' });
+    // Filas de líder SOLO para el vistazo del admin: reflejan a UNO de los
+    // conductores de la jornada (coord_am ⊆ morning, coord_pm ⊆ afternoon). NO
+    // son cupo aparte → dayCoverage las excluye (la cobertura sigue en 4/día).
     lanes.push({ kind: 'coord_am', index: 0, group: 'co' });
     lanes.push({ kind: 'coord_pm', index: 0, group: 'co' });
     return lanes;
@@ -1331,7 +1334,8 @@
     let n = 0;
     Scheduler.DAYS.forEach(day => {
       const d = state.schedule[day]; if (!d) return;
-      ['morning', 'afternoon', 'coord_am', 'coord_pm'].forEach(k => { if ((d[k] || []).includes(id)) n++; });
+      // Liderar no suma carga aparte: el líder ya está contado en su jornada.
+      ['morning', 'afternoon'].forEach(k => { if ((d[k] || []).includes(id)) n++; });
     });
     return n;
   }
@@ -1361,15 +1365,48 @@
   }
 
   function dayCoverage(dayKey) {
-    const lanes = boardLanes();
     const d = state.schedule?.[dayKey];
-    let filled = 0;
-    lanes.forEach(l => { if (d?.[l.kind]?.[l.index]) filled++; });
-    return { filled, total: lanes.length };
+    let filled = 0, total = 0;
+    boardLanes().forEach(l => {
+      if (isCoordKind(l.kind)) return; // el líder no es cupo aparte, ya conduce su jornada
+      total++;
+      if (d?.[l.kind]?.[l.index]) filled++;
+    });
+    return { filled, total };
+  }
+
+  // ---- Liderazgo: el líder es UNO de los conductores de la jornada ----
+  // coord_am ⊆ morning, coord_pm ⊆ afternoon (un id por jornada). Estas ayudas
+  // mantienen esa invariante y permiten marcar/quitar el líder desde la tarjeta.
+  const coordKeyOf = (kind) => kind === 'morning' ? 'coord_am' : kind === 'afternoon' ? 'coord_pm' : null;
+  function isLeaderCard(day, kind, id) {
+    const ck = coordKeyOf(kind); if (!ck) return false;
+    return (state.schedule?.[day]?.[ck] || []).includes(id);
+  }
+  // Quita del líder a quien ya no esté en su jornada (evita el "líder fantasma").
+  function cleanLeaders(day) {
+    const s = state.schedule?.[day]; if (!s) return;
+    const morn = new Set((s.morning || []).filter(Boolean));
+    const aft = new Set((s.afternoon || []).filter(Boolean));
+    s.coord_am = (s.coord_am || []).filter(id => morn.has(id));
+    s.coord_pm = (s.coord_pm || []).filter(id => aft.has(id));
+  }
+  function cleanAllLeaders() { if (state.schedule) Scheduler.DAYS.forEach(cleanLeaders); }
+  // Marca/desmarca a un conductor de la jornada como líder (toggle). Solo quien
+  // esté marcado como "Líder de turno" (can_coordinate) puede liderar.
+  function boardSetLeader(day, kind, id) {
+    const ck = coordKeyOf(kind); if (!ck) return;
+    ensureScheduleShape();
+    const drv = state.drivers.find(d => d.id === id);
+    if (!drv || !drv.can_coordinate) { flashBoard('Solo un conductor marcado como "Líder de turno" puede liderar la jornada.'); return; }
+    const cur = (state.schedule[day][ck] || [])[0] || null;
+    state.schedule[day][ck] = (cur === id) ? [] : [id]; // un líder por jornada
+    renderSchedule();
   }
 
   // ---- Render principal (reemplaza la tabla anterior) ----
   function renderSchedule() {
+    cleanAllLeaders();
     renderBoardChrome();
     renderKPIs();
     renderPool();
@@ -1410,18 +1447,17 @@
   function smDayConfCount(di) {
     const dayKey = Scheduler.DAYS[di]; const d = (state.schedule && state.schedule[dayKey]) || {}; let n = 0;
     smBands().forEach(b => (d[b.k] || []).forEach(id => { if (id && dayConflict(dayKey, id, b.k)) n++; }));
-    smCoordMembers(dayKey).forEach(m => { if (m.id && dayConflict(dayKey, m.id, m.kind)) n++; });
     return n;
   }
   function smTotals() { let f = 0, t = 0, conf = 0; for (let i = 0; i < 7; i++) { const c = smCov(i); f += c.filled; t += c.total; conf += smDayConfCount(i); } return { f, t, huecos: t - f, conf }; }
 
   function smArow(dayKey, id, kind, bandLabel) {
     if (!id) return `<div class="empty"><span class="ei"><svg class="icon" style="width:14px;height:14px"><use href="#i-plus"/></svg></span><div><b>Sin cubrir</b><span>${escapeHtml(bandLabel)} · cupo libre</span></div></div>`;
-    const conf = dayConflict(dayKey, id, kind); const soft = daySoft(dayKey, id, kind); const isCoord = isCoordKind(kind);
+    const conf = dayConflict(dayKey, id, kind); const soft = daySoft(dayKey, id, kind); const isLeader = isLeaderCard(dayKey, kind, id);
     const tag = conf ? `<span class="tag conf"><svg class="icon" style="width:11px;height:11px"><use href="#i-alert"/></svg>Conflicto</span>`
-      : isCoord ? `<span class="tag coord">Coordina</span>`
+      : isLeader ? `<span class="tag coord">★ Líder de turno</span>`
         : (soft ? `<span class="tag" style="background:var(--amber-soft);color:var(--amber)">Pidió descanso</span>` : '');
-    const sub = conf ? (conf === 'rule' ? 'Descanso fijo este día' : conf === 'unavailable' ? 'No disponible este día' : 'Doble turno este día') : bandLabel;
+    const sub = conf ? (conf === 'rule' ? 'Descanso fijo este día' : conf === 'unavailable' ? 'No disponible este día' : 'Doble turno este día') : (isLeader ? bandLabel + ' · Líder' : bandLabel);
     return `<div class="arow ${conf ? 'conf' : ''}"><span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nameOf(id)))}</span><div class="nm"><b>${escapeHtml(nameOf(id))}</b><span>${escapeHtml(sub)}</span></div>${tag}</div>`;
   }
   function smBandBlock(di, b) {
@@ -1451,8 +1487,8 @@
   function smRenderDia() {
     const el = $('#sm-scroll'); if (!el) return; const di = smState.sel; const ti = smTodayIndex(); const c = smCov(di); const wk = Scheduler.weekDates(state.currentWeek);
     el.innerHTML = `<div class="daytitle"><b>${SM_DOWLONG[di]}</b><span>${String(wk[di].dayNum).padStart(2, '0')}</span>${di === ti ? '<span class="tnow">Hoy</span>' : ''}</div>
-      ${smBands().map(b => smBandBlock(di, b)).join('')}${smCoordBlock(di)}
-      <div class="footnote">Asignación de la semana · <b>${c.filled}/${c.total} cupos</b> cubiertos este día.<br>Para editar el horario, abre el Tablero desde un computador.</div>`;
+      ${smBands().map(b => smBandBlock(di, b)).join('')}
+      <div class="footnote">El ★ marca al líder de cada jornada.<br>Asignación de la semana · <b>${c.filled}/${c.total} cupos</b> cubiertos este día.<br>Para editar el horario, abre el Tablero desde un computador.</div>`;
   }
   function smRenderSemana() {
     const el = $('#sm-scroll'); if (!el) return; const ti = smTodayIndex(); const wk = Scheduler.weekDates(state.currentWeek);
@@ -1460,11 +1496,11 @@
       const c = smCov(di); const cl = smCovClass(c.filled, c.total); const dayKey = Scheduler.DAYS[di]; const d = (state.schedule && state.schedule[dayKey]) || {};
       const bandRows = smBands().map(b => {
         let chips = ''; for (let i = 0; i < b.slots; i++) { const id = (d[b.k] || [])[i] || null;
-          chips += id ? `<span class="nchip ${dayConflict(dayKey, id, b.k) ? 'conf' : ''}"><span class="dd" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nameOf(id)))}</span>${escapeHtml(smFname(id))}</span>` : `<span class="nchip gap">Hueco</span>`; }
+          const lead = !!(id && isLeaderCard(dayKey, b.k, id));
+          chips += id ? `<span class="nchip ${lead ? 'coord' : ''} ${dayConflict(dayKey, id, b.k) ? 'conf' : ''}"><span class="dd" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nameOf(id)))}</span>${lead ? '★ ' : ''}${escapeHtml(smFname(id))}</span>` : `<span class="nchip gap">Hueco</span>`; }
         return `<div class="brow"><span class="blab">${b.short}</span><div class="chips">${chips}</div></div>`;
       }).join('');
-      const coordChips = smCoordMembers(dayKey).map(m => m.id ? `<span class="nchip coord ${dayConflict(dayKey, m.id, m.kind) ? 'conf' : ''}"><span class="dd" style="background:${colorOfId(m.id)}">${escapeHtml(initialsOf(nameOf(m.id)))}</span>${escapeHtml(smFname(m.id))}</span>` : `<span class="nchip gap">Hueco</span>`).join('');
-      return `<div class="wkcard ${di === ti ? 'today' : ''} ${smState.open.has(di) ? 'open' : ''}" data-sm-wk="${di}"><div class="wkc-h" data-sm-toggle="${di}"><div class="wd"><b>${String(dd.dayNum).padStart(2, '0')}</b><span>${SM_DOW[di]}</span></div>${di === ti ? '<span class="tag coord" style="margin-left:8px">Hoy</span>' : ''}<span class="cvpill ${cl}">${c.filled}/${c.total}</span><span class="chev"><svg class="icon"><use href="#i-chev"/></svg></span></div><div class="wkc-b">${bandRows}<div class="brow"><span class="blab">Coord</span><div class="chips">${coordChips}</div></div></div></div>`;
+      return `<div class="wkcard ${di === ti ? 'today' : ''} ${smState.open.has(di) ? 'open' : ''}" data-sm-wk="${di}"><div class="wkc-h" data-sm-toggle="${di}"><div class="wd"><b>${String(dd.dayNum).padStart(2, '0')}</b><span>${SM_DOW[di]}</span></div>${di === ti ? '<span class="tag coord" style="margin-left:8px">Hoy</span>' : ''}<span class="cvpill ${cl}">${c.filled}/${c.total}</span><span class="chev"><svg class="icon"><use href="#i-chev"/></svg></span></div><div class="wkc-b">${bandRows}</div></div>`;
     }).join('') + `<div class="footnote">Toca un día para ver el detalle. Para editar, usa el Tablero en computador.</div>`;
   }
   function smRenderBody() { smState.mode === 'dia' ? smRenderDia() : smRenderSemana(); }
@@ -1536,6 +1572,7 @@
       const day = state.schedule?.[d.key];
       if (day?.coord_am?.[0] && day?.coord_pm?.[0]) coordDays++;
       boardLanes().forEach(l => {
+        if (isCoordKind(l.kind)) return; // el líder ya se contó en su jornada
         const id = day?.[l.kind]?.[l.index];
         if (id && dayConflict(d.key, id, l.kind)) conf++;
       });
@@ -1569,9 +1606,8 @@
       const pct = Math.min(l / 5 * 100, 100);
       const cls = out ? 'out' : l >= 5 ? 'hi' : l <= 2 ? 'lo' : '';
       const mc = l >= 5 ? 'hi' : l <= 2 ? 'lo' : '';
-      const isFlex = (d.email || '').toLowerCase() === FLEX_COORD_EMAIL;
       const sub = out ? (isSuspendedId(d.id) ? 'Suspendido' : 'Fuera del corte')
-        : (isFlex ? 'Lidera (flex)' : d.can_coordinate ? 'Lidera' : 'Disponible');
+        : (d.can_coordinate ? 'Puede liderar' : 'Disponible');
       const hidden = filter && !(d.name || '').toLowerCase().includes(filter) ? ' hidden' : '';
       return `<div class="pcard ${cls}"${out ? '' : ' draggable="true"'} data-driver="${d.id}" data-src="pool"${hidden}>
         <span class="av" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span>
@@ -1614,25 +1650,48 @@
       week.forEach((d, di) => {
         const wknd = di >= 5 ? 'wknd' : '';
         const id = sched?.[d.key]?.[lane.kind]?.[lane.index] || null;
+        const coordLane = isCoordKind(lane.kind);
         let inner;
         if (id) {
           const hard = dayConflict(d.key, id, lane.kind);
           const soft = !hard && daySoft(d.key, id, lane.kind);
-          const cardCls = [
-            isCoordKind(lane.kind) ? 'coord' : '',
-            hard ? 'conf' : '',
-            soft ? 'soft' : '',
-            boardJustPlaced === `${d.key}-${lane.kind}-${lane.index}` ? 'just' : '',
-          ].filter(Boolean).join(' ');
           const nm = nameOf(id);
-          const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isCoordKind(lane.kind) ? 'Lidera' : BOARD_GROUP_LABEL[lane.group]);
-          inner = `<div class="asg ${cardCls}" draggable="true" data-driver="${id}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
-              <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
-              <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(subtxt)}</span></div>
-              <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
-            </div>`;
+          const justCls = boardJustPlaced === `${d.key}-${lane.kind}-${lane.index}` ? 'just' : '';
+          if (coordLane) {
+            // Fila de líder (vistazo admin): refleja al líder; su ★/cambio vive en la
+            // tarjeta de Mañana/Tarde. La X quita el liderazgo (no saca de la jornada).
+            const cardCls = ['coord', hard ? 'conf' : '', justCls].filter(Boolean).join(' ');
+            inner = `<div class="asg ${cardCls}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
+                <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
+                <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(hard ? '⚠ ' + hardLabel(hard) : 'Lidera')}</span></div>
+                <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar líder"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
+              </div>`;
+          } else {
+            const isLeader = isLeaderCard(d.key, lane.kind, id);
+            const drv = state.drivers.find(x => x.id === id);
+            const canLead = !!(drv && drv.can_coordinate);
+            const cardCls = [
+              isLeader ? 'coord lead-on' : '',
+              hard ? 'conf' : '',
+              soft ? 'soft' : '',
+              justCls,
+            ].filter(Boolean).join(' ');
+            const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isLeader ? 'Lidera' : BOARD_GROUP_LABEL[lane.group]);
+            // Estrella (★) a la izquierda: solo para quien pueda liderar. Naranja fija =
+            // líder actual de la jornada; en gris al pasar el mouse = clic para nombrarlo.
+            const star = canLead
+              ? `<button class="lead ${isLeader ? 'on' : ''}" data-lead title="${isLeader ? 'Quitar como líder' : 'Marcar como líder de la jornada'}">★</button>`
+              : '';
+            inner = `<div class="asg ${cardCls}" draggable="true" data-driver="${id}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
+                ${star}
+                <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
+                <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(subtxt)}</span></div>
+                <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
+              </div>`;
+          }
         } else {
-          inner = `<div class="drop" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">+ asignar<small>${escapeHtml(laneShortLabel(lane))}</small></div>`;
+          const lbl = coordLane ? '+ líder' : '+ asignar';
+          inner = `<div class="drop" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">${lbl}<small>${escapeHtml(laneShortLabel(lane))}</small></div>`;
         }
         h += `<div class="zone ${wknd}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}"><div class="slot">${inner}</div></div>`;
       });
@@ -1656,21 +1715,28 @@
     const [day, kind, index] = src.split('-');
     if (state.schedule[day] && state.schedule[day][kind]) {
       state.schedule[day][kind][+index] = null;
-      if (!isCoordKind(kind)) rebuildRestRow(day);
+      rebuildRestRow(day); // recalcula descanso y limpia al líder si salió de la jornada
     }
   }
   function boardPlaceInto(day, kind, index, id, src) {
     ensureScheduleShape();
-    if (isCoordKind(kind) && !coordPeople().some(p => p.id === id)) {
-      flashBoard('Solo líderes de turno (admin o Daniel) pueden ir en Líder de turno.');
+    // Soltar en la fila de líder: solo un conductor de esa jornada que pueda liderar.
+    if (isCoordKind(kind)) {
+      const shiftKind = kind === 'coord_am' ? 'morning' : 'afternoon';
+      const drv = state.drivers.find(d => d.id === id);
+      if (!drv || !drv.can_coordinate) { flashBoard('Solo un conductor marcado como "Líder de turno" puede liderar.'); return; }
+      if (!(state.schedule[day][shiftKind] || []).includes(id)) { flashBoard('El líder debe ser uno de los conductores de esa jornada; ponlo primero en Mañana/Tarde.'); return; }
+      state.schedule[day][kind] = [id];
+      boardJustPlaced = `${day}-${kind}-${index}`;
+      renderSchedule();
       return;
     }
-    const scope = isCoordKind(kind) ? COORD_KINDS : ['morning', 'afternoon', 'rest'];
+    const scope = ['morning', 'afternoon', 'rest'];
     scope.forEach(k => { state.schedule[day][k] = (state.schedule[day][k] || []).filter(x => x !== id); });
     if (src && src !== 'pool') boardRemoveFrom(src);
     while (state.schedule[day][kind].length <= index) state.schedule[day][kind].push(null);
     state.schedule[day][kind][index] = id;
-    if (!isCoordKind(kind)) rebuildRestRow(day);
+    rebuildRestRow(day);
     boardJustPlaced = `${day}-${kind}-${index}`;
     renderSchedule();
     const c = dayConflict(day, id, kind);
@@ -1742,6 +1808,8 @@
     board.addEventListener('click', e => {
       const x = e.target.closest('[data-remove]');
       if (x) { e.stopPropagation(); boardRemoveFrom(x.dataset.remove); renderSchedule(); return; }
+      const lead = e.target.closest('[data-lead]');
+      if (lead) { e.stopPropagation(); const a = lead.closest('.asg'); if (a) boardSetLeader(a.dataset.day, a.dataset.kind, a.dataset.driver); return; }
       const cell = e.target.closest('.asg, .drop');
       if (cell && cell.dataset.day) openCellEditor(cell);
     });
@@ -1974,7 +2042,16 @@
       `Editar ${kindLabel(kind)} · ${Scheduler.DAY_LABELS_ES[day]}`;
     const select = $('#cell-editor-select');
     const options = ['<option value="">— vacío —</option>'];
-    const people = isCoordKind(kind) ? coordPeople() : state.drivers;
+    // Fila de líder: solo los conductores de esa jornada que pueden liderar.
+    let people;
+    if (isCoordKind(kind)) {
+      const shiftKind = kind === 'coord_am' ? 'morning' : 'afternoon';
+      const ids = new Set((state.schedule?.[day]?.[shiftKind] || []).filter(Boolean));
+      people = state.drivers.filter(p => ids.has(p.id) && p.can_coordinate);
+      if (!people.length) options[0] = '<option value="">— nadie de esta jornada puede liderar —</option>';
+    } else {
+      people = state.drivers;
+    }
     people.forEach(p => options.push(`<option value="${p.id}">${p.name}</option>`));
     select.innerHTML = options.join('');
     if (state.schedule) {
@@ -2010,8 +2087,17 @@
       });
     });
 
-    // Las celdas de coordinación (admins) son independientes de las de conductores.
-    const scope = isCoordKind(kind) ? COORD_KINDS : ['morning', 'afternoon', 'rest'];
+    // Fila de líder: solo setea coord_am/coord_pm (el líder ya conduce su jornada;
+    // no se toca morning/afternoon/rest). cleanLeaders valida que siga en su jornada.
+    if (isCoordKind(kind)) {
+      sched[day][kind] = id ? [id] : [];
+      cleanLeaders(day);
+      closeCellEditor();
+      renderSchedule();
+      return;
+    }
+
+    const scope = ['morning', 'afternoon', 'rest'];
 
     if (id) {
       scope.forEach(k => {
@@ -2022,7 +2108,7 @@
     while (sched[day][kind].length <= index) sched[day][kind].push(null);
     sched[day][kind][index] = id;
 
-    if (!isCoordKind(kind)) rebuildRestRow(day);
+    rebuildRestRow(day);
     closeCellEditor();
     renderSchedule();
   }
@@ -2031,6 +2117,7 @@
     const sched = state.schedule[day];
     const used = new Set([...(sched.morning || []), ...(sched.afternoon || [])].filter(Boolean));
     sched.rest = state.drivers.filter(d => !used.has(d.id)).map(d => d.id);
+    cleanLeaders(day); // el líder debe seguir estando en su jornada
   }
 
   // ====================================================================
@@ -4246,10 +4333,9 @@
     week.forEach(d => {
       const day = sch.data[d.key] || {};
       const meId = state.profile.id;
-      if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Manejo' });
-      if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Manejo' });
-      if ((day.coord_am || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Líder de turno' });
-      if ((day.coord_pm || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Líder de turno' });
+      // El líder conduce su jornada: un solo turno (no se duplica ni las horas).
+      if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', lead: (day.coord_am || []).includes(meId) });
+      if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', lead: (day.coord_pm || []).includes(meId) });
     });
     if (summaryBox) {
       if (!myShifts.length) {
@@ -4261,7 +4347,7 @@
         const horas = myShifts.length * ((state.settings && state.settings.shift_hours) || 12);
         const items = myShifts.map(s => `<li class="flex items-center justify-between border-b border-slate-100 last:border-0 py-1.5">
           <span class="text-sm text-ink">${s.d.label} ${s.d.dayNum}</span>
-          <span class="text-xs font-semibold text-slate-600">${s.shift}${s.kind === 'Líder de turno' ? ' · Líder' : ''}</span>
+          <span class="text-xs font-semibold ${s.lead ? 'text-orange-600' : 'text-slate-600'}">${s.shift}${s.lead ? ' · ★ Líder' : ''}</span>
         </li>`).join('');
         summaryBox.innerHTML = `<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
           <p class="text-sm font-bold text-ink">Mi semana</p>
@@ -4297,7 +4383,7 @@
       });
       html += '</tr>';
     }
-    [['coord_am', 'COORDINACIÓN AM'], ['coord_pm', 'COORDINACIÓN PM']].forEach(([kind, label]) => {
+    [['coord_am', 'LÍDER DE TURNO AM'], ['coord_pm', 'LÍDER DE TURNO PM']].forEach(([kind, label]) => {
       html += '<tr class="row-coord"><td class="cell-label">' + label + '</td>';
       week.forEach(d => {
         const id = sch.data[d.key]?.[kind]?.[0];
