@@ -655,7 +655,7 @@
   async function listVehiclesForShift() {
     const { data, error } = await sb
       .from('vehicles')
-      .select('id, internal_code, license_plate, brand, model, capacity, current_km, last_maintenance_km, maintenance_interval_km, status, soat_expires_at, tecnomec_expires_at')
+      .select('id, internal_code, license_plate, brand, model, capacity, current_km, last_maintenance_km, maintenance_interval_km, status, soat_expires_at, tecnomec_expires_at, oil_override_at, oil_override_by')
       .is('deleted_at', null)
       .order('internal_code');
     if (error) throw error;
@@ -980,6 +980,23 @@
     return data;
   }
 
+  // El conductor desbloquea un carro detenido por cambio de aceite, bajo su
+  // responsabilidad (0041). No reinicia el contador; devuelve admin_ids para el
+  // push de aviso a los administradores.
+  async function driverOverrideOilBlock(vehicleId) {
+    const { data, error } = await sb.rpc('driver_override_oil_block', { p_vehicle_id: vehicleId });
+    if (error) throw error;
+    return data;
+  }
+
+  // El admin registra el cambio de aceite: reinicia el contador, limpia el
+  // override del conductor y regresa a servicio si estaba bloqueado (0041).
+  async function registerOilChange(vehicleId, reason) {
+    const { data, error } = await sb.rpc('register_oil_change', { p_vehicle_id: vehicleId, p_reason: reason || null });
+    if (error) throw error;
+    return data;
+  }
+
   // ====================================================================
   // Inspecciones — revisión/aprobación (admin) + checklist configurable
   // ====================================================================
@@ -1232,7 +1249,7 @@
     listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
     savePushSubscription, deletePushSubscription, sendPush,
-    getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
+    getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, driverOverrideOilBlock, registerOilChange, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, listIncidents, countOpenIncidents, updateIncidentStatus, startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,

@@ -145,6 +145,7 @@
     $('#new-veh-create-btn')?.addEventListener('click', onCreateVehicle);
     $('#vehicles-list')?.addEventListener('click', (e) => {
       const ed = e.target.closest('[data-veh-edit]'); if (ed) { onEditVehicle(ed.dataset.vehEdit); return; }
+      const oc = e.target.closest('[data-veh-oilchange]'); if (oc) { onRegisterOilChange(oc.dataset.vehOilchange); return; }
       const r = e.target.closest('[data-veh-restore]'); if (r) { onRestoreVehicle(r.dataset.vehRestore); return; }
       const d = e.target.closest('[data-veh-del]'); if (d) { onDeleteVehicle(d.dataset.vehDel); return; }
     });
@@ -344,6 +345,7 @@
       $('#driver-save-bar').classList.add('hidden');
       refreshInspectionsBadge();
       refreshShiftsBadge();
+      refreshOilBadge();
     } else {
       $('#admin-nav').classList.add('hidden');
       $('#admin-greeting-block').classList.add('hidden');
@@ -434,6 +436,19 @@
   }
   function staleThreshold() {
     return (state.settings && state.settings.auto_close_hours != null) ? state.settings.auto_close_hours : 14;
+  }
+
+  // Badge "!" en la pestaña Ajustes: alerta (no número) cuando hay al menos un
+  // vehículo con cambio de aceite pendiente (bloqueado o desbloqueado por conductor).
+  function setOilBadge(vehs) {
+    const b = $('#oil-badge');
+    if (!b) return;
+    const pending = (vehs || []).some(v => v.status === 'blocked' || v.oil_override_at);
+    b.classList.toggle('hidden', !pending);
+  }
+  async function refreshOilBadge() {
+    if (state.profile?.role !== 'admin') return;
+    try { setOilBadge(await Api.listVehiclesForShift()); } catch (e) { /* silencioso: solo el badge */ }
   }
 
   async function refreshShiftsBadge() {
@@ -528,8 +543,8 @@
     grave: { cls: 'grave', label: 'Grave', text: 'Grave · requiere atención', color: 'var(--red)' },
   };
   const INSP_ST = { pending: ['pend', 'Pendiente', 'i-warn'], approved: ['appr', 'Aprobada', 'i-check'], rejected: ['rej', 'Rechazada', 'i-x'] };
-  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero', damage: 'Golpe/daño', extra: 'Adicional' };
-  const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard'];
+  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero', glovebox: 'Guantera', door_left: 'Puerta cond.', door_right: 'Puerta pas.', damage: 'Golpe/daño', extra: 'Adicional' };
+  const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard', 'glovebox', 'door_left', 'door_right'];
 
   function inspShowView(v) {
     $$('#inspections-ui .view').forEach(s => s.classList.toggle('on', s.id === 'insp-v-' + v));
@@ -1663,27 +1678,22 @@
             const cardCls = ['coord', hard ? 'conf' : '', justCls].filter(Boolean).join(' ');
             inner = `<div class="asg ${cardCls}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
                 <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
-                <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(hard ? '⚠ ' + hardLabel(hard) : 'Lidera')}</span></div>
+                <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(hard ? '⚠ ' + hardLabel(hard) : '★ Lidera')}</span></div>
                 <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar líder"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
               </div>`;
           } else {
             const isLeader = isLeaderCard(d.key, lane.kind, id);
-            const drv = state.drivers.find(x => x.id === id);
-            const canLead = !!(drv && drv.can_coordinate);
             const cardCls = [
               isLeader ? 'coord lead-on' : '',
               hard ? 'conf' : '',
               soft ? 'soft' : '',
               justCls,
             ].filter(Boolean).join(' ');
-            const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isLeader ? 'Lidera' : BOARD_GROUP_LABEL[lane.group]);
-            // Estrella (★) a la izquierda: solo para quien pueda liderar. Naranja fija =
-            // líder actual de la jornada; en gris al pasar el mouse = clic para nombrarlo.
-            const star = canLead
-              ? `<button class="lead ${isLeader ? 'on' : ''}" data-lead title="${isLeader ? 'Quitar como líder' : 'Marcar como líder de la jornada'}">★</button>`
-              : '';
+            // El líder se marca con fondo naranja + "★ Lidera" en el subtítulo (sin
+            // elemento suelto que desalinee las tarjetas). Se cambia desde las filas
+            // Líder AM/PM. Mismo layout que las demás → avatares alineados.
+            const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isLeader ? '★ Lidera' : BOARD_GROUP_LABEL[lane.group]);
             inner = `<div class="asg ${cardCls}" draggable="true" data-driver="${id}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
-                ${star}
                 <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
                 <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(subtxt)}</span></div>
                 <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
@@ -2822,17 +2832,28 @@
     try { vehs = await Api.listVehiclesForShift(); }
     catch (e) { console.error(e); box.innerHTML = '<p class="set-hint">No se pudieron cargar los vehículos.</p>'; return; }
     vehiclesCache = vehs;
+    setOilBadge(vehs);   // refresca el "!" de Ajustes con la lista ya cargada
     if (!vehs.length) { box.innerHTML = '<p class="set-hint">Aún no hay vehículos. Agrega el primero abajo.</p>'; return; }
     box.innerHTML = vehs.map(v => {
-      const offService = v.status === 'maintenance' || v.status === 'blocked';
-      const restoreBtn = offService
-        ? `<button class="set-btn dark" data-veh-restore="${v.id}" title="Regresar a servicio">${v.status === 'blocked' ? 'Cambio de aceite hecho' : 'Regresar a servicio'}</button>`
+      const overridden = !!v.oil_override_at;               // conductor lo desbloqueó
+      const oilPending = v.status === 'blocked' || overridden; // aceite vencido (con o sin override)
+      // Botón "Cambio de aceite hecho": para carros bloqueados por aceite Y para
+      // los que el conductor desbloqueó (siguen disponibles pero con aceite pendiente).
+      const oilBtn = oilPending
+        ? `<button class="set-btn dark" data-veh-oilchange="${v.id}" title="Registrar cambio de aceite">Cambio de aceite hecho</button>`
+        : '';
+      // 'maintenance' (NO APTO) se regresa a servicio por la vía normal.
+      const restoreBtn = (v.status === 'maintenance')
+        ? `<button class="set-btn dark" data-veh-restore="${v.id}" title="Regresar a servicio">Regresar a servicio</button>`
+        : '';
+      const oilAlert = oilPending
+        ? `<span style="display:block;margin-top:3px;color:#dc2626;font-weight:800;font-size:11px">🛢️ Cambio de aceite pendiente${overridden ? ' · desbloqueado por conductor' : ''}</span>`
         : '';
       const intv = v.maintenance_interval_km ? ` · aceite c/${(v.maintenance_interval_km).toLocaleString('es-CO')} km` : '';
       return `<div class="veh-row" data-veh="${v.id}">
-      <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km${intv}</span></div>
+      <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km${intv}</span>${oilAlert}</div>
       <span class="veh-stat st-${v.status}">${VEH_STATUS_ES[v.status] || escapeHtml(v.status || '')}</span>
-      ${restoreBtn}
+      ${oilBtn}${restoreBtn}
       <button class="set-btn ghost" data-veh-edit="${v.id}" title="Editar" style="height:34px">Editar</button>
       <button class="veh-del" data-veh-del="${v.id}" title="Eliminar vehículo"><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
     </div>`;
@@ -2913,16 +2934,14 @@
     catch (e) { console.error(e); alert('No se pudo eliminar: ' + (e.message || 'error')); }
   }
 
+  // 'maintenance' (p. ej. NO APTO): regresar a servicio sin tocar el contador.
+  // El caso 'blocked'/override por aceite va por onRegisterOilChange (0041).
   async function onRestoreVehicle(id) {
     const v = (await safeVehicles()).find(x => x.id === id);
     const label = v ? (v.internal_code || v.license_plate || 'este vehículo') : 'este vehículo';
-    const oil = v && v.status === 'blocked';
-    const msg = oil
-      ? `¿Registrar el cambio de aceite de ${label}? Quedará Disponible y se reinicia el contador de km.`
-      : `¿Regresar ${label} a servicio? Quedará Disponible para los conductores.`;
-    if (!confirm(msg)) return;
+    if (!confirm(`¿Regresar ${label} a servicio? Quedará Disponible para los conductores.`)) return;
     try {
-      await Api.returnVehicleToService(id, oil ? 'Cambio de aceite realizado' : 'Regreso a servicio desde Ajustes');
+      await Api.returnVehicleToService(id, 'Regreso a servicio desde Ajustes');
       toast('Vehículo disponible.');
       renderVehiclesSettings();
     } catch (e) {
@@ -2933,6 +2952,26 @@
       alert('No se pudo regresar a servicio: ' + msg);
     }
   }
+  // Admin registra el cambio de aceite (0041): reinicia el contador, limpia el
+  // override del conductor y regresa a servicio si estaba bloqueado.
+  async function onRegisterOilChange(id) {
+    const v = (await safeVehicles()).find(x => x.id === id);
+    const label = v ? (v.internal_code || v.license_plate || 'este vehículo') : 'este vehículo';
+    const wasOverride = v && v.oil_override_at;
+    const msg = wasOverride
+      ? `¿Registrar el cambio de aceite de ${label}? Un conductor lo desbloqueó y sigue pendiente. Se reinicia el contador de km.`
+      : `¿Registrar el cambio de aceite de ${label}? Quedará Disponible y se reinicia el contador de km.`;
+    if (!confirm(msg)) return;
+    try {
+      await Api.registerOilChange(id, 'Cambio de aceite registrado desde Ajustes');
+      toast('Cambio de aceite registrado.');
+      renderVehiclesSettings();
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo registrar el cambio de aceite: ' + (e.message || 'error'));
+    }
+  }
+
   async function safeVehicles() { try { return await Api.listVehiclesForShift(); } catch (e) { return []; } }
 
   // --- Editor de parametrización: descansos fijos por conductor (Fase 4) ---
