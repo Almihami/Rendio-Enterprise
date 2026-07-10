@@ -624,7 +624,13 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #schedule-board .asg:active{cursor:grabbing}
 #schedule-board .asg.dragging{opacity:.35}
 #schedule-board .asg .av{width:23px;height:23px;font-size:9.5px}
-#schedule-board .asg .nm{min-width:0}
+#schedule-board .asg .nm{min-width:0;flex:1 1 auto}
+#schedule-board .asg .lead{flex:0 0 auto;width:16px;height:20px;display:grid;place-items:center;font-size:14px;line-height:1;color:var(--ink3);opacity:0;cursor:pointer;border:0;background:transparent;padding:0;transition:opacity .15s,color .12s,transform .1s}
+#schedule-board .asg:hover .lead{opacity:.55}
+#schedule-board .asg .lead:hover{color:var(--orange);opacity:.95;transform:scale(1.15)}
+#schedule-board .asg .lead.on{opacity:1;color:var(--orange)}
+#schedule-board .asg.lead-on{border-color:var(--orange)}
+#schedule-board .asg.coord .nm span{color:var(--orange);font-weight:700}
 #schedule-board .asg .nm b{font-size:12px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;line-height:1.1}
 #schedule-board .asg .nm span{font-size:9px;color:var(--ink3);display:block}
 #schedule-board .asg .x{margin-left:auto;width:18px;height:18px;border-radius:6px;display:grid;place-items:center;color:var(--ink3);opacity:0;transition:opacity .15s,background .15s;flex:0 0 auto;cursor:pointer}
@@ -1002,6 +1008,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #inspections-ui .who .sub{font-size:12.5px;color:var(--ink2);margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 #inspections-ui .who .veh{font-family:var(--mono);font-size:11px;background:var(--panel2);border:1px solid var(--line);padding:2px 7px;border-radius:6px;color:var(--ink2)}
 #inspections-ui .who .when{display:inline-flex;align-items:center;gap:5px}
+#inspections-ui .who .novdesc{font-size:13px;color:var(--ink2);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #inspections-ui .right{display:flex;flex-direction:column;gap:9px;align-items:flex-end}
 #inspections-ui .chips{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 #inspections-ui .thumbs{display:flex;gap:5px}
@@ -1010,7 +1017,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #inspections-ui .thumb svg{width:13px;height:13px}
 #inspections-ui .qactions{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 #inspections-ui .chip{display:inline-flex;align-items:center;gap:6px;height:25px;padding:0 11px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.02em}
-#inspections-ui .chip svg{width:13px;height:13px}
+#inspections-ui .chip svg{width:13px;height:13px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
 #inspections-ui .chip.leve{background:var(--green-soft);color:var(--green)}
 #inspections-ui .chip.media{background:var(--amber-soft);color:var(--amber)}
 #inspections-ui .chip.grave{background:var(--red-soft);color:var(--red)}

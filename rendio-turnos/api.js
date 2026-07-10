@@ -655,7 +655,7 @@
   async function listVehiclesForShift() {
     const { data, error } = await sb
       .from('vehicles')
-      .select('id, internal_code, license_plate, brand, model, capacity, current_km, last_maintenance_km, maintenance_interval_km, status, soat_expires_at, tecnomec_expires_at')
+      .select('id, internal_code, license_plate, brand, model, capacity, current_km, last_maintenance_km, maintenance_interval_km, status, soat_expires_at, tecnomec_expires_at, oil_override_at, oil_override_by')
       .is('deleted_at', null)
       .order('internal_code');
     if (error) throw error;
@@ -879,6 +879,46 @@
     return data.id;
   }
 
+  // Novedades/incidents para el admin: cola con estado + evidencia. `status`:
+  // 'open' | 'in_progress' | 'resolved' | 'all' (o nada = todas). Cascada por si el
+  // embed del reporter falla (dos FKs a profiles → hint por columna reporter_id).
+  async function listIncidents(status) {
+    const base = 'id,shift_id,vehicle_id,reporter_id,category,severity,status,description,' +
+      'photo_paths,resolution_notes,resolved_at,created_at,' +
+      'vehicles(internal_code,license_plate,brand,model)';
+    const run = (sel) => {
+      let q = sb.from('incidents').select(sel).order('created_at', { ascending: false }).limit(300);
+      if (status && status !== 'all') q = q.eq('status', status);
+      return q;
+    };
+    let { data, error } = await run(base + ',reporter:profiles!reporter_id(id,full_name)');
+    if (error) ({ data, error } = await run(base));
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Conteo rápido de novedades ABIERTAS (para el badge de la pestaña).
+  async function countOpenIncidents() {
+    const { count, error } = await sb.from('incidents')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'open');
+    if (error) throw error;
+    return count || 0;
+  }
+
+  // Cambia el estado de una novedad. Al resolver sella resolved_at + notas; al reabrir los limpia.
+  async function updateIncidentStatus(id, status, resolutionNotes) {
+    const patch = { status };
+    if (status === 'resolved') {
+      patch.resolved_at = new Date().toISOString();
+      if (resolutionNotes != null) patch.resolution_notes = resolutionNotes;
+    } else {
+      patch.resolved_at = null;
+    }
+    const { error } = await sb.from('incidents').update(patch).eq('id', id);
+    if (error) throw error;
+  }
+
   // SECURITY DEFINER: valida dueño + inspección + vehículo libre; marca in_use.
   async function startShift(shiftId) {
     const { data, error } = await sb.rpc('start_shift', { p_shift_id: shiftId });
@@ -936,6 +976,23 @@
   // mantenimiento, ya que el panel de vehículos no tenía cómo desbloquearlos.
   async function returnVehicleToService(vehicleId, reason) {
     const { data, error } = await sb.rpc('return_vehicle_to_service', { p_vehicle_id: vehicleId, p_reason: reason || null });
+    if (error) throw error;
+    return data;
+  }
+
+  // El conductor desbloquea un carro detenido por cambio de aceite, bajo su
+  // responsabilidad (0041). No reinicia el contador; devuelve admin_ids para el
+  // push de aviso a los administradores.
+  async function driverOverrideOilBlock(vehicleId) {
+    const { data, error } = await sb.rpc('driver_override_oil_block', { p_vehicle_id: vehicleId });
+    if (error) throw error;
+    return data;
+  }
+
+  // El admin registra el cambio de aceite: reinicia el contador, limpia el
+  // override del conductor y regresa a servicio si estaba bloqueado (0041).
+  async function registerOilChange(vehicleId, reason) {
+    const { data, error } = await sb.rpc('register_oil_change', { p_vehicle_id: vehicleId, p_reason: reason || null });
     if (error) throw error;
     return data;
   }
@@ -1192,9 +1249,9 @@
     listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
     savePushSubscription, deletePushSubscription, sendPush,
-    getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, getMyOpenShift,
+    getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, driverOverrideOilBlock, registerOilChange, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
-    addIncident, startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
+    addIncident, listIncidents, countOpenIncidents, updateIncidentStatus, startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
     getMyFullProfile, uploadMyAvatar,

@@ -193,44 +193,18 @@
     return sorted.slice(0, count);
   }
 
-  // Selecciona coordinadores RESPETANDO la disponibilidad pedida:
-  //  - 'unavailable' (con o sin solicitud) → filtro DURO, no entra.
-  //  - 'prefer_rest' → filtro BLANDO, va al fondo (solo entra si no hay otra opción).
-  // Si todos los del pool pidieron unavailable y faltan cupos, el generador
-  // devolverá < count y se reporta como warning (no hay con quién cubrir).
-  function pickCoordinators(admins, coordLoads, count, exclude, rank, availability, day, shift) {
-    const eligible = admins.filter(a => !exclude.has(a.id) && (
-      !availability || getState(availability, a.id, day, shift) !== 'unavailable'
-    ));
-    const sorted = eligible.sort((a, b) => {
-      // Quien pidió 'prefer_rest' ese día/jornada va al fondo.
-      const restA = availability && getState(availability, a.id, day, shift) === 'prefer_rest' ? 1 : 0;
-      const restB = availability && getState(availability, b.id, day, shift) === 'prefer_rest' ? 1 : 0;
-      if (restA !== restB) return restA - restB;
-      const la = coordLoads.get(a.id) || 0;
-      const lb = coordLoads.get(b.id) || 0;
-      if (la !== lb) return la - lb;
-      const ra = rank ? (rank.get(a.id) ?? 0) : 0;
-      const rb = rank ? (rank.get(b.id) ?? 0) : 0;
-      if (ra !== rb) return ra - rb;
-      return (a.name || '').localeCompare(b.name || '');
-    });
-    return sorted.slice(0, count);
-  }
-
   function generateSchedule({ drivers, settings, availability, admins = [], flexCoordinatorId = null, weekStart = '', nonce = '', seedPmIds = [] }) {
     const warnings = [];
     const workerLoads = new Map(drivers.map(d => [d.id, 0]));
-    const coordLoads = new Map(admins.map(a => [a.id, 0]));
-    const COORD_SLOTS = settings.coordSlots || 1; // nº coordinadores AM + PM por día (parametrizable; default 1)
+    // Carga de LIDERAZGO por conductor (cuántas jornadas ha liderado esta semana),
+    // para que el rol de líder rote y nadie quede liderando toda la semana.
+    const leaderLoads = new Map(drivers.map(d => [d.id, 0]));
+    const COORD_SLOTS = settings.coordSlots || 1; // nº de líderes por jornada (parametrizable; default 1)
     const result = {};
 
     // Orden de desempate barajado para esta generación.
     const rng = mulberry32(hashSeed('rendio-turnos|' + (weekStart || '') + '|' + (nonce || '')));
     const driverRank = seededRankMap(drivers, rng);
-
-    // Para saber, dentro del pool de coordinadores, quién es conductor.
-    const driverIds = new Set(drivers.map(d => d.id));
 
     // Regla DURA "PM hoy ⇒ no AM mañana": un conductor que cerró el día anterior
     // a las ~2am no puede arrancar a las 2am del día siguiente. Se rastrea entre
@@ -242,55 +216,78 @@
       !ruleBlocked(d, day, shift) &&
       !(shift === 'am' && prevPmIds.has(d.id));
 
+    // ------- LIDERAZGO: el líder es UNO de los conductores de la jornada -------
+    // El líder NO es un cupo aparte: es uno de los conductores en turno que puede
+    // liderar (can_coordinate) y que además conduce esa jornada. Nunca alguien
+    // "lidera 24h": el líder AM sale de la mañana y el líder PM de la tarde, que
+    // son personas distintas (nadie hace doble turno). leaderLoads hace que rote.
+    const hasLeader = (set) => set.some(d => d.can_coordinate);
+    const leaderCmp = (a, b) => {
+      const la = leaderLoads.get(a.id) || 0, lb = leaderLoads.get(b.id) || 0;
+      if (la !== lb) return la - lb;                       // el que menos ha liderado, primero
+      const wa = workerLoads.get(a.id) || 0, wb = workerLoads.get(b.id) || 0;
+      if (wa !== wb) return wa - wb;
+      return (driverRank.get(a.id) ?? 0) - (driverRank.get(b.id) ?? 0);
+    };
+    // Asegura que en la jornada haya ≥1 conductor que pueda liderar. Si no cayó
+    // ninguno: mete al mejor líder disponible (si hay cupo libre lo agrega; si no,
+    // cambia al conductor menos crítico, sin sacar nunca a la prioridad 4 dura).
+    function ensureLeaderCapable(set, day, shift, usedToday, slots) {
+      if (hasLeader(set)) return set;
+      const inSet = new Set(set.map(d => d.id));
+      const cand = drivers
+        .filter(d => d.can_coordinate && !usedToday.has(d.id) && !inSet.has(d.id) && eligibleFor(d, day, shift))
+        .sort(leaderCmp)[0];
+      if (!cand) return set;                                // no hay líder disponible → warning aparte
+      if (set.length < slots) return [...set, cand];        // hay cupo libre: agrégalo
+      const removable = set
+        .filter(d => (d.priority || 1) < 4)                 // nunca se saca a la prioridad 4 dura
+        .sort((a, b) => {
+          const wa = workerLoads.get(a.id) || 0, wb = workerLoads.get(b.id) || 0;
+          if (wa !== wb) return wb - wa;                    // el de mayor carga sale primero
+          return (driverRank.get(b.id) ?? 0) - (driverRank.get(a.id) ?? 0);
+        })[0];
+      if (!removable) return set;                           // todos son prioridad dura: no se cambia
+      return [...set.filter(d => d.id !== removable.id), cand];
+    }
+    // Designa hasta COORD_SLOTS líderes ENTRE los conductores de la jornada.
+    function pickLeaders(set) {
+      const chosen = set.filter(d => d.can_coordinate).sort(leaderCmp).slice(0, COORD_SLOTS);
+      chosen.forEach(d => leaderLoads.set(d.id, (leaderLoads.get(d.id) || 0) + 1));
+      return chosen;
+    }
+
     for (const day of DAYS) {
       const usedToday = new Set();
 
-      // --- Coordinación PRIMERO (para excluir luego al conductor que coordina) ---
-      // Pool = admins (is_coordinator) + conductores con can_coordinate; ambos
-      // llegan en `admins`. Barajado NUEVO por día → rotan día a día y por
-      // generación (el nonce mueve el rng). coordLoads equilibra el total.
-      // Respeta disponibilidad: 'unavailable' bloquea duro; 'prefer_rest' suave.
-      const dayAdminRank = seededRankMap(admins, rng);
-      const usedCoord = new Set();
-      const coordAm = pickCoordinators(admins, coordLoads, COORD_SLOTS, usedCoord, dayAdminRank, availability, day, 'am');
-      coordAm.forEach(a => { usedCoord.add(a.id); coordLoads.set(a.id, (coordLoads.get(a.id) || 0) + 1); });
-      // Con 2+ en el pool, el de AM no repite en PM ese día; con 1 sí cubre ambos.
-      const excludePm = admins.length > 1 ? usedCoord : new Set();
-      const coordPm = pickCoordinators(admins, coordLoads, COORD_SLOTS, excludePm, dayAdminRank, availability, day, 'pm');
-      coordPm.forEach(a => { coordLoads.set(a.id, (coordLoads.get(a.id) || 0) + 1); });
-      if (coordAm.length < COORD_SLOTS) warnings.push(`Falta líder de turno AM en ${DAY_LABELS_ES[day]} (todos pidieron descanso o no disponibilidad).`);
-      if (coordPm.length < COORD_SLOTS) warnings.push(`Falta líder de turno PM en ${DAY_LABELS_ES[day]} (todos pidieron descanso o no disponibilidad).`);
-      // Si un CONDUCTOR coordina hoy: ese día NO maneja ni descansa (como Daniel).
-      const coordDriversToday = new Set(
-        [...coordAm, ...coordPm].map(a => a.id).filter(id => driverIds.has(id))
+      // --- MAÑANA: elige conductores y asegura que uno de ellos pueda liderar ---
+      let morning = pickForShift(
+        drivers.filter(d => eligibleFor(d, day, 'am')),
+        workerLoads, availability, day, 'am', settings.morningSlots, driverRank
       );
-
-      const morningEligible = drivers.filter(d =>
-        !coordDriversToday.has(d.id) && eligibleFor(d, day, 'am')
-      );
-      const morning = pickForShift(morningEligible, workerLoads, availability, day, 'am', settings.morningSlots, driverRank);
-      morning.forEach(d => {
-        usedToday.add(d.id);
-        workerLoads.set(d.id, (workerLoads.get(d.id) || 0) + 1);
-      });
+      morning = ensureLeaderCapable(morning, day, 'am', usedToday, settings.morningSlots);
+      morning.forEach(d => { usedToday.add(d.id); workerLoads.set(d.id, (workerLoads.get(d.id) || 0) + 1); });
       if (morning.length < settings.morningSlots) {
         warnings.push(`Faltan ${settings.morningSlots - morning.length} cupos de Mañana en ${DAY_LABELS_ES[day]}.`);
       }
+      const coordAm = pickLeaders(morning); // líder(es) elegidos ENTRE los de la mañana
+      if (!coordAm.length) warnings.push(`Falta líder en la Mañana de ${DAY_LABELS_ES[day]} (ningún conductor de la jornada puede liderar; marca a más como "Líder de turno").`);
 
-      const afternoonEligible = drivers.filter(d =>
-        !usedToday.has(d.id) && !coordDriversToday.has(d.id) && eligibleFor(d, day, 'pm')
+      // --- TARDE ---
+      let afternoon = pickForShift(
+        drivers.filter(d => !usedToday.has(d.id) && eligibleFor(d, day, 'pm')),
+        workerLoads, availability, day, 'pm', settings.afternoonSlots, driverRank
       );
-      const afternoon = pickForShift(afternoonEligible, workerLoads, availability, day, 'pm', settings.afternoonSlots, driverRank);
-      afternoon.forEach(d => {
-        usedToday.add(d.id);
-        workerLoads.set(d.id, (workerLoads.get(d.id) || 0) + 1);
-      });
+      afternoon = ensureLeaderCapable(afternoon, day, 'pm', usedToday, settings.afternoonSlots);
+      afternoon.forEach(d => { usedToday.add(d.id); workerLoads.set(d.id, (workerLoads.get(d.id) || 0) + 1); });
       if (afternoon.length < settings.afternoonSlots) {
         warnings.push(`Faltan ${settings.afternoonSlots - afternoon.length} cupos de Tarde en ${DAY_LABELS_ES[day]}.`);
       }
+      const coordPm = pickLeaders(afternoon); // líder(es) elegidos ENTRE los de la tarde
+      if (!coordPm.length) warnings.push(`Falta líder en la Tarde de ${DAY_LABELS_ES[day]} (ningún conductor de la jornada puede liderar; marca a más como "Líder de turno").`);
 
       const rest = drivers
-        .filter(d => !usedToday.has(d.id) && !coordDriversToday.has(d.id))
+        .filter(d => !usedToday.has(d.id))
         .sort((a, b) => (driverRank.get(a.id) ?? 0) - (driverRank.get(b.id) ?? 0))
         .map(d => d.id);
 
@@ -298,71 +295,11 @@
         morning: morning.map(d => d.id),
         afternoon: afternoon.map(d => d.id),
         rest,
-        coord_am: coordAm.map(a => a.id),
-        coord_pm: coordPm.map(a => a.id),
+        coord_am: coordAm.map(d => d.id), // ⊆ morning
+        coord_pm: coordPm.map(d => d.id), // ⊆ afternoon
       };
-      // Para la regla PM→AM del día siguiente: PM de manejo + coord PM.
-      prevPmIds = new Set([
-        ...afternoon.map(d => d.id),
-        ...coordPm.map(a => a.id).filter(id => driverIds.has(id)),
-      ]);
-    }
-
-    // --- Daniel: conductor que coordina ≥1 jornada/semana; ese día NO conduce ---
-    if (flexCoordinatorId && drivers.some(d => d.id === flexCoordinatorId)) {
-      const alreadyCoord = DAYS.some(day =>
-        (result[day].coord_am || []).includes(flexCoordinatorId) ||
-        (result[day].coord_pm || []).includes(flexCoordinatorId)
-      );
-      if (!alreadyCoord) {
-        // Preferir un día donde ya descansa (cero impacto en cobertura).
-        let day = DAYS.find(d => (result[d].rest || []).includes(flexCoordinatorId));
-        if (!day) {
-          day = DAYS.find(d =>
-            (result[d].morning || []).includes(flexCoordinatorId) ||
-            (result[d].afternoon || []).includes(flexCoordinatorId)
-          ) || DAYS[0];
-        }
-
-        // Conductores que coordinan ESE día (vía pool): no se les puede meter
-        // a manejar ni a descansar al recalcular por el caso Daniel.
-        const dayCoordDrivers = new Set(
-          (result[day].coord_pm || []).filter(id => driverIds.has(id))
-        );
-
-        // Sacarlo de conducción TODO ese día.
-        result[day].morning = (result[day].morning || []).filter(id => id !== flexCoordinatorId);
-        result[day].afternoon = (result[day].afternoon || []).filter(id => id !== flexCoordinatorId);
-
-        // Rellenar cupos liberados con otros conductores disponibles ese día.
-        const usedDay = new Set([...result[day].morning, ...result[day].afternoon]);
-        const refill = (arr, slots, shift) => {
-          while (arr.length < slots) {
-            const cand = drivers
-              .filter(dd =>
-                dd.id !== flexCoordinatorId && !usedDay.has(dd.id) &&
-                !dayCoordDrivers.has(dd.id) && eligibleFor(dd, day, shift)
-              )
-              .sort((a, b) => (driverRank.get(a.id) ?? 0) - (driverRank.get(b.id) ?? 0))[0];
-            if (!cand) {
-              warnings.push(`Falta cubrir un cupo de ${shift === 'am' ? 'Mañana' : 'Tarde'} en ${DAY_LABELS_ES[day]} (Daniel lidera ese día).`);
-              break;
-            }
-            arr.push(cand.id);
-            usedDay.add(cand.id);
-          }
-        };
-        refill(result[day].morning, settings.morningSlots, 'am');
-        refill(result[day].afternoon, settings.afternoonSlots, 'pm');
-
-        // Daniel coordina la mañana de ese día (reemplaza al admin coordinador AM).
-        result[day].coord_am = [flexCoordinatorId];
-        const usedFinal = new Set([...result[day].morning, ...result[day].afternoon]);
-        result[day].rest = drivers
-          .filter(d => d.id !== flexCoordinatorId && !usedFinal.has(d.id) && !dayCoordDrivers.has(d.id))
-          .sort((a, b) => (driverRank.get(a.id) ?? 0) - (driverRank.get(b.id) ?? 0))
-          .map(d => d.id);
-      }
+      // Para la regla PM→AM del día siguiente: los de la tarde (el líder PM ya va incluido).
+      prevPmIds = new Set(afternoon.map(d => d.id));
     }
 
     return { schedule: result, warnings, loads: Object.fromEntries(workerLoads) };

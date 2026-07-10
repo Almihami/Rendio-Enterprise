@@ -2,7 +2,7 @@
 // Wizard de 6 pasos fiel al diseño de /Visual (Conductor.html):
 //   1. Selección de vehículo   4. Kilometraje inicial
 //   2. Checklist pre-operacional  5. Novedades / observaciones
-//   3. Fotos (5 ángulos)       6. Confirmar e iniciar
+//   3. Fotos (8: 5 exteriores + guantera y 2 puertas)  6. Confirmar e iniciar
 //
 // Persistencia (al confirmar, en orden):
 //   fotos → bucket 'inspections' · shift → shifts · inspección → inspections
@@ -51,13 +51,17 @@
   // fallback a los fijos si la migración no está o la organización no tiene ítems.
   let ckItems = CHECKLIST_FALLBACK;
 
-  // photo_type del enum inspection_photo_type (0016): front|left|right|rear|dashboard
+  // photo_type del enum inspection_photo_type: front|left|right|rear|dashboard (0016)
+  // + glovebox|door_left|door_right (0042, fotos "sin basura").
   const PHOTO_SLOTS = [
-    { id: 'front',     label: 'Frontal',            detail: 'Placa visible, parachoques completo' },
-    { id: 'rear',      label: 'Trasera',            detail: 'Placa, stops, baúl' },
-    { id: 'left',      label: 'Lateral izquierdo',  detail: 'Lado del conductor, retrovisor' },
-    { id: 'right',     label: 'Lateral derecho',    detail: 'Lado del pasajero, retrovisor' },
-    { id: 'dashboard', label: 'Interior / tablero', detail: 'Asientos, tablero y odómetro visibles' },
+    { id: 'front',      label: 'Frontal',            detail: 'Placa visible, parachoques completo' },
+    { id: 'rear',       label: 'Trasera',            detail: 'Placa, stops, baúl' },
+    { id: 'left',       label: 'Lateral izquierdo',  detail: 'Lado del conductor, retrovisor' },
+    { id: 'right',      label: 'Lateral derecho',    detail: 'Lado del pasajero, retrovisor' },
+    { id: 'dashboard',  label: 'Interior / tablero', detail: 'Asientos, tablero y odómetro visibles' },
+    { id: 'glovebox',   label: 'Guantera',           detail: 'Ábrela: debe verse vacía, sin basura' },
+    { id: 'door_left',  label: 'Puerta conductor',   detail: 'Bolsillo interno vacío, sin basura' },
+    { id: 'door_right', label: 'Puerta pasajero',    detail: 'Bolsillo interno vacío, sin basura' },
   ];
 
   const TOTAL_STEPS = 6;
@@ -427,7 +431,7 @@
         // El chip de estado ya dice "Cambio de aceite" si está bloqueado; evita duplicar.
         const mi = (v.status === 'blocked') ? null : maintenanceInfo(v); if (mi) chips.push(chip(mi.tone, mi.label));
         const si = soatInfo(v); if (si) chips.push(chip(si.tone, si.label));
-        return `<button data-vehicle="${v.id}" ${disabled ? 'disabled' : ''}
+        const card = `<button data-vehicle="${v.id}" ${disabled ? 'disabled' : ''}
           class="w-full text-left bg-white border-2 ${isSel ? 'border-brand' : 'border-slate-200'} rounded-2xl p-4 flex gap-3 items-start transition ${disabled ? 'opacity-50' : 'active:scale-[0.99]'}">
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
@@ -439,6 +443,15 @@
           </div>
           <div class="w-6 h-6 rounded-full border-2 ${isSel ? 'bg-brand border-brand text-white' : 'border-slate-300 text-transparent'} flex items-center justify-center shrink-0 mt-1 text-sm">✓</div>
         </button>`;
+        // Carro detenido por cambio de aceite: el conductor puede desbloquearlo
+        // bajo su responsabilidad (0041). Se avisa al admin por push.
+        if (v.status === 'blocked') {
+          return `<div class="space-y-1.5">${card}
+            <button data-oil-override="${v.id}" class="w-full text-[12px] font-bold text-amber-800 bg-amber-50 border border-amber-300 rounded-xl py-2.5 active:scale-[0.99] transition">
+              🛢️ Desbloquear bajo mi responsabilidad
+            </button></div>`;
+        }
+        return card;
       }).join('');
 
     const anyAvail = sf.vehicles.some(v => v.status === 'available' || v.id === sf.myReservedVehicleId);
@@ -460,8 +473,54 @@
     wiz.querySelectorAll('[data-vehicle]').forEach(btn => {
       btn.addEventListener('click', () => { sf.vehicleId = btn.dataset.vehicle; render(); });
     });
+    wiz.querySelectorAll('[data-oil-override]').forEach(btn => {
+      btn.addEventListener('click', () => onOilOverride(btn.dataset.oilOverride));
+    });
     $('#sf-next').addEventListener('click', reserveAndAdvance);
     $('#sf-fast')?.addEventListener('click', onFastStart);
+  }
+
+  // Desbloqueo del carro por cambio de aceite, bajo responsabilidad del conductor.
+  // No reinicia el contador; avisa a los admins por push (0041).
+  async function onOilOverride(vehicleId) {
+    const v = sf.vehicles.find(x => x.id === vehicleId);
+    if (!v) return;
+    const label = v.internal_code || v.license_plate || 'este vehículo';
+    const ok = confirm(`⚠️ ${label} tiene el CAMBIO DE ACEITE VENCIDO.\n\n`
+      + `Si lo desbloqueas, asumes la responsabilidad de operarlo así y se le avisará al administrador. `
+      + `El carro seguirá pendiente de cambio de aceite hasta que el admin lo registre.\n\n`
+      + `¿Desbloquear y usar este vehículo?`);
+    if (!ok) return;
+    try {
+      const res = await Api.driverOverrideOilBlock(vehicleId);
+      // Reflejar el desbloqueo en la lista en caché y seleccionarlo.
+      v.status = 'available';
+      v.oil_override_at = (res && res.oil_override_at) || 'now';
+      sf.vehicleId = vehicleId;
+      // Avisar a los admins (push best-effort: nunca rompe el flujo).
+      const adminIds = (res && res.admin_ids) || [];
+      if (adminIds.length) {
+        const who = (sf.profile && sf.profile.full_name) || 'Un conductor';
+        try {
+          await Api.sendPush({
+            profileIds: adminIds,
+            title: '🛢️ Carro desbloqueado (aceite pendiente)',
+            body: `${who} desbloqueó ${label} bajo su responsabilidad. Programa el cambio de aceite.`,
+            url: '/',
+          });
+        } catch (e) { /* push opcional */ }
+      }
+      sfToast('Vehículo desbloqueado. Se avisó al administrador.');
+      render();
+    } catch (e) {
+      const msg = (e && e.message) || '';
+      if (/NOT_OIL_BLOCK|NOT_DUE/.test(msg)) sfToast('Ese vehículo ya no requiere desbloqueo.');
+      else if (/WRONG_ORG|VEHICLE_NOT_FOUND/.test(msg)) sfToast('No se encontró el vehículo.');
+      else if (/Failed to fetch|NetworkError/.test(msg)) sfToast('Sin conexión. Inténtalo de nuevo.');
+      else sfToast('No se pudo desbloquear: ' + msg);
+      try { sf.vehicles = await Api.listVehiclesForShift(); } catch (_) { /* */ }
+      render();
+    }
   }
 
   // Reserva dura: al avanzar a la inspección, reserva el vehículo para que otro
@@ -608,7 +667,7 @@
         </div>
       </button>`;
     };
-    const cells = PHOTO_SLOTS.map((s, i) => cell(s, `${i + 1}/5`)).join('')
+    const cells = PHOTO_SLOTS.map((s, i) => cell(s, `${i + 1}/${PHOTO_SLOTS.length}`)).join('')
       + (showDamage ? cell(DAMAGE_SLOT, 'golpe', true) : '');
 
     // Fotos adicionales libres, a criterio del conductor.
@@ -633,7 +692,7 @@
     wiz.innerHTML = shellHtml(
       `Inicio de turno · Paso 3 de ${TOTAL_STEPS}`,
       'Fotos del vehículo',
-      showDamage ? '5 ángulos + la foto del golpe que reportaste.' : '5 ángulos. Toca cada uno para capturar con la cámara.',
+      showDamage ? `${PHOTO_SLOTS.length} fotos + la del golpe que reportaste.` : `${PHOTO_SLOTS.length} fotos (exterior + guantera y puertas). Toca cada una para capturar.`,
       `<div class="grid grid-cols-2 gap-2.5">${cells}</div>
        ${extraSection}
        <input id="sf-photo-input" type="file" accept="image/*" capture="environment" class="hidden" />
@@ -1256,7 +1315,7 @@
           <p class="text-[12px] ${sf.close.receipts.length ? 'text-slate-500' : 'text-rose-600 font-semibold'} mb-3 -mt-1">${sf.close.receipts.length ? 'Adjunta los recibos de gasolina pagados en el turno (foto + valor).' : 'Obligatorio: adjunta al menos un recibo de gasolina (foto + valor) para cerrar el turno.'}</p>
           <div class="space-y-2.5">${receiptRows}</div>
           <button id="cl-add-receipt" class="mt-2.5 w-full rounded-xl border-2 border-dashed border-brand-300 bg-brand-50 text-brand-700 font-bold py-3 text-sm flex items-center justify-center gap-2 active:scale-[.98]">＋ Agregar comprobante</button>
-          <input id="cl-file-receipt" type="file" accept="image/*" capture="environment" class="hidden">
+          <input id="cl-file-receipt" type="file" accept="image/*" class="hidden">
         </section>
 
         <label class="flex gap-3 items-start rounded-xl bg-white border border-slate-200 px-3.5 py-3 cursor-pointer">

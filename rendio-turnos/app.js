@@ -145,6 +145,7 @@
     $('#new-veh-create-btn')?.addEventListener('click', onCreateVehicle);
     $('#vehicles-list')?.addEventListener('click', (e) => {
       const ed = e.target.closest('[data-veh-edit]'); if (ed) { onEditVehicle(ed.dataset.vehEdit); return; }
+      const oc = e.target.closest('[data-veh-oilchange]'); if (oc) { onRegisterOilChange(oc.dataset.vehOilchange); return; }
       const r = e.target.closest('[data-veh-restore]'); if (r) { onRestoreVehicle(r.dataset.vehRestore); return; }
       const d = e.target.closest('[data-veh-del]'); if (d) { onDeleteVehicle(d.dataset.vehDel); return; }
     });
@@ -344,6 +345,7 @@
       $('#driver-save-bar').classList.add('hidden');
       refreshInspectionsBadge();
       refreshShiftsBadge();
+      refreshOilBadge();
     } else {
       $('#admin-nav').classList.add('hidden');
       $('#admin-greeting-block').classList.add('hidden');
@@ -436,6 +438,19 @@
     return (state.settings && state.settings.auto_close_hours != null) ? state.settings.auto_close_hours : 14;
   }
 
+  // Badge "!" en la pestaña Ajustes: alerta (no número) cuando hay al menos un
+  // vehículo con cambio de aceite pendiente (bloqueado o desbloqueado por conductor).
+  function setOilBadge(vehs) {
+    const b = $('#oil-badge');
+    if (!b) return;
+    const pending = (vehs || []).some(v => v.status === 'blocked' || v.oil_override_at);
+    b.classList.toggle('hidden', !pending);
+  }
+  async function refreshOilBadge() {
+    if (state.profile?.role !== 'admin') return;
+    try { setOilBadge(await Api.listVehiclesForShift()); } catch (e) { /* silencioso: solo el badge */ }
+  }
+
   async function refreshShiftsBadge() {
     if (state.profile?.role !== 'admin') return;
     try {
@@ -520,15 +535,16 @@
   // ====================================================================
   // Inspecciones (admin) — revisión/aprobación + checklist configurable
   // ====================================================================
-  const inspState = { items: [], filter: 'pending', current: null, checklist: [], vehicles: [], autoVehicleId: null, autoItems: [], adminPhoto: null };
+  const inspState = { items: [], filter: 'pending', current: null, checklist: [], vehicles: [], autoVehicleId: null, autoItems: [], adminPhoto: null,
+    novItems: [], novFilter: 'open', novCurrent: null, openIncidents: 0 };
   const INSP_SEV = {
     leve:  { cls: 'leve',  label: 'Leve',  text: 'Leve · informativo',       color: 'var(--green)' },
     media: { cls: 'media', label: 'Media', text: 'Media · con cuidado',       color: 'var(--amber)' },
     grave: { cls: 'grave', label: 'Grave', text: 'Grave · requiere atención', color: 'var(--red)' },
   };
   const INSP_ST = { pending: ['pend', 'Pendiente', 'i-warn'], approved: ['appr', 'Aprobada', 'i-check'], rejected: ['rej', 'Rechazada', 'i-x'] };
-  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero', damage: 'Golpe/daño', extra: 'Adicional' };
-  const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard'];
+  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero', glovebox: 'Guantera', door_left: 'Puerta cond.', door_right: 'Puerta pas.', damage: 'Golpe/daño', extra: 'Adicional' };
+  const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard', 'glovebox', 'door_left', 'door_right'];
 
   function inspShowView(v) {
     $$('#inspections-ui .view').forEach(s => s.classList.toggle('on', s.id === 'insp-v-' + v));
@@ -560,10 +576,16 @@
     return c;
   }
 
-  function refreshInspectionsBadge() {
-    const setBadge = (n) => { const b = $('#inspections-badge'); if (!b) return; b.textContent = n; b.classList.toggle('hidden', !n); };
-    if (inspState.items.length) { setBadge(inspCounts().pending); return; }
-    Api.listInspectionsForReview('pending').then(rows => setBadge(rows.length)).catch(() => {});
+  // El badge de la pestaña suma inspecciones pendientes + novedades ABIERTAS, para
+  // que una novedad reportada sí llame la atención del admin (antes era invisible).
+  async function refreshInspectionsBadge() {
+    const b = $('#inspections-badge'); if (!b) return;
+    try {
+      const pend = inspState.items.length ? inspCounts().pending : (await Api.listInspectionsForReview('pending')).length;
+      let open = 0; try { open = await Api.countOpenIncidents(); inspState.openIncidents = open; } catch (e) { /* */ }
+      const n = pend + open;
+      b.textContent = n; b.classList.toggle('hidden', !n);
+    } catch (e) { /* */ }
   }
 
   async function renderInspections() {
@@ -578,14 +600,193 @@
       if (list) list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>';
       return;
     }
+    try { inspState.openIncidents = await Api.countOpenIncidents(); } catch (e) { /* */ }
+    updateNovCount();
     renderInspList();
+  }
+
+  // Refresca el contador del botón "Novedades" (novedades abiertas).
+  function updateNovCount() {
+    const el = $('#insp-nov-ct'); if (!el) return;
+    el.textContent = inspState.openIncidents || 0;
+    el.classList.toggle('hidden', !inspState.openIncidents);
+  }
+
+  // ---------- Novedades reportadas (incidents) dentro de la pestaña Inspecciones ----------
+  const NOV_ST = {
+    open:        { label: 'Abierta',    color: 'var(--amber)', icon: 'i-warn' },
+    in_progress: { label: 'En proceso', color: '#2563A8',      icon: 'i-clock' },
+    resolved:    { label: 'Resuelta',   color: 'var(--green)', icon: 'i-check' },
+  };
+  const NOV_SEV = {
+    low:    { label: 'Leve',  color: 'var(--green)' },
+    medium: { label: 'Media', color: 'var(--amber)' },
+    high:   { label: 'Grave', color: 'var(--red)' },
+  };
+  const NOV_CAT = { vehicle_problem: 'Problema del vehículo', delay: 'Demora', accident: 'Accidente', fuel: 'Combustible', other: 'Otra' };
+  const novWhen = (iso) => { try { return new Date(iso).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }); } catch (e) { return ''; } };
+  const novMediaPaths = (it) => Array.isArray(it.photo_paths) ? it.photo_paths.filter(p => typeof p === 'string') : [];
+  const novIsVideo = (p) => /\.(mp4|mov|webm|m4v)$/i.test(p);
+
+  async function renderNovedades() {
+    bindInspections();
+    inspShowView('novedades');
+    renderNovShell();
+    const list = $('#nov-list');
+    if (list) list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    try {
+      inspState.novItems = await Api.listIncidents();
+    } catch (e) {
+      console.error(e);
+      if (list) list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las novedades.</p>';
+      return;
+    }
+    inspState.openIncidents = inspState.novItems.filter(i => i.status === 'open').length;
+    updateNovCount();
+    renderNovList();
+  }
+
+  function renderNovShell() {
+    const el = $('#insp-v-novedades'); if (!el) return;
+    el.innerHTML = `
+      <button class="back" data-nov-back><svg class="icon"><use href="#i-back"/></svg>Volver a inspecciones</button>
+      <div class="phead">
+        <div><h1>Novedades reportadas</h1><p>Lo que los conductores reportan al iniciar o cerrar el turno. Ábrelas para ver el detalle, la evidencia y marcar el seguimiento.</p></div>
+      </div>
+      <div class="seg" id="nov-filter">
+        <button data-nf="open" class="on"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Abiertas <span class="n" data-nc="open">0</span></button>
+        <button data-nf="in_progress">En proceso <span class="n" data-nc="in_progress">0</span></button>
+        <button data-nf="resolved">Resueltas <span class="n" data-nc="resolved">0</span></button>
+        <button data-nf="all">Todas <span class="n" data-nc="all">0</span></button>
+      </div>
+      <div id="nov-list"></div>`;
+  }
+
+  function renderNovList() {
+    const items = inspState.novItems || [];
+    const counts = { open: 0, in_progress: 0, resolved: 0, all: items.length };
+    items.forEach(i => { if (counts[i.status] != null) counts[i.status]++; });
+    $$('#nov-filter .n').forEach(n => { n.textContent = counts[n.dataset.nc] != null ? counts[n.dataset.nc] : 0; });
+    $$('#nov-filter button').forEach(b => b.classList.toggle('on', b.dataset.nf === inspState.novFilter));
+    const shown = items.filter(it => inspState.novFilter === 'all' ? true : it.status === inspState.novFilter);
+    const list = $('#nov-list'); if (!list) return;
+    list.innerHTML = shown.length ? shown.map(novCardHtml).join('')
+      : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Nada por aquí</h3><p>No hay novedades en este filtro.</p></div>`;
+  }
+
+  function novCardHtml(it) {
+    const sev = NOV_SEV[it.severity] || NOV_SEV.medium;
+    const stm = NOV_ST[it.status] || NOV_ST.open;
+    const v = it.vehicles || {};
+    const veh = `${escapeHtml(v.internal_code || '—')}${v.license_plate ? ' · ' + escapeHtml(v.license_plate) : ''}`;
+    const who = (it.reporter && it.reporter.full_name) || '—';
+    const nMedia = novMediaPaths(it).length;
+    return `<div class="icard ${it.status === 'open' && it.severity === 'high' ? 'grave' : ''}">
+      <span class="avt" style="background:${colorOfId(it.id)}">${escapeHtml(initialsOf(who))}</span>
+      <div class="who"><b>${escapeHtml(who)}</b>
+        <div class="sub"><span class="veh">${veh}</span> <span class="when"><svg class="icon" style="width:12px;height:12px"><use href="#i-clock"/></svg>${escapeHtml(novWhen(it.created_at))}</span></div>
+        <div class="novdesc">${escapeHtml(it.description || '')}</div>
+      </div>
+      <div class="right">
+        <div class="chips">
+          <span class="chip" style="color:${sev.color}"><svg><use href="#i-warn"/></svg>${sev.label}</span>
+          ${nMedia ? `<span class="chip"><svg><use href="#i-cam"/></svg>${nMedia}</span>` : ''}
+        </div>
+        <div class="qactions"><span class="chip" style="color:${stm.color};font-weight:700"><svg><use href="#${stm.icon}"/></svg>${stm.label}</span><button class="btn dark sm" data-nov-open="${it.id}">Ver <svg class="icon" style="width:14px;height:14px"><use href="#i-chev"/></svg></button></div>
+      </div>
+    </div>`;
+  }
+
+  async function openNovedadDetail(id) {
+    const it = (inspState.novItems || []).find(x => x.id === id);
+    if (!it) return;
+    inspState.novCurrent = it;
+    inspShowView('novedades');
+    const el = $('#insp-v-novedades');
+    if (el) el.innerHTML = `<button class="back" data-nov-list><svg class="icon"><use href="#i-back"/></svg>Volver a novedades</button><div class="card"><p style="color:var(--ink2);font-size:13px">Cargando evidencia…</p></div>`;
+    let urls = {};
+    const paths = novMediaPaths(it);
+    if (paths.length) { try { urls = await Api.signedInspectionPhotoUrls(paths); } catch (e) { console.error(e); } }
+    renderNovedadDetail(it, urls);
+  }
+
+  function renderNovedadDetail(it, urls) {
+    const el = $('#insp-v-novedades'); if (!el) return;
+    const sev = NOV_SEV[it.severity] || NOV_SEV.medium;
+    const stm = NOV_ST[it.status] || NOV_ST.open;
+    const v = it.vehicles || {};
+    const who = (it.reporter && it.reporter.full_name) || '—';
+    const paths = novMediaPaths(it);
+    const mediaHtml = paths.length ? paths.map(p => {
+      const url = urls[p];
+      if (!url) return `<div class="photo"><svg class="icon"><use href="#i-cam"/></svg><span class="plabel">Evidencia</span></div>`;
+      if (novIsVideo(p)) return `<div class="photo" style="cursor:default"><video src="${url}" controls preload="metadata" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;background:#000"></video><span class="plabel">Video</span></div>`;
+      return `<div class="photo" data-insp-photo="${url}"><img src="${url}" alt="Evidencia"><span class="plabel">Foto</span></div>`;
+    }).join('') : '<p style="color:var(--ink2);font-size:13px">Sin evidencia adjunta.</p>';
+    const fmtDT = (s) => { try { return new Date(s).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }); } catch (e) { return ''; } };
+    const actions = it.status === 'resolved'
+      ? `<div class="abar" style="margin-top:12px"><button class="btn ghost" data-nov-status="open"><svg class="icon"><use href="#i-back"/></svg>Reabrir novedad</button></div>`
+      : `<label>Nota de resolución (opcional)</label>
+         <textarea id="nov-resolve-note" placeholder="Ej: Se revisó el golpe, autorizado para operar. / Enviado a taller.">${escapeHtml(it.resolution_notes || '')}</textarea>
+         <div class="abar" style="margin-top:12px">
+           ${it.status === 'open' ? '<button class="btn ghost" data-nov-status="in_progress"><svg class="icon"><use href="#i-clock"/></svg>Marcar en proceso</button>' : ''}
+           <button class="rbtn ok" data-nov-status="resolved"><svg><use href="#i-check"/></svg>Marcar resuelta</button>
+         </div>`;
+    el.innerHTML = `
+      <button class="back" data-nov-list><svg class="icon"><use href="#i-back"/></svg>Volver a novedades</button>
+      <div class="card">
+        <div class="dhead">
+          <span class="avt" style="background:${colorOfId(it.id)}">${escapeHtml(initialsOf(who))}</span>
+          <div class="grow">
+            <h2>${escapeHtml(who)}</h2>
+            <div class="who"><div class="sub"><span class="veh">${escapeHtml(v.internal_code || '—')}${v.license_plate ? ' · ' + escapeHtml(v.license_plate) : ''}</span> ${escapeHtml([v.brand, v.model].filter(Boolean).join(' '))} · ${escapeHtml(fmtDT(it.created_at))}</div></div>
+          </div>
+          <span class="chip" style="color:${sev.color}"><svg><use href="#i-warn"/></svg>${sev.label}</span>
+          <span class="chip" style="color:${stm.color};font-weight:700"><svg><use href="#${stm.icon}"/></svg>${stm.label}</span>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2><svg class="icon"><use href="#i-info"/></svg>Novedad</h2>
+        <div class="kv"><span class="k">Tipo</span><span class="v">${escapeHtml(NOV_CAT[it.category] || it.category || '—')}</span></div>
+        <div style="margin-top:12px"><div class="note">${escapeHtml(it.description || '—')}</div></div>
+        ${it.resolved_at ? `<div class="kv" style="margin-top:10px"><span class="k">Resuelta</span><span class="v">${escapeHtml(fmtDT(it.resolved_at))}</span></div>` : ''}
+        ${(it.resolution_notes && it.status === 'resolved') ? `<div style="margin-top:10px"><div class="note"><b>Resolución:</b> ${escapeHtml(it.resolution_notes)}</div></div>` : ''}
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h2><svg class="icon"><use href="#i-cam"/></svg>Evidencia</h2>
+        <p class="csub">Fotos y videos que adjuntó el conductor. Toca una foto para ampliar.</p>
+        <div class="pgrid">${mediaHtml}</div>
+      </div>
+      <div class="card" id="nov-decision" style="margin-top:16px">
+        <h2>Seguimiento</h2>
+        <p class="csub">Marca el avance de esta novedad para llevar control.</p>
+        ${actions}
+      </div>`;
+  }
+
+  async function novChangeStatus(id, status) {
+    const it = (inspState.novItems || []).find(x => x.id === id) || inspState.novCurrent;
+    let notes = null;
+    if (status === 'resolved') { const t = $('#nov-resolve-note'); notes = t ? t.value.trim() : null; }
+    try {
+      await Api.updateIncidentStatus(id, status, notes);
+      if (it) {
+        it.status = status;
+        it.resolved_at = status === 'resolved' ? new Date().toISOString() : null;
+        if (status === 'resolved' && notes != null) it.resolution_notes = notes;
+      }
+      inspState.openIncidents = (inspState.novItems || []).filter(x => x.status === 'open').length;
+      updateNovCount();
+      toast(status === 'resolved' ? 'Novedad marcada como resuelta.' : status === 'in_progress' ? 'Novedad en proceso.' : 'Novedad reabierta.');
+      openNovedadDetail(id);
+    } catch (e) { console.error(e); toast('No se pudo actualizar la novedad.'); }
   }
 
   function renderInspList() {
     const counts = inspCounts();
     if ($('#insp-count')) $('#insp-count').textContent = counts.pending;
     $$('#insp-filter .n').forEach(n => { n.textContent = counts[n.dataset.c] != null ? counts[n.dataset.c] : 0; });
-    const b = $('#inspections-badge'); if (b) { b.textContent = counts.pending; b.classList.toggle('hidden', !counts.pending); }
+    const b = $('#inspections-badge'); if (b) { const n = counts.pending + (inspState.openIncidents || 0); b.textContent = n; b.classList.toggle('hidden', !n); }
     const autosBar = $('#insp-autos-bar');
     if (inspState.filter === 'autos') { renderAutosView(); return; }
     if (autosBar) autosBar.classList.add('hidden');
@@ -940,7 +1141,14 @@
       const fb = e.target.closest('#insp-filter button');
       if (fb) { inspState.filter = fb.dataset.f; $$('#insp-filter button').forEach(b => b.classList.toggle('on', b === fb)); renderInspList(); return; }
       if (e.target.closest('#insp-to-config')) { openInspChecklist(); return; }
+      if (e.target.closest('#insp-to-novedades')) { renderNovedades(); return; }
       if (e.target.closest('[data-insp-back]')) { renderInspections(); return; }
+      // --- Novedades (incidents) ---
+      if (e.target.closest('[data-nov-back]')) { renderInspections(); return; }
+      if (e.target.closest('[data-nov-list]')) { renderNovedades(); return; }
+      const nf = e.target.closest('#nov-filter button'); if (nf) { inspState.novFilter = nf.dataset.nf; renderNovList(); return; }
+      const novOpen = e.target.closest('[data-nov-open]'); if (novOpen) { openNovedadDetail(novOpen.dataset.novOpen); return; }
+      const novSt = e.target.closest('[data-nov-status]'); if (novSt) { const cur = inspState.novCurrent; if (cur) novChangeStatus(cur.id, novSt.dataset.novStatus); return; }
       const open = e.target.closest('[data-insp-open]'); if (open) { openInspectionDetail(open.dataset.inspOpen); return; }
       const ok = e.target.closest('[data-insp-ok]'); if (ok) { inspState.current = inspFindItem(ok.dataset.inspOk); inspDoReview(ok.dataset.inspOk, 'approved', null); return; }
       const rej = e.target.closest('[data-insp-rej]'); if (rej) { openInspectionDetail(rej.dataset.inspRej); return; }
@@ -1104,6 +1312,9 @@
     const lanes = [];
     for (let i = 0; i < (s.morning_slots || 0); i++) lanes.push({ kind: 'morning', index: i, group: 'am' });
     for (let i = 0; i < (s.afternoon_slots || 0); i++) lanes.push({ kind: 'afternoon', index: i, group: 'pm' });
+    // Filas de líder SOLO para el vistazo del admin: reflejan a UNO de los
+    // conductores de la jornada (coord_am ⊆ morning, coord_pm ⊆ afternoon). NO
+    // son cupo aparte → dayCoverage las excluye (la cobertura sigue en 4/día).
     lanes.push({ kind: 'coord_am', index: 0, group: 'co' });
     lanes.push({ kind: 'coord_pm', index: 0, group: 'co' });
     return lanes;
@@ -1138,7 +1349,8 @@
     let n = 0;
     Scheduler.DAYS.forEach(day => {
       const d = state.schedule[day]; if (!d) return;
-      ['morning', 'afternoon', 'coord_am', 'coord_pm'].forEach(k => { if ((d[k] || []).includes(id)) n++; });
+      // Liderar no suma carga aparte: el líder ya está contado en su jornada.
+      ['morning', 'afternoon'].forEach(k => { if ((d[k] || []).includes(id)) n++; });
     });
     return n;
   }
@@ -1168,15 +1380,48 @@
   }
 
   function dayCoverage(dayKey) {
-    const lanes = boardLanes();
     const d = state.schedule?.[dayKey];
-    let filled = 0;
-    lanes.forEach(l => { if (d?.[l.kind]?.[l.index]) filled++; });
-    return { filled, total: lanes.length };
+    let filled = 0, total = 0;
+    boardLanes().forEach(l => {
+      if (isCoordKind(l.kind)) return; // el líder no es cupo aparte, ya conduce su jornada
+      total++;
+      if (d?.[l.kind]?.[l.index]) filled++;
+    });
+    return { filled, total };
+  }
+
+  // ---- Liderazgo: el líder es UNO de los conductores de la jornada ----
+  // coord_am ⊆ morning, coord_pm ⊆ afternoon (un id por jornada). Estas ayudas
+  // mantienen esa invariante y permiten marcar/quitar el líder desde la tarjeta.
+  const coordKeyOf = (kind) => kind === 'morning' ? 'coord_am' : kind === 'afternoon' ? 'coord_pm' : null;
+  function isLeaderCard(day, kind, id) {
+    const ck = coordKeyOf(kind); if (!ck) return false;
+    return (state.schedule?.[day]?.[ck] || []).includes(id);
+  }
+  // Quita del líder a quien ya no esté en su jornada (evita el "líder fantasma").
+  function cleanLeaders(day) {
+    const s = state.schedule?.[day]; if (!s) return;
+    const morn = new Set((s.morning || []).filter(Boolean));
+    const aft = new Set((s.afternoon || []).filter(Boolean));
+    s.coord_am = (s.coord_am || []).filter(id => morn.has(id));
+    s.coord_pm = (s.coord_pm || []).filter(id => aft.has(id));
+  }
+  function cleanAllLeaders() { if (state.schedule) Scheduler.DAYS.forEach(cleanLeaders); }
+  // Marca/desmarca a un conductor de la jornada como líder (toggle). Solo quien
+  // esté marcado como "Líder de turno" (can_coordinate) puede liderar.
+  function boardSetLeader(day, kind, id) {
+    const ck = coordKeyOf(kind); if (!ck) return;
+    ensureScheduleShape();
+    const drv = state.drivers.find(d => d.id === id);
+    if (!drv || !drv.can_coordinate) { flashBoard('Solo un conductor marcado como "Líder de turno" puede liderar la jornada.'); return; }
+    const cur = (state.schedule[day][ck] || [])[0] || null;
+    state.schedule[day][ck] = (cur === id) ? [] : [id]; // un líder por jornada
+    renderSchedule();
   }
 
   // ---- Render principal (reemplaza la tabla anterior) ----
   function renderSchedule() {
+    cleanAllLeaders();
     renderBoardChrome();
     renderKPIs();
     renderPool();
@@ -1217,18 +1462,17 @@
   function smDayConfCount(di) {
     const dayKey = Scheduler.DAYS[di]; const d = (state.schedule && state.schedule[dayKey]) || {}; let n = 0;
     smBands().forEach(b => (d[b.k] || []).forEach(id => { if (id && dayConflict(dayKey, id, b.k)) n++; }));
-    smCoordMembers(dayKey).forEach(m => { if (m.id && dayConflict(dayKey, m.id, m.kind)) n++; });
     return n;
   }
   function smTotals() { let f = 0, t = 0, conf = 0; for (let i = 0; i < 7; i++) { const c = smCov(i); f += c.filled; t += c.total; conf += smDayConfCount(i); } return { f, t, huecos: t - f, conf }; }
 
   function smArow(dayKey, id, kind, bandLabel) {
     if (!id) return `<div class="empty"><span class="ei"><svg class="icon" style="width:14px;height:14px"><use href="#i-plus"/></svg></span><div><b>Sin cubrir</b><span>${escapeHtml(bandLabel)} · cupo libre</span></div></div>`;
-    const conf = dayConflict(dayKey, id, kind); const soft = daySoft(dayKey, id, kind); const isCoord = isCoordKind(kind);
+    const conf = dayConflict(dayKey, id, kind); const soft = daySoft(dayKey, id, kind); const isLeader = isLeaderCard(dayKey, kind, id);
     const tag = conf ? `<span class="tag conf"><svg class="icon" style="width:11px;height:11px"><use href="#i-alert"/></svg>Conflicto</span>`
-      : isCoord ? `<span class="tag coord">Coordina</span>`
+      : isLeader ? `<span class="tag coord">★ Líder de turno</span>`
         : (soft ? `<span class="tag" style="background:var(--amber-soft);color:var(--amber)">Pidió descanso</span>` : '');
-    const sub = conf ? (conf === 'rule' ? 'Descanso fijo este día' : conf === 'unavailable' ? 'No disponible este día' : 'Doble turno este día') : bandLabel;
+    const sub = conf ? (conf === 'rule' ? 'Descanso fijo este día' : conf === 'unavailable' ? 'No disponible este día' : 'Doble turno este día') : (isLeader ? bandLabel + ' · Líder' : bandLabel);
     return `<div class="arow ${conf ? 'conf' : ''}"><span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nameOf(id)))}</span><div class="nm"><b>${escapeHtml(nameOf(id))}</b><span>${escapeHtml(sub)}</span></div>${tag}</div>`;
   }
   function smBandBlock(di, b) {
@@ -1258,8 +1502,8 @@
   function smRenderDia() {
     const el = $('#sm-scroll'); if (!el) return; const di = smState.sel; const ti = smTodayIndex(); const c = smCov(di); const wk = Scheduler.weekDates(state.currentWeek);
     el.innerHTML = `<div class="daytitle"><b>${SM_DOWLONG[di]}</b><span>${String(wk[di].dayNum).padStart(2, '0')}</span>${di === ti ? '<span class="tnow">Hoy</span>' : ''}</div>
-      ${smBands().map(b => smBandBlock(di, b)).join('')}${smCoordBlock(di)}
-      <div class="footnote">Asignación de la semana · <b>${c.filled}/${c.total} cupos</b> cubiertos este día.<br>Para editar el horario, abre el Tablero desde un computador.</div>`;
+      ${smBands().map(b => smBandBlock(di, b)).join('')}
+      <div class="footnote">El ★ marca al líder de cada jornada.<br>Asignación de la semana · <b>${c.filled}/${c.total} cupos</b> cubiertos este día.<br>Para editar el horario, abre el Tablero desde un computador.</div>`;
   }
   function smRenderSemana() {
     const el = $('#sm-scroll'); if (!el) return; const ti = smTodayIndex(); const wk = Scheduler.weekDates(state.currentWeek);
@@ -1267,11 +1511,11 @@
       const c = smCov(di); const cl = smCovClass(c.filled, c.total); const dayKey = Scheduler.DAYS[di]; const d = (state.schedule && state.schedule[dayKey]) || {};
       const bandRows = smBands().map(b => {
         let chips = ''; for (let i = 0; i < b.slots; i++) { const id = (d[b.k] || [])[i] || null;
-          chips += id ? `<span class="nchip ${dayConflict(dayKey, id, b.k) ? 'conf' : ''}"><span class="dd" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nameOf(id)))}</span>${escapeHtml(smFname(id))}</span>` : `<span class="nchip gap">Hueco</span>`; }
+          const lead = !!(id && isLeaderCard(dayKey, b.k, id));
+          chips += id ? `<span class="nchip ${lead ? 'coord' : ''} ${dayConflict(dayKey, id, b.k) ? 'conf' : ''}"><span class="dd" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nameOf(id)))}</span>${lead ? '★ ' : ''}${escapeHtml(smFname(id))}</span>` : `<span class="nchip gap">Hueco</span>`; }
         return `<div class="brow"><span class="blab">${b.short}</span><div class="chips">${chips}</div></div>`;
       }).join('');
-      const coordChips = smCoordMembers(dayKey).map(m => m.id ? `<span class="nchip coord ${dayConflict(dayKey, m.id, m.kind) ? 'conf' : ''}"><span class="dd" style="background:${colorOfId(m.id)}">${escapeHtml(initialsOf(nameOf(m.id)))}</span>${escapeHtml(smFname(m.id))}</span>` : `<span class="nchip gap">Hueco</span>`).join('');
-      return `<div class="wkcard ${di === ti ? 'today' : ''} ${smState.open.has(di) ? 'open' : ''}" data-sm-wk="${di}"><div class="wkc-h" data-sm-toggle="${di}"><div class="wd"><b>${String(dd.dayNum).padStart(2, '0')}</b><span>${SM_DOW[di]}</span></div>${di === ti ? '<span class="tag coord" style="margin-left:8px">Hoy</span>' : ''}<span class="cvpill ${cl}">${c.filled}/${c.total}</span><span class="chev"><svg class="icon"><use href="#i-chev"/></svg></span></div><div class="wkc-b">${bandRows}<div class="brow"><span class="blab">Coord</span><div class="chips">${coordChips}</div></div></div></div>`;
+      return `<div class="wkcard ${di === ti ? 'today' : ''} ${smState.open.has(di) ? 'open' : ''}" data-sm-wk="${di}"><div class="wkc-h" data-sm-toggle="${di}"><div class="wd"><b>${String(dd.dayNum).padStart(2, '0')}</b><span>${SM_DOW[di]}</span></div>${di === ti ? '<span class="tag coord" style="margin-left:8px">Hoy</span>' : ''}<span class="cvpill ${cl}">${c.filled}/${c.total}</span><span class="chev"><svg class="icon"><use href="#i-chev"/></svg></span></div><div class="wkc-b">${bandRows}</div></div>`;
     }).join('') + `<div class="footnote">Toca un día para ver el detalle. Para editar, usa el Tablero en computador.</div>`;
   }
   function smRenderBody() { smState.mode === 'dia' ? smRenderDia() : smRenderSemana(); }
@@ -1343,6 +1587,7 @@
       const day = state.schedule?.[d.key];
       if (day?.coord_am?.[0] && day?.coord_pm?.[0]) coordDays++;
       boardLanes().forEach(l => {
+        if (isCoordKind(l.kind)) return; // el líder ya se contó en su jornada
         const id = day?.[l.kind]?.[l.index];
         if (id && dayConflict(d.key, id, l.kind)) conf++;
       });
@@ -1376,9 +1621,8 @@
       const pct = Math.min(l / 5 * 100, 100);
       const cls = out ? 'out' : l >= 5 ? 'hi' : l <= 2 ? 'lo' : '';
       const mc = l >= 5 ? 'hi' : l <= 2 ? 'lo' : '';
-      const isFlex = (d.email || '').toLowerCase() === FLEX_COORD_EMAIL;
       const sub = out ? (isSuspendedId(d.id) ? 'Suspendido' : 'Fuera del corte')
-        : (isFlex ? 'Lidera (flex)' : d.can_coordinate ? 'Lidera' : 'Disponible');
+        : (d.can_coordinate ? 'Puede liderar' : 'Disponible');
       const hidden = filter && !(d.name || '').toLowerCase().includes(filter) ? ' hidden' : '';
       return `<div class="pcard ${cls}"${out ? '' : ' draggable="true"'} data-driver="${d.id}" data-src="pool"${hidden}>
         <span class="av" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span>
@@ -1421,25 +1665,43 @@
       week.forEach((d, di) => {
         const wknd = di >= 5 ? 'wknd' : '';
         const id = sched?.[d.key]?.[lane.kind]?.[lane.index] || null;
+        const coordLane = isCoordKind(lane.kind);
         let inner;
         if (id) {
           const hard = dayConflict(d.key, id, lane.kind);
           const soft = !hard && daySoft(d.key, id, lane.kind);
-          const cardCls = [
-            isCoordKind(lane.kind) ? 'coord' : '',
-            hard ? 'conf' : '',
-            soft ? 'soft' : '',
-            boardJustPlaced === `${d.key}-${lane.kind}-${lane.index}` ? 'just' : '',
-          ].filter(Boolean).join(' ');
           const nm = nameOf(id);
-          const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isCoordKind(lane.kind) ? 'Lidera' : BOARD_GROUP_LABEL[lane.group]);
-          inner = `<div class="asg ${cardCls}" draggable="true" data-driver="${id}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
-              <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
-              <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(subtxt)}</span></div>
-              <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
-            </div>`;
+          const justCls = boardJustPlaced === `${d.key}-${lane.kind}-${lane.index}` ? 'just' : '';
+          if (coordLane) {
+            // Fila de líder (vistazo admin): refleja al líder; su ★/cambio vive en la
+            // tarjeta de Mañana/Tarde. La X quita el liderazgo (no saca de la jornada).
+            const cardCls = ['coord', hard ? 'conf' : '', justCls].filter(Boolean).join(' ');
+            inner = `<div class="asg ${cardCls}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
+                <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
+                <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(hard ? '⚠ ' + hardLabel(hard) : '★ Lidera')}</span></div>
+                <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar líder"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
+              </div>`;
+          } else {
+            const isLeader = isLeaderCard(d.key, lane.kind, id);
+            const cardCls = [
+              isLeader ? 'coord lead-on' : '',
+              hard ? 'conf' : '',
+              soft ? 'soft' : '',
+              justCls,
+            ].filter(Boolean).join(' ');
+            // El líder se marca con fondo naranja + "★ Lidera" en el subtítulo (sin
+            // elemento suelto que desalinee las tarjetas). Se cambia desde las filas
+            // Líder AM/PM. Mismo layout que las demás → avatares alineados.
+            const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isLeader ? '★ Lidera' : BOARD_GROUP_LABEL[lane.group]);
+            inner = `<div class="asg ${cardCls}" draggable="true" data-driver="${id}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
+                <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
+                <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(subtxt)}</span></div>
+                <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
+              </div>`;
+          }
         } else {
-          inner = `<div class="drop" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">+ asignar<small>${escapeHtml(laneShortLabel(lane))}</small></div>`;
+          const lbl = coordLane ? '+ líder' : '+ asignar';
+          inner = `<div class="drop" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">${lbl}<small>${escapeHtml(laneShortLabel(lane))}</small></div>`;
         }
         h += `<div class="zone ${wknd}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}"><div class="slot">${inner}</div></div>`;
       });
@@ -1463,21 +1725,28 @@
     const [day, kind, index] = src.split('-');
     if (state.schedule[day] && state.schedule[day][kind]) {
       state.schedule[day][kind][+index] = null;
-      if (!isCoordKind(kind)) rebuildRestRow(day);
+      rebuildRestRow(day); // recalcula descanso y limpia al líder si salió de la jornada
     }
   }
   function boardPlaceInto(day, kind, index, id, src) {
     ensureScheduleShape();
-    if (isCoordKind(kind) && !coordPeople().some(p => p.id === id)) {
-      flashBoard('Solo líderes de turno (admin o Daniel) pueden ir en Líder de turno.');
+    // Soltar en la fila de líder: solo un conductor de esa jornada que pueda liderar.
+    if (isCoordKind(kind)) {
+      const shiftKind = kind === 'coord_am' ? 'morning' : 'afternoon';
+      const drv = state.drivers.find(d => d.id === id);
+      if (!drv || !drv.can_coordinate) { flashBoard('Solo un conductor marcado como "Líder de turno" puede liderar.'); return; }
+      if (!(state.schedule[day][shiftKind] || []).includes(id)) { flashBoard('El líder debe ser uno de los conductores de esa jornada; ponlo primero en Mañana/Tarde.'); return; }
+      state.schedule[day][kind] = [id];
+      boardJustPlaced = `${day}-${kind}-${index}`;
+      renderSchedule();
       return;
     }
-    const scope = isCoordKind(kind) ? COORD_KINDS : ['morning', 'afternoon', 'rest'];
+    const scope = ['morning', 'afternoon', 'rest'];
     scope.forEach(k => { state.schedule[day][k] = (state.schedule[day][k] || []).filter(x => x !== id); });
     if (src && src !== 'pool') boardRemoveFrom(src);
     while (state.schedule[day][kind].length <= index) state.schedule[day][kind].push(null);
     state.schedule[day][kind][index] = id;
-    if (!isCoordKind(kind)) rebuildRestRow(day);
+    rebuildRestRow(day);
     boardJustPlaced = `${day}-${kind}-${index}`;
     renderSchedule();
     const c = dayConflict(day, id, kind);
@@ -1549,6 +1818,8 @@
     board.addEventListener('click', e => {
       const x = e.target.closest('[data-remove]');
       if (x) { e.stopPropagation(); boardRemoveFrom(x.dataset.remove); renderSchedule(); return; }
+      const lead = e.target.closest('[data-lead]');
+      if (lead) { e.stopPropagation(); const a = lead.closest('.asg'); if (a) boardSetLeader(a.dataset.day, a.dataset.kind, a.dataset.driver); return; }
       const cell = e.target.closest('.asg, .drop');
       if (cell && cell.dataset.day) openCellEditor(cell);
     });
@@ -1781,7 +2052,16 @@
       `Editar ${kindLabel(kind)} · ${Scheduler.DAY_LABELS_ES[day]}`;
     const select = $('#cell-editor-select');
     const options = ['<option value="">— vacío —</option>'];
-    const people = isCoordKind(kind) ? coordPeople() : state.drivers;
+    // Fila de líder: solo los conductores de esa jornada que pueden liderar.
+    let people;
+    if (isCoordKind(kind)) {
+      const shiftKind = kind === 'coord_am' ? 'morning' : 'afternoon';
+      const ids = new Set((state.schedule?.[day]?.[shiftKind] || []).filter(Boolean));
+      people = state.drivers.filter(p => ids.has(p.id) && p.can_coordinate);
+      if (!people.length) options[0] = '<option value="">— nadie de esta jornada puede liderar —</option>';
+    } else {
+      people = state.drivers;
+    }
     people.forEach(p => options.push(`<option value="${p.id}">${p.name}</option>`));
     select.innerHTML = options.join('');
     if (state.schedule) {
@@ -1817,8 +2097,17 @@
       });
     });
 
-    // Las celdas de coordinación (admins) son independientes de las de conductores.
-    const scope = isCoordKind(kind) ? COORD_KINDS : ['morning', 'afternoon', 'rest'];
+    // Fila de líder: solo setea coord_am/coord_pm (el líder ya conduce su jornada;
+    // no se toca morning/afternoon/rest). cleanLeaders valida que siga en su jornada.
+    if (isCoordKind(kind)) {
+      sched[day][kind] = id ? [id] : [];
+      cleanLeaders(day);
+      closeCellEditor();
+      renderSchedule();
+      return;
+    }
+
+    const scope = ['morning', 'afternoon', 'rest'];
 
     if (id) {
       scope.forEach(k => {
@@ -1829,7 +2118,7 @@
     while (sched[day][kind].length <= index) sched[day][kind].push(null);
     sched[day][kind][index] = id;
 
-    if (!isCoordKind(kind)) rebuildRestRow(day);
+    rebuildRestRow(day);
     closeCellEditor();
     renderSchedule();
   }
@@ -1838,6 +2127,7 @@
     const sched = state.schedule[day];
     const used = new Set([...(sched.morning || []), ...(sched.afternoon || [])].filter(Boolean));
     sched.rest = state.drivers.filter(d => !used.has(d.id)).map(d => d.id);
+    cleanLeaders(day); // el líder debe seguir estando en su jornada
   }
 
   // ====================================================================
@@ -2253,7 +2543,7 @@
         load: { am: 0, pm: 0, co: 0, total: 0 } })),
       ...drivers.map(d => ({ id: d.id, name: d.name, email: d.email, role: 'driver',
         coord: d.can_coordinate === true, active: d.active !== false,
-        strikes: strikeCounts.get(d.id) || 0, suspWeek: weekSusp.has(d.id),
+        strikes: strikeCounts.get(d.id) || 0, suspWeek: weekSusp.has(d.id), suspRow: weekSusp.get(d.id) || null,
         km: (kmByProfile.get(d.id) || {}).km || 0, turns: (kmByProfile.get(d.id) || {}).turns || 0,
         rest: restText(d.id), load: loadOf[d.id] || { am: 0, pm: 0, co: 0, total: 0 } })),
     ];
@@ -2342,6 +2632,7 @@
           <button class="pc-btn ${p.coord ? 'on' : ''}" data-act="${adm ? (p.coord ? 'coord-off' : 'coord-on') : (p.coord ? 'dcoord-off' : 'dcoord-on')}" data-id="${p.id}" data-name="${nm}">${p.coord ? '✓ Lidera' : '✕ No lidera'}</button>
           ${adm ? '' : `<button class="pc-btn" data-act="strike" data-id="${p.id}" data-name="${nm}">⚠ Strike</button>
           <button class="pc-btn" data-act="strikes-history" data-id="${p.id}" data-name="${nm}">Historial</button>
+          ${p.suspWeek ? `<button class="pc-btn" data-act="lift-susp" data-id="${p.id}" data-name="${nm}" data-susp-id="${p.suspRow ? p.suspRow.id : ''}">✓ Levantar suspensión</button>` : ''}
           <div class="spacer"></div>
           <button class="pc-btn" data-act="${p.active ? 'suspend' : 'reactivate'}" data-id="${p.id}" data-name="${nm}">${p.active ? 'Suspender' : 'Reactivar'}</button>
           <button class="pc-btn danger" data-act="delete" data-id="${p.id}" data-name="${nm}">Eliminar</button>`}
@@ -2411,6 +2702,23 @@
       btn.disabled = false;
       return;
     }
+    // Levantar la suspensión semanal (la que arma el 3º strike o una manual).
+    if (act === 'lift-susp') {
+      const suspId = btn.dataset.suspId;
+      if (!suspId) { toast('No encuentro la suspensión de esta semana.'); return; }
+      if (!confirm(`¿Levantar la suspensión de esta semana de ${name}? Volverá a entrar en la generación de turnos y podrá operar.`)) return;
+      btn.disabled = true;
+      try {
+        await Api.liftSuspension(suspId, state.profile.id);
+        notify([id], 'Suspensión levantada', 'Tu suspensión de esta semana fue levantada. Ya puedes operar normalmente.', '/');
+        await renderWorkers();
+        toast('Suspensión levantada.');
+      } catch (e) {
+        alert('Error al levantar la suspensión: ' + e.message);
+        btn.disabled = false;
+      }
+      return;
+    }
 
     if (act === 'delete' && !confirm(`¿Eliminar a ${name}? Desaparece del sistema y de la generación. Los horarios pasados donde aparece NO se borran.`)) return;
     if (act === 'suspend' && !confirm(`¿Suspender a ${name}? Saldrá de la generación de horarios hasta que lo reactives.`)) return;
@@ -2454,7 +2762,7 @@
         </div>
         <div class="strike-item-side">
           ${statusOf(s)}
-          ${(!s.voided_at && !s.consumed_at) ? `<button data-void-id="${s.id}" class="wk-btn wk-strike-void">Anular</button>` : ''}
+          ${!s.voided_at ? `<button data-void-id="${s.id}" data-consumed="${s.consumed_at ? '1' : ''}" class="wk-btn wk-strike-void">Anular</button>` : ''}
         </div>
       </div>`).join('') : '<p class="text-sm text-slate-500">Sin strikes registrados.</p>';
     const active = strikes.filter(s => !s.voided_at && !s.consumed_at).length;
@@ -2477,7 +2785,11 @@
     overlay.querySelector('#strikes-modal-close').addEventListener('click', () => overlay.remove());
     overlay.querySelectorAll('[data-void-id]').forEach(b => {
       b.addEventListener('click', async () => {
-        if (!confirm('¿Anular este strike? No contará para la suspensión (queda en historial).')) return;
+        const consumed = b.dataset.consumed === '1';
+        const msg = consumed
+          ? '¿Anular este strike YA consumido? Queda marcado en el historial, pero esto NO levanta una suspensión ya aplicada. Para desbloquear al conductor usa “Levantar suspensión” en su ficha.'
+          : '¿Anular este strike? No contará para la suspensión (queda en historial).';
+        if (!confirm(msg)) return;
         b.disabled = true;
         try {
           await Api.voidStrike(b.dataset.voidId, state.profile.id);
@@ -2520,17 +2832,28 @@
     try { vehs = await Api.listVehiclesForShift(); }
     catch (e) { console.error(e); box.innerHTML = '<p class="set-hint">No se pudieron cargar los vehículos.</p>'; return; }
     vehiclesCache = vehs;
+    setOilBadge(vehs);   // refresca el "!" de Ajustes con la lista ya cargada
     if (!vehs.length) { box.innerHTML = '<p class="set-hint">Aún no hay vehículos. Agrega el primero abajo.</p>'; return; }
     box.innerHTML = vehs.map(v => {
-      const offService = v.status === 'maintenance' || v.status === 'blocked';
-      const restoreBtn = offService
-        ? `<button class="set-btn dark" data-veh-restore="${v.id}" title="Regresar a servicio">${v.status === 'blocked' ? 'Cambio de aceite hecho' : 'Regresar a servicio'}</button>`
+      const overridden = !!v.oil_override_at;               // conductor lo desbloqueó
+      const oilPending = v.status === 'blocked' || overridden; // aceite vencido (con o sin override)
+      // Botón "Cambio de aceite hecho": para carros bloqueados por aceite Y para
+      // los que el conductor desbloqueó (siguen disponibles pero con aceite pendiente).
+      const oilBtn = oilPending
+        ? `<button class="set-btn dark" data-veh-oilchange="${v.id}" title="Registrar cambio de aceite">Cambio de aceite hecho</button>`
+        : '';
+      // 'maintenance' (NO APTO) se regresa a servicio por la vía normal.
+      const restoreBtn = (v.status === 'maintenance')
+        ? `<button class="set-btn dark" data-veh-restore="${v.id}" title="Regresar a servicio">Regresar a servicio</button>`
+        : '';
+      const oilAlert = oilPending
+        ? `<span style="display:block;margin-top:3px;color:#dc2626;font-weight:800;font-size:11px">🛢️ Cambio de aceite pendiente${overridden ? ' · desbloqueado por conductor' : ''}</span>`
         : '';
       const intv = v.maintenance_interval_km ? ` · aceite c/${(v.maintenance_interval_km).toLocaleString('es-CO')} km` : '';
       return `<div class="veh-row" data-veh="${v.id}">
-      <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km${intv}</span></div>
+      <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km${intv}</span>${oilAlert}</div>
       <span class="veh-stat st-${v.status}">${VEH_STATUS_ES[v.status] || escapeHtml(v.status || '')}</span>
-      ${restoreBtn}
+      ${oilBtn}${restoreBtn}
       <button class="set-btn ghost" data-veh-edit="${v.id}" title="Editar" style="height:34px">Editar</button>
       <button class="veh-del" data-veh-del="${v.id}" title="Eliminar vehículo"><svg class="icon" style="width:15px;height:15px"><use href="#i-trash"/></svg></button>
     </div>`;
@@ -2611,16 +2934,14 @@
     catch (e) { console.error(e); alert('No se pudo eliminar: ' + (e.message || 'error')); }
   }
 
+  // 'maintenance' (p. ej. NO APTO): regresar a servicio sin tocar el contador.
+  // El caso 'blocked'/override por aceite va por onRegisterOilChange (0041).
   async function onRestoreVehicle(id) {
     const v = (await safeVehicles()).find(x => x.id === id);
     const label = v ? (v.internal_code || v.license_plate || 'este vehículo') : 'este vehículo';
-    const oil = v && v.status === 'blocked';
-    const msg = oil
-      ? `¿Registrar el cambio de aceite de ${label}? Quedará Disponible y se reinicia el contador de km.`
-      : `¿Regresar ${label} a servicio? Quedará Disponible para los conductores.`;
-    if (!confirm(msg)) return;
+    if (!confirm(`¿Regresar ${label} a servicio? Quedará Disponible para los conductores.`)) return;
     try {
-      await Api.returnVehicleToService(id, oil ? 'Cambio de aceite realizado' : 'Regreso a servicio desde Ajustes');
+      await Api.returnVehicleToService(id, 'Regreso a servicio desde Ajustes');
       toast('Vehículo disponible.');
       renderVehiclesSettings();
     } catch (e) {
@@ -2631,6 +2952,26 @@
       alert('No se pudo regresar a servicio: ' + msg);
     }
   }
+  // Admin registra el cambio de aceite (0041): reinicia el contador, limpia el
+  // override del conductor y regresa a servicio si estaba bloqueado.
+  async function onRegisterOilChange(id) {
+    const v = (await safeVehicles()).find(x => x.id === id);
+    const label = v ? (v.internal_code || v.license_plate || 'este vehículo') : 'este vehículo';
+    const wasOverride = v && v.oil_override_at;
+    const msg = wasOverride
+      ? `¿Registrar el cambio de aceite de ${label}? Un conductor lo desbloqueó y sigue pendiente. Se reinicia el contador de km.`
+      : `¿Registrar el cambio de aceite de ${label}? Quedará Disponible y se reinicia el contador de km.`;
+    if (!confirm(msg)) return;
+    try {
+      await Api.registerOilChange(id, 'Cambio de aceite registrado desde Ajustes');
+      toast('Cambio de aceite registrado.');
+      renderVehiclesSettings();
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo registrar el cambio de aceite: ' + (e.message || 'error'));
+    }
+  }
+
   async function safeVehicles() { try { return await Api.listVehiclesForShift(); } catch (e) { return []; } }
 
   // --- Editor de parametrización: descansos fijos por conductor (Fase 4) ---
@@ -4031,10 +4372,9 @@
     week.forEach(d => {
       const day = sch.data[d.key] || {};
       const meId = state.profile.id;
-      if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Manejo' });
-      if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Manejo' });
-      if ((day.coord_am || []).includes(meId)) myShifts.push({ d, shift: 'AM', kind: 'Líder de turno' });
-      if ((day.coord_pm || []).includes(meId)) myShifts.push({ d, shift: 'PM', kind: 'Líder de turno' });
+      // El líder conduce su jornada: un solo turno (no se duplica ni las horas).
+      if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', lead: (day.coord_am || []).includes(meId) });
+      if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', lead: (day.coord_pm || []).includes(meId) });
     });
     if (summaryBox) {
       if (!myShifts.length) {
@@ -4046,7 +4386,7 @@
         const horas = myShifts.length * ((state.settings && state.settings.shift_hours) || 12);
         const items = myShifts.map(s => `<li class="flex items-center justify-between border-b border-slate-100 last:border-0 py-1.5">
           <span class="text-sm text-ink">${s.d.label} ${s.d.dayNum}</span>
-          <span class="text-xs font-semibold text-slate-600">${s.shift}${s.kind === 'Líder de turno' ? ' · Líder' : ''}</span>
+          <span class="text-xs font-semibold ${s.lead ? 'text-orange-600' : 'text-slate-600'}">${s.shift}${s.lead ? ' · ★ Líder' : ''}</span>
         </li>`).join('');
         summaryBox.innerHTML = `<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
           <p class="text-sm font-bold text-ink">Mi semana</p>
@@ -4082,7 +4422,7 @@
       });
       html += '</tr>';
     }
-    [['coord_am', 'COORDINACIÓN AM'], ['coord_pm', 'COORDINACIÓN PM']].forEach(([kind, label]) => {
+    [['coord_am', 'LÍDER DE TURNO AM'], ['coord_pm', 'LÍDER DE TURNO PM']].forEach(([kind, label]) => {
       html += '<tr class="row-coord"><td class="cell-label">' + label + '</td>';
       week.forEach(d => {
         const id = sch.data[d.key]?.[kind]?.[0];
