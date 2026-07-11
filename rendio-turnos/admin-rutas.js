@@ -5,35 +5,35 @@
   // Base de los carros y aeropuerto (coords reales del Oriente antioqueño).
   const RT_DEPOT = { lat: 6.1537, lng: -75.3738 };   // Plaza de la Libertad, Rionegro (base)
   const RT_AIRPORT = { lat: 6.1659, lng: -75.4239 }; // MDE José María Córdova (geocodificado OSM)
-  // DEMO con LUGARES REALES de Rionegro/Marinilla, geocodificados contra OSM
-  // (Nominatim, 2026-07-10) — el mismo geocodificador que usará el form real.
-  // `dir` = dirección/lugar exacto; las coords son las del lugar verificado.
+  // DEMO: 15 auxiliares en LUGARES REALES de Rionegro (solo Rionegro),
+  // geocodificados contra OSM (Nominatim, 2026-07-10) — el mismo geocodificador
+  // del form real. Horas de presentación en 3 oleadas (04:50–06:30) para
+  // estresar el sistema: 15 personas > 12 cupos (3 carros × 4).
   const RT_DEMO_AUX = {
-    // San Antonio de Pereira (3) — racimo grande al sur
-    a1: { n: 'Mariana Rojas', zona: 'San Antonio de Pereira', dir: 'Estación San Antonio · Calle 24', lat: 6.1303, lng: -75.3803, dl: '05:15', pax: 1, type: 'sal' },
-    a2: { n: 'Nicolás Herrera', zona: 'San Antonio de Pereira', dir: 'Calle 20 con Cra 47, San Antonio', lat: 6.1268, lng: -75.3823, dl: '05:15', pax: 1, type: 'sal' },
-    a3: { n: 'Valentina Castro', zona: 'San Antonio de Pereira', dir: 'Vía San Antonio – Rionegro, km 1', lat: 6.1329, lng: -75.3775, dl: '05:25', pax: 1, type: 'sal' },
-    // Cuatro Esquinas (1)
-    a4: { n: 'Daniela Restrepo', zona: 'Cuatro Esquinas', dir: 'Estación Cuatro Esquinas · Calle 42', lat: 6.1532, lng: -75.3630, dl: '05:25', pax: 1, type: 'sal' },
-    // Llanogrande (2) — suroccidente
-    a5: { n: 'Mateo Arango', zona: 'Llanogrande', dir: 'Complex Llanogrande', lat: 6.1251, lng: -75.4217, dl: '05:35', pax: 1, type: 'sal' },
-    a6: { n: 'Sara Lucía Gómez', zona: 'Llanogrande', dir: 'Mall Llanogrande', lat: 6.1257, lng: -75.4191, dl: '05:35', pax: 1, type: 'sal' },
-    // Centro Rionegro (2)
-    a7: { n: 'Andrés F. Mora', zona: 'Centro Rionegro', dir: 'Hospital San Juan de Dios · Calle 59', lat: 6.1587, lng: -75.3712, dl: '05:40', pax: 1, type: 'sal' },
-    a10: { n: 'Camila Ortiz', zona: 'Centro Rionegro', dir: 'Universidad Católica de Oriente · Calle 41', lat: 6.1508, lng: -75.3666, dl: '05:25', pax: 1, type: 'sal' },
-    // El Porvenir (1) — más temprano
-    a8: { n: 'Juan Camilo Díaz', zona: 'El Porvenir', dir: 'Estación El Porvenir · Calle 40', lat: 6.1466, lng: -75.3862, dl: '05:05', pax: 1, type: 'sal' },
-    // Marinilla (1) — lejos, al nororiente
-    a9: { n: 'Laura Vélez', zona: 'Marinilla', dir: 'Parque principal de Marinilla', lat: 6.1736, lng: -75.3347, dl: '05:45', pax: 1, type: 'sal' },
-    // Vereda Abreo (1) — noroccidente (ubicación real, corregida)
-    a11: { n: 'Diego Marín', zona: 'Abreo', dir: 'Cancha vereda Abreo · Cra 67A', lat: 6.1688, lng: -75.3983, dl: '05:15', pax: 1, type: 'sal' },
+    // ---- Oleada temprana (04:50–05:15) ----
+    a1: { n: 'Mariana Rojas', zona: 'San Antonio de Pereira', dir: 'Estación San Antonio · Calle 24', lat: 6.1303, lng: -75.3803, dl: '04:50', pax: 1, type: 'sal' },
+    a2: { n: 'Nicolás Herrera', zona: 'San Antonio de Pereira', dir: 'Calle 20 con Cra 47, San Antonio', lat: 6.1268, lng: -75.3823, dl: '04:50', pax: 1, type: 'sal' },
+    a3: { n: 'Valentina Castro', zona: 'San Antonio de Pereira', dir: 'Vía San Antonio – Rionegro, km 1', lat: 6.1329, lng: -75.3775, dl: '05:00', pax: 1, type: 'sal' },
+    a4: { n: 'Juan Camilo Díaz', zona: 'El Porvenir', dir: 'Estación El Porvenir · Calle 40', lat: 6.1466, lng: -75.3862, dl: '05:00', pax: 1, type: 'sal' },
+    a5: { n: 'Mateo Arango', zona: 'Llanogrande', dir: 'Éxito de Llanogrande · Vía San Nicolás–La Ceja', lat: 6.1092, lng: -75.4229, dl: '05:10', pax: 1, type: 'sal' },
+    a6: { n: 'Diego Marín', zona: 'Abreo', dir: 'Cancha vereda Abreo · Cra 67A', lat: 6.1688, lng: -75.3983, dl: '05:15', pax: 1, type: 'sal' },
+    // ---- Oleada media (05:30–05:50) ----
+    a7: { n: 'Sara Lucía Gómez', zona: 'Llanogrande', dir: 'Mall Llanogrande', lat: 6.1257, lng: -75.4191, dl: '05:30', pax: 1, type: 'sal' },
+    a8: { n: 'Daniela Restrepo', zona: 'Cuatro Esquinas', dir: 'Estación Cuatro Esquinas · Calle 42', lat: 6.1532, lng: -75.3630, dl: '05:30', pax: 1, type: 'sal' },
+    a9: { n: 'Andrés F. Mora', zona: 'Centro Rionegro', dir: 'Hospital San Juan de Dios · Calle 59', lat: 6.1587, lng: -75.3712, dl: '05:40', pax: 1, type: 'sal' },
+    a10: { n: 'Camila Ortiz', zona: 'Centro Rionegro', dir: 'Universidad Católica de Oriente · Calle 41', lat: 6.1508, lng: -75.3666, dl: '05:40', pax: 1, type: 'sal' },
+    a11: { n: 'Laura Vélez', zona: 'El Porvenir', dir: 'Parque de la Amistad', lat: 6.1477, lng: -75.3874, dl: '05:50', pax: 1, type: 'sal' },
+    // ---- Oleada tarde (06:10–06:30) — candidatos naturales a segunda vuelta ----
+    a12: { n: 'Tomás Gil', zona: 'San Nicolás', dir: 'Estadio Alberto Grisales · Calle 43A', lat: 6.1467, lng: -75.3728, dl: '06:10', pax: 1, type: 'sal' },
+    a13: { n: 'Isabela Muñoz', zona: 'San Nicolás', dir: 'C.C. San Nicolás · Calle 43', lat: 6.1477, lng: -75.3783, dl: '06:15', pax: 1, type: 'sal' },
+    a14: { n: 'Emilio Zapata', zona: 'Comfama', dir: 'Parque Recreativo Comfama', lat: 6.1383, lng: -75.3807, dl: '06:20', pax: 1, type: 'sal' },
+    a15: { n: 'Luciana Pérez', zona: 'Llanogrande', dir: 'Complex Llanogrande', lat: 6.1251, lng: -75.4217, dl: '06:30', pax: 1, type: 'sal' },
   };
-  const RT_DEMO_COLORS = { a1: '#3B82F6', a2: '#0EA5A0', a3: '#8B5CF6', a4: '#2563A8', a5: '#16936A', a6: '#7C5CD6', a7: '#D98A12', a8: '#0EA5E9', a9: '#E2551A', a10: '#DB4B7A', a11: '#5B8A2B' };
+  const RT_DEMO_COLORS = { a1: '#3B82F6', a2: '#0EA5A0', a3: '#8B5CF6', a4: '#2563A8', a5: '#16936A', a6: '#7C5CD6', a7: '#D98A12', a8: '#0EA5E9', a9: '#E2551A', a10: '#DB4B7A', a11: '#5B8A2B', a12: '#B45309', a13: '#4F46E5', a14: '#0D9488', a15: '#9D174D' };
   const RT_DEMO_CARS = [
-    // Horas de salida realistas para el modelo honesto (manejo ×1.25 + 4 min/
-    // parada + 10 min de entrega): RD-03 sale tarde a propósito para mostrar
-    // la alerta y la reparación por deadline.
-    { id: 'RD-01', start: '03:55', driver: null, capacity: 4 },
+    // Horas de salida realistas para la oleada temprana (04:50) con el modelo
+    // honesto (manejo ×1.25 + 4 min/parada + 10 min de entrega).
+    { id: 'RD-01', start: '03:45', driver: null, capacity: 4 },
     { id: 'RD-02', start: '04:10', driver: null, capacity: 4 },
     { id: 'RD-03', start: '03:50', driver: null, capacity: 4 },
   ];
@@ -244,20 +244,29 @@
   // tarde) intercambiando paradas urgentes de un carro atrasado por paradas
   // holgadas de un carro a tiempo. Finalmente ordena cada carro por la mejor ruta.
   function rtSolve() {
-    // 1) racimos por sector (los grandes primero; desempata por deadline)
+    // 1) racimos por sector. Con demanda > cupos manda la URGENCIA: el racimo
+    //    con el deadline más temprano se sienta primero (desempata por tamaño).
     const byZona = {};
     Object.keys(rt.aux).forEach(id => { const z = rt.aux[id].zona; (byZona[z] = byZona[z] || []).push(id); });
     const clusters = Object.entries(byZona).map(([zona, ids]) => ({
-      zona, ids: ids.slice(), pax: rtPaxOf(ids),
-    })).sort((a, b) => b.pax - a.pax || rt.aux[a.ids[0]].dl.localeCompare(rt.aux[b.ids[0]].dl));
+      zona, ids: ids.slice().sort((a, b) => rtToMin(rt.aux[a].dl) - rtToMin(rt.aux[b].dl)),
+      pax: rtPaxOf(ids), minDL: Math.min(...ids.map(id => rtToMin(rt.aux[id].dl))),
+    })).sort((a, b) => a.minDL - b.minDL || b.pax - a.pax);
     const remaining = clusters.slice();
     const cars = rt.cars.map(c => ({ id: c.id, start: c.start, cap: rtCapOf(c), ids: [] }));
-    // 2) empacar: cada carro arranca con el racimo más grande que quepa y se
-    //    rellena con los sectores/paradas más cercanos hasta el cupo.
+    // 2) empacar: cada carro arranca con el racimo MÁS URGENTE que quepa
+    //    (partiéndolo si es más grande que el cupo) y se rellena con los
+    //    sectores más cercanos hasta llenar.
     cars.forEach(car => {
-      const idx = remaining.findIndex(cl => cl.pax <= car.cap);
-      if (idx < 0) return;
-      car.ids.push(...remaining.splice(idx, 1)[0].ids);
+      if (!remaining.length) return;
+      const first = remaining[0];
+      if (first.pax <= car.cap) { car.ids.push(...remaining.shift().ids); }
+      else {
+        // racimo más grande que el carro: se lleva a los más urgentes del racimo
+        while (rtPaxOf(car.ids) < car.cap && first.ids.length) car.ids.push(first.ids.shift());
+        first.pax = rtPaxOf(first.ids);
+        if (!first.ids.length) remaining.shift();
+      }
       while (rtPaxOf(car.ids) < car.cap && remaining.length) {
         let best = -1, bestD = Infinity;
         remaining.forEach((cl, k) => { if (rtPaxOf(car.ids) + cl.pax > car.cap) return; const d = rtClusterDist(car.ids, cl.ids); if (d < bestD) { bestD = d; best = k; } });
@@ -265,8 +274,48 @@
         car.ids.push(...remaining.splice(best, 1)[0].ids);
       }
     });
-    // 3) si sobró demanda (más pasajeros que cupos), métela donde quepa
-    remaining.forEach(cl => cl.ids.forEach(id => { const car = cars.find(c => rtPaxOf(c.ids) < c.cap); if (car) car.ids.push(id); }));
+    // 3) desborde (más pasajeros que cupos): asigna cada sobrante, más urgente
+    //    primero, al carro donde MENOS atraso agrega; si no hay silla, queda
+    //    sin rutear (candidato natural a segunda vuelta).
+    const overflow = remaining.flatMap(cl => cl.ids).sort((a, b) => rtToMin(rt.aux[a].dl) - rtToMin(rt.aux[b].dl));
+    overflow.forEach(id => {
+      let best = null, bestCost = Infinity;
+      cars.forEach(c => {
+        if (rtPaxOf(c.ids) + rt.aux[id].pax > c.cap) return;
+        const cost = rtRouteEval(rtToMin(c.start), c.ids.concat(id)).late - rtRouteEval(rtToMin(c.start), c.ids).late;
+        if (cost < bestCost) { bestCost = cost; best = c; }
+      });
+      if (best) best.ids.push(id);
+    });
+    // 3b) garantía de urgencia: nadie se queda sin silla teniendo un deadline
+    //     más temprano que alguien sentado. Quedarse sin ruta es peor que
+    //     cualquier ajuste: se acepta el intercambio que deje la ruta FACTIBLE
+    //     (sin atraso), eligiendo el que más holgura conserve. El desplazado
+    //     (deadline más tardío) es el candidato natural a una segunda vuelta.
+    // Iterativo hasta punto fijo: un intercambio puede desplazar a alguien que
+    // a su vez merece silla frente a otro más tardío. Converge siempre porque
+    // cada swap deja sin silla a un deadline estrictamente MÁS tardío.
+    const seatedAll = () => cars.flatMap(c => c.ids);
+    for (let pass = 0; pass < 20; pass++) {
+      const unseated = Object.keys(rt.aux).filter(id => !seatedAll().includes(id))
+        .sort((a, b) => rtToMin(rt.aux[a].dl) - rtToMin(rt.aux[b].dl));
+      let swapped = false;
+      for (const u of unseated) {
+        let best = null, bestLate = Infinity;
+        cars.forEach(c => c.ids.forEach(s => {
+          if (rtToMin(rt.aux[s].dl) <= rtToMin(rt.aux[u].dl)) return; // s debe ser menos urgente
+          const after = rtRouteEval(rtToMin(c.start), c.ids.filter(x => x !== s).concat(u)).late;
+          // Preferir rutas factibles; entre iguales, desplazar al deadline más
+          // tardío. Se tolera hasta 15 min de "atraso" con la salida configurada,
+          // porque el carro puede salir antes (el carril muestra "sal máx HH:MM"
+          // y el despachador ajusta) — mejor eso que dejar a un urgente sin silla.
+          const key = after * 10000 - rtToMin(rt.aux[s].dl);
+          if (after <= 15 && key < bestLate) { bestLate = key; best = { c, s }; }
+        }));
+        if (best) { best.c.ids = best.c.ids.filter(x => x !== best.s).concat(u); swapped = true; break; }
+      }
+      if (!swapped) break;
+    }
     // 4) REPARACIÓN por deadline: mientras un carro llegue tarde, intercambia su
     //    parada más urgente por una menos urgente de un carro a tiempo, si baja el atraso.
     for (let pass = 0; pass < 8; pass++) {
