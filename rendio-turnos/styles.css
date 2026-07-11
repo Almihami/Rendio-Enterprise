@@ -2066,3 +2066,17 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #routes-ui .mapclose {width:34px;height:34px;border-radius:9px;border:1.5px solid var(--line2);background:var(--panel);color:var(--ink2);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
 #routes-ui .mapclose:hover {color:var(--ink);border-color:var(--ink3)}
 #routes-ui #rt-mapCanvas {height:min(62vh,560px);width:100%}
+
+/* ---- Rutas: Reloj 24h dual (día completo) — diseño /Visual/admin-clock.jsx ---- */
+#routes-ui .clockpanel {background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:18px 22px 10px;margin:0 22px 16px;display:flex;flex-direction:column;align-items:center}
+#routes-ui .clock-h {width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+#routes-ui .clock-h > b {font-size:15px;font-weight:800;color:var(--ink)}
+#routes-ui .clock-legend {display:flex;gap:14px;flex-wrap:wrap}
+#routes-ui .clock-legend .lg {display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink2)}
+#routes-ui .clock-legend .lg.muted {opacity:.45}
+#routes-ui .clock-legend .lg i {width:12px;height:12px;border-radius:4px;display:inline-block}
+#routes-ui .clock-legend .lg i.nowline {width:14px;height:2.5px;border-radius:2px;background:var(--ink)}
+#routes-ui #rt-clock {display:flex;justify-content:center;width:100%;padding:6px 0 2px}
+#routes-ui #rt-clock path[data-arc]:hover {opacity:1;filter:brightness(1.06)}
+#routes-ui .clock-hint {font-size:11.5px;color:var(--ink3);margin:6px 0 8px;text-align:center}
+#routes-ui .lane.flash {outline:3px solid #F26522;outline-offset:3px;transition:outline .2s}

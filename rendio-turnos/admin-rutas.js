@@ -5,55 +5,47 @@
   // Base de los carros y aeropuerto (coords reales del Oriente antioqueño).
   const RT_DEPOT = { lat: 6.1537, lng: -75.3738 };   // Plaza de la Libertad, Rionegro (base)
   const RT_AIRPORT = { lat: 6.1659, lng: -75.4239 }; // MDE José María Córdova (geocodificado OSM)
-  // DEMO = ESCENARIO REAL de un día completo (dado por la operación, 2026-07-10):
-  // 2 carros, oleadas de ~2am a ~11pm. Cada oleada comparte un "deben estar"
-  // (deadline). Coords: lugares reales OSM donde existen; los condominios que
-  // OSM no conoce llevan coordenadas aproximadas del corredor (marcadas ±).
-  // Las oleadas de la tarde/noche (13:40+) son inventadas para cubrir el día.
+  // DEMO: día completo de trabajo (~02:00 → ~23:00), 2 carros, 12 oleadas.
+  // Direcciones EXACTAS de Rionegro (nomenclatura real de barrios/vías; datos
+  // inventados para la demo — con reservas reales cada dirección se geocodifica).
   const RT_DEMO_AUX = {
-    // ---- deben estar 03:05 (van a hotel y aeropuerto) ----
-    b1: { n: 'Cami Vélez', zona: 'Marinilla', dir: 'Parque principal de Marinilla', lat: 6.1736, lng: -75.3347, dl: '03:05', pax: 1, type: 'sal' },
-    b2: { n: 'Yerly', zona: 'Manzanillos', dir: 'Manzanillos, vía Marinilla ±', lat: 6.1680, lng: -75.3550, dl: '03:05', pax: 1, type: 'sal', hotel: true },
-    // ---- deben estar 03:50 ----
-    b3: { n: 'Ana Lucía', zona: 'El Plantío', dir: 'Cond. El Plantío, Llanogrande ±', lat: 6.1330, lng: -75.4010, dl: '03:50', pax: 1, type: 'sal' },
-    b4: { n: 'Gaitán', zona: 'Arándanos', dir: 'Cond. Arándanos, Llanogrande ±', lat: 6.1290, lng: -75.4120, dl: '03:50', pax: 1, type: 'sal' },
-    b5: { n: 'Ana Upe', zona: 'Solare', dir: 'Solare, vía aeropuerto ±', lat: 6.1580, lng: -75.4180, dl: '03:50', pax: 1, type: 'sal' },
-    // ---- deben estar 04:10 ----
-    b6: { n: 'Tapias', zona: 'Santa Teresa', dir: 'Cond. Santa Teresa ±', lat: 6.1450, lng: -75.3900, dl: '04:10', pax: 1, type: 'sal' },
-    b7: { n: 'Yolanda', zona: 'Comando', dir: 'Comando de Policía · Calle 44 (OSM)', lat: 6.1504, lng: -75.3905, dl: '04:10', pax: 1, type: 'sal' },
-    b8: { n: 'Daniela Hin', zona: 'El Tejo', dir: 'Cond. El Tejo ±', lat: 6.1500, lng: -75.3660, dl: '04:10', pax: 1, type: 'sal' },
-    // ---- debe estar 04:50 ----
-    b9: { n: 'Rico', zona: 'Cámbulos', dir: 'Cond. Cámbulos, vía Llanogrande ±', lat: 6.1360, lng: -75.4060, dl: '04:50', pax: 1, type: 'sal' },
-    // ---- deben estar 06:24 ----
-    b10: { n: 'Sara Londoño', zona: 'Olivar', dir: 'Cond. Olivar, Llanogrande ±', lat: 6.1310, lng: -75.4160, dl: '06:24', pax: 1, type: 'sal' },
-    b11: { n: 'Sara Jara', zona: 'Quintas', dir: 'Cond. Quintas ±', lat: 6.1600, lng: -75.3760, dl: '06:24', pax: 1, type: 'sal' },
-    b12: { n: 'Nicol', zona: 'Cámbulos', dir: 'Cond. Cámbulos, vía Llanogrande ±', lat: 6.1365, lng: -75.4055, dl: '06:24', pax: 1, type: 'sal' },
-    // ---- deben estar 06:50 ----
-    b13: { n: 'Angelly', zona: 'Olivar', dir: 'Cond. Olivar, Llanogrande ±', lat: 6.1305, lng: -75.4165, dl: '06:50', pax: 1, type: 'sal' },
-    b14: { n: 'Lady', zona: 'Solare', dir: 'Solare, vía aeropuerto ±', lat: 6.1585, lng: -75.4175, dl: '06:50', pax: 1, type: 'sal' },
-    // ---- debe estar 07:50 ----
-    b15: { n: 'Ana Vélez', zona: 'El Rosal', dir: 'Vereda El Rosal (OSM)', lat: 6.1412, lng: -75.3640, dl: '07:50', pax: 1, type: 'sal' },
-    // ---- debe estar 09:00 ----
-    b16: { n: 'Kriss', zona: 'Campus', dir: 'Universidad Católica de Oriente (OSM)', lat: 6.1508, lng: -75.3666, dl: '09:00', pax: 1, type: 'sal' },
-    // ---- deben estar 09:30 ----
-    b17: { n: 'Sara Valencia', zona: 'Av. 33', dir: 'Avenida 33, centro ±', lat: 6.1560, lng: -75.3720, dl: '09:30', pax: 1, type: 'sal' },
-    b18: { n: 'Cami R', zona: 'Arándanos', dir: 'Cond. Arándanos, Llanogrande ±', lat: 6.1292, lng: -75.4118, dl: '09:30', pax: 1, type: 'sal' },
-    b19: { n: 'Michel', zona: 'Riovivo', dir: 'Cond. Riovivo, Llanogrande ±', lat: 6.1230, lng: -75.4180, dl: '09:30', pax: 1, type: 'sal' },
-    // ---- debe estar 10:30 ----
-    b20: { n: 'Núñez', zona: 'Vía Llanogrande', dir: 'Finca P-57615, vía Llanogrande ±', lat: 6.1350, lng: -75.4230, dl: '10:30', pax: 1, type: 'sal' },
-    // ---- deben estar 11:10 (van a hotel) ----
-    b21: { n: 'Jesús Taborda', zona: 'Llanogrande', dir: 'Mall Llanogrande (OSM)', lat: 6.1257, lng: -75.4191, dl: '11:10', pax: 1, type: 'sal', hotel: true },
-    b22: { n: 'Polo', zona: 'Guayacán', dir: 'Cond. Guayacán, Llanogrande ±', lat: 6.1280, lng: -75.4090, dl: '11:10', pax: 1, type: 'sal', hotel: true },
-    // ---- TARDE/NOCHE (inventadas para cubrir hasta las 11pm) ----
-    b23: { n: 'Valeria O.', zona: 'San Antonio de Pereira', dir: 'Estación San Antonio · Calle 24 (OSM)', lat: 6.1303, lng: -75.3803, dl: '13:40', pax: 1, type: 'sal' },
-    b24: { n: 'Pablo H.', zona: 'Comfama', dir: 'Parque Recreativo Comfama (OSM)', lat: 6.1383, lng: -75.3807, dl: '13:40', pax: 1, type: 'sal' },
-    b25: { n: 'Mónica T.', zona: 'Olivar', dir: 'Cond. Olivar, Llanogrande ±', lat: 6.1308, lng: -75.4162, dl: '16:20', pax: 1, type: 'sal' },
-    b26: { n: 'Julián V.', zona: 'Arándanos', dir: 'Cond. Arándanos, Llanogrande ±', lat: 6.1288, lng: -75.4122, dl: '16:20', pax: 1, type: 'sal' },
-    b27: { n: 'Rosa M.', zona: 'Cuatro Esquinas', dir: 'Estación Cuatro Esquinas · Calle 42 (OSM)', lat: 6.1532, lng: -75.3630, dl: '16:20', pax: 1, type: 'sal' },
-    b28: { n: 'Esteban R.', zona: 'Quintas', dir: 'Cond. Quintas ±', lat: 6.1602, lng: -75.3758, dl: '19:15', pax: 1, type: 'sal' },
-    b29: { n: 'Carol D.', zona: 'El Tejo', dir: 'Cond. El Tejo ±', lat: 6.1498, lng: -75.3662, dl: '19:15', pax: 1, type: 'sal' },
-    b30: { n: 'Óscar L.', zona: 'Solare', dir: 'Solare, vía aeropuerto ±', lat: 6.1582, lng: -75.4178, dl: '22:40', pax: 1, type: 'sal', hotel: true },
-    b31: { n: 'Diana C.', zona: 'Marinilla', dir: 'Parque principal de Marinilla', lat: 6.1736, lng: -75.3349, dl: '22:40', pax: 1, type: 'sal', hotel: true },
+    // ---- deben estar 03:10 ----
+    b1: { n: 'Laura G.', zona: 'Centro', dir: 'Cra 51 #49-06, Centro', lat: 6.1529, lng: -75.3752, dl: '03:10', pax: 1, type: 'sal' },
+    b2: { n: 'Andrés P.', zona: 'El Porvenir', dir: 'Calle 47 #59-33, B. El Porvenir', lat: 6.1468, lng: -75.3849, dl: '03:10', pax: 1, type: 'sal' },
+    // ---- deben estar 04:00 ----
+    b3: { n: 'Camila R.', zona: 'Cuatro Esquinas', dir: 'Cra 62 #42-18, B. Cuatro Esquinas', lat: 6.1512, lng: -75.3628, dl: '04:00', pax: 1, type: 'sal' },
+    b4: { n: 'Óscar D.', zona: 'El Faro', dir: 'Calle 41 #63-27, B. El Faro', lat: 6.1489, lng: -75.3672, dl: '04:00', pax: 1, type: 'sal' },
+    b5: { n: 'Melisa V.', zona: 'San Nicolás', dir: 'Cra 55 #44-12, B. San Nicolás', lat: 6.1470, lng: -75.3781, dl: '04:00', pax: 1, type: 'sal' },
+    // ---- deben estar 04:40 ----
+    b6: { n: 'Julio C.', zona: 'San Antonio', dir: 'Calle 24 #45-80, San Antonio de Pereira', lat: 6.1310, lng: -75.3795, dl: '04:40', pax: 1, type: 'sal' },
+    b7: { n: 'Paula E.', zona: 'San Antonio', dir: 'Cra 47 #21-35, San Antonio de Pereira', lat: 6.1281, lng: -75.3811, dl: '04:40', pax: 1, type: 'sal' },
+    // ---- deben estar 05:30 ----
+    b8: { n: 'Marcos L.', zona: 'Llanogrande', dir: 'Vía Llanogrande km 7, P. Cerrada Los Cedros', lat: 6.1268, lng: -75.4155, dl: '05:30', pax: 1, type: 'sal' },
+    b9: { n: 'Diana F.', zona: 'Llanogrande', dir: 'Calle 10B #36-44, Llanogrande', lat: 6.1249, lng: -75.4198, dl: '05:30', pax: 1, type: 'sal' },
+    b10: { n: 'Simón T.', zona: 'Llanogrande', dir: 'Vía San Nicolás–La Ceja km 2', lat: 6.1180, lng: -75.4210, dl: '05:30', pax: 1, type: 'sal' },
+    // ---- deben estar 06:40 ----
+    b11: { n: 'Verónica S.', zona: 'Alto del Medio', dir: 'Cra 50 #58-11, B. Alto del Medio', lat: 6.1618, lng: -75.3708, dl: '06:40', pax: 1, type: 'sal' },
+    b12: { n: 'Héctor M.', zona: 'Santa Ana', dir: 'Calle 62 #54-09, B. Santa Ana', lat: 6.1685, lng: -75.3745, dl: '06:40', pax: 1, type: 'sal' },
+    // ---- debe estar 08:00 ----
+    b13: { n: 'Natalia B.', zona: 'Centro', dir: 'Cra 48 #50-45, Centro', lat: 6.1545, lng: -75.3730, dl: '08:00', pax: 1, type: 'sal' },
+    // ---- deben estar 09:20 ----
+    b14: { n: 'Iván Q.', zona: 'Gualanday', dir: 'Vía Gualanday km 1', lat: 6.1620, lng: -75.3985, dl: '09:20', pax: 1, type: 'sal' },
+    b15: { n: 'Rosa H.', zona: 'La Colina', dir: 'Cra 70 #38-22, B. La Colina', lat: 6.1435, lng: -75.3900, dl: '09:20', pax: 1, type: 'sal' },
+    b16: { n: 'Fabián N.', zona: 'Centro', dir: 'Calle 52 #47-60, Centro', lat: 6.1560, lng: -75.3722, dl: '09:20', pax: 1, type: 'sal' },
+    // ---- deben estar 11:00 ----
+    b17: { n: 'Tatiana W.', zona: 'Vía Aeropuerto', dir: 'Vía Aeropuerto km 2, C. Res. Sajonia', lat: 6.1600, lng: -75.4120, dl: '11:00', pax: 1, type: 'sal' },
+    b18: { n: 'Germán A.', zona: 'San Antonio', dir: 'Calle 29 #52-14, San Antonio de Pereira', lat: 6.1330, lng: -75.3790, dl: '11:00', pax: 1, type: 'sal' },
+    // ---- debe estar 13:30 ----
+    b19: { n: 'Lucía Z.', zona: 'San Nicolás', dir: 'Cra 56 #43-05, B. San Nicolás', lat: 6.1462, lng: -75.3790, dl: '13:30', pax: 1, type: 'sal' },
+    // ---- deben estar 16:00 ----
+    b20: { n: 'Ramiro J.', zona: 'Vía Llanogrande', dir: 'Vía Llanogrande km 5, P. Cerrada Guayabales', lat: 6.1310, lng: -75.4080, dl: '16:00', pax: 1, type: 'sal' },
+    b21: { n: 'Claudia K.', zona: 'El Porvenir', dir: 'Calle 45 #66-30, B. El Porvenir', lat: 6.1455, lng: -75.3870, dl: '16:00', pax: 1, type: 'sal' },
+    // ---- deben estar 19:30 ----
+    b22: { n: 'Ernesto U.', zona: 'Centro', dir: 'Cra 51 #45-77, Centro', lat: 6.1502, lng: -75.3741, dl: '19:30', pax: 1, type: 'sal' },
+    b23: { n: 'Sofía X.', zona: 'Cuatro Esquinas', dir: 'Calle 38 #58-90, B. Cuatro Esquinas', lat: 6.1500, lng: -75.3640, dl: '19:30', pax: 1, type: 'sal' },
+    // ---- deben estar 22:50 (van a hotel) ----
+    b24: { n: 'Bernardo Y.', zona: 'Llanogrande', dir: 'Vía Llanogrande km 9, Hotel campestre', lat: 6.1235, lng: -75.4235, dl: '22:50', pax: 1, type: 'sal', hotel: true },
+    b25: { n: 'Adriana Ñ.', zona: 'Alto del Medio', dir: 'Cra 43 #61-02, B. Alto del Medio', lat: 6.1635, lng: -75.3690, dl: '22:50', pax: 1, type: 'sal', hotel: true },
   };
   const RT_PALETTE = ['#3B82F6', '#0EA5A0', '#8B5CF6', '#2563A8', '#16936A', '#7C5CD6', '#D98A12', '#0EA5E9', '#E2551A', '#DB4B7A', '#5B8A2B', '#B45309', '#4F46E5', '#0D9488', '#9D174D'];
   const RT_DEMO_COLORS = {};
@@ -395,7 +387,7 @@
     }
   }
 
-  function rtRenderAll() { rtRenderPool(); rtRenderLanes(); rtRenderStats(); }
+  function rtRenderAll() { rtRenderPool(); rtRenderLanes(); rtRenderStats(); rtRenderClock(); }
 
   const RT_STEPS = ['Leyendo sectores de Rionegro…', 'Calculando tiempos reales por carretera…', 'Agrupando por sector y cercanía…', 'Eligiendo el mejor orden de cada carro…'];
   async function rtOptimize() {
@@ -461,6 +453,72 @@
     $('#rt-drawer').classList.add('show');
   }
   function rtCloseDrawer() { $('#rt-scrim').classList.remove('show'); $('#rt-drawer').classList.remove('show'); rt.drawerCar = null; }
+
+  // ---- RELOJ 24h DUAL (diseño /Visual/admin-clock.jsx — propuesta ganadora) ----
+  // Un anillo por carro; cada vuelta es un arco (salida→llegada a MDE). Línea
+  // radial = ahora. Click en un arco baja al carril de esa vuelta.
+  const RT_TYPE_COLOR = { sal: '#F26522', lle: '#10B981', hotel: '#F59E0B' };
+  const rtHourAngle = (min) => -Math.PI / 2 + (min / 1440) * Math.PI * 2; // 00h arriba
+  function rtArcPath(cx, cy, rO, rI, a1, a2) {
+    const large = a2 - a1 > Math.PI ? 1 : 0;
+    const p = (r, a) => `${cx + r * Math.cos(a)} ${cy + r * Math.sin(a)}`;
+    return `M ${p(rO, a1)} A ${rO} ${rO} 0 ${large} 1 ${p(rO, a2)} L ${p(rI, a2)} A ${rI} ${rI} 0 ${large} 0 ${p(rI, a1)} Z`;
+  }
+  function rtRenderClock() {
+    const host = $('#rt-clock'); if (!host) return;
+    const size = 560, cx = 280, cy = 280;
+    const RINGS = [{ rO: 250, rI: 212 }, { rO: 202, rI: 164 }, { rO: 154, rI: 122 }]; // hasta 3 carros
+    let s = `<svg viewBox="0 0 ${size} ${size}" style="width:100%;max-width:560px;overflow:visible" role="img" aria-label="Día completo de rutas">`;
+    // rejilla horaria
+    for (let h = 0; h < 24; h++) {
+      const a = rtHourAngle(h * 60), q = h % 6 === 0;
+      const r1 = 112, r2 = 258;
+      s += `<line x1="${cx + r1 * Math.cos(a)}" y1="${cy + r1 * Math.sin(a)}" x2="${cx + r2 * Math.cos(a)}" y2="${cy + r2 * Math.sin(a)}" stroke="var(--line2)" stroke-width="${q ? 1.2 : 0.5}" opacity="${q ? 1 : 0.6}"/>`;
+    }
+    [0, 3, 6, 9, 12, 15, 18, 21].forEach(h => {
+      const a = rtHourAngle(h * 60), r = 271;
+      s += `<text x="${cx + r * Math.cos(a)}" y="${cy + r * Math.sin(a)}" text-anchor="middle" dominant-baseline="middle" font-size="11" font-weight="600" fill="var(--ink3)" font-family="var(--mono)">${String(h).padStart(2, '0')}</text>`;
+    });
+    // pistas de fondo (una por carro) con placa
+    rt.cars.forEach((c, i) => {
+      const ring = RINGS[i]; if (!ring) return;
+      const rm = (ring.rO + ring.rI) / 2;
+      s += `<circle cx="${cx}" cy="${cy}" r="${rm}" fill="none" stroke="var(--panel2)" stroke-width="${ring.rO - ring.rI}"/>`;
+      s += `<text x="${cx}" y="${cy - rm + 4}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--ink3)" font-family="var(--mono)" letter-spacing="1">${c.id}</text>`;
+    });
+    // arcos: una vuelta = salida → llegada a MDE
+    rt.lanes.forEach(l => {
+      const i = rt.cars.findIndex(c => c.id === l.car);
+      const ring = RINGS[i]; if (!ring) return;
+      const r = rtCarCompute(l.id);
+      if (!r.stops.length) return;
+      const a1 = rtHourAngle(rtToMin(l.start)), a2 = rtHourAngle(r.arrival);
+      const hotel = r.stops.some(x => rt.aux[x.id].hotel);
+      const color = hotel ? RT_TYPE_COLOR.hotel : RT_TYPE_COLOR[rt.tripType] || RT_TYPE_COLOR.sal;
+      const late = r.status === 'late';
+      s += `<path d="${rtArcPath(cx, cy, ring.rO - 3, ring.rI + 3, a1, a2)}" fill="${color}" opacity="0.88" data-arc="${l.id}" style="cursor:pointer">` +
+           `<title>${l.car} · Vuelta ${l.vuelta} · sale ${l.start} → MDE ${rtToHM(r.arrival)} · ${r.stops.length} parada${r.stops.length > 1 ? 's' : ''} · pres. ${rtToHM(r.hardDL)}${late ? ' · NO LLEGA' : ''}</title></path>`;
+      if (late) s += `<path d="${rtArcPath(cx, cy, ring.rO - 1, ring.rI + 1, a1, a2)}" fill="none" stroke="#EF4444" stroke-width="2" stroke-dasharray="4 3" pointer-events="none" transform-origin="center"/>`;
+    });
+    // línea de AHORA
+    const now = new Date(); const nowMin = now.getHours() * 60 + now.getMinutes();
+    const na = rtHourAngle(nowMin);
+    s += `<line x1="${cx + 112 * Math.cos(na)}" y1="${cy + 112 * Math.sin(na)}" x2="${cx + 262 * Math.cos(na)}" y2="${cy + 262 * Math.sin(na)}" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"/>`;
+    s += `<circle cx="${cx + 262 * Math.cos(na)}" cy="${cy + 262 * Math.sin(na)}" r="5" fill="var(--ink)"/>`;
+    // centro: hora + resumen del día
+    const st = rtDayStats();
+    const paxTotal = rt.lanes.reduce((t, l) => t + rtCarCompute(l.id).pax, 0);
+    s += `<circle cx="${cx}" cy="${cy}" r="104" fill="var(--panel)" stroke="var(--line2)"/>`;
+    s += `<text x="${cx}" y="${cy - 34}" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1.5" fill="var(--ink3)">AHORA</text>`;
+    s += `<text x="${cx}" y="${cy + 2}" text-anchor="middle" font-size="34" font-weight="700" fill="var(--ink)" font-family="var(--mono)">${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}</text>`;
+    s += rt.optimized
+      ? `<text x="${cx}" y="${cy + 28}" text-anchor="middle" font-size="11.5" fill="var(--ink2)">${rt.lanes.length} vueltas · ${paxTotal} aux</text>` +
+        `<text x="${cx}" y="${cy + 46}" text-anchor="middle" font-size="11.5" fill="${st.late ? '#EF4444' : '#16936A'}">${st.late ? st.late + ' no llega' : 'todas a tiempo'}</text>`
+      : `<text x="${cx}" y="${cy + 28}" text-anchor="middle" font-size="11.5" fill="var(--ink3)">Pulsa Optimizar</text>` +
+        `<text x="${cx}" y="${cy + 46}" text-anchor="middle" font-size="11.5" fill="var(--ink3)">para planear el día</text>`;
+    s += '</svg>';
+    host.innerHTML = s;
+  }
 
   // ---- Previsualización del trayecto (mapa Leaflet + geometría real OSRM) ----
   const rtMap = { map: null, layer: null };
@@ -559,6 +617,11 @@
     root.addEventListener('click', (e) => {
       if (e.target.closest('#rt-optBtn')) { rtOptimize(); return; }
       const mp = e.target.closest('[data-map]'); if (mp) { rtOpenMap(mp.dataset.map); return; }
+      const arc = e.target.closest('[data-arc]'); if (arc) {
+        const el = root.querySelector(`[data-lane="${arc.dataset.arc}"]`);
+        if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
+        return;
+      }
       if (e.target.closest('[data-mapclose]') || e.target === $('#rt-mapOvl')) { rtCloseMap(); return; }
       const as = e.target.closest('[data-assign]'); if (as) { rtOpenDrawer(as.dataset.assign); return; }
       if (e.target === $('#rt-scrim') || e.target.closest('[data-rtclose]')) { rtCloseDrawer(); return; }

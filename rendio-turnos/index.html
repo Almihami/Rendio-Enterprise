@@ -821,6 +821,20 @@
             <span id="rt-alertTx">Una ruta no llega a tiempo a la hora de presentación.</span>
             <button class="fix" id="rt-alertFix">Ver cuál</button>
           </div>
+          <!-- Día completo: Reloj 24h dual (diseño /Visual/admin-clock.jsx) -->
+          <section class="clockpanel" id="rt-clockPanel">
+            <div class="clock-h">
+              <b>Día completo</b>
+              <div class="clock-legend">
+                <span class="lg"><i style="background:#F26522"></i>Salida (casa → MDE)</span>
+                <span class="lg"><i style="background:#F59E0B"></i>Con hotel</span>
+                <span class="lg muted"><i style="background:#10B981"></i>Llegadas (próximamente)</span>
+                <span class="lg"><i class="nowline"></i>Ahora</span>
+              </div>
+            </div>
+            <div id="rt-clock"></div>
+            <p class="clock-hint">Cada anillo es un carro; cada arco, una vuelta (salida → entrega en MDE). Toca un arco para ir a su carril.</p>
+          </section>
           <div class="stage">
             <aside class="pool">
               <div class="pool-h">
@@ -830,7 +844,6 @@
               <div class="pool-list" id="rt-poolList"></div>
             </aside>
             <section class="lanes" id="rt-lanes">
-              <div class="axis"><span>03:30</span><span>04:00</span><span>04:30</span><span>05:00</span><span>05:30</span></div>
               <div id="rt-laneWrap"></div>
             </section>
           </div>
