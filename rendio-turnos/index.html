@@ -821,6 +821,15 @@
             <span id="rt-alertTx">Una ruta no llega a tiempo a la hora de presentación.</span>
             <button class="fix" id="rt-alertFix">Ver cuál</button>
           </div>
+          <div class="stage">
+            <aside class="pool">
+              <div class="pool-h">
+                <div class="t"><svg class="icon" style="width:16px;height:16px"><use href="#i-user"/></svg><b>Sin rutear</b><span class="c" id="rt-poolCount">0</span></div>
+                <p>Arrastra un auxiliar a un carro. El deadline en rojo es la <b>hora de presentación</b> (no negociable).</p>
+              </div>
+              <div class="pool-list" id="rt-poolList"></div>
+            </aside>
+            <section class="lanes" id="rt-lanes">
           <!-- Día completo: Reloj 24h dual (diseño /Visual/admin-clock.jsx) -->
           <section class="clockpanel" id="rt-clockPanel">
             <div class="clock-h">
@@ -833,17 +842,8 @@
               </div>
             </div>
             <div id="rt-clock"></div>
-            <p class="clock-hint">Cada anillo es un carro; cada arco, una vuelta (salida → entrega en MDE). Toca un arco para ir a su carril · <b>arrastra la aguja</b> para recorrer el día (doble clic: volver a ahora).</p>
+            <p class="clock-hint">Cada anillo es un carro; cada arco, una vuelta. Toca un arco para ir a su carril · <b>toca una hora o arrastra la aguja</b> para recorrer el día · toca el centro para volver a ahora.</p>
           </section>
-          <div class="stage">
-            <aside class="pool">
-              <div class="pool-h">
-                <div class="t"><svg class="icon" style="width:16px;height:16px"><use href="#i-user"/></svg><b>Sin rutear</b><span class="c" id="rt-poolCount">0</span></div>
-                <p>Arrastra un auxiliar a un carro. El deadline en rojo es la <b>hora de presentación</b> (no negociable).</p>
-              </div>
-              <div class="pool-list" id="rt-poolList"></div>
-            </aside>
-            <section class="lanes" id="rt-lanes">
               <div id="rt-laneWrap"></div>
             </section>
           </div>

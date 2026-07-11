@@ -2068,7 +2068,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #routes-ui #rt-mapCanvas {height:min(62vh,560px);width:100%}
 
 /* ---- Rutas: Reloj 24h dual (día completo) — diseño /Visual/admin-clock.jsx ---- */
-#routes-ui .clockpanel {background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:18px 22px 10px;margin:0 22px 16px;display:flex;flex-direction:column;align-items:center}
+#routes-ui .clockpanel {background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:16px 20px 8px;margin:0 auto 16px;max-width:680px;display:flex;flex-direction:column;align-items:center}
 #routes-ui .clock-h {width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}
 #routes-ui .clock-h > b {font-size:15px;font-weight:800;color:var(--ink)}
 #routes-ui .clock-legend {display:flex;gap:14px;flex-wrap:wrap}

@@ -232,9 +232,14 @@
     });
     const best = Math.min(...scored.map(s => s.t));
     const tol = Math.max(2, best * 0.06);
+    // Desempates (en orden): 1) no zigzaguear entre sectores; 2) "fluir hacia
+    // el destino" — terminar en la parada más cercana al aeropuerto; 3) tiempo.
+    const finalLeg = (perm) => rtLegMin(perm[perm.length - 1], 'airport');
     return scored
       .filter(s => s.t <= best + tol)
-      .sort((a, b) => (rtZoneReentries(a.perm) - rtZoneReentries(b.perm)) || (a.t - b.t))[0].perm;
+      .sort((a, b) => (rtZoneReentries(a.perm) - rtZoneReentries(b.perm))
+        || (finalLeg(a.perm) - finalLeg(b.perm))
+        || (a.t - b.t))[0].perm;
   }
   // Evalúa un carro (lista de paradas): mejor ruta → llegada al aeropuerto,
   // deadline más exigente y minutos de atraso (0 si llega a tiempo).
@@ -475,7 +480,7 @@
     const host = $('#rt-clock'); if (!host) return;
     const size = 560, cx = 280, cy = 280;
     const RINGS = [{ rO: 250, rI: 212 }, { rO: 202, rI: 164 }, { rO: 154, rI: 122 }]; // hasta 3 carros
-    let s = `<svg viewBox="0 0 ${size} ${size}" style="width:100%;max-width:560px;overflow:visible" role="img" aria-label="Día completo de rutas">`;
+    let s = `<svg viewBox="0 0 ${size} ${size}" style="width:100%;max-width:430px;overflow:visible" role="img" aria-label="Día completo de rutas">`;
     // rejilla horaria
     for (let h = 0; h < 24; h++) {
       const a = rtHourAngle(h * 60), q = h % 6 === 0;
@@ -665,8 +670,19 @@
         if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
         return;
       }
-      // doble propósito del reloj: doble clic en cualquier parte = volver a AHORA
-      if (e.target.closest('#rt-clock') && e.detail === 2 && rtScrubMin != null) { rtScrubMin = null; rtRenderClock(); return; }
+      // clic en el dial = mover la aguja a esa hora; clic en el centro = volver a AHORA
+      if (e.target.closest('#rt-clock')) {
+        const svg = $('#rt-clock svg');
+        if (svg) {
+          const b = svg.getBoundingClientRect();
+          const x = (e.clientX - b.left) / b.width * 560 - 280;
+          const y = (e.clientY - b.top) / b.height * 560 - 280;
+          const rad = Math.hypot(x, y);
+          if (rad <= 104) { if (rtScrubMin != null) { rtScrubMin = null; rtRenderClock(); } }
+          else if (rad <= 292) { const m = clockMinAt(e); if (m != null) { rtScrubMin = m; rtRenderClock(); } }
+        }
+        return;
+      }
       if (e.target.closest('[data-mapclose]') || e.target === $('#rt-mapOvl')) { rtCloseMap(); return; }
       const as = e.target.closest('[data-assign]'); if (as) { rtOpenDrawer(as.dataset.assign); return; }
       if (e.target === $('#rt-scrim') || e.target.closest('[data-rtclose]')) { rtCloseDrawer(); return; }
