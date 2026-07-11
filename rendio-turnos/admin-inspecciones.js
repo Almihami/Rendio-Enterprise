@@ -670,8 +670,10 @@
       const pending = await Api.listPendingApprovals(state.currentWeek);
       const count = pending.filter(p => p.state === 'pending' && ids.has(p.profile_id)).length;
       const badge = $('#pending-badge');
-      badge.textContent = String(count);
-      badge.classList.toggle('hidden', count === 0);
+      if (badge) {
+        badge.textContent = String(count);
+        badge.classList.toggle('hidden', count === 0);
+      }
       updateAdminGreeting(count);
     } catch (e) { /* silent */ }
   }

@@ -1233,6 +1233,79 @@
     return data || [];
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // RUTAS DE AUXILIARES — planeación (tablero de Asignación)
+  // ════════════════════════════════════════════════════════════════════
+  const RT_PALETTE = ['#3B82F6', '#0EA5A0', '#8B5CF6', '#2563A8', '#16936A', '#7C5CD6', '#D98A12', '#0EA5E9', '#E2551A', '#DB4B7A', '#5B8A2B'];
+  function rtHHMM(iso) { try { const d = new Date(iso); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); } catch (_) { return '05:00'; } }
+
+  // Arma el tablero del día a partir de reservas reales. Devuelve
+  // {aux, colors, cars, drivers, plan} o NULL si no hay reservas/vehículos
+  // (entonces la UI muestra datos de ejemplo). El cálculo fino de tramos y
+  // orden óptimo (OSRM/VROOM) es el siguiente paso: aquí 'tramo' es un estimado.
+  async function listRoutePlanning(tripType) {
+    const dir = tripType === 'lle' ? 'airport_to_home' : 'home_to_airport';
+    const today = new Date().toISOString().slice(0, 10);
+    let rows = null;
+    try {
+      const res = await sb
+        .from('reservations')
+        .select('id, direction, pickup_address, required_arrival_at, auxiliar_profiles(id, home_address, profiles(full_name))')
+        .eq('direction', dir)
+        .is('cancelled_at', null)
+        .gte('required_arrival_at', today + 'T00:00:00')
+        .lte('required_arrival_at', today + 'T23:59:59')
+        .order('required_arrival_at', { ascending: true });
+      if (res.error) throw res.error;
+      rows = res.data;
+    } catch (e) { return null; } // tabla ausente / RLS / 0003 no aplicada → demo
+    if (!rows || !rows.length) return null;
+
+    const aux = {}, colors = {};
+    rows.forEach((r, i) => {
+      const key = 'r' + String(r.id).slice(0, 8);
+      aux[key] = {
+        n: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar',
+        zona: (r.pickup_address || '').split(',')[0] || '—',
+        dl: rtHHMM(r.required_arrival_at),
+        tramo: 12, // TODO solver: estimar con OSRM/heurística por dirección
+        pax: 1,
+        type: tripType === 'lle' ? 'lle' : 'sal',
+        reservationId: r.id,
+      };
+      colors[key] = RT_PALETTE[i % RT_PALETTE.length];
+    });
+
+    let cars = [], drivers = [];
+    try {
+      const vs = await listVehiclesForShift();
+      cars = (vs || []).slice(0, 3).map((v, i) => ({ id: v.internal_code || v.license_plate || ('RD-0' + (i + 1)), start: '03:3' + i, driver: null, capacity: v.capacity || 4, vehicleId: v.id }));
+    } catch (_) {}
+    try {
+      const ds = await listDrivers();
+      drivers = (ds || []).map((d, i) => ({ id: d.id, n: d.full_name || d.name || 'Conductor', turno: 'Mañana', c: RT_PALETTE[i % RT_PALETTE.length] }));
+    } catch (_) {}
+    if (!cars.length) return null; // sin vehículos no hay tablero útil → demo
+
+    return { aux, colors, cars, drivers, plan: {} };
+  }
+
+  // Crea la cabecera de una ruta (borrador → con conductor). Defensivo: si las
+  // columnas de 0040 (driver/vehicle nullable, estado 'draft') no existen aún,
+  // el error se propaga y la UI lo ignora. Las route_stops (que requieren
+  // reservation_id por parada) se persistirán en la siguiente iteración.
+  async function saveRouteAssignment(car, orderIds, driverId) {
+    const payload = {
+      vehicle_id: car && car.vehicleId ? car.vehicleId : null,
+      driver_profile_id: driverId || null,
+      direction: 'home_to_airport',
+      status: driverId ? 'planned' : 'draft',
+    };
+    const { data, error } = await sb.from('route_assignments').insert(payload).select('id').single();
+    if (error) throw error;
+    return data ? data.id : null;
+  }
+
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
@@ -1257,5 +1330,6 @@
     getMyFullProfile, uploadMyAvatar,
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
+    listRoutePlanning, saveRouteAssignment,
   };
 })();

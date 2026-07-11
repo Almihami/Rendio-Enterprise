@@ -125,6 +125,8 @@
   // suscrito / permiso denegado → no se muestra).
   async function setupPushUI() {
     const existing = document.getElementById('enable-push-bar');
+    // El admin es un módulo web de escritorio: las notificaciones push no aplican.
+    if (state.profile?.role === 'admin') { existing?.remove(); return; }
     if (!pushSupported() || Notification.permission === 'denied') { existing?.remove(); return; }
     let alreadySub = false;
     try {

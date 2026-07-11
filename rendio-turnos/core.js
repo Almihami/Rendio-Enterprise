@@ -119,9 +119,7 @@
       btn.addEventListener('click', () => pickState(btn.dataset.pick));
     });
 
-    $$('#admin-nav .tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => setTab(btn.dataset.tab));
-    });
+    // La navegación admin se cablea en bindAdminSidebar() (sidebar por capas).
 
     $('#prev-week').addEventListener('click', () => navigateWeek(-7));
     $('#next-week').addEventListener('click', () => navigateWeek(7));
@@ -335,7 +333,10 @@
     await loadRules();
 
     if (state.profile.role === 'admin') {
-      $('#admin-nav').classList.remove('hidden');
+      // Shell admin: sidebar de navegación por capas (reemplaza la barra de pestañas).
+      $('#app-shell').classList.add('admin-shell');
+      $('#admin-side').classList.remove('hidden');
+      $('#admin-mhead').classList.remove('hidden');
       $('#admin-greeting-block').classList.remove('hidden');
       // Admins gestionan desde PC: el botón Instalar (PWA) no aplica para ellos.
       $('#install-btn')?.classList.add('hidden');
@@ -343,13 +344,17 @@
       updateAdminGreeting();
       state.drivers = await Api.listDrivers();
       state.admins = (await Api.listAdmins()).map(a => ({ id: a.id, name: a.full_name, email: a.email, is_coordinator: a.is_coordinator !== false }));
-      setTab('schedule');
+      bindAdminSidebar();
+      renderAdminSidebar();
+      setTab('consola');
       $('#driver-save-bar').classList.add('hidden');
       refreshInspectionsBadge();
       refreshShiftsBadge();
       refreshOilBadge();
     } else {
-      $('#admin-nav').classList.add('hidden');
+      $('#app-shell').classList.remove('admin-shell');
+      $('#admin-side')?.classList.add('hidden');
+      $('#admin-mhead')?.classList.add('hidden');
       $('#admin-greeting-block').classList.add('hidden');
       $('#driver-tabs-root')?.classList.remove('hidden');
       // La barra inferior NO se muestra al inicio: aparece al entrar a un módulo.
@@ -385,9 +390,14 @@
     state.activeTab = name;
     $('#driver-tabs-root')?.classList.add('hidden');
     $('#driver-nav')?.classList.remove('show');
-    $$('#admin-nav .tab-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.tab === name);
-    });
+    // Si el módulo vive en el otro espacio de trabajo, cambia el switcher
+    // y vuelve a pintar el sidebar antes de marcar el activo.
+    if (name !== 'consola') {
+      const found = findModuleByTab(name);
+      if (found && found.ws !== cnWs) { cnWs = found.ws; renderAdminSidebar(); }
+    }
+    markSidebarActive();
+    updateBreadcrumb(name);
     $$('section[data-panel]').forEach(s => {
       s.classList.toggle('hidden', s.dataset.panel !== name);
     });
@@ -402,5 +412,9 @@
     if (name === 'inspections') renderInspections();
     if (name === 'shifts') renderShifts();
     if (name === 'rewards') renderRewardsAdmin();
+    if (name === 'consola') renderConsola();
+    if (name === 'routes') renderRoutes();
+    if (name === 'oper') renderOperacion();
+    else stopOperTimers(); // al salir de Operación, frena el reloj/simulación
   }
 
