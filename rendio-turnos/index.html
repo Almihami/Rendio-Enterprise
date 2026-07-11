@@ -419,7 +419,7 @@
 
       <!-- =============== ADMIN: AVAILABILITY TAB (paleta limpia) =============== -->
       <!-- Rediseño visual scopeado bajo #avail-ui. Lógica intacta:
-           refreshAvailabilityMatrix / renderAvailability / rotateAvailPill en app.js.
+           refreshAvailabilityMatrix / renderAvailability / rotateAvailPill en admin-disponibilidad.js.
            Las celdas siguen siendo editables (clic rota el estado). -->
       <section data-panel="availability" class="hidden">
         <div id="avail-ui">
@@ -499,7 +499,7 @@
       <!-- =============== ADMIN: SETTINGS TAB (paleta limpia) =============== -->
       <!-- Rediseño visual al sistema "paleta limpia" (igual que Tablero v4),
            scopeado bajo #settings-ui. La lógica NO cambia: la pintan
-           renderSettings / renderPriorityList / renderRulesEditor en app.js. -->
+           renderSettings / renderPriorityList / renderRulesEditor en admin-personal.js. -->
       <section data-panel="settings" class="hidden">
         <div id="settings-ui" data-theme="light">
           <div class="set-head">
@@ -636,7 +636,7 @@
 
       <!-- =============== ADMIN: BALANCE TAB (paleta limpia) =============== -->
       <!-- Rediseño visual scopeado bajo #balance-ui. Lógica intacta:
-           renderBalance / onGenerateBalance / onDownloadBalanceCsv en app.js. -->
+           renderBalance / onGenerateBalance / onDownloadBalanceCsv en admin-balance.js. -->
       <section data-panel="balance" class="hidden">
         <div id="balance-ui">
           <div class="rl-phead">
@@ -666,7 +666,7 @@
       <!-- =============== ADMIN: INSPECCIONES TAB (paleta limpia) ===============
            Diseño UX (Rendio Admin - Inspecciones); tokens del app, scopeado bajo
            #inspections-ui. Lo pintan renderInspections / renderInspectionDetail /
-           renderInspChecklist en app.js. -->
+           renderInspChecklist en admin-inspecciones.js. -->
       <section data-panel="inspections" class="hidden">
         <div id="inspections-ui" data-theme="light">
           <!-- Vista: cola de revisión -->
@@ -814,7 +814,21 @@
   <script src="scheduler.js"></script>
   <script src="api.js"></script>
   <script src="shift-flow.js"></script>
-  <script src="app.js"></script>
+  <!-- app.js fue dividido en módulos por feature (split mecánico 2026-07-10).
+       Comparten scope global; el ORDEN de carga importa: core.js primero
+       (estado global + boot) y ui-push.js último (registra DOMContentLoaded). -->
+  <script src="core.js"></script>
+  <script src="admin-turnos-activos.js"></script>
+  <script src="admin-inspecciones.js"></script>
+  <script src="horario.js"></script>
+  <script src="admin-solicitudes.js"></script>
+  <script src="admin-disponibilidad.js"></script>
+  <script src="admin-personal.js"></script>
+  <script src="admin-balance.js"></script>
+  <script src="driver-home.js"></script>
+  <script src="admin-recompensas.js"></script>
+  <script src="driver-perfil.js"></script>
+  <script src="ui-push.js"></script>
 
   <!-- PWA: registrar service worker + detectar updates -->
   <script>

@@ -1,0 +1,93 @@
+# --- Secrets / env (NEVER commit) ---
+.env
+.env.*
+!.env.example
+.env.local
+.env.local.*
+*.pem
+*.key
+*.p12
+*.keystore
+*.jks
+service-account*.json
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.recommended.json
+*.swp
+*.swo
+
+# --- Logs ---
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Node / Web (rendio-admin-web) ---
+node_modules/
+dist/
+build/
+.next/
+.cache/
+.parcel-cache/
+.turbo/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+.eslintcache
+.vite/
+
+# --- Flutter / Mobile (rendio-mobile) ---
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+android/.gradle/
+android/captures/
+android/gradlew
+android/gradlew.bat
+android/local.properties
+android/key.properties
+android/app/upload-keystore.jks
+**/google-services.json
+**/GoogleService-Info.plist
+*.iml
+
+# --- Supabase (rendio-backend) ---
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+supabase/seed.local.sql
+
+# --- Python (scripts auxiliares) ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- PII real (NUNCA commitear) ---
+# Datos reales de conductores (nombres, correos, celulares, cédulas).
+# Se versiona solo el .example con placeholders.
+rendio-backend/scripts/seed-turnos-users.json
+
+# --- Misc ---
+*.bak
+*.tmp
+tmp/
+
+# --- Local del proyecto (no versionar) ---
+_archivo/
+docs/
+mockups/

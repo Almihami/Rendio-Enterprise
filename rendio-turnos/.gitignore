@@ -1,1 +1,3 @@
-config.js.dev-backup
+# Trabajo local que NO se despliega (previews, harnesses, notas)
+_dev/
+.DS_Store
