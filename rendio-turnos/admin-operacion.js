@@ -8,7 +8,9 @@
   // Las posiciones reales saldrían de driver_locations (GPS de la app del
   // conductor); mientras no haya GPS, se usa data DEMO con coords reales.
   // ====================================================================
-  const OP_MDE = { lat: 6.1645, lng: -75.4231 }; // Aeropuerto JMC (Rionegro)
+  // Rotonda del TERMINAL DE PASAJEROS (acceso occidental) — la coord genérica
+  // del aeropuerto ruteaba por la zona de carga/CACOM 5, que es prohibida.
+  const OP_MDE = { lat: 6.1715, lng: -75.4270 }; // MDE · terminal de pasajeros
   const OP_COLORS = { ontime: '#16936A', tight: '#C9810F', late: '#D6473B', done: '#9D998F' };
   const OP_STLABEL = { ontime: ['A tiempo', 'i-check'], tight: ['Ajustado', 'i-clock'], late: ['Va tarde', 'i-warn'], done: ['Completó', 'i-check'] };
   const OP_VAN_SVG = '<svg viewBox="0 0 24 24"><path d="M3 13V7a1 1 0 0 1 1-1h9l4 4h3a1 1 0 0 1 1 1v2"/><path d="M3 13h19v4H3z"/><circle cx="7.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>';

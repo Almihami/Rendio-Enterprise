@@ -4,7 +4,10 @@
   // ---------------- ASIGNACIÓN (planeación de rutas) ----------------
   // Base de los carros y aeropuerto (coords reales del Oriente antioqueño).
   const RT_DEPOT = { lat: 6.1537, lng: -75.3738 };   // Plaza de la Libertad, Rionegro (base)
-  const RT_AIRPORT = { lat: 6.1659, lng: -75.4239 }; // MDE José María Córdova (geocodificado OSM)
+  // OJO: la coord del "aeropuerto" debe ser la ROTONDA DEL TERMINAL DE PASAJEROS
+  // (acceso occidental). El punto geocodificado genérico caía del lado oriental
+  // de la pista y OSRM ruteaba por la zona de carga/CACOM 5 (prohibida).
+  const RT_AIRPORT = { lat: 6.1715, lng: -75.4270 }; // MDE · terminal de pasajeros (verificado vs OSRM)
   // DEMO: día completo de trabajo (~02:00 → ~23:00), 2 carros, 12 oleadas.
   // Direcciones EXACTAS de Rionegro (nomenclatura real de barrios/vías; datos
   // inventados para la demo — con reservas reales cada dirección se geocodifica).
@@ -105,7 +108,7 @@
       rt.plan = {}; rt.source = 'demo';
     }
     // Estado inicial: una vuelta vacía por carro; todos los auxiliares en el pool.
-    rt.lanes = rt.cars.map(c => ({ id: `${c.id}·V1`, car: c.id, vuelta: 1, start: c.avail0 || '02:00', origin: 'depot' }));
+    rt.lanes = rt.cars.map(c => ({ id: `${c.id}·V1`, car: c.id, vuelta: 1, start: c.avail0 || '02:00', origin: null }));
     rt.order = {}; rt.lanes.forEach(l => { rt.order[l.id] = []; });
     rt.pool = Object.keys(rt.aux);
     rt.optimized = false;
@@ -147,7 +150,7 @@
     const lane = rtLaneOf(laneId);
     let t = rtToMin(lane.start), prev = lane.origin, stops = [], pax = 0, hardDL = Infinity;
     rt.order[laneId].forEach(id => {
-      t += rtLegMin(prev, id); pax += rt.aux[id].pax;
+      if (prev) t += rtLegMin(prev, id); pax += rt.aux[id].pax;
       stops.push({ id, eta: Math.round(t) }); // ETA = cuando el carro LLEGA a la parada
       t += rt.SERVICE_MIN; // subir gente + maletas antes de arrancar al siguiente
       hardDL = Math.min(hardDL, rtToMin(rt.aux[id].dl));
@@ -216,11 +219,14 @@
   // reentradas de sector — el cronómetro no distingue 6 segundos, la operación sí.
   // El tiempo de servicio por parada es constante (mismas paradas en toda
   // permutación), así que no afecta cuál orden gana — no se suma aquí.
-  function rtBestOrder(ids, origin = 'depot') {
+  // origin: 'airport' (encadenada, sale de MDE), o null → la vuelta arranca EN
+  // la primera recogida (el punto de partida del conductor se define en SU
+  // módulo, no aquí — decisión de la operación 2026-07-10).
+  function rtBestOrder(ids, origin = null) {
     if (ids.length <= 1) return ids.slice();
     const scored = rtPermutations(ids).map(perm => {
       let t = 0, prev = origin;
-      perm.forEach(id => { t += rtLegMin(prev, id); prev = id; });
+      perm.forEach(id => { if (prev) t += rtLegMin(prev, id); prev = id; });
       t += rtLegMin(prev, 'airport');
       return { perm, t };
     });
@@ -232,11 +238,11 @@
   }
   // Evalúa un carro (lista de paradas): mejor ruta → llegada al aeropuerto,
   // deadline más exigente y minutos de atraso (0 si llega a tiempo).
-  function rtRouteEval(carStart, ids, origin = 'depot') {
+  function rtRouteEval(carStart, ids, origin = null) {
     if (!ids.length) return { arrival: null, minDL: Infinity, late: 0 };
     const ord = rtBestOrder(ids, origin);
     let t = carStart, prev = origin;
-    ord.forEach(id => { t += rtLegMin(prev, id) + rt.SERVICE_MIN; prev = id; });
+    ord.forEach(id => { if (prev) t += rtLegMin(prev, id); t += rt.SERVICE_MIN; prev = id; });
     const arrival = t + rtLegMin(prev, 'airport');
     const minDL = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl)));
     // "Tarde" = no alcanza el deadline con el colchón de entrega incluido.
@@ -271,7 +277,7 @@
     trips.forEach(tr => {
       let best = null;
       cs.forEach(s => {
-        const origin = s.atMDE ? 'airport' : 'depot';
+        const origin = s.atMDE ? 'airport' : null; // 1ª vuelta: arranca en la primera recogida
         const dur = rtTripDur(tr.ids, origin);
         const salmax = tr.dlMin - rt.AIRPORT_BUFFER - dur;
         const depart = Math.max(s.avail, salmax - rt.CUSHION);
@@ -354,11 +360,11 @@
          <button class="assignbtn ${!car.driver ? 'cta' : ''}" data-assign="${lane.id}"><svg class="icon" style="width:14px;height:14px"><use href="#i-user"/></svg>${car.driver ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
       : '';
     // Etiqueta de la vuelta: carro · Vn · sale HH:MM (desde base o desde MDE).
-    const origen = lane.origin === 'airport' ? 'desde MDE' : 'desde base';
+    const salida = lane.origin === 'airport' ? `sale ${lane.start} desde MDE` : `1ª recogida ${lane.start}`;
     return `<div class="lane ${st}" data-lane="${lane.id}">
       <div class="lane-h">
         <div class="car"><span class="cav"><svg class="icon"><use href="#i-van"/></svg></span>
-          <div class="cinfo"><b>${car.id} · Vuelta ${lane.vuelta} <span style="font-weight:600;color:var(--ink3);font-size:12px">· sale ${lane.start} ${origen}</span></b>${drvHTML}</div></div>
+          <div class="cinfo"><b>${car.id} · Vuelta ${lane.vuelta} <span style="font-weight:600;color:var(--ink3);font-size:12px">· ${salida}</span></b>${drvHTML}</div></div>
         <div class="cap ${capFull ? 'full' : ''}"><span class="pips">${pips}</span>${r.pax}/${rtCapOf(car)}</div>
         <div class="sema">${sema}${assignBtn}</div>
       </div>
@@ -428,7 +434,7 @@
         <div class="dsec"><h3>Resumen de la ruta</h3>
           <div class="sumcard">
             <div class="sumrow"><span class="k">Paradas</span><span class="v">${r.stops.length} · ${r.pax}/${rtCapOf(car)} pax</span></div>
-            <div class="sumrow"><span class="k">Salida</span><span class="v mono">${lane.start} ${lane.origin === 'airport' ? '(desde MDE)' : '(desde base)'}</span></div>
+            <div class="sumrow"><span class="k">${lane.origin === 'airport' ? 'Sale de MDE' : 'Primera recogida'}</span><span class="v mono">${lane.start}</span></div>
             <div class="sumrow"><span class="k">Llegada a MDE</span><span class="v mono">${rtToHM(r.arrival)}</span></div>
             <div class="sumrow"><span class="k">Presentación más temprana</span><span class="v mono">${rtToHM(r.hardDL)}</span></div>
             <div class="sumrow hl"><span class="k">Holgura</span><span class="v">${semaPill}</span></div>
@@ -459,6 +465,7 @@
   // radial = ahora. Click en un arco baja al carril de esa vuelta.
   const RT_TYPE_COLOR = { sal: '#F26522', lle: '#10B981', hotel: '#F59E0B' };
   const rtHourAngle = (min) => -Math.PI / 2 + (min / 1440) * Math.PI * 2; // 00h arriba
+  let rtScrubMin = null; // aguja: null = hora actual; número = minuto "visitado" por el admin
   function rtArcPath(cx, cy, rO, rI, a1, a2) {
     const large = a2 - a1 > Math.PI ? 1 : 0;
     const p = (r, a) => `${cx + r * Math.cos(a)} ${cy + r * Math.sin(a)}`;
@@ -486,31 +493,40 @@
       s += `<circle cx="${cx}" cy="${cy}" r="${rm}" fill="none" stroke="var(--panel2)" stroke-width="${ring.rO - ring.rI}"/>`;
       s += `<text x="${cx}" y="${cy - rm + 4}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--ink3)" font-family="var(--mono)" letter-spacing="1">${c.id}</text>`;
     });
-    // arcos: una vuelta = salida → llegada a MDE
+    // arcos: una vuelta = salida → llegada a MDE. Si la aguja está "visitando"
+    // una hora, se resaltan solo las vueltas activas en ese momento.
+    const scrub = rtScrubMin;
     rt.lanes.forEach(l => {
       const i = rt.cars.findIndex(c => c.id === l.car);
       const ring = RINGS[i]; if (!ring) return;
       const r = rtCarCompute(l.id);
       if (!r.stops.length) return;
-      const a1 = rtHourAngle(rtToMin(l.start)), a2 = rtHourAngle(r.arrival);
+      const dep = rtToMin(l.start);
+      const a1 = rtHourAngle(dep), a2 = rtHourAngle(r.arrival);
       const hotel = r.stops.some(x => rt.aux[x.id].hotel);
       const color = hotel ? RT_TYPE_COLOR.hotel : RT_TYPE_COLOR[rt.tripType] || RT_TYPE_COLOR.sal;
       const late = r.status === 'late';
-      s += `<path d="${rtArcPath(cx, cy, ring.rO - 3, ring.rI + 3, a1, a2)}" fill="${color}" opacity="0.88" data-arc="${l.id}" style="cursor:pointer">` +
+      const activa = scrub == null || (scrub >= dep && scrub <= r.arrival);
+      s += `<path d="${rtArcPath(cx, cy, ring.rO - 3, ring.rI + 3, a1, a2)}" fill="${color}" opacity="${activa ? 0.9 : 0.18}" data-arc="${l.id}" style="cursor:pointer;transition:opacity .15s">` +
            `<title>${l.car} · Vuelta ${l.vuelta} · sale ${l.start} → MDE ${rtToHM(r.arrival)} · ${r.stops.length} parada${r.stops.length > 1 ? 's' : ''} · pres. ${rtToHM(r.hardDL)}${late ? ' · NO LLEGA' : ''}</title></path>`;
       if (late) s += `<path d="${rtArcPath(cx, cy, ring.rO - 1, ring.rI + 1, a1, a2)}" fill="none" stroke="#EF4444" stroke-width="2" stroke-dasharray="4 3" pointer-events="none" transform-origin="center"/>`;
     });
-    // línea de AHORA
+    // AGUJA: por defecto marca AHORA; el admin puede ARRASTRARLA para recorrer
+    // el día (resalta las vueltas activas a esa hora). Doble clic = volver a ahora.
     const now = new Date(); const nowMin = now.getHours() * 60 + now.getMinutes();
-    const na = rtHourAngle(nowMin);
-    s += `<line x1="${cx + 112 * Math.cos(na)}" y1="${cy + 112 * Math.sin(na)}" x2="${cx + 262 * Math.cos(na)}" y2="${cy + 262 * Math.sin(na)}" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"/>`;
-    s += `<circle cx="${cx + 262 * Math.cos(na)}" cy="${cy + 262 * Math.sin(na)}" r="5" fill="var(--ink)"/>`;
+    const needleMin = scrub != null ? scrub : nowMin;
+    const na = rtHourAngle(needleMin);
+    const needleColor = scrub != null ? '#F26522' : 'var(--ink)';
+    s += `<line x1="${cx + 112 * Math.cos(na)}" y1="${cy + 112 * Math.sin(na)}" x2="${cx + 262 * Math.cos(na)}" y2="${cy + 262 * Math.sin(na)}" stroke="${needleColor}" stroke-width="2" stroke-linecap="round" pointer-events="none"/>`;
+    s += `<circle cx="${cx + 262 * Math.cos(na)}" cy="${cy + 262 * Math.sin(na)}" r="7" fill="${needleColor}" pointer-events="none"/>`;
+    // zona de agarre invisible y generosa sobre la aguja
+    s += `<line x1="${cx + 100 * Math.cos(na)}" y1="${cy + 100 * Math.sin(na)}" x2="${cx + 274 * Math.cos(na)}" y2="${cy + 274 * Math.sin(na)}" stroke="rgba(0,0,0,0)" stroke-width="26" data-needle="1" style="cursor:grab"/>`;
     // centro: hora + resumen del día
     const st = rtDayStats();
     const paxTotal = rt.lanes.reduce((t, l) => t + rtCarCompute(l.id).pax, 0);
     s += `<circle cx="${cx}" cy="${cy}" r="104" fill="var(--panel)" stroke="var(--line2)"/>`;
-    s += `<text x="${cx}" y="${cy - 34}" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1.5" fill="var(--ink3)">AHORA</text>`;
-    s += `<text x="${cx}" y="${cy + 2}" text-anchor="middle" font-size="34" font-weight="700" fill="var(--ink)" font-family="var(--mono)">${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}</text>`;
+    s += `<text x="${cx}" y="${cy - 34}" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1.5" fill="${scrub != null ? '#F26522' : 'var(--ink3)'}">${scrub != null ? 'VIENDO · doble clic: ahora' : 'AHORA'}</text>`;
+    s += `<text x="${cx}" y="${cy + 2}" text-anchor="middle" font-size="34" font-weight="700" fill="var(--ink)" font-family="var(--mono)">${rtToHM(needleMin)}</text>`;
     s += rt.optimized
       ? `<text x="${cx}" y="${cy + 28}" text-anchor="middle" font-size="11.5" fill="var(--ink2)">${rt.lanes.length} vueltas · ${paxTotal} aux</text>` +
         `<text x="${cx}" y="${cy + 46}" text-anchor="middle" font-size="11.5" fill="${st.late ? '#EF4444' : '#16936A'}">${st.late ? st.late + ' no llega' : 'todas a tiempo'}</text>`
@@ -529,7 +545,7 @@
     const ovl = $('#rt-mapOvl'); if (!ovl) return;
     const lane = rtLaneOf(laneId);
     $('#rt-mapTitle').textContent = `Trayecto ${lane.car} · Vuelta ${lane.vuelta}`;
-    $('#rt-mapSub').textContent = `sale ${lane.start} ${lane.origin === 'airport' ? 'desde MDE' : 'desde base'} · ${r.stops.length} paradas · llega a MDE ${rtToHM(r.arrival)} (pres. ${rtToHM(r.hardDL)})`;
+    $('#rt-mapSub').textContent = `${lane.origin === 'airport' ? 'sale de MDE ' + lane.start : '1ª recogida ' + lane.start} · ${r.stops.length} paradas · llega a MDE ${rtToHM(r.arrival)} (pres. ${rtToHM(r.hardDL)})`;
     ovl.classList.add('show');
     // Mapa una sola vez; capa de ruta se redibuja por carro.
     if (!rtMap.map) {
@@ -538,12 +554,12 @@
     }
     if (rtMap.layer) { rtMap.layer.remove(); rtMap.layer = null; }
     const layer = rtMap.layer = L.layerGroup().addTo(rtMap.map);
-    const originPt = lane.origin === 'airport' ? RT_AIRPORT : RT_DEPOT;
-    const pts = [originPt, ...r.stops.map(s => rtCoordsOf(s.id)), RT_AIRPORT];
+    // La previsualización verifica LA RUTA (paradas → MDE). El punto de partida
+    // del conductor no se dibuja: se define en el módulo de conductores.
+    const pts = [...r.stops.map(s => rtCoordsOf(s.id)), RT_AIRPORT];
     // Marcadores: base, paradas numeradas (con dirección y ETA) y aeropuerto.
     const mk = (p, html, pop) => { const m = L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(layer); if (pop) m.bindPopup(pop); return m; };
     const pin = (bg, tx) => `<div style="width:26px;height:26px;border-radius:50%;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font:800 12px Inter,sans-serif;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)">${tx}</div>`;
-    mk(originPt, pin('#1F2937', lane.origin === 'airport' ? '✈' : 'B'), lane.origin === 'airport' ? `<b>MDE</b> · sale de entregar la vuelta anterior<br>Sale ${lane.start}` : `<b>Base</b> · Plaza de la Libertad<br>Sale ${lane.start}`);
     r.stops.forEach((s, i) => { const a = rt.aux[s.id]; mk(rtCoordsOf(s.id), pin('#E2551A', String(i + 1)), `<b>${i + 1}. ${a.n}</b><br>${a.dir || a.zona}<br>ETA ${rtToHM(s.eta)} · pres. ${a.dl}`); });
     mk(RT_AIRPORT, pin('#16936A', '✈'), `<b>MDE</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
     // Geometría real por carretera (OSRM route). Si falla → línea recta punteada.
@@ -614,6 +630,33 @@
       rtRenderAll();
     });
 
+    // Aguja del reloj arrastrable: recorre el día y resalta las vueltas activas.
+    const clockMinAt = (ev) => {
+      const svg = $('#rt-clock svg'); if (!svg) return null;
+      const b = svg.getBoundingClientRect();
+      const x = (ev.clientX - b.left) / b.width * 560 - 280;
+      const y = (ev.clientY - b.top) / b.height * 560 - 280;
+      let a = Math.atan2(y, x) + Math.PI / 2; // 00h arriba
+      if (a < 0) a += Math.PI * 2;
+      return Math.round((a / (Math.PI * 2)) * 1440 / 5) * 5 % 1440; // pasos de 5 min
+    };
+    let needleDrag = false, needleRaf = null;
+    root.addEventListener('pointerdown', (e) => {
+      if (!e.target.closest('[data-needle]')) return;
+      needleDrag = true; e.preventDefault();
+      document.addEventListener('pointermove', onNeedleMove);
+      document.addEventListener('pointerup', onNeedleUp, { once: true });
+    });
+    function onNeedleMove(e) {
+      if (!needleDrag || needleRaf) return;
+      needleRaf = requestAnimationFrame(() => {
+        needleRaf = null;
+        const m = clockMinAt(e); if (m == null) return;
+        rtScrubMin = m; rtRenderClock();
+      });
+    }
+    function onNeedleUp() { needleDrag = false; document.removeEventListener('pointermove', onNeedleMove); }
+
     root.addEventListener('click', (e) => {
       if (e.target.closest('#rt-optBtn')) { rtOptimize(); return; }
       const mp = e.target.closest('[data-map]'); if (mp) { rtOpenMap(mp.dataset.map); return; }
@@ -622,6 +665,8 @@
         if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
         return;
       }
+      // doble propósito del reloj: doble clic en cualquier parte = volver a AHORA
+      if (e.target.closest('#rt-clock') && e.detail === 2 && rtScrubMin != null) { rtScrubMin = null; rtRenderClock(); return; }
       if (e.target.closest('[data-mapclose]') || e.target === $('#rt-mapOvl')) { rtCloseMap(); return; }
       const as = e.target.closest('[data-assign]'); if (as) { rtOpenDrawer(as.dataset.assign); return; }
       if (e.target === $('#rt-scrim') || e.target.closest('[data-rtclose]')) { rtCloseDrawer(); return; }
