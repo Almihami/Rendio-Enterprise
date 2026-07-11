@@ -674,7 +674,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 
 /* =====================================================================
    Ajustes — paleta limpia. VISUAL ONLY. Scopeado bajo #settings-ui.
-   Mismos tokens que el Tablero v4. La lógica vive en app.js:
+   Mismos tokens que el Tablero v4. La lógica vive en admin-personal.js:
    renderSettings / renderPriorityList / renderRulesEditor.
    ===================================================================== */
 #settings-ui{
@@ -768,7 +768,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 /* =====================================================================
    Pantallas de datos migradas (Balance / Disponibilidad / Solicitudes).
    Tokens compartidos — mismos valores que #settings-ui + acentos (blue/rest).
-   VISUAL ONLY. La lógica vive en app.js (funciones existentes, IDs intactos).
+   VISUAL ONLY. La lógica vive en admin-balance/disponibilidad/solicitudes.js (IDs intactos).
    ===================================================================== */
 #balance-ui,#avail-ui,#solic-ui{
   --bg:#F8FAFC; --panel:#FFFFFF; --panel2:#F1F5F9; --ink:#211D18; --ink2:#6B6258; --ink3:#A39A8D;

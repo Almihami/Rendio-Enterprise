@@ -17,7 +17,15 @@ rendio-turnos/
 ├── supabase-client.js     # crea window.sb
 ├── api.js                 # wrappers de queries a Supabase
 ├── scheduler.js           # algoritmo de asignación AM/PM
-├── app.js                 # controlador + routing por rol
+├── shift-flow.js          # wizard inicio/cierre de turno (conductor)
+├── core.js                # boot, login/sesión, estado global, tabs (carga PRIMERO)
+├── admin-*.js             # una pestaña admin por archivo (turnos-activos,
+│                          #   inspecciones, solicitudes, disponibilidad,
+│                          #   personal, balance, recompensas)
+├── horario.js             # schedule + tablero v4 + vista móvil + publicar
+├── driver-home.js         # vista home del conductor
+├── driver-perfil.js       # perfil, strikes, cambios de turno
+├── ui-push.js             # helpers UI, PWA, Web Push, arranque (carga ÚLTIMO)
 ├── styles.css             # estilos + reglas de impresión
 ├── vercel.json            # configuración mínima de deploy
 └── README.md
