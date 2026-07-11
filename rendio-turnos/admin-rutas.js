@@ -600,7 +600,7 @@
     const host = $('#rt-clock'); if (!host) return;
     const size = 560, cx = 280, cy = 280;
     const RINGS = [{ rO: 250, rI: 212 }, { rO: 202, rI: 164 }, { rO: 154, rI: 122 }]; // hasta 3 carros
-    let s = `<svg viewBox="0 0 ${size} ${size}" style="width:100%;max-width:640px;overflow:visible" role="img" aria-label="Día completo de rutas">`;
+    let s = `<svg viewBox="0 0 ${size} ${size}" style="width:100%;max-width:420px;overflow:visible" role="img" aria-label="Día completo de rutas">`;
     // rejilla horaria
     for (let h = 0; h < 24; h++) {
       const a = rtHourAngle(h * 60), q = h % 6 === 0;
