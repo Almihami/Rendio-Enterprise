@@ -49,6 +49,12 @@
     // ---- deben estar 22:50 (van a hotel) ----
     b24: { n: 'Bernardo Y.', zona: 'Llanogrande', dir: 'Vía Llanogrande km 9, Hotel campestre', lat: 6.1235, lng: -75.4235, dl: '22:50', pax: 1, type: 'sal', hotel: true },
     b25: { n: 'Adriana Ñ.', zona: 'Alto del Medio', dir: 'Cra 43 #61-02, B. Alto del Medio', lat: 6.1635, lng: -75.3690, dl: '22:50', pax: 1, type: 'sal', hotel: true },
+    // ---- LLEGADAS (dl = hora en que ATERRIZA el vuelo; recogen en MDE → casa) ----
+    l1: { n: 'Patricia D.', zona: 'San Nicolás', dir: 'Calle 43 #55-20, B. San Nicolás', lat: 6.1473, lng: -75.3778, dl: '10:40', pax: 1, type: 'lle' },
+    l2: { n: 'Álvaro C.', zona: 'Centro', dir: 'Cra 51 #50-12, Centro', lat: 6.1535, lng: -75.3748, dl: '10:40', pax: 1, type: 'lle' },
+    l3: { n: 'Renata O.', zona: 'San Antonio', dir: 'Calle 25 #46-11, San Antonio de Pereira', lat: 6.1315, lng: -75.3800, dl: '14:50', pax: 1, type: 'lle' },
+    l4: { n: 'Gustavo M.', zona: 'Llanogrande', dir: 'Vía Llanogrande km 6', lat: 6.1290, lng: -75.4130, dl: '21:10', pax: 1, type: 'lle' },
+    l5: { n: 'Elena R.', zona: 'Centro', dir: 'Cra 47 #52-30, Centro', lat: 6.1548, lng: -75.3739, dl: '21:10', pax: 1, type: 'lle' },
   };
   const RT_PALETTE = ['#3B82F6', '#0EA5A0', '#8B5CF6', '#2563A8', '#16936A', '#7C5CD6', '#D98A12', '#0EA5E9', '#E2551A', '#DB4B7A', '#5B8A2B', '#B45309', '#4F46E5', '#0D9488', '#9D174D'];
   const RT_DEMO_COLORS = {};
@@ -77,6 +83,7 @@
     AIRPORT_BUFFER: 10,  // min de colchón al entregar: bajar maletas + entrar a tiempo
     TRAFFIC_FACTOR: 1.25,// multiplica el tiempo de manejo (OSRM da flujo libre, sin tráfico)
     TURNAROUND: 8,       // min en MDE entre entregar y arrancar la siguiente vuelta
+    DEPLANE: 20,         // min entre que el vuelo aterriza y el pasajero sale (migración+maletas)
     CUSHION: 15,         // min extra de margen al programar la salida de cada vuelta
     etaSource: null,     // 'osrm' | 'haversine' — de dónde salieron los tiempos
     M: null, // matriz de tiempos reales (min) entre depot/aeropuerto/paradas (OSRM o haversine)
@@ -91,13 +98,14 @@
     rt.AIRPORT_BUFFER = Number(s.route_airport_buffer_min) || 10;
     rt.TRAFFIC_FACTOR = Number(s.route_traffic_factor) || 1.25;
     rt.TURNAROUND = Number(s.route_turnaround_min) || 8;
+    rt.DEPLANE = Number(s.route_deplane_min) || 20;
     rt.CUSHION = Number(s.route_depart_cushion_min) || 15;
   }
 
   async function rtLoad() {
     rtCfg();
     let loaded = null;
-    try { if (Api.listRoutePlanning) loaded = await Api.listRoutePlanning(rt.tripType); }
+    try { if (Api.listRoutePlanning) loaded = await Api.listRoutePlanning('all'); }
     catch (e) { loaded = null; }
     if (loaded && loaded.aux && Object.keys(loaded.aux).length) {
       rt.aux = loaded.aux; rt.colors = loaded.colors || {}; rt.cars = loaded.cars || [];
@@ -148,6 +156,7 @@
   // Evalúa una VUELTA (lane): ETAs por parada, llegada a MDE, holgura y estado.
   function rtCarCompute(laneId) {
     const lane = rtLaneOf(laneId);
+    if (lane.type === 'lle') return rtCarComputeLle(lane);
     let t = rtToMin(lane.start), prev = lane.origin, stops = [], pax = 0, hardDL = Infinity;
     rt.order[laneId].forEach(id => {
       if (prev) t += rtLegMin(prev, id); pax += rt.aux[id].pax;
@@ -166,6 +175,24 @@
     // y aún entregar con colchón — la palanca del despachador.
     const depart = arrival != null ? hardDL - rt.AIRPORT_BUFFER - (arrival - rtToMin(lane.start)) : null;
     return { stops, pax, arrival, hardDL, holg, status, depart };
+  }
+
+  // Vuelta de LLEGADA: recoge en MDE cuando el vuelo suelta a la gente y
+  // reparte a las casas. El semáforo mide cuánto ESPERARÍA el pasajero.
+  function rtCarComputeLle(lane) {
+    let t = rtToMin(lane.start), prev = 'airport', stops = [], pax = 0;
+    rt.order[lane.id].forEach(id => {
+      t += rtLegMin(prev, id); pax += rt.aux[id].pax;
+      stops.push({ id, eta: Math.round(t) });
+      t += rt.SERVICE_MIN;
+      prev = id;
+    });
+    const arrival = rt.order[lane.id].length ? Math.round(t) : null; // termina en la última casa
+    const ideal = rtToMin(lane.landing) + rt.DEPLANE; // cuándo sale la gente del terminal
+    const wait = Math.max(0, rtToMin(lane.start) - ideal);
+    let status = 'empty';
+    if (arrival != null) status = wait > 15 ? 'late' : (wait > 5 ? 'tight' : 'ontime');
+    return { stops, pax, arrival, hardDL: ideal, holg: -wait, status, depart: ideal, wait, lle: true };
   }
 
   function rtDayStats() {
@@ -222,12 +249,12 @@
   // origin: 'airport' (encadenada, sale de MDE), o null → la vuelta arranca EN
   // la primera recogida (el punto de partida del conductor se define en SU
   // módulo, no aquí — decisión de la operación 2026-07-10).
-  function rtBestOrder(ids, origin = null) {
+  function rtBestOrder(ids, origin = null, endAtAirport = true) {
     if (ids.length <= 1) return ids.slice();
     const scored = rtPermutations(ids).map(perm => {
       let t = 0, prev = origin;
       perm.forEach(id => { if (prev) t += rtLegMin(prev, id); prev = id; });
-      t += rtLegMin(prev, 'airport');
+      if (endAtAirport) t += rtLegMin(prev, 'airport');
       return { perm, t };
     });
     const best = Math.min(...scored.map(s => s.t));
@@ -261,28 +288,59 @@
     // duración del viaje (manejo + servicio por parada), independiente de la hora
     return rtRouteEval(0, ids, origin).arrival;
   }
+  // Vuelta de LLEGADA: arranca en MDE y reparte a las casas (no vuelve al aeropuerto).
+  function rtHomesPlan(ids) {
+    const ord = rtBestOrder(ids, 'airport', false);
+    let t = 0, prev = 'airport', last = 'airport';
+    ord.forEach(id => { t += rtLegMin(prev, id) + rt.SERVICE_MIN; prev = id; last = id; });
+    return { ord, dur: t, last };
+  }
+
   function rtSolveDay() {
-    // 1) OLEADAS: agrupar por deadline ("deben estar"), en orden cronológico.
-    const byDL = {};
-    Object.keys(rt.aux).forEach(id => { (byDL[rt.aux[id].dl] = byDL[rt.aux[id].dl] || []).push(id); });
-    const waves = Object.entries(byDL).map(([dl, ids]) => ({ dlMin: rtToMin(dl), ids }))
+    // TABLERO GENERAL: salidas y llegadas conviven — el carro que deja en el
+    // puerto ahí mismo recoge. 1) OLEADAS: agrupar por tipo + hora (salidas:
+    // "deben estar"; llegadas: hora en que aterriza el vuelo), cronológico.
+    const byKey = {};
+    Object.keys(rt.aux).forEach(id => { const a = rt.aux[id]; const k = a.type + '|' + a.dl; (byKey[k] = byKey[k] || []).push(id); });
+    const waves = Object.entries(byKey).map(([k, ids]) => ({ type: k.split('|')[0], dlMin: rtToMin(k.split('|')[1]), ids }))
       .sort((a, b) => a.dlMin - b.dlMin);
     // 2) VIAJES: partir oleadas más grandes que el cupo (agrupando por sector).
     const capMax = Math.max(...rt.cars.map(rtCapOf));
     const trips = [];
     waves.forEach(w => {
       const ids = w.ids.slice().sort((a, b) => rt.aux[a].zona.localeCompare(rt.aux[b].zona));
-      for (let i = 0; i < ids.length; i += capMax) trips.push({ dlMin: w.dlMin, ids: ids.slice(i, i + capMax) });
+      for (let i = 0; i < ids.length; i += capMax) trips.push({ type: w.type, dlMin: w.dlMin, ids: ids.slice(i, i + capMax) });
     });
-    // 3) ASIGNAR cada viaje (cronológico) al mejor carro:
-    //    - factible primero (puede salir a más tardar en "sal máx")
-    //    - entre factibles, el que MENOS vueltas lleva (balancea la carga)
-    const cs = rt.cars.map(c => ({ car: c, avail: rtToMin(c.avail0 || '01:30'), vuelta: 0, atMDE: false }));
+    // 3) ASIGNAR cada viaje (cronológico) al mejor carro. El carro tiene POSICIÓN
+    //    (null = aún no sale; 'airport' = en MDE; id de parada = última casa de
+    //    una llegada) — el tramo desde donde quedó SÍ cuenta.
+    const cs = rt.cars.map(c => ({ car: c, avail: rtToMin(c.avail0 || '01:30'), vuelta: 0, pos: null }));
     const lanes = [], order = {}, unassigned = [];
     trips.forEach(tr => {
       let best = null;
+      if (tr.type === 'lle') {
+        // LLEGADA: hay que ESTAR en MDE cuando salgan (aterriza + desembarque).
+        const idealPickup = tr.dlMin + rt.DEPLANE;
+        cs.forEach(s => {
+          const goLeg = (s.pos && s.pos !== 'airport') ? rtLegMin(s.pos, 'airport') : 0;
+          const readyAtMDE = s.avail + goLeg;
+          const wait = Math.max(0, readyAtMDE - idealPickup); // min que esperaría el pasajero
+          const key = wait * 100000 + s.vuelta * 1000 + s.avail;
+          if (!best || key < best.key) best = { key, s, wait, pickup: Math.max(idealPickup, readyAtMDE) };
+        });
+        if (!best || best.wait > 15) { unassigned.push(...tr.ids); return; }
+        const s = best.s; s.vuelta++;
+        const plan = rtHomesPlan(tr.ids);
+        const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'lle', start: rtToHM(best.pickup), origin: 'airport', landing: rtToHM(tr.dlMin) };
+        lanes.push(lane);
+        order[lane.id] = plan.ord;
+        s.avail = best.pickup + plan.dur + 2; // termina en la última casa
+        s.pos = plan.last;
+        return;
+      }
+      // SALIDA (casa → MDE), como siempre — pero el origen es donde QUEDÓ el carro.
       cs.forEach(s => {
-        const origin = s.atMDE ? 'airport' : null; // 1ª vuelta: arranca en la primera recogida
+        const origin = s.pos; // null = arranca en la 1ª recogida; 'airport' o casa = tramo real
         const dur = rtTripDur(tr.ids, origin);
         const salmax = tr.dlMin - rt.AIRPORT_BUFFER - dur;
         const depart = Math.max(s.avail, salmax - rt.CUSHION);
@@ -292,12 +350,12 @@
       });
       if (!best || best.late > 15) { unassigned.push(...tr.ids); return; }
       const s = best.s; s.vuelta++;
-      const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, start: rtToHM(best.depart), origin: best.origin };
+      const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'sal', start: rtToHM(best.depart), origin: best.origin };
       lanes.push(lane);
       order[lane.id] = rtBestOrder(tr.ids, best.origin);
       // tras entregar queda en MDE, disponible para la siguiente vuelta
       s.avail = best.depart + best.dur + rt.TURNAROUND;
-      s.atMDE = true;
+      s.pos = 'airport';
     });
     return { lanes, order, unassigned };
   }
@@ -345,7 +403,11 @@
     const drvHTML = drv
       ? `<span class="drv set"><span class="av" style="background:${drv.c}">${rtIni(drv.n)}</span>${drv.n}</span>`
       : `<span class="drv none"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor (borrador)</span>`;
-    const sema = st === 'empty'
+    const sema = r.lle
+      ? (st === 'ontime'
+        ? `<div class="holg"><div class="big" style="color:var(--green)">al bajar</div><div class="sm">aterriza ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`
+        : `<div class="holg"><div class="big" style="color:${st === 'late' ? 'var(--red)' : 'var(--amber)'}">espera ${r.wait} min</div><div class="sm">aterriza ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ${st}"><svg class="icon"><use href="#${st === 'late' ? 'i-warn' : 'i-clock'}"/></svg>${st === 'late' ? 'Espera larga' : 'Ajustado'}</span>`)
+      : st === 'empty'
       ? `<span class="spill empty">Vacío</span>`
       : st === 'late'
         ? `<div class="holg"><div class="big" style="color:var(--red)">${Math.abs(Math.round(r.holg))} min tarde</div><div class="sm">llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)} · <b>sal ${rtToHM(r.depart)}</b></div></div><span class="spill late"><svg class="icon"><use href="#i-warn"/></svg>No llega</span>`
@@ -357,15 +419,20 @@
       body = `<div class="lane-empty" data-drop="${lane.id}"><svg class="icon"><use href="#i-arrow"/></svg>Arrastra auxiliares aquí para armar la ruta de ${car.id}.</div>`;
     } else {
       const stops = r.stops.map((s, i) => rtStopHTML(lane.id, s, i)).join('<span class="arrow"><svg class="icon"><use href="#i-arrow"/></svg></span>');
-      const apt = `<span class="arrow"><svg class="icon"><use href="#i-arrow"/></svg></span><div class="airport ${st}"><svg class="icon"><use href="#i-plane"/></svg><b>MDE</b><span class="arr">${rtToHM(r.arrival)}</span></div>`;
-      body = `<div class="seq" data-drop="${lane.id}">${stops}${apt}</div>`;
+      // Llegadas: el chip de MDE va AL INICIO (ahí recoge); salidas: al final (ahí entrega).
+      const apt = r.lle
+        ? `<div class="airport lle ${st}"><svg class="icon"><use href="#i-plane"/></svg><b>MDE</b><span class="arr">${lane.start}</span></div><span class="arrow"><svg class="icon"><use href="#i-arrow"/></svg></span>`
+        : `<span class="arrow"><svg class="icon"><use href="#i-arrow"/></svg></span><div class="airport ${st}"><svg class="icon"><use href="#i-plane"/></svg><b>MDE</b><span class="arr">${rtToHM(r.arrival)}</span></div>`;
+      body = r.lle
+        ? `<div class="seq" data-drop="${lane.id}">${apt}${stops}</div>`
+        : `<div class="seq" data-drop="${lane.id}">${stops}${apt}</div>`;
     }
     const assignBtn = rt.order[lane.id].length
       ? `<button class="mapbtn" data-map="${lane.id}" title="Ver el trayecto real por carretera"><svg class="icon" style="width:14px;height:14px"><use href="#i-route"/></svg>Trayecto</button>
          <button class="assignbtn ${!car.driver ? 'cta' : ''}" data-assign="${lane.id}"><svg class="icon" style="width:14px;height:14px"><use href="#i-user"/></svg>${car.driver ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
       : '';
     // Etiqueta de la vuelta: carro · Vn · sale HH:MM (desde base o desde MDE).
-    const salida = lane.origin === 'airport' ? `sale ${lane.start} desde MDE` : `1ª recogida ${lane.start}`;
+    const salida = lane.type === 'lle' ? `recoge en MDE ${lane.start}` : (lane.origin === 'airport' ? `sale ${lane.start} desde MDE` : `1ª recogida ${lane.start}`);
     return `<div class="lane ${st}" data-lane="${lane.id}">
       <div class="lane-h">
         <div class="car"><span class="cav"><svg class="icon"><use href="#i-van"/></svg></span>
@@ -509,7 +576,7 @@
       const dep = rtToMin(l.start);
       const a1 = rtHourAngle(dep), a2 = rtHourAngle(r.arrival);
       const hotel = r.stops.some(x => rt.aux[x.id].hotel);
-      const color = hotel ? RT_TYPE_COLOR.hotel : RT_TYPE_COLOR[rt.tripType] || RT_TYPE_COLOR.sal;
+      const color = hotel ? RT_TYPE_COLOR.hotel : RT_TYPE_COLOR[l.type || 'sal'];
       const late = r.status === 'late';
       const activa = scrub == null || (scrub >= dep && scrub <= r.arrival);
       s += `<path d="${rtArcPath(cx, cy, ring.rO - 3, ring.rI + 3, a1, a2)}" fill="${color}" opacity="${activa ? 0.9 : 0.18}" data-arc="${l.id}" style="cursor:pointer;transition:opacity .15s">` +
@@ -550,7 +617,9 @@
     const ovl = $('#rt-mapOvl'); if (!ovl) return;
     const lane = rtLaneOf(laneId);
     $('#rt-mapTitle').textContent = `Trayecto ${lane.car} · Vuelta ${lane.vuelta}`;
-    $('#rt-mapSub').textContent = `${lane.origin === 'airport' ? 'sale de MDE ' + lane.start : '1ª recogida ' + lane.start} · ${r.stops.length} paradas · llega a MDE ${rtToHM(r.arrival)} (pres. ${rtToHM(r.hardDL)})`;
+    $('#rt-mapSub').textContent = lane.type === 'lle'
+      ? `aterriza ${lane.landing} · recoge en MDE ${lane.start} · ${r.stops.length} paradas · termina ${rtToHM(r.arrival)}`
+      : `${lane.origin === 'airport' ? 'sale de MDE ' + lane.start : '1ª recogida ' + lane.start} · ${r.stops.length} paradas · llega a MDE ${rtToHM(r.arrival)} (pres. ${rtToHM(r.hardDL)})`;
     ovl.classList.add('show');
     // Mapa una sola vez; capa de ruta se redibuja por carro.
     if (!rtMap.map) {
@@ -559,14 +628,15 @@
     }
     if (rtMap.layer) { rtMap.layer.remove(); rtMap.layer = null; }
     const layer = rtMap.layer = L.layerGroup().addTo(rtMap.map);
-    // La previsualización verifica LA RUTA (paradas → MDE). El punto de partida
-    // del conductor no se dibuja: se define en el módulo de conductores.
-    const pts = [...r.stops.map(s => rtCoordsOf(s.id)), RT_AIRPORT];
+    // La previsualización verifica LA RUTA. Salidas: paradas → MDE (el punto de
+    // partida del conductor no se dibuja). Llegadas: MDE → casas.
+    const pts = r.lle ? [RT_AIRPORT, ...r.stops.map(s => rtCoordsOf(s.id))] : [...r.stops.map(s => rtCoordsOf(s.id)), RT_AIRPORT];
     // Marcadores: base, paradas numeradas (con dirección y ETA) y aeropuerto.
     const mk = (p, html, pop) => { const m = L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(layer); if (pop) m.bindPopup(pop); return m; };
     const pin = (bg, tx) => `<div style="width:26px;height:26px;border-radius:50%;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font:800 12px Inter,sans-serif;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)">${tx}</div>`;
-    r.stops.forEach((s, i) => { const a = rt.aux[s.id]; mk(rtCoordsOf(s.id), pin('#E2551A', String(i + 1)), `<b>${i + 1}. ${a.n}</b><br>${a.dir || a.zona}<br>ETA ${rtToHM(s.eta)} · pres. ${a.dl}`); });
-    mk(RT_AIRPORT, pin('#16936A', '✈'), `<b>MDE</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
+    const stopColor = r.lle ? '#10B981' : '#E2551A';
+    r.stops.forEach((s, i) => { const a = rt.aux[s.id]; mk(rtCoordsOf(s.id), pin(stopColor, String(i + 1)), `<b>${i + 1}. ${a.n}</b><br>${a.dir || a.zona}<br>${r.lle ? 'Lo dejan' : 'ETA'} ${rtToHM(s.eta)}${r.lle ? '' : ' · pres. ' + a.dl}`); });
+    mk(RT_AIRPORT, pin('#16936A', '✈'), r.lle ? `<b>MDE</b> · recoge ${lane.start} (aterriza ${lane.landing})` : `<b>MDE</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
     // Geometría real por carretera (OSRM route). Si falla → línea recta punteada.
     let drew = false;
     try {
@@ -620,8 +690,10 @@
       if (poolDrop) { if (rt.dragSrc !== 'pool') { removeFromSrc(); rt.pool.push(rt.dragId); } }
       else if (laneDrop) {
         const cid = laneDrop.dataset.drop;
+        const lane = rtLaneOf(cid);
+        if ((lane.type || 'sal') !== rt.aux[rt.dragId].type) { toast('No se mezclan salidas y llegadas en la misma vuelta.'); rt.dragId = null; return; }
         const cur = rtCarCompute(cid);
-        const cap = rtCapOf(rtCarOf(rtLaneOf(cid)));
+        const cap = rtCapOf(rtCarOf(lane));
         const incoming = rt.aux[rt.dragId].pax;
         const already = rt.order[cid].includes(rt.dragId);
         if (!already && cur.pax + incoming > cap) { toast(`${cid} llegaría a ${cur.pax + incoming}/${cap} — supera la capacidad.`); rt.dragId = null; return; }
@@ -695,12 +767,6 @@
         if (rt.source === 'live' && Api.saveRouteAssignment) { Api.saveRouteAssignment(car, rt.order[cid], rt.pendingDriver).catch(() => {}); }
         rtCloseDrawer(); rtRenderAll(); toast(`${cid} confirmada con ${dn}.`); return;
       }
-      const seg = e.target.closest('#rt-tripSeg button'); if (seg) {
-        $('#rt-tripSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b === seg));
-        rt.tripType = seg.dataset.trip; renderRoutes();
-        if (rt.tripType === 'lle') toast('Llegadas (aeropuerto→casa): hora aproximada según vuelo.');
-        return;
-      }
       if (e.target.closest('#rt-alertFix')) {
         const bad = rt.lanes.find(l => rtCarCompute(l.id).status === 'late');
         if (bad) { const el = root.querySelector(`[data-lane="${bad.id}"]`); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); toast(`${bad.id} no llega: sal más temprano (ver "sal máx") o mueve una parada a otra vuelta.`); }
@@ -713,7 +779,7 @@
   async function renderRoutes() {
     await rtLoad();
     $('#rt-optBtn').innerHTML = '<svg class="icon"><use href="#i-bolt"/></svg>Optimizar';
-    $('#rt-h1').textContent = rt.tripType === 'sal' ? 'Salida matinal' : 'Llegadas del día';
+    $('#rt-h1').textContent = 'Rutas del día';
     rtRenderAll();
     rtBindOnce();
     if (rt.source === 'demo' && !rt.demoToasted) { rt.demoToasted = true; toast('Mostrando datos de ejemplo. Conecta reservas reales (mig. 0040 + seed) para planear de verdad.'); }
