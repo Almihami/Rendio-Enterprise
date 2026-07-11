@@ -76,6 +76,7 @@
     // MULTI-VIAJE: cada carro hace varias vueltas al día. Un "lane" = un viaje
     // (carro + vuelta + hora de salida + origen). rt.order se indexa por lane.id.
     lanes: [], order: {}, pool: [], optimized: false, drawerCar: null, pendingDriver: null,
+    expandedLane: null, _dragging: false, // UI: vuelta expandida en la tarjeta del carro / drag activo
     tripType: 'sal', source: 'demo', bound: false, demoToasted: false,
     CAP: 4, AIRPORT_LEG: 16, MARGIN_TIGHT: 15, dragId: null, dragSrc: null,
     // ---- Modelo de tiempos (todo parametrizable desde Ajustes/app_settings) ----
@@ -375,6 +376,9 @@
   }
 
   function rtRenderPool() {
+    // Todos ruteados → la columna se oculta (reaparece al arrastrar una parada).
+    const stage = $('#routes-ui .stage');
+    if (stage) stage.classList.toggle('nopool', rt.optimized && !rt.pool.length && !rt._dragging);
     $('#rt-poolCount').textContent = rt.pool.length;
     $('#rt-dsTotal').textContent = Object.keys(rt.aux).length;
     const list = $('#rt-poolList');
@@ -429,7 +433,7 @@
     }
     const assignBtn = rt.order[lane.id].length
       ? `<button class="mapbtn" data-map="${lane.id}" title="Ver el trayecto real por carretera"><svg class="icon" style="width:14px;height:14px"><use href="#i-route"/></svg>Trayecto</button>
-         <button class="assignbtn ${!car.driver ? 'cta' : ''}" data-assign="${lane.id}"><svg class="icon" style="width:14px;height:14px"><use href="#i-user"/></svg>${car.driver ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
+         <button class="mapbtn" data-expand="${lane.id}" title="Colapsar esta vuelta"><svg class="icon" style="width:14px;height:14px"><use href="#i-collapse"/></svg></button>`
       : '';
     // Etiqueta de la vuelta: carro · Vn · sale HH:MM (desde base o desde MDE).
     const salida = lane.type === 'lle' ? `recoge en MDE ${lane.start}` : (lane.origin === 'airport' ? `sale ${lane.start} desde MDE` : `1ª recogida ${lane.start}`);
@@ -444,7 +448,56 @@
     </div>`;
   }
 
-  function rtRenderLanes() { $('#rt-laneWrap').innerHTML = rt.lanes.map(rtLaneHTML).join(''); }
+  // Fila compacta de un trayecto dentro de la tarjeta del vehículo.
+  function rtTripRowHTML(lane) {
+    const r = rtCarCompute(lane.id);
+    const hotel = r.stops.some(x => rt.aux[x.id].hotel);
+    const tipo = lane.type === 'lle' ? 'lle' : (hotel ? 'hotel' : 'sal');
+    const ruta = lane.type === 'lle'
+      ? `MDE ${lane.start} → ${r.stops.length} casa${r.stops.length > 1 ? 's' : ''} (${rtToHM(r.arrival)})`
+      : `${lane.start} → MDE ${rtToHM(r.arrival)}`;
+    const sema = r.status === 'late'
+      ? `<span class="spill late"><svg class="icon"><use href="#i-warn"/></svg>${r.lle ? 'Espera larga' : 'No llega'}</span>`
+      : r.status === 'tight'
+        ? `<span class="spill tight"><svg class="icon"><use href="#i-clock"/></svg>Ajustado</span>`
+        : `<span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`;
+    const zonas = [...new Set(r.stops.map(s => rt.aux[s.id].zona))].slice(0, 3).join(', ');
+    return `<div class="triprow ${r.status}" data-drop="${lane.id}" data-expand="${lane.id}" title="Toca para ver y editar las paradas">
+      <span class="tr-dot ${tipo}"></span><b class="tr-v">V${lane.vuelta}</b>
+      <span class="tr-time">${ruta}</span>
+      <span class="tr-info">${r.stops.length}p · ${r.pax} pax · ${zonas}</span>
+      ${sema}
+      <button class="mapbtn sm" data-map="${lane.id}" title="Ver trayecto en el mapa"><svg class="icon" style="width:13px;height:13px"><use href="#i-route"/></svg></button>
+      <svg class="icon tr-chev"><use href="#i-chev"/></svg>
+    </div>`;
+  }
+  // Una tarjeta por VEHÍCULO: su ruta completa del día (lista de trayectos).
+  function rtRenderLanes() {
+    const wrap = $('#rt-laneWrap');
+    wrap.innerHTML = rt.cars.map(car => {
+      const lanes = rt.lanes.filter(l => l.car === car.id);
+      const drv = car.driver ? rt.drivers.find(d => d.id === car.driver) : null;
+      const drvHTML = drv
+        ? `<span class="drv set"><span class="av" style="background:${drv.c}">${rtIni(drv.n)}</span>${drv.n}</span>`
+        : `<span class="drv none"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor</span>`;
+      const paxTotal = lanes.reduce((t, l) => t + rtCarCompute(l.id).pax, 0);
+      const rows = lanes.length
+        ? lanes.map(l => rt.expandedLane === l.id ? rtLaneHTML(l) : rtTripRowHTML(l)).join('')
+        : `<div class="lane-empty" data-drop="${car.id}·V1">Sin vueltas — pulsa Optimizar o arrastra auxiliares.</div>`;
+      const assignBtn = lanes.length
+        ? `<button class="assignbtn ${!car.driver ? 'cta' : ''}" data-assign="${lanes[0].id}"><svg class="icon" style="width:14px;height:14px"><use href="#i-user"/></svg>${car.driver ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
+        : '';
+      return `<div class="carcard">
+        <div class="cc-h">
+          <span class="cav"><svg class="icon"><use href="#i-van"/></svg></span>
+          <div class="cc-t"><b>${car.id}</b>${drvHTML}</div>
+          <span class="cc-n">${lanes.length} vuelta${lanes.length === 1 ? '' : 's'} · ${paxTotal} pax</span>
+          ${assignBtn}
+        </div>
+        <div class="cc-b">${rows}</div>
+      </div>`;
+    }).join('');
+  }
 
   function rtRenderStats() {
     const s = rtDayStats();
@@ -547,7 +600,7 @@
     const host = $('#rt-clock'); if (!host) return;
     const size = 560, cx = 280, cy = 280;
     const RINGS = [{ rO: 250, rI: 212 }, { rO: 202, rI: 164 }, { rO: 154, rI: 122 }]; // hasta 3 carros
-    let s = `<svg viewBox="0 0 ${size} ${size}" style="width:100%;max-width:430px;overflow:visible" role="img" aria-label="Día completo de rutas">`;
+    let s = `<svg viewBox="0 0 ${size} ${size}" style="width:100%;max-width:640px;overflow:visible" role="img" aria-label="Día completo de rutas">`;
     // rejilla horaria
     for (let h = 0; h < 24; h++) {
       const a = rtHourAngle(h * 60), q = h % 6 === 0;
@@ -667,12 +720,14 @@
     root.addEventListener('dragstart', (e) => {
       const el = e.target.closest('[data-aux]'); if (!el) return;
       rt.dragId = el.dataset.aux; rt.dragSrc = el.dataset.src;
+      rt._dragging = true; $('#routes-ui .stage')?.classList.remove('nopool'); // el pool reaparece para poder soltar ahí
       el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
       try { e.dataTransfer.setData('text', rt.dragId); } catch (_) {}
     });
     root.addEventListener('dragend', (e) => {
       const el = e.target.closest('[data-aux]'); if (el) el.classList.remove('dragging');
       root.querySelectorAll('.dragover').forEach(x => x.classList.remove('dragover'));
+      rt._dragging = false; rtRenderPool();
     });
     root.addEventListener('dragover', (e) => {
       if (!rt.dragId) return;
@@ -737,7 +792,12 @@
     root.addEventListener('click', (e) => {
       if (e.target.closest('#rt-optBtn')) { rtOptimize(); return; }
       const mp = e.target.closest('[data-map]'); if (mp) { rtOpenMap(mp.dataset.map); return; }
+      const ex = e.target.closest('[data-expand]'); if (ex) {
+        rt.expandedLane = rt.expandedLane === ex.dataset.expand ? null : ex.dataset.expand;
+        rtRenderLanes(); return;
+      }
       const arc = e.target.closest('[data-arc]'); if (arc) {
+        rt.expandedLane = arc.dataset.arc; rtRenderLanes();
         const el = root.querySelector(`[data-lane="${arc.dataset.arc}"]`);
         if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
         return;
@@ -769,7 +829,7 @@
       }
       if (e.target.closest('#rt-alertFix')) {
         const bad = rt.lanes.find(l => rtCarCompute(l.id).status === 'late');
-        if (bad) { const el = root.querySelector(`[data-lane="${bad.id}"]`); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); toast(`${bad.id} no llega: sal más temprano (ver "sal máx") o mueve una parada a otra vuelta.`); }
+        if (bad) { rt.expandedLane = bad.id; rtRenderLanes(); const el = root.querySelector(`[data-lane="${bad.id}"]`); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); toast(`${bad.id} no llega: sal más temprano (ver "sal máx") o mueve una parada a otra vuelta.`); }
         return;
       }
       if (e.target.closest('#rt-dayprev') || e.target.closest('#rt-daynext')) { toast('Navegación de día disponible al conectar reservas reales.'); return; }
