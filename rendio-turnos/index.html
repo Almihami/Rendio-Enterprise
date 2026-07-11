@@ -835,6 +835,16 @@
             </section>
           </div>
           <div class="ovl" id="rt-ovl"><div class="box"><div class="ring"></div><b>Optimizando rutas…</b><p>Agrupando por cercanía y respetando cada hora de presentación.</p><div class="step" id="rt-ovlStep"></div></div></div>
+          <!-- Previsualización del trayecto: recorrido real por carretera (OSRM) -->
+          <div class="mapovl" id="rt-mapOvl">
+            <div class="mapbox">
+              <div class="maphead">
+                <div><b id="rt-mapTitle">Trayecto</b><span id="rt-mapSub"></span></div>
+                <button class="mapclose" data-mapclose title="Cerrar"><svg class="icon"><use href="#i-x"/></svg></button>
+              </div>
+              <div id="rt-mapCanvas"></div>
+            </div>
+          </div>
           <div class="scrim" id="rt-scrim"></div>
           <aside class="drawer" id="rt-drawer"></aside>
         </div>

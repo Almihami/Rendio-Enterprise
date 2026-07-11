@@ -2053,3 +2053,16 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #oper-ui .op-ev .op-evtx p{font-size:12.5px;color:var(--ink);line-height:1.4}
 #oper-ui .op-ev .op-evtx p b{font-weight:700}
 #oper-ui .op-ev .op-evtx .op-evt{font-size:10.5px;color:var(--ink3);font-family:var(--mono);margin-top:3px}
+
+/* ---- Rutas: previsualización del trayecto (mapa OSRM) ---- */
+#routes-ui .mapbtn {height:34px;padding:0 13px;border-radius:9px;border:1.5px solid var(--line2);background:var(--panel);color:var(--ink2);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.14s;margin-right:8px}
+#routes-ui .mapbtn:hover {color:var(--ink);border-color:var(--ink3)}
+#routes-ui .mapovl {position:fixed;inset:0;background:rgba(15,14,12,.55);z-index:400;display:none;align-items:center;justify-content:center;padding:24px}
+#routes-ui .mapovl.show {display:flex}
+#routes-ui .mapbox {background:var(--panel);border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,.35);width:min(980px,94vw);overflow:hidden;display:flex;flex-direction:column}
+#routes-ui .maphead {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line2)}
+#routes-ui .maphead b {font-size:15.5px;color:var(--ink);font-weight:800}
+#routes-ui .maphead span {display:block;font-size:12px;color:var(--ink3);margin-top:2px;font-family:var(--mono)}
+#routes-ui .mapclose {width:34px;height:34px;border-radius:9px;border:1.5px solid var(--line2);background:var(--panel);color:var(--ink2);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+#routes-ui .mapclose:hover {color:var(--ink);border-color:var(--ink3)}
+#routes-ui #rt-mapCanvas {height:min(62vh,560px);width:100%}

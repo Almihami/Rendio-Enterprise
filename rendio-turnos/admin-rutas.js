@@ -3,31 +3,30 @@
 // Comparte scope global; el orden de carga está en index.html.
   // ---------------- ASIGNACIÓN (planeación de rutas) ----------------
   // Base de los carros y aeropuerto (coords reales del Oriente antioqueño).
-  const RT_DEPOT = { lat: 6.1553, lng: -75.3739 };   // Rionegro centro (base)
-  const RT_AIRPORT = { lat: 6.1645, lng: -75.4231 };  // MDE (José María Córdova)
-  // DEMO con SECTORES REALES de Rionegro y coordenadas reales. Diseñado para que
-  // se vea la lógica del asignador: racimos por sector (3 en San Antonio + 1
-  // cercano = un carro de 4), respetando cupo y eligiendo el mejor orden.
+  const RT_DEPOT = { lat: 6.1537, lng: -75.3738 };   // Plaza de la Libertad, Rionegro (base)
+  const RT_AIRPORT = { lat: 6.1659, lng: -75.4239 }; // MDE José María Córdova (geocodificado OSM)
+  // DEMO con LUGARES REALES de Rionegro/Marinilla, geocodificados contra OSM
+  // (Nominatim, 2026-07-10) — el mismo geocodificador que usará el form real.
+  // `dir` = dirección/lugar exacto; las coords son las del lugar verificado.
   const RT_DEMO_AUX = {
-    // San Antonio de Pereira (3) — racimo grande
-    a1: { n: 'Mariana Rojas', zona: 'San Antonio de Pereira', lat: 6.1492, lng: -75.3585, dl: '05:15', pax: 1, type: 'sal' },
-    a2: { n: 'Nicolás Herrera', zona: 'San Antonio de Pereira', lat: 6.1476, lng: -75.3602, dl: '05:15', pax: 1, type: 'sal' },
-    a3: { n: 'Valentina Castro', zona: 'San Antonio de Pereira', lat: 6.1508, lng: -75.3569, dl: '05:25', pax: 1, type: 'sal' },
-    // Cuatro Esquinas (1) — cerca de San Antonio → completa ese carro
-    a4: { n: 'Daniela Restrepo', zona: 'Cuatro Esquinas', lat: 6.1445, lng: -75.3760, dl: '05:25', pax: 1, type: 'sal' },
-    // Llanogrande (2)
-    a5: { n: 'Mateo Arango', zona: 'Llanogrande', lat: 6.1480, lng: -75.4080, dl: '05:35', pax: 1, type: 'sal' },
-    a6: { n: 'Sara Lucía Gómez', zona: 'Llanogrande', lat: 6.1506, lng: -75.4039, dl: '05:35', pax: 1, type: 'sal' },
-    // Gualanday (1)
-    a7: { n: 'Andrés F. Mora', zona: 'Gualanday', lat: 6.1700, lng: -75.4050, dl: '05:40', pax: 1, type: 'sal' },
+    // San Antonio de Pereira (3) — racimo grande al sur
+    a1: { n: 'Mariana Rojas', zona: 'San Antonio de Pereira', dir: 'Estación San Antonio · Calle 24', lat: 6.1303, lng: -75.3803, dl: '05:15', pax: 1, type: 'sal' },
+    a2: { n: 'Nicolás Herrera', zona: 'San Antonio de Pereira', dir: 'Calle 20 con Cra 47, San Antonio', lat: 6.1268, lng: -75.3823, dl: '05:15', pax: 1, type: 'sal' },
+    a3: { n: 'Valentina Castro', zona: 'San Antonio de Pereira', dir: 'Vía San Antonio – Rionegro, km 1', lat: 6.1329, lng: -75.3775, dl: '05:25', pax: 1, type: 'sal' },
+    // Cuatro Esquinas (1)
+    a4: { n: 'Daniela Restrepo', zona: 'Cuatro Esquinas', dir: 'Estación Cuatro Esquinas · Calle 42', lat: 6.1532, lng: -75.3630, dl: '05:25', pax: 1, type: 'sal' },
+    // Llanogrande (2) — suroccidente
+    a5: { n: 'Mateo Arango', zona: 'Llanogrande', dir: 'Complex Llanogrande', lat: 6.1251, lng: -75.4217, dl: '05:35', pax: 1, type: 'sal' },
+    a6: { n: 'Sara Lucía Gómez', zona: 'Llanogrande', dir: 'Mall Llanogrande', lat: 6.1257, lng: -75.4191, dl: '05:35', pax: 1, type: 'sal' },
+    // Centro Rionegro (2)
+    a7: { n: 'Andrés F. Mora', zona: 'Centro Rionegro', dir: 'Hospital San Juan de Dios · Calle 59', lat: 6.1587, lng: -75.3712, dl: '05:40', pax: 1, type: 'sal' },
+    a10: { n: 'Camila Ortiz', zona: 'Centro Rionegro', dir: 'Universidad Católica de Oriente · Calle 41', lat: 6.1508, lng: -75.3666, dl: '05:25', pax: 1, type: 'sal' },
     // El Porvenir (1) — más temprano
-    a8: { n: 'Juan Camilo Díaz', zona: 'El Porvenir', lat: 6.1635, lng: -75.3850, dl: '05:05', pax: 1, type: 'sal' },
+    a8: { n: 'Juan Camilo Díaz', zona: 'El Porvenir', dir: 'Estación El Porvenir · Calle 40', lat: 6.1466, lng: -75.3862, dl: '05:05', pax: 1, type: 'sal' },
     // Marinilla (1) — lejos, al nororiente
-    a9: { n: 'Laura Vélez', zona: 'Marinilla', lat: 6.1736, lng: -75.3376, dl: '05:45', pax: 1, type: 'sal' },
-    // Fontibón (1)
-    a10: { n: 'Camila Ortiz', zona: 'Fontibón', lat: 6.1380, lng: -75.3950, dl: '05:25', pax: 1, type: 'sal' },
-    // Abreo (1)
-    a11: { n: 'Diego Marín', zona: 'Abreo', lat: 6.1360, lng: -75.3520, dl: '05:15', pax: 1, type: 'sal' },
+    a9: { n: 'Laura Vélez', zona: 'Marinilla', dir: 'Parque principal de Marinilla', lat: 6.1736, lng: -75.3347, dl: '05:45', pax: 1, type: 'sal' },
+    // Vereda Abreo (1) — noroccidente (ubicación real, corregida)
+    a11: { n: 'Diego Marín', zona: 'Abreo', dir: 'Cancha vereda Abreo · Cra 67A', lat: 6.1688, lng: -75.3983, dl: '05:15', pax: 1, type: 'sal' },
   };
   const RT_DEMO_COLORS = { a1: '#3B82F6', a2: '#0EA5A0', a3: '#8B5CF6', a4: '#2563A8', a5: '#16936A', a6: '#7C5CD6', a7: '#D98A12', a8: '#0EA5E9', a9: '#E2551A', a10: '#DB4B7A', a11: '#5B8A2B' };
   const RT_DEMO_CARS = [
@@ -304,7 +303,7 @@
     const a = rt.aux[id];
     const tt = a.hotel ? 'hotel' : a.type;
     const ttl = a.hotel ? 'Hotel' : (a.type === 'sal' ? 'Salida' : 'Llegada');
-    return `<div class="aux" draggable="true" data-aux="${id}" data-src="pool">
+    return `<div class="aux" draggable="true" data-aux="${id}" data-src="pool" title="${a.dir || a.zona}">
       <span class="pax">${a.pax > 1 ? '×' + a.pax : ''}</span>
       <div class="a-top"><span class="a-av" style="background:${rt.colors[id] || '#888'}">${rtIni(a.n)}</span>
         <div class="a-nm"><b>${a.n}</b><span>${a.zona}</span></div></div>
@@ -326,7 +325,7 @@
     const a = rt.aux[s.id];
     const overDL = s.eta > rtToMin(a.dl);
     const p = a.n.split(' ');
-    return `<div class="stop ${overDL ? 'over-dl' : ''}" draggable="true" data-aux="${s.id}" data-src="${cid}">
+    return `<div class="stop ${overDL ? 'over-dl' : ''}" draggable="true" data-aux="${s.id}" data-src="${cid}" title="${a.dir || a.zona}">
       <div class="s-top"><span class="s-n">${idx + 1}</span><span class="s-av" style="background:${rt.colors[s.id] || '#888'}">${rtIni(a.n)}</span><span class="s-nm">${p[0]} ${p[1] ? p[1][0] + '.' : ''}</span></div>
       <div class="s-meta"><span class="s-zona">${a.zona}</span><span class="s-eta">${rtToHM(s.eta)}</span></div>
       <div class="s-dl"><svg class="icon" style="width:10px;height:10px"><use href="#i-clock"/></svg>pres. ${a.dl}${a.pax > 1 ? ' · ×' + a.pax : ''}</div>
@@ -358,7 +357,8 @@
       body = `<div class="seq" data-drop="${car.id}">${stops}${apt}</div>`;
     }
     const assignBtn = rt.order[car.id].length
-      ? `<button class="assignbtn ${!car.driver ? 'cta' : ''}" data-assign="${car.id}"><svg class="icon" style="width:14px;height:14px"><use href="#i-user"/></svg>${car.driver ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
+      ? `<button class="mapbtn" data-map="${car.id}" title="Ver el trayecto real por carretera"><svg class="icon" style="width:14px;height:14px"><use href="#i-route"/></svg>Trayecto</button>
+         <button class="assignbtn ${!car.driver ? 'cta' : ''}" data-assign="${car.id}"><svg class="icon" style="width:14px;height:14px"><use href="#i-user"/></svg>${car.driver ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
       : '';
     return `<div class="lane ${st}" data-lane="${car.id}">
       <div class="lane-h">
@@ -458,6 +458,52 @@
   }
   function rtCloseDrawer() { $('#rt-scrim').classList.remove('show'); $('#rt-drawer').classList.remove('show'); rt.drawerCar = null; }
 
+  // ---- Previsualización del trayecto (mapa Leaflet + geometría real OSRM) ----
+  const rtMap = { map: null, layer: null };
+  function rtCloseMap() { $('#rt-mapOvl')?.classList.remove('show'); }
+  async function rtOpenMap(cid) {
+    const r = rtCarCompute(cid);
+    if (!r.stops.length || typeof L === 'undefined') return;
+    const ovl = $('#rt-mapOvl'); if (!ovl) return;
+    $('#rt-mapTitle').textContent = `Trayecto ${cid}`;
+    const car = rt.cars.find(c => c.id === cid);
+    $('#rt-mapSub').textContent = `sale ${car.start} · ${r.stops.length} paradas · llega a MDE ${rtToHM(r.arrival)} (pres. ${rtToHM(r.hardDL)})`;
+    ovl.classList.add('show');
+    // Mapa una sola vez; capa de ruta se redibuja por carro.
+    if (!rtMap.map) {
+      rtMap.map = L.map('rt-mapCanvas', { zoomControl: true, attributionControl: true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(rtMap.map);
+    }
+    if (rtMap.layer) { rtMap.layer.remove(); rtMap.layer = null; }
+    const layer = rtMap.layer = L.layerGroup().addTo(rtMap.map);
+    const pts = [RT_DEPOT, ...r.stops.map(s => rtCoordsOf(s.id)), RT_AIRPORT];
+    // Marcadores: base, paradas numeradas (con dirección y ETA) y aeropuerto.
+    const mk = (p, html, pop) => { const m = L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(layer); if (pop) m.bindPopup(pop); return m; };
+    const pin = (bg, tx) => `<div style="width:26px;height:26px;border-radius:50%;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font:800 12px Inter,sans-serif;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)">${tx}</div>`;
+    mk(RT_DEPOT, pin('#1F2937', 'B'), `<b>Base</b> · Plaza de la Libertad<br>Sale ${car.start}`);
+    r.stops.forEach((s, i) => { const a = rt.aux[s.id]; mk(rtCoordsOf(s.id), pin('#E2551A', String(i + 1)), `<b>${i + 1}. ${a.n}</b><br>${a.dir || a.zona}<br>ETA ${rtToHM(s.eta)} · pres. ${a.dl}`); });
+    mk(RT_AIRPORT, pin('#16936A', '✈'), `<b>MDE</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
+    // Geometría real por carretera (OSRM route). Si falla → línea recta punteada.
+    let drew = false;
+    try {
+      const coords = pts.map(p => `${p.lng},${p.lat}`).join(';');
+      const j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`)).json();
+      if (j.code === 'Ok' && j.routes && j.routes[0]) {
+        const line = j.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+        L.polyline(line, { color: '#E2551A', weight: 5, opacity: 0.85 }).addTo(layer);
+        const km = (j.routes[0].distance / 1000).toFixed(1);
+        $('#rt-mapSub').textContent += ` · ${km} km por carretera`;
+        drew = true;
+      }
+    } catch (e) { /* sin red → respaldo */ }
+    if (!drew) {
+      L.polyline(pts.map(p => [p.lat, p.lng]), { color: '#E2551A', weight: 4, dashArray: '8 8', opacity: 0.7 }).addTo(layer);
+      $('#rt-mapSub').textContent += ' · trayecto estimado (sin OSRM)';
+    }
+    rtMap.map.invalidateSize();
+    rtMap.map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])), { padding: [36, 36] });
+  }
+
   function rtBindOnce() {
     if (rt.bound) return;
     const root = $('#routes-ui');
@@ -508,6 +554,8 @@
 
     root.addEventListener('click', (e) => {
       if (e.target.closest('#rt-optBtn')) { rtOptimize(); return; }
+      const mp = e.target.closest('[data-map]'); if (mp) { rtOpenMap(mp.dataset.map); return; }
+      if (e.target.closest('[data-mapclose]') || e.target === $('#rt-mapOvl')) { rtCloseMap(); return; }
       const as = e.target.closest('[data-assign]'); if (as) { rtOpenDrawer(as.dataset.assign); return; }
       if (e.target === $('#rt-scrim') || e.target.closest('[data-rtclose]')) { rtCloseDrawer(); return; }
       const dv = e.target.closest('[data-rtdrv]'); if (dv) { rt.pendingDriver = dv.dataset.rtdrv; $('#rt-drawer').querySelectorAll('.drv-opt').forEach(o => o.classList.toggle('sel', o === dv)); return; }
