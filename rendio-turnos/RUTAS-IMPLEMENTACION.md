@@ -81,3 +81,23 @@ servicio por parada + colchón de entrega en aeropuerto**.
   o son **estimados** (haversine 30 km/h ×1.4) — sin conexión se degrada avisando.
 - Sin tráfico EN VIVO todavía: eso es la fase de APIs de pago (Google/TomTom) y el
   factor ×1.25 es el sustituto conservador mientras tanto.
+
+## Multi-viaje (2026-07-10) — el modelo real de la operación
+
+La unidad de trabajo real no es "una ruta por carro": es la **OLEADA** (grupo con
+el mismo "deben estar") y cada carro hace **varias vueltas al día** (~2am–11pm).
+
+- `rtSolveDay()`: agrupa por deadline → parte oleadas más grandes que el cupo →
+  asigna cada viaje al carro disponible que pueda salir a tiempo (factible
+  primero; entre factibles, el que menos vueltas lleva = balancea carga).
+- Un **lane = una vuelta** (`RD-01·V3`): carro + n° de vuelta + hora de salida +
+  origen (base para la V1, MDE para las siguientes: el carro queda allá al entregar).
+- Encadenamiento: disponible = llegada + `route_turnaround_min` (8).
+- La salida de cada vuelta se programa con `route_depart_cushion_min` (15) de
+  margen sobre el "sal máx" — lo planeado nace "A tiempo"; el semáforo se
+  daña solo si el drag & drop lo rompe.
+- Escenario demo = el día real de la operación (oleadas 03:05→11:10 con nombres
+  y sectores reales + tarde/noche inventada hasta 22:40). Hotel = flag visible.
+- El plan resultante es ~20 min más conservador que la práctica manual de la
+  operación — se acerca ajustando en app_settings: buffer de entrega, colchón
+  de salida, servicio por parada y factor de tráfico.
