@@ -194,20 +194,36 @@
     arr.forEach((x, i) => { const rest = arr.slice(0, i).concat(arr.slice(i + 1)); rtPermutations(rest).forEach(p => out.push([x, ...p])); });
     return out;
   }
-  // Mejor orden de recogida de un carro: el que minimiza el tiempo total
-  // depot → paradas → aeropuerto (fuerza bruta = óptimo exacto para ≤4 paradas).
+  // Coherencia geográfica: cuántas veces la ruta SALE de un sector y luego
+  // VUELVE a él (San Antonio → Abreo → San Antonio = 1 reentrada). A igualdad
+  // práctica de tiempo, la ruta que no zigzaguea es más clara para el
+  // conductor y más robusta ante tráfico real.
+  function rtZoneReentries(perm) {
+    const runs = []; let prev = null;
+    perm.forEach(id => { const z = rt.aux[id].zona; if (z !== prev) { runs.push(z); prev = z; } });
+    const seen = {}; let re = 0;
+    runs.forEach(z => { seen[z] = (seen[z] || 0) + 1; if (seen[z] > 1) re++; });
+    return re;
+  }
+  // Mejor orden de recogida de un carro (fuerza bruta = exacto para ≤4 paradas):
+  // 1º minimiza el tiempo depot → paradas → aeropuerto; 2º entre órdenes
+  // empatadas en la práctica (≤2 min o 6% del mejor), gana la de MENOS
+  // reentradas de sector — el cronómetro no distingue 6 segundos, la operación sí.
   // El tiempo de servicio por parada es constante (mismas paradas en toda
   // permutación), así que no afecta cuál orden gana — no se suma aquí.
   function rtBestOrder(ids) {
     if (ids.length <= 1) return ids.slice();
-    let best = null, bestCost = Infinity;
-    rtPermutations(ids).forEach(perm => {
+    const scored = rtPermutations(ids).map(perm => {
       let t = 0, prev = 'depot';
       perm.forEach(id => { t += rtLegMin(prev, id); prev = id; });
       t += rtLegMin(prev, 'airport');
-      if (t < bestCost) { bestCost = t; best = perm; }
+      return { perm, t };
     });
-    return best;
+    const best = Math.min(...scored.map(s => s.t));
+    const tol = Math.max(2, best * 0.06);
+    return scored
+      .filter(s => s.t <= best + tol)
+      .sort((a, b) => (rtZoneReentries(a.perm) - rtZoneReentries(b.perm)) || (a.t - b.t))[0].perm;
   }
   // Evalúa un carro (lista de paradas): mejor ruta → llegada al aeropuerto,
   // deadline más exigente y minutos de atraso (0 si llega a tiempo).
