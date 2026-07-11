@@ -31,9 +31,12 @@
   };
   const RT_DEMO_COLORS = { a1: '#3B82F6', a2: '#0EA5A0', a3: '#8B5CF6', a4: '#2563A8', a5: '#16936A', a6: '#7C5CD6', a7: '#D98A12', a8: '#0EA5E9', a9: '#E2551A', a10: '#DB4B7A', a11: '#5B8A2B' };
   const RT_DEMO_CARS = [
-    { id: 'RD-01', start: '04:25', driver: null, capacity: 4 },
-    { id: 'RD-02', start: '04:30', driver: null, capacity: 4 },
-    { id: 'RD-03', start: '04:35', driver: null, capacity: 4 },
+    // Horas de salida realistas para el modelo honesto (manejo ×1.25 + 4 min/
+    // parada + 10 min de entrega): RD-03 sale tarde a propósito para mostrar
+    // la alerta y la reparación por deadline.
+    { id: 'RD-01', start: '03:55', driver: null, capacity: 4 },
+    { id: 'RD-02', start: '04:10', driver: null, capacity: 4 },
+    { id: 'RD-03', start: '03:50', driver: null, capacity: 4 },
   ];
   const RT_DEMO_DRIVERS = [
     { id: 'd1', n: 'Carlos Roldán', turno: 'Mañana', c: '#2563A8' },
@@ -47,6 +50,11 @@
     order: {}, pool: [], optimized: false, drawerCar: null, pendingDriver: null,
     tripType: 'sal', source: 'demo', bound: false, demoToasted: false,
     CAP: 4, AIRPORT_LEG: 16, MARGIN_TIGHT: 15, dragId: null, dragSrc: null,
+    // ---- Modelo de tiempos (todo parametrizable desde Ajustes/app_settings) ----
+    SERVICE_MIN: 4,      // min por parada: frenar, timbrar, subir gente y maletas
+    AIRPORT_BUFFER: 10,  // min de colchón al entregar: bajar maletas + entrar a tiempo
+    TRAFFIC_FACTOR: 1.25,// multiplica el tiempo de manejo (OSRM da flujo libre, sin tráfico)
+    etaSource: null,     // 'osrm' | 'haversine' — de dónde salieron los tiempos
     M: null, // matriz de tiempos reales (min) entre depot/aeropuerto/paradas (OSRM o haversine)
   };
 
@@ -55,6 +63,9 @@
     rt.CAP = Number(s.route_default_capacity) || 4;
     rt.AIRPORT_LEG = Number(s.route_airport_leg_min) || 16;
     rt.MARGIN_TIGHT = Number(s.route_margin_tight_min) || 15;
+    rt.SERVICE_MIN = Number(s.route_service_min) || 4;
+    rt.AIRPORT_BUFFER = Number(s.route_airport_buffer_min) || 10;
+    rt.TRAFFIC_FACTOR = Number(s.route_traffic_factor) || 1.25;
   }
 
   async function rtLoad() {
@@ -95,9 +106,13 @@
     return Math.max(2, km / 30 * 60); // ~30 km/h promedio en el Oriente
   }
   // Tiempo de un tramo: usa la matriz real (OSRM) si está; si no, haversine.
+  // Se multiplica por TRAFFIC_FACTOR: OSRM devuelve flujo libre (sin tráfico,
+  // sin lluvia, sin madrugada); el factor lo aterriza. Prioridad #1 = nunca tarde.
   function rtLegMin(aKey, bKey) {
-    if (rt.M && rt.M[aKey] && rt.M[aKey][bKey] != null) return rt.M[aKey][bKey];
-    return rtHaversineMin(rtCoordsOf(aKey), rtCoordsOf(bKey));
+    const raw = (rt.M && rt.M[aKey] && rt.M[aKey][bKey] != null)
+      ? rt.M[aKey][bKey]
+      : rtHaversineMin(rtCoordsOf(aKey), rtCoordsOf(bKey));
+    return raw * rt.TRAFFIC_FACTOR;
   }
 
   function rtCarCompute(cid) {
@@ -105,15 +120,22 @@
     let t = rtToMin(car.start), prev = 'depot', stops = [], pax = 0, hardDL = Infinity;
     rt.order[cid].forEach(id => {
       t += rtLegMin(prev, id); pax += rt.aux[id].pax;
-      stops.push({ id, eta: Math.round(t) });
+      stops.push({ id, eta: Math.round(t) }); // ETA = cuando el carro LLEGA a la parada
+      t += rt.SERVICE_MIN; // subir gente + maletas antes de arrancar al siguiente
       hardDL = Math.min(hardDL, rtToMin(rt.aux[id].dl));
       prev = id;
     });
     const arrival = rt.order[cid].length ? Math.round(t + rtLegMin(prev, 'airport')) : null;
-    const holg = arrival != null ? hardDL - arrival : null;
+    // Holgura contra el deadline DESCONTANDO el colchón de entrega (bajar
+    // maletas + entrar): llegar "justo" a la hora de presentación ES tarde.
+    const holg = arrival != null ? hardDL - arrival - rt.AIRPORT_BUFFER : null;
     let status = 'empty';
     if (arrival != null) status = holg < 0 ? 'late' : (holg < rt.MARGIN_TIGHT ? 'tight' : 'ontime');
-    return { stops, pax, arrival, hardDL, holg, status };
+    // Hora de salida recomendada: lo más tarde que puede arrancar el carro y
+    // aún entregar con colchón. Los carros ruedan ~24h — la hora de salida es
+    // la palanca del despachador, no un dato fijo.
+    const depart = arrival != null ? hardDL - rt.AIRPORT_BUFFER - (arrival - rtToMin(car.start)) : null;
+    return { stops, pax, arrival, hardDL, holg, status, depart };
   }
 
   function rtDayStats() {
@@ -174,6 +196,8 @@
   }
   // Mejor orden de recogida de un carro: el que minimiza el tiempo total
   // depot → paradas → aeropuerto (fuerza bruta = óptimo exacto para ≤4 paradas).
+  // El tiempo de servicio por parada es constante (mismas paradas en toda
+  // permutación), así que no afecta cuál orden gana — no se suma aquí.
   function rtBestOrder(ids) {
     if (ids.length <= 1) return ids.slice();
     let best = null, bestCost = Infinity;
@@ -191,10 +215,11 @@
     if (!ids.length) return { arrival: null, minDL: Infinity, late: 0 };
     const ord = rtBestOrder(ids);
     let t = carStart, prev = 'depot';
-    ord.forEach(id => { t += rtLegMin(prev, id); prev = id; });
+    ord.forEach(id => { t += rtLegMin(prev, id) + rt.SERVICE_MIN; prev = id; });
     const arrival = t + rtLegMin(prev, 'airport');
     const minDL = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl)));
-    return { arrival, minDL, late: Math.max(0, arrival - minDL) };
+    // "Tarde" = no alcanza el deadline con el colchón de entrega incluido.
+    return { arrival, minDL, late: Math.max(0, arrival + rt.AIRPORT_BUFFER - minDL) };
   }
   const rtPaxOf = (ids) => ids.reduce((s, id) => s + rt.aux[id].pax, 0);
   const rtTotalLate = (cars) => cars.reduce((s, c) => s + rtRouteEval(rtToMin(c.start), c.ids).late, 0);
@@ -304,10 +329,10 @@
     const sema = st === 'empty'
       ? `<span class="spill empty">Vacío</span>`
       : st === 'late'
-        ? `<div class="holg"><div class="big" style="color:var(--red)">${r.holg} min tarde</div><div class="sm">llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}</div></div><span class="spill late"><svg class="icon"><use href="#i-warn"/></svg>No llega</span>`
+        ? `<div class="holg"><div class="big" style="color:var(--red)">${Math.abs(Math.round(r.holg))} min tarde</div><div class="sm">llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)} · <b>sal ${rtToHM(r.depart)}</b></div></div><span class="spill late"><svg class="icon"><use href="#i-warn"/></svg>No llega</span>`
         : st === 'tight'
-          ? `<div class="holg"><div class="big" style="color:var(--amber)">+${r.holg} min</div><div class="sm">llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}</div></div><span class="spill tight"><svg class="icon"><use href="#i-clock"/></svg>Ajustado</span>`
-          : `<div class="holg"><div class="big" style="color:var(--green)">+${r.holg} min</div><div class="sm">llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}</div></div><span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`;
+          ? `<div class="holg"><div class="big" style="color:var(--amber)">+${Math.round(r.holg)} min</div><div class="sm">llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)} · sal máx ${rtToHM(r.depart)}</div></div><span class="spill tight"><svg class="icon"><use href="#i-clock"/></svg>Ajustado</span>`
+          : `<div class="holg"><div class="big" style="color:var(--green)">+${Math.round(r.holg)} min</div><div class="sm">llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)} · sal máx ${rtToHM(r.depart)}</div></div><span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`;
     let body;
     if (!rt.order[car.id].length) {
       body = `<div class="lane-empty" data-drop="${car.id}"><svg class="icon"><use href="#i-arrow"/></svg>Arrastra auxiliares aquí para armar la ruta de ${car.id}.</div>`;
@@ -341,6 +366,14 @@
     const al = $('#rt-alert');
     if (s.late > 0) { al.classList.add('show'); $('#rt-alertTx').textContent = s.late === 1 ? 'Una ruta no llega a tiempo a la hora de presentación. Reequilibra moviendo una parada a un carro con holgura.' : `${s.late} rutas no llegan a tiempo. Reequilibra moviendo paradas a carros con holgura.`; }
     else al.classList.remove('show');
+    // Transparencia del modelo: de dónde salen los tiempos y con qué colchones.
+    const de = $('#rt-dsEta');
+    if (de) {
+      const modelo = `manejo ×${rt.TRAFFIC_FACTOR} tráfico + ${rt.SERVICE_MIN} min/parada + ${rt.AIRPORT_BUFFER} min entrega`;
+      if (!rt.etaSource) { de.querySelector('b').textContent = '—'; de.title = 'Pulsa Optimizar para calcular tiempos reales.'; de.className = 'ds'; }
+      else if (rt.etaSource === 'osrm') { de.querySelector('b').textContent = 'OSRM'; de.title = `Tiempos por carretera real (OSRM): ${modelo}.`; de.className = 'ds ok'; }
+      else { de.querySelector('b').textContent = 'Estimado'; de.title = `Sin conexión a OSRM — estimado por distancia (30 km/h, ×1.4 vías): ${modelo}.`; de.className = 'ds warn'; }
+    }
   }
 
   function rtRenderAll() { rtRenderPool(); rtRenderLanes(); rtRenderStats(); }
@@ -352,6 +385,7 @@
     const iv = setInterval(() => { i++; if (i < RT_STEPS.length) $('#rt-ovlStep').textContent = RT_STEPS[i]; }, 480);
     // Tiempos reales (OSRM) + un piso de ~900ms para que se vea el proceso.
     const [src] = await Promise.all([rtBuildMatrix(), new Promise(r => setTimeout(r, 900))]);
+    rt.etaSource = src; // 'osrm' = carretera real | 'haversine' = estimado en línea recta
     const plan = rtSolve(); // sectores + cupo + mejor orden
     clearInterval(iv); $('#rt-ovl').classList.remove('show');
     rt.order = {};

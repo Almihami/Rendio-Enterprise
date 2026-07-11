@@ -61,3 +61,23 @@ python3 -m http.server 8077 --bind 127.0.0.1
    `reservation_id` real por parada).
 5. **Operación / Monitoreo en vivo** y **Métricas**: marcados "Por construir" en la Consola.
 6. **Llegadas (a2h)**: el tablero ya alterna Salidas/Llegadas; falta el flujo a2h completo.
+
+## Modelo de tiempos v2 (2026-07-10) — honesto y parametrizable
+
+El modelo v1 solo sumaba manejo a flujo libre → rutas "de 10 minutos" imposibles.
+El v2 calcula: **tiempo real de manejo (OSRM) × factor de tráfico + tiempo de
+servicio por parada + colchón de entrega en aeropuerto**.
+
+| Parámetro | Default | Clave en app_settings | Qué cubre |
+|---|---|---|---|
+| Factor de tráfico | ×1.25 | `route_traffic_factor` | OSRM da flujo libre; esto aterriza (madrugada, lluvia, tráfico) |
+| Servicio por parada | 4 min | `route_service_min` | Frenar, timbrar, subir gente y maletas |
+| Colchón de entrega | 10 min | `route_airport_buffer_min` | Bajar maletas + entrar; llegar "justo" ES tarde |
+
+- El semáforo (holgura) compara `llegada + colchón` contra la hora de presentación.
+- **Salida recomendada**: cada carril muestra "sal máx HH:MM" — lo más tarde que
+  puede arrancar el carro y aún entregar con colchón (la palanca del despachador).
+- Chip "ETAs" en el tablero: dice si los tiempos vienen de **OSRM** (carretera real)
+  o son **estimados** (haversine 30 km/h ×1.4) — sin conexión se degrada avisando.
+- Sin tráfico EN VIVO todavía: eso es la fase de APIs de pago (Google/TomTom) y el
+  factor ×1.25 es el sustituto conservador mientras tanto.
