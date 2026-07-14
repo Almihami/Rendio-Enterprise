@@ -1243,51 +1243,115 @@
   // {aux, colors, cars, drivers, plan} o NULL si no hay reservas/vehículos
   // (entonces la UI muestra datos de ejemplo). El cálculo fino de tramos y
   // orden óptimo (OSRM/VROOM) es el siguiente paso: aquí 'tramo' es un estimado.
+  // Lee las reservas del PRÓXIMO día operativo (todas las direcciones) con
+  // coordenadas, en el formato que consume el motor de rutas (admin-rutas).
+  // Devuelve null → el tablero cae a datos DEMO.
   async function listRoutePlanning(tripType) {
-    const dir = tripType === 'lle' ? 'airport_to_home' : 'home_to_airport';
-    const today = new Date().toISOString().slice(0, 10);
+    // Día en hora de COLOMBIA (no UTC): un viaje de las 21:10 Col NO debe rodar
+    // al día siguiente (21:10 Col = 02:10 UTC). Agrupamos por America/Bogota.
+    const bogDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
     let rows = null;
     try {
-      const res = await sb
-        .from('reservations')
-        .select('id, direction, pickup_address, required_arrival_at, auxiliar_profiles(id, home_address, profiles(full_name))')
-        .eq('direction', dir)
+      // Ventana amplia en UTC (ayer→) para no perder madrugadas de Colombia;
+      // el filtro fino por día operativo se hace abajo en hora local.
+      const floor = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+      const res = await sb.from('reservations')
+        .select('id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, auxiliar_profiles(profiles(full_name))')
         .is('cancelled_at', null)
-        .gte('required_arrival_at', today + 'T00:00:00')
-        .lte('required_arrival_at', today + 'T23:59:59')
+        .gte('required_arrival_at', floor)
         .order('required_arrival_at', { ascending: true });
       if (res.error) throw res.error;
       rows = res.data;
-    } catch (e) { return null; } // tabla ausente / RLS / 0003 no aplicada → demo
+    } catch (e) { return null; } // RLS / tabla ausente → demo
     if (!rows || !rows.length) return null;
+
+    // Día operativo más próximo (en hora de Colombia) con reservas.
+    const todayBog = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    const upcoming = rows.filter(r => bogDay(r.required_arrival_at) >= todayBog);
+    if (!upcoming.length) return null;
+    const day0 = bogDay(upcoming[0].required_arrival_at);
+    rows = upcoming.filter(r => bogDay(r.required_arrival_at) === day0);
 
     const aux = {}, colors = {};
     rows.forEach((r, i) => {
       const key = 'r' + String(r.id).slice(0, 8);
+      const type = r.direction === 'airport_to_home' ? 'lle' : 'sal';
+      const parts = (r.pickup_address || '').split(',');
       aux[key] = {
         n: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar',
-        zona: (r.pickup_address || '').split(',')[0] || '—',
+        zona: (parts.length > 1 ? parts[parts.length - 1] : parts[0] || '—').trim(),
+        dir: r.pickup_address || '',
+        lat: r.pickup_latitude, lng: r.pickup_longitude,
         dl: rtHHMM(r.required_arrival_at),
-        tramo: 12, // TODO solver: estimar con OSRM/heurística por dirección
-        pax: 1,
-        type: tripType === 'lle' ? 'lle' : 'sal',
-        reservationId: r.id,
+        pax: 1, type, reservationId: r.id,
       };
       colors[key] = RT_PALETTE[i % RT_PALETTE.length];
     });
 
-    let cars = [], drivers = [];
+    // Carros: vehículos reales si hay; si no, 2 por defecto (disponibles 01:30).
+    let cars = [];
     try {
       const vs = await listVehiclesForShift();
-      cars = (vs || []).slice(0, 3).map((v, i) => ({ id: v.internal_code || v.license_plate || ('RD-0' + (i + 1)), start: '03:3' + i, driver: null, capacity: v.capacity || 4, vehicleId: v.id }));
+      cars = (vs || []).slice(0, 2).map((v, i) => ({ id: v.internal_code || v.license_plate || ('RD-0' + (i + 1)), avail0: '01:30', driver: null, capacity: v.capacity || 4, vehicleId: v.id }));
     } catch (_) {}
+    if (!cars.length) cars = [{ id: 'RD-01', avail0: '01:30', driver: null, capacity: 4 }, { id: 'RD-02', avail0: '01:30', driver: null, capacity: 4 }];
+    let drivers = [];
     try {
       const ds = await listDrivers();
       drivers = (ds || []).map((d, i) => ({ id: d.id, n: d.full_name || d.name || 'Conductor', turno: 'Mañana', c: RT_PALETTE[i % RT_PALETTE.length] }));
     } catch (_) {}
-    if (!cars.length) return null; // sin vehículos no hay tablero útil → demo
+    return { aux, colors, cars, drivers, plan: {}, source: 'live', day: day0 };
+  }
 
-    return { aux, colors, cars, drivers, plan: {} };
+  // ---- Auxiliar (pasajero) ----
+  let _myAuxId = null;
+  async function getMyAuxiliarProfileId() {
+    if (_myAuxId) return _myAuxId;
+    const { data: u } = await sb.auth.getUser();
+    const uid = u?.user?.id; if (!uid) return null;
+    const { data, error } = await sb.from('auxiliar_profiles').select('id').eq('profile_id', uid).maybeSingle();
+    if (error || !data) return null;
+    _myAuxId = data.id; return _myAuxId;
+  }
+  // Mapea el estado de la reserva (enum BD) al estado simple de la UI del auxiliar.
+  function _auxTripStatus(r) {
+    const s = r.status_h2a || r.status_a2h;
+    if (['assigned', 'driver_assigned', 'ready'].includes(s)) return 'assigned';
+    if (['en_route', 'at_pickup'].includes(s)) return 'onway';
+    if (['on_board', 'picked_up', 'en_route_home'].includes(s)) return 'onboard';
+    if (s === 'delivered') return 'done';
+    return 'pending';
+  }
+  async function listMyReservations() {
+    const apId = await getMyAuxiliarProfileId(); if (!apId) return null;
+    const { data, error } = await sb.from('reservations')
+      .select('id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, flights(flight_number)')
+      .eq('auxiliar_profile_id', apId).is('cancelled_at', null)
+      .order('required_arrival_at', { ascending: true });
+    if (error) return null;
+    return (data || []).map(r => ({
+      id: r.id, type: r.direction === 'airport_to_home' ? 'lle' : 'sal',
+      flight: r.flights?.flight_number || (r.notes && r.notes.match(/AV-?\d+/) ? r.notes.match(/AV-?\d+/)[0] : ''),
+      date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
+      address: r.pickup_address, lat: r.pickup_latitude, lng: r.pickup_longitude,
+      notes: r.notes || '', status: _auxTripStatus(r), driver: null,
+    }));
+  }
+  // Crea una reserva del auxiliar autenticado (RLS: solo la suya).
+  async function createReservation(f) {
+    const apId = await getMyAuxiliarProfileId(); if (!apId) throw new Error('Sin perfil de auxiliar');
+    const isLle = f.type === 'lle';
+    const notes = (f.flight ? 'Vuelo ' + f.flight + '. ' : '') + (f.notes || '');
+    const payload = {
+      auxiliar_profile_id: apId, flight_id: null,
+      direction: isLle ? 'airport_to_home' : 'home_to_airport',
+      status_h2a: isLle ? null : 'requested', status_a2h: isLle ? 'scheduled' : null,
+      pickup_address: f.address, pickup_latitude: f.lat, pickup_longitude: f.lng,
+      required_arrival_at: f.date + 'T' + f.time + ':00-05:00', notes: notes.trim() || null,
+    };
+    const { data, error } = await sb.from('reservations').insert(payload).select('id').single();
+    if (error) throw error;
+    return data.id;
   }
 
   // Crea la cabecera de una ruta (borrador → con conductor). Defensivo: si las
@@ -1331,5 +1395,6 @@
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment,
+    getMyAuxiliarProfileId, listMyReservations, createReservation,
   };
 })();

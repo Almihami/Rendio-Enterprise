@@ -2,7 +2,8 @@
 // Módulo nuevo 2026-07-13. Comparte scope global con los demás (core carga primero).
 // Diseño portado de /Visual/ (aux-booking + auxiliar-screens), aterrizado a Rionegro→MDE.
 // Decisiones: login correo+contraseña · dirección con pin ajustable · sin propina
-// (servicio mensual) · calificación ligera · datos DEMO por ahora (sin escribir a BD).
+// (servicio mensual) · calificación ligera. Lee/escribe reservas REALES en dev
+// (Api.listMyReservations/createReservation); si no hay sesión/BD → fallback DEMO.
 
   // Coord del terminal de pasajeros MDE (misma que el motor de rutas).
   const AUX_MDE = { lat: 6.1715, lng: -75.4270 };
@@ -22,16 +23,20 @@
   const auxState = {
     profile: null, view: 'home', step: 1, form: {}, trips: [], editingTrip: null,
     map: null, marker: null, geoTimer: null, geoReq: 0, bound: false,
-    trackTimer: null, trackMap: null, ratingSel: 0, ratingTags: [],
+    trackTimer: null, trackMap: null, ratingSel: 0, ratingTags: [], source: 'demo',
   };
 
   window.Auxiliar = { init: auxInit };
 
-  function auxInit(profile) {
+  async function auxInit(profile) {
     auxState.profile = profile;
-    auxState.trips = AUX_DEMO_TRIPS.map(t => ({ ...t }));
     auxState.view = 'home';
     auxBindOnce();
+    // Datos REALES desde dev (reservas del auxiliar); si no hay sesión/BD → demo.
+    let trips = null;
+    try { if (window.Api?.listMyReservations) trips = await Api.listMyReservations(); } catch (e) {}
+    auxState.trips = (trips && trips.length !== undefined) ? trips : AUX_DEMO_TRIPS.map(t => ({ ...t }));
+    auxState.source = trips ? 'live' : 'demo';
     auxRender();
   }
 
@@ -293,8 +298,8 @@
     } catch (e) { /* silencioso: el usuario puede reintentar */ }
   }
 
-  // ---------- confirmar → agrega el viaje → pantalla de confirmación ----------
-  function auxSubmit() {
+  // ---------- confirmar → crea la reserva (BD real o demo) → confirmación ----------
+  async function auxSubmit() {
     const f = auxState.form;
     const trip = {
       id: 't' + Date.now(),
@@ -303,12 +308,17 @@
       isPernocta: !!f.isPernocta, isReserva: f.isReserva !== false, notes: f.notes || '',
       status: 'pending', driver: null, rated: false,
     };
+    // Persistir en dev si hay sesión real; si falla, sigue como demo local.
+    if (auxState.source === 'live' && window.Api?.createReservation) {
+      try { trip.id = await Api.createReservation(f); }
+      catch (e) { toast('No se pudo guardar en el servidor; queda local.'); }
+    } else {
+      setTimeout(() => auxDemoAssign(trip.id), 6000); // demo: asigna solo
+    }
     auxState.trips.unshift(trip);
     auxState.step = 1; auxState.form = {};
     auxState.editingTrip = trip.id; auxState.view = 'confirm';
     auxRender();
-    // DEMO: simula que el admin asigna conductor a los pocos segundos.
-    setTimeout(() => auxDemoAssign(trip.id), 6000);
   }
   // DEMO: asigna un conductor y avisa (sustituye al push real "conductor asignado").
   function auxDemoAssign(tripId) {
