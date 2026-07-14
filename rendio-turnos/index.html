@@ -303,6 +303,9 @@
           </div>
         </section>
 
+        <!-- Pestaña: Mi ruta (rutas de auxiliares) — la renderiza driver-rutas.js -->
+        <section data-dtab="ruta" class="driver-panel hidden"></section>
+
         <!-- Pestaña: Disponibilidad -->
         <section data-dtab="avail" class="driver-panel hidden space-y-5">
           <div>
@@ -391,6 +394,7 @@
       <!-- Barra de navegación inferior (solo conductor) -->
       <nav id="driver-nav">
         <button data-dtab="home" class="dnav-btn"><span class="dnav-ic">🏠</span><span>Inicio</span></button>
+        <button data-dtab="ruta" class="dnav-btn"><span class="dnav-ic">🧭</span><span>Mi ruta</span></button>
         <button data-dtab="avail" class="dnav-btn"><span class="dnav-ic">📅</span><span>Disponib.</span></button>
         <button data-dtab="schedule" class="dnav-btn"><span class="dnav-ic">🗓️</span><span>Mi horario</span></button>
         <button data-dtab="requests" class="dnav-btn"><span class="dnav-ic">🔁</span><span>Solicitudes</span></button>
@@ -1038,6 +1042,8 @@
   <script src="admin-operacion.js"></script>
   <!-- Rol auxiliar (pasajero) -->
   <script src="auxiliar.js"></script>
+  <!-- Conductor: rutas de auxiliares -->
+  <script src="driver-rutas.js"></script>
   <script src="ui-push.js"></script>
 
   <!-- PWA: registrar service worker + detectar updates -->
