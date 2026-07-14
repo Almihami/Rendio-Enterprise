@@ -1005,6 +1005,11 @@
   <!-- Wizard de inicio de turno (pantalla completa) — lo renderiza shift-flow.js -->
   <div id="shift-wizard" class="hidden fixed inset-0 z-30 bg-slate-50 overflow-y-auto overscroll-contain"></div>
 
+  <!-- Rol Auxiliar (pasajero): pantalla propia full-screen — la renderiza auxiliar.js -->
+  <section id="auxiliar-root" class="hidden">
+    <div id="auxiliar-ui" data-theme="light"></div>
+  </section>
+
   <!-- Toast -->
   <div id="toast" class="hidden fixed bottom-20 md:bottom-4 left-1/2 -translate-x-1/2 z-40 bg-ink text-white px-4 py-2.5 rounded-full text-sm font-medium shadow-lg"></div>
 
@@ -1031,6 +1036,8 @@
   <script src="admin-consola.js"></script>
   <script src="admin-rutas.js"></script>
   <script src="admin-operacion.js"></script>
+  <!-- Rol auxiliar (pasajero) -->
+  <script src="auxiliar.js"></script>
   <script src="ui-push.js"></script>
 
   <!-- PWA: registrar service worker + detectar updates -->

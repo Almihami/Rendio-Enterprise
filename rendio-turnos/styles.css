@@ -2115,3 +2115,130 @@ details[open] .details-chevron { transform: rotate(180deg); }
   #routes-ui .lanes {grid-template-columns:1fr}
   #routes-ui .clockpanel {position:static;max-width:560px;margin:0 auto;width:100%}
 }
+
+/* ============================================================
+   Rol Auxiliar (pasajero) — mobile-first, canvas tipo teléfono
+   Colores compartidos con rutas: salida #F26522 · llegada #10B981 · hotel #F59E0B
+   ============================================================ */
+#auxiliar-root{position:fixed;inset:0;z-index:20;background:#EEF1F4;display:flex;justify-content:center;overflow:hidden}
+#auxiliar-root.hidden{display:none}
+#auxiliar-ui{--a-bg:#F7F8FA;--a-card:#FFFFFF;--a-text:#0F1113;--a-t2:#5B636B;--a-t3:#98A0A8;--a-line:#E7EAEE;--a-line2:#EDF0F3;
+  --a-accent:#F4791F;--a-h2a:#F26522;--a-a2h:#10B981;--a-hotel:#F59E0B;--a-ok:#0B7A5C;--a-radius:16px;
+  width:100%;max-width:480px;height:100%;background:var(--a-bg);color:var(--a-text);display:flex;flex-direction:column;
+  font-family:Inter,system-ui,-apple-system,sans-serif;position:relative;box-shadow:0 0 48px rgba(0,0,0,.08)}
+#auxiliar-ui .icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+#auxiliar-ui .ax-body{flex:1;overflow-y:auto;padding:0 18px;-webkit-overflow-scrolling:touch}
+#auxiliar-ui .ax-spacer{height:96px}
+#auxiliar-ui .hidden{display:none}
+
+/* Header */
+#auxiliar-ui .ax-head{display:flex;align-items:flex-start;justify-content:space-between;padding:22px 18px 10px}
+#auxiliar-ui .ax-head h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:2px 0 0}
+#auxiliar-ui .ax-hi{font-size:13px;color:var(--a-t2);font-weight:500}
+#auxiliar-ui .ax-avatar{width:42px;height:42px;border-radius:50%;background:var(--a-accent);color:#fff;font-weight:800;font-size:16px;border:none;cursor:pointer}
+
+/* Secciones + tarjetas de viaje */
+#auxiliar-ui .ax-next-label,#auxiliar-ui .ax-sec{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--a-t3);margin:18px 2px 10px}
+#auxiliar-ui .ax-trip{display:block;width:100%;text-align:left;background:var(--a-card);border:1px solid var(--a-line);border-radius:var(--a-radius);padding:14px;margin-bottom:10px;cursor:pointer;transition:.14s}
+#auxiliar-ui .ax-trip:hover{border-color:var(--a-t3)}
+#auxiliar-ui .ax-trip.hero{box-shadow:0 8px 28px rgba(0,0,0,.07);border-color:transparent}
+#auxiliar-ui .ax-trip-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+#auxiliar-ui .ax-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px}
+#auxiliar-ui .ax-chip .icon{width:13px;height:13px}
+#auxiliar-ui .ax-chip.h2a{background:#FEEDE4;color:var(--a-h2a)}
+#auxiliar-ui .ax-chip.a2h{background:#E7F8F1;color:var(--a-ok)}
+#auxiliar-ui .ax-status{font-size:11.5px;font-weight:700}
+#auxiliar-ui .ax-status.ok{color:var(--a-ok)}#auxiliar-ui .ax-status.warn{color:var(--a-hotel)}#auxiliar-ui .ax-status.muted{color:var(--a-t3)}
+#auxiliar-ui .ax-trip-route{display:flex;align-items:center;gap:10px}
+#auxiliar-ui .ax-trip-route b{font-size:16px;font-weight:800;letter-spacing:-.01em}
+#auxiliar-ui .ax-arrow{width:16px;height:16px;color:var(--a-t3)}
+#auxiliar-ui .ax-trip-bot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;font-size:12px;color:var(--a-t2)}
+#auxiliar-ui .ax-trip-bot span{display:inline-flex;align-items:center;gap:6px}
+#auxiliar-ui .ax-trip-bot .icon{width:13px;height:13px}
+#auxiliar-ui .ax-flight{font-family:'Space Mono',ui-monospace,monospace;font-weight:700;color:var(--a-text)}
+
+/* Empty */
+#auxiliar-ui .ax-empty{text-align:center;padding:40px 20px;display:flex;flex-direction:column;align-items:center;gap:6px}
+#auxiliar-ui .ax-empty-ic{width:56px;height:56px;border-radius:50%;background:var(--a-line2);display:flex;align-items:center;justify-content:center;color:var(--a-t3);margin-bottom:6px}
+#auxiliar-ui .ax-empty b{font-size:16px;font-weight:800}
+#auxiliar-ui .ax-empty span{font-size:13px;color:var(--a-t2)}
+
+/* CTA bar + botones */
+#auxiliar-ui .ax-cta-bar{position:absolute;left:0;right:0;bottom:62px;padding:12px 18px;background:linear-gradient(to top,var(--a-bg) 70%,transparent)}
+#auxiliar-ui .ax-btn{width:100%;height:52px;border-radius:14px;border:none;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:.14s}
+#auxiliar-ui .ax-btn-primary{background:var(--a-accent);color:#fff;box-shadow:0 8px 20px rgba(244,121,31,.28)}
+#auxiliar-ui .ax-btn-primary:disabled{background:var(--a-line);color:var(--a-t3);box-shadow:none;cursor:not-allowed}
+#auxiliar-ui .ax-btn-ghost{background:var(--a-card);color:var(--a-text);border:1.5px solid var(--a-line);height:46px;margin-top:10px}
+
+/* Tabs inferiores */
+#auxiliar-ui .ax-tabs{position:absolute;left:0;right:0;bottom:0;height:62px;background:var(--a-card);border-top:1px solid var(--a-line);display:flex}
+#auxiliar-ui .ax-tab{flex:1;border:none;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--a-t3);font-size:11px;font-weight:600;cursor:pointer}
+#auxiliar-ui .ax-tab.on{color:var(--a-accent)}
+
+/* Formulario */
+#auxiliar-ui .ax-form-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px}
+#auxiliar-ui .ax-form-head b{font-size:15px;font-weight:800}
+#auxiliar-ui .ax-icbtn{width:38px;height:38px;border-radius:11px;border:1.5px solid var(--a-line);background:var(--a-card);color:var(--a-text);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
+#auxiliar-ui .ax-steps{display:flex;gap:6px;flex:1;justify-content:center}
+#auxiliar-ui .ax-dot{width:26px;height:5px;border-radius:3px;background:var(--a-line)}
+#auxiliar-ui .ax-dot.on{background:var(--a-accent)}
+#auxiliar-ui .ax-step-n{font-size:12px;font-weight:700;color:var(--a-t3);font-family:'Space Mono',monospace}
+#auxiliar-ui .ax-form-title{font-size:23px;font-weight:800;letter-spacing:-.02em;margin:4px 0 4px}
+#auxiliar-ui .ax-lead{font-size:14px;color:var(--a-t2);margin-bottom:14px}
+
+/* Opciones tipo de viaje */
+#auxiliar-ui .ax-opt{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--a-card);border:1.5px solid var(--a-line);border-radius:var(--a-radius);padding:16px;margin-bottom:12px;cursor:pointer;transition:.14s}
+#auxiliar-ui .ax-opt .ax-opt-ic{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+#auxiliar-ui .ax-opt.h2a .ax-opt-ic{background:#FEEDE4;color:var(--a-h2a)}
+#auxiliar-ui .ax-opt.a2h .ax-opt-ic{background:#E7F8F1;color:var(--a-ok)}
+#auxiliar-ui .ax-opt div b{font-size:16px;font-weight:800;display:block}
+#auxiliar-ui .ax-opt div span{font-size:12.5px;color:var(--a-t2)}
+#auxiliar-ui .ax-opt .ax-radio{margin-left:auto;width:24px;height:24px;border-radius:50%;border:2px solid var(--a-line);display:flex;align-items:center;justify-content:center;color:#fff;flex:0 0 auto}
+#auxiliar-ui .ax-opt.sel{border-color:var(--a-accent)}
+#auxiliar-ui .ax-opt.sel .ax-radio{background:var(--a-accent);border-color:var(--a-accent)}
+#auxiliar-ui .ax-opt.sel .ax-radio .icon{width:14px;height:14px}
+
+/* Campos */
+#auxiliar-ui .ax-label{display:block;font-size:12.5px;font-weight:700;color:var(--a-t2);margin:14px 0 0}
+#auxiliar-ui .ax-input{width:100%;margin-top:7px;background:var(--a-card);border:1.5px solid var(--a-line);border-radius:12px;padding:13px 14px;font-family:inherit;font-size:15px;color:var(--a-text);box-sizing:border-box}
+#auxiliar-ui .ax-input:focus{outline:none;border-color:var(--a-accent)}
+#auxiliar-ui textarea.ax-input{resize:none}
+#auxiliar-ui .ax-geo-hint{font-size:11.5px;color:var(--a-t3);margin-top:6px}
+
+/* Mapa + pin */
+#auxiliar-ui .ax-map{height:170px;border-radius:12px;overflow:hidden;margin-top:12px;border:1px solid var(--a-line)}
+#auxiliar-ui .ax-pin-row{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--a-t2)}
+#auxiliar-ui .ax-pin-row.ok{color:var(--a-ok);font-weight:700}
+#auxiliar-ui .ax-pin-row .ax-link{margin-left:auto;background:none;border:none;color:var(--a-accent);font-weight:700;font-size:12.5px;cursor:pointer}
+
+/* Toggles */
+#auxiliar-ui .ax-toggles{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+#auxiliar-ui .ax-toggle{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--a-card);border:1.5px solid var(--a-line);border-radius:12px;padding:13px 14px;cursor:pointer}
+#auxiliar-ui .ax-toggle div b{font-size:14px;font-weight:700;display:block}
+#auxiliar-ui .ax-toggle div span{font-size:11.5px;color:var(--a-t2)}
+#auxiliar-ui .ax-toggle .ax-switch{margin-left:auto;width:44px;height:26px;border-radius:999px;background:var(--a-line);position:relative;transition:.15s;flex:0 0 auto}
+#auxiliar-ui .ax-toggle .ax-knob{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:.15s}
+#auxiliar-ui .ax-toggle.on .ax-switch{background:var(--a-accent)}
+#auxiliar-ui .ax-toggle.on .ax-knob{left:21px}
+
+/* Hint */
+#auxiliar-ui .ax-hint{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--a-t2);background:var(--a-line2);border-radius:10px;padding:10px 12px;margin-top:14px;line-height:1.4}
+#auxiliar-ui .ax-hint .icon{width:15px;height:15px;margin-top:1px}
+#auxiliar-ui .ax-hint.ok{background:#E7F8F1;color:var(--a-ok)}
+
+/* Resumen (paso 4 + detalle) */
+#auxiliar-ui .ax-sum{background:var(--a-card);border:1px solid var(--a-line);border-radius:var(--a-radius);overflow:hidden;margin-top:6px}
+#auxiliar-ui .ax-sum-head{display:flex;align-items:center;gap:8px;padding:12px 14px;font-size:13px;font-weight:700;border-bottom:1px solid var(--a-line2)}
+#auxiliar-ui .ax-sum-head.h2a{color:var(--a-h2a)}#auxiliar-ui .ax-sum-head.a2h{color:var(--a-ok)}
+#auxiliar-ui .ax-sum-row{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;font-size:13.5px;border-bottom:1px solid var(--a-line2)}
+#auxiliar-ui .ax-sum-row:last-child{border-bottom:none}
+#auxiliar-ui .ax-sum-row span{color:var(--a-t2)}#auxiliar-ui .ax-sum-row b{font-weight:700;text-align:right}
+
+/* Detalle: hero + conductor */
+#auxiliar-ui .ax-trip-hero{display:flex;align-items:center;justify-content:space-between;padding:16px;border-radius:var(--a-radius);margin-top:6px;background:var(--a-card);border:1px solid var(--a-line)}
+#auxiliar-ui .ax-driver{display:flex;align-items:center;gap:12px;background:var(--a-card);border:1px solid var(--a-line);border-radius:var(--a-radius);padding:14px;margin-top:6px}
+#auxiliar-ui .ax-driver-av{width:44px;height:44px;border-radius:50%;background:var(--a-accent);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+#auxiliar-ui .ax-driver div b{font-size:15px;font-weight:800;display:block}
+#auxiliar-ui .ax-driver div span{font-size:12.5px;color:var(--a-t2)}
+#auxiliar-ui .ax-eta{margin-left:auto;text-align:right;font-size:11px;color:var(--a-t2)}
+#auxiliar-ui .ax-eta b{font-size:16px;color:var(--a-text);font-family:'Space Mono',monospace}

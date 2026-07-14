@@ -33,6 +33,19 @@
     bindGlobalEvents();
     setupInstallPrompt();
 
+    // --- Vista previa SOLO LOCAL (para probar UI sin cuenta real) ---
+    // Se activa únicamente en localhost + hash explícito. Nunca en producción.
+    const isLocal = ['127.0.0.1', 'localhost'].includes(location.hostname);
+    if (isLocal && location.hash.startsWith('#preview-')) {
+      const role = location.hash.replace('#preview-', '');
+      const demo = { admin: 'Admin Demo', auxiliar: 'María Gómez', driver: 'Conductor Demo' };
+      if (demo[role]) {
+        state.profile = { role, full_name: demo[role], id: 'preview-' + role };
+        dismissSplash();
+        return enterApp();
+      }
+    }
+
     const splashHold = new Promise((r) => setTimeout(r, 2500));
 
     let nextAction = () => showLogin();
@@ -331,6 +344,14 @@
 
     state.settings = await Api.getSettings();
     await loadRules();
+
+    // Auxiliar (pasajero): pantalla propia full-screen, fuera del shell admin/conductor.
+    if (state.profile.role === 'auxiliar') {
+      $('#app-shell').classList.add('hidden');
+      $('#auxiliar-root').classList.remove('hidden');
+      if (window.Auxiliar) Auxiliar.init(state.profile);
+      return;
+    }
 
     if (state.profile.role === 'admin') {
       // Shell admin: sidebar de navegación por capas (reemplaza la barra de pestañas).
