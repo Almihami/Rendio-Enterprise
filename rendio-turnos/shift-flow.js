@@ -1118,13 +1118,17 @@
       icon = '✓'; iconCls = 'bg-brand-50 text-brand-600'; title = '¡Listo, en ruta!';
       body = `Turno activo con el ${veh} desde ${fmtKm(sf.km)} km. Maneja con calma.`; btnCls = 'bg-brand text-white shadow-brand';
     }
+    // Con el turno activo, el siguiente paso natural es VER LA RUTA DEL DÍA.
+    const activeTurno = !(d === 'aborted' || d === 'completed-noapt');
     wiz.innerHTML = `<div class="max-w-lg mx-auto min-h-screen flex flex-col items-center justify-center text-center px-8 bg-slate-50">
       <div class="w-20 h-20 rounded-full ${iconCls} text-4xl flex items-center justify-center mb-5">${icon}</div>
       <h1 class="text-2xl font-extrabold text-ink">${title}</h1>
       <p class="text-[15px] text-slate-500 mt-2 leading-relaxed max-w-xs">${body}</p>
-      <button id="sf-done-btn" class="mt-8 px-6 py-3 rounded-xl ${btnCls} font-bold active:scale-[0.98] transition">Volver al inicio</button>
+      ${activeTurno ? `<button id="sf-route-btn" class="mt-8 w-full max-w-xs px-6 py-3.5 rounded-xl bg-brand text-white font-extrabold shadow-brand active:scale-[0.98] transition flex items-center justify-center gap-2"><span>🧭</span>Ver mi ruta del día</button>
+      <button id="sf-done-btn" class="mt-3 px-6 py-2.5 text-slate-500 font-semibold">Volver al inicio</button>`
+      : `<button id="sf-done-btn" class="mt-8 px-6 py-3 rounded-xl ${btnCls} font-bold active:scale-[0.98] transition">Volver al inicio</button>`}
     </div>`;
-    $('#sf-done-btn').addEventListener('click', () => {
+    const cleanup = () => {
       Object.values(sf.photos).forEach(p => p && p.url && URL.revokeObjectURL(p.url));
       sf.photos = {};
       sf.extraPhotos.forEach(p => p && p.url && URL.revokeObjectURL(p.url));
@@ -1132,6 +1136,11 @@
       sf.completing = false;
       closeWizard();
       renderCard();
+    };
+    $('#sf-done-btn').addEventListener('click', cleanup);
+    $('#sf-route-btn')?.addEventListener('click', () => {
+      cleanup();
+      if (window.DriverRutas) DriverRutas.open(sf.profile);
     });
   }
 

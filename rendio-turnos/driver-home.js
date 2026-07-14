@@ -55,8 +55,6 @@
     $('#driver-save-bar')?.classList.toggle('hidden', name !== 'avail');
     if (name === 'home') updateDriverHome();
     if (name === 'perfil') renderDriverProfile();
-    if (name === 'ruta' && window.DriverRutas) DriverRutas.render();
-    else if (window.DriverRutas) DriverRutas.stop(); // libera mapa/GPS al salir de rutas
     window.scrollTo(0, 0);
   }
 

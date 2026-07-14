@@ -1370,6 +1370,68 @@
     return data ? data.id : null;
   }
 
+  // ---- Persistir el plan del día (admin) y leerlo (conductor) ----
+  const _bogDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+
+  // Guarda TODAS las vueltas del día como route_assignments + route_stops.
+  // lanes: [{ vehicleId, driverProfileId(=profile id|null), type('sal'|'lle'), startAt(ISO), stops:[reservationId] }]
+  async function saveRoutePlan(day, lanes) {
+    // profile id → driver_profile id (route_assignments referencia driver_profiles).
+    const profIds = [...new Set(lanes.map(l => l.driverProfileId).filter(Boolean))];
+    const dpMap = {};
+    if (profIds.length) {
+      const { data } = await sb.from('driver_profiles').select('id, profile_id').in('profile_id', profIds);
+      (data || []).forEach(r => { dpMap[r.profile_id] = r.id; });
+    }
+    // Limpia el plan del día (no toca lo ya completado) para re-publicar idempotente.
+    await sb.from('route_assignments').delete().neq('status', 'completed')
+      .gte('planned_start_at', day + 'T00:00:00-05:00').lte('planned_start_at', day + 'T23:59:59-05:00');
+    let saved = 0, skipped = 0;
+    for (const lane of lanes) {
+      if (!lane.vehicleId || !lane.stops || !lane.stops.length) { skipped++; continue; }
+      const dpid = lane.driverProfileId ? dpMap[lane.driverProfileId] : null;
+      const { data: ra, error } = await sb.from('route_assignments').insert({
+        driver_profile_id: dpid, vehicle_id: lane.vehicleId,
+        direction: lane.type === 'lle' ? 'airport_to_home' : 'home_to_airport',
+        status: dpid ? 'planned' : 'draft', planned_start_at: lane.startAt,
+      }).select('id').single();
+      if (error) { skipped++; continue; }
+      const stops = lane.stops.map((rid, i) => ({ route_assignment_id: ra.id, reservation_id: rid, stop_order: i + 1 }));
+      if (stops.length) { const r2 = await sb.from('route_stops').insert(stops); if (r2.error) { skipped++; continue; } }
+      saved++;
+    }
+    return { saved, skipped };
+  }
+
+  // El conductor lee SU ruta del día (route_assignments asignadas a él) → vueltas.
+  async function listMyVueltasForDriver(profileId) {
+    const dpid = await getMyDriverProfileId(profileId); if (!dpid) return null;
+    const { data, error } = await sb.from('route_assignments')
+      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, auxiliar_profiles(profiles(full_name)), flights(flight_number)))')
+      .eq('driver_profile_id', dpid)
+      .order('planned_start_at', { ascending: true });
+    if (error) return null;
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    const MDE = { name: 'Aeropuerto MDE', addr: 'Terminal de pasajeros · José María Córdova', lat: 6.1715, lng: -75.4270 };
+    // Día operativo MÁS PRÓXIMO con ruta (hoy si la hay; si no, la siguiente).
+    const active = (data || []).filter(ra => ra.planned_start_at && ra.status !== 'completed' && _bogDay(ra.planned_start_at) >= today);
+    if (!active.length) return [];
+    const day0 = _bogDay(active[0].planned_start_at); // vienen ordenadas por planned_start_at
+    const rows = active.filter(ra => _bogDay(ra.planned_start_at) === day0);
+    return rows.map((ra, i) => {
+      const type = ra.direction === 'airport_to_home' ? 'lle' : 'sal';
+      const stops = (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order).map(s => {
+        const r = s.reservations || {};
+        return { name: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar', addr: r.pickup_address || '',
+          lat: r.pickup_latitude, lng: r.pickup_longitude, flight: r.flights?.flight_number || '',
+          dl: rtHHMM(r.required_arrival_at), kind: type === 'lle' ? 'dropoff' : 'pickup' };
+      });
+      const air = { name: MDE.name, addr: MDE.addr, lat: MDE.lat, lng: MDE.lng, kind: 'airport' };
+      const legs = type === 'lle' ? [air, ...stops] : [...stops, air]; // llegada: sale de MDE; salida: termina en MDE
+      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), done: ra.status === 'completed', legs, assignmentId: ra.id };
+    });
+  }
+
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
@@ -1396,5 +1458,6 @@
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment,
     getMyAuxiliarProfileId, listMyReservations, createReservation,
+    saveRoutePlan, listMyVueltasForDriver,
   };
 })();

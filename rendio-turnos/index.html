@@ -303,9 +303,6 @@
           </div>
         </section>
 
-        <!-- Pestaña: Mi ruta (rutas de auxiliares) — la renderiza driver-rutas.js -->
-        <section data-dtab="ruta" class="driver-panel hidden"></section>
-
         <!-- Pestaña: Disponibilidad -->
         <section data-dtab="avail" class="driver-panel hidden space-y-5">
           <div>
@@ -394,7 +391,6 @@
       <!-- Barra de navegación inferior (solo conductor) -->
       <nav id="driver-nav">
         <button data-dtab="home" class="dnav-btn"><span class="dnav-ic">🏠</span><span>Inicio</span></button>
-        <button data-dtab="ruta" class="dnav-btn"><span class="dnav-ic">🧭</span><span>Mi ruta</span></button>
         <button data-dtab="avail" class="dnav-btn"><span class="dnav-ic">📅</span><span>Disponib.</span></button>
         <button data-dtab="schedule" class="dnav-btn"><span class="dnav-ic">🗓️</span><span>Mi horario</span></button>
         <button data-dtab="requests" class="dnav-btn"><span class="dnav-ic">🔁</span><span>Solicitudes</span></button>
@@ -815,6 +811,7 @@
               <div class="ds" id="rt-dsEta" title="Pulsa Optimizar para calcular tiempos reales."><b>—</b><span>ETAs</span></div>
             </div>
             <button class="btn" id="rt-optBtn"><svg class="icon"><use href="#i-bolt"/></svg>Optimizar</button>
+            <button class="btn primary" id="rt-saveBtn" style="display:none"><svg class="icon"><use href="#i-save"/></svg>Publicar plan</button>
           </div>
           <div class="alert" id="rt-alert">
             <svg class="icon"><use href="#i-warn"/></svg>
@@ -1013,6 +1010,10 @@
   <section id="auxiliar-root" class="hidden">
     <div id="auxiliar-ui" data-theme="light"></div>
   </section>
+
+  <!-- Ruta del día del conductor (pantalla completa) — se abre al terminar el
+       inicio de turno; la renderiza driver-rutas.js -->
+  <div id="driver-ruta-root" class="hidden"></div>
 
   <!-- Toast -->
   <div id="toast" class="hidden fixed bottom-20 md:bottom-4 left-1/2 -translate-x-1/2 z-40 bg-ink text-white px-4 py-2.5 rounded-full text-sm font-medium shadow-lg"></div>

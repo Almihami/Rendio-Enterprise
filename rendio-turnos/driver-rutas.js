@@ -25,16 +25,41 @@
   ];
 
   const drState = {
+    profile: null, source: 'demo',
     vueltas: [], view: 'overview', activeId: null, legIdx: 0, legState: 'en_camino',
     map: null, watchId: null, sharing: false, bound: false,
   };
 
-  window.DriverRutas = { render: drRender, stop: drTeardown };
+  window.DriverRutas = { open: drOpen, close: drClose };
 
-  function drRender() {
-    drState.vueltas = drState.vueltas.length ? drState.vueltas : DR_DEMO_VUELTAS.map(v => ({ ...v, legs: v.legs.map(l => ({ ...l })) }));
+  const drHost = () => document.getElementById('driver-ruta-root');
+
+  // Abre la ruta del día del conductor (pantalla completa). Se invoca al TERMINAR
+  // el inicio de turno, o desde el home ("Ver mi ruta"). Lee la ruta REAL asignada.
+  async function drOpen(profile) {
+    drState.profile = profile;
+    drState.view = 'overview'; drState.activeId = null;
+    const root = drHost(); if (!root) return;
+    root.classList.remove('hidden');
+    root.innerHTML = '<div id="driver-ruta-ui"><div class="dr-loading">Cargando tu ruta…</div></div>';
+    // Ruta REAL asignada por el admin; si no hay (o no hay sesión) → demo.
+    let vueltas = null;
+    try { if (window.Api?.listMyVueltasForDriver && profile?.id) vueltas = await Api.listMyVueltasForDriver(profile.id); } catch (e) {}
+    drState.source = (vueltas && vueltas.length) ? 'live' : 'demo';
+    drState.vueltas = (vueltas && vueltas.length)
+      ? vueltas
+      : DR_DEMO_VUELTAS.map(v => ({ ...v, legs: v.legs.map(l => ({ ...l })) }));
     drBindOnce();
-    const host = document.querySelector('#driver-tabs-root [data-dtab="ruta"]'); if (!host) return;
+    drRender();
+  }
+  function drClose() {
+    drTeardown();
+    drHost()?.classList.add('hidden');
+    // Volver al home del conductor.
+    if (window.setDriverTab) try { setDriverTab('home'); } catch (e) {}
+  }
+  function drRender() {
+    const host = drHost(); if (!host) return;
     host.innerHTML = drState.view === 'exec' ? drExecHTML() : drOverviewHTML();
     if (drState.view === 'exec') drAfterExec();
   }
@@ -55,6 +80,11 @@
     const pax = vs.reduce((n, v) => n + v.legs.filter(l => l.kind !== 'airport').length, 0);
     return `
       <div id="driver-ruta-ui">
+        <div class="dr-topbar">
+          <button class="dr-icbtn light" data-dr="close" title="Volver al inicio"><svg class="icon"><use href="#i-back"/></svg></button>
+          <b>Tu ruta del día</b>
+          ${drState.source === 'demo' ? '<span class="dr-demo-tag">demo</span>' : '<span></span>'}
+        </div>
         <div class="dr-hd">
           <div><h2>Mi ruta de hoy</h2><p>${vs.length} vueltas · ${pax} auxiliares · ${pend} pendientes</p></div>
           <span class="dr-live ${drState.sharing ? 'on' : ''}" id="dr-live-badge"><span class="dot"></span>${drState.sharing ? 'Compartiendo ubicación' : 'Ubicación off'}</span>
@@ -161,11 +191,12 @@
   // ---------- eventos ----------
   function drBindOnce() {
     if (drState.bound) return;
-    const root = document.querySelector('#driver-tabs-root [data-dtab="ruta"]'); if (!root) return;
+    const root = drHost(); if (!root) return;
     drState.bound = true;
     root.addEventListener('click', (e) => {
       const el = e.target.closest('[data-dr]'); if (!el) return;
       const a = el.dataset.dr;
+      if (a === 'close') { drClose(); return; }
       if (a === 'open') {
         drState.activeId = el.dataset.id; drState.legIdx = 0; drState.legState = 'en_camino'; drState.view = 'exec';
         drStartGps(); drRender();

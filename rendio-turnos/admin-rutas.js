@@ -111,6 +111,7 @@
     if (loaded && loaded.aux && Object.keys(loaded.aux).length) {
       rt.aux = loaded.aux; rt.colors = loaded.colors || {}; rt.cars = loaded.cars || [];
       rt.drivers = loaded.drivers || []; rt.plan = loaded.plan || {}; rt.source = 'live';
+      rt.day = loaded.day || null; // día operativo real (para persistir el plan)
     } else {
       rt.aux = JSON.parse(JSON.stringify(RT_DEMO_AUX)); rt.colors = RT_DEMO_COLORS;
       rt.cars = JSON.parse(JSON.stringify(RT_DEMO_CARS)); rt.drivers = RT_DEMO_DRIVERS;
@@ -535,11 +536,38 @@
     rt.pool = day.unassigned.slice();
     rt.optimized = true;
     $('#rt-optBtn').innerHTML = '<svg class="icon"><use href="#i-bolt"/></svg>Re-optimizar';
+    // "Publicar plan" solo con reservas reales (para que el conductor lo vea).
+    const saveBtn = $('#rt-saveBtn'); if (saveBtn) saveBtn.style.display = (rt.source === 'live' && rt.day) ? '' : 'none';
     rtRenderAll();
     const s = rtDayStats();
     const how = src === 'osrm' ? 'tiempos reales OSRM' : 'distancia estimada';
     const vueltas = rt.lanes.length;
     toast(s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ajustada, revísala.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`);
+  }
+
+  // Persiste el plan del día: cada vuelta → route_assignment + route_stops.
+  // Las vueltas con conductor asignado quedan visibles para ese conductor.
+  async function rtSavePlan() {
+    if (rt.source !== 'live' || !rt.day) { toast('Solo se publica con reservas reales.'); return; }
+    const lanes = rt.lanes.filter(l => rt.order[l.id] && rt.order[l.id].length).map(l => {
+      const car = rt.cars.find(c => c.id === l.car);
+      return {
+        vehicleId: car ? car.vehicleId : null,
+        driverProfileId: car ? car.driver : null,
+        type: l.type || 'sal',
+        startAt: rt.day + 'T' + (l.start || '04:00') + ':00-05:00',
+        stops: rt.order[l.id].map(k => rt.aux[k] && rt.aux[k].reservationId).filter(Boolean),
+      };
+    });
+    const withDriver = lanes.filter(l => l.driverProfileId).length;
+    $('#rt-saveBtn').innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicando…';
+    try {
+      const r = await Api.saveRoutePlan(rt.day, lanes);
+      toast(withDriver
+        ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado). Los conductores ya lo ven.`
+        : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.`);
+    } catch (e) { toast('No se pudo publicar: ' + (e.message || 'error')); }
+    $('#rt-saveBtn').innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicar plan';
   }
 
   function rtOpenDrawer(laneId) {
@@ -791,6 +819,7 @@
 
     root.addEventListener('click', (e) => {
       if (e.target.closest('#rt-optBtn')) { rtOptimize(); return; }
+      if (e.target.closest('#rt-saveBtn')) { rtSavePlan(); return; }
       const mp = e.target.closest('[data-map]'); if (mp) { rtOpenMap(mp.dataset.map); return; }
       const ex = e.target.closest('[data-expand]'); if (ex) {
         rt.expandedLane = rt.expandedLane === ex.dataset.expand ? null : ex.dataset.expand;
