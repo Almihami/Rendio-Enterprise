@@ -75,7 +75,8 @@
     aux: {}, colors: {}, cars: [], drivers: [], plan: {},
     // MULTI-VIAJE: cada carro hace varias vueltas al día. Un "lane" = un viaje
     // (carro + vuelta + hora de salida + origen). rt.order se indexa por lane.id.
-    lanes: [], order: {}, pool: [], optimized: false, drawerCar: null, pendingDriver: null,
+    lanes: [], order: {}, pool: [], optimized: false, drawerCar: null,
+    shift: null, shiftLoaded: false, pendingAM: null, pendingPM: null,
     expandedLane: null, _dragging: false, // UI: vuelta expandida en la tarjeta del carro / drag activo
     tripType: 'sal', source: 'demo', bound: false, demoToasted: false,
     CAP: 4, AIRPORT_LEG: 16, MARGIN_TIGHT: 15, dragId: null, dragSrc: null,
@@ -123,11 +124,41 @@
     rt.pool = Object.keys(rt.aux);
     rt.optimized = false;
     rt.M = null;
+    // Conductores EN TURNO por franja (del horario publicado) para asignar AM/PM.
+    rt.shift = null; rt.shiftLoaded = false;
+    if (rt.source === 'live' && rt.day && Api.listDriversOnShift) {
+      try {
+        const sh = await Api.listDriversOnShift(rt.day);
+        if (sh) {
+          const byId = {}; rt.drivers.forEach(d => { byId[d.id] = d; });
+          const enr = arr => (arr || []).map(x => ({ id: x.id, n: x.n, c: (byId[x.id] && byId[x.id].c) || '#8895a7' }));
+          rt.shift = { am: enr(sh.am), pm: enr(sh.pm), coordAm: enr(sh.coordAm), coordPm: enr(sh.coordPm) };
+          rt.shiftLoaded = true;
+        }
+      } catch (e) { /* sin horario → fallback a todos */ }
+    }
   }
   const rtCarOf = (lane) => rt.cars.find(c => c.id === lane.car);
   const rtLaneOf = (laneId) => rt.lanes.find(l => l.id === laneId);
 
   const rtCapOf = (car) => (car && car.capacity) || rt.CAP;
+
+  // ---- Asignación por franja de turno (AM 02:30–14:00 / PM 14:00–01:30) ----
+  // Una vuelta pertenece a AM u PM según su hora de arranque. El relevo es ~14:00;
+  // las horas de 00:00–02:30 caen en el turno PM (que corre hasta 01:30).
+  function rtBandOf(lane) { const m = rtToMin((lane && lane.start) || '00:00'); return (m >= 150 && m < 840) ? 'am' : 'pm'; }
+  // Conductores EN TURNO de una franja ese día (horario publicado). Sin horario
+  // publicado (demo o semana sin publicar) → todos, como fallback.
+  function rtPoolFor(band) {
+    if (rt.shiftLoaded && rt.shift) return (band === 'am' ? rt.shift.am : rt.shift.pm) || [];
+    return rt.drivers;
+  }
+  // Conductor asignado a una vuelta, según SU franja (driverAM o driverPM del carro).
+  function rtDriverOf(lane) { const car = rtCarOf(lane); if (!car) return null; return rtBandOf(lane) === 'am' ? car.driverAM : car.driverPM; }
+  // Franjas que realmente cubre un carro (por sus vueltas con paradas).
+  function rtBandsOfCar(carId) { return [...new Set(rt.lanes.filter(l => l.car === carId && rt.order[l.id] && rt.order[l.id].length).map(rtBandOf))].sort(); }
+  const rtBandLabel = (b) => b === 'am' ? '02:30–14:00' : '14:00–01:30';
+  const rtBandIcon = (b) => b === 'am' ? '☀' : '☾';
 
   // Coordenadas de un punto (depot / aeropuerto / parada).
   function rtCoordsOf(key) {
@@ -404,10 +435,11 @@
     const st = r.status;
     const capFull = r.pax >= rtCapOf(car);
     const pips = Array.from({ length: rtCapOf(car) }, (_, i) => `<span class="pip ${i < r.pax ? 'f' : ''}"></span>`).join('');
-    const drv = car.driver ? rt.drivers.find(d => d.id === car.driver) : null;
+    const dId = rtDriverOf(lane);
+    const drv = dId ? rt.drivers.find(d => d.id === dId) : null;
     const drvHTML = drv
-      ? `<span class="drv set"><span class="av" style="background:${drv.c}">${rtIni(drv.n)}</span>${drv.n}</span>`
-      : `<span class="drv none"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor (borrador)</span>`;
+      ? `<span class="drv set">${rtBandIcon(rtBandOf(lane))} <span class="av" style="background:${drv.c}">${rtIni(drv.n)}</span>${drv.n}</span>`
+      : `<span class="drv none">${rtBandIcon(rtBandOf(lane))} <svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor ${rtBandOf(lane).toUpperCase()} (borrador)</span>`;
     const sema = r.lle
       ? (st === 'ontime'
         ? `<div class="holg"><div class="big" style="color:var(--green)">al bajar</div><div class="sm">aterriza ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`
@@ -477,16 +509,21 @@
     const wrap = $('#rt-laneWrap');
     wrap.innerHTML = rt.cars.map(car => {
       const lanes = rt.lanes.filter(l => l.car === car.id);
-      const drv = car.driver ? rt.drivers.find(d => d.id === car.driver) : null;
-      const drvHTML = drv
-        ? `<span class="drv set"><span class="av" style="background:${drv.c}">${rtIni(drv.n)}</span>${drv.n}</span>`
-        : `<span class="drv none"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor</span>`;
+      const bands = rtBandsOfCar(car.id);
+      const drvHTML = (bands.length ? bands : []).map(b => {
+        const id = b === 'am' ? car.driverAM : car.driverPM;
+        const d = id ? rt.drivers.find(x => x.id === id) : null;
+        return d
+          ? `<span class="drv set">${rtBandIcon(b)} <span class="av" style="background:${d.c}">${rtIni(d.n)}</span>${d.n}</span>`
+          : `<span class="drv none">${rtBandIcon(b)} <svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor ${b.toUpperCase()}</span>`;
+      }).join('') || `<span class="drv none">Sin vueltas</span>`;
+      const allAssigned = bands.length && bands.every(b => (b === 'am' ? car.driverAM : car.driverPM));
       const paxTotal = lanes.reduce((t, l) => t + rtCarCompute(l.id).pax, 0);
       const rows = lanes.length
         ? lanes.map(l => rt.expandedLane === l.id ? rtLaneHTML(l) : rtTripRowHTML(l)).join('')
         : `<div class="lane-empty" data-drop="${car.id}·V1">Sin vueltas — pulsa Optimizar o arrastra auxiliares.</div>`;
       const assignBtn = lanes.length
-        ? `<button class="assignbtn ${!car.driver ? 'cta' : ''}" data-assign="${lanes[0].id}"><svg class="icon" style="width:14px;height:14px"><use href="#i-user"/></svg>${car.driver ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
+        ? `<button class="assignbtn ${!allAssigned ? 'cta' : ''}" data-assign="${lanes[0].id}"><svg class="icon" style="width:14px;height:14px"><use href="#i-user"/></svg>${allAssigned ? 'Cambiar conductores' : 'Asignar conductor'}</button>`
         : '';
       return `<div class="carcard">
         <div class="cc-h">
@@ -553,7 +590,7 @@
       const car = rt.cars.find(c => c.id === l.car);
       return {
         vehicleId: car ? car.vehicleId : null,
-        driverProfileId: car ? car.driver : null,
+        driverProfileId: rtDriverOf(l), // conductor de la FRANJA de esta vuelta (AM/PM)
         type: l.type || 'sal',
         startAt: rt.day + 'T' + (l.start || '04:00') + ':00-05:00',
         stops: rt.order[l.id].map(k => rt.aux[k] && rt.aux[k].reservationId).filter(Boolean),
@@ -574,14 +611,31 @@
     rt.drawerCar = laneId;
     const lane = rtLaneOf(laneId);
     const car = rtCarOf(lane);
-    rt.pendingDriver = car.driver;
+    rt.pendingAM = car.driverAM || null;
+    rt.pendingPM = car.driverPM || null;
+    const hasDrv = car.driverAM || car.driverPM;
+    // Franjas que cubre este carro; el drawer muestra un selector por cada una.
+    const bands = rtBandsOfCar(car.id); if (!bands.length) bands.push(rtBandOf(lane));
+    const pend = (b) => b === 'am' ? rt.pendingAM : rt.pendingPM;
+    const driverSecs = bands.map(b => {
+      const pool = rtPoolFor(b);
+      const nota = rt.shiftLoaded ? `en turno ${b.toUpperCase()} (horario publicado)` : `turno ${b.toUpperCase()}`;
+      const opts = pool.length
+        ? pool.map(d => `<div class="drv-opt ${pend(b) === d.id ? 'sel' : ''}" data-rtdrv="${d.id}" data-rtband="${b}">
+            <span class="av" style="background:${d.c || '#8895a7'}">${rtIni(d.n)}</span>
+            <div class="info"><b>${d.n}</b><span>En ${nota}</span></div>
+            <span class="tick"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span>
+          </div>`).join('')
+        : `<p style="font-size:12.5px;color:var(--ink2)">Nadie en turno ${b.toUpperCase()} ese día en el horario publicado. Publica/ajusta el horario o cambia la hora de la vuelta.</p>`;
+      return `<div class="dsec"><h3>${rtBandIcon(b)} Conductor ${b.toUpperCase()} · ${rtBandLabel(b)}</h3>${opts}</div>`;
+    }).join('');
     const r = rtCarCompute(laneId);
     const semaPill = r.status === 'late' ? `<span class="spill late"><svg class="icon"><use href="#i-warn"/></svg>No llega</span>`
       : r.status === 'tight' ? `<span class="spill tight"><svg class="icon"><use href="#i-clock"/></svg>Ajustado</span>`
       : `<span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`;
     $('#rt-drawer').innerHTML = `
       <div class="dr-h"><span class="cav"><svg class="icon"><use href="#i-van"/></svg></span>
-        <div><b>${car.id} · Vuelta ${lane.vuelta}</b><span>Ruta en ${car.driver ? 'borrador con conductor' : 'borrador · sin conductor'}</span></div>
+        <div><b>${car.id} · Vuelta ${lane.vuelta}</b><span>Ruta en ${hasDrv ? 'borrador con conductor' : 'borrador · sin conductor'}</span></div>
         <button class="x" data-rtclose><svg class="icon"><use href="#i-x"/></svg></button></div>
       <div class="dr-b">
         <div class="dsec"><h3>Resumen de la ruta</h3>
@@ -596,17 +650,11 @@
         <div class="dsec"><h3>Paradas en orden</h3>
           <div class="stoplist">${r.stops.map((s, i) => { const a = rt.aux[s.id]; return `<div class="sl"><span class="n">${i + 1}</span><span class="av" style="background:${rt.colors[s.id] || '#888'}">${rtIni(a.n)}</span><div class="nm"><b>${a.n}</b><span>${a.zona} · pres. ${a.dl}</span></div><span class="eta">${rtToHM(s.eta)}</span></div>`; }).join('')}</div>
         </div>
-        <div class="dsec"><h3>Conductor del turno</h3>
-          ${rt.drivers.length ? rt.drivers.map(d => `<div class="drv-opt ${rt.pendingDriver === d.id ? 'sel' : ''}" data-rtdrv="${d.id}">
-            <span class="av" style="background:${d.c}">${rtIni(d.n)}</span>
-            <div class="info"><b>${d.n}</b><span>Disponible · turno ${d.turno || 'mañana'}</span></div>
-            <span class="tick"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span>
-          </div>`).join('') : '<p style="font-size:12.5px;color:var(--ink2)">No hay conductores cargados.</p>'}
-        </div>
+        ${driverSecs}
       </div>
       <div class="dr-f">
         <button class="btn ghost" data-rtclose>Cancelar</button>
-        <button class="btn" data-rtconfirm><svg class="icon"><use href="#i-check"/></svg>${car.driver ? 'Actualizar' : 'Confirmar ruta'}</button>
+        <button class="btn" data-rtconfirm><svg class="icon"><use href="#i-check"/></svg>${hasDrv ? 'Actualizar' : 'Confirmar ruta'}</button>
       </div>`;
     $('#rt-scrim').classList.add('show');
     $('#rt-drawer').classList.add('show');
@@ -847,14 +895,23 @@
       if (e.target.closest('[data-mapclose]') || e.target === $('#rt-mapOvl')) { rtCloseMap(); return; }
       const as = e.target.closest('[data-assign]'); if (as) { rtOpenDrawer(as.dataset.assign); return; }
       if (e.target === $('#rt-scrim') || e.target.closest('[data-rtclose]')) { rtCloseDrawer(); return; }
-      const dv = e.target.closest('[data-rtdrv]'); if (dv) { rt.pendingDriver = dv.dataset.rtdrv; $('#rt-drawer').querySelectorAll('.drv-opt').forEach(o => o.classList.toggle('sel', o === dv)); return; }
+      const dv = e.target.closest('[data-rtdrv]'); if (dv) {
+        const band = dv.dataset.rtband;
+        // toca de nuevo al ya seleccionado → lo quita (deja esa franja sin conductor)
+        const cur = band === 'am' ? rt.pendingAM : rt.pendingPM;
+        const val = (cur === dv.dataset.rtdrv) ? null : dv.dataset.rtdrv;
+        if (band === 'am') rt.pendingAM = val; else rt.pendingPM = val;
+        $('#rt-drawer').querySelectorAll(`.drv-opt[data-rtband="${band}"]`).forEach(o => o.classList.toggle('sel', val && o === dv));
+        return;
+      }
       if (e.target.closest('[data-rtconfirm]')) {
-        if (!rt.pendingDriver) { toast('Elige un conductor para confirmar.'); return; }
-        const lane = rtLaneOf(rt.drawerCar); const car = lane && rtCarOf(lane); if (car) car.driver = rt.pendingDriver;
-        const dn = ((rt.drivers.find(d => d.id === rt.pendingDriver) || {}).n || '').split(' ')[0];
-        const cid = rt.drawerCar;
-        if (rt.source === 'live' && Api.saveRouteAssignment) { Api.saveRouteAssignment(car, rt.order[cid], rt.pendingDriver).catch(() => {}); }
-        rtCloseDrawer(); rtRenderAll(); toast(`${cid} confirmada con ${dn}.`); return;
+        const lane = rtLaneOf(rt.drawerCar); const car = lane && rtCarOf(lane);
+        if (!car) { rtCloseDrawer(); return; }
+        const bands = rtBandsOfCar(car.id);
+        if (!bands.some(b => (b === 'am' ? rt.pendingAM : rt.pendingPM))) { toast('Elige al menos un conductor de una franja.'); return; }
+        car.driverAM = rt.pendingAM || null; car.driverPM = rt.pendingPM || null;
+        const names = bands.map(b => { const id = b === 'am' ? car.driverAM : car.driverPM; const d = id && rt.drivers.find(x => x.id === id); return d ? `${b.toUpperCase()} ${d.n.split(' ')[0]}` : null; }).filter(Boolean).join(' · ');
+        rtCloseDrawer(); rtRenderAll(); toast(`${car.id} confirmada (${names || 'sin conductor'}).`); return;
       }
       if (e.target.closest('#rt-alertFix')) {
         const bad = rt.lanes.find(l => rtCarCompute(l.id).status === 'late');

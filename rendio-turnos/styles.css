@@ -1830,6 +1830,10 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #app-shell.admin-shell > #app-header{display:none}           /* el header de pestañas no se usa en admin */
 #app-shell.admin-shell > #admin-side{grid-column:1;grid-row:1/3}
 #app-shell.admin-shell > #admin-mhead{grid-column:2;grid-row:1}
+/* FIX: #admin-side/#admin-mhead son selectores de id → una clase .hidden (menor
+   especificidad) NO los ocultaba, y el sidebar del admin se colaba en la vista
+   del CONDUCTOR. id+clase gana al id solo. */
+#admin-side.hidden,#admin-mhead.hidden{display:none}
 #app-shell.admin-shell > #app-main{grid-column:2;grid-row:2;overflow-y:auto;min-height:0;min-width:0}
 
 /* ===== SIDEBAR ===== */
@@ -2283,57 +2287,163 @@ details[open] .details-chevron { transform: rotate(180deg); }
 /* ============================================================
    Conductor · Mi ruta (rutas de auxiliares) — alta legibilidad al volante
    ============================================================ */
-#driver-ruta-ui{--dr-sal:#F26522;--dr-lle:#10B981}
-#driver-ruta-ui .icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
-#driver-ruta-ui .dr-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:6px 2px 16px}
-#driver-ruta-ui .dr-hd h2{font-size:22px;font-weight:800;letter-spacing:-.02em}
-#driver-ruta-ui .dr-hd p{font-size:13px;color:#64748B;margin-top:2px}
-#driver-ruta-ui .dr-live{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#94A3B8;background:#F1F5F9;padding:5px 10px;border-radius:999px;white-space:nowrap}
-#driver-ruta-ui .dr-live .dot{width:7px;height:7px;border-radius:50%;background:#CBD5E1}
-#driver-ruta-ui .dr-live.on{color:#0B7A5C;background:#E7F8F1}
-#driver-ruta-ui .dr-live.on .dot{background:#10B981;animation:drpulse 1.6s infinite}
-@keyframes drpulse{0%,100%{opacity:1}50%{opacity:.3}}
-/* Tarjeta de vuelta */
-#driver-ruta-ui .dr-vcard{display:block;width:100%;text-align:left;background:#fff;border:1px solid #E7EAEE;border-radius:16px;padding:15px;margin-bottom:12px;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-#driver-ruta-ui .dr-vcard.done{opacity:.55}
-#driver-ruta-ui .dr-vc-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-#driver-ruta-ui .dr-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;padding:4px 11px;border-radius:999px}
-#driver-ruta-ui .dr-chip .icon{width:13px;height:13px}
-#driver-ruta-ui .dr-chip.sal{background:#FEEDE4;color:var(--dr-sal)}
-#driver-ruta-ui .dr-chip.lle{background:#E7F8F1;color:#0B7A5C}
-#driver-ruta-ui .dr-vc-time{font-size:12.5px;font-weight:700;color:#475569;font-family:'Space Mono',monospace}
-#driver-ruta-ui .dr-vc-route{display:flex;align-items:center;gap:9px;font-size:17px;font-weight:800;letter-spacing:-.01em}
-#driver-ruta-ui .dr-ar{width:16px;height:16px;color:#94A3B8}
-#driver-ruta-ui .dr-vc-bot{display:flex;align-items:center;justify-content:space-between;margin-top:11px;font-size:13px;color:#64748B}
-#driver-ruta-ui .dr-vc-cta{font-weight:700;color:var(--dr-sal)}
-/* Ejecución */
-#driver-ruta-ui.exec{position:fixed;inset:0;z-index:35;background:#0F1113;display:flex;flex-direction:column}
-#driver-ruta-ui .dr-ex-top{display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:#0F1113;color:#fff}
-#driver-ruta-ui .dr-icbtn{width:40px;height:40px;border-radius:12px;border:1px solid #2A2E33;background:#1A1D21;color:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
-#driver-ruta-ui .dr-ex-progress{flex:1}
-#driver-ruta-ui .dr-ex-progress b{font-size:15px;font-weight:800;display:block}
-#driver-ruta-ui .dr-ex-progress span{font-size:12px;color:#94A3B8}
-#driver-ruta-ui .dr-ex-map{flex:1;min-height:0}
-#driver-ruta-ui .dr-ex-sheet{background:#fff;border-radius:22px 22px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,.25)}
-#driver-ruta-ui .dr-ex-kind{display:inline-block;font-size:12px;font-weight:800;padding:5px 12px;border-radius:999px;margin-bottom:10px}
-#driver-ruta-ui .dr-ex-kind.sal{background:#FEEDE4;color:var(--dr-sal)}
-#driver-ruta-ui .dr-ex-kind.lle{background:#E7F8F1;color:#0B7A5C}
-#driver-ruta-ui .dr-ex-name{font-size:24px;font-weight:800;letter-spacing:-.02em}
-#driver-ruta-ui .dr-ex-addr{font-size:15px;color:#475569;margin-top:3px}
-#driver-ruta-ui .dr-ex-meta{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#64748B;margin-top:10px;font-weight:600}
-#driver-ruta-ui .dr-ex-meta .icon{width:14px;height:14px}
-#driver-ruta-ui .dr-ex-acts{display:flex;gap:10px;margin:16px 0 10px}
-#driver-ruta-ui .dr-btn{flex:1;height:52px;border-radius:14px;border:none;font-family:inherit;font-size:15px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
-#driver-ruta-ui .dr-btn.ghost{background:#F1F5F9;color:#0F1113;flex:1}
-#driver-ruta-ui .dr-btn.primary{width:100%;background:var(--dr-sal);color:#fff;height:58px;font-size:17px;box-shadow:0 8px 20px rgba(242,101,34,.3)}
-#driver-ruta-ui .dr-link{display:block;width:100%;text-align:center;background:none;border:none;color:#94A3B8;font-weight:700;font-size:14px;padding:14px;cursor:pointer;margin-top:4px}
-
-/* Ruta del conductor: pantalla completa (se abre al terminar el inicio de turno) */
-#driver-ruta-root{position:fixed;inset:0;z-index:40;background:#F1F5F9;overflow-y:auto;-webkit-overflow-scrolling:touch}
+/* ============================================================
+   Ruta del conductor — diseño UX (/Visual/route-screens.jsx)
+   Tokens --r-* scopeados al contenedor. Ver [feedback-seguir-diseno-ux].
+   ============================================================ */
+#driver-ruta-root{
+  --r-bg:#F8F8F6;--r-card:#FFFFFF;--r-accent:#F26522;--r-accent-soft:#FEEEE3;
+  --r-text:#18181B;--r-text-2:#71717A;--r-text-3:#A1A1AA;
+  --r-border:#E4E4E7;--r-border-strong:#D4D4D8;--r-surface-2:#F4F4F1;
+  --r-h2a:#F26522;--r-h2a-soft:#FEEEE3;--r-a2h:#10B981;--r-a2h-soft:#E7F8F1;
+  --r-error:#EF4444;--r-error-soft:#FEECEC;--r-warn:#F59E0B;--r-warn-soft:#FEF4E2;
+  --r-info:#3B82F6;--r-info-soft:#EAF2FE;
+  --r-font-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter",system-ui,sans-serif;
+  --r-shadow:0 1px 3px rgba(20,20,30,.05),0 4px 16px rgba(20,20,30,.04);
+  position:fixed;inset:0;z-index:40;background:var(--r-bg);color:var(--r-text);
+  overflow-y:auto;-webkit-overflow-scrolling:touch}
+/* Decisión UX (2026-07-15): el diseño del conductor es CLARO siempre (la maqueta
+   es clara). NO seguir el modo oscuro del OS — por eso no hay bloque prefers-dark. */
 #driver-ruta-root.hidden{display:none}
-#driver-ruta-root > #driver-ruta-ui:not(.exec){max-width:520px;margin:0 auto;padding:0 16px calc(30px + env(safe-area-inset-bottom));min-height:100%}
-#driver-ruta-ui .dr-topbar{display:flex;align-items:center;gap:12px;padding:calc(12px + env(safe-area-inset-top)) 2px 8px}
-#driver-ruta-ui .dr-topbar > b{font-size:15px;font-weight:800;color:#0F1113;flex:1}
-#driver-ruta-ui .dr-icbtn.light{width:38px;height:38px;border-radius:11px;border:1px solid #E2E8F0;background:#fff;color:#0F1113}
-#driver-ruta-ui .dr-demo-tag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#94A3B8;background:#E2E8F0;padding:3px 8px;border-radius:6px}
-#driver-ruta-ui .dr-loading{text-align:center;color:#64748B;padding:80px 20px;font-size:14px}
+#driver-ruta-ui{max-width:520px;margin:0 auto;min-height:100%;position:relative}
+#driver-ruta-ui .icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+/* Top bar / header */
+#driver-ruta-ui .dr-topbar{display:flex;align-items:center;gap:12px;padding:calc(14px + env(safe-area-inset-top)) 20px 4px}
+#driver-ruta-ui .dr-topbar>b{font-size:15px;font-weight:600;flex:1}
+#driver-ruta-ui .dr-hd{padding:6px 20px 4px}
+#driver-ruta-ui .dr-eyebrow{font-size:12px;font-weight:500;color:var(--r-text-2);text-transform:uppercase;letter-spacing:.06em}
+#driver-ruta-ui .dr-title{font-family:var(--r-font-display);font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:3px}
+#driver-ruta-ui .dr-sub{font-size:13.5px;color:var(--r-text-2);margin-top:5px}
+#driver-ruta-ui .dr-icbtn{width:44px;height:44px;border-radius:22px;border:none;background:var(--r-card);color:var(--r-text);display:flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:var(--r-shadow);cursor:pointer}
+#driver-ruta-ui .dr-live{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:500;color:var(--r-text-3);background:var(--r-surface-2);padding:5px 10px;border-radius:999px;white-space:nowrap}
+#driver-ruta-ui .dr-live .dot{width:7px;height:7px;border-radius:50%;background:var(--r-text-3)}
+#driver-ruta-ui .dr-live.on{color:var(--r-a2h);background:var(--r-a2h-soft)}
+#driver-ruta-ui .dr-live.on .dot{background:var(--r-a2h);animation:drpulse 1.6s infinite}
+@keyframes drpulse{0%,100%{opacity:1}50%{opacity:.3}}
+#driver-ruta-ui .dr-demo-tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--r-text-3);background:var(--r-surface-2);padding:3px 8px;border-radius:6px}
+#driver-ruta-ui .dr-loading{text-align:center;color:var(--r-text-2);padding:80px 20px;font-size:14px}
+/* Body + tarjeta de vuelta (overview multi-vuelta) */
+#driver-ruta-ui .dr-body{padding:6px 20px calc(24px + env(safe-area-inset-bottom))}
+#driver-ruta-ui .dr-seclabel{font-size:12px;color:var(--r-text-2);text-transform:uppercase;letter-spacing:.5px;font-weight:500;margin:16px 4px 8px}
+#driver-ruta-ui .dr-vcard{display:block;width:100%;text-align:left;background:var(--r-card);border:1px solid var(--r-border);border-radius:16px;padding:16px;margin-bottom:12px;cursor:pointer;box-shadow:var(--r-shadow);color:inherit}
+#driver-ruta-ui .dr-vcard.done{opacity:.5}
+#driver-ruta-ui .dr-vc-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+#driver-ruta-ui .dr-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:5px 11px;border-radius:999px;text-transform:uppercase;letter-spacing:.4px}
+#driver-ruta-ui .dr-chip .icon{width:13px;height:13px}
+#driver-ruta-ui .dr-chip.sal{background:var(--r-h2a-soft);color:var(--r-h2a)}
+#driver-ruta-ui .dr-chip.lle{background:var(--r-a2h-soft);color:var(--r-a2h)}
+#driver-ruta-ui .dr-vc-time{font-size:13px;font-weight:500;color:var(--r-text-2);font-variant-numeric:tabular-nums}
+#driver-ruta-ui .dr-vc-route{display:flex;align-items:center;gap:9px;font-size:17px;font-weight:600;letter-spacing:-.01em}
+#driver-ruta-ui .dr-ar{width:16px;height:16px;color:var(--r-text-3)}
+#driver-ruta-ui .dr-vc-bot{display:flex;align-items:center;justify-content:space-between;margin-top:12px;font-size:13px;color:var(--r-text-2)}
+#driver-ruta-ui .dr-vc-cta{font-weight:600;color:var(--r-accent)}
+/* Route overview (una vuelta): mapa + lista de paradas con conector */
+#driver-ruta-ui .dr-map{height:210px;margin:6px 20px 0;border-radius:16px;overflow:hidden;border:1px solid var(--r-border);position:relative}
+#driver-ruta-ui .dr-map-chip{position:absolute;top:10px;right:10px;padding:6px 10px;border-radius:8px;background:var(--r-card);font-size:11px;font-weight:500;color:var(--r-text-2);border:1px solid var(--r-border);z-index:500}
+#driver-ruta-ui .dr-stops{position:relative;padding:4px 20px 0}
+#driver-ruta-ui .dr-stops::before{content:"";position:absolute;left:39px;top:28px;bottom:36px;width:2px;background:var(--r-border)}
+#driver-ruta-ui .dr-stop{display:flex;gap:14px;align-items:flex-start;padding:8px 0;position:relative}
+#driver-ruta-ui .dr-stop-n{width:40px;height:40px;border-radius:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;position:relative;z-index:1;background:var(--r-card);border:2px solid var(--r-border-strong);color:var(--r-text-2)}
+#driver-ruta-ui .dr-stop-n.first{background:var(--r-h2a);border:none;color:#fff}
+#driver-ruta-ui .dr-stop-n.apt{background:var(--r-a2h);border:none;color:#fff}
+#driver-ruta-ui .dr-stop-b{flex:1;padding:2px 0 8px}
+#driver-ruta-ui .dr-stop-b .r1{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+#driver-ruta-ui .dr-stop-b .nm{font-size:15px;font-weight:600}
+#driver-ruta-ui .dr-stop-b .eta{font-size:14px;font-weight:500;color:var(--r-text-2);font-variant-numeric:tabular-nums;flex:0 0 auto}
+#driver-ruta-ui .dr-stop-b .ad{font-size:13px;color:var(--r-text-2);margin-top:2px}
+#driver-ruta-ui .dr-bottom{position:sticky;bottom:0;padding:14px 20px calc(16px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--r-bg) 74%,transparent)}
+#driver-ruta-ui .dr-btn-primary{width:100%;height:56px;border-radius:14px;border:none;background:var(--r-accent);color:#fff;font-family:inherit;font-size:17px;font-weight:600;letter-spacing:-.2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+/* Ejecución: mapa de fondo + bottom sheet */
+#driver-ruta-ui.exec{position:absolute;inset:0;max-width:none;margin:0}
+#driver-ruta-ui .dr-ex-map{position:absolute;inset:0;z-index:0}
+#driver-ruta-ui .dr-ex-topbar{position:absolute;top:calc(14px + env(safe-area-inset-top));left:16px;right:16px;z-index:10;display:flex;gap:8px;align-items:center}
+#driver-ruta-ui .dr-ex-pill{flex:1;height:44px;border-radius:22px;background:var(--r-card);box-shadow:0 2px 8px rgba(0,0,0,.14);display:flex;align-items:center;padding:0 16px;gap:10px;font-size:13px;font-weight:500}
+#driver-ruta-ui .dr-ex-pill .sp{flex:1}
+#driver-ruta-ui .dr-ex-chip{position:absolute;top:calc(70px + env(safe-area-inset-top));left:16px;z-index:10;padding:6px 12px;border-radius:100px;color:#fff;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;display:inline-flex;align-items:center;gap:6px}
+#driver-ruta-ui .dr-ex-chip.sal{background:var(--r-h2a)}
+#driver-ruta-ui .dr-ex-chip.lle{background:var(--r-a2h)}
+#driver-ruta-ui .dr-sheet{position:absolute;bottom:0;left:0;right:0;z-index:20;background:var(--r-card);border-radius:24px 24px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.14)}
+#driver-ruta-ui .dr-sheet-h{display:flex;justify-content:center;padding:8px 0 4px}
+#driver-ruta-ui .dr-sheet-h i{width:40px;height:4px;border-radius:2px;background:var(--r-border-strong);display:block}
+#driver-ruta-ui .dr-sheet-b{padding:12px 20px calc(20px + env(safe-area-inset-bottom))}
+#driver-ruta-ui .dr-aux{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+#driver-ruta-ui .dr-aux-av{width:48px;height:48px;border-radius:24px;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;flex-shrink:0}
+#driver-ruta-ui .dr-aux-av.sal{background:var(--r-h2a-soft);color:var(--r-h2a)}
+#driver-ruta-ui .dr-aux-av.lle{background:var(--r-a2h-soft);color:var(--r-a2h)}
+#driver-ruta-ui .dr-aux-t{flex:1;min-width:0}
+#driver-ruta-ui .dr-aux-t .nm{font-size:17px;font-weight:600;letter-spacing:-.2px}
+#driver-ruta-ui .dr-aux-t .ad{font-size:13px;color:var(--r-text-2);margin-top:2px}
+#driver-ruta-ui .dr-call{width:44px;height:44px;border-radius:22px;background:var(--r-accent-soft);color:var(--r-accent);display:flex;align-items:center;justify-content:center;text-decoration:none;flex-shrink:0}
+#driver-ruta-ui .dr-state{padding:12px 14px;border-radius:12px;font-size:13px;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+#driver-ruta-ui .dr-state.info{background:var(--r-info-soft);color:var(--r-info)}
+#driver-ruta-ui .dr-state.wait{background:var(--r-accent-soft);color:var(--r-accent)}
+#driver-ruta-ui .dr-state.warn{background:var(--r-warn-soft);color:var(--r-warn)}
+#driver-ruta-ui .dr-state .sp{flex:1}
+#driver-ruta-ui .dr-noshow{display:flex;gap:8px;margin-bottom:12px}
+#driver-ruta-ui .dr-noshow button{flex:1;height:40px;border-radius:10px;font:inherit;font-size:13px;font-weight:500;cursor:pointer}
+#driver-ruta-ui .dr-noshow .again{border:1px solid var(--r-border-strong);background:var(--r-card);color:var(--r-text)}
+#driver-ruta-ui .dr-noshow .no{border:1px solid var(--r-error);background:var(--r-error-soft);color:var(--r-error)}
+#driver-ruta-ui .dr-cta{width:100%;height:56px;border-radius:14px;border:none;cursor:pointer;font-family:inherit;font-size:17px;font-weight:600;letter-spacing:-.2px;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--r-text);color:var(--r-bg)}
+#driver-ruta-ui .dr-cta.go{background:var(--r-accent);color:#fff}
+#driver-ruta-ui .dr-foot{display:flex;justify-content:space-between;align-items:center;padding-top:12px;margin-top:12px;border-top:1px solid var(--r-border);font-size:12px;color:var(--r-text-2)}
+#driver-ruta-ui .dr-foot button{background:none;border:none;font:inherit;font-size:12px;color:var(--r-text-2);cursor:pointer;text-decoration:underline}
+/* Completado */
+#driver-ruta-ui .dr-done{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:32px;text-align:center}
+#driver-ruta-ui .dr-done-ic{width:88px;height:88px;border-radius:44px;background:var(--r-accent-soft);color:var(--r-accent);display:flex;align-items:center;justify-content:center;margin-bottom:24px}
+#driver-ruta-ui .dr-done-ic .icon{width:44px;height:44px}
+#driver-ruta-ui .dr-done h1{font-family:var(--r-font-display);font-size:28px;font-weight:600;letter-spacing:-.5px}
+#driver-ruta-ui .dr-done p{font-size:15px;color:var(--r-text-2);margin-top:10px;line-height:1.5;max-width:280px}
+#driver-ruta-ui .dr-done-card{margin-top:24px;width:100%;max-width:320px;background:var(--r-card);border:1px solid var(--r-border);border-radius:16px;padding:12px 16px}
+#driver-ruta-ui .dr-done-card .row{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
+#driver-ruta-ui .dr-done-card .row span:first-child{color:var(--r-text-2)}
+#driver-ruta-ui .dr-done-card .row span:last-child{font-weight:500}
+#driver-ruta-ui .dr-done .close{margin-top:24px;height:52px;padding:0 24px;border-radius:12px;border:none;background:var(--r-accent);color:#fff;font:inherit;font-size:15px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+/* --- Overview: barra de progreso + pill "compartiendo" + tarjetas maqueta --- */
+#driver-ruta-ui .dr-progress{display:flex;align-items:center;gap:12px;padding:12px 4px 2px}
+#driver-ruta-ui .dr-pbar{flex:0 0 84px;height:6px;border-radius:3px;background:var(--r-surface-2);overflow:hidden;position:relative}
+#driver-ruta-ui .dr-pbar i{position:absolute;left:0;top:0;bottom:0;background:var(--r-a2h);border-radius:3px}
+#driver-ruta-ui .dr-pnum{font-size:12px;font-weight:600;color:var(--r-text-2);font-variant-numeric:tabular-nums}
+#driver-ruta-ui .dr-share{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--r-text-3);background:var(--r-surface-2);padding:5px 11px;border-radius:999px}
+#driver-ruta-ui .dr-share.on{color:var(--r-a2h);background:var(--r-a2h-soft)}
+#driver-ruta-ui .dr-share .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+#driver-ruta-ui .dr-share.on .dot{animation:drpulse 1.6s infinite}
+#driver-ruta-ui .dr-vcard{position:relative;overflow:hidden;padding:16px 16px 14px 20px}
+#driver-ruta-ui .dr-vcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px}
+#driver-ruta-ui .dr-vcard.sal::before{background:var(--r-h2a)}
+#driver-ruta-ui .dr-vcard.lle::before{background:var(--r-a2h)}
+#driver-ruta-ui .dr-vcard.hotel::before{background:var(--r-warn)}
+#driver-ruta-ui .dr-vc-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+#driver-ruta-ui .dr-vc-type{font-size:12px;font-weight:800;letter-spacing:.5px;text-transform:uppercase}
+#driver-ruta-ui .dr-vcard.sal .dr-vc-type{color:var(--r-h2a)}
+#driver-ruta-ui .dr-vcard.lle .dr-vc-type{color:var(--r-a2h)}
+#driver-ruta-ui .dr-vcard.hotel .dr-vc-type{color:var(--r-warn)}
+#driver-ruta-ui .dr-vc-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--r-surface-2);color:var(--r-text-2)}
+#driver-ruta-ui .dr-vc-badge.curso{background:var(--r-h2a-soft);color:var(--r-h2a);display:inline-flex;align-items:center;gap:5px}
+#driver-ruta-ui .dr-vc-badge.curso::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+#driver-ruta-ui .dr-vc-time2{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
+#driver-ruta-ui .dr-vc-when{font-size:13px;color:var(--r-text-2);margin-top:4px}
+#driver-ruta-ui .dr-vc-route2{font-size:15px;font-weight:600;margin-top:8px}
+#driver-ruta-ui .dr-vc-meta{display:flex;align-items:center;gap:14px;margin-top:12px;font-size:12.5px;color:var(--r-text-2)}
+#driver-ruta-ui .dr-vc-meta span{display:inline-flex;align-items:center;gap:5px}
+#driver-ruta-ui .dr-vc-meta .icon{width:14px;height:14px;color:var(--r-text-3)}
+#driver-ruta-ui .dr-vc-meta .chev{margin-left:auto;width:16px;height:16px;color:var(--r-text-3)}
+/* --- Exec: chips row, 2 contactos, notas, distancia, fila Navegar+primario --- */
+#driver-ruta-ui .dr-ex-chips{position:absolute;top:calc(70px + env(safe-area-inset-top));left:16px;right:16px;z-index:10;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#driver-ruta-ui .dr-ex-chip{position:static}
+#driver-ruta-ui .dr-ex-share{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:6px 11px;border-radius:100px;background:var(--r-card);color:var(--r-text-3);box-shadow:0 2px 8px rgba(0,0,0,.14)}
+#driver-ruta-ui .dr-ex-share.on{color:var(--r-a2h)}
+#driver-ruta-ui .dr-ex-share .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+#driver-ruta-ui .dr-ex-share.on .dot{animation:drpulse 1.6s infinite}
+#driver-ruta-ui .dr-aux-btns{display:flex;gap:8px;flex-shrink:0}
+#driver-ruta-ui .dr-cbtn{width:44px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;text-decoration:none;border:none;cursor:pointer;flex:0 0 auto}
+#driver-ruta-ui .dr-cbtn.msg{background:var(--r-a2h-soft);color:var(--r-a2h)}
+#driver-ruta-ui .dr-cbtn.tel{background:var(--r-accent-soft);color:var(--r-accent)}
+#driver-ruta-ui .dr-notes{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:10px;background:var(--r-surface-2);font-size:13px;color:var(--r-text-2);margin-bottom:12px}
+#driver-ruta-ui .dr-notes .icon{width:15px;height:15px;flex:0 0 auto;margin-top:1px}
+#driver-ruta-ui .dr-eta{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:12px;background:var(--r-info-soft);color:var(--r-info);font-size:13px;margin-bottom:12px}
+#driver-ruta-ui .dr-eta .km{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums}
+#driver-ruta-ui .dr-btnrow{display:flex;gap:10px}
+#driver-ruta-ui .dr-btnrow .nav{flex:0 0 auto;height:56px;padding:0 18px;border-radius:14px;border:1px solid var(--r-border-strong);background:var(--r-card);color:var(--r-text);font:inherit;font-size:15px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+#driver-ruta-ui .dr-btnrow .nav .icon{color:var(--r-accent);width:18px;height:18px}
+#driver-ruta-ui .dr-btnrow .dr-cta{flex:1;width:auto}
+#driver-ruta-ui .dr-foot .links{display:inline-flex;gap:14px}

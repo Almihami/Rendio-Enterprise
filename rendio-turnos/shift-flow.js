@@ -200,6 +200,7 @@
           <button id="sf-do-insp" class="tap w-full mt-2 bg-white text-emerald-700 text-sm font-extrabold py-2.5 rounded-lg active:scale-[.98]">Hacer inspección ahora</button>
         </div>` : ''}
         <div class="mt-4 pt-4 border-t border-white/20">
+          <button id="sf-route-btn" class="tap w-full bg-white/15 border border-white/30 text-white text-base font-extrabold py-3.5 rounded-xl active:scale-[.98] flex items-center justify-center gap-2 mb-2.5"><span>🧭</span>Ruta · Trayectos de hoy</button>
           <button id="sf-close-btn" class="tap w-full bg-white text-emerald-700 text-base font-extrabold py-3.5 rounded-xl shadow-sm active:scale-[.98]">Cerrar turno</button>
           <p class="text-[11px] text-white/80 text-center mt-2">Kilometraje final, novedades y comprobantes de tanqueo.</p>
         </div>
@@ -207,6 +208,7 @@
       startElapsedTimer(open.start_at);
       $('#sf-close-btn').addEventListener('click', () => openClose(open));
       $('#sf-do-insp')?.addEventListener('click', () => openCompletion(open));
+      $('#sf-route-btn')?.addEventListener('click', () => { if (window.DriverRutas) DriverRutas.open(sf.profile); });
       return;
     }
     stopElapsedTimer();

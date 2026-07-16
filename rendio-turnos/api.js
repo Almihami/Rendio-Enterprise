@@ -550,6 +550,26 @@
     return out;
   }
 
+  // Quién trabaja por franja el día `day` (YYYY-MM-DD) según el horario PUBLICADO de
+  // esa semana. Para rutas: solo se le puede asignar una vuelta a quien está en turno
+  // a esa hora. Devuelve { am:[{id,n}], pm:[{id,n}], coordAm, coordPm } o null si no
+  // hay horario publicado (el que llama decide el fallback, p.ej. mostrar todos).
+  async function listDriversOnShift(day) {
+    if (!day) return null;
+    const weekStart = (window.Scheduler && Scheduler.startOfWeekISO)
+      ? Scheduler.startOfWeekISO(day)
+      : (() => { const d = new Date(day + 'T00:00:00'); const wd = d.getDay(); d.setDate(d.getDate() - wd + (wd === 0 ? -6 : 1)); d.setHours(0, 0, 0, 0); return d.toISOString().slice(0, 10); })();
+    let sch = null;
+    try { sch = await getSchedule(weekStart); } catch (e) { return null; }
+    if (!sch || !sch.published || !sch.data) return null;
+    const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    const wd = new Date(day + 'T00:00:00').getDay();
+    const cell = sch.data[DAYS[(wd + 6) % 7]] || {};
+    const names = sch.data._names || {};
+    const toDrv = (ids) => [...new Set((ids || []).filter(Boolean))].map(id => ({ id, n: names[id] || 'Conductor' }));
+    return { am: toDrv(cell.morning), pm: toDrv(cell.afternoon), coordAm: toDrv(cell.coord_am), coordPm: toDrv(cell.coord_pm) };
+  }
+
   // Horarios PUBLICADOS con week_start_date en [fromWeek, toWeek] (para Balance).
   async function listPublishedSchedules(fromWeekISO, toWeekISO) {
     const { data, error } = await sb
@@ -1407,7 +1427,7 @@
   async function listMyVueltasForDriver(profileId) {
     const dpid = await getMyDriverProfileId(profileId); if (!dpid) return null;
     const { data, error } = await sb.from('route_assignments')
-      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, auxiliar_profiles(profiles(full_name)), flights(flight_number)))')
+      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)))')
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true });
     if (error) return null;
@@ -1424,12 +1444,23 @@
         const r = s.reservations || {};
         return { name: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar', addr: r.pickup_address || '',
           lat: r.pickup_latitude, lng: r.pickup_longitude, flight: r.flights?.flight_number || '',
-          dl: rtHHMM(r.required_arrival_at), kind: type === 'lle' ? 'dropoff' : 'pickup' };
+          dl: rtHHMM(r.required_arrival_at), kind: type === 'lle' ? 'dropoff' : 'pickup',
+          phone: r.auxiliar_profiles?.profiles?.phone || '', notes: r.notes || '',
+          reservationId: s.reservation_id };
       });
       const air = { name: MDE.name, addr: MDE.addr, lat: MDE.lat, lng: MDE.lng, kind: 'airport' };
       const legs = type === 'lle' ? [air, ...stops] : [...stops, air]; // llegada: sale de MDE; salida: termina en MDE
-      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), done: ra.status === 'completed', legs, assignmentId: ra.id };
+      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), done: ra.status === 'completed', legs, assignmentId: ra.id, day: day0 };
     });
+  }
+
+  // El conductor marca el avance de una parada (recogí / entregué / no-show / etc.).
+  // Escribe el estado en reservations vía RPC SECURITY DEFINER que valida que quien
+  // llama sea el conductor asignado a esa ruta. status ∈ enums reservation_status_*.
+  async function driverSetStopStatus(reservationId, status) {
+    if (!reservationId || !status) return;
+    const { error } = await sb.rpc('driver_set_reservation_status', { p_reservation_id: reservationId, p_status: status });
+    if (error) throw error;
   }
 
   window.Api = {
@@ -1440,7 +1471,7 @@
     listSubmittedDriverIds,
     getWeeklyAvailability, getMyWeeklyAvailability,
     upsertAvailabilityRow, saveDriverWeekAvailability,
-    getSchedule, saveSchedule, deleteSchedule, listPublishedSchedules,
+    getSchedule, saveSchedule, deleteSchedule, listPublishedSchedules, listDriversOnShift,
     getSettings, saveSettings, setAvailabilityReopen,
     listMyApprovalRequests, listPendingApprovals, resolveApproval, runAutoResolve,
     listDriverStrikes, getActiveStrikeCounts, addStrike, voidStrike,
@@ -1458,6 +1489,6 @@
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment,
     getMyAuxiliarProfileId, listMyReservations, createReservation,
-    saveRoutePlan, listMyVueltasForDriver,
+    saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus,
   };
 })();
