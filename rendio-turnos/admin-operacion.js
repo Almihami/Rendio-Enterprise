@@ -12,6 +12,8 @@
   // del aeropuerto ruteaba por la zona de carga/CACOM 5, que es prohibida.
   const OP_MDE = { lat: 6.1715, lng: -75.4270 }; // MDE · terminal de pasajeros
   const OP_COLORS = { ontime: '#16936A', tight: '#C9810F', late: '#D6473B', done: '#9D998F' };
+  // Color por carro (identidad en el mapa y en la tarjeta), en orden estable.
+  const OP_CAR_COLORS = ['#2563A8', '#7C5CD6', '#16936A', '#0EA5E9', '#E2551A', '#8B5CF6'];
   const OP_STLABEL = { ontime: ['A tiempo', 'i-check'], tight: ['Ajustado', 'i-clock'], late: ['Va tarde', 'i-warn'], done: ['Completó', 'i-check'] };
   const OP_VAN_SVG = '<svg viewBox="0 0 24 24"><path d="M3 13V7a1 1 0 0 1 1-1h9l4 4h3a1 1 0 0 1 1 1v2"/><path d="M3 13h19v4H3z"/><circle cx="7.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>';
   // DEMO con coordenadas reales del Oriente antioqueño → MDE. Los auxiliares
@@ -29,7 +31,25 @@
     { k: 'ok', t: '05:02', h: '<b>RD-04</b> completó su ruta y queda disponible.' },
     { k: 'warn', t: '04:58', h: 'Tráfico moderado en la vía Llanogrande–Aeropuerto <i>(demo — tráfico en vivo pendiente de API key)</i>.' },
   ];
-  const opState = { map: null, routeLayer: null, markerLayer: null, markers: {}, cars: [], feed: [], sel: 'RD-03', clockT: 0, timers: [], bound: false };
+  const opState = { map: null, routeLayer: null, markerLayer: null, markers: {}, cars: [], feed: [], sel: 'RD-03', clockT: 0, timers: [], bound: false, source: 'demo', day: null, loading: false, tweens: {}, raf: null };
+  // Cada cuánto se relee la operación real. La posición llega por polling: la
+  // tabla driver_locations se diseñó para Realtime, pero el polling es suficiente
+  // para una flota de 3-4 carros y no exige habilitar replicación.
+  const OP_POLL_MS = 5000;
+  // El marcador se desliza entre DOS reportes REALES (no extrapola: al llegar al
+  // último punto conocido, se queda ahí). Si el hueco entre reportes es mayor que
+  // esto, no sabemos por dónde fue → salta en vez de inventar el trayecto.
+  const OP_TWEEN_MAX_GAP_MS = 30000;
+  // Margen antes de la presentación para considerar la vuelta "ajustada".
+  const OP_TIGHT_MIN = 10;
+  // A partir de aquí un GPS se considera viejo y manda el ancla por evento.
+  const OP_STALE_MS = 2 * 60 * 1000;
+  // El carro brinca de un reporte al siguiente (no interpolamos), pero no hace
+  // falta recalcular ruta/ETA en cada brinco: OSRM es el servidor público de
+  // demo y pide uso ligero. Solo se rehace si el carro se movió de verdad, si
+  // cambió de destino, o si pasó un minuto.
+  const OP_OSRM_MOVE_M = 250;
+  const OP_OSRM_MAX_MS = 60000;
 
   const opIni = (n) => { const p = (n || '').trim().split(/\s+/); return ((p[0] || '')[0] + ((p[1] || p[0] || '')[0] || '')).toUpperCase(); };
   const opToSec = (s) => { const [h, m, sec] = s.split(':').map(Number); return h * 3600 + m * 60 + (sec || 0); };
@@ -45,8 +65,184 @@
     syncOperDelay();
     bindOperOnce();
     startOperTimers();
-    // Dónde se conectaría el dato real cuando exista GPS del conductor:
-    // tryLoadRealOps();  // leería driver_locations / route_assignments activas.
+    loadRealOps(); // si hay rutas publicadas, reemplaza el demo con lo real
+  }
+
+  // ---------------------------------------------------------------------------
+  // DATO REAL — route_assignments activas + driver_locations.
+  // ---------------------------------------------------------------------------
+
+  // Reloj real en hora Colombia (el demo corría un contador falso desde 05:12).
+  const opNowSec = () => {
+    const s = new Date().toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false });
+    return opToSec(s);
+  };
+
+  async function loadRealOps() {
+    if (opState.loading || !(window.Api && Api.listLiveOperation)) return;
+    opState.loading = true;
+    try {
+      const data = await Api.listLiveOperation();
+      if (!data || data.source !== 'live' || !data.cars.length) return; // sin plan publicado → se queda el demo
+      const first = opState.source !== 'live';
+      opState.source = 'live';
+      opState.day = data.day;
+      opState.clockT = opNowSec();
+      const prevById = {};
+      opState.cars.forEach(c => { prevById[c.id] = c; });
+      opState.cars = data.cars.map((c, i) => {
+        const prev = prevById[c.id];
+        const stale = opNeedsOsrm(c, prev); // ¿se movió lo bastante para rehacer ruta/ETA?
+        return {
+          ...c,
+          dc: OP_CAR_COLORS[i % OP_CAR_COLORS.length],
+          // Sin dato nuevo de OSRM, conservamos el semáforo anterior en vez de
+          // parpadear a 'ontime' en cada refresco.
+          state: prev ? prev.state : 'ontime',
+          arrival: prev ? prev.arrival : '—',
+          etaNext: prev ? prev.etaNext : '—',
+          lateMin: prev ? prev.lateMin : null,
+          path: prev ? prev.path : null,
+          _osrmFrom: prev ? prev._osrmFrom : null,
+          _osrmDest: prev ? prev._osrmDest : null,
+          _osrmAt: prev ? prev._osrmAt : 0,
+          _needsOsrm: stale,
+        };
+      });
+      opState.feed = data.feed.length ? data.feed : [{ k: 'info', t: opFmt(opState.clockT).slice(0, 5), h: 'Sin eventos todavía. El feed se llena cuando el conductor marca su avance.' }];
+      if (first || !opState.cars.some(c => c.id === opState.sel)) opState.sel = opState.cars[0].id;
+      await opComputeStates();
+      renderOperCars(); renderOperFeed(); syncOperDelay();
+
+      // Las animaciones se deciden ANTES de pintar: renderOperMarkers saltaría
+      // el marcador al destino y la animación arrancaría desde donde termina.
+      opState.cars.forEach(c => {
+        const prev = prevById[c.id];
+        const m = opState.markers[c.id];
+        if (!m || !c.pos || !prev || !prev.pos || !prev.posAt || !c.posAt) return;
+        if (String(prev.pos) === String(c.pos)) return;      // no reportó nada nuevo
+        const gap = new Date(c.posAt) - new Date(prev.posAt);
+        if (gap <= 0 || gap > OP_TWEEN_MAX_GAP_MS) return;    // hueco largo: no sabemos el trayecto → que salte
+        if (c.posSource === 'anchor') return;                 // el ancla es un salto cierto, no un recorrido
+        // Arranca desde donde el marcador está pintado ahora (puede venir a
+        // mitad de la animación anterior), no desde el reporte viejo.
+        const ll = m.getLatLng();
+        opTween(c.id, [ll.lat, ll.lng], c.pos.slice(), OP_POLL_MS);
+      });
+      renderOperMarkers();
+      // La ruta punteada tiene que salir de donde está el carro AHORA; si solo se
+      // dibujara al principio, el carro se despegaría de su propio trayecto.
+      if (opState.cars.some(c => c._needsOsrm)) fetchOperRoutes();
+      if (first) startOperTimers(); // en vivo: sin animación, solo polling
+    } catch (e) {
+      // Sin red o sin permisos: se queda lo que haya (demo o el último dato).
+    } finally {
+      opState.loading = false;
+    }
+  }
+
+  // Semáforo REAL: ETA por carretera (OSRM) desde donde está el carro hasta el
+  // aeropuerto, contra la hora de presentación del vuelo más próximo.
+  // Solo aplica a las SALIDAS: en una llegada los pasajeros ya aterrizaron y no
+  // hay vuelo que perder, así que no inventamos una alarma.
+  async function opComputeStates() {
+    for (const c of opState.cars) {
+      if (c.done) { c.state = 'done'; c.arrival = c.posAt ? opHHMM(c.posAt) : '—'; continue; }
+      if (!c.pos) { c.state = 'ontime'; c.arrival = '—'; c.etaNext = '—'; continue; }
+      if (!c._needsOsrm) continue; // no se movió lo bastante: vale el cálculo anterior
+      const etaSec = await opEtaSec(c.pos, [OP_MDE.lat, OP_MDE.lng]);
+      c._osrmAt = Date.now();
+      if (etaSec == null || c.type === 'lle' || !c.presAt) {
+        c.state = 'ontime';
+        c.arrival = etaSec != null ? opFmt((opNowSec() + etaSec) % 86400).slice(0, 5) : '—';
+        c.etaNext = c.arrival;
+        continue;
+      }
+      const arrSec = opNowSec() + etaSec;
+      const presSec = opToSec(opHHMM(c.presAt));
+      c.arrival = opFmt(arrSec % 86400).slice(0, 5);
+      c.etaNext = c.arrival;
+      const holgura = (presSec - arrSec) / 60;
+      c.lateMin = Math.max(0, Math.round(-holgura));
+      c.state = holgura < 0 ? 'late' : holgura <= OP_TIGHT_MIN ? 'tight' : 'ontime';
+    }
+  }
+
+  const opHHMM = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false }).slice(0, 5);
+
+  // Metros entre dos [lat,lng] (haversine). Para decidir si el carro se movió
+  // lo bastante como para valer una llamada a OSRM.
+  function opDistM(a, b) {
+    if (!a || !b) return Infinity;
+    const R = 6371000, rad = Math.PI / 180;
+    const dLat = (b[0] - a[0]) * rad, dLng = (b[1] - a[1]) * rad;
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+  }
+
+  // ---------- Movimiento continuo entre dos reportes REALES ----------
+  // El carro reportó en A y luego en B: estuvo de verdad en el medio, así que
+  // deslizarlo de A a B no inventa nada — dibuja la transición. Lo que NO se
+  // hace es seguir moviéndolo después de B (eso sí sería adivinar): al llegar
+  // al último punto conocido se queda quieto hasta el siguiente reporte.
+  //
+  // A 6s entre pings, los puntos quedan a ~100 m: la línea recta entre ellos es
+  // indistinguible de la vía, así que no hace falta rutear cada tramo.
+  function opTween(id, from, to, dur) {
+    opState.tweens[id] = { from, to, t0: (typeof performance !== 'undefined' ? performance.now() : Date.now()), dur: Math.max(400, dur) };
+    opStartRaf();
+  }
+  function opStartRaf() {
+    if (opState.raf) return;
+    const step = () => {
+      const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      let vivos = 0;
+      Object.keys(opState.tweens).forEach(id => {
+        const tw = opState.tweens[id];
+        const m = opState.markers[id];
+        if (!m) { delete opState.tweens[id]; return; }
+        const k = Math.min(1, (now - tw.t0) / tw.dur);
+        m.setLatLng([tw.from[0] + (tw.to[0] - tw.from[0]) * k, tw.from[1] + (tw.to[1] - tw.from[1]) * k]);
+        if (k >= 1) delete opState.tweens[id]; else vivos++;
+      });
+      opState.raf = vivos ? requestAnimationFrame(step) : null;
+    };
+    opState.raf = requestAnimationFrame(step);
+  }
+  function opStopRaf() {
+    if (opState.raf) cancelAnimationFrame(opState.raf);
+    opState.raf = null;
+    opState.tweens = {};
+  }
+
+  // ¿Vale la pena rehacer ruta y ETA de este carro?
+  function opNeedsOsrm(c, prev) {
+    if (!c.pos) return false;
+    if (!prev || !prev._osrmFrom) return true;
+    if (String(prev._osrmDest) !== String(c.nextPos)) return true; // cambió de parada
+    if (Date.now() - (prev._osrmAt || 0) > OP_OSRM_MAX_MS) return true;
+    return opDistM(prev._osrmFrom, c.pos) > OP_OSRM_MOVE_M;
+  }
+
+  // Segundos de viaje por carretera entre dos puntos. null si OSRM no responde
+  // (preferimos no mostrar semáforo a mostrar uno inventado con línea recta).
+  async function opEtaSec(from, to) {
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=false`;
+      const j = await (await fetch(url)).json();
+      return j.routes && j.routes[0] ? Math.round(j.routes[0].duration) : null;
+    } catch (e) { return null; }
+  }
+
+  // Frescura de la posición: el admin tiene que saber si ve un dato vivo o una
+  // foto vieja. Un punto de hace 20 min no es "dónde está", es "dónde estuvo".
+  function opFreshness(c) {
+    if (!c.pos || !c.posAt) return { txt: 'sin ubicación aún', cls: 'stale' };
+    const age = Date.now() - new Date(c.posAt).getTime();
+    const min = Math.floor(age / 60000);
+    const rel = age < 45000 ? 'ahora' : min < 60 ? `hace ${min} min` : `hace ${Math.floor(min / 60)} h`;
+    const src = c.posSource === 'anchor' ? 'última parada' : 'GPS';
+    return { txt: `${src} · ${rel}`, cls: age > OP_STALE_MS ? 'stale' : 'fresh' };
   }
 
   function initOperMap() {
@@ -74,33 +270,72 @@
 
   function renderOperMarkers() {
     if (!opState.map) return;
-    opState.markerLayer.clearLayers();
-    opState.markers = {};
+    const vivos = {};
     opState.cars.forEach(c => {
       if (c.state === 'done') return;
+      // Sin posición reportada no hay marcador: un carro puesto "por si acaso"
+      // en un punto cualquiera es peor que un carro ausente.
+      if (!c.pos) return;
+      vivos[c.id] = true;
       const col = OP_COLORS[c.state];
       const selCss = c.id === opState.sel ? 'outline:3px solid #E2551A;outline-offset:2px;' : '';
-      const html = `<div class="op-marker ${c.state}"><div class="op-mk-body" style="background:${col};${selCss}">${OP_VAN_SVG}</div></div>`;
-      const m = L.marker(c.pos, { icon: L.divIcon({ className: '', html, iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: c.state === 'late' ? 1000 : 0 })
-        .addTo(opState.markerLayer).bindTooltip(`${c.id} · ${c.driver} · llega ${c.arrival}`);
+      const stale = opState.source === 'live' && opFreshness(c).cls === 'stale' ? ' stale' : '';
+      const html = `<div class="op-marker ${c.state}${stale}"><div class="op-mk-body" style="background:${col};${selCss}">${OP_VAN_SVG}</div></div>`;
+      const tip = opState.source === 'live'
+        ? `${c.id} · ${c.driver} · ${opFreshness(c).txt}`
+        : `${c.id} · ${c.driver} · llega ${c.arrival}`;
+      const icon = L.divIcon({ className: '', html, iconSize: [30, 30], iconAnchor: [15, 15] });
+
+      // Si el marcador ya existe se MUEVE, no se recrea: recrearlo en cada
+      // refresco hace parpadear el mapa y cierra el tooltip abierto.
+      const ex = opState.markers[c.id];
+      if (ex) {
+        // Si hay animación en curso, la posición la maneja el rAF: pisarla aquí
+        // teletransportaría el carro al destino y mataría el deslizamiento.
+        if (!opState.tweens[c.id]) ex.setLatLng(c.pos);
+        if (ex._opHtml !== html) { ex.setIcon(icon); ex._opHtml = html; }
+        ex.setZIndexOffset(c.state === 'late' ? 1000 : 0);
+        ex.setTooltipContent(tip);
+        return;
+      }
+      const m = L.marker(c.pos, { icon, zIndexOffset: c.state === 'late' ? 1000 : 0 })
+        .addTo(opState.markerLayer).bindTooltip(tip);
+      m._opHtml = html;
       m.on('click', () => { opState.sel = c.id; renderOperCars(); renderOperMarkers(); });
       opState.markers[c.id] = m;
+    });
+    // Carros que ya no van en el mapa (terminaron o perdieron posición).
+    Object.keys(opState.markers).forEach(id => {
+      if (vivos[id]) return;
+      try { opState.markerLayer.removeLayer(opState.markers[id]); } catch (_) {}
+      delete opState.markers[id];
     });
   }
 
   async function fetchOperRoutes() {
+    // En vivo se redibujan TODAS las líneas (la capa es una sola), pero solo se
+    // vuelve a pedir a OSRM la de los carros que se movieron.
+    if (opState.source === 'live' && opState.routeLayer) opState.routeLayer.clearLayers();
     for (const c of opState.cars) {
-      if (c.state === 'done') continue;
+      if (c.state === 'done' || !c.pos) continue;
       const col = OP_COLORS[c.state];
+      // El trayecto que importa es hacia donde va: la próxima parada si la hay,
+      // el aeropuerto si ya no quedan recogidas.
+      const dest = (opState.source === 'live' && c.nextPos) ? c.nextPos : [OP_MDE.lat, OP_MDE.lng];
+      if (opState.source === 'live' && !c._needsOsrm && c.path) {
+        try { L.polyline(c.path, { color: col, weight: 3.5, opacity: 0.6, dashArray: '7 8' }).addTo(opState.routeLayer); } catch (_) {}
+        continue;
+      }
+      c._osrmFrom = c.pos.slice(); c._osrmDest = dest;
       try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${c.pos[1]},${c.pos[0]};${OP_MDE.lng},${OP_MDE.lat}?overview=full&geometries=geojson`;
+        const url = `https://router.project-osrm.org/route/v1/driving/${c.pos[1]},${c.pos[0]};${dest[1]},${dest[0]}?overview=full&geometries=geojson`;
         const j = await (await fetch(url)).json();
         const coords = j.routes[0].geometry.coordinates.map(p => [p[1], p[0]]); // [lat,lng]
         c.path = coords; c.prog = 0;
         L.polyline(coords, { color: col, weight: 3.5, opacity: 0.6, dashArray: '7 8' }).addTo(opState.routeLayer);
       } catch (e) {
         // Sin OSRM: línea recta como respaldo (la ETA real necesitaría el router).
-        c.path = [c.pos.slice(), [OP_MDE.lat, OP_MDE.lng]];
+        c.path = [c.pos.slice(), dest.slice()];
         try { L.polyline(c.path, { color: col, weight: 3, opacity: 0.45, dashArray: '4 9' }).addTo(opState.routeLayer); } catch (_) {}
       }
     }
@@ -112,6 +347,9 @@
     const next = c.state !== 'done'
       ? `<div class="op-cc-next"><svg class="icon"><use href="#i-pin"/></svg><span>Próx: <b>${c.next}</b></span><span class="eta ${etaCls}">${c.etaNext}</span></div>`
       : `<div class="op-cc-next"><svg class="icon"><use href="#i-check"/></svg><span>Llegó ${c.arrival} · sin pendientes</span></div>`;
+    // En vivo mostramos de dónde salió el punto y qué tan viejo es.
+    const fr = opState.source === 'live' ? opFreshness(c) : null;
+    const fresh = fr ? `<div class="op-cc-fresh ${fr.cls}"><span class="op-cc-freshdot"></span>${fr.txt}</div>` : '';
     return `<div class="op-cc ${c.state} ${c.id === opState.sel ? 'sel' : ''}" data-car="${c.id}">
       <div class="op-cc-top">
         <span class="op-cc-dot" style="background:${c.dc}"><svg class="icon"><use href="#i-van"/></svg></span>
@@ -123,6 +361,7 @@
         <span class="op-cc-pax"><svg class="icon"><use href="#i-users"/></svg>${c.pax}/${c.cap}</span>
       </div>
       ${next}
+      ${fresh}
     </div>`;
   }
 
@@ -156,7 +395,10 @@
     if (!box) return;
     if (late) {
       const t = document.getElementById('oper-delayTitle'); if (t) t.textContent = `${late.id} va tarde para el vuelo ${late.flight}`;
-      const s = document.getElementById('oper-delaySub'); if (s) s.textContent = `Llegaría ${late.arrival} · presentación ${late.pres} — 8 min tarde para ${late.next.split(' · ')[0]}`;
+      const s = document.getElementById('oper-delaySub');
+      // El atraso sale de la ETA real, no de un número escrito a mano.
+      const mins = late.lateMin != null ? late.lateMin : 8;
+      if (s) s.textContent = `Llegaría ${late.arrival} · presentación ${late.pres} — ${mins} min tarde para ${late.next.split(' · ')[0]}`;
       box.classList.add('show');
     } else box.classList.remove('show');
   }
@@ -164,6 +406,23 @@
   function resolveOperLate(method) {
     const late = opState.cars.find(c => c.state === 'late');
     if (!late) return;
+
+    // En vivo no se simula nada. Llamar al conductor sí es real; re-optimizar y
+    // reasignar todavía no están conectados y decirlo es mejor que fingirlo:
+    // el admin estaría decidiendo sobre una operación de verdad.
+    if (opState.source === 'live') {
+      if (method === 'call') {
+        const tel = (late.driverPhone || '').replace(/\s/g, '');
+        if (tel) { window.open('tel:' + tel); opPushFeed('info', `Llamada al conductor de <b>${late.id}</b> (${late.driver}).`); }
+        else toast('Ese conductor no tiene teléfono registrado.');
+        return;
+      }
+      toast(method === 'reopt'
+        ? 'Re-optimizar en vivo todavía no está conectado.'
+        : 'Reasignar una parada en vivo todavía no está conectado.');
+      return;
+    }
+
     late.state = 'tight'; late.arrival = '05:38'; late.etaNext = '05:24';
     renderOperCars(); renderOperMarkers(); syncOperDelay();
     if (method === 'reopt') { opPushFeed('ok', `Re-optimización: <b>${late.id}</b> ahora llega 05:38 — a tiempo para ${late.flight}.`); toast('Rutas re-optimizadas. RD-03 ya llega a tiempo.'); }
@@ -175,12 +434,29 @@
     stopOperTimers();
     const clk = setInterval(() => {
       if (state.activeTab !== 'oper') { stopOperTimers(); return; }
-      opState.clockT += 1;
+      opState.clockT = opState.source === 'live' ? opNowSec() : opState.clockT + 1;
       const el = document.getElementById('oper-clock'); if (el) el.textContent = opFmt(opState.clockT);
     }, 1000);
+    opState.timers = [clk];
+
+    if (opState.source === 'live') {
+      // En vivo NO se anima: el carro se queda donde de verdad reportó. Deslizarlo
+      // por la ruta sería inventar una posición, y el admin decide con esto.
+      // La frescura de la tarjeta dice si el punto está vivo o viejo.
+      opState.timers.push(setInterval(() => {
+        if (state.activeTab !== 'oper') { stopOperTimers(); return; }
+        loadRealOps();
+      }, OP_POLL_MS));
+      // Refresca solo las etiquetas de frescura entre polls.
+      opState.timers.push(setInterval(() => {
+        if (state.activeTab !== 'oper') { stopOperTimers(); return; }
+        renderOperCars();
+      }, 20000));
+      return;
+    }
+
     const mv = setInterval(() => {
       if (state.activeTab !== 'oper') { stopOperTimers(); return; }
-      let moved = false;
       opState.cars.forEach(c => {
         if (c.state === 'done' || !c.path || c.path.length < 2) return;
         const step = (c.path.length - 1) / 90; // recorre la ruta en ~90 ticks
@@ -190,15 +466,14 @@
         const f = c.prog - seg, a = c.path[seg], b = c.path[seg + 1];
         c.pos = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
         const m = opState.markers[c.id]; if (m) m.setLatLng(c.pos);
-        moved = true;
       });
-      if (!moved) { /* todos llegaron */ }
     }, 1100);
-    opState.timers = [clk, mv];
+    opState.timers.push(mv);
   }
   function stopOperTimers() {
     (opState.timers || []).forEach(t => clearInterval(t));
     opState.timers = [];
+    opStopRaf();
   }
 
   function bindOperOnce() {

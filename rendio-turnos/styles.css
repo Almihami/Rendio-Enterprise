@@ -2008,6 +2008,15 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #oper-ui .op-cc-next b{color:var(--ink);font-weight:700}
 #oper-ui .op-cc-next .eta{margin-left:auto;font-family:var(--mono);font-weight:700}
 #oper-ui .op-cc-next .eta.late{color:var(--red)} #oper-ui .op-cc-next .eta.tight{color:var(--amber)}
+/* Frescura de la posición: de dónde salió el punto y hace cuánto. Solo en vivo. */
+#oper-ui .op-cc-fresh{margin-top:6px;display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--ink3)}
+#oper-ui .op-cc-freshdot{width:5px;height:5px;border-radius:3px;background:var(--green);flex:none}
+#oper-ui .op-cc-fresh.fresh .op-cc-freshdot{animation:opPulse 1.8s infinite}
+#oper-ui .op-cc-fresh.stale{color:var(--amber)}
+#oper-ui .op-cc-fresh.stale .op-cc-freshdot{background:var(--amber);animation:none}
+/* Punto viejo = carro translúcido: se ve que es una foto, no el ahora. */
+#oper-ui .op-marker.stale{opacity:.55}
+@keyframes opPulse{0%,100%{opacity:1}50%{opacity:.25}}
 
 /* CENTRO: mapa real */
 #oper-ui .op-mapwrap{position:relative;overflow:hidden;background:#EAE7E0;min-width:0}

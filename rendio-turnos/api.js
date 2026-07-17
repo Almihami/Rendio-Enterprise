@@ -1457,10 +1457,159 @@
   // El conductor marca el avance de una parada (recogí / entregué / no-show / etc.).
   // Escribe el estado en reservations vía RPC SECURITY DEFINER que valida que quien
   // llama sea el conductor asignado a esa ruta. status ∈ enums reservation_status_*.
+  // Desde 0045 la misma RPC llena route_stops y deja el ancla de posición.
   async function driverSetStopStatus(reservationId, status) {
     if (!reservationId || !status) return;
     const { error } = await sb.rpc('driver_set_reservation_status', { p_reservation_id: reservationId, p_status: status });
     if (error) throw error;
+  }
+
+  // ---------------------------------------------------------------------------
+  // OPERACIÓN EN VIVO
+  // ---------------------------------------------------------------------------
+
+  // El conductor reporta su GPS. Best-effort: si falla, se traga el error — el
+  // ancla por evento (0045) es la red de seguridad, no queremos romper la ruta
+  // del conductor porque un ping no entró.
+  async function sendDriverLocation(driverProfileId, lat, lng, opts) {
+    if (!driverProfileId || !isFinite(lat) || !isFinite(lng)) return;
+    const o = opts || {};
+    const row = { driver_profile_id: driverProfileId, latitude: lat, longitude: lng, source: 'gps' };
+    if (o.routeAssignmentId) row.route_assignment_id = o.routeAssignmentId;
+    if (isFinite(o.heading)) row.heading = o.heading;
+    if (isFinite(o.speedKmh)) row.speed_kmh = o.speedKmh;
+    const { error } = await sb.from('driver_locations').insert(row);
+    if (error) throw error;
+  }
+
+  // Etiqueta legible del avance de un carro, según el estado de sus paradas.
+  function _opStatusLabel(stops, type) {
+    const pend = stops.filter(s => s.status === 'pending');
+    const arrived = stops.some(s => s.status === 'arrived');
+    const onboard = stops.filter(s => s.status === 'picked_up').length;
+    if (!pend.length && !arrived && !onboard) return type === 'lle' ? 'Entregó a todos' : 'Completó';
+    if (arrived) return 'Recogiendo';
+    if (onboard && !pend.length) return type === 'lle' ? 'A bordo · llevando' : 'A bordo · llegando';
+    if (onboard) return 'En ruta · con pasajeros';
+    return 'En ruta';
+  }
+
+  // Operación en vivo para el admin: las vueltas activas del día operativo más
+  // próximo, con la última posición conocida de cada conductor.
+  //
+  // La posición sale de driver_locations, que mezcla dos fuentes (0045):
+  //   source='gps'    → ping del dispositivo (continuo, poco fiable)
+  //   source='anchor' → evento de estado del conductor (discreto, pero cierto)
+  // Gana la más reciente por recorded_at; el admin muestra la frescura para no
+  // creerle ciegamente a un punto viejo.
+  async function listLiveOperation() {
+    const { data, error } = await sb
+      .from('route_assignments')
+      .select('id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profiles(full_name, phone)), route_stops(stop_order, status, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, auxiliar_profiles(profiles(full_name)), flights(flight_number)))')
+      .in('status', ['planned', 'in_progress'])
+      .order('planned_start_at');
+    if (error) throw error;
+
+    const today = _bogDay(new Date().toISOString());
+    const active = (data || []).filter(ra => ra.planned_start_at && _bogDay(ra.planned_start_at) >= today);
+    if (!active.length) return { source: 'empty', day: null, cars: [], feed: [] };
+    const day0 = _bogDay(active[0].planned_start_at);
+    const rows = active.filter(ra => _bogDay(ra.planned_start_at) === day0);
+
+    // Última posición por conductor (una sola consulta para todos).
+    const driverIds = [...new Set(rows.map(r => r.driver_profile_id).filter(Boolean))];
+    const posOf = {};
+    if (driverIds.length) {
+      const { data: locs } = await sb
+        .from('driver_locations')
+        .select('driver_profile_id, latitude, longitude, source, recorded_at, route_assignment_id')
+        .in('driver_profile_id', driverIds)
+        .order('recorded_at', { ascending: false })
+        .limit(400);
+      // Vienen ordenadas desc: la primera de cada conductor es la más reciente.
+      (locs || []).forEach(l => { if (!posOf[l.driver_profile_id]) posOf[l.driver_profile_id] = l; });
+    }
+
+    const nameOf = (s) => s.reservations?.auxiliar_profiles?.profiles?.full_name || 'Auxiliar';
+    const shortName = (n) => { const p = n.split(/\s+/); return p[0] + (p[1] ? ' ' + p[1][0] + '.' : ''); };
+    const stopsOf = (ra) => (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order);
+    const raDone = (ra) => !stopsOf(ra).some(s => s.status === 'pending' || s.status === 'arrived' || s.status === 'picked_up');
+
+    // Feed real: los eventos que YA ocurrieron, con su hora real. Sale de todas
+    // las vueltas del día, no solo de la que el carro tiene ahora.
+    const feed = [];
+    rows.forEach(ra => {
+      const plate = ra.vehicles?.license_plate || ra.vehicles?.internal_code || 'Carro';
+      stopsOf(ra).forEach(s => {
+        const who = shortName(nameOf(s));
+        if (s.actual_pickup_at) feed.push({ at: s.actual_pickup_at, k: 'ok', h: `<b>${plate}</b> recogió a ${who}.` });
+        if (s.actual_dropoff_at) feed.push({ at: s.actual_dropoff_at, k: 'ok', h: `<b>${plate}</b> entregó a ${who}.` });
+        if (s.status === 'no_show' && s.actual_arrival_at) feed.push({ at: s.actual_arrival_at, k: 'bad', h: `<b>${plate}</b> reportó que ${who} no se presentó.` });
+      });
+    });
+
+    // La pantalla monitorea CARROS, no vueltas: un carro hace varias vueltas al
+    // día y cambia de conductor en el relevo AM→PM. Cada tarjeta muestra la
+    // vuelta que el carro tiene ENTRE MANOS (la primera sin terminar), y el
+    // conductor de esa vuelta — que es quien lo lleva ahora.
+    const byVeh = new Map();
+    rows.forEach(ra => {
+      const k = ra.vehicle_id || ra.id;
+      if (!byVeh.has(k)) byVeh.set(k, []);
+      byVeh.get(k).push(ra);
+    });
+
+    const cars = [...byVeh.values()].map((ras, i) => {
+      const activa = ras.find(ra => !raDone(ra)) || ras[ras.length - 1];
+      const type = activa.direction === 'airport_to_home' ? 'lle' : 'sal';
+      const stops = stopsOf(activa);
+      const v = activa.vehicles || {};
+
+      const nextStop = stops.find(s => s.status === 'pending' || s.status === 'arrived');
+      const onboard = stops.filter(s => s.status === 'picked_up').length;
+      // El carro terminó el día solo si TODAS sus vueltas están cerradas.
+      const done = ras.every(raDone);
+
+      // Presentación = el pasajero pendiente con la hora límite más temprana.
+      const pend = stops.filter(s => s.status !== 'delivered' && s.status !== 'no_show');
+      const presAt = pend.map(s => s.reservations?.required_arrival_at).filter(Boolean).sort()[0] || null;
+      const flight = (nextStop || stops[0])?.reservations?.flights?.flight_number || '—';
+
+      const loc = posOf[activa.driver_profile_id];
+
+      return {
+        id: v.license_plate || v.internal_code || ('RD-' + String(i + 1).padStart(2, '0')),
+        assignmentId: activa.id,
+        vueltasHoy: ras.length,
+        driver: activa.driver_profiles?.profiles?.full_name || 'Sin conductor',
+        driverPhone: activa.driver_profiles?.profiles?.phone || '',
+        driverProfileId: activa.driver_profile_id,
+        type,
+        cap: v.capacity || 4,
+        pax: onboard,
+        paxTotal: stops.length,
+        flight,
+        pres: presAt ? rtHHMM(presAt) : '—',
+        presAt,
+        next: nextStop ? `${shortName(nameOf(nextStop))} · ${(nextStop.reservations?.pickup_address || '').split(',')[0]}` : (type === 'lle' ? 'Entregas pendientes' : 'Aeropuerto MDE'),
+        nextPos: nextStop && nextStop.reservations?.pickup_latitude
+          ? [nextStop.reservations.pickup_latitude, nextStop.reservations.pickup_longitude]
+          : null,
+        status: done ? 'Disponible' : _opStatusLabel(stops, type),
+        done,
+        pos: loc ? [loc.latitude, loc.longitude] : null,
+        posSource: loc ? loc.source : null,
+        posAt: loc ? loc.recorded_at : null,
+      };
+    });
+
+    feed.sort((a, b) => (a.at < b.at ? 1 : -1));
+    return {
+      source: 'live',
+      day: day0,
+      cars,
+      feed: feed.slice(0, 12).map(e => ({ k: e.k, t: rtHHMM(e.at), h: e.h })),
+    };
   }
 
   window.Api = {
@@ -1490,5 +1639,6 @@
     listRoutePlanning, saveRouteAssignment,
     getMyAuxiliarProfileId, listMyReservations, createReservation,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus,
+    sendDriverLocation, listLiveOperation,
   };
 })();

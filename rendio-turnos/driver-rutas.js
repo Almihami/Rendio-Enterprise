@@ -21,10 +21,16 @@
   ];
 
   const drState = {
-    profile: null, source: 'demo',
+    profile: null, source: 'demo', driverProfileId: null,
     vueltas: [], view: 'overview', activeId: null, legIdx: 0, legState: 'en_camino',
     map: null, watchId: null, sharing: false, bound: false, _lastDone: null,
+    lastPingAt: 0,
   };
+  // Cada cuánto se escribe la posición. Cada carro tiene su propio celular con
+  // cargador (no hay que cuidar batería), así que se reporta seguido: a 6s y
+  // 60 km/h son ~100 m entre puntos, y el admin los une con una animación que
+  // se ve continua. La retención de 7 días (mig 0046) le pone techo a la tabla.
+  const DR_PING_MS = 6000;
 
   window.DriverRutas = { open: drOpen, close: drClose };
   const drHost = () => document.getElementById('driver-ruta-root');
@@ -42,6 +48,11 @@
     drState.vueltas = (vueltas && vueltas.length)
       ? vueltas
       : DR_DEMO_VUELTAS.map(v => ({ ...v, legs: v.legs.map(l => ({ ...l })) }));
+    // driver_locations referencia driver_profiles(id), no profiles(id).
+    drState.driverProfileId = null;
+    if (drState.source === 'live' && window.Api && Api.getMyDriverProfileId) {
+      try { drState.driverProfileId = await Api.getMyDriverProfileId(profile.id); } catch (e) {}
+    }
     drBindOnce();
     drRender();
   }
@@ -320,11 +331,31 @@
   }
 
   // ---------- GPS en vivo ----------
+  // Cada ping alimenta el mapa del admin. Es best-effort a propósito: si el GPS
+  // falla o el insert no entra, el ancla por evento (mig 0045) sigue moviendo el
+  // carro cuando el conductor marca "llegué"/"a bordo".
+  function drPushGps(p) {
+    drState.sharing = true;
+    drUpdateLiveBadge();
+    if (drState.source !== 'live' || !drState.driverProfileId) return;
+    if (!(window.Api && Api.sendDriverLocation)) return;
+    const now = Date.now();
+    if (now - drState.lastPingAt < DR_PING_MS) return;
+    drState.lastPingAt = now;
+    const c = p && p.coords; if (!c) return;
+    const v = drVuelta();
+    Api.sendDriverLocation(drState.driverProfileId, c.latitude, c.longitude, {
+      routeAssignmentId: v && v.assignmentId,
+      heading: c.heading,
+      // La API del navegador da m/s; la tabla guarda km/h.
+      speedKmh: isFinite(c.speed) && c.speed != null ? c.speed * 3.6 : undefined,
+    }).catch(() => {});
+  }
   function drStartGps() {
     if (drState.sharing || !navigator.geolocation) { drState.sharing = !!navigator.geolocation && drState.sharing; return; }
     try {
       drState.watchId = navigator.geolocation.watchPosition(
-        () => { drState.sharing = true; drUpdateLiveBadge(); /* TODO(BD): Api.sendDriverLocation → driver_locations */ },
+        drPushGps,
         () => { drState.sharing = false; drUpdateLiveBadge(); },
         { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
       );
