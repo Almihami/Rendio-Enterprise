@@ -1374,6 +1374,29 @@
     return data.id;
   }
 
+  // Rastreo EN VIVO de UNA reserva para su dueño (auxiliar). Vía RPC SECURITY
+  // DEFINER (0047): valida ownership y devuelve la última posición conocida del
+  // conductor (gps/ancla), su identidad y el avance real. Devuelve:
+  //   null                              → no es suya / sin sesión / RPC ausente
+  //   { assigned:false, raw_status,… }  → aún sin ruta activa (no hay conductor)
+  //   { assigned:true, driver, plate, pos:{lat,lng,source,at}|null, stop_status,…}
+  async function trackReservation(reservationId) {
+    if (!reservationId) return null;
+    const { data, error } = await sb.rpc('auxiliar_track_reservation', { p_reservation_id: reservationId });
+    if (error) return null;
+    return data || null;
+  }
+
+  // El auxiliar dueño califica su reserva (1-5 + etiquetas). RPC de 0048.
+  async function rateReservation(reservationId, rating, tags) {
+    if (!reservationId || !rating) return false;
+    const { error } = await sb.rpc('auxiliar_rate_reservation', {
+      p_reservation_id: reservationId, p_rating: rating, p_tags: (tags && tags.length) ? tags : null,
+    });
+    if (error) throw error;
+    return true;
+  }
+
   // Crea la cabecera de una ruta (borrador → con conductor). Defensivo: si las
   // columnas de 0040 (driver/vehicle nullable, estado 'draft') no existen aún,
   // el error se propaga y la UI lo ignora. Las route_stops (que requieren
@@ -1388,6 +1411,17 @@
     const { data, error } = await sb.from('route_assignments').insert(payload).select('id').single();
     if (error) throw error;
     return data ? data.id : null;
+  }
+
+  // Resuelve reservationIds → profile_id de sus auxiliares (para notificar por
+  // push al publicar el plan). Admin RLS: lee reservations de su org + el
+  // auxiliar_profiles anidado (p_auxiliar_profiles_select_admin).
+  async function auxiliarUserIdsForReservations(ids) {
+    if (!ids || !ids.length) return [];
+    const { data, error } = await sb.from('reservations')
+      .select('auxiliar_profiles(profile_id)').in('id', ids);
+    if (error) return [];
+    return [...new Set((data || []).map(r => r.auxiliar_profiles?.profile_id).filter(Boolean))];
   }
 
   // ---- Persistir el plan del día (admin) y leerlo (conductor) ----
@@ -1637,8 +1671,8 @@
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment,
-    getMyAuxiliarProfileId, listMyReservations, createReservation,
-    saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus,
+    getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,
+    saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
     sendDriverLocation, listLiveOperation,
   };
 })();

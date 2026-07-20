@@ -603,6 +603,32 @@
       toast(withDriver
         ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado). Los conductores ya lo ven.`
         : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.`);
+      // Push "conductor asignado" a los auxiliares de las vueltas CON conductor.
+      // Best-effort: el plan ya quedó publicado aunque el push falle.
+      try {
+        const resIds = lanes.filter(l => l.driverProfileId).flatMap(l => l.stops || []);
+        if (resIds.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
+          const profileIds = await Api.auxiliarUserIdsForReservations(resIds);
+          if (profileIds.length) await Api.sendPush({
+            profileIds,
+            title: 'Conductor asignado 🚗',
+            body: 'Ya tienes conductor para tu traslado. Ábrelo para seguirlo en vivo.',
+            url: '/',
+          });
+        }
+      } catch (_) {}
+      // Push "ruta asignada" al CONDUCTOR de cada vuelta con conductor. Su
+      // driverProfileId aquí es el id de PERFIL (lo que indexa las suscripciones
+      // push), no el de driver_profiles. Best-effort, igual que el de arriba.
+      try {
+        const driverIds = [...new Set(lanes.map(l => l.driverProfileId).filter(Boolean))];
+        if (driverIds.length && Api.sendPush) await Api.sendPush({
+          profileIds: driverIds,
+          title: 'Ruta asignada 🗺️',
+          body: 'Se te asignó una ruta de traslados para tu turno. La verás al iniciar tu turno.',
+          url: '/',
+        });
+      } catch (_) {}
     } catch (e) { toast('No se pudo publicar: ' + (e.message || 'error')); }
     $('#rt-saveBtn').innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicar plan';
   }

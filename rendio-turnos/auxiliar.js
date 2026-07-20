@@ -24,6 +24,9 @@
     profile: null, view: 'home', step: 1, form: {}, trips: [], editingTrip: null,
     map: null, marker: null, geoTimer: null, geoReq: 0, bound: false,
     trackTimer: null, trackMap: null, ratingSel: 0, ratingTags: [], source: 'demo',
+    // Seguimiento EN VIVO (source==='live'): polling del RPC + tween del carro.
+    trackPoll: null, trackTween: null, trackCar: null, trackLine: null,
+    trackLast: null, trackDestPt: null,
   };
 
   window.Auxiliar = { init: auxInit };
@@ -127,8 +130,47 @@
       pending:  { cls: 'warn', label: 'Sin rutear' },
       assigned: { cls: 'ok',   label: 'Conductor asignado' },
       onway:    { cls: 'ok',   label: 'En camino' },
+      onboard:  { cls: 'ok',   label: 'A bordo' },
       done:     { cls: 'muted',label: 'Completado' },
     })[s] || { cls: 'muted', label: s };
+  }
+  // Estado crudo de la reserva (BD) → estado simple de la UI. Espejo de
+  // api.js/_auxTripStatus; lo usa el rastreo en vivo para avanzar de pantalla.
+  const AUX_ORDER = { pending: 0, assigned: 1, onway: 2, onboard: 3, done: 4 };
+  function auxUiStatus(raw) {
+    if (['assigned', 'driver_assigned', 'ready'].includes(raw)) return 'assigned';
+    if (['en_route', 'at_pickup'].includes(raw)) return 'onway';
+    if (['on_board', 'picked_up', 'en_route_home'].includes(raw)) return 'onboard';
+    if (raw === 'delivered') return 'done';
+    return 'pending';
+  }
+
+  // ¿El viaje va tarde? SIN ETA de OSRM (decisión de la profa): usamos la regla
+  // operativa real (recogida ~1h antes de la presentación en salidas) + el estado
+  // real de la parada. Es honesto: mide contra el horario, no inventa un ETA vivo.
+  function auxLateness(t, info) {
+    if (!t || !['assigned', 'onway'].includes(t.status)) return null; // solo con conductor
+    const t0 = new Date(t.date + 'T' + (t.time || '00:00') + ':00-05:00').getTime();
+    if (isNaN(t0)) return null;
+    if (info && info.stop_status === 'picked_up') return null; // ya lo recogieron
+    const now = Date.now(), MIN = 60000;
+    if (t.type === 'sal') {
+      const pickupBy = t0 - 60 * MIN;                 // recogida ~1h antes de presentación
+      if (now > t0)       return { level: 'late', text: 'Vas retrasado para tu presentación.' };
+      if (now > pickupBy) return { level: 'late', text: 'El conductor va sobre el tiempo de recogida.' };
+      if (now > pickupBy - 15 * MIN) return { level: 'warn', text: 'Vas justo de tiempo — mantente atento.' };
+      return { level: 'ok', text: 'Vas a tiempo.' };
+    }
+    // llegada: ya aterrizaste; el conductor viene a recogerte.
+    if (now > t0 + 15 * MIN) return { level: 'warn', text: 'El conductor va en camino a recogerte.' };
+    return { level: 'ok', text: 'A tiempo.' };
+  }
+  function auxLateHTML(t, info) {
+    const l = auxLateness(t, info); if (!l) return '';
+    return `<div class="ax-late ${l.level}"><svg class="icon"><use href="#${l.level === 'ok' ? 'i-check' : 'i-info'}"/></svg>${l.text}</div>`;
+  }
+  function auxRefreshLate(t) {
+    const el = document.getElementById('ax-late-wrap'); if (el) el.innerHTML = auxLateHTML(t, t._info);
   }
 
   // ---------- tabs inferiores ----------
@@ -364,9 +406,11 @@
     return `<div class="ax-form-head"><button class="ax-icbtn" data-ax="home"><svg class="icon"><use href="#i-back"/></svg></button><b>${title}</b><span></span></div>`;
   }
   function auxDriverCard(d, showEta) {
+    d = d || {};
+    const meta = 'Carro ' + (d.plate || '—') + (d.rating ? ' · ★ ' + d.rating : '');
     return `<div class="ax-driver">
-      <span class="ax-driver-av">${d.name[0] || 'C'}</span>
-      <div><b>${d.name}</b><span>Carro ${d.plate} · ★ ${d.rating}</span></div>
+      <span class="ax-driver-av">${(d.name || 'C')[0]}</span>
+      <div><b>${d.name || 'Tu conductor'}</b><span>${meta}</span></div>
       <div class="ax-driver-acts">
         <button class="ax-icbtn sm" data-ax="call" title="Llamar"><svg class="icon"><use href="#i-phone"/></svg></button>
         ${showEta && d.eta ? `<span class="ax-eta">recogida<br><b>${d.eta}</b></span>` : ''}
@@ -384,6 +428,7 @@
           <span class="ax-chip ${m.cls}"><svg class="icon"><use href="#${m.ic}"/></svg>${m.label}</span>
           <div class="ax-status ${st.cls}">${st.label}</div>
         </div>
+        <div id="ax-late-wrap">${auxLateHTML(t, t._info)}</div>
         <div class="ax-sum">
           <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Te recogen en' : 'Te recogen en'}</span><b>${t.type === 'lle' ? 'MDE' : auxShortAddr(t.address)}</b></div>
           <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Te dejan en' : 'Destino'}</span><b>${t.type === 'lle' ? auxShortAddr(t.address) : 'MDE'}</b></div>
@@ -407,8 +452,10 @@
       ${auxTripHead('Conductor en camino')}
       <div id="ax-track-map" class="ax-track-map"></div>
       <div class="ax-track-sheet">
-        <div class="ax-eta-hero"><span>Llega en</span><b id="ax-eta-min">— min</b></div>
+        <div class="ax-eta-hero"><span id="ax-eta-label">Llega en</span><b id="ax-eta-min">— min</b></div>
+        <div id="ax-late-wrap">${auxLateHTML(t, t._info)}</div>
         ${auxDriverCard(t.driver, false)}
+        <div class="ax-track-fresh" id="ax-track-fresh"></div>
         <button class="ax-btn ax-btn-ghost" data-ax="share-eta"><svg class="icon"><use href="#i-send"/></svg>Compartir mi ETA</button>
       </div>`;
   }
@@ -420,8 +467,9 @@
       <div id="ax-track-map" class="ax-track-map"></div>
       <div class="ax-track-sheet">
         <div class="ax-onboard-badge"><svg class="icon"><use href="#i-check"/></svg>En camino a ${dest}</div>
-        <div class="ax-eta-hero"><span>Llegada estimada</span><b id="ax-eta-min">— min</b></div>
+        <div class="ax-eta-hero"><span id="ax-eta-label">Llegada estimada</span><b id="ax-eta-min">— min</b></div>
         ${auxDriverCard(t.driver, false)}
+        <div class="ax-track-fresh" id="ax-track-fresh"></div>
       </div>`;
   }
   // P5: calificación (sin propina — servicio mensual)
@@ -448,15 +496,169 @@
       </div>`;
   }
 
-  // ---------- animación del mapa de seguimiento (demo) ----------
+  // ---------- seguimiento del viaje ----------
+  // En vivo (source==='live') → posición REAL del conductor vía RPC.
+  // Demo (presentaciones)      → la animación de siempre.
   function auxAfterTripRender() {
     const t = auxState.trips.find(x => x.id === auxState.editingTrip); if (!t) return;
+    if (auxState.source === 'live') {
+      // Desde 'pending' ya seguimos: la pantalla avanza sola cuando el admin
+      // publica el plan (→ conductor) y cuando el conductor arranca (→ mapa).
+      if (['pending', 'assigned', 'onway', 'onboard'].includes(t.status)) auxStartLiveTrack(t);
+      return;
+    }
     if (t.status === 'onway') auxRunTrack(t, t.driver, { lat: t.lat, lng: t.lng }, 'pickup');
     if (t.status === 'onboard') auxRunTrack(t, { lat: t.lat, lng: t.lng }, AUX_MDE, 'airport');
   }
   function auxStopTrack() {
     if (auxState.trackTimer) { clearInterval(auxState.trackTimer); auxState.trackTimer = null; }
+    if (auxState.trackPoll) { clearInterval(auxState.trackPoll); auxState.trackPoll = null; }
+    if (auxState.trackTween) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
     if (auxState.trackMap) { auxState.trackMap.remove(); auxState.trackMap = null; }
+    auxState.trackCar = null; auxState.trackLine = null; auxState.trackLast = null; auxState.trackDestPt = null;
+  }
+
+  // ---------- seguimiento EN VIVO (datos reales) ----------
+  // A dónde va el carro en esta fase (para pintar el punto destino y la línea):
+  //   sal onway    → a tu dirección · sal onboard   → a MDE
+  //   lle onway    → a MDE (te recoge) · lle onboard → a tu dirección
+  function auxTrackDest(t) {
+    if (t.type === 'lle') return t.status === 'onboard' ? { lat: t.lat, lng: t.lng } : AUX_MDE;
+    return t.status === 'onboard' ? AUX_MDE : { lat: t.lat, lng: t.lng };
+  }
+  function auxDistM(a, b) {
+    const R = 6371000, toR = Math.PI / 180;
+    const dLat = (b[0] - a[0]) * toR, dLng = (b[1] - a[1]) * toR;
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * toR) * Math.cos(b[0] * toR) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+  }
+  // Frescura del punto: no le creemos ciegamente a un GPS viejo.
+  function auxFreshLabel(pos) {
+    if (!pos || pos.at == null) return { text: 'Esperando señal del conductor…', stale: true };
+    const secs = Math.max(0, Math.round((Date.now() - new Date(pos.at).getTime()) / 1000));
+    const ago = secs < 10 ? 'ahora' : secs < 60 ? `hace ${secs} s` : `hace ${Math.round(secs / 60)} min`;
+    const src = pos.source === 'anchor' ? 'última parada' : 'GPS';
+    return { text: `${src} · ${ago}`, stale: secs > 120 };
+  }
+
+  function auxStartLiveTrack(t) {
+    auxState.trackLast = null;
+    auxTrackTick(t);                                       // primer tick inmediato
+    auxState.trackPoll = setInterval(() => auxTrackTick(t), 6000);
+  }
+  async function auxTrackTick(t) {
+    if (auxState.view !== 'trip' || auxState.editingTrip !== t.id) return;
+    let info = null;
+    try { if (window.Api?.trackReservation) info = await Api.trackReservation(t.id); } catch (_) {}
+    // El await pudo tardar: si el usuario cambió de vista/viaje, abortamos.
+    if (auxState.view !== 'trip' || auxState.editingTrip !== t.id) return;
+    if (!info) return;
+    t._info = info;                                   // para el banner "va tarde"
+
+    if (info.driver && info.driver.name) {
+      t.driver = { name: info.driver.name, plate: info.plate || '—', phone: info.driver.phone || '', rating: null };
+    }
+    // Avance real → estado UI. 'assigned' lo marca info.assigned (la reserva quedó
+    // en una ruta con conductor), aunque el estado crudo siga en 'scheduled'/
+    // 'requested'. El estado crudo solo AGREGA progresión (en camino/a bordo/entregado).
+    let ui;
+    if (info.assigned) {
+      const prog = auxUiStatus(info.raw_status);
+      ui = AUX_ORDER[prog] > AUX_ORDER.assigned ? prog : 'assigned';
+    } else {
+      ui = auxUiStatus(info.raw_status);
+    }
+    // Solo AVANZA (nunca retrocede), para no dar tumbos de pantalla.
+    if (AUX_ORDER[ui] > (AUX_ORDER[t.status] || 0)) {
+      t.status = ui;
+      auxRender();          // cambia de pantalla; el nuevo render re-arranca el rastreo
+      return;
+    }
+    auxRefreshLate(t);      // banner "va tarde" (assigned/onway)
+    if (t.status === 'onway' || t.status === 'onboard') {
+      auxPlotDriver(t, info);
+    } else if (t.status === 'assigned' && t.driver && !t._cardShown) {
+      t._cardShown = true;  // muestra la tarjeta del conductor ya hidratada (una sola vez)
+      auxRender();
+    }
+  }
+
+  // Pinta el mapa: destino fijo + carro que se desliza ENTRE dos reportes reales.
+  // No extrapola: al llegar al último punto conocido, se queda quieto.
+  function auxPlotDriver(t, info) {
+    auxUpdateTrackHUD(t, info);
+    const el = document.getElementById('ax-track-map');
+    if (!el || typeof L === 'undefined') return;
+    const d = auxTrackDest(t);
+    const destPt = [d.lat, d.lng];
+    const driverPt = info.pos ? [info.pos.lat, info.pos.lng] : null;
+
+    // Primer montaje de esta fase.
+    if (!auxState.trackMap) {
+      const map = auxState.trackMap = L.map(el, { zoomControl: false, attributionControl: false });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+      auxState.trackDestPt = destPt;
+      L.circleMarker(destPt, { radius: 8, color: '#F26522', fillColor: '#F26522', fillOpacity: 1, weight: 3 }).addTo(map);
+      if (driverPt) { auxMountCar(driverPt, destPt); map.fitBounds([driverPt, destPt], { padding: [55, 55] }); }
+      else { map.setView(destPt, 14); }
+      setTimeout(() => map.invalidateSize(), 60);
+      return;
+    }
+    if (!driverPt) return;                                 // aún sin ping: dejamos el destino
+    if (!auxState.trackCar) {                              // el carro apareció tras el montaje
+      auxMountCar(driverPt, destPt);
+      auxState.trackMap.fitBounds([driverPt, destPt], { padding: [55, 55] });
+      return;
+    }
+    const last = auxState.trackLast;
+    if (last && auxDistM(last, driverPt) > 2000) {
+      // Salto grande (señal perdida): no inventamos el trayecto — saltamos.
+      auxState.trackCar.setLatLng(driverPt);
+      if (auxState.trackLine) auxState.trackLine.setLatLngs([driverPt, auxState.trackDestPt]);
+    } else if (!last || auxDistM(last, driverPt) > 3) {
+      auxTweenCar(last || driverPt, driverPt);
+    }
+    auxState.trackLast = driverPt;
+  }
+  function auxMountCar(driverPt, destPt) {
+    const carIcon = L.divIcon({ className: '', html: '<div class="ax-car">🚗</div>', iconSize: [30, 30], iconAnchor: [15, 15] });
+    auxState.trackLine = L.polyline([driverPt, destPt], { color: '#F4791F', weight: 4, opacity: .5, dashArray: '6 8' }).addTo(auxState.trackMap);
+    auxState.trackCar = L.marker(driverPt, { icon: carIcon }).addTo(auxState.trackMap);
+    auxState.trackLast = driverPt;
+  }
+  function auxTweenCar(from, to) {
+    if (auxState.trackTween) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
+    const car = auxState.trackCar, line = auxState.trackLine, dest = auxState.trackDestPt;
+    if (!car) return;
+    const A = from, B = to, START = Date.now(), DUR = 1400;
+    auxState.trackTween = setInterval(() => {
+      const k = Math.min(1, (Date.now() - START) / DUR);
+      const lat = A[0] + (B[0] - A[0]) * k, lng = A[1] + (B[1] - A[1]) * k;
+      car.setLatLng([lat, lng]);
+      if (line && dest) line.setLatLngs([[lat, lng], dest]);
+      if (k >= 1) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
+    }, 60);
+  }
+  // Textos honestos (sin ETA inventado): estado + frescura del punto.
+  function auxUpdateTrackHUD(t, info) {
+    const arrived = info.stop_status === 'arrived';
+    const labelEl = document.getElementById('ax-eta-label');
+    const valEl = document.getElementById('ax-eta-min');
+    const freshEl = document.getElementById('ax-track-fresh');
+    if (labelEl && valEl) {
+      if (t.status === 'onway') {
+        labelEl.textContent = 'Tu conductor';
+        valEl.textContent = arrived ? '¡Llegó!' : 'En camino';
+      } else {
+        labelEl.textContent = t.type === 'lle' ? 'Vas a casa' : 'Vas al aeropuerto';
+        valEl.textContent = 'En ruta';
+      }
+    }
+    if (freshEl) {
+      const f = auxFreshLabel(info.pos);
+      freshEl.textContent = (arrived ? 'Te espera máx. 3 min · ' : '') + f.text;
+      freshEl.classList.toggle('stale', !!f.stale);
+    }
   }
   function auxRunTrack(t, from, to, phase) {
     const el = document.getElementById('ax-track-map'); if (!el || typeof L === 'undefined') return;
@@ -520,12 +722,26 @@
       else if (a === 'profile') { toast('Perfil — próximamente.'); }
       // --- seguimiento del viaje ---
       else if (a === 'confirm-pickup') { const t = auxCurTrip(); if (t) { t.status = 'onway'; auxRender(); } }
-      else if (a === 'call') { toast('📞 Llamando a tu conductor…'); }
+      else if (a === 'call') {
+        const ph = auxCurTrip()?.driver?.phone;
+        if (ph) { try { window.location.href = 'tel:' + ph.replace(/[^\d+]/g, ''); } catch (_) {} }
+        else toast('Aún no hay teléfono del conductor.');
+      }
       else if (a === 'share-eta') { toast('Enlace de seguimiento copiado para compartir.'); }
       // --- calificación ---
       else if (a === 'star') { auxState.ratingSel = Number(el.dataset.n); auxState.ratingTags = []; auxRender(); }
       else if (a === 'tag') { const tg = el.dataset.tag; const s = new Set(auxState.ratingTags); s.has(tg) ? s.delete(tg) : s.add(tg); auxState.ratingTags = [...s]; auxRender(); }
-      else if (a === 'rate-send') { if (el.hasAttribute('disabled')) return; const t = auxCurTrip(); if (t) { t.rated = true; t.rating = auxState.ratingSel; } toast('¡Gracias por tu calificación!'); auxState.view = 'home'; auxRender(); }
+      else if (a === 'rate-send') {
+        if (el.hasAttribute('disabled')) return;
+        const t = auxCurTrip();
+        if (t) { t.rated = true; t.rating = auxState.ratingSel; }
+        // Persiste en dev (optimista); en demo se queda local.
+        if (auxState.source === 'live' && t && window.Api?.rateReservation) {
+          Api.rateReservation(t.id, auxState.ratingSel, auxState.ratingTags)
+            .catch(() => toast('No se pudo guardar la calificación en el servidor.'));
+        }
+        toast('¡Gracias por tu calificación!'); auxState.view = 'home'; auxRender();
+      }
       else if (a === 'rate-skip') { const t = auxCurTrip(); if (t) t.rated = true; auxState.view = 'home'; auxRender(); }
     });
 
