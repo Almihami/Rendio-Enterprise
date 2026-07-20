@@ -25,6 +25,8 @@
     vueltas: [], view: 'overview', activeId: null, legIdx: 0, legState: 'en_camino',
     map: null, watchId: null, sharing: false, bound: false, _lastDone: null,
     lastPingAt: 0,
+    // Nivel 1 (nav in-app): mi posición en vivo + seguir. Popup mapa grande. Reanudar.
+    meMarker: null, lastPos: null, follow: true, bigMap: null,
   };
   // Cada cuánto se escribe la posición. Cada carro tiene su propio celular con
   // cargador (no hay que cuidar batería), así que se reporta seguido: a 6s y
@@ -54,6 +56,8 @@
       try { drState.driverProfileId = await Api.getMyDriverProfileId(profile.id); } catch (e) {}
     }
     drBindOnce();
+    // Reanuda la ruta en curso sin re-tocar "Iniciar ruta" (tras salir/volver a la app).
+    if (drRestoreProgress()) drStartGps();
     drRender();
   }
   function drClose() {
@@ -69,6 +73,7 @@
       : drOverviewHTML();
     if (drState.view === 'route') drRouteMap();
     else if (drState.view === 'exec') drExecMap();
+    drSaveProgress();   // persiste el avance de la ruta (o lo limpia si ya no estamos en ella)
   }
   function drTeardown() {
     if (drState.map) { try { drState.map.remove(); } catch (e) {} drState.map = null; }
@@ -202,13 +207,46 @@
         <div class="dr-title">${stops.length} ${v.type === 'lle' ? 'entregas' : 'auxiliares'}</div>
         <div class="dr-sub">${v.type === 'lle' ? 'Del aeropuerto a los domicilios' : 'Salida ' + v.start + ' · presentación en MDE'}</div>
       </div>
-      <div class="dr-map" id="dr-route-map"><div class="dr-map-chip">${stops.length} paradas · ${v.type === 'lle' ? 'llegada' : 'salida'}</div></div>
+      <div class="dr-map" id="dr-route-map"><div class="dr-map-chip">${stops.length} paradas · ${v.type === 'lle' ? 'llegada' : 'salida'}</div><button class="dr-map-expand" data-dr="mapbig" aria-label="Ampliar mapa">⤢</button></div>
       <div class="dr-seclabel" style="margin-left:24px">Paradas en orden</div>
       <div class="dr-stops">${rows}</div>
       <div class="dr-bottom">
         <button class="dr-btn-primary" data-dr="start"><svg class="icon"><use href="#i-bolt"/></svg>Iniciar ruta</button>
       </div>
+      ${drMapModalHTML()}
     </div>`;
+  }
+  // Popup: mapa a (casi) pantalla completa con la ruta.
+  function drMapModalHTML() {
+    return `<div class="dr-modal hidden" id="dr-map-modal">
+      <div class="dr-modal-head"><b>Ruta completa</b><button class="dr-icbtn" data-dr="mapbigclose" aria-label="Cerrar"><svg class="icon"><use href="#i-back"/></svg></button></div>
+      <div class="dr-modal-map" id="dr-map-big"></div>
+    </div>`;
+  }
+  async function drOpenBigMap() {
+    const v = drVuelta(); if (!v) return;
+    const modal = document.getElementById('dr-map-modal'), el = document.getElementById('dr-map-big');
+    if (!modal || !el || typeof L === 'undefined') return;
+    modal.classList.remove('hidden');
+    if (drState.bigMap) { try { drState.bigMap.remove(); } catch (e) {} drState.bigMap = null; }
+    const pts = v.legs.filter(l => l.lat != null).map(l => [l.lat, l.lng]);
+    const map = drState.bigMap = L.map(el, { attributionControl: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    v.legs.forEach(l => {
+      if (l.lat == null) return;
+      const isApt = l.kind === 'airport';
+      L.circleMarker([l.lat, l.lng], { radius: 8, color: '#fff', weight: 2, fillColor: isApt ? '#10B981' : '#F26522', fillOpacity: 1 })
+        .addTo(map).bindTooltip(isApt ? 'Aeropuerto MDE' : (l.name || ''));
+    });
+    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.2));
+    setTimeout(() => map.invalidateSize(), 60);
+    const road = await drRoadPath(pts);
+    if (drState.bigMap !== map) return;
+    L.polyline(road || pts, { color: '#F26522', weight: 4, opacity: .9 }).addTo(map);
+  }
+  function drCloseBigMap() {
+    if (drState.bigMap) { try { drState.bigMap.remove(); } catch (e) {} drState.bigMap = null; }
+    const modal = document.getElementById('dr-map-modal'); if (modal) modal.classList.add('hidden');
   }
   async function drRouteMap() {
     const el = document.getElementById('dr-route-map');
@@ -218,6 +256,7 @@
     const pts = v.legs.filter(l => l.lat != null).map(l => [l.lat, l.lng]);
     if (!pts.length) return;
     const map = drState.map = L.map(el, { zoomControl: false, attributionControl: false, tap: false });
+    map.on('click', () => drOpenBigMap());   // tap al mapa → previsualización grande
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
     v.legs.forEach(l => {
       if (l.lat == null) return;
@@ -283,6 +322,7 @@
         <div class="dr-ex-chip ${tone}">${chipTxt}</div>
         <div class="dr-ex-share ${drState.sharing ? 'on' : ''}"><span class="dot"></span>${drState.sharing ? 'Compartiendo ubicación' : 'Ubicación off'}</div>
       </div>
+      <button class="dr-recenter hidden" data-dr="recenter" aria-label="Centrarme"><svg class="icon" style="width:20px;height:20px"><use href="#i-pin"/></svg></button>
       <div class="dr-sheet">
         <div class="dr-sheet-h"><i></i></div>
         <div class="dr-sheet-b">
@@ -305,10 +345,14 @@
     const el = document.getElementById('dr-ex-map');
     if (!el || typeof L === 'undefined') return;
     if (drState.map) { try { drState.map.remove(); } catch (e) {} drState.map = null; }
+    drState.meMarker = null;   // vivía en el mapa viejo; el próximo ping (o lastPos) lo re-crea
+    drState.follow = true;     // cada parada re-centra en mí (el botón "centrarme" arranca oculto)
     const v = drVuelta(); if (!v) return;
     const leg = v.legs[drState.legIdx];
     const pts = v.legs.filter(l => l.lat != null).map(l => [l.lat, l.lng]);
     const map = drState.map = L.map(el, { zoomControl: false, attributionControl: false });
+    // Si el conductor arrastra el mapa, deja de seguirlo y aparece el botón "centrarme".
+    map.on('dragstart', () => { drState.follow = false; drToggleRecenter(true); });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
     v.legs.forEach((l, i) => {
       if (l.lat == null) return;
@@ -324,6 +368,70 @@
     const road = await drRoadPath(pts);
     if (drState.map !== map) return;
     L.polyline(road || pts, { color: '#F26522', weight: 4, opacity: .85 }).addTo(map);
+    // Re-pinta mi posición (si ya la teníamos) tras re-crear el mapa.
+    if (drState.lastPos) drUpdateMe({ latitude: drState.lastPos[0], longitude: drState.lastPos[1] });
+  }
+
+  // ---------- Nivel 1: navegación in-app (mi posición en vivo, seguir, distancia) ----------
+  // Pinta/actualiza mi punto azul en el mapa de ejecución y, si "follow" está activo,
+  // recentra el mapa dejándome arriba del bottom-sheet. Funciona en demo y en vivo.
+  function drUpdateMe(c) {
+    if (!c || c.latitude == null || !isFinite(c.latitude)) return;
+    drState.lastPos = [c.latitude, c.longitude];
+    if (drState.view !== 'exec' || !drState.map || typeof L === 'undefined') return;
+    const here = drState.lastPos;
+    if (!drState.meMarker) {
+      const ic = L.divIcon({ className: '', html: '<div class="dr-me"></div>', iconSize: [20, 20], iconAnchor: [10, 10] });
+      drState.meMarker = L.marker(here, { icon: ic, zIndexOffset: 1000, interactive: false }).addTo(drState.map);
+    } else drState.meMarker.setLatLng(here);
+    if (drState.follow !== false) {
+      const z = Math.max(drState.map.getZoom(), 15);
+      const pt = drState.map.project(here, z).add([0, 90]); // centro 90px abajo → yo quedo arriba del sheet
+      drState.map.setView(drState.map.unproject(pt, z), z, { animate: true, duration: 0.5 });
+    }
+    drUpdateDistHUD(here);
+  }
+  // Distancia a la próxima parada, en el chip superior.
+  function drUpdateDistHUD(here) {
+    const v = drVuelta(); if (!v) return;
+    const leg = v.legs[drState.legIdx]; if (!leg || leg.lat == null) return;
+    const km = drHav(here, [leg.lat, leg.lng]) * 1.35; // factor por carretera
+    const txt = km < 1 ? `${Math.max(10, Math.round(km * 100) * 10)} m` : `${km.toFixed(1)} km`;
+    const chip = document.querySelector('#driver-ruta-ui .dr-ex-chip'); if (!chip) return;
+    let d = chip.querySelector('.dr-dist');
+    if (!d) { d = document.createElement('span'); d.className = 'dr-dist'; chip.appendChild(d); }
+    d.textContent = ' · ' + txt;
+  }
+  function drToggleRecenter(show) {
+    const b = document.querySelector('#driver-ruta-ui .dr-recenter');
+    if (b) b.classList.toggle('hidden', !show);
+  }
+
+  // ---------- Reanudar la ruta tras salir/volver a la app ----------
+  const DR_PKEY = () => 'rendio-dr-progress-' + ((drState.profile && drState.profile.id) || 'anon');
+  function drSaveProgress() {
+    try {
+      if (drState.view === 'exec' && drState.activeId) {
+        const v = drVuelta();
+        localStorage.setItem(DR_PKEY(), JSON.stringify({ day: (v && v.day) || null, activeId: drState.activeId, legIdx: drState.legIdx, legState: drState.legState, ts: Date.now() }));
+      } else localStorage.removeItem(DR_PKEY());
+    } catch (e) {}
+  }
+  function drRestoreProgress() {
+    try {
+      const raw = localStorage.getItem(DR_PKEY()); if (!raw) return false;
+      const s = JSON.parse(raw);
+      const v = drState.vueltas.find(x => x.id === s.activeId);
+      if (!v || v.done) { localStorage.removeItem(DR_PKEY()); return false; }
+      // Solo reanuda del mismo día operativo (no revive rutas viejas).
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+      if (s.day && v.day && v.day !== today) { localStorage.removeItem(DR_PKEY()); return false; }
+      drState.activeId = s.activeId;
+      drState.legIdx = Math.min(s.legIdx || 0, v.legs.length - 1);
+      drState.legState = s.legState || 'en_camino';
+      drState.view = 'exec';
+      return true;
+    } catch (e) { return false; }
   }
 
   // ---------- DONE ----------
@@ -344,6 +452,7 @@
   function drPushGps(p) {
     drState.sharing = true;
     drUpdateLiveBadge();
+    if (p && p.coords) drUpdateMe(p.coords);   // Nivel 1: mi punto en el mapa (demo o vivo)
     if (drState.source !== 'live' || !drState.driverProfileId) return;
     if (!(window.Api && Api.sendDriverLocation)) return;
     const now = Date.now();
@@ -418,6 +527,9 @@
       if (a === 'start') { drTeardown(); drState.legIdx = 0; drState.legState = 'en_camino'; drState.view = 'exec'; drMarkEnRoute(); drStartGps(); drRender(); return; }
       if (a === 'back') { drBack(); return; }
       if (a === 'nav') { window.open(`https://waze.com/ul?ll=${el.dataset.lat},${el.dataset.lng}&navigate=yes`, '_blank'); return; }
+      if (a === 'mapbig') { drOpenBigMap(); return; }
+      if (a === 'mapbigclose') { drCloseBigMap(); return; }
+      if (a === 'recenter') { drState.follow = true; drToggleRecenter(false); if (drState.lastPos) drUpdateMe({ latitude: drState.lastPos[0], longitude: drState.lastPos[1] }); return; }
       if (a === 'call2') { const p = el.dataset.phone || ''; if (p) window.open('tel:' + p.replace(/\s/g, '')); return; }
       if (a === 'arrived') {
         const v = drVuelta(); const leg = v && v.legs[drState.legIdx];

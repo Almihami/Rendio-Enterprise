@@ -2358,6 +2358,17 @@ details[open] .details-chevron { transform: rotate(180deg); }
 /* Route overview (una vuelta): mapa + lista de paradas con conector */
 #driver-ruta-ui .dr-map{height:210px;margin:6px 20px 0;border-radius:16px;overflow:hidden;border:1px solid var(--r-border);position:relative}
 #driver-ruta-ui .dr-map-chip{position:absolute;top:10px;right:10px;padding:6px 10px;border-radius:8px;background:var(--r-card);font-size:11px;font-weight:500;color:var(--r-text-2);border:1px solid var(--r-border);z-index:500}
+/* Popup de mapa grande (tocar el mapa o el botón ⤢ en la vista previa) */
+#driver-ruta-ui .dr-map-expand{position:absolute;right:10px;bottom:10px;z-index:500;width:38px;height:38px;border-radius:10px;border:1px solid var(--r-border);background:var(--r-card);color:var(--r-text-1,#18181B);font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
+#driver-ruta-ui .dr-modal{position:fixed;inset:0;z-index:3000;background:var(--r-bg,#F8F8F6);display:flex;flex-direction:column}
+#driver-ruta-ui .dr-modal.hidden{display:none}
+#driver-ruta-ui .dr-modal-head{display:flex;align-items:center;justify-content:space-between;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;font-size:16px;font-weight:700;color:var(--r-text-1,#18181B)}
+#driver-ruta-ui .dr-modal-map{flex:1;width:100%}
+/* Nivel 1: mi punto azul en vivo + botón centrarme + distancia a la próxima */
+#driver-ruta-ui .dr-me{width:18px;height:18px;border-radius:50%;background:#2563EB;border:3px solid #fff;box-shadow:0 0 0 2px rgba(37,99,235,.35),0 1px 5px rgba(0,0,0,.35)}
+#driver-ruta-ui .dr-ex-chip .dr-dist{font-weight:700;text-transform:none;letter-spacing:0}
+#driver-ruta-ui .dr-recenter{position:absolute;top:calc(112px + env(safe-area-inset-top));right:16px;z-index:12;width:44px;height:44px;border-radius:50%;border:none;background:var(--r-card);color:var(--r-a2h);box-shadow:0 3px 10px rgba(0,0,0,.2);display:flex;align-items:center;justify-content:center;cursor:pointer}
+#driver-ruta-ui .dr-recenter.hidden{display:none}
 #driver-ruta-ui .dr-stops{position:relative;padding:4px 20px 0}
 #driver-ruta-ui .dr-stops::before{content:"";position:absolute;left:39px;top:28px;bottom:36px;width:2px;background:var(--r-border)}
 #driver-ruta-ui .dr-stop{display:flex;gap:14px;align-items:flex-start;padding:8px 0;position:relative}
