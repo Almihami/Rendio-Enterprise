@@ -555,7 +555,12 @@
     if (!info) return;
     t._info = info;                                   // para el banner "va tarde"
 
+    // ¿Recién llega el dato del conductor? Al recargar la app ya "en camino", la
+    // tarjeta se pintó genérica ("Tu conductor / Carro —") antes de este primer
+    // dato; hay que re-hidratarla aunque el estado no cambie.
+    let driverJustArrived = false;
     if (info.driver && info.driver.name) {
+      driverJustArrived = !(t.driver && t.driver.name);
       t.driver = { name: info.driver.name, plate: info.plate || '—', phone: info.driver.phone || '', rating: null };
     }
     // Avance real → estado UI. 'assigned' lo marca info.assigned (la reserva quedó
@@ -575,11 +580,15 @@
       return;
     }
     auxRefreshLate(t);      // banner "va tarde" (assigned/onway)
+    // Hidrata la tarjeta del conductor la 1ª vez que llega su dato, en CUALQUIER
+    // pantalla que la muestre (asignado/en camino/a bordo), no solo al cambiar de
+    // estado — arregla el caso de recargar la app con el viaje ya en curso.
+    if (driverJustArrived && ['assigned', 'onway', 'onboard'].includes(t.status)) {
+      auxRender();
+      return;
+    }
     if (t.status === 'onway' || t.status === 'onboard') {
       auxPlotDriver(t, info);
-    } else if (t.status === 'assigned' && t.driver && !t._cardShown) {
-      t._cardShown = true;  // muestra la tarjeta del conductor ya hidratada (una sola vez)
-      auxRender();
     }
   }
 
