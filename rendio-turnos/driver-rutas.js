@@ -175,7 +175,14 @@
       const isApt = l.kind === 'airport';
       const cls = isApt ? 'apt' : (i === 0 ? 'first' : '');
       const badge = isApt ? '<svg class="icon" style="width:18px;height:18px"><use href="#i-pin"/></svg>' : (++n);
-      const time = isApt ? v.start : (l.dl || '');
+      // Hora por parada, según el tipo de vuelta:
+      //  - llegada: el aeropuerto es la RECOGIDA (v.start); las casas, su entrega (l.dl)
+      //  - salida:  la 1ª casa es la RECOGIDA (v.start); el aeropuerto, la PRESENTACIÓN
+      //    (l.dl de las paradas, que comparten hora); las paradas intermedias no
+      //    tienen ETA propia calculada, así que van sin hora.
+      const time = v.type === 'lle'
+        ? (isApt ? v.start : (l.dl || ''))
+        : (isApt ? ((stops[0] && stops[0].dl) || '') : (i === 0 ? v.start : ''));
       return `<div class="dr-stop">
         <div class="dr-stop-n ${cls}">${badge}</div>
         <div class="dr-stop-b">
