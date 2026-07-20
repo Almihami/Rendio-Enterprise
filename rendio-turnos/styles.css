@@ -2141,6 +2141,11 @@ details[open] .details-chevron { transform: rotate(180deg); }
   font-family:Inter,system-ui,-apple-system,sans-serif;position:relative;box-shadow:0 0 48px rgba(0,0,0,.08)}
 #auxiliar-ui .icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
 #auxiliar-ui .ax-body{flex:1;overflow-y:auto;padding:0 18px;-webkit-overflow-scrolling:touch}
+/* Barra PWA del auxiliar: Instalar app + Activar notificaciones */
+#auxiliar-ui .ax-pwa{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
+#auxiliar-ui .ax-pwa.hidden{display:none}
+#auxiliar-ui .ax-pwa-btn{flex:1;min-width:140px;padding:11px 12px;border-radius:12px;border:1px solid var(--a-line);background:var(--a-card,#fff);color:var(--a-accent);font-size:13px;font-weight:700;cursor:pointer}
+#auxiliar-ui .ax-pwa-btn.hidden{display:none}
 #auxiliar-ui .ax-spacer{height:96px}
 #auxiliar-ui .hidden{display:none}
 

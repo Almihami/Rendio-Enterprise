@@ -1461,7 +1461,7 @@
   async function listMyVueltasForDriver(profileId) {
     const dpid = await getMyDriverProfileId(profileId); if (!dpid) return null;
     const { data, error } = await sb.from('route_assignments')
-      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)))')
+      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true });
     if (error) return null;
@@ -1480,7 +1480,7 @@
           lat: r.pickup_latitude, lng: r.pickup_longitude, flight: r.flights?.flight_number || '',
           dl: rtHHMM(r.required_arrival_at), kind: type === 'lle' ? 'dropoff' : 'pickup',
           phone: r.auxiliar_profiles?.profiles?.phone || '', notes: r.notes || '',
-          reservationId: s.reservation_id };
+          reservationId: s.reservation_id, auxProfileId: r.auxiliar_profiles?.profiles?.id || null };
       });
       const air = { name: MDE.name, addr: MDE.addr, lat: MDE.lat, lng: MDE.lng, kind: 'airport' };
       const legs = type === 'lle' ? [air, ...stops] : [...stops, air]; // llegada: sale de MDE; salida: termina en MDE

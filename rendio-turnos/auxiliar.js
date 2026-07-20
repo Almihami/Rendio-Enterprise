@@ -72,6 +72,27 @@
     if (auxState.view === 'confirm') { root.innerHTML = auxConfirmHTML(); return; }
     if (auxState.view === 'trip') { root.innerHTML = auxTripHTML(); auxAfterTripRender(); return; }
     root.innerHTML = auxHomeHTML();
+    auxSetupPwa();
+  }
+
+  // Botones PWA del auxiliar (su UI va aparte del shell admin/conductor, así que el
+  // setupPushUI del core NO lo cubre): muestra "Instalar app" si es instalable y
+  // "Activar notificaciones" si el push está soportado y aún no se ha suscrito.
+  async function auxSetupPwa() {
+    const bar = document.getElementById('ax-pwa-bar'); if (!bar) return;
+    const ins = bar.querySelector('[data-ax="install"]');
+    const psh = bar.querySelector('[data-ax="enable-push"]');
+    const canInstall = !!window.rendioInstall; // solo existe si NO está ya instalada (standalone)
+    if (ins) ins.classList.toggle('hidden', !canInstall);
+    let showPush = false;
+    try {
+      if (typeof pushSupported === 'function' && pushSupported() && Notification.permission !== 'denied') {
+        const reg = await navigator.serviceWorker.ready;
+        showPush = !(await reg.pushManager.getSubscription());
+      }
+    } catch (e) {}
+    if (psh) psh.classList.toggle('hidden', !showPush);
+    bar.classList.toggle('hidden', !canInstall && !showPush);
   }
 
   // ---------- HOME (Mis viajes) ----------
@@ -88,6 +109,10 @@
         <button class="ax-avatar" data-ax="profile" title="Perfil">${(auxFirstName()[0] || 'A').toUpperCase()}</button>
       </div>
       <div class="ax-body">
+        <div id="ax-pwa-bar" class="ax-pwa hidden">
+          <button class="ax-pwa-btn hidden" data-ax="install">📲 Instalar app</button>
+          <button class="ax-pwa-btn hidden" data-ax="enable-push">🔔 Activar notificaciones</button>
+        </div>
         ${next ? `<div class="ax-next-label">Próximo viaje</div>${auxTripCard(next, true)}` : `
           <div class="ax-empty">
             <div class="ax-empty-ic"><svg class="icon"><use href="#i-plane"/></svg></div>
@@ -715,6 +740,8 @@
     root.addEventListener('click', (e) => {
       const el = e.target.closest('[data-ax]'); if (!el) return;
       const a = el.dataset.ax;
+      if (a === 'install') { if (window.rendioInstall) window.rendioInstall.prompt(); return; }
+      if (a === 'enable-push') { if (typeof enablePush === 'function') Promise.resolve(enablePush()).then(() => auxSetupPwa()); return; }
       if (a === 'new') { auxState.view = 'form'; auxState.step = 1; auxState.form = { isReserva: true }; auxRender(); }
       else if (a === 'cancel' || a === 'home') { auxState.view = 'home'; auxState.step = 1; auxState.form = {}; auxRender(); }
       else if (a === 'back') { auxState.step = Math.max(1, auxState.step - 1); auxRender(); }

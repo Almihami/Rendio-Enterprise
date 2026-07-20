@@ -496,10 +496,17 @@
     if (drState.source !== 'live' || !reservationId || !(window.Api && Api.driverSetStopStatus)) return;
     Api.driverSetStopStatus(reservationId, status).catch(() => {});
   }
+  // Push al auxiliar: su conductor va en camino / llegó al punto (best-effort, solo en vivo).
+  function drNotifyAux(leg, kind) {
+    if (drState.source !== 'live' || !leg || !leg.auxProfileId || typeof notify !== 'function') return;
+    const who = ((drState.profile && drState.profile.full_name) || 'Tu conductor').split(' ')[0];
+    if (kind === 'en_route') notify([leg.auxProfileId], 'Tu conductor va en camino 🚗', `${who} va hacia ti para tu traslado.`, '/');
+    else if (kind === 'arrived') notify([leg.auxProfileId], '¡Tu conductor llegó! 📍', `${who} está en el punto de recogida. Sal cuando puedas.`, '/');
+  }
   function drMarkEnRoute() {
     const v = drVuelta(); if (!v) return;
     const leg = v.legs[drState.legIdx]; if (!leg) return;
-    if (leg.kind === 'pickup') drPushStatus(leg.reservationId, 'en_route');
+    if (leg.kind === 'pickup') { drPushStatus(leg.reservationId, 'en_route'); drNotifyAux(leg, 'en_route'); }
     else if (leg.kind === 'dropoff') drPushStatus(leg.reservationId, 'en_route_home');
   }
   function drApplyNext() {
@@ -533,7 +540,7 @@
       if (a === 'call2') { const p = el.dataset.phone || ''; if (p) window.open('tel:' + p.replace(/\s/g, '')); return; }
       if (a === 'arrived') {
         const v = drVuelta(); const leg = v && v.legs[drState.legIdx];
-        if (leg && leg.kind === 'pickup') drPushStatus(leg.reservationId, 'at_pickup');
+        if (leg && leg.kind === 'pickup') { drPushStatus(leg.reservationId, 'at_pickup'); drNotifyAux(leg, 'arrived'); }
         drState.legState = 'llegue'; drRender(); return;
       }
       if (a === 'noshow') {

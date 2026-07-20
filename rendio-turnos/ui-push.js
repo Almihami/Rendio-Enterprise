@@ -48,8 +48,12 @@
         deferredInstallPrompt = null;
       } else if (isIos) {
         iosModal.classList.remove('hidden');
+      } else {
+        toast('Para instalar: menú del navegador → "Instalar app" / "Agregar a inicio".');
       }
     };
+    // Expuesto para que el rol Auxiliar (UI aparte del shell) también ofrezca "Instalar".
+    window.rendioInstall = { prompt: onClick, isIos };
     btn.addEventListener('click', onClick);
     btnMobile.addEventListener('click', onClick);
     iosClose.addEventListener('click', () => iosModal.classList.add('hidden'));
