@@ -452,7 +452,7 @@
   function drPushGps(p) {
     drState.sharing = true;
     drUpdateLiveBadge();
-    if (p && p.coords) drUpdateMe(p.coords);   // Nivel 1: mi punto en el mapa (demo o vivo)
+    if (p && p.coords) { drUpdateMe(p.coords); drCheckNear([p.coords.latitude, p.coords.longitude]); } // Nivel 1 + "por llegar"
     if (drState.source !== 'live' || !drState.driverProfileId) return;
     if (!(window.Api && Api.sendDriverLocation)) return;
     const now = Date.now();
@@ -500,8 +500,21 @@
   function drNotifyAux(leg, kind) {
     if (drState.source !== 'live' || !leg || !leg.auxProfileId || typeof notify !== 'function') return;
     const who = ((drState.profile && drState.profile.full_name) || 'Tu conductor').split(' ')[0];
-    if (kind === 'en_route') notify([leg.auxProfileId], 'Tu conductor va en camino 🚗', `${who} va hacia ti para tu traslado.`, '/');
+    if (kind === 'en_route') notify([leg.auxProfileId], 'Eres el siguiente 🔜', `${who} va hacia ti para recogerte.`, '/');
     else if (kind === 'arrived') notify([leg.auxProfileId], '¡Tu conductor llegó! 📍', `${who} está en el punto de recogida. Sal cuando puedas.`, '/');
+  }
+  // Push "está por llegar" cuando el conductor está a <300 m de la recogida actual
+  // (distancia REAL, una sola vez por parada).
+  function drCheckNear(here) {
+    if (drState.source !== 'live') return;
+    const v = drVuelta(); if (!v) return;
+    const leg = v.legs[drState.legIdx];
+    if (!leg || leg.kind !== 'pickup' || !leg.auxProfileId || leg._nearNotified || leg.lat == null) return;
+    if (drHav(here, [leg.lat, leg.lng]) < 0.3 && typeof notify === 'function') {
+      leg._nearNotified = true;
+      const who = ((drState.profile && drState.profile.full_name) || 'Tu conductor').split(' ')[0];
+      notify([leg.auxProfileId], 'Tu conductor está por llegar 📍', `${who} está muy cerca de tu punto de recogida.`, '/');
+    }
   }
   function drMarkEnRoute() {
     const v = drVuelta(); if (!v) return;

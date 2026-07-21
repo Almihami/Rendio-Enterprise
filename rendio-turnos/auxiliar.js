@@ -477,7 +477,8 @@
       ${auxTripHead('Conductor en camino')}
       <div id="ax-track-map" class="ax-track-map"></div>
       <div class="ax-track-sheet">
-        <div class="ax-eta-hero"><span id="ax-eta-label">Llega en</span><b id="ax-eta-min">— min</b></div>
+        <div class="ax-eta-hero"><span id="ax-eta-label">Tu conductor</span><b id="ax-eta-min">En camino</b></div>
+        <div class="ax-count hidden" id="ax-count"></div>
         <div id="ax-late-wrap">${auxLateHTML(t, t._info)}</div>
         ${auxDriverCard(t.driver, false)}
         <div class="ax-track-fresh" id="ax-track-fresh"></div>
@@ -678,15 +679,35 @@
     const arrived = info.stop_status === 'arrived';
     const labelEl = document.getElementById('ax-eta-label');
     const valEl = document.getElementById('ax-eta-min');
+    const countEl = document.getElementById('ax-count');
     const freshEl = document.getElementById('ax-track-fresh');
+    // ¿Está cerca? Distancia REAL del conductor a mi punto (sin ETA inventado).
+    let near = false;
+    if (info.pos && info.pickup && info.pickup.lat != null) {
+      near = auxDistM([info.pos.lat, info.pos.lng], [info.pickup.lat, info.pickup.lng]) < 300;
+    }
+    const before = (typeof info.remaining_before === 'number') ? info.remaining_before : null;
     if (labelEl && valEl) {
       if (t.status === 'onway') {
-        labelEl.textContent = 'Tu conductor';
-        valEl.textContent = arrived ? '¡Llegó!' : 'En camino';
+        // Protagonista: "Faltan X antes de ti" → "Eres el siguiente" → "Está por llegar" → "Llegó".
+        if (arrived)           { labelEl.textContent = 'Tu conductor'; valEl.textContent = '¡Llegó! 📍'; }
+        else if (near)         { labelEl.textContent = 'Tu conductor'; valEl.textContent = '¡Está por llegar!'; }
+        else if (before === 0) { labelEl.textContent = 'Eres el';      valEl.textContent = 'siguiente 🔜'; }
+        else if (before > 0)   { labelEl.textContent = 'Faltan';       valEl.textContent = `${before} antes de ti`; }
+        else                   { labelEl.textContent = 'Tu conductor'; valEl.textContent = 'En camino'; }
       } else {
         labelEl.textContent = t.type === 'lle' ? 'Vas a casa' : 'Vas al aeropuerto';
         valEl.textContent = 'En ruta';
       }
+    }
+    if (countEl) {
+      const so = info.stop_order, tot = info.total_stops;
+      let txt = (so && tot) ? `Vas ${so} de ${tot}` : '';
+      if (info.route_start) {
+        try { const h = new Date(info.route_start).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' }); txt += (txt ? ' · ' : '') + 'Sale ' + h; } catch (_) {}
+      }
+      countEl.textContent = txt;
+      countEl.classList.toggle('hidden', !txt);
     }
     if (freshEl) {
       const f = auxFreshLabel(info.pos);
