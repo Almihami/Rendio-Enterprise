@@ -35,20 +35,20 @@ function proximoLunes() {
 const DIA = process.env.DIA_PRUEBA || proximoLunes();
 const SEMANA = DIA; // el día objetivo ES lunes → arranque de semana
 
-// 4 auxiliares en sectores REALES distintos: el asignador agrupa por cercanía,
-// así la prueba muestra si de verdad junta a los que viven cerca.
 const AUXILIARES = [
+  // Los 4 viven en El Porvenir, a menos de ~400 m entre sí: la ruta queda corta
+  // y se ve claro cómo el asignador los junta en un solo carro.
   { email: 'auxiliar.prueba@rendio.demo', full_name: 'Auxiliar Prueba', esDeLaProfa: true,
-    dir: 'Cra 51 #49-06, Centro, Rionegro', lat: 6.1529, lng: -75.3752,
+    dir: 'Calle 47 #59-33, B. El Porvenir, Rionegro', lat: 6.1468, lng: -75.3849,
     vuelo: 'AV-9412', hora: '05:10' },
   { email: 'prueba.valeria@rendio.demo', full_name: 'Valeria Ochoa',
-    dir: 'Calle 47 #59-33, El Porvenir, Rionegro', lat: 6.1468, lng: -75.3849,
+    dir: 'Cra 60 #46-15, B. El Porvenir, Rionegro', lat: 6.1455, lng: -75.3861,
     vuelo: 'AV-9412', hora: '05:10' },
   { email: 'prueba.mateo@rendio.demo', full_name: 'Mateo Herrera',
-    dir: 'Calle 24 #45-80, San Antonio de Pereira, Rionegro', lat: 6.1310, lng: -75.3795,
+    dir: 'Calle 45 #58-20, B. El Porvenir, Rionegro', lat: 6.1449, lng: -75.3838,
     vuelo: 'AV-9412', hora: '05:10' },
   { email: 'prueba.camila@rendio.demo', full_name: 'Camila Suárez',
-    dir: 'Vía Llanogrande km 7, Rionegro', lat: 6.1268, lng: -75.4155,
+    dir: 'Cra 58 #48-40, B. El Porvenir, Rionegro', lat: 6.1477, lng: -75.3832,
     vuelo: 'LA-4011', hora: '06:20' },
 ];
 
