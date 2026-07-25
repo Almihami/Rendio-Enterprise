@@ -2437,7 +2437,6 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #driver-ruta-ui .dr-live.on{color:var(--r-a2h);background:var(--r-a2h-soft)}
 #driver-ruta-ui .dr-live.on .dot{background:var(--r-a2h);animation:drpulse 1.6s infinite}
 @keyframes drpulse{0%,100%{opacity:1}50%{opacity:.3}}
-#driver-ruta-ui .dr-demo-tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--r-text-3);background:var(--r-surface-2);padding:3px 8px;border-radius:6px}
 #driver-ruta-ui .dr-loading{text-align:center;color:var(--r-text-2);padding:80px 20px;font-size:14px}
 /* Body + tarjeta de vuelta (overview multi-vuelta) */
 #driver-ruta-ui .dr-body{padding:6px 20px calc(24px + env(safe-area-inset-bottom))}
@@ -2526,6 +2525,13 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #driver-ruta-ui .dr-done-card .row span:first-child{color:var(--r-text-2)}
 #driver-ruta-ui .dr-done-card .row span:last-child{font-weight:500}
 #driver-ruta-ui .dr-done .close{margin-top:24px;height:52px;padding:0 24px;border-radius:12px;border:none;background:var(--r-accent);color:#fff;font:inherit;font-size:15px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+/* Sin ruta asignada — mismo bloque visual que "vuelta completa" */
+#driver-ruta-ui .dr-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:76vh;padding:32px;text-align:center}
+#driver-ruta-ui .dr-empty-ic{width:88px;height:88px;border-radius:44px;background:var(--r-surface-2);color:var(--r-text-3);display:flex;align-items:center;justify-content:center;margin-bottom:24px}
+#driver-ruta-ui .dr-empty-ic .icon{width:40px;height:40px}
+#driver-ruta-ui .dr-empty h1{font-family:var(--r-font-display);font-size:26px;font-weight:600;letter-spacing:-.5px}
+#driver-ruta-ui .dr-empty p{font-size:15px;color:var(--r-text-2);margin-top:10px;line-height:1.5;max-width:300px}
+#driver-ruta-ui .dr-empty .close{margin-top:24px;height:52px;padding:0 24px;border-radius:12px;border:none;background:var(--r-accent);color:#fff;font:inherit;font-size:15px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
 /* --- Overview: barra de progreso + pill "compartiendo" + tarjetas maqueta --- */
 #driver-ruta-ui .dr-progress{display:flex;align-items:center;gap:12px;padding:12px 4px 2px}
 #driver-ruta-ui .dr-pbar{flex:0 0 84px;height:6px;border-radius:3px;background:var(--r-surface-2);overflow:hidden;position:relative}

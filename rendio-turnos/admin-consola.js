@@ -3,7 +3,7 @@
 // Comparte scope global; el orden de carga está en index.html.
   // ════════════════════════════════════════════════════════════════════
   // RUTAS DE AUXILIARES — Consola (hub por capas) + Asignación (planeación)
-  // Visual portada de los previews del UX. Datos: Api con fallback DEMO.
+  // Visual portada de los previews del UX. Datos: solo reales (sin fallback demo).
   // ════════════════════════════════════════════════════════════════════
 
   const rtIni = (n) => { const p = (n || '').trim().split(/\s+/); return ((p[0] || '')[0] + ((p[1] || p[0] || '')[0] || '')).toUpperCase(); };

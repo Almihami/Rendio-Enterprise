@@ -1270,7 +1270,7 @@
   // orden óptimo (OSRM/VROOM) es el siguiente paso: aquí 'tramo' es un estimado.
   // Lee las reservas del PRÓXIMO día operativo (todas las direcciones) con
   // coordenadas, en el formato que consume el motor de rutas (admin-rutas).
-  // Devuelve null → el tablero cae a datos DEMO.
+  // Devuelve null → el tablero queda vacío y dice qué falta (ya no hay demo).
   async function listRoutePlanning(tripType) {
     // Día en hora de COLOMBIA (no UTC): un viaje de las 21:10 Col NO debe rodar
     // al día siguiente (21:10 Col = 02:10 UTC). Agrupamos por America/Bogota.

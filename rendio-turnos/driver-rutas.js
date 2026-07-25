@@ -5,23 +5,14 @@
 // (listMyVueltasForDriver), estados que persisten (Pieza 1: driverSetStopStatus),
 // mapa Leaflet real, navegar→Waze, llamar→tel:, GPS en vivo.
 
-  const DR_MDE = { lat: 6.1715, lng: -75.4270, name: 'Aeropuerto MDE', addr: 'Terminal de pasajeros · José María Córdova' };
-
-  // Vueltas demo (fallback si no hay ruta real). kind: pickup|dropoff|airport.
-  const DR_DEMO_VUELTAS = [
-    { id: 'V1', type: 'sal', start: '04:00', done: false, legs: [
-      { name: 'Laura Gómez', addr: 'Cra 51 #49-06, Centro', lat: 6.1529, lng: -75.3752, phone: '+57 310 555 0142', flight: 'AV-9412 · 05:10', dl: '05:10', kind: 'pickup', notes: 'Portón negro, timbre del 201.' },
-      { name: 'Andrés Peña', addr: 'Calle 47 #59-33, El Porvenir', lat: 6.1468, lng: -75.3849, phone: '+57 311 555 0233', flight: 'AV-9412 · 05:10', dl: '05:10', kind: 'pickup', notes: 'Frente a la tienda, casa de dos pisos.' },
-      { name: DR_MDE.name, addr: DR_MDE.addr, lat: DR_MDE.lat, lng: DR_MDE.lng, kind: 'airport' },
-    ] },
-    { id: 'V2', type: 'lle', start: '10:40', done: false, legs: [
-      { name: DR_MDE.name, addr: 'Recoger en MDE · llegadas', lat: DR_MDE.lat, lng: DR_MDE.lng, kind: 'airport' },
-      { name: 'Patricia Díaz', addr: 'Calle 43 #55-20, San Nicolás', lat: 6.1473, lng: -75.3778, phone: '+57 313 555 0777', flight: 'AV-9527', dl: '10:40', kind: 'dropoff' },
-    ] },
-  ];
+  // 2026-07-25: se eliminó DR_DEMO_VUELTAS (2 vueltas con "Laura Gómez",
+  // "Andrés Peña" y "Patricia Díaz", con teléfono y todo). Un conductor SIN ruta
+  // asignada veía esas paradas como si fueran suyas y podía arrancar a
+  // recogerlas. Ver [feedback-no-inventar-datos]. Ahora, sin ruta real, la
+  // pantalla lo dice y no hay nada que ejecutar.
 
   const drState = {
-    profile: null, source: 'demo', driverProfileId: null,
+    profile: null, source: 'empty', driverProfileId: null,
     vueltas: [], view: 'overview', activeId: null, legIdx: 0, legState: 'en_camino',
     map: null, watchId: null, sharing: false, bound: false, _lastDone: null,
     lastPingAt: 0,
@@ -44,7 +35,8 @@
   window.DriverRutas = { open: drOpen, close: drClose };
   const drHost = () => document.getElementById('driver-ruta-root');
 
-  // Abre la ruta del día (pantalla completa). Lee la ruta REAL asignada; si no hay → demo.
+  // Abre la ruta del día (pantalla completa). Solo ruta REAL asignada; si no hay,
+  // la pantalla lo dice (ya no existe fallback a datos de ejemplo).
   async function drOpen(profile) {
     drState.profile = profile;
     drState.view = 'overview'; drState.activeId = null;
@@ -53,10 +45,8 @@
     root.innerHTML = '<div id="driver-ruta-ui"><div class="dr-loading">Cargando tu ruta…</div></div>';
     let vueltas = null;
     try { if (window.Api && Api.listMyVueltasForDriver && profile && profile.id) vueltas = await Api.listMyVueltasForDriver(profile.id); } catch (e) {}
-    drState.source = (vueltas && vueltas.length) ? 'live' : 'demo';
-    drState.vueltas = (vueltas && vueltas.length)
-      ? vueltas
-      : DR_DEMO_VUELTAS.map(v => ({ ...v, legs: v.legs.map(l => ({ ...l })) }));
+    drState.source = (vueltas && vueltas.length) ? 'live' : 'empty';
+    drState.vueltas = (vueltas && vueltas.length) ? vueltas : [];
     // driver_locations referencia driver_profiles(id), no profiles(id).
     drState.driverProfileId = null;
     if (drState.source === 'live' && window.Api && Api.getMyDriverProfileId) {
@@ -162,6 +152,22 @@
   // ---------- OVERVIEW: "Mi día" (maqueta route-screens.jsx) ----------
   function drOverviewHTML() {
     const vs = drState.vueltas;
+    // Sin ruta asignada no se inventa una: se dice y ya. Antes aquí aparecían
+    // dos vueltas de mentira que el conductor podía arrancar a ejecutar.
+    if (!vs.length) {
+      return `<div id="driver-ruta-ui">
+        <div class="dr-topbar">
+          <button class="dr-icbtn" data-dr="close" aria-label="Volver"><svg class="icon"><use href="#i-back"/></svg></button>
+          <b>Ruta del día</b>
+        </div>
+        <div class="dr-empty">
+          <div class="dr-empty-ic"><svg class="icon"><use href="#i-route"/></svg></div>
+          <h1>No tienes ruta asignada</h1>
+          <p>Cuando coordinación publique el plan del día con tu nombre, tus vueltas aparecen aquí y te llega una notificación.</p>
+          <button class="close" data-dr="close"><svg class="icon" style="width:18px;height:18px"><use href="#i-back"/></svg>Volver</button>
+        </div>
+      </div>`;
+    }
     const done = vs.filter(v => v.done).length;
     const pax = vs.reduce((n, v) => n + drStopsOf(v).length, 0);
     const pct = vs.length ? Math.round(done / vs.length * 100) : 0;
@@ -170,7 +176,6 @@
       <div class="dr-topbar">
         <button class="dr-icbtn" data-dr="close" aria-label="Volver"><svg class="icon"><use href="#i-back"/></svg></button>
         <b>Ruta del día</b>
-        ${drState.source === 'demo' ? '<span class="dr-demo-tag">demo</span>' : ''}
       </div>
       <div class="dr-hd">
         <div class="dr-eyebrow">Rutas · ${dateStr}</div>

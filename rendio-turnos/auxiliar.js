@@ -3,27 +3,22 @@
 // Diseño portado de /Visual/ (aux-booking + auxiliar-screens), aterrizado a Rionegro→MDE.
 // Decisiones: login correo+contraseña · dirección con pin ajustable · sin propina
 // (servicio mensual) · calificación ligera. Lee/escribe reservas REALES en dev
-// (Api.listMyReservations/createReservation); si no hay sesión/BD → fallback DEMO.
+// (Api.listMyReservations/createReservation). Sin fallback: si no hay sesión o
+// falla la consulta, se le dice al usuario en vez de inventarle viajes.
 
   // Coord del terminal de pasajeros MDE (misma que el motor de rutas).
   const AUX_MDE = { lat: 6.1715, lng: -75.4270 };
 
-  // Viajes demo (reemplazan lo que vendría de `reservations`).
-  const AUX_DEMO_TRIPS = [
-    { id: 't1', type: 'sal', flight: 'AV-9412', date: '2026-07-14', time: '05:10',
-      address: 'Cra 51 #49-06, Centro, Rionegro', lat: 6.1529, lng: -75.3752,
-      isPernocta: false, isReserva: true, notes: '', status: 'assigned',
-      driver: { name: 'Carlos Roldán', plate: 'RD-01', rating: 4.9, eta: '04:05', lat: 6.1725, lng: -75.3560 } },
-    { id: 't2', type: 'lle', flight: 'AV-9527', date: '2026-07-12', time: '21:10',
-      address: 'Calle 43 #55-20, San Nicolás, Rionegro', lat: 6.1473, lng: -75.3778,
-      isPernocta: false, isReserva: true, notes: 'Portería, torre 2', status: 'done',
-      driver: { name: 'Daniel Álvarez', plate: 'RD-02', rating: 4.8 } },
-  ];
+  // 2026-07-25: se eliminaron AUX_DEMO_TRIPS y toda la simulación de seguimiento
+  // (el carrito que se deslizaba de A a B en 9 s con un ETA inventado, y el
+  // "conductor asignado" que aparecía solo a los 6 s). Ver
+  // [feedback-no-inventar-datos]. Ahora el auxiliar solo ve sus reservas reales;
+  // si no hay sesión o falla la consulta, se lo decimos.
 
   const auxState = {
     profile: null, view: 'home', step: 1, form: {}, trips: [], editingTrip: null,
     map: null, marker: null, geoTimer: null, geoReq: 0, bound: false,
-    trackTimer: null, trackMap: null, ratingSel: 0, ratingTags: [], source: 'demo',
+    trackMap: null, ratingSel: 0, ratingTags: [], source: 'live',
     // Seguimiento EN VIVO (source==='live'): polling del RPC + tween del carro.
     trackPoll: null, trackTween: null, trackCar: null, trackLine: null,
     trackLast: null, trackDestPt: null,
@@ -43,8 +38,10 @@
     // Datos REALES desde dev (reservas del auxiliar); si no hay sesión/BD → demo.
     let trips = null;
     try { if (window.Api?.listMyReservations) trips = await Api.listMyReservations(); } catch (e) {}
-    auxState.trips = (trips && trips.length !== undefined) ? trips : AUX_DEMO_TRIPS.map(t => ({ ...t }));
-    auxState.source = trips ? 'live' : 'demo';
+    // trips === null → no hay sesión de auxiliar o falló la consulta. No se
+    // rellena con nada: la pantalla lo dice y ofrece reintentar.
+    auxState.trips = Array.isArray(trips) ? trips : [];
+    auxState.source = Array.isArray(trips) ? 'live' : 'error';
     auxRender();
   }
 
@@ -126,7 +123,13 @@
           <button class="ax-pwa-btn hidden" data-ax="install">📲 Instalar app</button>
           <button class="ax-pwa-btn hidden" data-ax="enable-push">🔔 Activar notificaciones</button>
         </div>
-        ${next ? `<div class="ax-next-label">Próximo viaje</div>${auxTripCard(next, true)}` : `
+        ${auxState.source === 'error' ? `
+          <div class="ax-empty">
+            <div class="ax-empty-ic"><svg class="icon"><use href="#i-info"/></svg></div>
+            <b>No pudimos cargar tus viajes</b><span>Revisa tu conexión. Si sigue igual, avisa a coordinación: puede que tu usuario aún no esté registrado como auxiliar.</span>
+            <button class="ax-btn ax-btn-ghost" data-ax="reload">Reintentar</button>
+          </div>`
+        : next ? `<div class="ax-next-label">Próximo viaje</div>${auxTripCard(next, true)}` : `
           <div class="ax-empty">
             <div class="ax-empty-ic"><svg class="icon"><use href="#i-plane"/></svg></div>
             <b>Aún no tienes viajes</b><span>Pide tu traslado y aquí lo verás.</span>
@@ -479,27 +482,13 @@
       status: 'pending', driver: null, rated: false,
     };
     // Persistir en dev si hay sesión real; si falla, sigue como demo local.
-    if (auxState.source === 'live' && window.Api?.createReservation) {
-      try { trip.id = await Api.createReservation(f); }
-      catch (e) { toast('No se pudo guardar en el servidor; queda local.'); }
-    } else {
-      setTimeout(() => auxDemoAssign(trip.id), 6000); // demo: asigna solo
-    }
+    try { trip.id = await Api.createReservation(f); }
+    catch (e) { toast('No se pudo guardar tu traslado. Revisa la conexión e intenta otra vez.'); return; }
     auxState.trips.unshift(trip);
     auxState.step = 1; auxState.form = {};
     auxState.editingTrip = trip.id; auxState.view = 'confirm';
     auxRender();
   }
-  // DEMO: asigna un conductor y avisa (sustituye al push real "conductor asignado").
-  function auxDemoAssign(tripId) {
-    const t = auxState.trips.find(x => x.id === tripId); if (!t || t.status !== 'pending') return;
-    t.status = 'assigned';
-    t.driver = { name: 'Carlos Roldán', plate: 'RD-01', rating: 4.9, eta: auxSuggestPickup(t.time),
-      lat: t.lat + 0.022, lng: t.lng - 0.018 }; // arranca a ~2.5 km
-    toast('🚗 ¡Te asignamos conductor! Carlos Roldán · RD-01');
-    if (auxState.view === 'home' || (auxState.view === 'trip' && auxState.editingTrip === tripId)) auxRender();
-  }
-
   // ---------- P1: confirmación (justo tras reservar) ----------
   function auxConfirmHTML() {
     const t = auxState.trips.find(x => x.id === auxState.editingTrip); if (!t) { auxState.view = 'home'; return auxHomeHTML(); }
@@ -658,17 +647,11 @@
   // Demo (presentaciones)      → la animación de siempre.
   function auxAfterTripRender() {
     const t = auxState.trips.find(x => x.id === auxState.editingTrip); if (!t) return;
-    if (auxState.source === 'live') {
-      // Desde 'pending' ya seguimos: la pantalla avanza sola cuando el admin
-      // publica el plan (→ conductor) y cuando el conductor arranca (→ mapa).
-      if (['pending', 'assigned', 'onway', 'onboard'].includes(t.status)) auxStartLiveTrack(t);
-      return;
-    }
-    if (t.status === 'onway') auxRunTrack(t, t.driver, { lat: t.lat, lng: t.lng }, 'pickup');
-    if (t.status === 'onboard') auxRunTrack(t, { lat: t.lat, lng: t.lng }, AUX_MDE, 'airport');
+    // Desde 'pending' ya seguimos: la pantalla avanza sola cuando el admin
+    // publica el plan (→ conductor) y cuando el conductor arranca (→ mapa).
+    if (['pending', 'assigned', 'onway', 'onboard'].includes(t.status)) auxStartLiveTrack(t);
   }
   function auxStopTrack() {
-    if (auxState.trackTimer) { clearInterval(auxState.trackTimer); auxState.trackTimer = null; }
     if (auxState.trackPoll) { clearInterval(auxState.trackPoll); auxState.trackPoll = null; }
     if (auxState.trackTween) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
     if (auxState.waitTick) { clearInterval(auxState.waitTick); auxState.waitTick = null; }
@@ -897,43 +880,6 @@
       freshEl.classList.toggle('stale', !!f.stale);
     }
   }
-  function auxRunTrack(t, from, to, phase) {
-    const el = document.getElementById('ax-track-map'); if (!el || typeof L === 'undefined') return;
-    // Blindaje: sin coords válidas no animamos (evita crash de Leaflet).
-    if (!from || from.lat == null || !to || to.lat == null) {
-      const etaEl = document.getElementById('ax-eta-min'); if (etaEl) etaEl.textContent = 'en camino';
-      return;
-    }
-    const map = auxState.trackMap = L.map(el, { zoomControl: false, attributionControl: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-    const A = [from.lat, from.lng], B = [to.lat, to.lng];
-    map.fitBounds([A, B], { padding: [50, 50] });
-    L.circleMarker(B, { radius: 8, color: '#F26522', fillColor: '#F26522', fillOpacity: 1, weight: 3 }).addTo(map);
-    const line = L.polyline([A, B], { color: '#F4791F', weight: 4, opacity: .5, dashArray: '6 8' }).addTo(map);
-    const carIcon = L.divIcon({ className: '', html: '<div class="ax-car">🚗</div>', iconSize: [30, 30], iconAnchor: [15, 15] });
-    const car = L.marker(A, { icon: carIcon }).addTo(map);
-    setTimeout(() => map.invalidateSize(), 60);
-    // interpola A→B en ~9s, actualiza ETA, y al llegar avanza de fase
-    const TOTAL = 9000, START = Date.now();
-    auxState.trackTimer = setInterval(() => {
-      const k = Math.min(1, (Date.now() - START) / TOTAL);
-      const lat = A[0] + (B[0] - A[0]) * k, lng = A[1] + (B[1] - A[1]) * k;
-      car.setLatLng([lat, lng]);
-      line.setLatLngs([[lat, lng], B]);
-      const etaEl = document.getElementById('ax-eta-min');
-      if (etaEl) etaEl.textContent = k >= 1 ? '¡Llegó!' : Math.max(1, Math.round((1 - k) * (phase === 'airport' ? 18 : 6))) + ' min';
-      if (k >= 1) {
-        clearInterval(auxState.trackTimer); auxState.trackTimer = null;
-        setTimeout(() => auxTrackArrived(t, phase), 900);
-      }
-    }, 300);
-  }
-  function auxTrackArrived(t, phase) {
-    if (auxState.view !== 'trip' || auxState.editingTrip !== t.id) return;
-    if (phase === 'pickup') { t.status = 'onboard'; toast('Tu conductor llegó. ¡Buen viaje!'); auxRender(); }
-    else { t.status = 'done'; auxRender(); } // llegó al destino → calificar
-  }
-
   // ---------- navegación, salida y cancelación ----------
   function auxGoTab(tab) {
     auxState.tab = tab || 'inicio';
@@ -952,20 +898,25 @@
     const t = auxCurTrip(); if (!t) return;
     const reason = (document.getElementById('ax-cancel-reason')?.value || '').trim();
     btn.disabled = true; btn.textContent = 'Cancelando…';
-    if (auxState.source === 'live' && window.Api?.cancelMyReservation) {
-      try {
-        const r = await Api.cancelMyReservation(t.id, reason);
-        if (r && r.driver_profile_id && typeof notify === 'function') {
-          notify([r.driver_profile_id], 'Traslado cancelado',
-            `${(auxState.profile?.full_name || 'Un auxiliar').split(' ')[0]} canceló su traslado. Ya no está en tu ruta.`, '/');
-        }
-      } catch (e) {
-        btn.disabled = false; btn.textContent = 'Sí, cancelar';
-        toast(e.message && e.message.includes('en curso')
-          ? 'El viaje ya está en curso: no se puede cancelar.'
-          : 'No se pudo cancelar. Intenta de nuevo.');
-        return;
+    // La cancelación es del servidor o no es: no se marca cancelado en pantalla
+    // si la reserva sigue viva en la BD y el conductor sigue yendo por él.
+    if (!window.Api?.cancelMyReservation) {
+      btn.disabled = false; btn.textContent = 'Sí, cancelar';
+      toast('No se pudo cancelar. Intenta de nuevo.');
+      return;
+    }
+    try {
+      const r = await Api.cancelMyReservation(t.id, reason);
+      if (r && r.driver_profile_id && typeof notify === 'function') {
+        notify([r.driver_profile_id], 'Traslado cancelado',
+          `${(auxState.profile?.full_name || 'Un auxiliar').split(' ')[0]} canceló su traslado. Ya no está en tu ruta.`, '/');
       }
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Sí, cancelar';
+      toast(e.message && e.message.includes('en curso')
+        ? 'El viaje ya está en curso: no se puede cancelar.'
+        : 'No se pudo cancelar. Intenta de nuevo.');
+      return;
     }
     t.status = 'cancelled'; t.cancelledAt = new Date().toISOString(); t.cancelReason = reason;
     auxState.confirmingCancel = false;
@@ -1001,6 +952,7 @@
       else if (a === 'tab') { auxGoTab(el.dataset.tab); }
       else if (a === 'profile') { auxGoTab('perfil'); }
       else if (a === 'logout') { auxLogout(); }
+      else if (a === 'reload') { el.disabled = true; auxInit(auxState.profile); }
       // --- seguimiento del viaje ---
       // Confirmar recogida: ahora PERSISTE (RPC auxiliar_confirm_ready). Antes
       // solo cambiaba el estado en memoria y el siguiente refresco lo pisaba,
@@ -1008,11 +960,12 @@
       else if (a === 'confirm-pickup') {
         const t = auxCurTrip(); if (!t) return;
         el.disabled = true;
-        if (auxState.source === 'live' && window.Api?.confirmReservationReady) {
-          Api.confirmReservationReady(t.id)
-            .then(() => { t.readyAt = new Date().toISOString(); toast('Listo — le avisamos a tu conductor.'); auxRender(); })
-            .catch(() => { el.disabled = false; toast('No se pudo confirmar. Intenta de nuevo.'); });
-        } else { t.readyAt = new Date().toISOString(); toast('Confirmado.'); auxRender(); }
+        // Sin la API no se "confirma" nada en local: sería el mismo engaño que
+        // se acaba de arreglar, solo que en otra rama.
+        if (!window.Api?.confirmReservationReady) { el.disabled = false; toast('No se pudo confirmar. Intenta de nuevo.'); return; }
+        Api.confirmReservationReady(t.id)
+          .then(() => { t.readyAt = new Date().toISOString(); toast('Listo — le avisamos a tu conductor.'); auxRender(); })
+          .catch(() => { el.disabled = false; toast('No se pudo confirmar. Intenta de nuevo.'); });
       }
       // --- cancelar el traslado ---
       else if (a === 'cancel-trip') { auxState.confirmingCancel = true; auxRender(); }
