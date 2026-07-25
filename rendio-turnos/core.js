@@ -133,7 +133,7 @@
     $('#reopen-avail-btn')?.addEventListener('click', onReopenAvailability);
     $('#balance-generate')?.addEventListener('click', onGenerateBalance);
     $('#balance-month')?.addEventListener('click', balanceThisMonth);
-    $('#balance-csv')?.addEventListener('click', onDownloadBalanceCsv);
+    $('#balance-xlsx')?.addEventListener('click', onDownloadBalanceXlsx);
     $('#download-schedule-btn')?.addEventListener('click', onDownloadScheduleXlsx);
     $('#save-btn').addEventListener('click', () => onSaveSchedule(false));
     $('#publish-btn').addEventListener('click', () => onSaveSchedule(true));

@@ -636,7 +636,7 @@
 
       <!-- =============== ADMIN: BALANCE TAB (paleta limpia) =============== -->
       <!-- Rediseño visual scopeado bajo #balance-ui. Lógica intacta:
-           renderBalance / onGenerateBalance / onDownloadBalanceCsv en admin-balance.js. -->
+           renderBalance / onGenerateBalance / onDownloadBalanceXlsx en admin-balance.js. -->
       <section data-panel="balance" class="hidden">
         <div id="balance-ui">
           <div class="rl-phead">
@@ -650,7 +650,7 @@
             <button class="rl-btn ghost" id="balance-month">Mes actual</button>
             <button class="rl-btn" id="balance-generate"><svg class="icon"><use href="#i-play"/></svg>Generar informe</button>
             <div class="rl-spacer"></div>
-            <button class="rl-btn green" id="balance-csv"><svg class="icon"><use href="#i-download"/></svg>Descargar CSV</button>
+            <button class="rl-btn green" id="balance-xlsx"><svg class="icon"><use href="#i-download"/></svg>Descargar Excel</button>
           </div>
 
           <div class="bal-summary" id="balance-summary"></div>

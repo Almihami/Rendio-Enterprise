@@ -144,22 +144,80 @@
       </div>`;
   }
 
-  function onDownloadBalanceCsv() {
+  // Descarga el balance como Excel (.xlsx) real → abre en columnas en cualquier
+  // visor, sin tener que elegir separador. Reusa ExcelJS (ya cargado para el horario).
+  async function onDownloadBalanceXlsx() {
     const bd = state.balanceData;
     if (!bd || !bd.list.length) { toast('Genera primero un informe con datos.'); return; }
-    const esc = v => { v = String(v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-    const tot = k => bd.list.reduce((a, x) => a + x[k], 0);
+    if (typeof ExcelJS === 'undefined') { alert('No se pudo cargar la librería de Excel. Revisa tu conexión y reintenta.'); return; }
     const r1 = n => Math.round(n * 10) / 10;
-    const lines = [
-      `Balance por horas reales trabajadas;${bd.fromV} a ${bd.toV};${bd.count} turnos en el rango`,
-      ['Nombre', 'Email', 'Rol', 'Turnos completos', 'Horas reales', 'Turnos auto-cerrados', 'Horas auto-cerradas (sin verificar)', 'Arranques falsos', 'En curso'].join(';'),
-      ...bd.list.map(r => [r.name, r.email, r.role, r.ok, r.okH, r.auto, r.autoH, r.falso, r.curso].map(esc).join(';')),
-      ['Total', '', '', tot('ok'), r1(tot('okH')), tot('auto'), r1(tot('autoH')), tot('falso'), tot('curso')].map(esc).join(';'),
+    const tot = k => bd.list.reduce((a, x) => a + x[k], 0);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Balance', { views: [{ showGridLines: false }] });
+    ws.columns = [
+      { width: 26 }, { width: 26 }, { width: 12 },
+      { width: 11 }, { width: 12 }, { width: 13 }, { width: 16 }, { width: 12 }, { width: 10 },
     ];
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const border = { style: 'thin', color: { argb: 'FFD9D9D9' } };
+    const allBorders = { top: border, bottom: border, left: border, right: border };
+    const headFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4791F' } };
+    const totFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+
+    // Título (A1:I1)
+    ws.mergeCells('A1:I1');
+    const t = ws.getCell('A1');
+    t.value = `Balance por horas reales trabajadas · ${bd.fromV} a ${bd.toV} · ${bd.count} turnos`;
+    t.font = { name: 'Arial', size: 13, bold: true };
+    t.alignment = { vertical: 'middle' };
+    ws.getRow(1).height = 24;
+
+    // Encabezados (fila 3)
+    const headers = ['Persona', 'Email', 'Rol', 'Turnos completos', 'Horas reales', 'Turnos auto-cerrados', 'Horas auto-cerradas (sin verificar)', 'Arranques falsos', 'En curso'];
+    const hr = ws.getRow(3);
+    headers.forEach((h, i) => {
+      const c = hr.getCell(i + 1);
+      c.value = h;
+      c.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = headFill;
+      c.alignment = { vertical: 'middle', wrapText: true, horizontal: i >= 3 ? 'center' : 'left' };
+      c.border = allBorders;
+    });
+    hr.height = 34;
+
+    // Filas de datos
+    let row = 4;
+    bd.list.forEach(p => {
+      const vals = [p.name, p.email, p.role, p.ok, p.okH, p.auto, p.autoH, p.falso, p.curso];
+      const rr = ws.getRow(row);
+      vals.forEach((v, i) => {
+        const c = rr.getCell(i + 1);
+        c.value = v;
+        c.font = { name: 'Arial', size: 11 };
+        c.alignment = { vertical: 'middle', horizontal: i >= 3 ? 'center' : 'left' };
+        c.border = allBorders;
+      });
+      ws.getRow(row).height = 20;
+      row++;
+    });
+
+    // Total (negrita, fondo gris)
+    const totVals = ['Total', '', '', tot('ok'), r1(tot('okH')), tot('auto'), r1(tot('autoH')), tot('falso'), tot('curso')];
+    const tr = ws.getRow(row);
+    totVals.forEach((v, i) => {
+      const c = tr.getCell(i + 1);
+      c.value = v;
+      c.font = { name: 'Arial', size: 11, bold: true };
+      c.fill = totFill;
+      c.alignment = { vertical: 'middle', horizontal: i >= 3 ? 'center' : 'left' };
+      c.border = allBorders;
+    });
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `balance_horas_reales_${bd.fromV}_a_${bd.toV}.csv`;
+    a.download = `balance_horas_reales_${bd.fromV}_a_${bd.toV}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
