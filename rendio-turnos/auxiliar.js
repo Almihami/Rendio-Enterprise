@@ -22,6 +22,8 @@
     // Seguimiento EN VIVO (source==='live'): polling del RPC + tween del carro.
     trackPoll: null, trackTween: null, trackCar: null, trackLine: null,
     trackLast: null, trackDestPt: null,
+    // Vía REAL por carretera (OSRM) en vez de la línea recta que se veía antes.
+    routePath: null, routeFrom: null, routeDestKey: null, routeAt: 0,
     // Pestaña activa del nav inferior + cancelación en 2 toques (sin confirm() nativo).
     tab: 'inicio', confirmingCancel: false, cancelTimer: null,
     // Espera en el punto de recogida: cuenta regresiva REAL desde que el
@@ -658,6 +660,8 @@
     if (auxState.trackMap) { auxState.trackMap.remove(); auxState.trackMap = null; }
     auxState.trackCar = null; auxState.trackLine = null; auxState.trackLast = null; auxState.trackDestPt = null;
     auxState.waitFrom = null;
+    // Estado de la vía real: al cambiar de vista se recalcula desde cero.
+    auxState.routePath = null; auxState.routeFrom = null; auxState.routeDestKey = null; auxState.routeAt = 0;
   }
 
   // ---------- espera en el punto de recogida ----------
@@ -809,17 +813,67 @@
     if (last && auxDistM(last, driverPt) > 2000) {
       // Salto grande (señal perdida): no inventamos el trayecto — saltamos.
       auxState.trackCar.setLatLng(driverPt);
-      if (auxState.trackLine) auxState.trackLine.setLatLngs([driverPt, auxState.trackDestPt]);
+      if (auxState.trackLine && !auxState.routePath) auxState.trackLine.setLatLngs([driverPt, auxState.trackDestPt]);
     } else if (!last || auxDistM(last, driverPt) > 3) {
       auxTweenCar(last || driverPt, driverPt);
     }
     auxState.trackLast = driverPt;
+    // Redibuja la vía real desde donde va el carro (con freno: ver auxSyncRoute).
+    auxSyncRoute(driverPt, destPt);
   }
   function auxMountCar(driverPt, destPt) {
     const carIcon = L.divIcon({ className: '', html: '<div class="ax-car">🚗</div>', iconSize: [30, 30], iconAnchor: [15, 15] });
-    auxState.trackLine = L.polyline([driverPt, destPt], { color: '#F4791F', weight: 4, opacity: .5, dashArray: '6 8' }).addTo(auxState.trackMap);
+    // Arranca como línea recta punteada (es lo único cierto mientras OSRM
+    // responde) y auxSyncRoute la reemplaza por la vía real en cuanto llega.
+    auxState.trackLine = L.polyline([driverPt, destPt], { color: '#F4791F', weight: 4, opacity: .45, dashArray: '6 8' }).addTo(auxState.trackMap);
     auxState.trackCar = L.marker(driverPt, { icon: carIcon }).addTo(auxState.trackMap);
     auxState.trackLast = driverPt;
+    auxSyncRoute(driverPt, destPt);
+  }
+
+  // ---------- trayecto REAL por carretera (OSRM) ----------
+  // El auxiliar veía una línea recta del carro a su casa, que cruzaba potreros y
+  // no decía nada del camino real. El conductor y el admin ya pintaban la vía
+  // (OSRM); esto le da lo mismo al pasajero.
+  //
+  // OSRM es el servidor público de demo y pide uso ligero: solo se vuelve a
+  // pedir si el carro se movió de verdad (>250 m), si cambió el destino (cambio
+  // de fase del viaje) o si pasó un minuto. Mismo criterio que admin-operacion.
+  const AUX_OSRM_MOVE_M = 250;
+  const AUX_OSRM_MAX_MS = 60000;
+
+  async function auxSyncRoute(driverPt, destPt) {
+    if (!auxState.trackLine || !driverPt || !destPt) return;
+    const destKey = destPt.join(',');
+    const movio = !auxState.routeFrom || auxDistM(auxState.routeFrom, driverPt) > AUX_OSRM_MOVE_M;
+    const otroDestino = auxState.routeDestKey !== destKey;
+    const viejo = Date.now() - (auxState.routeAt || 0) > AUX_OSRM_MAX_MS;
+    if (!movio && !otroDestino && !viejo) return;
+    // Se marca ANTES de pedir: si no, cada tick de 6 s dispara otra petición.
+    auxState.routeFrom = driverPt; auxState.routeDestKey = destKey; auxState.routeAt = Date.now();
+
+    const path = await auxRoadPath(driverPt, destPt);
+    // Pudo cambiar de vista/viaje mientras OSRM respondía.
+    if (!auxState.trackLine || auxState.routeDestKey !== destKey) return;
+    if (path && path.length > 1) {
+      auxState.routePath = path;
+      auxState.trackLine.setLatLngs(path);
+      auxState.trackLine.setStyle({ dashArray: null, opacity: .75, weight: 5 });
+    } else {
+      // Sin respuesta de OSRM se deja la recta, pero PUNTEADA: el punteado dice
+      // "esto es la dirección, no el camino". No se finge una vía que no sabemos.
+      auxState.routePath = null;
+      auxState.trackLine.setStyle({ dashArray: '6 8', opacity: .45, weight: 4 });
+    }
+  }
+  async function auxRoadPath(from, to) {
+    try {
+      const coords = `${from[1]},${from[0]};${to[1]},${to[0]}`;
+      const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+      const j = await (await fetch(url)).json();
+      const c = j && j.routes && j.routes[0] && j.routes[0].geometry && j.routes[0].geometry.coordinates;
+      return c ? c.map(p => [p[1], p[0]]) : null;
+    } catch (_) { return null; }
   }
   function auxTweenCar(from, to) {
     if (auxState.trackTween) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
@@ -830,7 +884,10 @@
       const k = Math.min(1, (Date.now() - START) / DUR);
       const lat = A[0] + (B[0] - A[0]) * k, lng = A[1] + (B[1] - A[1]) * k;
       car.setLatLng([lat, lng]);
-      if (line && dest) line.setLatLngs([[lat, lng], dest]);
+      // Con vía real dibujada, la línea NO se toca: es el camino por carretera,
+      // no un cordel atado al carro. Sin ella, se mantiene el comportamiento
+      // viejo (la recta sigue al carro) para no dejar el mapa sin referencia.
+      if (line && dest && !auxState.routePath) line.setLatLngs([[lat, lng], dest]);
       if (k >= 1) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
     }, 60);
   }
