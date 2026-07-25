@@ -1233,6 +1233,20 @@
     return data || [];
   }
 
+  // Admin: TODOS los turnos cuyo start_at cae en [fromISO, toISO). Trae los campos
+  // para calcular horas reales trabajadas (inicio→cierre) y clasificar el turno:
+  // completo, auto-cerrado (por el cron, sin km de cierre), arranque falso
+  // (sin km de apertura) o en curso (sin cierre). Lo usa el Balance real.
+  async function listShiftsForBalance(fromISO, toISO) {
+    const { data, error } = await sb.from('shifts')
+      .select('id, status, start_at, end_at, opening_km, closing_km, driver_id, ' +
+              'driver_profiles(profile_id, profiles(full_name, email))')
+      .gte('start_at', fromISO).lt('start_at', toISO)
+      .order('start_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins,
@@ -1257,5 +1271,6 @@
     getMyFullProfile, uploadMyAvatar,
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
+    listShiftsForBalance,
   };
 })();

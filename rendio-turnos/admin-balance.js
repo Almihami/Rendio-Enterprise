@@ -26,92 +26,121 @@
     onGenerateBalance();
   }
 
-  // Cuenta, por persona: días de manejo + días de coordinación (= turnos de 12h).
-  // Un mismo día cuenta 1 sola vez (maneja XOR coordina, como genera el sistema).
-  function aggregateBalance(rows) {
-    const merged = {}, agg = {};
-    rows.forEach(r => {
-      const dataObj = r.data || {};
-      Object.assign(merged, dataObj._names || {});
-      Scheduler.DAYS.forEach(dk => {
-        const day = dataObj[dk];
-        if (!day) return;
-        const morning = new Set(day.morning || []);
-        const afternoon = new Set(day.afternoon || []);
-        const coord = new Set([...(day.coord_am || []), ...(day.coord_pm || [])]);
-        new Set([...morning, ...afternoon, ...coord]).forEach(id => {
-          agg[id] = agg[id] || { am: 0, pm: 0, co: 0 };
-          // 1 turno por día: manejar (AM/PM) tiene prioridad sobre coordinar.
-          if (morning.has(id)) agg[id].am++;
-          else if (afternoon.has(id)) agg[id].pm++;
-          else if (coord.has(id)) agg[id].co++;
-        });
-      });
+  // ── Balance por HORAS REALES trabajadas ────────────────────────────────────
+  // La nómina se paga por lo trabajado, no por lo planeado. Este informe lee los
+  // turnos reales (tabla shifts: inicio→cierre) en vez del horario publicado ×12.
+  //
+  // Clasificación de cada turno por sus propias columnas (sin joins extra):
+  //   • ok    (completo)     → tiene km de apertura y de cierre: el conductor lo
+  //                            abrió y lo cerró. Horas pagables = cierre − inicio.
+  //   • auto  (auto-cerrado) → apertura sí, km de cierre NO, pero tiene end_at: lo
+  //                            cerró el sistema (cron/forzado) porque el conductor
+  //                            no cerró. Sus horas quedan topeadas → se muestran
+  //                            aparte para revisión, NO entran al pagable.
+  //   • falso (arranque)     → sin km de apertura: reserva/inspección que nunca
+  //                            avanzó ("RESERVA EXPIRADA"). No hubo trabajo → 0 h.
+  //   • curso (en curso)     → sin end_at: turno aún abierto → no cuenta aún.
+  function classifyShift(s) {
+    if (s.opening_km == null) return 'falso';
+    if (!s.end_at) return 'curso';
+    if (s.closing_km == null) return 'auto';
+    return 'ok';
+  }
+  function shiftHours(s) {
+    if (!s.start_at || !s.end_at) return 0;
+    return Math.max(0, (new Date(s.end_at).getTime() - new Date(s.start_at).getTime()) / 3600000);
+  }
+  // 'YYYY-MM-DD' → día siguiente en 'YYYY-MM-DD' (para incluir el día "Hasta" completo).
+  function dayAfterISO(ymd) {
+    const [y, m, d] = ymd.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d) + 86400000), p = n => String(n).padStart(2, '0');
+    return `${dt.getUTCFullYear()}-${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())}`;
+  }
+
+  // Agrupa los turnos del rango por persona (profile_id) y suma horas reales.
+  function aggregateRealHours(shifts) {
+    const agg = {};
+    shifts.forEach(s => {
+      const dp = s.driver_profiles || {};
+      const pid = dp.profile_id || `sinperfil:${s.driver_id}`;
+      const name = (dp.profiles && dp.profiles.full_name) || '(desconocido)';
+      const email = (dp.profiles && dp.profiles.email) || '';
+      const a = agg[pid] || (agg[pid] = { id: pid, name, email, ok: 0, okH: 0, auto: 0, autoH: 0, falso: 0, curso: 0 });
+      switch (classifyShift(s)) {
+        case 'ok':    a.ok++;    a.okH += shiftHours(s); break;
+        case 'auto':  a.auto++;  a.autoH += shiftHours(s); break;
+        case 'falso': a.falso++; break;
+        default:      a.curso++;
+      }
     });
     const adminIds = new Set((state.admins || []).map(a => a.id));
     const driverIds = new Set((state.drivers || []).map(d => d.id));
-    const liveName = {}, liveMail = {};
-    (state.drivers || []).forEach(d => { liveName[d.id] = d.name; liveMail[d.id] = d.email || ''; });
-    (state.admins || []).forEach(a => { liveName[a.id] = liveName[a.id] || a.name; liveMail[a.id] = liveMail[a.id] || a.email || ''; });
-    const list = Object.keys(agg).map(id => {
-      const { am, pm, co } = agg[id];
-      const total = am + pm + co;
-      const name = liveName[id] || merged[id] || '(eliminado)';
-      const role = adminIds.has(id) ? 'Admin' : (driverIds.has(id) ? 'Conductor' : '—');
-      return { id, name, email: liveMail[id] || '', role, am, pm, co, total, horas: total * ((state.settings && state.settings.shift_hours) || 12) };
-    }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-    return { weeks: rows.length, list };
+    const r1 = n => Math.round(n * 10) / 10;
+    const list = Object.values(agg).map(a => ({
+      ...a, okH: r1(a.okH), autoH: r1(a.autoH),
+      role: adminIds.has(a.id) ? 'Admin' : (driverIds.has(a.id) ? 'Conductor' : '—'),
+    })).sort((x, y) => y.okH - x.okH || y.ok - x.ok || x.name.localeCompare(y.name));
+    return { list, count: shifts.length };
   }
 
   async function onGenerateBalance() {
     const fromV = $('#balance-from').value, toV = $('#balance-to').value;
     const box = $('#balance-table'), sum = $('#balance-summary');
     if (!fromV || !toV) { sum.innerHTML = ''; box.innerHTML = '<div class="bal-empty"><h3>Elige el rango</h3><p>Selecciona Desde y Hasta para generar el informe.</p></div>'; return; }
-    const fromWk = Scheduler.startOfWeekISO(fromV), toWk = Scheduler.startOfWeekISO(toV);
     sum.innerHTML = ''; box.innerHTML = '<div class="bal-empty"><p>Calculando…</p></div>';
-    let rows;
-    try { rows = await Api.listPublishedSchedules(fromWk, toWk); }
+    let shifts;
+    try { shifts = await Api.listShiftsForBalance(`${fromV}T00:00:00-05:00`, `${dayAfterISO(toV)}T00:00:00-05:00`); }
     catch (e) { box.innerHTML = `<div class="bal-empty"><h3>Error</h3><p>${escapeHtml(e.message)}</p></div>`; return; }
-    const agg = aggregateBalance(rows);
+    const agg = aggregateRealHours(shifts);
     state.balanceData = { ...agg, fromV, toV };
     if (!agg.list.length) {
-      box.innerHTML = '<div class="bal-empty"><h3>Sin datos</h3><p>No hay horarios publicados en ese rango.</p></div>';
+      box.innerHTML = '<div class="bal-empty"><h3>Sin datos</h3><p>No hay turnos en ese rango.</p></div>';
       return;
     }
     const r = agg.list;
-    const totAm = r.reduce((a, x) => a + x.am, 0);
-    const totPm = r.reduce((a, x) => a + x.pm, 0);
-    const totCo = r.reduce((a, x) => a + x.co, 0);
-    const totTurnos = totAm + totPm + totCo;
-    const TH = (state.settings && state.settings.shift_hours) || 12;
-    const totHoras = totTurnos * TH;
-    const maxH = Math.max(...r.map(x => x.horas), 1);
-    const avg = Math.round(totHoras / r.length);
+    const r1 = n => Math.round(n * 10) / 10;
+    const totOk = r.reduce((a, x) => a + x.ok, 0);
+    const totOkH = r1(r.reduce((a, x) => a + x.okH, 0));
+    const totAuto = r.reduce((a, x) => a + x.auto, 0);
+    const totAutoH = r1(r.reduce((a, x) => a + x.autoH, 0));
+    const totFalso = r.reduce((a, x) => a + x.falso, 0);
+    const totCurso = r.reduce((a, x) => a + x.curso, 0);
+    const maxH = Math.max(...r.map(x => x.okH), 1);
+    const avg = r.length ? Math.round(totOkH / r.length) : 0;
     sum.innerHTML = `
-      <div class="bal-scard accent"><div class="n">${totTurnos}</div><div class="l">Turnos publicados</div></div>
-      <div class="bal-scard"><div class="n">${totHoras}<s> h</s></div><div class="l">Horas totales</div></div>
-      <div class="bal-scard"><div class="n">${r.length}</div><div class="l">Personas con turno</div></div>
+      <div class="bal-scard accent"><div class="n">${totOkH}<s> h</s></div><div class="l">Horas reales trabajadas</div></div>
+      <div class="bal-scard"><div class="n">${totOk}</div><div class="l">Turnos completos</div></div>
+      <div class="bal-scard"><div class="n">${r.length}</div><div class="l">Personas</div></div>
       <div class="bal-scard"><div class="n">${avg}<s> h</s></div><div class="l">Promedio por persona</div></div>`;
-    const pill = (v, cls) => `<span class="bal-pill ${v ? cls : 'z'}">${v}</span>`;
+    const warn = (txt, title) => `<span class="bal-pill z" title="${escapeHtml(title)}" style="background:#fde68a;color:#7c2d12">${txt}</span>`;
+    const zero = '<span class="bal-pill z">0</span>';
     box.innerHTML = `
       <div class="bal-report">
-        <div class="bal-rhead"><svg class="icon"><use href="#i-doc"/></svg><h2>Detalle por persona</h2><span class="period">${escapeHtml(fromV)} → ${escapeHtml(toV)} · ${agg.weeks} sem · turno = ${TH} h</span></div>
+        <div class="bal-rhead"><svg class="icon"><use href="#i-doc"/></svg><h2>Horas reales por persona</h2><span class="period">${escapeHtml(fromV)} → ${escapeHtml(toV)} · ${agg.count} turnos · horas = inicio→cierre</span></div>
         <table class="bal-bt">
-          <thead><tr><th>Persona</th><th class="num">AM</th><th class="num">PM</th><th class="num">Coord</th><th class="num">Turnos</th><th class="num" style="width:210px">Horas</th></tr></thead>
+          <thead><tr><th>Persona</th><th class="num">Turnos</th><th class="num" style="width:230px">Horas reales</th><th class="num">Auto-cerrados</th><th class="num">Arranques falsos</th><th class="num">En curso</th></tr></thead>
           <tbody>${r.map(p => `<tr>
             <td><div class="person"><span class="bal-avt" style="background:${colorOfId(p.id)}">${escapeHtml(initialsOf(p.name))}</span><div><b>${escapeHtml(p.name)}</b><span>${escapeHtml(p.email || p.role)}</span></div></div></td>
-            <td class="num">${pill(p.am, 'am')}</td>
-            <td class="num">${pill(p.pm, 'pm')}</td>
-            <td class="num">${pill(p.co, 'co')}</td>
-            <td class="num"><b>${p.total}</b></td>
-            <td class="num"><div class="bal-hrs"><span class="bar"><i style="width:${Math.round(p.horas / maxH * 100)}%"></i></span><b>${p.horas} h</b></div></td>
+            <td class="num"><b>${p.ok}</b></td>
+            <td class="num"><div class="bal-hrs"><span class="bar"><i style="width:${Math.round(p.okH / maxH * 100)}%"></i></span><b>${p.okH} h</b></div></td>
+            <td class="num">${p.auto ? warn(`${p.auto} · ${p.autoH}h`, 'Los cerró el sistema, no el conductor — horas sin verificar, revisar antes de pagar') : zero}</td>
+            <td class="num">${p.falso ? warn(p.falso, 'Reserva/inspección sin avanzar — no hubo trabajo (0 h)') : zero}</td>
+            <td class="num">${p.curso ? `<span class="bal-pill z" style="background:#dbeafe;color:#1e3a8a">${p.curso}</span>` : zero}</td>
           </tr>`).join('')}</tbody>
           <tfoot><tr>
             <td>Total · ${r.length} personas</td>
-            <td class="num">${totAm}</td><td class="num">${totPm}</td><td class="num">${totCo}</td>
-            <td class="num">${totTurnos}</td><td class="num">${totHoras} h</td>
+            <td class="num">${totOk}</td>
+            <td class="num">${totOkH} h</td>
+            <td class="num">${totAuto}${totAutoH ? ' · ' + totAutoH + 'h' : ''}</td>
+            <td class="num">${totFalso}</td>
+            <td class="num">${totCurso}</td>
           </tr></tfoot>
         </table>
+        <p style="margin:12px 4px 0;font-size:12.5px;color:var(--ink2);line-height:1.55">
+          <b>Horas reales</b> = suma de (cierre − inicio) de los turnos que el conductor abrió y cerró.
+          <b>Auto-cerrados</b>: los cerró el sistema porque el conductor no cerró; sus horas están topeadas → revisar antes de pagar.
+          <b>Arranques falsos</b>: reserva/inspección que no avanzó, no hubo trabajo. <b>En curso</b>: turnos aún abiertos.
+        </p>
       </div>`;
   }
 
@@ -120,17 +149,17 @@
     if (!bd || !bd.list.length) { toast('Genera primero un informe con datos.'); return; }
     const esc = v => { v = String(v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
     const tot = k => bd.list.reduce((a, x) => a + x[k], 0);
-    const TH = (state.settings && state.settings.shift_hours) || 12;
+    const r1 = n => Math.round(n * 10) / 10;
     const lines = [
-      `Balance de turnos;${bd.fromV} a ${bd.toV};${bd.weeks} semanas publicadas`,
-      ['Nombre', 'Email', 'Rol', 'AM', 'PM', 'Liderazgo', 'Total turnos', `Horas (x${TH})`].join(';'),
-      ...bd.list.map(r => [r.name, r.email, r.role, r.am, r.pm, r.co, r.total, r.horas].map(esc).join(';')),
-      ['Total', '', '', tot('am'), tot('pm'), tot('co'), tot('total'), tot('total') * TH].map(esc).join(';'),
+      `Balance por horas reales trabajadas;${bd.fromV} a ${bd.toV};${bd.count} turnos en el rango`,
+      ['Nombre', 'Email', 'Rol', 'Turnos completos', 'Horas reales', 'Turnos auto-cerrados', 'Horas auto-cerradas (sin verificar)', 'Arranques falsos', 'En curso'].join(';'),
+      ...bd.list.map(r => [r.name, r.email, r.role, r.ok, r.okH, r.auto, r.autoH, r.falso, r.curso].map(esc).join(';')),
+      ['Total', '', '', tot('ok'), r1(tot('okH')), tot('auto'), r1(tot('autoH')), tot('falso'), tot('curso')].map(esc).join(';'),
     ];
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `balance_${bd.fromV}_a_${bd.toV}.csv`;
+    a.download = `balance_horas_reales_${bd.fromV}_a_${bd.toV}.csv`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }

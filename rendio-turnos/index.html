@@ -525,7 +525,7 @@
               </div>
               <div class="set-row2" style="margin-top:14px">
                 <div class="set-field"><label>Líderes de turno por jornada</label><input id="setting-coord-slots" class="set-input" type="number" min="1" max="4" /><div class="set-hint">Cuántos líderes de turno se asignan en AM y en PM.</div></div>
-                <div class="set-field"><label>Horas por turno</label><input id="setting-shift-hours" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Para el cálculo de horas en Balance.</div></div>
+                <div class="set-field"><label>Horas por turno</label><input id="setting-shift-hours" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Estimado de horas en “Mi perfil” del conductor. El Balance usa horas reales (inicio→cierre).</div></div>
               </div>
               <div class="set-row2" style="margin-top:14px">
                 <div class="set-field"><label>Auto-cierre de turno (horas)</label><input id="setting-auto-close-hours" class="set-input" type="number" min="1" max="72" /><div class="set-hint">Si un turno sigue activo más de X horas, se cierra solo y libera el vehículo (red de seguridad).</div></div>
@@ -641,7 +641,7 @@
         <div id="balance-ui">
           <div class="rl-phead">
             <h1>Balance de turnos</h1>
-            <p>Cuenta turnos de horarios <b>publicados</b>. Cada turno (manejo o liderazgo) = <b>12 h</b>.</p>
+            <p>Suma las <b>horas reales trabajadas</b> (inicio → cierre de cada turno). No se calcula del horario publicado.</p>
           </div>
 
           <div class="bal-controls">
