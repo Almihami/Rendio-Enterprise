@@ -27,6 +27,11 @@
     // Seguimiento EN VIVO (source==='live'): polling del RPC + tween del carro.
     trackPoll: null, trackTween: null, trackCar: null, trackLine: null,
     trackLast: null, trackDestPt: null,
+    // Pestaña activa del nav inferior + cancelación en 2 toques (sin confirm() nativo).
+    tab: 'inicio', confirmingCancel: false, cancelTimer: null,
+    // Espera en el punto de recogida: cuenta regresiva REAL desde que el
+    // conductor marcó "llegué" (arrived_at) durante wait_minutes de Ajustes.
+    waitTick: null, waitFrom: null, waitMin: 5,
   };
 
   window.Auxiliar = { init: auxInit };
@@ -71,6 +76,8 @@
     if (auxState.view === 'form') { root.innerHTML = auxFormHTML(); auxAfterFormRender(); return; }
     if (auxState.view === 'confirm') { root.innerHTML = auxConfirmHTML(); return; }
     if (auxState.view === 'trip') { root.innerHTML = auxTripHTML(); auxAfterTripRender(); return; }
+    if (auxState.view === 'viajes') { root.innerHTML = auxViajesHTML(); return; }
+    if (auxState.view === 'perfil') { root.innerHTML = auxPerfilHTML(); auxSetupPwa(); return; }
     root.innerHTML = auxHomeHTML();
     auxSetupPwa();
   }
@@ -96,9 +103,15 @@
   }
 
   // ---------- HOME (Mis viajes) ----------
+  // Un viaje está CERRADO si terminó, lo cancelaron o no se presentó: esos van
+  // al historial, no a "próximos" (antes un cancelado seguía saliendo arriba).
+  const AUX_CLOSED = ['done', 'cancelled', 'noshow'];
+  const auxUpcoming = () => auxState.trips.filter(t => !AUX_CLOSED.includes(t.status));
+  const auxPast = () => auxState.trips.filter(t => AUX_CLOSED.includes(t.status));
+
   function auxHomeHTML() {
-    const upcoming = auxState.trips.filter(t => t.status !== 'done');
-    const past = auxState.trips.filter(t => t.status === 'done');
+    const upcoming = auxUpcoming();
+    const past = auxPast();
     const next = upcoming[0];
     return `
       <div class="ax-head">
@@ -119,13 +132,61 @@
             <b>Aún no tienes viajes</b><span>Pide tu traslado y aquí lo verás.</span>
           </div>`}
         ${upcoming.length > 1 ? `<div class="ax-sec">Más próximos</div>${upcoming.slice(1).map(t => auxTripCard(t)).join('')}` : ''}
-        ${past.length ? `<div class="ax-sec">Anteriores</div>${past.map(t => auxTripCard(t)).join('')}` : ''}
+        ${past.length ? `<div class="ax-sec">Anteriores</div>${past.slice(0, 3).map(t => auxTripCard(t)).join('')}` : ''}
         <div class="ax-spacer"></div>
       </div>
       <div class="ax-cta-bar">
         <button class="ax-btn ax-btn-primary" data-ax="new"><svg class="icon"><use href="#i-plus"/></svg>Pedir traslado</button>
       </div>
       ${auxTabsHTML('inicio')}`;
+  }
+
+  // ---------- VIAJES (pestaña 2): historial completo ----------
+  function auxViajesHTML() {
+    const upcoming = auxUpcoming(), past = auxPast();
+    return `
+      <div class="ax-head"><div><p class="ax-hi">Tu historial</p><h1>Viajes</h1></div></div>
+      <div class="ax-body">
+        ${upcoming.length ? `<div class="ax-sec">Próximos</div>${upcoming.map(t => auxTripCard(t)).join('')}` : ''}
+        ${past.length ? `<div class="ax-sec">Anteriores</div>${past.map(t => auxTripCard(t)).join('')}` : ''}
+        ${!upcoming.length && !past.length ? `
+          <div class="ax-empty">
+            <div class="ax-empty-ic"><svg class="icon"><use href="#i-list"/></svg></div>
+            <b>Todavía no hay nada</b><span>Cuando pidas un traslado aparecerá aquí.</span>
+          </div>` : ''}
+        <div class="ax-spacer"></div>
+      </div>
+      ${auxTabsHTML('viajes')}`;
+  }
+
+  // ---------- PERFIL (pestaña 3): datos, notificaciones y CERRAR SESIÓN ----------
+  // Hasta ahora el auxiliar no tenía ninguna forma de salir de la app: su UI va
+  // fuera del shell admin/conductor, así que no heredaba el botón de logout.
+  function auxPerfilHTML() {
+    const p = auxState.profile || {};
+    const done = auxState.trips.filter(t => t.status === 'done').length;
+    return `
+      <div class="ax-head"><div><p class="ax-hi">Tu cuenta</p><h1>Perfil</h1></div></div>
+      <div class="ax-body">
+        <div class="ax-prof-card">
+          <span class="ax-driver-av lg">${(auxFirstName()[0] || 'A').toUpperCase()}</span>
+          <div><b>${p.full_name || 'Auxiliar'}</b><span>${p.email || ''}</span></div>
+        </div>
+        <div class="ax-sum">
+          ${p.phone ? `<div class="ax-sum-row"><span>Teléfono</span><b>${p.phone}</b></div>` : ''}
+          <div class="ax-sum-row"><span>Viajes completados</span><b>${done}</b></div>
+          <div class="ax-sum-row"><span>Rol</span><b>Auxiliar de vuelo</b></div>
+        </div>
+        <div class="ax-sec">App</div>
+        <div id="ax-pwa-bar" class="ax-pwa hidden">
+          <button class="ax-pwa-btn hidden" data-ax="install">📲 Instalar app</button>
+          <button class="ax-pwa-btn hidden" data-ax="enable-push">🔔 Activar notificaciones</button>
+        </div>
+        <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Con las notificaciones activadas te avisamos cuando te asignen conductor y cuando esté por llegar.</div>
+        <button class="ax-btn ax-btn-ghost ax-danger" data-ax="logout"><svg class="icon"><use href="#i-exit"/></svg>Cerrar sesión</button>
+        <div class="ax-spacer"></div>
+      </div>
+      ${auxTabsHTML('perfil')}`;
   }
 
   function auxTripCard(t, hero) {
@@ -157,6 +218,8 @@
       onway:    { cls: 'ok',   label: 'En camino' },
       onboard:  { cls: 'ok',   label: 'A bordo' },
       done:     { cls: 'muted',label: 'Completado' },
+      cancelled:{ cls: 'muted',label: 'Cancelado' },
+      noshow:   { cls: 'warn', label: 'No te presentaste' },
     })[s] || { cls: 'muted', label: s };
   }
   // Estado crudo de la reserva (BD) → estado simple de la UI. Espejo de
@@ -238,14 +301,49 @@
       <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Si tu vuelo incluye pernocta, lo marcas en el paso de dirección.</div>`;
   }
 
+  // Momento del vuelo en hora de Colombia (o null si aún falta un dato).
+  function auxWhenTs(f) {
+    if (!f.date || !f.time) return null;
+    const t = new Date(f.date + 'T' + f.time + ':00-05:00').getTime();
+    return isNaN(t) ? null : t;
+  }
+  // Reglas de tiempo del pedido. Antes no había ninguna: se podía pedir un
+  // traslado para ayer, o para dentro de 10 minutos, y la app contestaba
+  // "quedó en la planeación del día" tan tranquila.
+  //   pasado  → se bloquea (es un error, no una urgencia)
+  //   corto   → se avisa pero se PERMITE: la operación real tiene urgencias.
+  function auxLeadCheck(f) {
+    const ts = auxWhenTs(f); if (ts == null) return null;
+    // `state` es un const de script (no vive en window): se lee directo.
+    const lead = (typeof state !== 'undefined' && state.settings?.aux_min_lead_hours != null)
+      ? state.settings.aux_min_lead_hours : 6;
+    const hrs = (ts - Date.now()) / 3600000;
+    if (hrs < 0) return { level: 'bad', text: 'Esa fecha y hora ya pasaron. Revísalas.' };
+    if (lead > 0 && hrs < lead) return { level: 'warn', text: `Estás pidiendo con menos de ${lead} h de anticipación. Lo recibimos, pero puede que no alcance a entrar en la planeación — avisa también al coordinador.` };
+    return null;
+  }
+  function auxTodayISO() {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+  }
+
   function auxStep2() {
     const isLle = auxState.form.type === 'lle';
     const f = auxState.form;
     return `
       ${auxField('Número de vuelo', 'flight', f.flight || '', 'Ej: AV-9412')}
-      ${auxField('Fecha del vuelo', 'date', f.date || '', '', 'date')}
+      ${auxField('Fecha del vuelo', 'date', f.date || '', '', 'date', `min="${auxTodayISO()}"`)}
       ${auxField(isLle ? 'Hora de aterrizaje' : 'Hora de presentación', 'time', f.time || '', isLle ? '06:18' : '05:10', 'time')}
-      ${f.time ? `<div class="ax-hint ok"><svg class="icon"><use href="#i-clock"/></svg>${isLle ? 'Te esperamos al bajar del avión.' : `Recogida estimada <b>${auxSuggestPickup(f.time)}</b> · te dejamos en MDE antes de tu presentación.`}</div>` : ''}`;
+      <div id="ax-time-hints">${auxTimeHints()}</div>`;
+  }
+  // Va en su propio contenedor porque se repinta en cada tecla (junto con el
+  // CTA) sin remontar los inputs — si no, el botón se deshabilitaba sin decir
+  // por qué y el auxiliar se quedaba trancado sin entender.
+  function auxTimeHints() {
+    const f = auxState.form, isLle = f.type === 'lle';
+    const lead = auxLeadCheck(f);
+    if (lead) return `<div class="ax-hint ${lead.level === 'bad' ? 'bad' : ''}"><svg class="icon"><use href="#i-info"/></svg>${lead.text}</div>`;
+    if (!f.time) return '';
+    return `<div class="ax-hint ok"><svg class="icon"><use href="#i-clock"/></svg>${isLle ? 'Te esperamos al bajar del avión.' : `Recogida estimada <b>${auxSuggestPickup(f.time)}</b> · te dejamos en MDE antes de tu presentación.`}</div>`;
   }
 
   function auxStep3() {
@@ -280,6 +378,7 @@
         ${row(f.type === 'lle' ? 'Aterriza' : 'Presentación', auxHM(f.time))}
         ${row('Dirección', auxShortAddr(f.address))}
         ${f.isPernocta ? row('Pernocta', 'Sí (hotel)') : ''}
+        ${f.isReserva === false ? row('Reserva', 'Tentativa (sin confirmar)') : ''}
         ${f.notes ? row('Notas', f.notes) : ''}
       </div>
       <div class="ax-hint ok"><svg class="icon"><use href="#i-info"/></svg>Al confirmar, tu traslado entra a la planeación del día. Te avisamos cuando asignen conductor.</div>`;
@@ -287,16 +386,20 @@
 
   function auxFormCTA() {
     const s = auxState.step, f = auxState.form;
-    const disabled = (s === 1 && !f.type) || (s === 2 && (!f.flight || !f.date || !f.time)) || (s === 3 && (!f.address || !f.locConfirmed));
+    const badDate = auxLeadCheck(f)?.level === 'bad';
+    const disabled = (s === 1 && !f.type)
+      || (s === 2 && (!f.flight || !f.date || !f.time || badDate))
+      || (s === 3 && (!f.address || !f.locConfirmed))
+      || (s === 4 && badDate);
     const label = s < 4 ? 'Continuar' : 'Confirmar traslado';
     return `<button class="ax-btn ax-btn-primary" data-ax="next" ${disabled ? 'disabled' : ''}>${label}${s < 4 ? '<svg class="icon"><use href="#i-arrow"/></svg>' : ''}</button>`;
   }
 
   // ---------- campos ----------
-  function auxField(label, key, value, ph, type) {
+  function auxField(label, key, value, ph, type, attrs) {
     const input = type === 'textarea'
       ? `<textarea class="ax-input" data-field="${key}" rows="2" placeholder="${ph || ''}">${value}</textarea>`
-      : `<input class="ax-input" data-field="${key}" type="${type || 'text'}" value="${value}" placeholder="${ph || ''}" />`;
+      : `<input class="ax-input" data-field="${key}" type="${type || 'text'}" value="${value}" placeholder="${ph || ''}" ${attrs || ''} />`;
     return `<label class="ax-label">${label}${input}</label>`;
   }
   function auxToggle(label, key, on, hint) {
@@ -423,8 +526,8 @@
     const t = auxState.trips.find(x => x.id === auxState.editingTrip); if (!t) { auxState.view = 'home'; return auxHomeHTML(); }
     if (t.status === 'onway') return auxTrackOnWay(t);   // P3
     if (t.status === 'onboard') return auxTrackOnBoard(t); // P4
-    if (t.status === 'done' && !t.rated) return auxRating(t); // P5
-    return auxTripDetail(t); // pending / assigned (P2) / done ya calificado
+    if (t.status === 'done' && !t.rated && t.driver) return auxRating(t); // P5
+    return auxTripDetail(t); // pending / assigned (P2) / cancelado / no-show / done
   }
 
   function auxTripHead(title) {
@@ -443,9 +546,12 @@
     </div>`;
   }
 
-  // P2 (assigned) + pending + done-ya-calificado
+  // P2 (assigned) + pending + cancelado + no-show + done
   function auxTripDetail(t) {
     const m = auxTypeMeta(t.type), st = auxStatusMeta(t.status);
+    const closed = AUX_CLOSED.includes(t.status);
+    // Se puede cancelar mientras no te hayan recogido ni sea un viaje cerrado.
+    const canCancel = !closed && ['pending', 'assigned', 'onway'].includes(t.status);
     return `
       ${auxTripHead('Tu viaje')}
       <div class="ax-body">
@@ -453,22 +559,46 @@
           <span class="ax-chip ${m.cls}"><svg class="icon"><use href="#${m.ic}"/></svg>${m.label}</span>
           <div class="ax-status ${st.cls}">${st.label}</div>
         </div>
-        <div id="ax-late-wrap">${auxLateHTML(t, t._info)}</div>
+        ${t.status === 'cancelled' ? `<div class="ax-late warn"><svg class="icon"><use href="#i-info"/></svg>Este traslado fue cancelado${t.cancelReason ? ' — ' + t.cancelReason : ''}.</div>` : ''}
+        ${t.status === 'noshow' ? `<div class="ax-late late"><svg class="icon"><use href="#i-info"/></svg>El conductor te esperó en el punto y no pudo recogerte. Si fue un error, avisa al coordinador.</div>` : ''}
+        ${!closed ? `<div id="ax-late-wrap">${auxLateHTML(t, t._info)}</div>` : ''}
         <div class="ax-sum">
-          <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Te recogen en' : 'Te recogen en'}</span><b>${t.type === 'lle' ? 'MDE' : auxShortAddr(t.address)}</b></div>
+          <div class="ax-sum-row"><span>Te recogen en</span><b>${t.type === 'lle' ? 'MDE' : auxShortAddr(t.address)}</b></div>
           <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Te dejan en' : 'Destino'}</span><b>${t.type === 'lle' ? auxShortAddr(t.address) : 'MDE'}</b></div>
-          <div class="ax-sum-row"><span>Vuelo</span><b>${t.flight}</b></div>
+          <div class="ax-sum-row"><span>Vuelo</span><b>${t.flight || '—'}</b></div>
           <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Aterriza' : 'Presentación'}</span><b>${auxDateES(t.date)} · ${auxHM(t.time)}</b></div>
+          ${t.isPernocta ? `<div class="ax-sum-row"><span>Pernocta</span><b>Sí (hotel)</b></div>` : ''}
+          ${t.isReserva === false ? `<div class="ax-sum-row"><span>Reserva</span><b>Tentativa</b></div>` : ''}
           ${t.notes ? `<div class="ax-sum-row"><span>Notas</span><b>${t.notes}</b></div>` : ''}
         </div>
-        ${t.driver ? `<div class="ax-sec">Tu conductor</div>${auxDriverCard(t.driver, true)}
-          <div class="ax-hint ok"><svg class="icon"><use href="#i-info"/></svg>Te avisaremos cuando ${t.driver.name.split(' ')[0]} esté en camino. No tienes que estar pendiente.</div>`
-        : t.status === 'done'
-          ? `<div class="ax-hint ok"><svg class="icon"><use href="#i-check"/></svg>Viaje completado. ¡Gracias por viajar con Rendio!</div>`
-          : `<div class="ax-hint"><svg class="icon"><use href="#i-clock"/></svg>Buscando conductor… te avisamos apenas asignen.</div>`}
+        ${closed ? (t.status === 'done'
+            ? `<div class="ax-hint ok"><svg class="icon"><use href="#i-check"/></svg>Viaje completado. ¡Gracias por viajar con Rendio!</div>`
+            : '')
+          : t.driver ? `<div class="ax-sec">Tu conductor</div>${auxDriverCard(t.driver, true)}
+              ${t.readyAt ? `<div class="ax-hint ok"><svg class="icon"><use href="#i-check"/></svg>Ya confirmaste que estarás listo. ${t.driver.name.split(' ')[0]} lo ve en su ruta.</div>`
+                          : `<div class="ax-hint ok"><svg class="icon"><use href="#i-info"/></svg>Te avisaremos cuando ${t.driver.name.split(' ')[0]} esté en camino. No tienes que estar pendiente.</div>`}`
+            : `<div class="ax-hint"><svg class="icon"><use href="#i-clock"/></svg>Buscando conductor… te avisamos apenas asignen.</div>`}
+        ${canCancel ? auxCancelBlock(t) : ''}
         <div class="ax-spacer"></div>
       </div>
-      ${t.status === 'assigned' ? `<div class="ax-cta-bar"><button class="ax-btn ax-btn-primary" data-ax="confirm-pickup"><svg class="icon"><use href="#i-check"/></svg>Confirmar mi recogida</button></div>` : ''}`;
+      ${(t.status === 'assigned' && !t.readyAt) ? `<div class="ax-cta-bar"><button class="ax-btn ax-btn-primary" data-ax="confirm-pickup"><svg class="icon"><use href="#i-check"/></svg>Confirmar mi recogida</button></div>` : ''}`;
+  }
+
+  // Cancelar en dos toques (no usamos confirm() nativo: bloquea la PWA y se ve
+  // como un error del navegador, no como una decisión de la app).
+  function auxCancelBlock(t) {
+    if (!auxState.confirmingCancel) {
+      return `<button class="ax-link ax-cancel-link" data-ax="cancel-trip">Cancelar este traslado</button>`;
+    }
+    return `<div class="ax-cancel-box">
+      <b>¿Cancelar tu traslado?</b>
+      <span>${t.driver ? 'Le avisamos a ' + t.driver.name.split(' ')[0] + ' y sale de su ruta.' : 'Sale de la planeación del día.'} No se puede deshacer: tendrías que pedirlo otra vez.</span>
+      <input class="ax-input" id="ax-cancel-reason" type="text" placeholder="Motivo (opcional): vuelo cancelado, cambio de horario…" />
+      <div class="ax-cancel-acts">
+        <button class="ax-btn ax-btn-ghost" data-ax="cancel-abort">No, seguir</button>
+        <button class="ax-btn ax-btn-danger" data-ax="cancel-do">Sí, cancelar</button>
+      </div>
+    </div>`;
   }
 
   // P3: conductor en camino — mapa en vivo
@@ -479,6 +609,7 @@
       <div class="ax-track-sheet">
         <div class="ax-eta-hero"><span id="ax-eta-label">Tu conductor</span><b id="ax-eta-min">En camino</b></div>
         <div class="ax-count hidden" id="ax-count"></div>
+        <div class="ax-wait hidden" id="ax-wait"></div>
         <div id="ax-late-wrap">${auxLateHTML(t, t._info)}</div>
         ${auxDriverCard(t.driver, false)}
         <div class="ax-track-fresh" id="ax-track-fresh"></div>
@@ -540,8 +671,47 @@
     if (auxState.trackTimer) { clearInterval(auxState.trackTimer); auxState.trackTimer = null; }
     if (auxState.trackPoll) { clearInterval(auxState.trackPoll); auxState.trackPoll = null; }
     if (auxState.trackTween) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
+    if (auxState.waitTick) { clearInterval(auxState.waitTick); auxState.waitTick = null; }
     if (auxState.trackMap) { auxState.trackMap.remove(); auxState.trackMap = null; }
     auxState.trackCar = null; auxState.trackLine = null; auxState.trackLast = null; auxState.trackDestPt = null;
+    auxState.waitFrom = null;
+  }
+
+  // ---------- espera en el punto de recogida ----------
+  // El "máx. 3 min" era un letrero fijo: no contaba nada y al vencerse no pasaba
+  // nada. Ahora es un reloj real que arranca en la hora en que el conductor
+  // marcó "llegué" (route_stops.actual_arrival_at) y dura los minutos que diga
+  // Ajustes — el MISMO número que habilita el "no se presentó" del conductor.
+  function auxStartWait(arrivedAtISO, minutes) {
+    const from = new Date(arrivedAtISO).getTime();
+    if (isNaN(from)) return;
+    if (auxState.waitFrom === from && auxState.waitTick) return; // ya corriendo
+    auxState.waitFrom = from;
+    auxState.waitMin = minutes || 5;
+    if (auxState.waitTick) clearInterval(auxState.waitTick);
+    auxPaintWait();
+    auxState.waitTick = setInterval(auxPaintWait, 1000);
+  }
+  function auxPaintWait() {
+    const el = document.getElementById('ax-wait');
+    if (!el || auxState.waitFrom == null) return;
+    const left = Math.round((auxState.waitFrom + auxState.waitMin * 60000 - Date.now()) / 1000);
+    el.classList.remove('hidden');
+    if (left > 0) {
+      const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, '0');
+      el.className = 'ax-wait';
+      el.innerHTML = `<span>Tu conductor te espera</span><b>${mm}:${ss}</b>`;
+    } else {
+      el.className = 'ax-wait over';
+      el.innerHTML = `<span>Tiempo de espera cumplido</span><b>Sal ya o llámalo</b>`;
+      if (auxState.waitTick) { clearInterval(auxState.waitTick); auxState.waitTick = null; }
+    }
+  }
+  function auxStopWait() {
+    if (auxState.waitTick) { clearInterval(auxState.waitTick); auxState.waitTick = null; }
+    auxState.waitFrom = null;
+    const el = document.getElementById('ax-wait');
+    if (el) { el.classList.add('hidden'); el.innerHTML = ''; }
   }
 
   // ---------- seguimiento EN VIVO (datos reales) ----------
@@ -580,6 +750,13 @@
     if (auxState.view !== 'trip' || auxState.editingTrip !== t.id) return;
     if (!info) return;
     t._info = info;                                   // para el banner "va tarde"
+
+    // Cancelada mientras la miraba (la canceló el admin, u otro dispositivo suyo):
+    // antes el RPC devolvía NULL y el auxiliar se quedaba viendo "en camino".
+    if (info.cancelled) {
+      if (t.status !== 'cancelled') { t.status = 'cancelled'; auxRender(); }
+      return;
+    }
 
     // ¿Recién llega el dato del conductor? Al recargar la app ya "en camino", la
     // tarjeta se pintó genérica ("Tu conductor / Carro —") antes de este primer
@@ -687,6 +864,9 @@
       near = auxDistM([info.pos.lat, info.pos.lng], [info.pickup.lat, info.pickup.lng]) < 300;
     }
     const before = (typeof info.remaining_before === 'number') ? info.remaining_before : null;
+    // Cuenta regresiva de espera: solo cuando ya llegó y sabemos desde cuándo.
+    if (arrived && info.arrived_at) auxStartWait(info.arrived_at, info.wait_minutes);
+    else auxStopWait();
     if (labelEl && valEl) {
       if (t.status === 'onway') {
         // Protagonista: "Faltan X antes de ti" → "Eres el siguiente" → "Está por llegar" → "Llegó".
@@ -710,8 +890,10 @@
       countEl.classList.toggle('hidden', !txt);
     }
     if (freshEl) {
+      // El "máx. 3 min" salía de aquí como texto fijo; ahora vive en #ax-wait
+      // con un reloj de verdad, así que esta línea vuelve a ser solo frescura.
       const f = auxFreshLabel(info.pos);
-      freshEl.textContent = (arrived ? 'Te espera máx. 3 min · ' : '') + f.text;
+      freshEl.textContent = f.text;
       freshEl.classList.toggle('stale', !!f.stale);
     }
   }
@@ -752,6 +934,47 @@
     else { t.status = 'done'; auxRender(); } // llegó al destino → calificar
   }
 
+  // ---------- navegación, salida y cancelación ----------
+  function auxGoTab(tab) {
+    auxState.tab = tab || 'inicio';
+    auxState.view = (tab === 'viajes' || tab === 'perfil') ? tab : 'home';
+    auxState.confirmingCancel = false;
+    auxRender();
+  }
+  async function auxLogout() {
+    try { if (window.Api?.signOut) await Api.signOut(); } catch (e) {}
+    try { if (typeof state !== 'undefined') state.profile = null; } catch (e) {}
+    location.reload();
+  }
+  // Cancela de verdad: RPC (saca la reserva de la ruta activa) + push al
+  // conductor afectado, que el propio RPC nos dice quién es.
+  async function auxDoCancel(btn) {
+    const t = auxCurTrip(); if (!t) return;
+    const reason = (document.getElementById('ax-cancel-reason')?.value || '').trim();
+    btn.disabled = true; btn.textContent = 'Cancelando…';
+    if (auxState.source === 'live' && window.Api?.cancelMyReservation) {
+      try {
+        const r = await Api.cancelMyReservation(t.id, reason);
+        if (r && r.driver_profile_id && typeof notify === 'function') {
+          notify([r.driver_profile_id], 'Traslado cancelado',
+            `${(auxState.profile?.full_name || 'Un auxiliar').split(' ')[0]} canceló su traslado. Ya no está en tu ruta.`, '/');
+        }
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Sí, cancelar';
+        toast(e.message && e.message.includes('en curso')
+          ? 'El viaje ya está en curso: no se puede cancelar.'
+          : 'No se pudo cancelar. Intenta de nuevo.');
+        return;
+      }
+    }
+    t.status = 'cancelled'; t.cancelledAt = new Date().toISOString(); t.cancelReason = reason;
+    auxState.confirmingCancel = false;
+    auxStopTrack();
+    toast('Traslado cancelado.');
+    auxState.view = 'home'; auxState.tab = 'inicio';
+    auxRender();
+  }
+
   // ---------- eventos ----------
   function auxBindOnce() {
     if (auxState.bound) return;
@@ -774,11 +997,27 @@
       else if (a === 'toggle') { const k = el.dataset.key; auxState.form[k] = !auxState.form[k]; auxRender(); }
       else if (a === 'pin-confirm') { auxState.form.locConfirmed = true; auxRefreshPinRow(); toast('Ubicación confirmada.'); }
       else if (a === 'pin-edit') { auxState.form.locConfirmed = false; auxRefreshPinRow(); }
-      else if (a === 'trip') { auxState.editingTrip = el.dataset.id; auxState.view = 'trip'; auxState.ratingSel = 0; auxState.ratingTags = []; auxRender(); }
-      else if (a === 'tab') { if (el.dataset.tab !== 'inicio') toast('Sección "' + el.dataset.tab + '" — próximamente.'); }
-      else if (a === 'profile') { toast('Perfil — próximamente.'); }
+      else if (a === 'trip') { auxState.editingTrip = el.dataset.id; auxState.view = 'trip'; auxState.ratingSel = 0; auxState.ratingTags = []; auxState.confirmingCancel = false; auxRender(); }
+      else if (a === 'tab') { auxGoTab(el.dataset.tab); }
+      else if (a === 'profile') { auxGoTab('perfil'); }
+      else if (a === 'logout') { auxLogout(); }
       // --- seguimiento del viaje ---
-      else if (a === 'confirm-pickup') { const t = auxCurTrip(); if (t) { t.status = 'onway'; auxRender(); } }
+      // Confirmar recogida: ahora PERSISTE (RPC auxiliar_confirm_ready). Antes
+      // solo cambiaba el estado en memoria y el siguiente refresco lo pisaba,
+      // así que el auxiliar creía haber confirmado algo que nadie recibía.
+      else if (a === 'confirm-pickup') {
+        const t = auxCurTrip(); if (!t) return;
+        el.disabled = true;
+        if (auxState.source === 'live' && window.Api?.confirmReservationReady) {
+          Api.confirmReservationReady(t.id)
+            .then(() => { t.readyAt = new Date().toISOString(); toast('Listo — le avisamos a tu conductor.'); auxRender(); })
+            .catch(() => { el.disabled = false; toast('No se pudo confirmar. Intenta de nuevo.'); });
+        } else { t.readyAt = new Date().toISOString(); toast('Confirmado.'); auxRender(); }
+      }
+      // --- cancelar el traslado ---
+      else if (a === 'cancel-trip') { auxState.confirmingCancel = true; auxRender(); }
+      else if (a === 'cancel-abort') { auxState.confirmingCancel = false; auxRender(); }
+      else if (a === 'cancel-do') { auxDoCancel(el); }
       else if (a === 'call') {
         const ph = auxCurTrip()?.driver?.phone;
         if (ph) { try { window.location.href = 'tel:' + ph.replace(/[^\d+]/g, ''); } catch (_) {} }
@@ -814,5 +1053,10 @@
       }
       // habilita/inhabilita el CTA sin remontar (no perder foco del input)
       const cta = auxRoot().querySelector('.ax-cta-bar'); if (cta) cta.innerHTML = auxFormCTA();
+      // …y con él, el aviso de fecha/antelación: si no, el botón se apagaba mudo.
+      if (k === 'date' || k === 'time') {
+        const hints = document.getElementById('ax-time-hints');
+        if (hints) hints.innerHTML = auxTimeHints();
+      }
     });
   }

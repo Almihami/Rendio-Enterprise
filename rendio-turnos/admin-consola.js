@@ -43,7 +43,7 @@
       groups: [
         { id: 'plan', name: 'Planeación', icon: 'g-plan', desc: 'Armar las rutas del día', items: [
           { id: 'asign', name: 'Asignación', icon: 'm-asign', desc: 'Optimizar reservas en rutas para 2–3 carros, con semáforo de holgura vs. deadline.', star: true, tab: 'routes' },
-          { id: 'reservas', name: 'Reservas', icon: 'm-reservas', desc: 'Tabla de viajes del día: filtros, re-asignar, detalle.', soon: 'build' },
+          { id: 'reservas', name: 'Reservas', icon: 'm-reservas', desc: 'Tabla de traslados: detalle, pernocta, calificaciones y cancelar si se cae un vuelo.', tab: 'reservas' },
           { id: 'vuelos', name: 'Vuelos', icon: 'm-vuelos', desc: 'Agenda de vuelos: el origen del dato de toda la planeación.', soon: 'build' },
         ] },
         { id: 'ops', name: 'Operación', icon: 'g-ops', desc: 'Monitoreo en vivo', items: [

@@ -595,7 +595,8 @@
     const sel = cols => sb.from('app_settings').select(cols).eq('id', 'singleton').maybeSingle();
     // Fallback en cascada: de más completo a más básico, así el código tolera
     // migraciones no aplicadas (0014 reopen_*, 0025 coord_slots/shift_hours, 0027 auto_close_hours).
-    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes');
+    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours');
+    if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours'));
@@ -616,6 +617,8 @@
       fast_start_from_hour: (data && data.fast_start_from_hour != null) ? data.fast_start_from_hour : 12,
       fast_start_to_hour: (data && data.fast_start_to_hour != null) ? data.fast_start_to_hour : 16,
       inspection_grace_minutes: (data && data.inspection_grace_minutes != null) ? data.inspection_grace_minutes : 90,
+      aux_wait_minutes: (data && data.aux_wait_minutes != null) ? data.aux_wait_minutes : 5,
+      aux_min_lead_hours: (data && data.aux_min_lead_hours != null) ? data.aux_min_lead_hours : 6,
     };
   }
 
@@ -628,8 +631,10 @@
     };
     const upd = cols => sb.from('app_settings').update(cols).eq('id', 'singleton');
     // Intenta con las columnas nuevas; cae en cascada si la migración no está
-    // (0037 reservation_idle/strike_limit → 0027 auto_close_hours → 0025 coord/shift → base).
-    let { error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit, fast_start_enabled: s.fast_start_enabled, fast_start_from_hour: s.fast_start_from_hour, fast_start_to_hour: s.fast_start_to_hour, inspection_grace_minutes: s.inspection_grace_minutes });
+    // (0050 aux_wait/aux_lead → 0037 reservation_idle/strike_limit → 0027 auto_close_hours → 0025 coord/shift → base).
+    const full = { ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit, fast_start_enabled: s.fast_start_enabled, fast_start_from_hour: s.fast_start_from_hour, fast_start_to_hour: s.fast_start_to_hour, inspection_grace_minutes: s.inspection_grace_minutes };
+    let { error } = await upd({ ...full, aux_wait_minutes: s.aux_wait_minutes, aux_min_lead_hours: s.aux_min_lead_hours });
+    if (error) ({ error } = await upd(full));
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit }));
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours }));
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours }));
@@ -1336,18 +1341,27 @@
   // Mapea el estado de la reserva (enum BD) al estado simple de la UI del auxiliar.
   function _auxTripStatus(r) {
     const s = r.status_h2a || r.status_a2h;
+    // Cancelado y no-show son finales y visibles: antes caían al 'pending' del
+    // final y el auxiliar veía "Sin rutear" en un viaje que ya no existía.
+    if (r.cancelled_at || s === 'cancelled') return 'cancelled';
+    if (s === 'no_show') return 'noshow';
     if (['assigned', 'driver_assigned', 'ready'].includes(s)) return 'assigned';
     if (['en_route', 'at_pickup'].includes(s)) return 'onway';
     if (['on_board', 'picked_up', 'en_route_home'].includes(s)) return 'onboard';
     if (s === 'delivered') return 'done';
     return 'pending';
   }
+  // Las reservas del auxiliar. Trae también las CANCELADAS (su historial es
+  // suyo: si canceló ayer tiene derecho a verlo) — antes se filtraban y el
+  // viaje simplemente desaparecía de la pantalla sin explicación.
+  // Defensivo: si 0050 no está aplicada, cae al SELECT sin columnas nuevas.
   async function listMyReservations() {
     const apId = await getMyAuxiliarProfileId(); if (!apId) return null;
-    const { data, error } = await sb.from('reservations')
-      .select('id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, flights(flight_number)')
-      .eq('auxiliar_profile_id', apId).is('cancelled_at', null)
-      .order('required_arrival_at', { ascending: true });
+    const COLS = 'id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, cancelled_at, rating, flights(flight_number)';
+    const q = cols => sb.from('reservations').select(cols)
+      .eq('auxiliar_profile_id', apId).order('required_arrival_at', { ascending: true });
+    let { data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason');
+    if (error) ({ data, error } = await q(COLS));
     if (error) return null;
     return (data || []).map(r => ({
       id: r.id, type: r.direction === 'airport_to_home' ? 'lle' : 'sal',
@@ -1355,9 +1369,15 @@
       date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
       address: r.pickup_address, lat: r.pickup_latitude, lng: r.pickup_longitude,
       notes: r.notes || '', status: _auxTripStatus(r), driver: null,
+      cancelledAt: r.cancelled_at || null, cancelReason: r.cancellation_reason || '',
+      isPernocta: !!r.is_overnight, isReserva: r.is_firm !== false,
+      readyAt: r.ready_confirmed_at || null,
+      rated: r.rating != null, rating: r.rating || 0,
     }));
   }
   // Crea una reserva del auxiliar autenticado (RLS: solo la suya).
+  // Pernocta y "reserva en firme" se preguntaban en el formulario y se botaban:
+  // desde 0050 tienen columna y llegan al admin.
   async function createReservation(f) {
     const apId = await getMyAuxiliarProfileId(); if (!apId) throw new Error('Sin perfil de auxiliar');
     const isLle = f.type === 'lle';
@@ -1369,9 +1389,66 @@
       pickup_address: f.address, pickup_latitude: f.lat, pickup_longitude: f.lng,
       required_arrival_at: f.date + 'T' + f.time + ':00-05:00', notes: notes.trim() || null,
     };
-    const { data, error } = await sb.from('reservations').insert(payload).select('id').single();
+    const extra = { is_overnight: !!f.isPernocta, is_firm: f.isReserva !== false };
+    let { data, error } = await sb.from('reservations').insert({ ...payload, ...extra }).select('id').single();
+    if (error) ({ data, error } = await sb.from('reservations').insert(payload).select('id').single());
     if (error) throw error;
     return data.id;
+  }
+
+  // El auxiliar cancela SU traslado (RPC de 0050). Devuelve el profile_id del
+  // conductor afectado (o null) para que el frontend le avise por push.
+  async function cancelMyReservation(reservationId, reason) {
+    const { data, error } = await sb.rpc('auxiliar_cancel_reservation', {
+      p_reservation_id: reservationId, p_reason: reason || null,
+    });
+    if (error) throw error;
+    return data || { ok: true };
+  }
+  // Un admin cancela el traslado de un auxiliar (vuelo caído, cambio de plan).
+  async function adminCancelReservation(reservationId, reason) {
+    const { data, error } = await sb.rpc('admin_cancel_reservation', {
+      p_reservation_id: reservationId, p_reason: reason || null,
+    });
+    if (error) throw error;
+    return data || { ok: true };
+  }
+  // "Confirmar mi recogida": antes solo cambiaba una variable en memoria.
+  async function confirmReservationReady(reservationId) {
+    const { error } = await sb.rpc('auxiliar_confirm_ready', { p_reservation_id: reservationId });
+    if (error) throw error;
+    return true;
+  }
+
+  // Tabla de reservas del admin (módulo Reservas). Ventana de días alrededor de
+  // hoy en hora de Colombia. Incluye canceladas: el admin necesita ver qué se
+  // cayó, no solo lo que sigue en pie.
+  async function listReservationsAdmin(daysBack, daysFwd) {
+    const back = daysBack == null ? 1 : daysBack, fwd = daysFwd == null ? 7 : daysFwd;
+    const from = new Date(Date.now() - back * 86400000).toISOString();
+    const to = new Date(Date.now() + fwd * 86400000).toISOString();
+    const COLS = 'id, direction, pickup_address, required_arrival_at, status_h2a, status_a2h, notes, cancelled_at, created_at, rating, rating_tags, rated_at, auxiliar_profiles(profiles(id, full_name, phone))';
+    const q = cols => sb.from('reservations').select(cols)
+      .gte('required_arrival_at', from).lte('required_arrival_at', to)
+      .order('required_arrival_at', { ascending: true });
+    let { data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at');
+    if (error) ({ data, error } = await q(COLS));
+    if (error) return null;
+    return (data || []).map(r => ({
+      id: r.id, type: r.direction === 'airport_to_home' ? 'lle' : 'sal',
+      name: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar',
+      profileId: r.auxiliar_profiles?.profiles?.id || null,
+      phone: r.auxiliar_profiles?.profiles?.phone || '',
+      address: r.pickup_address || '', when: r.required_arrival_at,
+      date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
+      flight: (r.notes && r.notes.match(/AV-?\d+/)) ? r.notes.match(/AV-?\d+/)[0] : '',
+      notes: r.notes || '', raw: r.status_h2a || r.status_a2h || '',
+      status: _auxTripStatus(r), cancelledAt: r.cancelled_at || null,
+      cancelReason: r.cancellation_reason || '', createdAt: r.created_at,
+      isPernocta: !!r.is_overnight, isReserva: r.is_firm !== false,
+      readyAt: r.ready_confirmed_at || null,
+      rating: r.rating || 0, ratingTags: r.rating_tags || [], ratedAt: r.rated_at || null,
+    }));
   }
 
   // Rastreo EN VIVO de UNA reserva para su dueño (auxiliar). Vía RPC SECURITY
@@ -1429,20 +1506,55 @@
 
   // Guarda TODAS las vueltas del día como route_assignments + route_stops.
   // lanes: [{ vehicleId, driverProfileId(=profile id|null), type('sal'|'lle'), startAt(ISO), stops:[reservationId] }]
+  //
+  // Republicar es idempotente: borra el plan del día y lo vuelve a insertar.
+  // PERO nunca toca una ruta YA EMPEZADA (status 'in_progress') ni una
+  // completada — antes las borraba a todas y un conductor que ya iba en camino
+  // se quedaba sin ruta a mitad de operación, con IDs nuevos. Las rutas en
+  // curso se respetan y sus reservas se excluyen del re-planteo.
+  //
+  // Devuelve además `notify`: solo los auxiliares cuya asignación CAMBIÓ
+  // (entraron a una ruta con conductor por primera vez, o les cambió el
+  // conductor). Así republicar no vuelve a notificar a todo el mundo.
   async function saveRoutePlan(day, lanes) {
+    const d0 = day + 'T00:00:00-05:00', d1 = day + 'T23:59:59-05:00';
     // profile id → driver_profile id (route_assignments referencia driver_profiles).
     const profIds = [...new Set(lanes.map(l => l.driverProfileId).filter(Boolean))];
-    const dpMap = {};
+    const dpMap = {}, dpBack = {};
     if (profIds.length) {
       const { data } = await sb.from('driver_profiles').select('id, profile_id').in('profile_id', profIds);
-      (data || []).forEach(r => { dpMap[r.profile_id] = r.id; });
+      (data || []).forEach(r => { dpMap[r.profile_id] = r.id; dpBack[r.id] = r.profile_id; });
     }
-    // Limpia el plan del día (no toca lo ya completado) para re-publicar idempotente.
-    await sb.from('route_assignments').delete().neq('status', 'completed')
-      .gte('planned_start_at', day + 'T00:00:00-05:00').lte('planned_start_at', day + 'T23:59:59-05:00');
-    let saved = 0, skipped = 0;
+
+    // Foto del plan ANTES de tocarlo: qué reserva estaba con qué conductor, y
+    // cuáles están en una ruta ya empezada (intocables).
+    const prev = {}, locked = new Set();
+    {
+      const { data } = await sb.from('route_assignments')
+        .select('id, status, driver_profile_id, driver_profiles(profile_id), route_stops(reservation_id)')
+        .gte('planned_start_at', d0).lte('planned_start_at', d1);
+      (data || []).forEach(ra => {
+        const pid = ra.driver_profiles?.profile_id || null;
+        (ra.route_stops || []).forEach(s => {
+          prev[s.reservation_id] = pid;
+          if (ra.status === 'in_progress' || ra.status === 'completed') locked.add(s.reservation_id);
+        });
+      });
+    }
+
+    // Borra SOLO lo que aún no arranca (draft/planned). in_progress y completed sobreviven.
+    await sb.from('route_assignments').delete()
+      .in('status', ['draft', 'planned'])
+      .gte('planned_start_at', d0).lte('planned_start_at', d1);
+
+    let saved = 0, skipped = 0, kept = 0;
+    const notify = [];
     for (const lane of lanes) {
       if (!lane.vehicleId || !lane.stops || !lane.stops.length) { skipped++; continue; }
+      // Las paradas ya en curso no se re-planean: siguen donde están.
+      const stopIds = lane.stops.filter(rid => !locked.has(rid));
+      kept += lane.stops.length - stopIds.length;
+      if (!stopIds.length) { skipped++; continue; }
       const dpid = lane.driverProfileId ? dpMap[lane.driverProfileId] : null;
       const { data: ra, error } = await sb.from('route_assignments').insert({
         driver_profile_id: dpid, vehicle_id: lane.vehicleId,
@@ -1450,11 +1562,16 @@
         status: dpid ? 'planned' : 'draft', planned_start_at: lane.startAt,
       }).select('id').single();
       if (error) { skipped++; continue; }
-      const stops = lane.stops.map((rid, i) => ({ route_assignment_id: ra.id, reservation_id: rid, stop_order: i + 1 }));
-      if (stops.length) { const r2 = await sb.from('route_stops').insert(stops); if (r2.error) { skipped++; continue; } }
+      const stops = stopIds.map((rid, i) => ({ route_assignment_id: ra.id, reservation_id: rid, stop_order: i + 1 }));
+      const r2 = await sb.from('route_stops').insert(stops);
+      if (r2.error) { skipped++; continue; }
+      // Novedad real para el auxiliar: pasó de sin conductor a con conductor, o se lo cambiaron.
+      if (dpid) stopIds.forEach(rid => {
+        if (prev[rid] !== lane.driverProfileId) notify.push({ reservationId: rid, changed: !!prev[rid] });
+      });
       saved++;
     }
-    return { saved, skipped };
+    return { saved, skipped, kept, notify };
   }
 
   // El conductor lee SU ruta del día (route_assignments asignadas a él) → vueltas.
@@ -1672,6 +1789,7 @@
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment,
     getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,
+    cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
     sendDriverLocation, listLiveOperation,
   };

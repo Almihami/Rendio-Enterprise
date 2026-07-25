@@ -27,7 +27,14 @@
     lastPingAt: 0,
     // Nivel 1 (nav in-app): mi posición en vivo + seguir. Popup mapa grande. Reanudar.
     meMarker: null, lastPos: null, follow: true, bigMap: null,
+    // Espera en el punto: desde que marca "Llegué" corre el reloj y solo al
+    // vencerse se habilita "No se presentó" (antes se podía marcar al segundo 1).
+    waitTick: null,
   };
+  // Minutos de espera configurados en Ajustes (0050). Default 5.
+  // `state` es un const de script (no vive en window): se lee directo.
+  const drWaitMin = () => (typeof state !== 'undefined' && state.settings?.aux_wait_minutes != null)
+    ? state.settings.aux_wait_minutes : 5;
   // Cada cuánto se escribe la posición. Cada carro tiene su propio celular con
   // cargador (no hay que cuidar batería), así que se reporta seguido: a 6s y
   // 60 km/h son ~100 m entre puntos, y el admin los une con una animación que
@@ -73,11 +80,49 @@
       : drOverviewHTML();
     if (drState.view === 'route') drRouteMap();
     else if (drState.view === 'exec') drExecMap();
+    drSyncWait();       // reloj de espera en el punto (solo tras marcar "Llegué")
     drSaveProgress();   // persiste el avance de la ruta (o lo limpia si ya no estamos en ella)
   }
   function drTeardown() {
     if (drState.map) { try { drState.map.remove(); } catch (e) {} drState.map = null; }
+    drStopWait();
     drStopGps();
+  }
+
+  // ---------- espera en el punto de recogida ----------
+  // Regla: al marcar "Llegué" arranca un reloj de `aux_wait_minutes` (Ajustes).
+  // Mientras corre, "No se presentó" está bloqueado; al vencerse se habilita.
+  // El auxiliar ve el MISMO reloj en su app (arranca en actual_arrival_at).
+  function drSyncWait() {
+    const v = drVuelta();
+    const leg = v && v.legs[drState.legIdx];
+    const active = drState.view === 'exec' && drState.legState === 'llegue'
+      && leg && leg.kind === 'pickup' && leg._arrivedAt;
+    if (!active) { drStopWait(); return; }
+    if (!drState.waitTick) drState.waitTick = setInterval(drPaintWait, 1000);
+    drPaintWait();
+  }
+  function drPaintWait() {
+    const box = document.getElementById('dr-wait');
+    const btn = document.getElementById('dr-noshow');
+    const v = drVuelta();
+    const leg = v && v.legs[drState.legIdx];
+    if (!box || !leg || !leg._arrivedAt) { drStopWait(); return; }
+    const left = Math.round((leg._arrivedAt + drWaitMin() * 60000 - Date.now()) / 1000);
+    if (left > 0) {
+      const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, '0');
+      box.className = 'dr-wait';
+      box.innerHTML = `<span>Espera acordada</span><b>${mm}:${ss}</b>`;
+      if (btn) { btn.disabled = true; btn.textContent = `No se presentó (${mm}:${ss})`; }
+    } else {
+      box.className = 'dr-wait over';
+      box.innerHTML = `<span>Espera cumplida</span><b>Puedes seguir</b>`;
+      if (btn) { btn.disabled = false; btn.textContent = 'No se presentó'; }
+      if (drState.waitTick) { clearInterval(drState.waitTick); drState.waitTick = null; }
+    }
+  }
+  function drStopWait() {
+    if (drState.waitTick) { clearInterval(drState.waitTick); drState.waitTick = null; }
   }
 
   const drTypeMeta = (t) => t === 'lle' ? { cls: 'lle', label: 'Llegada' } : t === 'hotel' ? { cls: 'hotel', label: 'Hotel' } : { cls: 'sal', label: 'Salida' };
@@ -305,7 +350,11 @@
         <a class="dr-cbtn msg" href="sms:${leg.phone.replace(/\s/g, '')}" aria-label="Mensaje"><svg class="icon" style="width:19px;height:19px"><use href="#i-send"/></svg></a>
         <a class="dr-cbtn tel" href="tel:${leg.phone.replace(/\s/g, '')}" aria-label="Llamar"><svg class="icon" style="width:19px;height:19px"><use href="#i-phone"/></svg></a>
       </div>` : '';
-    const footLinks = `<span class="links">${(!enCamino && leg.kind === 'pickup') ? '<button data-dr="noshow">No se presentó</button>' : ''}<button data-dr="report">Reportar novedad</button></span>`;
+    // "No se presentó" solo después de cumplir la espera pactada. El botón
+    // arranca deshabilitado y drPaintWait() lo suelta cuando el reloj llega a 0.
+    const waiting = !enCamino && leg.kind === 'pickup';
+    const footLinks = `<span class="links">${waiting ? '<button data-dr="noshow" id="dr-noshow" disabled>No se presentó</button>' : ''}<button data-dr="report">Reportar novedad</button></span>`;
+    const waitBox = waiting ? `<div class="dr-wait" id="dr-wait"></div>` : '';
 
     return `<div id="driver-ruta-ui" class="exec">
       <div class="dr-ex-map" id="dr-ex-map"></div>
@@ -332,6 +381,7 @@
             ${contacts}
           </div>
           ${mid}
+          ${waitBox}
           <div class="dr-btnrow">
             ${!isApt ? `<button class="nav" data-dr="nav" data-lat="${leg.lat}" data-lng="${leg.lng}"><svg class="icon"><use href="#i-route"/></svg>Navegar</button>` : ''}
             <button class="dr-cta ${primary.cls}" data-dr="${primary.act}"><svg class="icon" style="width:18px;height:18px"><use href="#${primary.ic}"/></svg>${primary.label}</button>
@@ -501,7 +551,11 @@
     if (drState.source !== 'live' || !leg || !leg.auxProfileId || typeof notify !== 'function') return;
     const who = ((drState.profile && drState.profile.full_name) || 'Tu conductor').split(' ')[0];
     if (kind === 'en_route') notify([leg.auxProfileId], 'Eres el siguiente 🔜', `${who} va hacia ti para recogerte.`, '/');
-    else if (kind === 'arrived') notify([leg.auxProfileId], '¡Tu conductor llegó! 📍', `${who} está en el punto de recogida. Sal cuando puedas.`, '/');
+    else if (kind === 'arrived') notify([leg.auxProfileId], '¡Tu conductor llegó! 📍', `${who} está en el punto de recogida. Te espera ${drWaitMin()} min.`, '/');
+    // Antes el "no se presentó" no le llegaba: el auxiliar se quedaba con la
+    // pantalla en "en camino" para siempre, sin push y sin explicación.
+    else if (kind === 'no_show') notify([leg.auxProfileId], 'No pudimos recogerte',
+      `${who} esperó ${drWaitMin()} min en el punto y siguió su ruta. Si fue un error, avisa al coordinador.`, '/');
   }
   // Push "está por llegar" cuando el conductor está a <300 m de la recogida actual
   // (distancia REAL, una sola vez por parada).
@@ -553,12 +607,16 @@
       if (a === 'call2') { const p = el.dataset.phone || ''; if (p) window.open('tel:' + p.replace(/\s/g, '')); return; }
       if (a === 'arrived') {
         const v = drVuelta(); const leg = v && v.legs[drState.legIdx];
-        if (leg && leg.kind === 'pickup') { drPushStatus(leg.reservationId, 'at_pickup'); drNotifyAux(leg, 'arrived'); }
+        if (leg && leg.kind === 'pickup') {
+          leg._arrivedAt = Date.now();   // arranca el reloj de espera
+          drPushStatus(leg.reservationId, 'at_pickup'); drNotifyAux(leg, 'arrived');
+        }
         drState.legState = 'llegue'; drRender(); return;
       }
       if (a === 'noshow') {
+        if (el.hasAttribute('disabled')) return;   // aún no cumple la espera
         const v = drVuelta(); const leg = v && v.legs[drState.legIdx];
-        if (leg) drPushStatus(leg.reservationId, 'no_show');
+        if (leg) { drPushStatus(leg.reservationId, 'no_show'); drNotifyAux(leg, 'no_show'); }
         toast('Marcado: no se presentó.'); drAdvance(); return;
       }
       if (a === 'next') { drApplyNext(); drAdvance(); return; }

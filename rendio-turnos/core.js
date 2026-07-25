@@ -435,6 +435,7 @@
     if (name === 'rewards') renderRewardsAdmin();
     if (name === 'consola') renderConsola();
     if (name === 'routes') renderRoutes();
+    if (name === 'reservas') renderReservas();
     if (name === 'oper') renderOperacion();
     else stopOperTimers(); // al salir de Operación, frena el reloj/simulación
   }

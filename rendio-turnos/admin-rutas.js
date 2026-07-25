@@ -601,20 +601,26 @@
     try {
       const r = await Api.saveRoutePlan(rt.day, lanes);
       toast(withDriver
-        ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado). Los conductores ya lo ven.`
+        ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado)${r.kept ? ` · ${r.kept} paradas ya en curso quedaron intactas` : ''}. Los conductores ya lo ven.`
         : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.`);
-      // Push "conductor asignado" a los auxiliares de las vueltas CON conductor.
-      // Best-effort: el plan ya quedó publicado aunque el push falle.
+      // Push a los auxiliares cuya asignación CAMBIÓ de verdad. Antes se le
+      // avisaba a todos en cada republicación, así que quien ya tenía conductor
+      // recibía "Conductor asignado 🚗" otra vez — y a quien SÍ le cambiaron el
+      // conductor le llegaba el mismo texto, sin decirle que había cambiado.
       try {
-        const resIds = lanes.filter(l => l.driverProfileId).flatMap(l => l.stops || []);
-        if (resIds.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
-          const profileIds = await Api.auxiliarUserIdsForReservations(resIds);
-          if (profileIds.length) await Api.sendPush({
-            profileIds,
+        const fresh = (r.notify || []).filter(n => !n.changed).map(n => n.reservationId);
+        const moved = (r.notify || []).filter(n => n.changed).map(n => n.reservationId);
+        if (fresh.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
+          const ids = await Api.auxiliarUserIdsForReservations(fresh);
+          if (ids.length) await Api.sendPush({ profileIds: ids,
             title: 'Conductor asignado 🚗',
-            body: 'Ya tienes conductor para tu traslado. Ábrelo para seguirlo en vivo.',
-            url: '/',
-          });
+            body: 'Ya tienes conductor para tu traslado. Ábrelo para seguirlo en vivo.', url: '/' });
+        }
+        if (moved.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
+          const ids = await Api.auxiliarUserIdsForReservations(moved);
+          if (ids.length) await Api.sendPush({ profileIds: ids,
+            title: 'Te cambiamos el conductor 🔄',
+            body: 'Tu traslado sigue en pie, pero lo atiende otro conductor. Ábrelo para ver quién es.', url: '/' });
         }
       } catch (_) {}
       // Push "ruta asignada" al CONDUCTOR de cada vuelta con conductor. Su

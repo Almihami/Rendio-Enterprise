@@ -355,6 +355,8 @@
     if ($('#setting-fast-start-from')) $('#setting-fast-start-from').value = state.settings.fast_start_from_hour != null ? state.settings.fast_start_from_hour : 12;
     if ($('#setting-fast-start-to')) $('#setting-fast-start-to').value = state.settings.fast_start_to_hour != null ? state.settings.fast_start_to_hour : 16;
     if ($('#setting-inspection-grace')) $('#setting-inspection-grace').value = state.settings.inspection_grace_minutes != null ? state.settings.inspection_grace_minutes : 90;
+    if ($('#setting-aux-wait')) $('#setting-aux-wait').value = state.settings.aux_wait_minutes != null ? state.settings.aux_wait_minutes : 5;
+    if ($('#setting-aux-lead')) $('#setting-aux-lead').value = state.settings.aux_min_lead_hours != null ? state.settings.aux_min_lead_hours : 6;
     renderPriorityList();
     renderRulesEditor();
     renderVehiclesSettings();
@@ -701,6 +703,12 @@
       fast_start_from_hour: Math.min(23, Math.max(0, parseInt($('#setting-fast-start-from') && $('#setting-fast-start-from').value, 10) || 12)),
       fast_start_to_hour: Math.min(24, Math.max(1, parseInt($('#setting-fast-start-to') && $('#setting-fast-start-to').value, 10) || 16)),
       inspection_grace_minutes: Math.min(480, Math.max(15, parseInt($('#setting-inspection-grace') && $('#setting-inspection-grace').value, 10) || 90)),
+      aux_wait_minutes: Math.min(60, Math.max(1, parseInt($('#setting-aux-wait') && $('#setting-aux-wait').value, 10) || 5)),
+      // 0 = sin anticipación mínima. `|| 6` lo pisaría, así que se valida aparte.
+      aux_min_lead_hours: (() => {
+        const n = parseInt($('#setting-aux-lead') && $('#setting-aux-lead').value, 10);
+        return isNaN(n) ? 6 : Math.min(72, Math.max(0, n));
+      })(),
     };
     try {
       await Api.saveSettings(next);

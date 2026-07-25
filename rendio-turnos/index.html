@@ -602,6 +602,12 @@
                 <div class="set-field"><label>Plazo para la inspección (min)</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint">Si no la hace en este tiempo → strike automático. Default 90.</div></div>
                 <div class="set-field"></div>
               </div>
+              <div class="set-divider" style="margin:16px 0 4px"></div>
+              <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Traslados de auxiliares</p>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Espera en el punto (min)</label><input id="setting-aux-wait" class="set-input" type="number" min="1" max="60" /><div class="set-hint">Cuánto espera el conductor al auxiliar en la recogida. El auxiliar ve la misma cuenta regresiva, y "No se presentó" solo se habilita al vencerse. Default 5.</div></div>
+                <div class="set-field"><label>Anticipación mínima (horas)</label><input id="setting-aux-lead" class="set-input" type="number" min="0" max="72" /><div class="set-hint">Por debajo de esto se le avisa al auxiliar y el traslado queda marcado como "pedido tarde" en Reservas. No se bloquea: la operación tiene urgencias. Default 6.</div></div>
+              </div>
               <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
             </div>
           </div>
@@ -768,6 +774,28 @@
             <button class="set-btn ghost" id="shifts-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
           </div>
           <div id="shifts-list"></div>
+        </div>
+      </section>
+
+      <!-- ADMIN: Reservas (tabla operativa de traslados del día) -->
+      <section data-panel="reservas" class="hidden">
+        <div id="rv-ui" data-theme="light">
+          <div class="sh-phead">
+            <div>
+              <h1>Reservas <span class="sh-ct" id="rv-count">0</span></h1>
+              <p>Traslados pedidos por los auxiliares. Aquí ves el detalle uno por uno, quién confirmó su recogida, quién pidió tarde y las calificaciones. Si un vuelo se cae, <b>cancela el traslado</b>: sale de la ruta del conductor y les avisamos a los dos.</p>
+            </div>
+            <button class="set-btn ghost" id="rv-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+          </div>
+          <div class="rv-bar">
+            <button class="rv-fbtn on" data-rv-f="all">Todas <i></i></button>
+            <button class="rv-fbtn" data-rv-f="active">En pie <i></i></button>
+            <button class="rv-fbtn" data-rv-f="pending">Sin rutear <i></i></button>
+            <button class="rv-fbtn" data-rv-f="cancelled">Canceladas <i></i></button>
+            <button class="rv-fbtn" data-rv-f="rated">Calificadas <i></i></button>
+          </div>
+          <div class="rv-days" id="rv-days"></div>
+          <div id="rv-list"></div>
         </div>
       </section>
 
@@ -1040,6 +1068,7 @@
   <!-- Rutas de auxiliares (feat/rutas-modular): consola/sidebar + asignación + operación -->
   <script src="admin-consola.js"></script>
   <script src="admin-rutas.js"></script>
+  <script src="admin-reservas.js"></script>
   <script src="admin-operacion.js"></script>
   <!-- Rol auxiliar (pasajero) -->
   <script src="auxiliar.js"></script>

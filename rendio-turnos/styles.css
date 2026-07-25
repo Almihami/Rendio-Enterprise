@@ -1142,6 +1142,68 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #shifts-ui .sh-empty h3{font-size:16px;font-weight:800;color:var(--ink)}
 #shifts-ui .sh-empty p{font-size:13px;margin-top:4px}
 
+/* ============================================================
+   Admin · Reservas (tabla operativa de traslados de auxiliares)
+   Reusa la paleta y las piezas de Turnos activos (.sh-phead/.set-btn).
+   ============================================================ */
+#rv-ui *{box-sizing:border-box}
+#rv-ui .icon{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
+#rv-ui .sh-phead{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:16px}
+#rv-ui .sh-phead h1{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;display:flex;align-items:center;gap:11px;color:var(--ink)}
+#rv-ui .sh-phead h1 .sh-ct{font-size:13px;font-weight:800;font-family:var(--mono);background:var(--amber-soft);color:var(--amber);border-radius:999px;padding:3px 11px}
+#rv-ui .sh-phead p{font-size:13px;color:var(--ink2);margin-top:8px;max-width:660px;line-height:1.5}
+#rv-ui .sh-phead p b{color:var(--ink);font-weight:700}
+#rv-ui .set-btn{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 9px 22px rgba(242,101,34,.26)}
+#rv-ui .set-btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:none}
+#rv-ui .set-btn.danger{background:var(--red);color:#fff;box-shadow:none}
+#rv-ui .set-btn:disabled{opacity:.55;cursor:not-allowed}
+#rv-ui .set-input{width:100%;height:38px;padding:0 12px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);font-family:var(--font);font-size:13px}
+/* Filtros + días */
+#rv-ui .rv-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+#rv-ui .rv-fbtn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);color:var(--ink2);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer}
+#rv-ui .rv-fbtn.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+#rv-ui .rv-fbtn i{font-style:normal;font-family:var(--mono);font-size:11px;opacity:.7}
+#rv-ui .rv-days{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+#rv-ui .rv-chip{height:30px;padding:0 12px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--ink2);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer;text-transform:capitalize}
+#rv-ui .rv-chip.on{background:var(--orange);color:#fff;border-color:var(--orange)}
+/* Filas */
+#rv-ui #rv-list{display:grid;gap:10px}
+#rv-ui .rv-row{display:flex;align-items:flex-start;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+#rv-ui .rv-row.off{opacity:.62}
+#rv-ui .rv-when{flex:0 0 auto;text-align:center;min-width:64px;padding-top:2px}
+#rv-ui .rv-when b{display:block;font-size:17px;font-weight:800;font-family:var(--mono);color:var(--ink);letter-spacing:-.02em}
+#rv-ui .rv-when span{display:block;font-size:11px;color:var(--ink3);text-transform:capitalize;margin-top:2px}
+#rv-ui .rv-main{flex:1 1 auto;min-width:0}
+#rv-ui .rv-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#rv-ui .rv-top b{font-size:15px;font-weight:800;color:var(--ink)}
+#rv-ui .rv-st{font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;background:var(--line2);color:var(--ink2)}
+#rv-ui .rv-st.ok{background:var(--green-soft,#E7F8F1);color:var(--green,#0F7B5A)}
+#rv-ui .rv-st.warn{background:var(--amber-soft);color:var(--amber)}
+#rv-ui .rv-st.bad{background:var(--red-soft);color:var(--red)}
+#rv-ui .rv-sub{font-size:12.5px;color:var(--ink2);margin-top:3px;line-height:1.45}
+#rv-ui .rv-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+#rv-ui .rv-tag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:7px;background:var(--line2);color:var(--ink2)}
+#rv-ui .rv-tag.pern{background:#EEF2FF;color:#4338CA}
+#rv-ui .rv-tag.tent{background:var(--amber-soft);color:var(--amber)}
+#rv-ui .rv-tag.late{background:var(--red-soft);color:var(--red)}
+#rv-ui .rv-tag.ready{background:var(--green-soft,#E7F8F1);color:var(--green,#0F7B5A)}
+#rv-ui .rv-tag.star{background:#FEF3C7;color:#B45309}
+#rv-ui .rv-note{font-size:11.5px;color:var(--ink3);margin-top:6px;font-style:italic}
+#rv-ui .rv-cancel{margin-top:10px;padding:12px;border:1px solid var(--red);background:var(--red-soft);border-radius:12px}
+#rv-ui .rv-cancel-acts{display:flex;gap:8px;margin-top:9px}
+#rv-ui .rv-acts{flex:0 0 auto;display:flex;align-items:center;gap:8px}
+#rv-ui .rv-ic{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:10px;border:1px solid var(--line2);color:var(--ink2);background:var(--panel)}
+#rv-ui .rv-msg{font-size:13px;color:var(--ink2);padding:8px}
+#rv-ui .rv-msg.bad{color:var(--red)}
+#rv-ui .rv-empty{text-align:center;padding:46px 20px;color:var(--ink2)}
+#rv-ui .rv-empty .icon{width:34px;height:34px;color:var(--ink3);margin:0 auto 10px}
+#rv-ui .rv-empty h3{font-size:16px;font-weight:800;color:var(--ink)}
+#rv-ui .rv-empty p{font-size:13px;margin-top:4px}
+@media(max-width:640px){
+  #rv-ui .rv-row{flex-wrap:wrap}
+  #rv-ui .rv-acts{width:100%;justify-content:flex-end}
+}
+
 /* Inspecciones — filtro "Autos" (selector de vehículo) + resolución con foto del admin */
 #inspections-ui .autosel{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #inspections-ui .autosel label{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
@@ -2310,6 +2372,29 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #auxiliar-ui .ax-skip{display:block;width:100%;text-align:center;background:none;border:none;color:var(--a-t2);font-weight:600;font-size:13.5px;padding:12px;cursor:pointer;margin-top:2px}
 #auxiliar-ui .ax-link{color:var(--a-accent);font-weight:700;background:none;border:none;cursor:pointer}
 
+/* Espera en el punto de recogida — reloj REAL (arranca en actual_arrival_at) */
+#auxiliar-ui .ax-wait{display:flex;align-items:center;justify-content:center;gap:10px;background:#E7F8F1;color:var(--a-ok);border-radius:12px;padding:10px 14px;margin:0 0 12px;font-size:13px;font-weight:700}
+#auxiliar-ui .ax-wait.hidden{display:none}
+#auxiliar-ui .ax-wait b{font-size:20px;font-variant-numeric:tabular-nums;letter-spacing:.5px}
+#auxiliar-ui .ax-wait.over{background:#FDECEC;color:#C53030}
+#auxiliar-ui .ax-wait.over b{font-size:14px}
+/* Aviso duro del formulario (fecha ya pasada) */
+#auxiliar-ui .ax-hint.bad{background:#FDECEC;color:#C53030;font-weight:600}
+/* Cancelar traslado */
+#auxiliar-ui .ax-cancel-link{display:block;width:100%;text-align:center;color:#C53030;font-size:13.5px;padding:14px 0 4px;margin-top:6px}
+#auxiliar-ui .ax-cancel-box{border:1.5px solid #F5C6C6;background:#FFF7F7;border-radius:14px;padding:14px;margin-top:16px}
+#auxiliar-ui .ax-cancel-box b{display:block;font-size:14.5px;color:#C53030;margin-bottom:4px}
+#auxiliar-ui .ax-cancel-box>span{display:block;font-size:12.5px;color:var(--a-t2);line-height:1.45;margin-bottom:10px}
+#auxiliar-ui .ax-cancel-box .ax-input{margin-bottom:10px}
+#auxiliar-ui .ax-cancel-acts{display:flex;gap:8px}
+#auxiliar-ui .ax-cancel-acts .ax-btn{flex:1;margin-top:0;height:44px;font-size:14px}
+#auxiliar-ui .ax-btn-danger{background:#C53030;color:#fff;border:none}
+#auxiliar-ui .ax-btn-ghost.ax-danger{color:#C53030;border-color:#F5C6C6;margin-top:16px}
+/* Perfil del auxiliar */
+#auxiliar-ui .ax-prof-card{display:flex;align-items:center;gap:14px;background:var(--a-card);border:1px solid var(--a-line);border-radius:16px;padding:16px;margin-bottom:16px}
+#auxiliar-ui .ax-prof-card b{display:block;font-size:16px}
+#auxiliar-ui .ax-prof-card span{font-size:12.5px;color:var(--a-t2);word-break:break-all}
+
 /* ============================================================
    Conductor · Mi ruta (rutas de auxiliares) — alta legibilidad al volante
    ============================================================ */
@@ -2484,3 +2569,9 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #driver-ruta-ui .dr-btnrow .nav .icon{color:var(--r-accent);width:18px;height:18px}
 #driver-ruta-ui .dr-btnrow .dr-cta{flex:1;width:auto}
 #driver-ruta-ui .dr-foot .links{display:inline-flex;gap:14px}
+#driver-ruta-ui .dr-foot button[disabled]{opacity:.4;cursor:not-allowed;text-decoration:none}
+/* Reloj de espera en el punto de recogida (mismo número que ve el auxiliar) */
+#driver-ruta-ui .dr-wait{display:flex;align-items:center;justify-content:center;gap:10px;background:#E7F8F1;color:#0F7B5A;border-radius:12px;padding:10px 14px;margin-top:12px;font-size:13px;font-weight:700}
+#driver-ruta-ui .dr-wait b{font-size:20px;font-variant-numeric:tabular-nums;letter-spacing:.5px}
+#driver-ruta-ui .dr-wait.over{background:#FDECEC;color:#C53030}
+#driver-ruta-ui .dr-wait.over b{font-size:15px}
