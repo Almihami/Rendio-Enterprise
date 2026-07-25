@@ -2034,6 +2034,12 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #oper-ui .op-cars{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
 #oper-ui .op-cars-h{padding:13px 14px 11px;border-bottom:1px solid var(--line)}
 #oper-ui .op-kpis{display:flex;gap:8px}
+/* Estado vacío de Operación: sin carros reales no se pinta nada inventado */
+#oper-ui .op-empty{text-align:center;padding:34px 18px;color:var(--ink2)}
+#oper-ui .op-empty .icon{width:30px;height:30px;color:var(--ink3);margin:0 auto 10px;display:block;stroke:currentColor;stroke-width:1.8;fill:none}
+#oper-ui .op-empty b{display:block;font-size:14.5px;font-weight:800;color:var(--ink);margin-bottom:5px}
+#oper-ui .op-empty span{display:block;font-size:12.5px;line-height:1.5;max-width:300px;margin:0 auto}
+#oper-ui .op-empty.sm{padding:18px 14px}
 #oper-ui .op-kpi{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:8px 9px;text-align:center}
 #oper-ui .op-kpi b{font-size:18px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;display:block}
 #oper-ui .op-kpi span{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3);display:block;margin-top:4px}

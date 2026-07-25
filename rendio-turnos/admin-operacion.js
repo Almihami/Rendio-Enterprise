@@ -5,8 +5,9 @@
   // OPERACIÓN EN VIVO — mapa real OSM (Leaflet) + monitoreo de carros.
   // Plan de Rutas: mapa OSM (gratis) + ETAs OSRM (gratis). Tráfico (Google/
   // TomTom) y vuelos (AeroDataBox) quedan STUBBEADOS (requieren API key).
-  // Las posiciones reales saldrían de driver_locations (GPS de la app del
-  // conductor); mientras no haya GPS, se usa data DEMO con coords reales.
+  // Las posiciones salen de driver_locations (GPS de la app del conductor) y de
+  // las anclas por evento (mig 0045). Desde 2026-07-25 NO hay data de ejemplo:
+  // sin operación real la pantalla queda vacía y explica qué falta.
   // ====================================================================
   // Rotonda del TERMINAL DE PASAJEROS (acceso occidental) — la coord genérica
   // del aeropuerto ruteaba por la zona de carga/CACOM 5, que es prohibida.
@@ -16,22 +17,13 @@
   const OP_CAR_COLORS = ['#2563A8', '#7C5CD6', '#16936A', '#0EA5E9', '#E2551A', '#8B5CF6'];
   const OP_STLABEL = { ontime: ['A tiempo', 'i-check'], tight: ['Ajustado', 'i-clock'], late: ['Va tarde', 'i-warn'], done: ['Completó', 'i-check'] };
   const OP_VAN_SVG = '<svg viewBox="0 0 24 24"><path d="M3 13V7a1 1 0 0 1 1-1h9l4 4h3a1 1 0 0 1 1 1v2"/><path d="M3 13h19v4H3z"/><circle cx="7.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>';
-  // DEMO con coordenadas reales del Oriente antioqueño → MDE. Los auxiliares
-  // viven en Rionegro y alrededores; los viajes son recogida local → aeropuerto.
-  const OP_DEMO_CARS = [
-    { id: 'RD-01', driver: 'Carlos Roldán', dc: '#2563A8', pax: 3, cap: 4, state: 'ontime', next: 'Mariana R. · San Antonio', etaNext: '05:18', arrival: '05:28', pres: '05:50', flight: 'AV8120', status: 'En ruta', pos: [6.1490, -75.3590] }, // San Antonio de Pereira (Rionegro)
-    { id: 'RD-02', driver: 'Jefferson Cardona', dc: '#7C5CD6', pax: 4, cap: 4, state: 'tight', next: 'Aeropuerto MDE', etaNext: '05:31', arrival: '05:31', pres: '05:40', flight: 'LA4011', status: 'A bordo · llegando', pos: [6.1480, -75.4080] }, // Llanogrande
-    { id: 'RD-03', driver: 'Daniel Álvarez', dc: '#16936A', pax: 2, cap: 4, state: 'late', next: 'Valentina C. · Marinilla', etaNext: '05:26', arrival: '05:48', pres: '05:40', flight: 'AV8432', status: 'Recogiendo', pos: [6.1736, -75.3376] }, // Marinilla
-    { id: 'RD-04', driver: 'Juan Mery', dc: '#0EA5E9', pax: 0, cap: 4, state: 'done', next: 'Turno completado', etaNext: '—', arrival: '05:02', pres: '—', flight: '—', status: 'Disponible', pos: [6.1645, -75.4231] }, // ya en MDE
-  ];
-  const OP_DEMO_FEED = [
-    { k: 'bad', t: '05:11', h: '<b>RD-03</b> proyecta atraso de 8 min para el vuelo AV8432.' },
-    { k: 'ok', t: '05:09', h: '<b>RD-01</b> recogió a Andrés F. en San Antonio de Pereira. 3/4 a bordo.' },
-    { k: 'info', t: '05:04', h: '<b>RD-02</b> va camino al aeropuerto con 4/4.' },
-    { k: 'ok', t: '05:02', h: '<b>RD-04</b> completó su ruta y queda disponible.' },
-    { k: 'warn', t: '04:58', h: 'Tráfico moderado en la vía Llanogrande–Aeropuerto <i>(demo — tráfico en vivo pendiente de API key)</i>.' },
-  ];
-  const opState = { map: null, routeLayer: null, markerLayer: null, markers: {}, cars: [], feed: [], sel: 'RD-03', clockT: 0, timers: [], bound: false, source: 'demo', day: null, loading: false, tweens: {}, raf: null };
+  // 2026-07-25: se eliminaron OP_DEMO_CARS y OP_DEMO_FEED (4 carros y 5 eventos
+  // inventados que se pintaban cuando no había operación real). Servían para
+  // enseñar la pantalla antes de que existiera el GPS, pero con la app en
+  // pruebas reales mentían: mostraban carros rodando y conductores por nombre
+  // que no existían. Ver [feedback-no-inventar-datos]. Sin datos reales la
+  // pantalla ahora lo DICE y no pinta nada.
+  const opState = { map: null, routeLayer: null, markerLayer: null, markers: {}, cars: [], feed: [], sel: null, clockT: 0, timers: [], bound: false, source: 'empty', day: null, loading: false, tweens: {}, raf: null };
   // Cada cuánto se relee la operación real. La posición llega por polling: la
   // tabla driver_locations se diseñó para Realtime, pero el polling es suficiente
   // para una flota de 3-4 carros y no exige habilitar replicación.
@@ -56,16 +48,18 @@
   const opFmt = (sec) => { const h = Math.floor(sec / 3600) % 24, m = Math.floor(sec / 60) % 60, s = sec % 60; return [h, m, s].map(x => String(x).padStart(2, '0')).join(':'); };
 
   function renderOperacion() {
-    if (!opState.cars.length) opState.cars = OP_DEMO_CARS.map(c => ({ ...c, pos: c.pos.slice(), path: null, prog: 0 }));
-    if (!opState.feed.length) opState.feed = OP_DEMO_FEED.slice();
-    if (!opState.clockT) opState.clockT = opToSec('05:12:04');
+    // El reloj arranca en la hora REAL de Colombia (antes en un 05:12:04 fijo).
+    // Se pinta ya: si se deja al intervalo, el primer segundo muestra "--:--:--".
+    opState.clockT = opNowSec();
+    const clkEl = document.getElementById('oper-clock');
+    if (clkEl) clkEl.textContent = opFmt(opState.clockT);
     initOperMap();
     renderOperCars();
     renderOperFeed();
     syncOperDelay();
     bindOperOnce();
     startOperTimers();
-    loadRealOps(); // si hay rutas publicadas, reemplaza el demo con lo real
+    loadRealOps(); // única fuente: rutas publicadas + GPS/anclas reales
   }
 
   // ---------------------------------------------------------------------------
@@ -83,7 +77,14 @@
     opState.loading = true;
     try {
       const data = await Api.listLiveOperation();
-      if (!data || data.source !== 'live' || !data.cars.length) return; // sin plan publicado → se queda el demo
+      // Sin plan publicado o sin carros rodando: la pantalla queda VACÍA y lo
+      // dice. Antes se quedaba el demo y parecía que había operación en curso.
+      if (!data || data.source !== 'live' || !data.cars.length) {
+        if (opState.cars.length) { opState.cars = []; opState.sel = null; opStopRaf(); }
+        opState.source = 'empty';
+        renderOperCars(); renderOperFeed(); syncOperDelay(); renderOperMarkers();
+        return;
+      }
       const first = opState.source !== 'live';
       opState.source = 'live';
       opState.day = data.day;
@@ -368,6 +369,18 @@
   function renderOperCars() {
     const list = document.getElementById('oper-carlist');
     if (!list) return;
+    if (!opState.cars.length) {
+      // Estado vacío honesto: se dice POR QUÉ no hay nada y qué falta para que
+      // aparezca. Antes aquí se pintaban 4 carros inventados rodando.
+      list.innerHTML = `<div class="op-empty">
+        <svg class="icon"><use href="#i-route"/></svg>
+        <b>No hay carros en operación</b>
+        <span>Aparecen aquí cuando hay un plan de rutas publicado con conductor asignado y ese conductor inicia su ruta desde la app.</span>
+      </div>`;
+      ['oper-kOn', 'oper-kLate', 'oper-kDone'].forEach(id => { const e = document.querySelector(`#${id} b`); if (e) e.textContent = '0'; });
+      const kl0 = document.getElementById('oper-kLate'); if (kl0) kl0.className = 'op-kpi ok';
+      return;
+    }
     list.innerHTML = opState.cars.map(opCarCard).join('');
     const on = opState.cars.filter(c => c.state === 'ontime').length;
     const risk = opState.cars.filter(c => c.state === 'late' || c.state === 'tight').length;
@@ -381,10 +394,14 @@
   function renderOperFeed() {
     const f = document.getElementById('oper-feed');
     if (!f) return;
+    if (!opState.feed.length) {
+      f.innerHTML = `<div class="op-empty sm"><span>Sin eventos. El feed se llena con lo que marcan los conductores en su ruta.</span></div>`;
+      return;
+    }
     f.innerHTML = opState.feed.map(e => `<div class="op-ev ${e.k}"><span class="op-evdot"></span><div class="op-evtx"><p>${e.h}</p><div class="op-evt">${e.t}</div></div></div>`).join('');
   }
   function opPushFeed(k, h) {
-    const now = (document.getElementById('oper-clock')?.textContent || '05:12:00').slice(0, 5);
+    const now = opFmt(opNowSec()).slice(0, 5);   // hora real, no un 05:12 fijo
     opState.feed.unshift({ k, t: now, h });
     renderOperFeed();
   }
@@ -403,72 +420,49 @@
     } else box.classList.remove('show');
   }
 
+  // Acciones sobre un carro atrasado. Solo hay operación REAL, así que se quitó
+  // la rama que "resolvía" el atraso moviendo números de la demo (llegaba 05:38,
+  // reasignaba a Valentina C., llamaba a Daniel Álvarez — todo escrito a mano).
+  // Llamar al conductor sí funciona; re-optimizar y reasignar aún no están
+  // conectados, y decirlo es mejor que fingir que se hizo algo.
   function resolveOperLate(method) {
     const late = opState.cars.find(c => c.state === 'late');
     if (!late) return;
-
-    // En vivo no se simula nada. Llamar al conductor sí es real; re-optimizar y
-    // reasignar todavía no están conectados y decirlo es mejor que fingirlo:
-    // el admin estaría decidiendo sobre una operación de verdad.
-    if (opState.source === 'live') {
-      if (method === 'call') {
-        const tel = (late.driverPhone || '').replace(/\s/g, '');
-        if (tel) { window.open('tel:' + tel); opPushFeed('info', `Llamada al conductor de <b>${late.id}</b> (${late.driver}).`); }
-        else toast('Ese conductor no tiene teléfono registrado.');
-        return;
-      }
-      toast(method === 'reopt'
-        ? 'Re-optimizar en vivo todavía no está conectado.'
-        : 'Reasignar una parada en vivo todavía no está conectado.');
+    if (method === 'call') {
+      const tel = (late.driverPhone || '').replace(/\s/g, '');
+      if (tel) { window.open('tel:' + tel); opPushFeed('info', `Llamada al conductor de <b>${late.id}</b> (${late.driver}).`); }
+      else toast('Ese conductor no tiene teléfono registrado.');
       return;
     }
-
-    late.state = 'tight'; late.arrival = '05:38'; late.etaNext = '05:24';
-    renderOperCars(); renderOperMarkers(); syncOperDelay();
-    if (method === 'reopt') { opPushFeed('ok', `Re-optimización: <b>${late.id}</b> ahora llega 05:38 — a tiempo para ${late.flight}.`); toast('Rutas re-optimizadas. RD-03 ya llega a tiempo.'); }
-    if (method === 'reassign') { opPushFeed('info', `Parada de Valentina C. reasignada a <b>RD-01</b>. Holgura recuperada.`); toast('Parada reasignada a RD-01.'); }
-    if (method === 'call') { opPushFeed('info', `Llamada al conductor de <b>${late.id}</b> para priorizar la última recogida.`); toast('Llamando a Daniel Álvarez…'); }
+    toast(method === 'reopt'
+      ? 'Re-optimizar en vivo todavía no está conectado.'
+      : 'Reasignar una parada en vivo todavía no está conectado.');
   }
 
+  // Se eliminó el intervalo que deslizaba los carros de la demo por su ruta
+  // (`mv`): sin operación real no hay nada que mover, y con operación real el
+  // carro se queda donde de verdad reportó. El reloj siempre marca hora de
+  // Colombia (antes, en demo, corría un contador inventado hacia adelante).
   function startOperTimers() {
     stopOperTimers();
     const clk = setInterval(() => {
       if (state.activeTab !== 'oper') { stopOperTimers(); return; }
-      opState.clockT = opState.source === 'live' ? opNowSec() : opState.clockT + 1;
+      opState.clockT = opNowSec();
       const el = document.getElementById('oper-clock'); if (el) el.textContent = opFmt(opState.clockT);
     }, 1000);
     opState.timers = [clk];
 
-    if (opState.source === 'live') {
-      // En vivo NO se anima: el carro se queda donde de verdad reportó. Deslizarlo
-      // por la ruta sería inventar una posición, y el admin decide con esto.
-      // La frescura de la tarjeta dice si el punto está vivo o viejo.
-      opState.timers.push(setInterval(() => {
-        if (state.activeTab !== 'oper') { stopOperTimers(); return; }
-        loadRealOps();
-      }, OP_POLL_MS));
-      // Refresca solo las etiquetas de frescura entre polls.
-      opState.timers.push(setInterval(() => {
-        if (state.activeTab !== 'oper') { stopOperTimers(); return; }
-        renderOperCars();
-      }, 20000));
-      return;
-    }
-
-    const mv = setInterval(() => {
+    // Relee la operación real. Se hace SIEMPRE (no solo cuando ya hay carros):
+    // así la pantalla se prende sola en cuanto un conductor arranca su ruta.
+    opState.timers.push(setInterval(() => {
       if (state.activeTab !== 'oper') { stopOperTimers(); return; }
-      opState.cars.forEach(c => {
-        if (c.state === 'done' || !c.path || c.path.length < 2) return;
-        const step = (c.path.length - 1) / 90; // recorre la ruta en ~90 ticks
-        c.prog = (c.prog || 0) + step;
-        let seg = Math.floor(c.prog);
-        if (seg >= c.path.length - 1) { c.pos = c.path[c.path.length - 1].slice(); return; }
-        const f = c.prog - seg, a = c.path[seg], b = c.path[seg + 1];
-        c.pos = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-        const m = opState.markers[c.id]; if (m) m.setLatLng(c.pos);
-      });
-    }, 1100);
-    opState.timers.push(mv);
+      loadRealOps();
+    }, OP_POLL_MS));
+    // Refresca solo las etiquetas de frescura entre polls.
+    opState.timers.push(setInterval(() => {
+      if (state.activeTab !== 'oper') { stopOperTimers(); return; }
+      renderOperCars();
+    }, 20000));
   }
   function stopOperTimers() {
     (opState.timers || []).forEach(t => clearInterval(t));

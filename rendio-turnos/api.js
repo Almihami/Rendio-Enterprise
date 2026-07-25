@@ -1313,13 +1313,17 @@
       colors[key] = RT_PALETTE[i % RT_PALETTE.length];
     });
 
-    // Carros: vehículos reales si hay; si no, 2 por defecto (disponibles 01:30).
+    // Carros: SOLO vehículos reales de la flota. Antes, si no había vehículos,
+    // se inventaban un RD-01 y un RD-02 — y el admin podía armar y publicar un
+    // plan contra carros que no existen (saveRoutePlan los descarta sin
+    // vehicleId, así que el plan se perdía en silencio). Sin vehículos se
+    // devuelve `noVehicles` y el tablero lo dice.
     let cars = [];
     try {
       const vs = await listVehiclesForShift();
-      cars = (vs || []).slice(0, 2).map((v, i) => ({ id: v.internal_code || v.license_plate || ('RD-0' + (i + 1)), avail0: '01:30', driver: null, capacity: v.capacity || 4, vehicleId: v.id }));
+      cars = (vs || []).slice(0, 2).map((v, i) => ({ id: v.internal_code || v.license_plate || ('Carro ' + (i + 1)), avail0: '01:30', driver: null, capacity: v.capacity || 4, vehicleId: v.id }));
     } catch (_) {}
-    if (!cars.length) cars = [{ id: 'RD-01', avail0: '01:30', driver: null, capacity: 4 }, { id: 'RD-02', avail0: '01:30', driver: null, capacity: 4 }];
+    if (!cars.length) return { aux: {}, colors: {}, cars: [], drivers: [], plan: {}, source: 'empty', day: day0, noVehicles: true };
     let drivers = [];
     try {
       const ds = await listDrivers();

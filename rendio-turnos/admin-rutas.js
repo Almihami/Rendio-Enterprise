@@ -8,68 +8,13 @@
   // (acceso occidental). El punto geocodificado genérico caía del lado oriental
   // de la pista y OSRM ruteaba por la zona de carga/CACOM 5 (prohibida).
   const RT_AIRPORT = { lat: 6.1715, lng: -75.4270 }; // MDE · terminal de pasajeros (verificado vs OSRM)
-  // DEMO: día completo de trabajo (~02:00 → ~23:00), 2 carros, 12 oleadas.
-  // Direcciones EXACTAS de Rionegro (nomenclatura real de barrios/vías; datos
-  // inventados para la demo — con reservas reales cada dirección se geocodifica).
-  const RT_DEMO_AUX = {
-    // ---- deben estar 03:10 ----
-    b1: { n: 'Laura G.', zona: 'Centro', dir: 'Cra 51 #49-06, Centro', lat: 6.1529, lng: -75.3752, dl: '03:10', pax: 1, type: 'sal' },
-    b2: { n: 'Andrés P.', zona: 'El Porvenir', dir: 'Calle 47 #59-33, B. El Porvenir', lat: 6.1468, lng: -75.3849, dl: '03:10', pax: 1, type: 'sal' },
-    // ---- deben estar 04:00 ----
-    b3: { n: 'Camila R.', zona: 'Cuatro Esquinas', dir: 'Cra 62 #42-18, B. Cuatro Esquinas', lat: 6.1512, lng: -75.3628, dl: '04:00', pax: 1, type: 'sal' },
-    b4: { n: 'Óscar D.', zona: 'El Faro', dir: 'Calle 41 #63-27, B. El Faro', lat: 6.1489, lng: -75.3672, dl: '04:00', pax: 1, type: 'sal' },
-    b5: { n: 'Melisa V.', zona: 'San Nicolás', dir: 'Cra 55 #44-12, B. San Nicolás', lat: 6.1470, lng: -75.3781, dl: '04:00', pax: 1, type: 'sal' },
-    // ---- deben estar 04:40 ----
-    b6: { n: 'Julio C.', zona: 'San Antonio', dir: 'Calle 24 #45-80, San Antonio de Pereira', lat: 6.1310, lng: -75.3795, dl: '04:40', pax: 1, type: 'sal' },
-    b7: { n: 'Paula E.', zona: 'San Antonio', dir: 'Cra 47 #21-35, San Antonio de Pereira', lat: 6.1281, lng: -75.3811, dl: '04:40', pax: 1, type: 'sal' },
-    // ---- deben estar 05:30 ----
-    b8: { n: 'Marcos L.', zona: 'Llanogrande', dir: 'Vía Llanogrande km 7, P. Cerrada Los Cedros', lat: 6.1268, lng: -75.4155, dl: '05:30', pax: 1, type: 'sal' },
-    b9: { n: 'Diana F.', zona: 'Llanogrande', dir: 'Calle 10B #36-44, Llanogrande', lat: 6.1249, lng: -75.4198, dl: '05:30', pax: 1, type: 'sal' },
-    b10: { n: 'Simón T.', zona: 'Llanogrande', dir: 'Vía San Nicolás–La Ceja km 2', lat: 6.1180, lng: -75.4210, dl: '05:30', pax: 1, type: 'sal' },
-    // ---- deben estar 06:40 ----
-    b11: { n: 'Verónica S.', zona: 'Alto del Medio', dir: 'Cra 50 #58-11, B. Alto del Medio', lat: 6.1618, lng: -75.3708, dl: '06:40', pax: 1, type: 'sal' },
-    b12: { n: 'Héctor M.', zona: 'Santa Ana', dir: 'Calle 62 #54-09, B. Santa Ana', lat: 6.1685, lng: -75.3745, dl: '06:40', pax: 1, type: 'sal' },
-    // ---- debe estar 08:00 ----
-    b13: { n: 'Natalia B.', zona: 'Centro', dir: 'Cra 48 #50-45, Centro', lat: 6.1545, lng: -75.3730, dl: '08:00', pax: 1, type: 'sal' },
-    // ---- deben estar 09:20 ----
-    b14: { n: 'Iván Q.', zona: 'Gualanday', dir: 'Vía Gualanday km 1', lat: 6.1620, lng: -75.3985, dl: '09:20', pax: 1, type: 'sal' },
-    b15: { n: 'Rosa H.', zona: 'La Colina', dir: 'Cra 70 #38-22, B. La Colina', lat: 6.1435, lng: -75.3900, dl: '09:20', pax: 1, type: 'sal' },
-    b16: { n: 'Fabián N.', zona: 'Centro', dir: 'Calle 52 #47-60, Centro', lat: 6.1560, lng: -75.3722, dl: '09:20', pax: 1, type: 'sal' },
-    // ---- deben estar 11:00 ----
-    b17: { n: 'Tatiana W.', zona: 'Vía Aeropuerto', dir: 'Vía Aeropuerto km 2, C. Res. Sajonia', lat: 6.1600, lng: -75.4120, dl: '11:00', pax: 1, type: 'sal' },
-    b18: { n: 'Germán A.', zona: 'San Antonio', dir: 'Calle 29 #52-14, San Antonio de Pereira', lat: 6.1330, lng: -75.3790, dl: '11:00', pax: 1, type: 'sal' },
-    // ---- debe estar 13:30 ----
-    b19: { n: 'Lucía Z.', zona: 'San Nicolás', dir: 'Cra 56 #43-05, B. San Nicolás', lat: 6.1462, lng: -75.3790, dl: '13:30', pax: 1, type: 'sal' },
-    // ---- deben estar 16:00 ----
-    b20: { n: 'Ramiro J.', zona: 'Vía Llanogrande', dir: 'Vía Llanogrande km 5, P. Cerrada Guayabales', lat: 6.1310, lng: -75.4080, dl: '16:00', pax: 1, type: 'sal' },
-    b21: { n: 'Claudia K.', zona: 'El Porvenir', dir: 'Calle 45 #66-30, B. El Porvenir', lat: 6.1455, lng: -75.3870, dl: '16:00', pax: 1, type: 'sal' },
-    // ---- deben estar 19:30 ----
-    b22: { n: 'Ernesto U.', zona: 'Centro', dir: 'Cra 51 #45-77, Centro', lat: 6.1502, lng: -75.3741, dl: '19:30', pax: 1, type: 'sal' },
-    b23: { n: 'Sofía X.', zona: 'Cuatro Esquinas', dir: 'Calle 38 #58-90, B. Cuatro Esquinas', lat: 6.1500, lng: -75.3640, dl: '19:30', pax: 1, type: 'sal' },
-    // ---- deben estar 22:50 (van a hotel) ----
-    b24: { n: 'Bernardo Y.', zona: 'Llanogrande', dir: 'Vía Llanogrande km 9, Hotel campestre', lat: 6.1235, lng: -75.4235, dl: '22:50', pax: 1, type: 'sal', hotel: true },
-    b25: { n: 'Adriana Ñ.', zona: 'Alto del Medio', dir: 'Cra 43 #61-02, B. Alto del Medio', lat: 6.1635, lng: -75.3690, dl: '22:50', pax: 1, type: 'sal', hotel: true },
-    // ---- LLEGADAS (dl = hora en que ATERRIZA el vuelo; recogen en MDE → casa) ----
-    l1: { n: 'Patricia D.', zona: 'San Nicolás', dir: 'Calle 43 #55-20, B. San Nicolás', lat: 6.1473, lng: -75.3778, dl: '10:40', pax: 1, type: 'lle' },
-    l2: { n: 'Álvaro C.', zona: 'Centro', dir: 'Cra 51 #50-12, Centro', lat: 6.1535, lng: -75.3748, dl: '10:40', pax: 1, type: 'lle' },
-    l3: { n: 'Renata O.', zona: 'San Antonio', dir: 'Calle 25 #46-11, San Antonio de Pereira', lat: 6.1315, lng: -75.3800, dl: '14:50', pax: 1, type: 'lle' },
-    l4: { n: 'Gustavo M.', zona: 'Llanogrande', dir: 'Vía Llanogrande km 6', lat: 6.1290, lng: -75.4130, dl: '21:10', pax: 1, type: 'lle' },
-    l5: { n: 'Elena R.', zona: 'Centro', dir: 'Cra 47 #52-30, Centro', lat: 6.1548, lng: -75.3739, dl: '21:10', pax: 1, type: 'lle' },
-  };
+  // 2026-07-25: se eliminaron RT_DEMO_AUX / RT_DEMO_CARS / RT_DEMO_DRIVERS
+  // (25 auxiliares, 2 carros y 4 conductores inventados). Servían para enseñar
+  // el tablero antes de que hubiera reservas reales, pero con la app en pruebas
+  // mentían: se podía "planear" y hasta creer que se publicó un plan de gente
+  // que no existe. Ver [feedback-no-inventar-datos]. Sin reservas reales el
+  // tablero ahora queda vacío y dice qué falta.
   const RT_PALETTE = ['#3B82F6', '#0EA5A0', '#8B5CF6', '#2563A8', '#16936A', '#7C5CD6', '#D98A12', '#0EA5E9', '#E2551A', '#DB4B7A', '#5B8A2B', '#B45309', '#4F46E5', '#0D9488', '#9D174D'];
-  const RT_DEMO_COLORS = {};
-  Object.keys(RT_DEMO_AUX).forEach((id, i) => { RT_DEMO_COLORS[id] = RT_PALETTE[i % RT_PALETTE.length]; });
-  const RT_DEMO_CARS = [
-    // Escenario real: 2 carros corriendo todo el día (disponibles desde la 01:30).
-    { id: 'RD-01', avail0: '01:30', driver: null, capacity: 4 },
-    { id: 'RD-02', avail0: '01:30', driver: null, capacity: 4 },
-  ];
-  const RT_DEMO_DRIVERS = [
-    { id: 'd1', n: 'Carlos Roldán', turno: 'Mañana', c: '#2563A8' },
-    { id: 'd2', n: 'Jefferson Cardona', turno: 'Mañana', c: '#7C5CD6' },
-    { id: 'd3', n: 'Daniel Álvarez', turno: 'Mañana', c: '#16936A' },
-    { id: 'd4', n: 'Juan Mery', turno: 'Mañana', c: '#0EA5E9' },
-  ];
 
   const rt = {
     aux: {}, colors: {}, cars: [], drivers: [], plan: {},
@@ -78,7 +23,7 @@
     lanes: [], order: {}, pool: [], optimized: false, drawerCar: null,
     shift: null, shiftLoaded: false, pendingAM: null, pendingPM: null,
     expandedLane: null, _dragging: false, // UI: vuelta expandida en la tarjeta del carro / drag activo
-    tripType: 'sal', source: 'demo', bound: false, demoToasted: false,
+    tripType: 'sal', source: 'empty', bound: false, emptyReason: 'reservas',
     CAP: 4, AIRPORT_LEG: 16, MARGIN_TIGHT: 15, dragId: null, dragSrc: null,
     // ---- Modelo de tiempos (todo parametrizable desde Ajustes/app_settings) ----
     SERVICE_MIN: 4,      // min por parada: frenar, timbrar, subir gente y maletas
@@ -114,9 +59,11 @@
       rt.drivers = loaded.drivers || []; rt.plan = loaded.plan || {}; rt.source = 'live';
       rt.day = loaded.day || null; // día operativo real (para persistir el plan)
     } else {
-      rt.aux = JSON.parse(JSON.stringify(RT_DEMO_AUX)); rt.colors = RT_DEMO_COLORS;
-      rt.cars = JSON.parse(JSON.stringify(RT_DEMO_CARS)); rt.drivers = RT_DEMO_DRIVERS;
-      rt.plan = {}; rt.source = 'demo';
+      // Sin reservas reales para el próximo día operativo: tablero VACÍO.
+      // `reason` explica qué falta (reservas o vehículos), no se inventa nada.
+      rt.aux = {}; rt.colors = {}; rt.cars = []; rt.drivers = [];
+      rt.plan = {}; rt.source = 'empty'; rt.day = null;
+      rt.emptyReason = (loaded && loaded.noVehicles) ? 'vehiculos' : 'reservas';
     }
     // Estado inicial: una vuelta vacía por carro; todos los auxiliares en el pool.
     rt.lanes = rt.cars.map(c => ({ id: `${c.id}·V1`, car: c.id, vuelta: 1, start: c.avail0 || '02:00', origin: null }));
@@ -414,7 +361,14 @@
     $('#rt-poolCount').textContent = rt.pool.length;
     $('#rt-dsTotal').textContent = Object.keys(rt.aux).length;
     const list = $('#rt-poolList');
-    if (!rt.pool.length) list.innerHTML = `<div class="pool-empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><b>Todos ruteados</b><span>Cada auxiliar está en un carro.</span></div>`;
+    if (rt.source === 'empty') {
+      // Estado vacío honesto: se dice qué falta. Antes aquí salían 25
+      // auxiliares inventados y se podía "planear" un día que no existe.
+      list.innerHTML = rt.emptyReason === 'vehiculos'
+        ? `<div class="pool-empty"><div class="circle"><svg class="icon"><use href="#i-warn"/></svg></div><b>No hay vehículos</b><span>Registra la flota en Ajustes → Vehículos para poder armar rutas.</span></div>`
+        : `<div class="pool-empty"><div class="circle"><svg class="icon"><use href="#i-clock"/></svg></div><b>Sin traslados por rutear</b><span>Aquí aparecen los auxiliares cuando piden su traslado desde la app. Puedes verlos uno por uno en Reservas.</span></div>`;
+    }
+    else if (!rt.pool.length) list.innerHTML = `<div class="pool-empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><b>Todos ruteados</b><span>Cada auxiliar está en un carro.</span></div>`;
     else list.innerHTML = rt.pool.map(rtAuxCard).join('');
   }
 
@@ -960,5 +914,6 @@
     $('#rt-h1').textContent = 'Rutas del día';
     rtRenderAll();
     rtBindOnce();
-    if (rt.source === 'demo' && !rt.demoToasted) { rt.demoToasted = true; toast('Mostrando datos de ejemplo. Conecta reservas reales (mig. 0040 + seed) para planear de verdad.'); }
+    // Optimizar no tiene sentido sin nada que rutear.
+    const opt = $('#rt-optBtn'); if (opt) opt.disabled = rt.source === 'empty';
   }
