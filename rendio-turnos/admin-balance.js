@@ -92,7 +92,7 @@
     try { shifts = await Api.listShiftsForBalance(`${fromV}T00:00:00-05:00`, `${dayAfterISO(toV)}T00:00:00-05:00`); }
     catch (e) { box.innerHTML = `<div class="bal-empty"><h3>Error</h3><p>${escapeHtml(e.message)}</p></div>`; return; }
     const agg = aggregateRealHours(shifts);
-    state.balanceData = { ...agg, fromV, toV };
+    state.balanceData = { ...agg, fromV, toV, shifts };
     if (!agg.list.length) {
       box.innerHTML = '<div class="bal-empty"><h3>Sin datos</h3><p>No hay turnos en ese rango.</p></div>';
       return;
@@ -144,80 +144,151 @@
       </div>`;
   }
 
-  // Descarga el balance como Excel (.xlsx) real → abre en columnas en cualquier
-  // visor, sin tener que elegir separador. Reusa ExcelJS (ya cargado para el horario).
+  // Descarga el balance DETALLADO en Excel (.xlsx), 3 hojas:
+  //   1) "Publicado vs Trabajado": día por día (AM/PM) — publicados vs quienes de
+  //      verdad trabajaron (+ horas), no-shows y quién trabajó sin estar publicado.
+  //   2) "Detalle turnos reales": cada turno con inicio/cierre/horas/tipo.
+  //   3) "Resumen por persona": totales (= tabla en pantalla).
+  // Cruza el horario publicado (weekly_schedules) con los turnos reales (shifts).
   async function onDownloadBalanceXlsx() {
     const bd = state.balanceData;
     if (!bd || !bd.list.length) { toast('Genera primero un informe con datos.'); return; }
     if (typeof ExcelJS === 'undefined') { alert('No se pudo cargar la librería de Excel. Revisa tu conexión y reintenta.'); return; }
-    const r1 = n => Math.round(n * 10) / 10;
-    const tot = k => bd.list.reduce((a, x) => a + x[k], 0);
+    const R1 = n => Math.round(n * 10) / 10;
+    const DAYS = (window.Scheduler && Scheduler.DAYS) || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    const WD = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const MON = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const p2 = n => String(n).padStart(2, '0');
+    const ymd = d => `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`;
+    const bog = s => new Date(new Date(s).getTime() - 5 * 3600000); // Bogotá = UTC-5 (sin horario de verano)
+    const dayLabel = key => { const [y, m, d] = key.split('-').map(Number); const dt = new Date(Date.UTC(y, m - 1, d)); return `${WD[dt.getUTCDay()]} ${d}-${MON[m - 1]}`; };
+    const fmtDT = s => { if (!s) return '—'; const b = bog(s); return `${p2(b.getUTCDate())}-${MON[b.getUTCMonth()]} ${p2(b.getUTCHours())}:${p2(b.getUTCMinutes())}`; };
+
+    // Horario publicado del rango → publicados por fecha (AM/PM + líderes).
+    let scheds = [];
+    try { scheds = await Api.listPublishedSchedules(Scheduler.startOfWeekISO(bd.fromV), Scheduler.startOfWeekISO(bd.toV)); }
+    catch (e) { toast('No se pudo leer el horario publicado: ' + (e.message || 'error')); }
+    const mergedNames = {}, pub = {};
+    scheds.forEach(s => {
+      const data = s.data || {};
+      Object.assign(mergedNames, data._names || {});
+      const [wy, wm, wd] = String(s.week_start_date).slice(0, 10).split('-').map(Number);
+      const monday = Date.UTC(wy, wm - 1, wd);
+      DAYS.forEach((dk, i) => {
+        const day = data[dk]; if (!day) return;
+        const key = ymd(new Date(monday + i * 86400000));
+        const e = pub[key] || (pub[key] = { AM: [], PM: [], coordAM: new Set(), coordPM: new Set() });
+        (day.morning || []).forEach(id => e.AM.push(id));
+        (day.afternoon || []).forEach(id => e.PM.push(id));
+        (day.coord_am || []).forEach(id => e.coordAM.add(id));
+        (day.coord_pm || []).forEach(id => e.coordPM.add(id));
+      });
+    });
+    const nameById = {};
+    (state.drivers || []).forEach(d => { nameById[d.id] = d.name; });
+    (state.admins || []).forEach(a => { if (!nameById[a.id]) nameById[a.id] = a.name; });
+    const nameOf = id => nameById[id] || mergedNames[id] || '(elim.)';
+
+    // Turnos reales → por fecha+jornada (AM<14h, PM≥14h; 0–2h = cola de PM del día
+    // anterior) y detalle plano. Se excluyen arranques falsos del cruce por jornada.
+    const real = {}, detail = [];
+    (bd.shifts || []).forEach(s => {
+      const dp = s.driver_profiles || {};
+      const pid = dp.profile_id;
+      const nm = (dp.profiles && dp.profiles.full_name) || nameOf(pid);
+      const b = bog(s.start_at), H = b.getUTCHours();
+      let dObj = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate())), slot;
+      if (H < 2) { slot = 'PM'; dObj = new Date(dObj.getTime() - 86400000); }
+      else if (H < 14) slot = 'AM'; else slot = 'PM';
+      const key = ymd(dObj), tipo = classifyShift(s), h = shiftHours(s);
+      detail.push({ key, slot, name: nm, tipo, h, start: s.start_at, end: s.end_at });
+      if (key < bd.fromV || key > bd.toV || tipo === 'falso') return;
+      const e = real[key] || (real[key] = { AM: [], PM: [] });
+      e[slot].push({ pid, name: nm, tipo, h });
+    });
 
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('Balance', { views: [{ showGridLines: false }] });
-    ws.columns = [
-      { width: 26 }, { width: 26 }, { width: 12 },
-      { width: 11 }, { width: 12 }, { width: 13 }, { width: 16 }, { width: 12 }, { width: 10 },
-    ];
-    const border = { style: 'thin', color: { argb: 'FFD9D9D9' } };
-    const allBorders = { top: border, bottom: border, left: border, right: border };
-    const headFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4791F' } };
-    const totFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+    const border = { style: 'thin', color: { argb: 'FFDDDDDD' } };
+    const AB = { top: border, bottom: border, left: border, right: border };
+    const HEAD = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F1F1F' } };
+    const H_AM = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEAF6' } };
+    const H_PM = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBE5D6' } };
+    const headCell = (c, v) => { c.value = v; c.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = HEAD; c.alignment = { vertical: 'middle', wrapText: true }; c.border = AB; };
 
-    // Título (A1:I1)
-    ws.mergeCells('A1:I1');
-    const t = ws.getCell('A1');
-    t.value = `Balance por horas reales trabajadas · ${bd.fromV} a ${bd.toV} · ${bd.count} turnos`;
-    t.font = { name: 'Arial', size: 13, bold: true };
-    t.alignment = { vertical: 'middle' };
-    ws.getRow(1).height = 24;
+    // ---- Hoja 1: Publicado vs Trabajado ----
+    const ws = wb.addWorksheet('Publicado vs Trabajado', { views: [{ showGridLines: false, state: 'frozen', ySplit: 2 }] });
+    ws.columns = [{ width: 14 }, { width: 8 }, { width: 34 }, { width: 42 }, { width: 10 }, { width: 26 }, { width: 26 }];
+    ws.mergeCells('A1:G1');
+    const ti = ws.getCell('A1');
+    ti.value = `Publicado vs Trabajado · ${bd.fromV} a ${bd.toV}`;
+    ti.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } }; ti.fill = HEAD; ti.alignment = { vertical: 'middle' }; ws.getRow(1).height = 26;
+    ['Día', 'Jornada', 'Publicados (● = líder)', 'Trabajaron real (horas)', 'Horas verif.', 'No se presentó', 'Trabajó sin publicar']
+      .forEach((h, i) => headCell(ws.getRow(2).getCell(i + 1), h));
+    ws.getRow(2).height = 28;
 
-    // Encabezados (fila 3)
-    const headers = ['Persona', 'Email', 'Rol', 'Turnos completos', 'Horas reales', 'Turnos auto-cerrados', 'Horas auto-cerradas (sin verificar)', 'Arranques falsos', 'En curso'];
-    const hr = ws.getRow(3);
-    headers.forEach((h, i) => {
-      const c = hr.getCell(i + 1);
-      c.value = h;
-      c.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
-      c.fill = headFill;
-      c.alignment = { vertical: 'middle', wrapText: true, horizontal: i >= 3 ? 'center' : 'left' };
-      c.border = allBorders;
-    });
-    hr.height = 34;
-
-    // Filas de datos
-    let row = 4;
-    bd.list.forEach(p => {
-      const vals = [p.name, p.email, p.role, p.ok, p.okH, p.auto, p.autoH, p.falso, p.curso];
-      const rr = ws.getRow(row);
-      vals.forEach((v, i) => {
-        const c = rr.getCell(i + 1);
-        c.value = v;
-        c.font = { name: 'Arial', size: 11 };
-        c.alignment = { vertical: 'middle', horizontal: i >= 3 ? 'center' : 'left' };
-        c.border = allBorders;
+    let row = 3;
+    const [fy, fm, fd] = bd.fromV.split('-').map(Number), [ty, tm, td] = bd.toV.split('-').map(Number);
+    for (let ms = Date.UTC(fy, fm - 1, fd); ms <= Date.UTC(ty, tm - 1, td); ms += 86400000) {
+      const key = ymd(new Date(ms));
+      const P = pub[key] || { AM: [], PM: [], coordAM: new Set(), coordPM: new Set() };
+      const Rr = real[key] || { AM: [], PM: [] };
+      ['AM', 'PM'].forEach(slot => {
+        const coordSet = slot === 'AM' ? P.coordAM : P.coordPM;
+        const pubIds = slot === 'AM' ? P.AM : P.PM;
+        const pubNames = pubIds.map(id => (coordSet.has(id) ? '● ' : '') + nameOf(id));
+        const realArr = Rr[slot];
+        const realNames = realArr.map(x => `${x.name} — ${R1(x.h)}h${x.tipo === 'auto' ? ' (auto)' : ''}${x.tipo === 'curso' ? ' (en curso)' : ''}`);
+        const jhrs = R1(realArr.filter(x => x.tipo === 'ok').reduce((a, x) => a + x.h, 0));
+        const realPids = new Set(realArr.map(x => x.pid));
+        const noShow = pubIds.filter(id => !realPids.has(id)).map(id => nameOf(id));
+        const extra = realArr.filter(x => !pubIds.includes(x.pid)).map(x => x.name);
+        const rr = ws.getRow(row);
+        const vals = [dayLabel(key), slot, pubNames.join('\n') || '—', realNames.join('\n') || '—', jhrs || 0, noShow.join('\n') || '—', extra.join('\n') || '—'];
+        vals.forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'top', wrapText: true, horizontal: (i === 1 || i === 4) ? 'center' : 'left' }; c.border = AB; });
+        rr.getCell(2).fill = slot === 'AM' ? H_AM : H_PM;
+        if (slot === 'AM') rr.getCell(1).font = { name: 'Arial', size: 10, bold: true };
+        rr.height = Math.max(18, Math.max(pubNames.length, realNames.length, noShow.length, extra.length, 1) * 14);
+        row++;
       });
-      ws.getRow(row).height = 20;
-      row++;
+    }
+
+    // ---- Hoja 2: Detalle turnos reales ----
+    const TIPO = { ok: 'Completo', auto: 'Auto-cerrado', falso: 'Arranque falso', curso: 'En curso' };
+    const ws2 = wb.addWorksheet('Detalle turnos reales', { views: [{ showGridLines: false, state: 'frozen', ySplit: 1 }] });
+    ws2.columns = [{ width: 14 }, { width: 8 }, { width: 26 }, { width: 16 }, { width: 16 }, { width: 9 }, { width: 14 }];
+    ['Día', 'Jornada', 'Conductor', 'Inicio', 'Cierre', 'Horas', 'Tipo'].forEach((h, i) => headCell(ws2.getRow(1).getCell(i + 1), h));
+    ws2.getRow(1).height = 22;
+    detail.sort((a, b) => new Date(a.start) - new Date(b.start));
+    let r2 = 2;
+    detail.forEach(d => {
+      const inCut = d.key >= bd.fromV && d.key <= bd.toV;
+      const rr = ws2.getRow(r2++);
+      const vals = [inCut ? dayLabel(d.key) : d.key, d.slot, d.name, fmtDT(d.start), fmtDT(d.end), (d.tipo === 'falso' || d.tipo === 'curso') ? '' : R1(d.h), TIPO[d.tipo]];
+      vals.forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'middle', horizontal: (i === 1 || i === 5) ? 'center' : 'left' }; c.border = AB; });
+      if (d.tipo === 'falso') rr.getCell(7).font = { name: 'Arial', size: 10, color: { argb: 'FFB91C1C' } };
+      if (d.tipo === 'auto') rr.getCell(7).font = { name: 'Arial', size: 10, color: { argb: 'FF92400E' } };
     });
 
-    // Total (negrita, fondo gris)
-    const totVals = ['Total', '', '', tot('ok'), r1(tot('okH')), tot('auto'), r1(tot('autoH')), tot('falso'), tot('curso')];
-    const tr = ws.getRow(row);
-    totVals.forEach((v, i) => {
-      const c = tr.getCell(i + 1);
-      c.value = v;
-      c.font = { name: 'Arial', size: 11, bold: true };
-      c.fill = totFill;
-      c.alignment = { vertical: 'middle', horizontal: i >= 3 ? 'center' : 'left' };
-      c.border = allBorders;
+    // ---- Hoja 3: Resumen por persona (= tabla en pantalla) ----
+    const ws3 = wb.addWorksheet('Resumen por persona', { views: [{ showGridLines: false, state: 'frozen', ySplit: 1 }] });
+    ws3.columns = [{ width: 26 }, { width: 12 }, { width: 12 }, { width: 13 }, { width: 16 }, { width: 12 }, { width: 9 }];
+    ['Conductor', 'Turnos completos', 'Horas reales', 'Turnos auto-cerrados', 'Horas auto (sin verificar)', 'Arranques falsos', 'En curso']
+      .forEach((h, i) => headCell(ws3.getRow(1).getCell(i + 1), h));
+    ws3.getRow(1).height = 30;
+    let r3 = 2;
+    bd.list.forEach(p => {
+      const rr = ws3.getRow(r3++);
+      [p.name, p.ok, p.okH, p.auto, p.autoH, p.falso, p.curso].forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' }; c.border = AB; });
     });
+    const T = k => bd.list.reduce((a, x) => a + x[k], 0);
+    const trr = ws3.getRow(r3);
+    ['Total', T('ok'), R1(T('okH')), T('auto'), R1(T('autoH')), T('falso'), T('curso')].forEach((v, i) => { const c = trr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10, bold: true }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } }; c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' }; c.border = AB; });
 
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `balance_horas_reales_${bd.fromV}_a_${bd.toV}.xlsx`;
+    a.download = `balance_detallado_${bd.fromV}_a_${bd.toV}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
