@@ -111,6 +111,21 @@
         };
       });
       opState.feed = data.feed.length ? data.feed : [{ k: 'info', t: opFmt(opState.clockT).slice(0, 5), h: 'Sin eventos todavía. El feed se llena cuando el conductor marca su avance.' }];
+      // Demoras que detectó el vigilante mientras nadie miraba la pantalla
+      // (corre en la base cada 5 min, también de madrugada). Van ARRIBA del feed:
+      // es lo primero que el jefe tiene que ver al abrir en la mañana.
+      try {
+        if (window.Api?.listOpenRouteRisks) {
+          const risks = await Api.listOpenRouteRisks();
+          risks.slice(0, 8).reverse().forEach(r => {
+            const hora = (() => { try { return new Date(r.at).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; } })();
+            // El feed se pinta con innerHTML: el nombre viene de la base y va escapado.
+            const nom = String(r.aux || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            opState.feed.unshift({ k: 'warn', t: hora,
+              h: `<b>${nom}</b> — el carro no alcanzaba su recogida por ~${r.minutesLate} min${r.km ? ` (estaba a ${r.km} km)` : ''}.` });
+          });
+        }
+      } catch (_) { /* sin vigilante: el feed queda como estaba */ }
       if (first || !opState.cars.some(c => c.id === opState.sel)) opState.sel = opState.cars[0].id;
       await opComputeStates();
       renderOperCars(); renderOperFeed(); syncOperDelay();

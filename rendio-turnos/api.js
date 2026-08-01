@@ -1506,6 +1506,41 @@
     } catch (_) { return null; }
   }
 
+  // -------------------- Riesgo de la ruta (0053) --------------------
+  // Lo llena el vigilante que corre en la base cada 5 minutos comparando dónde
+  // está de verdad el conductor contra la hora comprometida. La RLS ya limita:
+  // el auxiliar solo ve el de su traslado, el admin ve todos.
+
+  // Demora detectada en MI traslado (null si va bien). Devuelve null también si
+  // 0053 no está aplicada: sin dato no se inventa una demora.
+  async function getReservationRisk(reservationId) {
+    if (!reservationId) return null;
+    const { data, error } = await sb.from('route_stop_risks')
+      .select('minutes_late, distance_km, detected_at')
+      .eq('reservation_id', reservationId)
+      .is('resolved_at', null)
+      .order('detected_at', { ascending: false })
+      .limit(1);
+    if (error || !data || !data.length) return null;
+    return data[0];
+  }
+
+  // Todas las demoras abiertas, para el tablero de operación del admin.
+  async function listOpenRouteRisks() {
+    const { data, error } = await sb.from('route_stop_risks')
+      .select('minutes_late, distance_km, detected_at, reservation_id, ' +
+              'reservations(pickup_address, auxiliar_profiles(profiles(full_name)))')
+      .is('resolved_at', null)
+      .order('minutes_late', { ascending: false });
+    if (error) return [];
+    return (data || []).map(r => ({
+      minutesLate: r.minutes_late, km: r.distance_km, at: r.detected_at,
+      reservationId: r.reservation_id,
+      aux: r.reservations?.auxiliar_profiles?.profiles?.full_name || 'Auxiliar',
+      addr: r.reservations?.pickup_address || '',
+    }));
+  }
+
   // -------------------- Chat del traslado (0052) --------------------
   // Hilo entre el auxiliar y su conductor, atado a UNA reserva. El botón de
   // llamar se queda: el chat es para lo que conviene que quede escrito
@@ -1622,25 +1657,56 @@
     }
 
     // Foto del plan ANTES de tocarlo: qué reserva estaba con qué conductor, y
-    // cuáles están en una ruta ya empezada (intocables).
+    // cuáles NO se pueden mover.
+    //
+    // Antes se bloqueaba la ruta ENTERA en cuanto arrancaba, así que una parada
+    // que el conductor todavía no había atendido quedaba clavada en un carro que
+    // quizá ya no iba a alcanzar. Justo la contingencia que hay que poder
+    // resolver de madrugada: pasarle esa recogida a otro carro mejor ubicado.
+    //
+    // Ahora el candado es POR PARADA: fija solo si ya se atendió (llegó, recogió
+    // o no se presentó) o si su ruta terminó. Lo pendiente de una ruta en curso
+    // se puede reasignar.
     const prev = {}, locked = new Set();
+    const movableInProgress = [];   // route_stops.id pendientes de rutas ya arrancadas
     {
       const { data } = await sb.from('route_assignments')
-        .select('id, status, driver_profile_id, driver_profiles(profile_id), route_stops(reservation_id)')
+        .select('id, status, driver_profile_id, driver_profiles(profile_id), route_stops(id, reservation_id, status)')
         .gte('planned_start_at', d0).lte('planned_start_at', d1);
       (data || []).forEach(ra => {
         const pid = ra.driver_profiles?.profile_id || null;
         (ra.route_stops || []).forEach(s => {
           prev[s.reservation_id] = pid;
-          if (ra.status === 'in_progress' || ra.status === 'completed') locked.add(s.reservation_id);
+          const atendida = s.status && s.status !== 'pending';
+          if (ra.status === 'completed' || atendida) locked.add(s.reservation_id);
+          else if (ra.status === 'in_progress') movableInProgress.push({ id: s.id, rid: s.reservation_id });
         });
       });
     }
 
-    // Borra SOLO lo que aún no arranca (draft/planned). in_progress y completed sobreviven.
+    // De las rutas EN CURSO solo se toca lo que de verdad CAMBIA de conductor.
+    // Una parada pendiente que sigue con el mismo conductor se deja donde está:
+    // borrarla y recrearla partiría su vuelta en dos y le desordenaría la
+    // pantalla al conductor sin ninguna razón.
+    const nuevoDe = {};
+    lanes.forEach(l => (l.stops || []).forEach(rid => { nuevoDe[rid] = l.driverProfileId || null; }));
+    const aMover = [];
+    movableInProgress.forEach(s => {
+      const destino = nuevoDe[s.rid];
+      if (destino !== undefined && destino !== prev[s.rid]) aMover.push(s.id);
+      else locked.add(s.rid);   // se queda en su ruta: que no se duplique abajo
+    });
+
+    // Borra lo que aún no arranca (draft/planned) entero…
     await sb.from('route_assignments').delete()
       .in('status', ['draft', 'planned'])
       .gte('planned_start_at', d0).lte('planned_start_at', d1);
+    // …y de las rutas en curso, solo las paradas que cambian de carro. La ruta
+    // sigue viva con lo que el conductor ya hizo: borrarla completa perdería el
+    // avance real del viaje.
+    if (aMover.length) {
+      await sb.from('route_stops').delete().in('id', aMover);
+    }
 
     let saved = 0, skipped = 0, kept = 0;
     const notify = [];
@@ -1888,6 +1954,6 @@
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
     sendDriverLocation, listLiveOperation,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
-    trafficMatrix,
+    trafficMatrix, getReservationRisk, listOpenRouteRisks,
   };
 })();

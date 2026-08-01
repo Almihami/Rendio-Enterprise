@@ -33,6 +33,7 @@
     // Chat con el conductor (0052). El botón de llamar NO se va: el chat es para
     // lo que conviene que quede escrito, la llamada para cuando no hay datos.
     chatOpen: false, chatMsgs: [], chatPoll: null, chatUnread: 0, chatSending: false,
+    riskAt: 0,   // última consulta del vigilante de demoras (0053)
     // Pestaña activa del nav inferior + cancelación en 2 toques (sin confirm() nativo).
     tab: 'inicio', confirmingCancel: false, cancelTimer: null,
     // Espera en el punto de recogida: cuenta regresiva REAL desde que el
@@ -256,6 +257,13 @@
     if (isNaN(t0)) return null;
     if (info && info.stop_status === 'picked_up') return null; // ya lo recogieron
     const now = Date.now(), MIN = 60000;
+    // Dato REAL del vigilante (0053): compara dónde está el conductor contra la
+    // hora comprometida. Manda sobre lo de abajo, que solo mira el reloj y no
+    // sabe si el carro está a la vuelta o al otro lado del municipio.
+    if (t._risk && t._risk.minutes_late > 0) {
+      const m = t._risk.minutes_late;
+      return { level: 'late', text: `Tu conductor va ~${m} min demorado. Ya lo sabemos y estamos pendientes.` };
+    }
     if (t.type === 'sal') {
       const pickupBy = t0 - 60 * MIN;                 // recogida ~1h antes de presentación
       if (now > t0)       return { level: 'late', text: 'Vas retrasado para tu presentación.' };
@@ -947,6 +955,16 @@
     // Mensajes nuevos del conductor con la pantalla abierta: el push avisa
     // cuando la app está cerrada, esto mantiene el globito al día mientras mira.
     if (t.driver && !auxState.chatOpen) auxChatSync(false);
+    // ¿El vigilante marcó este traslado como demorado? Se consulta cada ~30 s
+    // (el vigilante corre cada 5 min, no tiene sentido preguntar más seguido).
+    if (window.Api?.getReservationRisk && Date.now() - (auxState.riskAt || 0) > 30000) {
+      auxState.riskAt = Date.now();
+      Api.getReservationRisk(t.id).then(r => {
+        const antes = t._risk ? t._risk.minutes_late : 0;
+        t._risk = r;
+        if ((r ? r.minutes_late : 0) !== antes) auxRefreshLate(t);
+      }).catch(() => {});
+    }
   }
 
   // Pinta el mapa: destino fijo + carro que se desliza ENTRE dos reportes reales.
