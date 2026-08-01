@@ -38,6 +38,7 @@
     // se va a rodar: aplicarles además el TRAFFIC_FACTOR sería contarlo dos veces.
     mHasTraffic: false,
     trafficDelay: 0,     // min de demora por tráfico en la peor pareja (para avisar)
+    _mCache: null,       // última matriz de TomTom {key, at, data} — ver rtBuildMatrix
   };
 
   function rtCfg() {
@@ -217,11 +218,24 @@
     rt.mHasTraffic = false; rt.trafficDelay = 0;
 
     // 1) TomTom, vía Edge Function (la llave vive en el servidor, no en la PWA).
+    //
+    // CACHÉ, y no es un lujo: TomTom cobra por CELDA, no por llamada — con más
+    // de 5 puntos son max(orígenes,destinos)×5 transacciones, o sea 410 en un
+    // día de 80 traslados. Como el admin re-optimiza varias veces mientras
+    // acomoda el día, sin caché una sola sesión de planeación gastaría miles.
+    // El tráfico previsto para una hora dada no cambia entre un clic y otro:
+    // mismos puntos + misma hora = misma respuesta, se reusa por 10 minutos.
     if (window.Api && Api.trafficMatrix) {
       try {
         const departAt = rtDepartAtISO();
-        const r = await Api.trafficMatrix(pts.map(p => ({ lat: p.lat, lng: p.lng })), departAt);
+        const coords = pts.map(p => ({ lat: p.lat, lng: p.lng }));
+        const ck = coords.map(p => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join('|') + '#' + (departAt || 'any');
+        const hit = rt._mCache;
+        const r = (hit && hit.key === ck && Date.now() - hit.at < 10 * 60000)
+          ? hit.data
+          : await Api.trafficMatrix(coords, departAt);
         if (r && Array.isArray(r.durations)) {
+          rt._mCache = { key: ck, at: (hit && hit.key === ck) ? hit.at : Date.now(), data: r };
           const M = {};
           let peor = 0, celdas = 0;
           keys.forEach((ka, i) => {
