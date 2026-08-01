@@ -605,7 +605,7 @@
       <div id="ax-track-map" class="ax-track-map"></div>
       <div class="ax-track-sheet">
         <div class="ax-eta-hero"><span id="ax-eta-label">Tu conductor</span><b id="ax-eta-min">En camino</b></div>
-        <div class="ax-eta hidden" id="ax-eta"></div>
+        <div class="ax-etaline hidden" id="ax-eta"></div>
         <div class="ax-count hidden" id="ax-count"></div>
         <div class="ax-wait hidden" id="ax-wait"></div>
         <div id="ax-late-wrap">${auxLateHTML(t, t._info)}</div>
@@ -635,7 +635,7 @@
       <div class="ax-track-sheet">
         <div class="ax-onboard-badge${auxPendingAhead(t, t._info) > 0 ? ' wait' : ''}" id="ax-onboard-badge">${auxOnBoardBadge(t, t._info)}</div>
         <div class="ax-eta-hero"><span id="ax-eta-label">${t.type === 'lle' ? 'Vas a casa' : 'Vas al aeropuerto'}</span><b id="ax-eta-min">En ruta</b></div>
-        <div class="ax-eta hidden" id="ax-eta"></div>
+        <div class="ax-etaline hidden" id="ax-eta"></div>
         <div class="ax-count" id="ax-count"></div>
         ${auxDriverCard(t.driver, false)}
         <div class="ax-track-fresh" id="ax-track-fresh"></div>
