@@ -1,5 +1,14 @@
 // =============================================================================
-// Edge Function: traffic-matrix
+// Edge Function: TOMTOM_API_KEY
+//
+// OJO CON EL NOMBRE: esta función NO guarda una llave — calcula la matriz de
+// tiempos con tráfico. Se llamaría "traffic-matrix", pero al desplegarla desde
+// el dashboard quedó con el nombre del secret por error, y en Supabase el slug
+// de una Edge Function no se puede cambiar: habría que borrarla y recrearla.
+// Se dejó así a propósito para no rehacerla. Si algún día se recrea, el nombre
+// bueno es "traffic-matrix" y hay que cambiar el invoke() en api.js.
+//
+// El secret que consume SÍ se llama TOMTOM_API_KEY (misma palabra, otra cosa).
 //
 // Matriz de tiempos de viaje CON TRÁFICO entre los puntos de una planeación,
 // para una hora de salida futura. Es lo que le faltaba al asignador: hoy calcula
