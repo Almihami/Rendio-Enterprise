@@ -2508,13 +2508,17 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #driver-ruta-ui .dr-map-chip{position:absolute;top:10px;right:10px;padding:6px 10px;border-radius:8px;background:var(--r-card);font-size:11px;font-weight:500;color:var(--r-text-2);border:1px solid var(--r-border);z-index:500}
 /* Popup de mapa grande (tocar el mapa o el botón ⤢ en la vista previa) */
 #driver-ruta-ui .dr-map-expand{position:absolute;right:10px;bottom:10px;z-index:500;width:38px;height:38px;border-radius:10px;border:1px solid var(--r-border);background:var(--r-card);color:var(--r-text-1,#18181B);font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
-#driver-ruta-ui .dr-modal{position:fixed;inset:0;z-index:3000;background:var(--r-bg,#F8F8F6);display:flex;flex-direction:column}
+/* Mismo criterio que .dr-chat: no salirse de la columna del conductor. */
+#driver-ruta-ui .dr-modal{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;z-index:3000;background:var(--r-bg,#F8F8F6);display:flex;flex-direction:column}
 #driver-ruta-ui .dr-modal.hidden{display:none}
 #driver-ruta-ui .dr-modal-head{display:flex;align-items:center;justify-content:space-between;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;font-size:16px;font-weight:700;color:var(--r-text-1,#18181B)}
 #driver-ruta-ui .dr-modal-map{flex:1;width:100%}
 /* ---- Chat con el auxiliar (0052) ---- */
-/* Encima de todo: el mapa de ejecución sigue vivo debajo con el GPS. */
-#driver-ruta-ui .dr-chat{position:fixed;inset:0;z-index:3200;background:var(--r-bg,#F8F8F6);display:flex;flex-direction:column}
+/* Encima de todo: el mapa de ejecución sigue vivo debajo con el GPS.
+   Fijo al viewport (para que el teclado del celular no lo empuje) pero SIN
+   salirse de la columna de 520px en la que vive la app del conductor: con
+   inset:0 se abría a todo el ancho de la pantalla en un computador. */
+#driver-ruta-ui .dr-chat{position:fixed;top:0;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;z-index:3200;background:var(--r-bg,#F8F8F6);display:flex;flex-direction:column}
 #driver-ruta-ui .dr-chat-head{display:flex;align-items:center;gap:12px;padding:calc(12px + env(safe-area-inset-top)) 14px 12px;background:var(--r-card);border-bottom:1px solid var(--r-border)}
 #driver-ruta-ui .dr-chat-who{flex:1;min-width:0}
 #driver-ruta-ui .dr-chat-who b{display:block;font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

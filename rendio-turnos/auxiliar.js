@@ -34,6 +34,7 @@
     // lo que conviene que quede escrito, la llamada para cuando no hay datos.
     chatOpen: false, chatMsgs: [], chatPoll: null, chatUnread: 0, chatSending: false,
     riskAt: 0,   // última consulta del vigilante de demoras (0053)
+    chatWarned: false,  // ya se avisó que el otro no tiene notificaciones
     // Pestaña activa del nav inferior + cancelación en 2 toques (sin confirm() nativo).
     tab: 'inicio', confirmingCancel: false, cancelTimer: null,
     // Espera en el punto de recogida: cuenta regresiva REAL desde que el
@@ -648,7 +649,13 @@
     auxState.chatMsgs = (auxState.chatMsgs || []).concat([temp]);
     auxChatBubbles();
     try {
-      await Api.sendReservationMessage(t.id, body, { title: 'Mensaje de tu pasajero' });
+      const r = await Api.sendReservationMessage(t.id, body, { title: 'Mensaje de tu pasajero' });
+      // Si al conductor no le suena, hay que decirlo: si no, uno se queda
+      // esperando una respuesta que no va a llegar hasta que él abra la app.
+      if (r && r.notified === false && !auxState.chatWarned) {
+        auxState.chatWarned = true;
+        toast('Enviado. Tu conductor no tiene notificaciones activadas: lo verá al abrir la app.');
+      }
       await auxChatSync(true);
     } catch (e) {
       auxState.chatMsgs = auxState.chatMsgs.filter(m => m.id !== temp.id);

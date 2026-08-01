@@ -1571,17 +1571,22 @@
     });
     if (error) throw error;
     const to = data && data.recipient_profile_id;
+    // Se devuelve si el aviso llegó o no: el que escribe merece saber que el
+    // otro NO tiene notificaciones activadas y que el mensaje se va a quedar ahí
+    // hasta que abra la app. Decir "enviado" a secas sería engañarlo.
+    let notified = null;
     if (to) {
       try {
-        await sendPush({
+        const r = await sendPush({
           profileIds: [to],
           title: (opts && opts.title) || 'Mensaje de tu traslado',
           body: String(body).slice(0, 120),
           url: (opts && opts.url) || '/',
         });
-      } catch (_) {}
+        notified = (r && typeof r.sent === 'number') ? r.sent > 0 : null;
+      } catch (_) { notified = false; }
     }
-    return data;
+    return Object.assign({}, data, { notified });
   }
 
   // Sin leer por reserva, para el badge del conductor (que lleva varias paradas

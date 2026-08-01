@@ -148,7 +148,7 @@
     const bar = document.createElement('div');
     bar.id = 'enable-push-bar';
     bar.className = 'push-bar';
-    bar.innerHTML = `<span>🔔 Activa las notificaciones para enterarte de cambios de turno, strikes y horarios.</span>
+    bar.innerHTML = `<span>🔔 Activa las notificaciones: mensajes de tus pasajeros, cambios de ruta, turnos y horarios.</span>
       <button id="enable-push-btn" class="wk-btn wk-coord-on" style="flex:0 0 auto;">Activar</button>`;
     // Admin: arriba del shell. Conductor: al final del Inicio (debajo de las 2 tarjetas).
     if (state.profile.role === 'admin') host.insertBefore(bar, host.firstChild);

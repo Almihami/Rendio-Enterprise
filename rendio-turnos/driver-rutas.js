@@ -21,7 +21,7 @@
     // Mapa grande: marcador "estás aquí" + tramo destacado hasta la próxima parada.
     bigMeMk: null, bigLegLine: null,
     // Chat con el auxiliar de una parada (0052) + sin leer por reserva.
-    chat: null, chatMsgs: [], chatPoll: null, chatSending: false, unread: {}, unreadPoll: null,
+    chat: null, chatMsgs: [], chatPoll: null, chatSending: false, unread: {}, unreadPoll: null, chatWarned: false,
     // Espera en el punto: desde que marca "Llegué" corre el reloj y solo al
     // vencerse se habilita "No se presentó" (antes se podía marcar al segundo 1).
     waitTick: null,
@@ -367,7 +367,12 @@
     drState.chatMsgs = (drState.chatMsgs || []).concat([temp]);
     drChatBubbles();
     try {
-      await Api.sendReservationMessage(c.rid, body, { title: 'Mensaje de tu conductor' });
+      const r = await Api.sendReservationMessage(c.rid, body, { title: 'Mensaje de tu conductor' });
+      // Igual que del otro lado: si al auxiliar no le suena, se dice.
+      if (r && r.notified === false && !drState.chatWarned) {
+        drState.chatWarned = true;
+        if (typeof toast === 'function') toast('Enviado. No tiene notificaciones activadas: lo verá al abrir la app.');
+      }
       await drChatSync();
     } catch (e) {
       drState.chatMsgs = drState.chatMsgs.filter(m => m.id !== temp.id);
