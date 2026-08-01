@@ -1491,6 +1491,69 @@
     return true;
   }
 
+  // -------------------- Chat del traslado (0052) --------------------
+  // Hilo entre el auxiliar y su conductor, atado a UNA reserva. El botón de
+  // llamar se queda: el chat es para lo que conviene que quede escrito
+  // ("portería 3, torre B"), la llamada para cuando no hay datos o hay afán.
+
+  // Mensajes del hilo, del más viejo al más nuevo. Devuelve [] si la tabla aún
+  // no existe (0052 sin aplicar) para no tumbar la pantalla del viaje.
+  async function listReservationMessages(reservationId) {
+    if (!reservationId) return [];
+    const { data, error } = await sb.from('reservation_messages')
+      .select('id, sender_profile_id, sender_role, body, read_at, created_at')
+      .eq('reservation_id', reservationId)
+      .order('created_at', { ascending: true });
+    if (error) return [];
+    return data || [];
+  }
+
+  // Envía y avisa al otro. El RPC deduce el rol y devuelve a quién notificar:
+  // el que escribe no tiene por qué conocer el profile_id del otro.
+  // El push es best-effort — que falle la notificación no puede perder el mensaje.
+  async function sendReservationMessage(reservationId, body, opts) {
+    const { data, error } = await sb.rpc('send_reservation_message', {
+      p_reservation_id: reservationId, p_body: body,
+    });
+    if (error) throw error;
+    const to = data && data.recipient_profile_id;
+    if (to) {
+      try {
+        await sendPush({
+          profileIds: [to],
+          title: (opts && opts.title) || 'Mensaje de tu traslado',
+          body: String(body).slice(0, 120),
+          url: (opts && opts.url) || '/',
+        });
+      } catch (_) {}
+    }
+    return data;
+  }
+
+  // Sin leer por reserva, para el badge del conductor (que lleva varias paradas
+  // a la vez). fromRole = quién escribió: 'auxiliar' si consulta el conductor.
+  // La RLS ya limita a sus propias reservas; el .in() es solo para no traer más.
+  async function countUnreadMessages(reservationIds, fromRole) {
+    const ids = (reservationIds || []).filter(Boolean);
+    if (!ids.length) return {};
+    const { data, error } = await sb.from('reservation_messages')
+      .select('reservation_id')
+      .in('reservation_id', ids)
+      .eq('sender_role', fromRole)
+      .is('read_at', null);
+    if (error) return {};
+    const out = {};
+    (data || []).forEach(m => { out[m.reservation_id] = (out[m.reservation_id] || 0) + 1; });
+    return out;
+  }
+
+  async function markReservationMessagesRead(reservationId) {
+    if (!reservationId) return 0;
+    const { data, error } = await sb.rpc('mark_reservation_messages_read', { p_reservation_id: reservationId });
+    if (error) return 0;
+    return data || 0;
+  }
+
   // Crea la cabecera de una ruta (borrador → con conductor). Defensivo: si las
   // columnas de 0040 (driver/vehicle nullable, estado 'draft') no existen aún,
   // el error se propaga y la UI lo ignora. Las route_stops (que requieren
@@ -1809,5 +1872,6 @@
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
     sendDriverLocation, listLiveOperation,
+    listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
   };
 })();

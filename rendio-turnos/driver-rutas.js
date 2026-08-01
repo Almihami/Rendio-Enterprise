@@ -20,6 +20,8 @@
     meMarker: null, lastPos: null, follow: true, bigMap: null,
     // Mapa grande: marcador "estás aquí" + tramo destacado hasta la próxima parada.
     bigMeMk: null, bigLegLine: null,
+    // Chat con el auxiliar de una parada (0052) + sin leer por reserva.
+    chat: null, chatMsgs: [], chatPoll: null, chatSending: false, unread: {}, unreadPoll: null,
     // Espera en el punto: desde que marca "Llegué" corre el reloj y solo al
     // vencerse se habilita "No se presentó" (antes se podía marcar al segundo 1).
     waitTick: null,
@@ -58,6 +60,11 @@
     // Reanuda la ruta en curso sin re-tocar "Iniciar ruta" (tras salir/volver a la app).
     if (drRestoreProgress()) drStartGps();
     drRender();
+    // Mensajes sin leer de sus paradas: cada 15 s basta (el push es el que
+    // avisa de verdad; esto solo mantiene el contador al día con la app abierta).
+    drSyncUnread();
+    if (drState.unreadPoll) clearInterval(drState.unreadPoll);
+    drState.unreadPoll = setInterval(drSyncUnread, 15000);
   }
   function drClose() {
     drTeardown();
@@ -74,8 +81,17 @@
     else if (drState.view === 'exec') drExecMap();
     drSyncWait();       // reloj de espera en el punto (solo tras marcar "Llegué")
     drSaveProgress();   // persiste el avance de la ruta (o lo limpia si ya no estamos en ella)
+    // El chat vive dentro del HTML que se acaba de rehacer: si estaba abierto,
+    // se vuelve a montar en vez de desaparecer.
+    if (drState.chat) {
+      const host = document.getElementById('driver-ruta-ui');
+      if (host) { host.insertAdjacentHTML('beforeend', drChatHTML()); drChatBubbles(); }
+    }
   }
   function drTeardown() {
+    if (drState.unreadPoll) { clearInterval(drState.unreadPoll); drState.unreadPoll = null; }
+    if (drState.chatPoll) { clearInterval(drState.chatPoll); drState.chatPoll = null; }
+    drState.chat = null;
     if (drState.map) { try { drState.map.remove(); } catch (e) {} drState.map = null; }
     drStopWait();
     drStopGps();
@@ -275,6 +291,102 @@
       <div class="dr-modal-map" id="dr-map-big"></div>
     </div>`;
   }
+  // ---------- CHAT con el auxiliar de una parada (0052) ----------
+  // Mismo hilo que ve el auxiliar. Va como panel encima para no desmontar el
+  // mapa de ejecución que está corriendo debajo con el GPS.
+  const drEsc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  function drChatHTML() {
+    const c = drState.chat; if (!c) return '';
+    return `<div class="dr-chat" id="dr-chat">
+      <div class="dr-chat-head">
+        <button class="dr-icbtn" data-dr="chat-close" aria-label="Cerrar"><svg class="icon"><use href="#i-back"/></svg></button>
+        <div class="dr-chat-who"><b>${drEsc(c.name || 'Auxiliar')}</b><span>Mensajes de este traslado</span></div>
+        ${c.phone ? `<a class="dr-icbtn" href="tel:${c.phone.replace(/\s/g, '')}" aria-label="Llamar"><svg class="icon"><use href="#i-phone"/></svg></a>` : ''}
+      </div>
+      <div class="dr-chat-body" id="dr-chat-body"></div>
+      <div class="dr-chat-foot">
+        <input id="dr-chat-input" type="text" maxlength="500" placeholder="Escribe un mensaje…" autocomplete="off">
+        <button class="dr-chat-send" data-dr="chat-send" aria-label="Enviar"><svg class="icon"><use href="#i-send"/></svg></button>
+      </div>
+    </div>`;
+  }
+  function drChatBubbles() {
+    const el = document.getElementById('dr-chat-body'); if (!el) return;
+    const msgs = drState.chatMsgs || [];
+    if (!msgs.length) {
+      el.innerHTML = `<div class="dr-chat-empty"><svg class="icon"><use href="#i-chat"/></svg>
+        <b>Sin mensajes</b><span>Escríbele si no lo encuentras o si vas retrasado. Queda registro del traslado.</span></div>`;
+      return;
+    }
+    const hora = (iso) => {
+      try { return new Date(iso).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' }); }
+      catch (_) { return ''; }
+    };
+    el.innerHTML = msgs.map(m => `<div class="dr-msg ${m.sender_role === 'driver' ? 'mine' : 'their'}">
+      <p>${drEsc(m.body)}</p><span>${hora(m.created_at)}</span></div>`).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+  async function drChatSync() {
+    const c = drState.chat; if (!c || !window.Api?.listReservationMessages) return;
+    const msgs = await Api.listReservationMessages(c.rid);
+    if (!drState.chat || drState.chat.rid !== c.rid) return;   // cerró o cambió de parada
+    drState.chatMsgs = msgs;
+    drChatBubbles();
+    if (Api.markReservationMessagesRead) { try { await Api.markReservationMessagesRead(c.rid); } catch (_) {} }
+    drState.unread[c.rid] = 0;
+  }
+  function drChatOpen(rid, name, phone) {
+    if (!rid) return;
+    drState.chat = { rid, name, phone };
+    drState.chatMsgs = [];
+    const host = document.getElementById('driver-ruta-ui') || document.body;
+    const old = document.getElementById('dr-chat'); if (old) old.remove();
+    host.insertAdjacentHTML('beforeend', drChatHTML());
+    drChatBubbles();
+    drChatSync();
+    if (drState.chatPoll) clearInterval(drState.chatPoll);
+    drState.chatPoll = setInterval(drChatSync, 5000);
+    const i = document.getElementById('dr-chat-input'); if (i) i.focus();
+  }
+  function drChatClose() {
+    drState.chat = null; drState.chatMsgs = [];
+    if (drState.chatPoll) { clearInterval(drState.chatPoll); drState.chatPoll = null; }
+    const el = document.getElementById('dr-chat'); if (el) el.remove();
+    drRender();                       // repinta el badge de la parada
+  }
+  async function drChatSend() {
+    const i = document.getElementById('dr-chat-input'); if (!i) return;
+    const body = i.value.trim();
+    const c = drState.chat;
+    if (!body || !c || drState.chatSending) return;
+    drState.chatSending = true;
+    i.value = '';
+    const temp = { id: 'tmp' + Date.now(), sender_role: 'driver', body, created_at: new Date().toISOString() };
+    drState.chatMsgs = (drState.chatMsgs || []).concat([temp]);
+    drChatBubbles();
+    try {
+      await Api.sendReservationMessage(c.rid, body, { title: 'Mensaje de tu conductor' });
+      await drChatSync();
+    } catch (e) {
+      drState.chatMsgs = drState.chatMsgs.filter(m => m.id !== temp.id);
+      drChatBubbles();
+      i.value = body;
+      if (typeof toast === 'function') toast((e && e.message) ? e.message : 'No se pudo enviar el mensaje.');
+    } finally { drState.chatSending = false; }
+  }
+  // Sin leer de TODAS las paradas de la vuelta, para los badges.
+  async function drSyncUnread() {
+    const v = drVuelta(); if (!v || !window.Api?.countUnreadMessages) return;
+    const ids = v.legs.map(l => l.reservationId).filter(Boolean);
+    if (!ids.length) return;
+    const counts = await Api.countUnreadMessages(ids, 'auxiliar');
+    const cambio = ids.some(id => (drState.unread[id] || 0) !== (counts[id] || 0));
+    drState.unread = counts;
+    if (cambio && !drState.chat) drRender();
+  }
+
   // Marcador redondo con el MISMO número que la lista "Paradas en orden": el
   // conductor lee "3" en la lista y busca el "3" en el mapa.
   function drStopIcon(html, cls) {
@@ -414,9 +526,13 @@
         mid = `<div class="dr-eta"><svg class="icon" style="width:16px;height:16px"><use href="#i-pin"/></svg><span>Llega <b>${leg.dl || '—'}</b>${leg.notes ? ' · ' + leg.notes : ''}</span></div>`;
       }
     }
-    const contacts = (!isApt && leg.phone) ? `<div class="dr-aux-btns">
-        <a class="dr-cbtn msg" href="sms:${leg.phone.replace(/\s/g, '')}" aria-label="Mensaje"><svg class="icon" style="width:19px;height:19px"><use href="#i-send"/></svg></a>
-        <a class="dr-cbtn tel" href="tel:${leg.phone.replace(/\s/g, '')}" aria-label="Llamar"><svg class="icon" style="width:19px;height:19px"><use href="#i-phone"/></svg></a>
+    // Chat de la app en vez de SMS: gratis, le llega como notificación aunque
+    // tenga la app cerrada, y queda registro si después hay un reclamo. El de
+    // llamar se queda — es lo único que sirve cuando no hay datos.
+    const unread = drState.unread[leg.reservationId] || 0;
+    const contacts = !isApt ? `<div class="dr-aux-btns">
+        ${leg.reservationId ? `<button class="dr-cbtn msg" data-dr="chat" data-rid="${leg.reservationId}" data-name="${(leg.name || '').replace(/"/g, '&quot;')}" data-phone="${leg.phone || ''}" aria-label="Escribir"><svg class="icon" style="width:19px;height:19px"><use href="#i-chat"/></svg>${unread ? `<span class="dr-badge">${unread > 9 ? '9+' : unread}</span>` : ''}</button>` : ''}
+        ${leg.phone ? `<a class="dr-cbtn tel" href="tel:${leg.phone.replace(/\s/g, '')}" aria-label="Llamar"><svg class="icon" style="width:19px;height:19px"><use href="#i-phone"/></svg></a>` : ''}
       </div>` : '';
     // "No se presentó" solo después de cumplir la espera pactada. El botón
     // arranca deshabilitado y drPaintWait() lo suelta cuando el reloj llega a 0.
@@ -660,6 +776,12 @@
     if (drState.bound) return;
     const root = drHost(); if (!root) return;
     drState.bound = true;
+    // Enter envía (el campo se recrea con cada render, por eso va delegado).
+    root.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || !e.target || e.target.id !== 'dr-chat-input') return;
+      e.preventDefault();
+      drChatSend();
+    });
     root.addEventListener('click', (e) => {
       const el = e.target.closest('[data-dr]'); if (!el) return;
       const a = el.dataset.dr;
@@ -689,6 +811,9 @@
       }
       if (a === 'next') { drApplyNext(); drAdvance(); return; }
       if (a === 'report') { toast('Reportar novedad — próximamente.'); return; }
+      if (a === 'chat') { drChatOpen(el.dataset.rid, el.dataset.name, el.dataset.phone); return; }
+      if (a === 'chat-close') { drChatClose(); return; }
+      if (a === 'chat-send') { drChatSend(); return; }
     });
   }
   function drBack() {

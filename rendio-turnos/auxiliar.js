@@ -30,6 +30,9 @@
     // Hora estimada de llegada: segundos que faltaban y CUÁNDO se calcularon
     // (para descontar lo corrido entre recálculos).
     etaSecs: null, etaAt: 0, etaKind: null,
+    // Chat con el conductor (0052). El botón de llamar NO se va: el chat es para
+    // lo que conviene que quede escrito, la llamada para cuando no hay datos.
+    chatOpen: false, chatMsgs: [], chatPoll: null, chatUnread: 0, chatSending: false,
     // Pestaña activa del nav inferior + cancelación en 2 toques (sin confirm() nativo).
     tab: 'inicio', confirmingCancel: false, cancelTimer: null,
     // Espera en el punto de recogida: cuenta regresiva REAL desde que el
@@ -533,14 +536,118 @@
   function auxDriverCard(d, showEta) {
     d = d || {};
     const meta = 'Carro ' + (d.plate || '—') + (d.rating ? ' · ★ ' + d.rating : '');
+    const n = auxState.chatUnread;
     return `<div class="ax-driver">
       <span class="ax-driver-av">${(d.name || 'C')[0]}</span>
       <div><b>${d.name || 'Tu conductor'}</b><span>${meta}</span></div>
       <div class="ax-driver-acts">
+        <button class="ax-icbtn sm ax-chat-btn" data-ax="chat" title="Escribirle"><svg class="icon"><use href="#i-chat"/></svg>${n ? `<span class="ax-badge">${n > 9 ? '9+' : n}</span>` : ''}</button>
         <button class="ax-icbtn sm" data-ax="call" title="Llamar"><svg class="icon"><use href="#i-phone"/></svg></button>
         ${showEta && d.eta ? `<span class="ax-eta">recogida<br><b>${d.eta}</b></span>` : ''}
       </div>
     </div>`;
+  }
+
+  // ---------- CHAT con el conductor (0052) ----------
+  // Va como panel encima de la pantalla del viaje, no como vista aparte: si
+  // fuera una vista, entrar al chat mataría el rastreo del mapa y al salir habría
+  // que remontarlo entero.
+  function auxChatHTML(t) {
+    const d = t.driver || {};
+    return `<div class="ax-chat hidden" id="ax-chat">
+      <div class="ax-chat-head">
+        <button class="ax-icbtn sm" data-ax="chat-close" aria-label="Cerrar"><svg class="icon"><use href="#i-back"/></svg></button>
+        <div class="ax-chat-who"><b>${d.name || 'Tu conductor'}</b><span>Carro ${d.plate || '—'}</span></div>
+        <button class="ax-icbtn sm" data-ax="call" title="Llamar"><svg class="icon"><use href="#i-phone"/></svg></button>
+      </div>
+      <div class="ax-chat-body" id="ax-chat-body"></div>
+      <div class="ax-chat-foot">
+        <input id="ax-chat-input" type="text" maxlength="500" placeholder="Escribe un mensaje…" autocomplete="off">
+        <button class="ax-chat-send" data-ax="chat-send" aria-label="Enviar"><svg class="icon"><use href="#i-send"/></svg></button>
+      </div>
+    </div>`;
+  }
+  function auxChatBubbles() {
+    const el = document.getElementById('ax-chat-body'); if (!el) return;
+    const msgs = auxState.chatMsgs || [];
+    if (!msgs.length) {
+      el.innerHTML = `<div class="ax-chat-empty">
+        <svg class="icon"><use href="#i-chat"/></svg>
+        <b>Escríbele a tu conductor</b>
+        <span>Sirve para lo que conviene que quede escrito: "portería 3, torre B", "salgo en 2 minutos". Si hay afán, llámalo.</span>
+      </div>`;
+      return;
+    }
+    const hora = (iso) => {
+      try { return new Date(iso).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' }); }
+      catch (_) { return ''; }
+    };
+    el.innerHTML = msgs.map(m => `<div class="ax-msg ${m.sender_role === 'auxiliar' ? 'mine' : 'their'}">
+      <p>${auxEsc(m.body)}</p><span>${hora(m.created_at)}</span>
+    </div>`).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+  const auxEsc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  async function auxChatSync(markRead) {
+    const t = auxCurTrip(); if (!t || !window.Api?.listReservationMessages) return;
+    const msgs = await Api.listReservationMessages(t.id);
+    // Pudo cerrarse el chat o cambiarse de viaje mientras respondía el servidor.
+    if (auxCurTrip() !== t) return;
+    const abierto = auxState.chatOpen;
+    auxState.chatMsgs = msgs;
+    auxState.chatUnread = abierto ? 0 : msgs.filter(m => m.sender_role !== 'auxiliar' && !m.read_at).length;
+    if (abierto) {
+      auxChatBubbles();
+      if (markRead && Api.markReservationMessagesRead) { try { await Api.markReservationMessagesRead(t.id); } catch (_) {} }
+    } else {
+      // Repinta solo el badge del botón, sin tocar el resto de la pantalla.
+      const btn = document.querySelector('#auxiliar-ui .ax-chat-btn');
+      if (btn) {
+        const b = btn.querySelector('.ax-badge');
+        if (!auxState.chatUnread) { if (b) b.remove(); }
+        else if (b) b.textContent = auxState.chatUnread > 9 ? '9+' : auxState.chatUnread;
+        else btn.insertAdjacentHTML('beforeend', `<span class="ax-badge">${auxState.chatUnread > 9 ? '9+' : auxState.chatUnread}</span>`);
+      }
+    }
+  }
+  function auxChatOpen() {
+    const p = document.getElementById('ax-chat'); if (!p) return;
+    auxState.chatOpen = true;
+    p.classList.remove('hidden');
+    auxChatBubbles();
+    auxChatSync(true);
+    if (auxState.chatPoll) clearInterval(auxState.chatPoll);
+    auxState.chatPoll = setInterval(() => auxChatSync(true), 5000);
+    const i = document.getElementById('ax-chat-input'); if (i) i.focus();
+  }
+  function auxChatClose() {
+    auxState.chatOpen = false;
+    const p = document.getElementById('ax-chat'); if (p) p.classList.add('hidden');
+    if (auxState.chatPoll) { clearInterval(auxState.chatPoll); auxState.chatPoll = null; }
+  }
+  async function auxChatSend() {
+    const i = document.getElementById('ax-chat-input'); if (!i) return;
+    const body = i.value.trim();
+    if (!body || auxState.chatSending) return;
+    const t = auxCurTrip(); if (!t) return;
+    auxState.chatSending = true;
+    i.value = '';
+    // Optimista: la burbuja aparece de una. Si el envío falla se quita y se
+    // devuelve el texto al campo, para que no se pierda lo que escribió.
+    const temp = { id: 'tmp' + Date.now(), sender_role: 'auxiliar', body, created_at: new Date().toISOString() };
+    auxState.chatMsgs = (auxState.chatMsgs || []).concat([temp]);
+    auxChatBubbles();
+    try {
+      await Api.sendReservationMessage(t.id, body, { title: 'Mensaje de tu pasajero' });
+      await auxChatSync(true);
+    } catch (e) {
+      auxState.chatMsgs = auxState.chatMsgs.filter(m => m.id !== temp.id);
+      auxChatBubbles();
+      i.value = body;
+      toast((e && e.message) ? e.message : 'No se pudo enviar el mensaje.');
+    } finally { auxState.chatSending = false; }
   }
 
   // P2 (assigned) + pending + cancelado + no-show + done
@@ -578,7 +685,8 @@
         ${canCancel ? auxCancelBlock(t) : ''}
         <div class="ax-spacer"></div>
       </div>
-      ${(t.status === 'assigned' && !t.readyAt) ? `<div class="ax-cta-bar"><button class="ax-btn ax-btn-primary" data-ax="confirm-pickup"><svg class="icon"><use href="#i-check"/></svg>Confirmar mi recogida</button></div>` : ''}`;
+      ${(t.status === 'assigned' && !t.readyAt) ? `<div class="ax-cta-bar"><button class="ax-btn ax-btn-primary" data-ax="confirm-pickup"><svg class="icon"><use href="#i-check"/></svg>Confirmar mi recogida</button></div>` : ''}
+      ${t.driver && !closed ? auxChatHTML(t) : ''}`;
   }
 
   // Cancelar en dos toques (no usamos confirm() nativo: bloquea la PWA y se ve
@@ -612,7 +720,8 @@
         ${auxDriverCard(t.driver, false)}
         <div class="ax-track-fresh" id="ax-track-fresh"></div>
         <button class="ax-btn ax-btn-ghost" data-ax="share-eta"><svg class="icon"><use href="#i-send"/></svg>Compartir mi ETA</button>
-      </div>`;
+      </div>
+      ${auxChatHTML(t)}`;
   }
   // P4: a bordo. OJO: "a bordo" no significa "ya vamos al destino" — el carro
   // puede tener casas por delante. El badge lo dice en vez de darlo por hecho.
@@ -639,7 +748,8 @@
         <div class="ax-count" id="ax-count"></div>
         ${auxDriverCard(t.driver, false)}
         <div class="ax-track-fresh" id="ax-track-fresh"></div>
-      </div>`;
+      </div>
+      ${auxChatHTML(t)}`;
   }
   // P5: calificación (sin propina — servicio mensual)
   function auxRating(t) {
@@ -673,8 +783,16 @@
     // Desde 'pending' ya seguimos: la pantalla avanza sola cuando el admin
     // publica el plan (→ conductor) y cuando el conductor arranca (→ mapa).
     if (['pending', 'assigned', 'onway', 'onboard'].includes(t.status)) auxStartLiveTrack(t);
+    // El chat vive dentro de esta pantalla y el render la rehace entera: si
+    // estaba abierto (p. ej. el viaje pasó a "a bordo" mientras escribía), se
+    // vuelve a abrir en vez de cerrarse en la cara del usuario.
+    if (t.driver && document.getElementById('ax-chat')) {
+      if (auxState.chatOpen) auxChatOpen();
+      else auxChatSync(false);        // trae el badge de no leídos
+    }
   }
   function auxStopTrack() {
+    if (auxState.chatPoll) { clearInterval(auxState.chatPoll); auxState.chatPoll = null; }
     if (auxState.trackPoll) { clearInterval(auxState.trackPoll); auxState.trackPoll = null; }
     if (auxState.trackTween) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
     if (auxState.waitTick) { clearInterval(auxState.waitTick); auxState.waitTick = null; }
@@ -826,6 +944,9 @@
     if (t.status === 'onway' || t.status === 'onboard') {
       auxPlotDriver(t, info);
     }
+    // Mensajes nuevos del conductor con la pantalla abierta: el push avisa
+    // cuando la app está cerrada, esto mantiene el globito al día mientras mira.
+    if (t.driver && !auxState.chatOpen) auxChatSync(false);
   }
 
   // Pinta el mapa: destino fijo + carro que se desliza ENTRE dos reportes reales.
@@ -1228,6 +1349,14 @@
     const root = auxRoot(); if (!root) return;
     auxState.bound = true;
 
+    // Enter envía el mensaje del chat (el input se recrea con cada render, por
+    // eso el listener va delegado en la raíz y no en el campo).
+    root.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || !e.target || e.target.id !== 'ax-chat-input') return;
+      e.preventDefault();
+      auxChatSend();
+    });
+
     root.addEventListener('click', (e) => {
       const el = e.target.closest('[data-ax]'); if (!el) return;
       const a = el.dataset.ax;
@@ -1273,6 +1402,10 @@
         else toast('Aún no hay teléfono del conductor.');
       }
       else if (a === 'share-eta') { auxShareEta(); }
+      // --- chat con el conductor ---
+      else if (a === 'chat') { auxChatOpen(); }
+      else if (a === 'chat-close') { auxChatClose(); }
+      else if (a === 'chat-send') { auxChatSend(); }
       // --- calificación ---
       else if (a === 'star') { auxState.ratingSel = Number(el.dataset.n); auxState.ratingTags = []; auxRender(); }
       else if (a === 'tag') { const tg = el.dataset.tag; const s = new Set(auxState.ratingTags); s.has(tg) ? s.delete(tg) : s.add(tg); auxState.ratingTags = [...s]; auxRender(); }

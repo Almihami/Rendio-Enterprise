@@ -2372,6 +2372,33 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #auxiliar-ui .ax-onboard-badge.wait{background:#FEF4E2;color:#B45309}
 #auxiliar-ui .ax-driver-acts{margin-left:auto;display:flex;align-items:center;gap:10px}
 #auxiliar-ui .ax-icbtn.sm{width:38px;height:38px;color:var(--a-accent);border-color:var(--a-line)}
+/* ---- Chat con el conductor (0052) ---- */
+/* Panel completo encima de la pantalla del viaje: entrar al chat no puede
+   desmontar el mapa que va rastreando debajo. */
+#auxiliar-ui .ax-chat{position:absolute;inset:0;z-index:900;background:var(--a-bg);display:flex;flex-direction:column}
+#auxiliar-ui .ax-chat.hidden{display:none}
+#auxiliar-ui .ax-chat-head{display:flex;align-items:center;gap:12px;padding:calc(12px + env(safe-area-inset-top)) 14px 12px;background:var(--a-card);border-bottom:1px solid var(--a-line)}
+#auxiliar-ui .ax-chat-who{flex:1;min-width:0}
+#auxiliar-ui .ax-chat-who b{display:block;font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#auxiliar-ui .ax-chat-who span{font-size:12px;color:var(--a-t2)}
+#auxiliar-ui .ax-chat-body{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:8px}
+#auxiliar-ui .ax-msg{max-width:78%;padding:9px 12px;border-radius:16px;position:relative}
+#auxiliar-ui .ax-msg p{margin:0;font-size:14px;line-height:1.4;word-break:break-word;white-space:pre-wrap}
+#auxiliar-ui .ax-msg span{display:block;margin-top:3px;font-size:10.5px;opacity:.65;text-align:right}
+#auxiliar-ui .ax-msg.mine{align-self:flex-end;background:var(--a-accent);color:#fff;border-bottom-right-radius:5px}
+#auxiliar-ui .ax-msg.their{align-self:flex-start;background:var(--a-card);border:1px solid var(--a-line);border-bottom-left-radius:5px}
+#auxiliar-ui .ax-chat-empty{margin:auto;text-align:center;padding:0 24px;color:var(--a-t2)}
+#auxiliar-ui .ax-chat-empty .icon{width:34px;height:34px;color:var(--a-t3);margin-bottom:10px}
+#auxiliar-ui .ax-chat-empty b{display:block;font-size:15px;color:var(--a-text);margin-bottom:5px}
+#auxiliar-ui .ax-chat-empty span{font-size:12.5px;line-height:1.45}
+#auxiliar-ui .ax-chat-foot{display:flex;align-items:center;gap:9px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--a-card);border-top:1px solid var(--a-line)}
+#auxiliar-ui .ax-chat-foot input{flex:1;min-width:0;height:42px;padding:0 14px;border-radius:999px;border:1px solid var(--a-line);background:var(--a-bg);font-size:14px;font-family:inherit;color:var(--a-text)}
+#auxiliar-ui .ax-chat-foot input:focus{outline:none;border-color:var(--a-accent)}
+#auxiliar-ui .ax-chat-send{width:42px;height:42px;flex:0 0 auto;border:none;border-radius:50%;background:var(--a-accent);color:#fff;display:grid;place-items:center;cursor:pointer}
+#auxiliar-ui .ax-chat-send .icon{width:18px;height:18px}
+/* Contador de mensajes sin leer sobre el botón de escribir */
+#auxiliar-ui .ax-chat-btn{position:relative}
+#auxiliar-ui .ax-badge{position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:var(--a-accent);color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;border:2px solid var(--a-card)}
 /* Hora estimada de llegada (OSRM). Se oculta sola si no hay dato confiable.
    OJO: NO usar .ax-eta — esa clase ya es el "recogida" de la tarjeta del conductor. */
 #auxiliar-ui .ax-etaline{text-align:center;font-size:13.5px;color:var(--a-t2);font-weight:600;margin:-6px 0 10px}
@@ -2485,6 +2512,30 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #driver-ruta-ui .dr-modal.hidden{display:none}
 #driver-ruta-ui .dr-modal-head{display:flex;align-items:center;justify-content:space-between;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;font-size:16px;font-weight:700;color:var(--r-text-1,#18181B)}
 #driver-ruta-ui .dr-modal-map{flex:1;width:100%}
+/* ---- Chat con el auxiliar (0052) ---- */
+/* Encima de todo: el mapa de ejecución sigue vivo debajo con el GPS. */
+#driver-ruta-ui .dr-chat{position:fixed;inset:0;z-index:3200;background:var(--r-bg,#F8F8F6);display:flex;flex-direction:column}
+#driver-ruta-ui .dr-chat-head{display:flex;align-items:center;gap:12px;padding:calc(12px + env(safe-area-inset-top)) 14px 12px;background:var(--r-card);border-bottom:1px solid var(--r-border)}
+#driver-ruta-ui .dr-chat-who{flex:1;min-width:0}
+#driver-ruta-ui .dr-chat-who b{display:block;font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#driver-ruta-ui .dr-chat-who span{font-size:12px;color:var(--r-text-2)}
+#driver-ruta-ui .dr-chat-body{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:8px}
+#driver-ruta-ui .dr-msg{max-width:78%;padding:9px 12px;border-radius:16px}
+#driver-ruta-ui .dr-msg p{margin:0;font-size:14.5px;line-height:1.4;word-break:break-word;white-space:pre-wrap}
+#driver-ruta-ui .dr-msg span{display:block;margin-top:3px;font-size:10.5px;opacity:.65;text-align:right}
+#driver-ruta-ui .dr-msg.mine{align-self:flex-end;background:var(--r-h2a);color:#fff;border-bottom-right-radius:5px}
+#driver-ruta-ui .dr-msg.their{align-self:flex-start;background:var(--r-card);border:1px solid var(--r-border);border-bottom-left-radius:5px}
+#driver-ruta-ui .dr-chat-empty{margin:auto;text-align:center;padding:0 26px;color:var(--r-text-2)}
+#driver-ruta-ui .dr-chat-empty .icon{width:34px;height:34px;color:var(--r-text-3);margin-bottom:10px}
+#driver-ruta-ui .dr-chat-empty b{display:block;font-size:15px;color:var(--r-text-1,#18181B);margin-bottom:5px}
+#driver-ruta-ui .dr-chat-empty span{font-size:12.5px;line-height:1.45}
+#driver-ruta-ui .dr-chat-foot{display:flex;align-items:center;gap:9px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--r-card);border-top:1px solid var(--r-border)}
+#driver-ruta-ui .dr-chat-foot input{flex:1;min-width:0;height:46px;padding:0 15px;border-radius:999px;border:1px solid var(--r-border);background:var(--r-bg);font-size:15px;font-family:inherit;color:var(--r-text-1,#18181B)}
+#driver-ruta-ui .dr-chat-foot input:focus{outline:none;border-color:var(--r-h2a)}
+#driver-ruta-ui .dr-chat-send{width:46px;height:46px;flex:0 0 auto;border:none;border-radius:50%;background:var(--r-h2a);color:#fff;display:grid;place-items:center;cursor:pointer}
+#driver-ruta-ui .dr-chat-send .icon{width:19px;height:19px}
+#driver-ruta-ui .dr-cbtn{position:relative}
+#driver-ruta-ui .dr-badge{position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;padding:0 4px;border-radius:999px;background:var(--r-error,#EF4444);color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;border:2px solid var(--r-card)}
 /* Paradas numeradas en el mapa grande: el número es el MISMO de la lista
    "Paradas en orden". 'next' = a donde va ahora · 'done' = ya visitada. */
 #driver-ruta-ui .dr-mk{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;background:var(--r-h2a);border:2px solid #fff;box-shadow:0 2px 7px rgba(0,0,0,.3)}
