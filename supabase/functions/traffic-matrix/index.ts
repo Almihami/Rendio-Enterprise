@@ -53,10 +53,18 @@ function log(level: string, msg: string, ctx: Record<string, unknown> = {}): voi
   console.log(JSON.stringify({ level, msg, ctx }));
 }
 
-// TomTom permite 100×100 síncrono. Una planeación real son ~6-12 puntos (depot,
-// aeropuerto y hasta 4 paradas por carro); el tope está para que un error de
-// programación no dispare una matriz gigante y se coma la cuota del mes.
-const MAX_POINTS = 25;
+// TomTom permite 100×100 en la versión síncrona y ahí ponemos el tope: un día
+// operativo real son ~80 traslados + depot + aeropuerto = 82 puntos, así que un
+// límite más bajo dejaría al asignador sin tráfico justo los días cargados.
+//
+// OJO CON EL COSTO: TomTom no cobra por llamada sino por celda. Con más de 5
+// orígenes y destinos cobra max(origins,destinations) × 5, así que 82 puntos
+// son 410 transacciones POR CONSULTA. Por eso el cliente cachea la matriz
+// (misma planeación + misma hora = una sola consulta), y por eso esto es solo
+// para admin. Si se quita el caché, se quema la cuota en un día.
+const MAX_POINTS = 100;
+// Aviso en el log cuando una consulta sale cara, para poder verlo en producción.
+const COSTLY_POINTS = 40;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -147,6 +155,10 @@ Deno.serve(async (req: Request) => {
   }
 
   const ok = out?.statistics?.successes ?? cells.length;
-  log("info", "matriz de tráfico resuelta", { points: n, departAt, traffic, successes: ok });
-  return json({ source: "tomtom", durations, delays, departAt, traffic, successes: ok });
+  // Costo estimado según la regla de TomTom (celdas, no llamadas): con más de 5
+  // orígenes y destinos cobra max × 5. Se registra para poder auditar la cuota.
+  const billed = n > 5 ? n * 5 : n * n;
+  log(n >= COSTLY_POINTS ? "warn" : "info", "matriz de tráfico resuelta",
+    { points: n, billedTransactions: billed, departAt, traffic, successes: ok });
+  return json({ source: "tomtom", durations, delays, departAt, traffic, successes: ok, billedTransactions: billed });
 });
