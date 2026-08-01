@@ -2372,6 +2372,10 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #auxiliar-ui .ax-onboard-badge.wait{background:#FEF4E2;color:#B45309}
 #auxiliar-ui .ax-driver-acts{margin-left:auto;display:flex;align-items:center;gap:10px}
 #auxiliar-ui .ax-icbtn.sm{width:38px;height:38px;color:var(--a-accent);border-color:var(--a-line)}
+/* Hora estimada de llegada (OSRM). Se oculta sola si no hay dato confiable. */
+#auxiliar-ui .ax-eta{text-align:center;font-size:13.5px;color:var(--a-t2);font-weight:600;margin:-6px 0 10px}
+#auxiliar-ui .ax-eta b{color:var(--a-text);font-weight:800;font-family:'Space Mono',monospace}
+#auxiliar-ui .ax-eta.hidden{display:none}
 /* Contador de posición en la ruta (Vas N de M · Sale HH:MM) */
 #auxiliar-ui .ax-count{text-align:center;font-size:13px;color:var(--a-t2);font-weight:600;margin:-4px 0 8px}
 #auxiliar-ui .ax-count.hidden{display:none}

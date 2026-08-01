@@ -27,6 +27,9 @@
     stopLayer: null, stopSig: null,
     // Vía REAL por carretera (OSRM) en vez de la línea recta que se veía antes.
     routePath: null, routeFrom: null, routeDestKey: null, routeAt: 0,
+    // Hora estimada de llegada: segundos que faltaban y CUÁNDO se calcularon
+    // (para descontar lo corrido entre recálculos).
+    etaSecs: null, etaAt: 0, etaKind: null,
     // Pestaña activa del nav inferior + cancelación en 2 toques (sin confirm() nativo).
     tab: 'inicio', confirmingCancel: false, cancelTimer: null,
     // Espera en el punto de recogida: cuenta regresiva REAL desde que el
@@ -602,6 +605,7 @@
       <div id="ax-track-map" class="ax-track-map"></div>
       <div class="ax-track-sheet">
         <div class="ax-eta-hero"><span id="ax-eta-label">Tu conductor</span><b id="ax-eta-min">En camino</b></div>
+        <div class="ax-eta hidden" id="ax-eta"></div>
         <div class="ax-count hidden" id="ax-count"></div>
         <div class="ax-wait hidden" id="ax-wait"></div>
         <div id="ax-late-wrap">${auxLateHTML(t, t._info)}</div>
@@ -631,6 +635,7 @@
       <div class="ax-track-sheet">
         <div class="ax-onboard-badge${auxPendingAhead(t, t._info) > 0 ? ' wait' : ''}" id="ax-onboard-badge">${auxOnBoardBadge(t, t._info)}</div>
         <div class="ax-eta-hero"><span id="ax-eta-label">${t.type === 'lle' ? 'Vas a casa' : 'Vas al aeropuerto'}</span><b id="ax-eta-min">En ruta</b></div>
+        <div class="ax-eta hidden" id="ax-eta"></div>
         <div class="ax-count" id="ax-count"></div>
         ${auxDriverCard(t.driver, false)}
         <div class="ax-track-fresh" id="ax-track-fresh"></div>
@@ -679,6 +684,7 @@
     auxState.waitFrom = null;
     // Estado de la vía real: al cambiar de vista se recalcula desde cero.
     auxState.routePath = null; auxState.routeFrom = null; auxState.routeDestKey = null; auxState.routeAt = 0;
+    auxState.etaSecs = null; auxState.etaAt = 0; auxState.etaKind = null;
   }
 
   // ---------- espera en el punto de recogida ----------
@@ -839,7 +845,7 @@
       auxState.trackDestPt = destPt;
       auxState.trackDestMk = L.circleMarker(destPt, { radius: 8, color: '#F26522', fillColor: '#F26522', fillOpacity: 1, weight: 3 }).addTo(map);
       auxPlotStops(t, info);
-      if (driverPt) { auxMountCar(driverPt, destPt); map.fitBounds([driverPt, destPt], { padding: [55, 55] }); }
+      if (driverPt) { auxMountCar(t, info, driverPt, destPt); map.fitBounds([driverPt, destPt], { padding: [55, 55] }); }
       else { map.setView(destPt, 14); }
       setTimeout(() => map.invalidateSize(), 60);
       return;
@@ -855,7 +861,7 @@
     auxPlotStops(t, info);
     if (!driverPt) return;                                 // aún sin ping: dejamos el destino
     if (!auxState.trackCar) {                              // el carro apareció tras el montaje
-      auxMountCar(driverPt, destPt);
+      auxMountCar(t, info, driverPt, destPt);
       auxState.trackMap.fitBounds([driverPt, destPt], { padding: [55, 55] });
       return;
     }
@@ -869,7 +875,7 @@
     }
     auxState.trackLast = driverPt;
     // Redibuja la vía real desde donde va el carro (con freno: ver auxSyncRoute).
-    auxSyncRoute(driverPt, destPt);
+    auxSyncRoute(t, info, driverPt, destPt);
   }
   // Dibuja lo que FALTA del recorrido: cada parada pendiente numerada en orden de
   // visita y el destino final (MDE o tu casa). Antes el mapa solo tenía el carro y
@@ -905,14 +911,14 @@
     L.marker(finalPt, { icon: fIcon }).addTo(layer).bindTooltip(isApt ? 'Aeropuerto MDE' : 'Tu casa', { direction: 'top', offset: [0, -14] });
   }
 
-  function auxMountCar(driverPt, destPt) {
+  function auxMountCar(t, info, driverPt, destPt) {
     const carIcon = L.divIcon({ className: '', html: '<div class="ax-car">🚗</div>', iconSize: [30, 30], iconAnchor: [15, 15] });
     // Arranca como línea recta punteada (es lo único cierto mientras OSRM
     // responde) y auxSyncRoute la reemplaza por la vía real en cuanto llega.
     auxState.trackLine = L.polyline([driverPt, destPt], { color: '#F4791F', weight: 4, opacity: .45, dashArray: '6 8' }).addTo(auxState.trackMap);
     auxState.trackCar = L.marker(driverPt, { icon: carIcon }).addTo(auxState.trackMap);
     auxState.trackLast = driverPt;
-    auxSyncRoute(driverPt, destPt);
+    auxSyncRoute(t, info, driverPt, destPt);
   }
 
   // ---------- trayecto REAL por carretera (OSRM) ----------
@@ -925,10 +931,42 @@
   // de fase del viaje) o si pasó un minuto. Mismo criterio que admin-operacion.
   const AUX_OSRM_MOVE_M = 250;
   const AUX_OSRM_MAX_MS = 60000;
+  // Lo que tarda cada recogida (parar, subir a alguien con maleta, arrancar).
+  // Mismo estimado que ya usa el tablero del admin para calcular las vueltas.
+  const AUX_STOP_MIN = 3;
 
-  async function auxSyncRoute(driverPt, destPt) {
+  // El camino que le QUEDA al carro, en orden, y cuál de esos puntos es el que a
+  // mí me importa: mi recogida si todavía no me he montado, o mi destino si ya
+  // voy adentro. En una llegada mi destino es mi casa aunque después dejen a más
+  // gente — mi hora no es la del final de la ruta.
+  function auxRouteAhead(t, info, driverPt) {
+    const pts = [driverPt];
+    if (t.type === 'lle' && t.status !== 'onboard') {
+      // Llegada y aún no me monto: el carro va al aeropuerto por mí.
+      return { pts: pts.concat([[AUX_MDE.lat, AUX_MDE.lng]]), target: 1 };
+    }
+    const pend = auxPendingStops(t, info);
+    let target = -1;
+    if (!pend.length && t.status !== 'onboard' && t.lat != null) {
+      // Sin detalle de paradas (RPC viejo): al menos sé a dónde vienen por mí.
+      return { pts: pts.concat([[t.lat, t.lng]]), target: 1 };
+    }
+    pend.forEach(s => { pts.push([s.lat, s.lng]); if (s.mine) target = pts.length - 1; });
+    if (t.type === 'sal') {
+      pts.push([AUX_MDE.lat, AUX_MDE.lng]);        // una salida siempre termina en MDE
+      if (target < 0) target = pts.length - 1;     // ya me recogieron → me importa el aeropuerto
+    } else if (target < 0 && t.lat != null) {
+      pts.push([t.lat, t.lng]); target = pts.length - 1;
+    }
+    return { pts, target: target < 0 ? pts.length - 1 : target };
+  }
+
+  async function auxSyncRoute(t, info, driverPt, destPt) {
     if (!auxState.trackLine || !driverPt || !destPt) return;
-    const destKey = destPt.join(',');
+    const ahead = auxRouteAhead(t, info, driverPt);
+    // La clave incluye TODAS las paradas: si el conductor cierra una, el camino
+    // que falta cambia aunque el destino inmediato siga siendo el mismo.
+    const destKey = ahead.pts.slice(1).map(p => p.join(',')).join('|') + '#' + ahead.target;
     const movio = !auxState.routeFrom || auxDistM(auxState.routeFrom, driverPt) > AUX_OSRM_MOVE_M;
     const otroDestino = auxState.routeDestKey !== destKey;
     const viejo = Date.now() - (auxState.routeAt || 0) > AUX_OSRM_MAX_MS;
@@ -936,9 +974,10 @@
     // Se marca ANTES de pedir: si no, cada tick de 6 s dispara otra petición.
     auxState.routeFrom = driverPt; auxState.routeDestKey = destKey; auxState.routeAt = Date.now();
 
-    const path = await auxRoadPath(driverPt, destPt);
+    const r = await auxRoadRoute(ahead.pts);
     // Pudo cambiar de vista/viaje mientras OSRM respondía.
     if (!auxState.trackLine || auxState.routeDestKey !== destKey) return;
+    const path = r && r.path;
     if (path && path.length > 1) {
       auxState.routePath = path;
       auxState.trackLine.setLatLngs(path);
@@ -949,15 +988,97 @@
       auxState.routePath = null;
       auxState.trackLine.setStyle({ dashArray: '6 8', opacity: .45, weight: 4 });
     }
+    // Hora estimada: suma de los tramos hasta MI punto + lo que toma cada
+    // recogida intermedia. Si OSRM no contestó, no se muestra nada: es mejor no
+    // decir hora que decir una inventada.
+    const legs = r && r.legs;
+    if (legs && legs.length >= ahead.target && ahead.target > 0) {
+      let secs = 0;
+      for (let i = 0; i < ahead.target; i++) secs += legs[i] || 0;
+      secs += AUX_STOP_MIN * 60 * Math.max(0, ahead.target - 1);
+      auxState.etaSecs = secs;
+      auxState.etaAt = Date.now();
+      auxState.etaKind = (t.status === 'onboard') ? 'dest' : 'pickup';
+    } else {
+      auxState.etaSecs = null; auxState.etaAt = 0;
+    }
+    auxRenderEta(t, info);
   }
-  async function auxRoadPath(from, to) {
+  // OSRM con N puntos: devuelve la vía completa y la duración de cada tramo.
+  async function auxRoadRoute(pts) {
+    if (!pts || pts.length < 2) return null;
     try {
-      const coords = `${from[1]},${from[0]};${to[1]},${to[0]}`;
+      const coords = pts.map(p => `${p[1]},${p[0]}`).join(';');
       const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
       const j = await (await fetch(url)).json();
-      const c = j && j.routes && j.routes[0] && j.routes[0].geometry && j.routes[0].geometry.coordinates;
-      return c ? c.map(p => [p[1], p[0]]) : null;
+      const r = j && j.code === 'Ok' && j.routes && j.routes[0];
+      if (!r) return null;
+      const c = r.geometry && r.geometry.coordinates;
+      return { path: c ? c.map(p => [p[1], p[0]]) : null, legs: (r.legs || []).map(l => l.duration) };
     } catch (_) { return null; }
+  }
+  // "¿A qué hora llego?" era la pregunta que la app no contestaba: la pantalla
+  // de a bordo tenía un "Llegada estimada — min" que nunca se llenó. La hora sale
+  // de la duración real por carretera que ya devolvía OSRM (solo se botaba).
+  //
+  // Reglas para no mentir:
+  //  · sin respuesta de OSRM → no se muestra nada.
+  //  · con el punto del conductor viejo (>2 min) → tampoco: sería una hora
+  //    calculada desde donde el carro YA NO está.
+  //  · ya llegó o está a menos de 300 m → sobra la hora, se dice lo que pasa.
+  //  · siempre con "~": es un estimado, y así se lee.
+  function auxRenderEta(t, info) {
+    const el = document.getElementById('ax-eta');
+    if (!el) return;
+    const hide = () => { el.textContent = ''; el.classList.add('hidden'); };
+    if (!auxState.etaSecs || !auxState.etaAt) return hide();
+    if (info && auxFreshLabel(info.pos).stale) return hide();
+    if (info && info.stop_status === 'arrived') return hide();
+    // Descuenta lo corrido desde el cálculo (se recalcula máximo cada minuto).
+    const secs = auxState.etaSecs - (Date.now() - auxState.etaAt) / 1000;
+    const dest = auxState.etaKind === 'dest'
+      ? (t.type === 'lle' ? 'Llegas a casa' : 'Llegas a MDE')
+      : (t.type === 'lle' ? 'Te recogemos en MDE' : 'Te recogemos');
+    if (secs < 60) {
+      el.textContent = `${dest} en menos de un minuto`;
+      el.classList.remove('hidden');
+      return;
+    }
+    const min = Math.round(secs / 60);
+    const cuanto = min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`;
+    let hora = '';
+    try {
+      hora = new Date(Date.now() + secs * 1000)
+        .toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' });
+    } catch (_) {}
+    el.innerHTML = `${dest} <b>~${hora}</b> · en ${cuanto}`;
+    el.classList.remove('hidden');
+  }
+  // "Compartir mi ETA" anunciaba "enlace de seguimiento copiado" y no copiaba
+  // nada — ese enlace no existe. Ahora comparte el texto con la hora real, y si
+  // todavía no hay hora calculada lo dice en vez de inventarla.
+  async function auxShareEta() {
+    const t = auxCurTrip(); if (!t) return;
+    const destino = t.type === 'lle' ? 'a casa' : 'al aeropuerto MDE';
+    let txt = `Voy en camino ${destino}.`;
+    if (auxState.etaSecs && auxState.etaAt) {
+      const secs = auxState.etaSecs - (Date.now() - auxState.etaAt) / 1000;
+      if (secs > 0) {
+        try {
+          const hora = new Date(Date.now() + secs * 1000)
+            .toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' });
+          txt = auxState.etaKind === 'dest'
+            ? `Voy en camino ${destino}, llego sobre las ${hora} (estimado).`
+            : `Me recogen sobre las ${hora} (estimado) y voy ${destino}.`;
+        } catch (_) {}
+      }
+    }
+    if (t.driver && t.driver.plate && t.driver.plate !== '—') txt += ` Carro ${t.driver.plate}.`;
+    try {
+      if (navigator.share) { await navigator.share({ text: txt }); return; }
+      await navigator.clipboard.writeText(txt);
+      toast('Texto copiado para compartir.');
+    } catch (_) { /* el usuario canceló el compartir: no es un error */ }
   }
   function auxTweenCar(from, to) {
     if (auxState.trackTween) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
@@ -1026,6 +1147,17 @@
     if (badgeEl) {
       badgeEl.innerHTML = auxOnBoardBadge(t, info);
       badgeEl.classList.toggle('wait', auxPendingAhead(t, info) > 0);
+    }
+    // La hora se recalcula como mucho cada minuto (OSRM público), pero el
+    // "en X min" se repinta en cada tick para que vaya bajando de verdad.
+    // Esperando: si ya está a la vuelta, la hora sobra ("está por llegar" dice
+    // más). A bordo NO se aplica: recién montado el carro sigue en mi punto y
+    // taparía justo la hora de llegada, que es lo que quiero ver ahí.
+    if (t.status === 'onway' && near) {
+      const e = document.getElementById('ax-eta');
+      if (e) { e.textContent = ''; e.classList.add('hidden'); }
+    } else {
+      auxRenderEta(t, info);
     }
     if (countEl) {
       const so = info.stop_order, tot = info.total_stops;
@@ -1140,7 +1272,7 @@
         if (ph) { try { window.location.href = 'tel:' + ph.replace(/[^\d+]/g, ''); } catch (_) {} }
         else toast('Aún no hay teléfono del conductor.');
       }
-      else if (a === 'share-eta') { toast('Enlace de seguimiento copiado para compartir.'); }
+      else if (a === 'share-eta') { auxShareEta(); }
       // --- calificación ---
       else if (a === 'star') { auxState.ratingSel = Number(el.dataset.n); auxState.ratingTags = []; auxRender(); }
       else if (a === 'tag') { const tg = el.dataset.tag; const s = new Set(auxState.ratingTags); s.has(tg) ? s.delete(tg) : s.add(tg); auxState.ratingTags = [...s]; auxRender(); }
