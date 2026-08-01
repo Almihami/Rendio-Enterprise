@@ -9,6 +9,11 @@
   const rtIni = (n) => { const p = (n || '').trim().split(/\s+/); return ((p[0] || '')[0] + ((p[1] || p[0] || '')[0] || '')).toUpperCase(); };
   const rtToMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   const rtToHM = (m) => { m = Math.round(m); const h = Math.floor(m / 60) % 24; const mm = ((m % 60) + 60) % 60; return String(h).padStart(2, '0') + ':' + String(mm).padStart(2, '0'); };
+  // Los datos del tablero de rutas ya son reales (nombres, direcciones, notas que
+  // escribe el auxiliar): se escapan antes de entrar al HTML, y sirve igual dentro
+  // de un atributo title="…".
+  const rtEsc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   // ---------------- CONSOLA (hub por capas) ----------------
   const CN_DATA = {

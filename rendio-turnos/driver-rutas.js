@@ -18,6 +18,8 @@
     lastPingAt: 0,
     // Nivel 1 (nav in-app): mi posición en vivo + seguir. Popup mapa grande. Reanudar.
     meMarker: null, lastPos: null, follow: true, bigMap: null,
+    // Mapa grande: marcador "estás aquí" + tramo destacado hasta la próxima parada.
+    bigMeMk: null, bigLegLine: null,
     // Espera en el punto: desde que marca "Llegué" corre el reloj y solo al
     // vencerse se habilita "No se presentó" (antes se podía marcar al segundo 1).
     waitTick: null,
@@ -269,10 +271,22 @@
   // Popup: mapa a (casi) pantalla completa con la ruta.
   function drMapModalHTML() {
     return `<div class="dr-modal hidden" id="dr-map-modal">
-      <div class="dr-modal-head"><b>Ruta completa</b><button class="dr-icbtn" data-dr="mapbigclose" aria-label="Cerrar"><svg class="icon"><use href="#i-back"/></svg></button></div>
+      <div class="dr-modal-head"><b id="dr-map-title">Ruta completa</b><button class="dr-icbtn" data-dr="mapbigclose" aria-label="Cerrar"><svg class="icon"><use href="#i-back"/></svg></button></div>
       <div class="dr-modal-map" id="dr-map-big"></div>
     </div>`;
   }
+  // Marcador redondo con el MISMO número que la lista "Paradas en orden": el
+  // conductor lee "3" en la lista y busca el "3" en el mapa.
+  function drStopIcon(html, cls) {
+    // El icono se ancla en su centro: si el div encoge (.sm) el marco tiene que
+    // encoger igual, o el número queda corrido del punto que señala.
+    const s = /\bsm\b/.test(cls || '') ? 22 : 30;
+    return L.divIcon({ className: '', html: `<div class="dr-mk ${cls}">${html}</div>`, iconSize: [s, s], iconAnchor: [s / 2, s / 2] });
+  }
+  // El mapa grande mostraba la vuelta entera encuadrada de lejos y con puntos
+  // iguales sin número: no servía para lo único que se pregunta al abrirlo, que
+  // es "¿por dónde arranco y a quién recojo primero?". Ahora encuadra el tramo
+  // que viene (dónde estoy → siguiente parada) y numera a cada auxiliar.
   async function drOpenBigMap() {
     const v = drVuelta(); if (!v) return;
     const modal = document.getElementById('dr-map-modal'), el = document.getElementById('dr-map-big');
@@ -282,20 +296,66 @@
     const pts = v.legs.filter(l => l.lat != null).map(l => [l.lat, l.lng]);
     const map = drState.bigMap = L.map(el, { attributionControl: false });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-    v.legs.forEach(l => {
-      if (l.lat == null) return;
+
+    const idx = Math.min(drState.legIdx || 0, v.legs.length - 1);
+    const next = v.legs[idx] && v.legs[idx].lat != null ? v.legs[idx] : null;
+    let n = 0;
+    v.legs.forEach((l, i) => {
       const isApt = l.kind === 'airport';
-      L.circleMarker([l.lat, l.lng], { radius: 8, color: '#fff', weight: 2, fillColor: isApt ? '#10B981' : '#F26522', fillOpacity: 1 })
-        .addTo(map).bindTooltip(isApt ? 'Aeropuerto MDE' : (l.name || ''));
+      const num = isApt ? null : ++n;                     // el aeropuerto no lleva número
+      if (l.lat == null) return;
+      const cls = isApt ? 'apt' : (i < idx ? 'done' : (i === idx ? 'next' : ''));
+      const tip = isApt ? 'Aeropuerto MDE'
+        : `${num}. ${l.name || 'Auxiliar'}${l.addr ? ' · ' + l.addr : ''}`;
+      L.marker([l.lat, l.lng], { icon: drStopIcon(isApt ? '✈' : num, cls) })
+        .addTo(map).bindTooltip(tip, { direction: 'top', offset: [0, -16] });
     });
-    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.2));
+
+    // Resto de la vuelta, tenue: contexto de a dónde se va después.
+    if (pts.length > 1) L.polyline(pts, { color: '#A1A1AA', weight: 3, opacity: .45, dashArray: '6 8' }).addTo(map);
+
+    const title = document.getElementById('dr-map-title');
+    if (title) title.textContent = next ? (next.kind === 'airport' ? 'Hacia el aeropuerto' : `Hacia ${(next.name || '').split(' ')[0] || 'la parada'}`) : 'Ruta completa';
+
+    drBigFocus(map, drState.lastPos, next, pts);
     setTimeout(() => map.invalidateSize(), 60);
-    const road = await drRoadPath(pts);
+    // Sin GPS todavía (pasa en el preview, antes de "Iniciar ruta"): se pide la
+    // posición una vez para poder trazar el tramo desde donde está parado.
+    if (!drState.lastPos && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (p) => {
+          if (drState.bigMap !== map) return;
+          drState.lastPos = [p.coords.latitude, p.coords.longitude];
+          drBigFocus(map, drState.lastPos, next, pts);
+          drBigLeg(map, drState.lastPos, next);
+        },
+        () => {}, { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 });
+    }
+    await drBigLeg(map, drState.lastPos, next);
+  }
+  // Encuadre: el tramo que viene, no la vuelta entera (que deja todo diminuto).
+  function drBigFocus(map, here, next, pts) {
+    const focus = [];
+    if (here) focus.push(here);
+    if (next) focus.push([next.lat, next.lng]);
+    if (focus.length >= 2) map.fitBounds(L.latLngBounds(focus).pad(0.35));
+    else if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.2));
+  }
+  // Tramo actual destacado: vía real desde donde está hasta la siguiente parada.
+  async function drBigLeg(map, here, next) {
+    if (!here || !next) return;
+    if (drState.bigMeMk) { try { map.removeLayer(drState.bigMeMk); } catch (e) {} }
+    drState.bigMeMk = L.marker(here, { icon: drStopIcon('🚐', 'me') })
+      .addTo(map).bindTooltip('Estás aquí', { direction: 'top', offset: [0, -16] });
+    const to = [next.lat, next.lng];
+    const road = await drRoadPath([here, to]);
     if (drState.bigMap !== map) return;
-    L.polyline(road || pts, { color: '#F26522', weight: 4, opacity: .9 }).addTo(map);
+    if (drState.bigLegLine) { try { map.removeLayer(drState.bigLegLine); } catch (e) {} }
+    drState.bigLegLine = L.polyline(road || [here, to], { color: '#F26522', weight: 5, opacity: .95 }).addTo(map);
   }
   function drCloseBigMap() {
     if (drState.bigMap) { try { drState.bigMap.remove(); } catch (e) {} drState.bigMap = null; }
+    drState.bigMeMk = null; drState.bigLegLine = null;   // vivían en el mapa que se acaba de destruir
     const modal = document.getElementById('dr-map-modal'); if (modal) modal.classList.add('hidden');
   }
   async function drRouteMap() {
@@ -308,10 +368,13 @@
     const map = drState.map = L.map(el, { zoomControl: false, attributionControl: false, tap: false });
     map.on('click', () => drOpenBigMap());   // tap al mapa → previsualización grande
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    // Mismos números que la lista de abajo y que el mapa grande.
+    let n = 0;
     v.legs.forEach(l => {
+      const isApt = l.kind === 'airport';
+      const num = isApt ? null : ++n;
       if (l.lat == null) return;
-      const color = l.kind === 'airport' ? '#10B981' : '#F26522';
-      L.circleMarker([l.lat, l.lng], { radius: 7, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map);
+      L.marker([l.lat, l.lng], { icon: drStopIcon(isApt ? '✈' : num, `sm${isApt ? ' apt' : ''}`) }).addTo(map);
     });
     map.fitBounds(L.latLngBounds(pts).pad(0.25));
     setTimeout(() => map.invalidateSize(), 60);

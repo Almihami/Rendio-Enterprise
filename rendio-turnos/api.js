@@ -1280,11 +1280,17 @@
       // Ventana amplia en UTC (ayer→) para no perder madrugadas de Colombia;
       // el filtro fino por día operativo se hace abajo en hora local.
       const floor = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
-      const res = await sb.from('reservations')
-        .select('id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, auxiliar_profiles(profiles(full_name))')
+      // El tablero mostraba solo nombre y zona: para decidir un cambio de ruta el
+      // admin tenía que abrir Reservas en otra pestaña. Se traen también vuelo,
+      // teléfono, notas y pernocta. Defensivo igual que listMyReservations: si
+      // 0050 no está aplicada, se reintenta sin las columnas nuevas.
+      const COLS = 'id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)';
+      const q = cols => sb.from('reservations').select(cols)
         .is('cancelled_at', null)
         .gte('required_arrival_at', floor)
         .order('required_arrival_at', { ascending: true });
+      let res = await q(COLS + ', is_overnight, is_firm');
+      if (res.error) res = await q(COLS);
       if (res.error) throw res.error;
       rows = res.data;
     } catch (e) { return null; } // RLS / tabla ausente → demo
@@ -1309,6 +1315,13 @@
         lat: r.pickup_latitude, lng: r.pickup_longitude,
         dl: rtHHMM(r.required_arrival_at),
         pax: 1, type, reservationId: r.id,
+        // Contexto para decidir sin salir del tablero.
+        tel: r.auxiliar_profiles?.profiles?.phone || '',
+        vuelo: r.flights?.flight_number || (r.notes && r.notes.match(/AV-?\d+/) ? r.notes.match(/AV-?\d+/)[0] : ''),
+        notas: r.notes || '',
+        // 'hotel' es el flag que el tablero ya sabía pintar (chip "Hotel"), pero
+        // nadie se lo llenaba: la pernocta se preguntaba y se perdía.
+        hotel: !!r.is_overnight,
       };
       colors[key] = RT_PALETTE[i % RT_PALETTE.length];
     });

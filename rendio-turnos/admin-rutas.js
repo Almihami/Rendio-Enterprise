@@ -340,18 +340,26 @@
     return { lanes, order, unassigned };
   }
 
+  // Tarjeta del pool. Antes solo decía nombre + zona + hora: para saber de qué
+  // vuelo era, a qué teléfono llamar o qué pidió el auxiliar había que irse a
+  // Reservas. Ahora el dato está donde se toma la decisión.
   function rtAuxCard(id) {
     const a = rt.aux[id];
     const tt = a.hotel ? 'hotel' : a.type;
     const ttl = a.hotel ? 'Hotel' : (a.type === 'sal' ? 'Salida' : 'Llegada');
-    return `<div class="aux" draggable="true" data-aux="${id}" data-src="pool" title="${a.dir || a.zona}">
+    const tip = [a.dir || a.zona, a.vuelo && ('Vuelo ' + a.vuelo), a.tel, a.notas].filter(Boolean).join(' · ');
+    return `<div class="aux" draggable="true" data-aux="${id}" data-src="pool" title="${rtEsc(tip)}">
       <span class="pax">${a.pax > 1 ? '×' + a.pax : ''}</span>
       <div class="a-top"><span class="a-av" style="background:${rt.colors[id] || '#888'}">${rtIni(a.n)}</span>
-        <div class="a-nm"><b>${a.n}</b><span>${a.zona}</span></div></div>
+        <div class="a-nm"><b>${a.n}</b><span>${rtEsc(a.dir || a.zona)}</span></div></div>
       <div class="a-meta">
-        <span class="triptype ${tt}"><svg class="icon"><use href="#${a.hotel ? 'i-home' : 'i-up'}"/></svg>${ttl}</span>
+        <span class="triptype ${tt}"><svg class="icon"><use href="#${a.hotel ? 'i-home' : (a.type === 'lle' ? 'i-down' : 'i-up')}"/></svg>${ttl}</span>
+        ${a.vuelo ? `<span class="a-flight">${rtEsc(a.vuelo)}</span>` : ''}
         <span class="dl hard"><svg class="icon"><use href="#i-clock"/></svg>${a.dl}</span>
-      </div></div>`;
+      </div>
+      ${a.notas ? `<div class="a-note" title="${rtEsc(a.notas)}"><svg class="icon"><use href="#i-info"/></svg>${rtEsc(a.notas)}</div>` : ''}
+      ${a.tel ? `<a class="a-tel" href="tel:${rtEsc(a.tel)}" draggable="false"><svg class="icon"><use href="#i-phone"/></svg>${rtEsc(a.tel)}</a>` : ''}
+    </div>`;
   }
 
   function rtRenderPool() {
@@ -376,10 +384,14 @@
     const a = rt.aux[s.id];
     const overDL = s.eta > rtToMin(a.dl);
     const p = a.n.split(' ');
-    return `<div class="stop ${overDL ? 'over-dl' : ''}" draggable="true" data-aux="${s.id}" data-src="${cid}" title="${a.dir || a.zona}">
-      <div class="s-top"><span class="s-n">${idx + 1}</span><span class="s-av" style="background:${rt.colors[s.id] || '#888'}">${rtIni(a.n)}</span><span class="s-nm">${p[0]} ${p[1] ? p[1][0] + '.' : ''}</span></div>
-      <div class="s-meta"><span class="s-zona">${a.zona}</span><span class="s-eta">${rtToHM(s.eta)}</span></div>
-      <div class="s-dl"><svg class="icon" style="width:10px;height:10px"><use href="#i-clock"/></svg>pres. ${a.dl}${a.pax > 1 ? ' · ×' + a.pax : ''}</div>
+    // El title carga el detalle completo: en una parada estrecha no cabe, pero el
+    // admin necesita poder consultarlo sin abrir Reservas.
+    const tip = [a.n, a.dir || a.zona, a.vuelo && ('Vuelo ' + a.vuelo), a.tel, a.notas].filter(Boolean).join('\n');
+    return `<div class="stop ${overDL ? 'over-dl' : ''}" draggable="true" data-aux="${s.id}" data-src="${cid}" title="${rtEsc(tip)}">
+      <div class="s-top"><span class="s-n">${idx + 1}</span><span class="s-av" style="background:${rt.colors[s.id] || '#888'}">${rtIni(a.n)}</span><span class="s-nm">${rtEsc(p[0] + ' ' + (p[1] ? p[1][0] + '.' : ''))}</span></div>
+      <div class="s-meta"><span class="s-zona">${rtEsc(a.zona)}</span><span class="s-eta">${rtToHM(s.eta)}</span></div>
+      <div class="s-dl"><svg class="icon" style="width:10px;height:10px"><use href="#i-clock"/></svg>pres. ${a.dl}${a.vuelo ? ' · ' + rtEsc(a.vuelo) : ''}${a.hotel ? ' · hotel' : ''}${a.pax > 1 ? ' · ×' + a.pax : ''}</div>
+      ${a.notas ? `<div class="s-note"><svg class="icon" style="width:10px;height:10px"><use href="#i-info"/></svg>${rtEsc(a.notas)}</div>` : ''}
     </div>`;
   }
 

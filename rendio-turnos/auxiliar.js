@@ -21,7 +21,10 @@
     trackMap: null, ratingSel: 0, ratingTags: [], source: 'live',
     // Seguimiento EN VIVO (source==='live'): polling del RPC + tween del carro.
     trackPoll: null, trackTween: null, trackCar: null, trackLine: null,
-    trackLast: null, trackDestPt: null,
+    trackLast: null, trackDestPt: null, trackDestMk: null,
+    // Paradas que faltan por visitar: capa de marcadores + firma para no
+    // repintarla en cada tick de 6 s (solo cuando de verdad cambia el recorrido).
+    stopLayer: null, stopSig: null,
     // Vía REAL por carretera (OSRM) en vez de la línea recta que se veía antes.
     routePath: null, routeFrom: null, routeDestKey: null, routeAt: 0,
     // Pestaña activa del nav inferior + cancelación en 2 toques (sin confirm() nativo).
@@ -607,15 +610,28 @@
         <button class="ax-btn ax-btn-ghost" data-ax="share-eta"><svg class="icon"><use href="#i-send"/></svg>Compartir mi ETA</button>
       </div>`;
   }
-  // P4: a bordo, camino al aeropuerto (o a casa si es llegada)
-  function auxTrackOnBoard(t) {
+  // P4: a bordo. OJO: "a bordo" no significa "ya vamos al destino" — el carro
+  // puede tener casas por delante. El badge lo dice en vez de darlo por hecho.
+  function auxOnBoardBadge(t, info) {
+    const falta = auxPendingAhead(t, info);
     const dest = t.type === 'lle' ? auxShortAddr(t.address) : 'Aeropuerto MDE';
+    if (falta > 0) {
+      const quien = falta === 1 ? 'un compañero' : `${falta} compañeros`;
+      const txt = t.type === 'lle'
+        ? `Dejamos a ${quien} antes que a ti`
+        : `Recogemos a ${quien} antes de ir al aeropuerto`;
+      return `<svg class="icon"><use href="#i-clock"/></svg>${txt}`;
+    }
+    return `<svg class="icon"><use href="#i-check"/></svg>En camino a ${dest}`;
+  }
+  function auxTrackOnBoard(t) {
     return `
       ${auxTripHead('A bordo')}
       <div id="ax-track-map" class="ax-track-map"></div>
       <div class="ax-track-sheet">
-        <div class="ax-onboard-badge"><svg class="icon"><use href="#i-check"/></svg>En camino a ${dest}</div>
-        <div class="ax-eta-hero"><span id="ax-eta-label">Llegada estimada</span><b id="ax-eta-min">— min</b></div>
+        <div class="ax-onboard-badge${auxPendingAhead(t, t._info) > 0 ? ' wait' : ''}" id="ax-onboard-badge">${auxOnBoardBadge(t, t._info)}</div>
+        <div class="ax-eta-hero"><span id="ax-eta-label">${t.type === 'lle' ? 'Vas a casa' : 'Vas al aeropuerto'}</span><b id="ax-eta-min">En ruta</b></div>
+        <div class="ax-count" id="ax-count"></div>
         ${auxDriverCard(t.driver, false)}
         <div class="ax-track-fresh" id="ax-track-fresh"></div>
       </div>`;
@@ -659,6 +675,7 @@
     if (auxState.waitTick) { clearInterval(auxState.waitTick); auxState.waitTick = null; }
     if (auxState.trackMap) { auxState.trackMap.remove(); auxState.trackMap = null; }
     auxState.trackCar = null; auxState.trackLine = null; auxState.trackLast = null; auxState.trackDestPt = null;
+    auxState.trackDestMk = null; auxState.stopLayer = null; auxState.stopSig = null;
     auxState.waitFrom = null;
     // Estado de la vía real: al cambiar de vista se recalcula desde cero.
     auxState.routePath = null; auxState.routeFrom = null; auxState.routeDestKey = null; auxState.routeAt = 0;
@@ -702,10 +719,33 @@
   }
 
   // ---------- seguimiento EN VIVO (datos reales) ----------
-  // A dónde va el carro en esta fase (para pintar el punto destino y la línea):
-  //   sal onway    → a tu dirección · sal onboard   → a MDE
-  //   lle onway    → a MDE (te recoge) · lle onboard → a tu dirección
-  function auxTrackDest(t) {
+  // Paradas que el carro todavía no ha visitado, en orden de visita (RPC 0051).
+  // De los compañeros solo llega sector + coordenada redondeada: nunca su nombre
+  // ni su dirección.
+  function auxPendingStops(t, info) {
+    if (!info || !Array.isArray(info.next_stops)) return [];
+    // En una salida, una vez a bordo mi parada ya está hecha aunque el RPC me la
+    // mande (la manda siempre para poder ubicarme en el recorrido).
+    const mineDone = t.type === 'sal' && t.status === 'onboard';
+    return info.next_stops.filter(s => s && s.lat != null && !(mineDone && s.mine));
+  }
+  // Cuántas paradas de OTROS me faltan por delante. Es lo que hace que "ya vamos
+  // al aeropuerto" sea mentira cuando uno se monta de segundo en un carro de tres.
+  //   salida  → los que faltan por recoger después de mí (remaining_after)
+  //   llegada → los que dejan antes que a mí (remaining_before)
+  function auxPendingAhead(t, info) {
+    if (!info) return 0;
+    const n = t.type === 'lle' ? info.remaining_before : info.remaining_after;
+    return typeof n === 'number' && n > 0 ? n : 0;
+  }
+  // A dónde va el carro AHORA MISMO (para pintar el punto destino y la línea).
+  // Antes esto saltaba directo al destino final del viaje; si quedaban casas por
+  // visitar, el mapa dibujaba una vía al aeropuerto que el carro no iba a tomar.
+  // La siguiente parada real es la pendiente de menor orden — sirve para las dos
+  // direcciones: en salida son recogidas, en llegada son entregas.
+  function auxTrackDest(t, info) {
+    const pend = auxPendingStops(t, info);
+    if (t.status === 'onboard' && pend.length) return { lat: pend[0].lat, lng: pend[0].lng };
     if (t.type === 'lle') return t.status === 'onboard' ? { lat: t.lat, lng: t.lng } : AUX_MDE;
     return t.status === 'onboard' ? AUX_MDE : { lat: t.lat, lng: t.lng };
   }
@@ -788,7 +828,7 @@
     auxUpdateTrackHUD(t, info);
     const el = document.getElementById('ax-track-map');
     if (!el || typeof L === 'undefined') return;
-    const d = auxTrackDest(t);
+    const d = auxTrackDest(t, info);
     const destPt = [d.lat, d.lng];
     const driverPt = info.pos ? [info.pos.lat, info.pos.lng] : null;
 
@@ -797,12 +837,22 @@
       const map = auxState.trackMap = L.map(el, { zoomControl: false, attributionControl: false });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
       auxState.trackDestPt = destPt;
-      L.circleMarker(destPt, { radius: 8, color: '#F26522', fillColor: '#F26522', fillOpacity: 1, weight: 3 }).addTo(map);
+      auxState.trackDestMk = L.circleMarker(destPt, { radius: 8, color: '#F26522', fillColor: '#F26522', fillOpacity: 1, weight: 3 }).addTo(map);
+      auxPlotStops(t, info);
       if (driverPt) { auxMountCar(driverPt, destPt); map.fitBounds([driverPt, destPt], { padding: [55, 55] }); }
       else { map.setView(destPt, 14); }
       setTimeout(() => map.invalidateSize(), 60);
       return;
     }
+    // El carro terminó una parada y arrancó para la siguiente: el destino cambia
+    // sin cambiar de pantalla, así que hay que moverlo (antes quedaba clavado en
+    // el punto del primer montaje y la vía apuntaba a donde el carro ya no iba).
+    if (auxState.trackDestPt && auxDistM(auxState.trackDestPt, destPt) > 30) {
+      auxState.trackDestPt = destPt;
+      if (auxState.trackDestMk) auxState.trackDestMk.setLatLng(destPt);
+      if (driverPt) auxState.trackMap.fitBounds([driverPt, destPt], { padding: [55, 55] });
+    }
+    auxPlotStops(t, info);
     if (!driverPt) return;                                 // aún sin ping: dejamos el destino
     if (!auxState.trackCar) {                              // el carro apareció tras el montaje
       auxMountCar(driverPt, destPt);
@@ -821,6 +871,40 @@
     // Redibuja la vía real desde donde va el carro (con freno: ver auxSyncRoute).
     auxSyncRoute(driverPt, destPt);
   }
+  // Dibuja lo que FALTA del recorrido: cada parada pendiente numerada en orden de
+  // visita y el destino final (MDE o tu casa). Antes el mapa solo tenía el carro y
+  // un punto, así que el que iba a bordo no veía por qué el viaje seguía dando vueltas.
+  function auxPlotStops(t, info) {
+    const map = auxState.trackMap; if (!map) return;
+    const pend = t.status === 'onboard' ? auxPendingStops(t, info) : [];
+    // Firma del recorrido pendiente: si no cambió, no se repinta (tick de 6 s).
+    const sig = pend.map(s => `${s.order}:${s.lat},${s.lng}`).join('|');
+    if (sig === auxState.stopSig) return;
+    auxState.stopSig = sig;
+    if (auxState.stopLayer) { map.removeLayer(auxState.stopLayer); auxState.stopLayer = null; }
+    // Sin paradas pendientes, el punto naranja de destino vuelve a ser el protagonista.
+    if (auxState.trackDestMk) {
+      auxState.trackDestMk.setStyle(pend.length ? { opacity: 0, fillOpacity: 0 } : { opacity: 1, fillOpacity: 1 });
+    }
+    if (!pend.length) return;
+    const layer = auxState.stopLayer = L.layerGroup().addTo(map);
+    pend.forEach((s, i) => {
+      const mine = !!s.mine;
+      const cls = `ax-stop${i === 0 ? ' next' : ''}${mine ? ' mine' : ''}`;
+      const icon = L.divIcon({ className: '', html: `<div class="${cls}">${mine ? '★' : i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
+      // De los compañeros solo se nombra el sector: nunca quién es ni dónde vive.
+      const label = mine ? 'Tu parada' : (s.sector ? `Recogida · ${s.sector}` : 'Otra recogida');
+      L.marker([s.lat, s.lng], { icon }).addTo(layer).bindTooltip(label, { direction: 'top', offset: [0, -14] });
+    });
+    // Destino final. En una llegada mi casa YA es una de las paradas: no se repite.
+    if (t.type !== 'sal' && pend.some(s => s.mine)) return;
+    const isApt = t.type === 'sal';
+    const finalPt = isApt ? [AUX_MDE.lat, AUX_MDE.lng] : [t.lat, t.lng];
+    if (finalPt[0] == null) return;
+    const fIcon = L.divIcon({ className: '', html: `<div class="ax-stop end">${isApt ? '✈' : '🏠'}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
+    L.marker(finalPt, { icon: fIcon }).addTo(layer).bindTooltip(isApt ? 'Aeropuerto MDE' : 'Tu casa', { direction: 'top', offset: [0, -14] });
+  }
+
   function auxMountCar(driverPt, destPt) {
     const carIcon = L.divIcon({ className: '', html: '<div class="ax-car">🚗</div>', iconSize: [30, 30], iconAnchor: [15, 15] });
     // Arranca como línea recta punteada (es lo único cierto mientras OSRM
@@ -891,6 +975,13 @@
       if (k >= 1) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
     }, 60);
   }
+  // El valor del hero va en 34px monospace: un texto largo se sale de pantalla en
+  // un móvil angosto, así que baja de tamaño en vez de desbordar.
+  function auxHero(labelEl, valEl, label, val) {
+    labelEl.textContent = label;
+    valEl.textContent = val;
+    valEl.classList.toggle('sm', val.length > 11);
+  }
   // Textos honestos (sin ETA inventado): estado + frescura del punto.
   function auxUpdateTrackHUD(t, info) {
     const arrived = info.stop_status === 'arrived';
@@ -910,15 +1001,31 @@
     if (labelEl && valEl) {
       if (t.status === 'onway') {
         // Protagonista: "Faltan X antes de ti" → "Eres el siguiente" → "Está por llegar" → "Llegó".
-        if (arrived)           { labelEl.textContent = 'Tu conductor'; valEl.textContent = '¡Llegó! 📍'; }
-        else if (near)         { labelEl.textContent = 'Tu conductor'; valEl.textContent = '¡Está por llegar!'; }
-        else if (before === 0) { labelEl.textContent = 'Eres el';      valEl.textContent = 'siguiente 🔜'; }
-        else if (before > 0)   { labelEl.textContent = 'Faltan';       valEl.textContent = `${before} antes de ti`; }
-        else                   { labelEl.textContent = 'Tu conductor'; valEl.textContent = 'En camino'; }
+        if (arrived)           auxHero(labelEl, valEl, 'Tu conductor', '¡Llegó! 📍');
+        else if (near)         auxHero(labelEl, valEl, 'Tu conductor', '¡Está por llegar!');
+        else if (before === 0) auxHero(labelEl, valEl, 'Eres el', 'siguiente 🔜');
+        else if (before > 0)   auxHero(labelEl, valEl, 'Faltan', `${before} antes de ti`);
+        else                   auxHero(labelEl, valEl, 'Tu conductor', 'En camino');
       } else {
-        labelEl.textContent = t.type === 'lle' ? 'Vas a casa' : 'Vas al aeropuerto';
-        valEl.textContent = 'En ruta';
+        // A bordo. Antes decía SIEMPRE "Vas al aeropuerto / En ruta", así que el
+        // que se montaba de segundo en un carro de tres leía que ya iban para el
+        // aeropuerto mientras el conductor seguía recogiendo gente.
+        const falta = auxPendingAhead(t, info);
+        if (falta > 0 && t.type === 'lle') {
+          auxHero(labelEl, valEl, 'Antes de ti', falta === 1 ? 'dejan a 1' : `dejan a ${falta}`);
+        } else if (falta > 0) {
+          auxHero(labelEl, valEl, 'Falta recoger', falta === 1 ? 'a 1 más' : `a ${falta} más`);
+        } else {
+          auxHero(labelEl, valEl, t.type === 'lle' ? 'Vas a casa' : 'Vas al aeropuerto', 'Sin paradas');
+        }
       }
+    }
+    // El badge de la pantalla "A bordo" se pinta una vez al render, pero el
+    // recorrido cambia debajo: se refresca en cada tick como el resto del HUD.
+    const badgeEl = document.getElementById('ax-onboard-badge');
+    if (badgeEl) {
+      badgeEl.innerHTML = auxOnBoardBadge(t, info);
+      badgeEl.classList.toggle('wait', auxPendingAhead(t, info) > 0);
     }
     if (countEl) {
       const so = info.stop_order, tot = info.total_stops;

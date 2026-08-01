@@ -1551,6 +1551,15 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #routes-ui .dl {margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:var(--ink2)}
 #routes-ui .dl.hard {color:var(--h2a)} .dl .icon{width:12px;height:12px}
 #routes-ui .aux .pax {position:absolute;top:9px;right:10px;font-size:10px;font-weight:800;color:var(--ink3)}
+  /* Contexto del auxiliar en la tarjeta: vuelo, nota al conductor y teléfono */
+#routes-ui .aux .a-flight {font-size:10px;font-weight:800;font-family:var(--mono);color:var(--ink2);background:var(--panel2);border:1px solid var(--line2);padding:2px 6px;border-radius:6px}
+#routes-ui .aux .a-note {display:flex;align-items:flex-start;gap:5px;margin-top:8px;font-size:11px;line-height:1.35;color:var(--ink2);background:var(--panel2);border-radius:8px;padding:6px 8px}
+#routes-ui .aux .a-note .icon {width:11px;height:11px;flex:0 0 auto;margin-top:2px}
+#routes-ui .aux .a-tel {display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-size:11.5px;font-weight:700;color:var(--h2a);text-decoration:none}
+#routes-ui .aux .a-tel .icon {width:12px;height:12px}
+#routes-ui .aux .a-tel:hover {text-decoration:underline}
+#routes-ui .stop .s-note {display:flex;align-items:flex-start;gap:4px;margin-top:5px;font-size:10px;line-height:1.3;color:var(--ink2);white-space:normal}
+#routes-ui .stop .s-note .icon {flex:0 0 auto;margin-top:1.5px}
 
   /* lanes */
 #routes-ui .lanes {overflow-y:auto;padding:16px;display:grid;grid-template-columns:440px minmax(0,1fr);gap:16px;align-items:start;align-content:start;min-height:0;background:var(--bg)}
@@ -2346,12 +2355,21 @@ details[open] .details-chevron { transform: rotate(180deg); }
 /* Mapa de seguimiento + hoja inferior */
 #auxiliar-ui .ax-track-map{position:absolute;top:64px;left:0;right:0;bottom:0}
 #auxiliar-ui .ax-car{font-size:24px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))}
+/* Paradas que faltan por visitar: numeradas en orden de visita. La 'next' es a
+   donde va el carro ahora; 'mine' es la tuya; 'end' el destino final del viaje. */
+#auxiliar-ui .ax-stop{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;background:var(--a-t3);border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.28)}
+#auxiliar-ui .ax-stop.next{background:var(--a-accent);transform:scale(1.15)}
+#auxiliar-ui .ax-stop.mine{background:var(--a-ok)}
+#auxiliar-ui .ax-stop.end{background:#18181B;font-size:13px}
 #auxiliar-ui .ax-track-sheet{position:absolute;left:0;right:0;bottom:0;background:var(--a-card);border-radius:22px 22px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.14);padding:18px 18px calc(18px + env(safe-area-inset-bottom));z-index:500}
 #auxiliar-ui .ax-eta-hero{text-align:center;margin-bottom:14px}
 #auxiliar-ui .ax-eta-hero span{font-size:12px;color:var(--a-t2);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
 #auxiliar-ui .ax-eta-hero b{display:block;font-size:34px;font-weight:800;letter-spacing:-.02em;font-family:'Space Mono',monospace}
+#auxiliar-ui .ax-eta-hero b.sm{font-size:23px}
 #auxiliar-ui .ax-onboard-badge{display:inline-flex;align-items:center;gap:7px;background:#E7F8F1;color:var(--a-ok);font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:999px;margin-bottom:12px}
 #auxiliar-ui .ax-onboard-badge .icon{width:14px;height:14px}
+/* A bordo pero el carro todavía tiene paradas: no es "listo", es "espera". */
+#auxiliar-ui .ax-onboard-badge.wait{background:#FEF4E2;color:#B45309}
 #auxiliar-ui .ax-driver-acts{margin-left:auto;display:flex;align-items:center;gap:10px}
 #auxiliar-ui .ax-icbtn.sm{width:38px;height:38px;color:var(--a-accent);border-color:var(--a-line)}
 /* Contador de posición en la ruta (Vas N de M · Sale HH:MM) */
@@ -2462,6 +2480,14 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #driver-ruta-ui .dr-modal.hidden{display:none}
 #driver-ruta-ui .dr-modal-head{display:flex;align-items:center;justify-content:space-between;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;font-size:16px;font-weight:700;color:var(--r-text-1,#18181B)}
 #driver-ruta-ui .dr-modal-map{flex:1;width:100%}
+/* Paradas numeradas en el mapa grande: el número es el MISMO de la lista
+   "Paradas en orden". 'next' = a donde va ahora · 'done' = ya visitada. */
+#driver-ruta-ui .dr-mk{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;background:var(--r-h2a);border:2px solid #fff;box-shadow:0 2px 7px rgba(0,0,0,.3)}
+#driver-ruta-ui .dr-mk.done{background:var(--r-text-3);opacity:.75}
+#driver-ruta-ui .dr-mk.next{background:var(--r-h2a);transform:scale(1.18);box-shadow:0 0 0 4px rgba(242,101,34,.25),0 2px 7px rgba(0,0,0,.3)}
+#driver-ruta-ui .dr-mk.apt{background:var(--r-a2h)}
+#driver-ruta-ui .dr-mk.me{background:#2563EB;font-size:15px}
+#driver-ruta-ui .dr-mk.sm{width:22px;height:22px;font-size:11px;border-width:2px}
 /* Nivel 1: mi punto azul en vivo + botón centrarme + distancia a la próxima */
 #driver-ruta-ui .dr-me{width:18px;height:18px;border-radius:50%;background:#2563EB;border:3px solid #fff;box-shadow:0 0 0 2px rgba(37,99,235,.35),0 1px 5px rgba(0,0,0,.35)}
 #driver-ruta-ui .dr-ex-chip .dr-dist{font-weight:700;text-transform:none;letter-spacing:0}
