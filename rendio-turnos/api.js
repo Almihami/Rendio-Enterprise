@@ -1491,6 +1491,21 @@
     return true;
   }
 
+  // Tiempos de viaje CON tráfico para una hora futura (Edge Function traffic-matrix
+  // → TomTom). La llave vive en el servidor: si viajara en la PWA, cualquiera la
+  // leería del código y gastaría la cuota.
+  // Devuelve null si no está configurada o falla: el asignador cae a OSRM solo.
+  async function trafficMatrix(points, departAt) {
+    if (!points || points.length < 2) return null;
+    try {
+      const { data, error } = await sb.functions.invoke('traffic-matrix', {
+        body: { points, departAt: departAt || undefined },
+      });
+      if (error) return null;
+      return (data && Array.isArray(data.durations)) ? data : null;
+    } catch (_) { return null; }
+  }
+
   // -------------------- Chat del traslado (0052) --------------------
   // Hilo entre el auxiliar y su conductor, atado a UNA reserva. El botón de
   // llamar se queda: el chat es para lo que conviene que quede escrito
@@ -1873,5 +1888,6 @@
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
     sendDriverLocation, listLiveOperation,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
+    trafficMatrix,
   };
 })();

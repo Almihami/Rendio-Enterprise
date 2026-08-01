@@ -32,8 +32,12 @@
     TURNAROUND: 8,       // min en MDE entre entregar y arrancar la siguiente vuelta
     DEPLANE: 20,         // min entre que el vuelo aterriza y el pasajero sale (migración+maletas)
     CUSHION: 15,         // min extra de margen al programar la salida de cada vuelta
-    etaSource: null,     // 'osrm' | 'haversine' — de dónde salieron los tiempos
-    M: null, // matriz de tiempos reales (min) entre depot/aeropuerto/paradas (OSRM o haversine)
+    etaSource: null,     // 'tomtom' | 'osrm' | 'haversine' — de dónde salieron los tiempos
+    M: null, // matriz de tiempos reales (min) entre depot/aeropuerto/paradas
+    // Cuando los tiempos vienen de TomTom YA traen el tráfico de la hora en que
+    // se va a rodar: aplicarles además el TRAFFIC_FACTOR sería contarlo dos veces.
+    mHasTraffic: false,
+    trafficDelay: 0,     // min de demora por tráfico en la peor pareja (para avisar)
   };
 
   function rtCfg() {
@@ -127,10 +131,12 @@
   // Se multiplica por TRAFFIC_FACTOR: OSRM devuelve flujo libre (sin tráfico,
   // sin lluvia, sin madrugada); el factor lo aterriza. Prioridad #1 = nunca tarde.
   function rtLegMin(aKey, bKey) {
-    const raw = (rt.M && rt.M[aKey] && rt.M[aKey][bKey] != null)
-      ? rt.M[aKey][bKey]
-      : rtHaversineMin(rtCoordsOf(aKey), rtCoordsOf(bKey));
-    return raw * rt.TRAFFIC_FACTOR;
+    const real = rt.M && rt.M[aKey] && rt.M[aKey][bKey] != null;
+    const raw = real ? rt.M[aKey][bKey] : rtHaversineMin(rtCoordsOf(aKey), rtCoordsOf(bKey));
+    // Con tiempos de TomTom el tráfico ya está dentro; el factor solo corrige a
+    // OSRM/haversine, que calculan como si la vía estuviera libre. Si el valor
+    // salió del respaldo haversine (celda sin datos), sí lleva factor.
+    return (rt.mHasTraffic && real) ? raw : raw * rt.TRAFFIC_FACTOR;
   }
 
   // Evalúa una VUELTA (lane): ETAs por parada, llegada a MDE, holgura y estado.
@@ -181,12 +187,65 @@
     return { rut, onTime, routes, late };
   }
 
+  // La hora para la que hay que pedir el tráfico: la salida MÁS TEMPRANA que se
+  // está planeando, no "ahora". Ese es todo el punto — a las 4pm preguntar cómo
+  // va a estar la vía a las 5pm, para saber antes de salir si la vuelta cuadra.
+  // Si esa hora ya pasó (se está replaneando sobre la marcha) se devuelve null y
+  // TomTom usa su histórico general.
+  function rtDepartAtISO() {
+    if (!rt.day) return null;
+    const mins = rt.lanes.map(l => rtToMin(l.start || '00:00')).filter(n => !isNaN(n));
+    if (!mins.length) return null;
+    const m = Math.min(...mins);
+    const iso = `${rt.day}T${rtToHM(m)}:00-05:00`;   // Colombia (sin horario de verano)
+    const t = new Date(iso).getTime();
+    if (isNaN(t) || t < Date.now() + 5 * 60000) return null;  // ya pasó o es inminente
+    return iso;
+  }
+
   // ---- Solver real: matriz de tiempos + agrupar por sector + mejor orden ----
   // Construye la matriz de tiempos (min) entre depot, aeropuerto y todas las
-  // paradas. Intenta OSRM (tiempos reales por carretera); si falla, haversine.
+  // paradas, en cascada de mejor a peor:
+  //   1) TomTom  → tiempos CON tráfico para la hora en que se va a rodar. Es lo
+  //      que permite ver a las 4pm que la vuelta de las 5pm ya no cuadra.
+  //   2) OSRM    → tiempos reales por carretera, pero de vía libre.
+  //   3) haversine → línea recta ×1.4. Último recurso.
+  // Los niveles 2 y 3 se corrigen con TRAFFIC_FACTOR; el 1 no (ver rtLegMin).
   async function rtBuildMatrix() {
     const keys = ['depot', 'airport', ...Object.keys(rt.aux)];
     const pts = keys.map(rtCoordsOf);
+    rt.mHasTraffic = false; rt.trafficDelay = 0;
+
+    // 1) TomTom, vía Edge Function (la llave vive en el servidor, no en la PWA).
+    if (window.Api && Api.trafficMatrix) {
+      try {
+        const departAt = rtDepartAtISO();
+        const r = await Api.trafficMatrix(pts.map(p => ({ lat: p.lat, lng: p.lng })), departAt);
+        if (r && Array.isArray(r.durations)) {
+          const M = {};
+          let peor = 0, celdas = 0;
+          keys.forEach((ka, i) => {
+            M[ka] = {};
+            keys.forEach((kb, jx) => {
+              const v = r.durations[i] ? r.durations[i][jx] : null;
+              // Celda que TomTom no resolvió: se rellena con haversine y esa SÍ
+              // lleva factor de tráfico (rtLegMin lo distingue).
+              M[ka][kb] = (v == null) ? rtHaversineMin(pts[i], pts[jx]) : v;
+              if (v != null) celdas++;
+              const d = r.delays && r.delays[i] ? r.delays[i][jx] : 0;
+              if (typeof d === 'number' && d > peor) peor = d;
+            });
+          });
+          // Si TomTom resolvió menos de la mitad, no vale la pena: mejor OSRM
+          // completo que una matriz con huecos rellenados a ojo.
+          if (celdas >= keys.length * keys.length / 2) {
+            rt.M = M; rt.mHasTraffic = true; rt.trafficDelay = peor;
+            return 'tomtom';
+          }
+        }
+      } catch (e) { /* sin tráfico: cae a OSRM */ }
+    }
+
     try {
       const coords = pts.map(p => `${p.lng},${p.lat}`).join(';');
       const url = `https://router.project-osrm.org/table/v1/driving/${coords}?annotations=duration`;
@@ -517,7 +576,16 @@
     if (de) {
       const modelo = `manejo ×${rt.TRAFFIC_FACTOR} tráfico + ${rt.SERVICE_MIN} min/parada + ${rt.AIRPORT_BUFFER} min entrega`;
       if (!rt.etaSource) { de.querySelector('b').textContent = '—'; de.title = 'Pulsa Optimizar para calcular tiempos reales.'; de.className = 'ds'; }
-      else if (rt.etaSource === 'osrm') { de.querySelector('b').textContent = 'OSRM'; de.title = `Tiempos por carretera real (OSRM): ${modelo}.`; de.className = 'ds ok'; }
+      else if (rt.etaSource === 'tomtom') {
+        // El único caso en que los tiempos ya traen el trancón de esa hora: se
+        // dice, porque cambia cuánta confianza merece el plan.
+        de.querySelector('b').textContent = 'Tráfico';
+        de.title = `Tiempos CON tráfico previsto para la hora de salida (TomTom)`
+          + `${rt.trafficDelay ? ` · hasta ${rt.trafficDelay} min de demora por trancón en el tramo más cargado` : ''}`
+          + ` + ${rt.SERVICE_MIN} min/parada + ${rt.AIRPORT_BUFFER} min entrega. No se aplica el factor ×${rt.TRAFFIC_FACTOR}: el tráfico ya está contado.`;
+        de.className = 'ds ok';
+      }
+      else if (rt.etaSource === 'osrm') { de.querySelector('b').textContent = 'OSRM'; de.title = `Tiempos por carretera real (OSRM), SIN tráfico en vivo: ${modelo}.`; de.className = 'ds ok'; }
       else { de.querySelector('b').textContent = 'Estimado'; de.title = `Sin conexión a OSRM — estimado por distancia (30 km/h, ×1.4 vías): ${modelo}.`; de.className = 'ds warn'; }
     }
   }
@@ -531,7 +599,7 @@
     const iv = setInterval(() => { i++; if (i < RT_STEPS.length) $('#rt-ovlStep').textContent = RT_STEPS[i]; }, 480);
     // Tiempos reales (OSRM) + un piso de ~900ms para que se vea el proceso.
     const [src] = await Promise.all([rtBuildMatrix(), new Promise(r => setTimeout(r, 900))]);
-    rt.etaSource = src; // 'osrm' = carretera real | 'haversine' = estimado en línea recta
+    rt.etaSource = src; // 'tomtom' = con tráfico | 'osrm' = carretera real | 'haversine' = línea recta
     const day = rtSolveDay(); // oleadas → vueltas encadenadas entre los carros
     clearInterval(iv); $('#rt-ovl').classList.remove('show');
     rt.lanes = day.lanes;
@@ -543,7 +611,8 @@
     const saveBtn = $('#rt-saveBtn'); if (saveBtn) saveBtn.style.display = (rt.source === 'live' && rt.day) ? '' : 'none';
     rtRenderAll();
     const s = rtDayStats();
-    const how = src === 'osrm' ? 'tiempos reales OSRM' : 'distancia estimada';
+    const how = src === 'tomtom' ? 'tiempos con tráfico previsto'
+      : src === 'osrm' ? 'tiempos reales OSRM' : 'distancia estimada';
     const vueltas = rt.lanes.length;
     toast(s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ajustada, revísala.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`);
   }
