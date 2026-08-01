@@ -1491,14 +1491,18 @@
     return true;
   }
 
-  // Tiempos de viaje CON tráfico para una hora futura (Edge Function traffic-matrix
+  // Tiempos de viaje CON tráfico para una hora futura (Edge Function TOMTOM_API_KEY
   // → TomTom). La llave vive en el servidor: si viajara en la PWA, cualquiera la
   // leería del código y gastaría la cuota.
   // Devuelve null si no está configurada o falla: el asignador cae a OSRM solo.
   async function trafficMatrix(points, departAt) {
     if (!points || points.length < 2) return null;
     try {
-      const { data, error } = await sb.functions.invoke('traffic-matrix', {
+      // El nombre de la función es raro a propósito: al desplegarla se le puso
+      // el del secret y en Supabase el slug no se puede renombrar (habría que
+      // borrarla y recrearla). NO guarda una llave: calcula la matriz con
+      // tráfico. Ver el encabezado de supabase/functions/TOMTOM_API_KEY.
+      const { data, error } = await sb.functions.invoke('TOMTOM_API_KEY', {
         body: { points, departAt: departAt || undefined },
       });
       if (error) return null;
