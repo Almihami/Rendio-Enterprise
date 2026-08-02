@@ -1495,15 +1495,23 @@
   // → TomTom). La llave vive en el servidor: si viajara en la PWA, cualquiera la
   // leería del código y gastaría la cuota.
   // Devuelve null si no está configurada o falla: el asignador cae a OSRM solo.
-  async function trafficMatrix(points, departAt) {
+  // mode: 'live' (lo que está pasando AHORA, incluye accidentes) | 'historical'
+  // (cómo suele estar esa vía a esa hora). El histórico sirve para planear
+  // mañana; el vivo es el único que ve un choque de hace diez minutos.
+  async function trafficMatrix(points, departAt, mode) {
     if (!points || points.length < 2) return null;
     try {
       // El nombre de la función es raro a propósito: al desplegarla se le puso
       // el del secret y en Supabase el slug no se puede renombrar (habría que
       // borrarla y recrearla). NO guarda una llave: calcula la matriz con
       // tráfico. Ver el encabezado de supabase/functions/TOMTOM_API_KEY.
+      const live = mode === 'live';
       const { data, error } = await sb.functions.invoke('TOMTOM_API_KEY', {
-        body: { points, departAt: departAt || undefined },
+        // El tráfico en vivo va siempre contra "ahora": pedirlo para una hora
+        // futura no tiene sentido y TomTom lo rechaza.
+        body: live
+          ? { points, departAt: 'now', traffic: 'live' }
+          : { points, departAt: departAt || undefined },
       });
       if (error) return null;
       return (data && Array.isArray(data.durations)) ? data : null;

@@ -39,6 +39,7 @@
     mHasTraffic: false,
     trafficDelay: 0,     // min de demora por tráfico en la peor pareja (para avisar)
     _mCache: null,       // última matriz de TomTom {key, at, data} — ver rtBuildMatrix
+    trafficMode: null,   // 'live' | 'historical' — con qué tráfico se calculó
   };
 
   function rtCfg() {
@@ -188,6 +189,10 @@
     return { rut, onTime, routes, late };
   }
 
+  // Si la vuelta sale dentro de menos de esto, se pide tráfico EN VIVO: a menos
+  // de una hora lo que está pasando en la vía pesa más que el patrón histórico.
+  const RT_LIVE_WINDOW_MIN = 60;
+
   // La hora para la que hay que pedir el tráfico: la salida MÁS TEMPRANA que se
   // está planeando, no "ahora". Ese es todo el punto — a las 4pm preguntar cómo
   // va a estar la vía a las 5pm, para saber antes de salir si la vuelta cuadra.
@@ -228,12 +233,24 @@
     if (window.Api && Api.trafficMatrix) {
       try {
         const departAt = rtDepartAtISO();
+        // Vivo vs histórico: el histórico dice "esta vía suele estar así a esta
+        // hora" y sirve para planear mañana, pero NO ve un accidente de hace
+        // diez minutos. Medido en el corredor Rionegro→MDE durante un choque
+        // real: histórico 16 min, en vivo 36. Planear con el histórico en ese
+        // momento habría hecho perder el vuelo por 20 minutos.
+        // Por eso: si la salida es inminente (o ya pasó), manda el tráfico real.
+        const mins = departAt ? (new Date(departAt).getTime() - Date.now()) / 60000 : 0;
+        const mode = (!departAt || mins <= RT_LIVE_WINDOW_MIN) ? 'live' : 'historical';
         const coords = pts.map(p => ({ lat: p.lat, lng: p.lng }));
-        const ck = coords.map(p => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join('|') + '#' + (departAt || 'any');
+        const ck = coords.map(p => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`).join('|')
+          + '#' + (mode === 'live' ? 'live' : (departAt || 'any'));
         const hit = rt._mCache;
-        const r = (hit && hit.key === ck && Date.now() - hit.at < 10 * 60000)
+        // El tráfico en vivo cambia solo: se cachea 3 minutos, no 10.
+        const ttl = (mode === 'live' ? 3 : 10) * 60000;
+        const r = (hit && hit.key === ck && Date.now() - hit.at < ttl)
           ? hit.data
-          : await Api.trafficMatrix(coords, departAt);
+          : await Api.trafficMatrix(coords, departAt, mode);
+        rt.trafficMode = mode;
         if (r && Array.isArray(r.durations)) {
           rt._mCache = { key: ck, at: (hit && hit.key === ck) ? hit.at : Date.now(), data: r };
           const M = {};
@@ -591,10 +608,16 @@
       const modelo = `manejo ×${rt.TRAFFIC_FACTOR} tráfico + ${rt.SERVICE_MIN} min/parada + ${rt.AIRPORT_BUFFER} min entrega`;
       if (!rt.etaSource) { de.querySelector('b').textContent = '—'; de.title = 'Pulsa Optimizar para calcular tiempos reales.'; de.className = 'ds'; }
       else if (rt.etaSource === 'tomtom') {
-        // El único caso en que los tiempos ya traen el trancón de esa hora: se
-        // dice, porque cambia cuánta confianza merece el plan.
-        de.querySelector('b').textContent = 'Tráfico';
-        de.title = `Tiempos CON tráfico previsto para la hora de salida (TomTom)`
+        // El único caso en que los tiempos ya traen el trancón: se dice, porque
+        // cambia cuánta confianza merece el plan. Y se distingue en vivo de
+        // previsto: "hay un choque ahora" no es lo mismo que "suele congestionarse".
+        const vivo = rt.trafficMode === 'live';
+        de.querySelector('b').textContent = vivo ? 'En vivo' : 'Tráfico';
+        de.title = vivo
+          ? `Tiempos con el tráfico REAL de este momento (TomTom, incluye accidentes y cierres)`
+            + ` + ${rt.SERVICE_MIN} min/parada + ${rt.AIRPORT_BUFFER} min entrega.`
+            + ` No se aplica el factor ×${rt.TRAFFIC_FACTOR}: el tráfico ya está contado.`
+          : `Tiempos CON tráfico previsto para la hora de salida (TomTom)`
           + `${rt.trafficDelay ? ` · hasta ${rt.trafficDelay} min de demora por trancón en el tramo más cargado` : ''}`
           + ` + ${rt.SERVICE_MIN} min/parada + ${rt.AIRPORT_BUFFER} min entrega. No se aplica el factor ×${rt.TRAFFIC_FACTOR}: el tráfico ya está contado.`;
         de.className = 'ds ok';
