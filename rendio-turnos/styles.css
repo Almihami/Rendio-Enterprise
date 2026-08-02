@@ -1891,10 +1891,15 @@ details[open] .details-chevron { transform: rotate(180deg); }
 }
 
 /* ----- Layout: sidebar (col 1) + breadcrumb (fila 1) + main (fila 2) ----- */
+/* Header del shell (conductor): es sticky top-0, así que en iPhone instalado
+   quedaba pegado bajo la barra de estado junto con su botón Salir. */
+#app-header{padding-top:env(safe-area-inset-top,0px)}
+
 #app-shell.admin-shell{
   display:grid;
   grid-template-columns:var(--adm-side) minmax(0,1fr);
-  grid-template-rows:56px minmax(0,1fr);
+  /* La fila de la barra superior crece con el inset del iPhone (0 sin notch). */
+  grid-template-rows:calc(56px + env(safe-area-inset-top,0px)) minmax(0,1fr);
   height:100vh; height:100dvh; overflow:hidden;
 }
 #app-shell.admin-shell.collapsed{--adm-side:72px}
@@ -1908,7 +1913,9 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #app-shell.admin-shell > #app-main{grid-column:2;grid-row:2;overflow-y:auto;min-height:0;min-width:0}
 
 /* ===== SIDEBAR ===== */
-#admin-side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;overflow:hidden;font-family:var(--font);color:var(--ink)}
+/* En móvil el sidebar es fixed de borde a borde: sin estos insets su cabecera
+   se mete bajo la barra de estado y el "Salir" del pie bajo el home indicator. */
+#admin-side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;overflow:hidden;font-family:var(--font);color:var(--ink);padding-top:env(safe-area-inset-top,0px)}
 #admin-side .icon{width:18px;height:18px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
 /* Todos los SVG del sidebar son iconos de línea (grupo .gi, módulo .ni-ic, etc.): nunca rellenos. */
 #admin-side svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -1970,7 +1977,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .admin-shell.collapsed #admin-side .nav-i:hover[data-tip]::after{opacity:1}
 
 /* footer */
-#admin-side .sfoot{flex:0 0 auto;border-top:1px solid var(--line);padding:10px 12px}
+#admin-side .sfoot{flex:0 0 auto;border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px))}
 #admin-side .sf-i{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;cursor:pointer;color:var(--ink2);transition:.13s}
 #admin-side .sf-i:hover{background:var(--panel2);color:var(--ink)}
 #admin-side .sf-i .ni-ic{width:19px;height:19px;color:var(--ink3);display:grid;place-items:center}
@@ -1979,7 +1986,10 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .admin-shell.collapsed #admin-side .sf-i .ni-tx{display:none}
 
 /* ===== BREADCRUMB (barra superior del main) ===== */
-.adm-mhead{display:flex;align-items:center;gap:14px;padding:0 22px;background:var(--panel);border-bottom:1px solid var(--line);font-family:var(--font)}
+/* El padding superior baja la barra por debajo del reloj/isla del iPhone: con
+   viewport-fit=cover el contenido llega hasta el borde y el botón Salir quedaba
+   tapado por la barra de estado. En pantallas sin notch el inset es 0. */
+.adm-mhead{display:flex;align-items:center;gap:14px;padding:env(safe-area-inset-top,0px) 22px 0;background:var(--panel);border-bottom:1px solid var(--line);font-family:var(--font)}
 .adm-mhead .icon{width:18px;height:18px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
 .adm-mhead .crumb{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--ink3);font-weight:600}
 .adm-mhead .crumb b{color:var(--ink);font-weight:800;font-size:15px;letter-spacing:-.01em}
@@ -2226,8 +2236,9 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #auxiliar-ui .ax-spacer{height:96px}
 #auxiliar-ui .hidden{display:none}
 
-/* Header */
-#auxiliar-ui .ax-head{display:flex;align-items:flex-start;justify-content:space-between;padding:22px 18px 10px}
+/* Header — #auxiliar-root es fixed inset:0, así que el encabezado arranca en el
+   borde superior de la pantalla: sin el inset queda bajo el reloj del iPhone. */
+#auxiliar-ui .ax-head{display:flex;align-items:flex-start;justify-content:space-between;padding:calc(22px + env(safe-area-inset-top,0px)) 18px 10px}
 #auxiliar-ui .ax-head h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:2px 0 0}
 #auxiliar-ui .ax-hi{font-size:13px;color:var(--a-t2);font-weight:500}
 #auxiliar-ui .ax-avatar{width:42px;height:42px;border-radius:50%;background:var(--a-accent);color:#fff;font-weight:800;font-size:16px;border:none;cursor:pointer}
