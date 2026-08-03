@@ -6,7 +6,7 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v76';
+const CACHE_VERSION = 'rendio-turnos-v77';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
@@ -30,6 +30,11 @@ const APP_SHELL = [
   '/driver-perfil.js',
   '/ui-push.js',
   '/styles.css',
+  // Librerías propias (antes venían de CDNs externos que el SW no podía cachear:
+  // si la red del usuario los bloqueaba o fallaba, la app cargaba sin estilos y
+  // sin poder hacer login). Ahora son del mismo origen → entran al precache.
+  '/vendor/tailwind-3.4.17.js',
+  '/vendor/supabase-js-2.111.0.min.js',
   '/manifest.json',
   '/assets/logo.png',
   '/assets/logo-icon.png',
