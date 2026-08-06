@@ -336,6 +336,12 @@
     return [...g.values()];
   }
   const rtPaxOf = (ids) => ids.reduce((s, id) => s + ((rt.aux[id] && rt.aux[id].pax) || 1), 0);
+  // La operación habla en múltiplos de 5: "recoge a las 3:15", no "a las 3:13".
+  // El lado seguro depende del tipo: en una SALIDA salir antes es gratis, así que
+  // va hacia abajo; en una LLEGADA adelantarse es plantarse en el terminal antes
+  // de que el pasajero salga, así que va hacia arriba.
+  const rtRedondea5 = (m) => Math.floor(m / 5) * 5;
+  const rtRedondea5Arr = (m) => Math.ceil(m / 5) * 5;
   // Coherencia geográfica: cuántas veces la ruta SALE de un sector y luego
   // VUELVE a él (San Antonio → Abreo → San Antonio = 1 reentrada). A igualdad
   // práctica de tiempo, la ruta que no zigzaguea es más clara para el
@@ -448,6 +454,11 @@
       const cand = base.concat(extra);
       if (rtPaxOf(cand) > capMax) return false;
       // ¿un carro sale más barato que dos? (comparten el tramo al aeropuerto)
+      //
+      // Se probó añadir un segundo freno —"el desvío no puede costar más que la
+      // ventana"— para evitar la vuelta tarde de las 13:00. MEDIDO: empeora.
+      // Bloquea fusiones que sí servían, los carros quedan más ocupados y los
+      // tarde suben de 0 a 3. La prueba económica sola es mejor freno.
       return durDe(tipo, cand) <= durDe(tipo, base) + durDe(tipo, extra);
     };
     const W = rt.MERGE_WINDOW;
@@ -456,10 +467,17 @@
     while (pend.length) {
       const base = pend.shift();
       const g = { type: base.type, dlMin: base.dlMin, ids: base.ids.slice() };
+      // El corte natural está donde se ABRE UN HUECO entre hora y hora, no a una
+      // distancia fija de la primera. Mirando el día: 3:30 · 3:30 · 3:40 · 3:50 ·
+      // 4:00 · 4:00 son saltos de 10 min —un solo racimo, que el cupo parte en
+      // 4+2— y el corte de verdad viene en 4:00 → 4:30. Midiendo desde la primera
+      // hora, Jesús Taborda (3:50) quedaba a 20 min de Juan Martínez (3:30) y se
+      // caía del grupo que la operación arma sin pensarlo.
+      let ultimo = g.dlMin;                          // hora de la última absorbida
       if (W > 0) {
         for (let i = 0; i < pend.length; i++) {
           const w = pend[i];
-          if (w.dlMin - g.dlMin > W) break;          // ordenadas por hora: las que siguen, peor
+          if (w.dlMin - ultimo > W) break;           // hueco: aquí corta el racimo
           if (w.type !== g.type) continue;
           // En una LLEGADA el carro no puede recoger antes de que aterricen TODOS,
           // así que el que aterrizó primero espera esa diferencia. Se acota con el
@@ -467,6 +485,7 @@
           if (g.type === 'lle' && w.dlMin - g.dlMin > Math.min(W, rt.MARGIN_TIGHT)) continue;
           if (!fusionables(g.type, g.ids, w.ids)) continue;
           g.ids = g.ids.concat(w.ids);
+          ultimo = w.dlMin;                          // el racimo sigue desde aquí
           // La llegada se rige por el ÚLTIMO que aterriza; la salida, por el
           // primero que debe presentarse (ya es dlMin, no cambia).
           if (g.type === 'lle') g.dlMin = Math.max(g.dlMin, w.dlMin);
@@ -511,7 +530,7 @@
         if (!best || best.wait > 15) { unassigned.push(...tr.ids); return; }
         const s = best.s; s.vuelta++;
         const plan = rtHomesPlan(tr.ids);
-        const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'lle', start: rtToHM(best.pickup), origin: 'airport', landing: rtToHM(tr.dlMin) };
+        const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'lle', start: rtToHM(rtRedondea5Arr(best.pickup)), origin: 'airport', landing: rtToHM(tr.dlMin) };
         lanes.push(lane);
         order[lane.id] = plan.ord;
         s.avail = best.pickup + plan.dur + 2; // termina en la última casa
@@ -530,7 +549,10 @@
       });
       if (!best || best.late > 15) { unassigned.push(...tr.ids); return; }
       const s = best.s; s.vuelta++;
-      const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'sal', start: rtToHM(best.depart), origin: best.origin };
+      // Hora redonda, como la maneja la operación: las 46 horas del plan manual
+      // de Julián son múltiplos de 5. Se redondea HACIA ABAJO — salir un par de
+      // minutos antes es gratis, salir después se come la holgura.
+      const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'sal', start: rtToHM(rtRedondea5(best.depart)), origin: best.origin };
       lanes.push(lane);
       order[lane.id] = rtBestOrder(tr.ids, best.origin);
       // tras entregar queda en MDE, disponible para la siguiente vuelta
