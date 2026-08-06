@@ -595,7 +595,13 @@
     const sel = cols => sb.from('app_settings').select(cols).eq('id', 'singleton').maybeSingle();
     // Fallback en cascada: de más completo a más básico, así el código tolera
     // migraciones no aplicadas (0014 reopen_*, 0025 coord_slots/shift_hours, 0027 auto_close_hours).
-    let { data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours');
+    // Los parámetros de ruteo NO se estaban seleccionando: el tablero leía
+    // state.settings.route_* y siempre le daba undefined, así que caía a los
+    // valores fijos del código y "configurable desde Ajustes" era mentira.
+    const ROUTE_COLS = ', route_service_min, route_airport_buffer_min, route_traffic_factor, route_turnaround_min, route_deplane_min, route_depart_cushion_min, route_merge_window_min, route_default_capacity, route_airport_leg_min, route_margin_tight_min';
+    const BASE_COLS = 'morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours';
+    let { data, error } = await sel(BASE_COLS + ROUTE_COLS);
+    if (error) ({ data, error } = await sel(BASE_COLS));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours'));
@@ -633,7 +639,12 @@
     // Intenta con las columnas nuevas; cae en cascada si la migración no está
     // (0050 aux_wait/aux_lead → 0037 reservation_idle/strike_limit → 0027 auto_close_hours → 0025 coord/shift → base).
     const full = { ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit, fast_start_enabled: s.fast_start_enabled, fast_start_from_hour: s.fast_start_from_hour, fast_start_to_hour: s.fast_start_to_hour, inspection_grace_minutes: s.inspection_grace_minutes };
-    let { error } = await upd({ ...full, aux_wait_minutes: s.aux_wait_minutes, aux_min_lead_hours: s.aux_min_lead_hours });
+    const conAux = { ...full, aux_wait_minutes: s.aux_wait_minutes, aux_min_lead_hours: s.aux_min_lead_hours };
+    // 0056: parámetros del optimizador. Un escalón más de la cascada.
+    let { error } = await upd({ ...conAux,
+      route_merge_window_min: s.route_merge_window_min, route_service_min: s.route_service_min,
+      route_traffic_factor: s.route_traffic_factor, route_airport_buffer_min: s.route_airport_buffer_min });
+    if (error) ({ error } = await upd(conAux));
     if (error) ({ error } = await upd(full));
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit }));
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours }));
@@ -1289,7 +1300,11 @@
         .is('cancelled_at', null)
         .gte('required_arrival_at', floor)
         .order('required_arrival_at', { ascending: true });
-      let res = await q(COLS + ', is_overnight, is_firm');
+      // La residencia (0055) es lo que permite tratar una portería como UNA
+      // parada: dos tripulantes del mismo conjunto son un solo frenazo. Va en
+      // su propio reintento porque main todavía no tiene la 0055.
+      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name)');
+      if (res.error) res = await q(COLS + ', is_overnight, is_firm');
       if (res.error) res = await q(COLS);
       if (res.error) throw res.error;
       rows = res.data;
@@ -1310,7 +1325,13 @@
       const parts = (r.pickup_address || '').split(',');
       aux[key] = {
         n: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar',
-        zona: (parts.length > 1 ? parts[parts.length - 1] : parts[0] || '—').trim(),
+        // La zona sale del catálogo cuando existe. Partir la dirección por comas
+        // era adivinar: si el auxiliar escribía "…, El Porvenir, Rionegro" la
+        // zona de todos quedaba "Rionegro" y el agrupamiento no servía de nada.
+        zona: r.residences?.name
+          || (parts.length > 1 ? parts[parts.length - 1] : parts[0] || '—').trim(),
+        // Llave de PARADA: dos reservas de la misma residencia son una portería.
+        resId: r.residence_id || null,
         dir: r.pickup_address || '',
         lat: r.pickup_latitude, lng: r.pickup_longitude,
         dl: rtHHMM(r.required_arrival_at),

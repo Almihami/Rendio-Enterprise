@@ -357,6 +357,11 @@
     if ($('#setting-inspection-grace')) $('#setting-inspection-grace').value = state.settings.inspection_grace_minutes != null ? state.settings.inspection_grace_minutes : 90;
     if ($('#setting-aux-wait')) $('#setting-aux-wait').value = state.settings.aux_wait_minutes != null ? state.settings.aux_wait_minutes : 5;
     if ($('#setting-aux-lead')) $('#setting-aux-lead').value = state.settings.aux_min_lead_hours != null ? state.settings.aux_min_lead_hours : 6;
+    const S = state.settings;
+    if ($('#setting-route-merge')) $('#setting-route-merge').value = S.route_merge_window_min != null ? S.route_merge_window_min : 30;
+    if ($('#setting-route-service')) $('#setting-route-service').value = S.route_service_min != null ? S.route_service_min : 3;
+    if ($('#setting-route-traffic')) $('#setting-route-traffic').value = S.route_traffic_factor != null ? S.route_traffic_factor : 1.05;
+    if ($('#setting-route-buffer')) $('#setting-route-buffer').value = S.route_airport_buffer_min != null ? S.route_airport_buffer_min : 10;
     renderPriorityList();
     renderRulesEditor();
     renderVehiclesSettings();
@@ -708,6 +713,24 @@
       aux_min_lead_hours: (() => {
         const n = parseInt($('#setting-aux-lead') && $('#setting-aux-lead').value, 10);
         return isNaN(n) ? 6 : Math.min(72, Math.max(0, n));
+      })(),
+      // Optimizador. Igual que aux_min_lead_hours, 0 es un valor VÁLIDO
+      // (0 = no juntar oleadas), así que `|| default` lo pisaría.
+      route_merge_window_min: (() => {
+        const n = parseInt($('#setting-route-merge') && $('#setting-route-merge').value, 10);
+        return isNaN(n) ? 30 : Math.min(120, Math.max(0, n));
+      })(),
+      route_service_min: (() => {
+        const n = parseInt($('#setting-route-service') && $('#setting-route-service').value, 10);
+        return isNaN(n) ? 3 : Math.min(20, Math.max(0, n));
+      })(),
+      route_traffic_factor: (() => {
+        const n = parseFloat($('#setting-route-traffic') && $('#setting-route-traffic').value);
+        return isNaN(n) ? 1.05 : Math.min(2, Math.max(1, n));
+      })(),
+      route_airport_buffer_min: (() => {
+        const n = parseInt($('#setting-route-buffer') && $('#setting-route-buffer').value, 10);
+        return isNaN(n) ? 10 : Math.min(45, Math.max(0, n));
       })(),
     };
     try {

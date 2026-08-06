@@ -609,6 +609,16 @@
                 <div class="set-field"><label>Espera en el punto (min)</label><input id="setting-aux-wait" class="set-input" type="number" min="1" max="60" /><div class="set-hint">Cuánto espera el conductor al auxiliar en la recogida. El auxiliar ve la misma cuenta regresiva, y "No se presentó" solo se habilita al vencerse. Default 5.</div></div>
                 <div class="set-field"><label>Anticipación mínima (horas)</label><input id="setting-aux-lead" class="set-input" type="number" min="0" max="72" /><div class="set-hint">Por debajo de esto se le avisa al auxiliar y el traslado queda marcado como "pedido tarde" en Reservas. No se bloquea: la operación tiene urgencias. Default 6.</div></div>
               </div>
+              <div class="set-divider" style="margin:16px 0 4px"></div>
+              <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Optimizador de rutas</p>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Juntar oleadas dentro de (min)</label><input id="setting-route-merge" class="set-input" type="number" min="0" max="120" /><div class="set-hint">Quien se presenta hasta estos minutos después puede subirse al mismo carro. Solo los junta si un carro sale más barato que dos, así que un desvío caro se rechaza solo. <b>0 = no juntar</b> (una vuelta por hora exacta). Default 30.</div></div>
+                <div class="set-field"><label>Minutos por portería</label><input id="setting-route-service" class="set-input" type="number" min="0" max="20" /><div class="set-hint">Lo que se pierde el carro en cada parada. Es por portería, no por persona: dos del mismo conjunto son un solo frenazo. Default 3.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Factor de tráfico</label><input id="setting-route-traffic" class="set-input" type="number" min="1" max="2" step="0.01" /><div class="set-hint">Multiplica el manejo cuando el tiempo sale de OSRM, que calcula con la vía libre. No aplica con TomTom (ese ya trae el tráfico). Default 1.05, calibrado contra la programación manual.</div></div>
+                <div class="set-field"><label>Colchón al entregar en MDE (min)</label><input id="setting-route-buffer" class="set-input" type="number" min="0" max="45" /><div class="set-hint">Bajar maletas y entrar al terminal. Llegar justo a la hora de presentación es llegar tarde. Default 10.</div></div>
+              </div>
               <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
             </div>
           </div>

@@ -32,6 +32,7 @@
     TURNAROUND: 8,       // min en MDE entre entregar y arrancar la siguiente vuelta
     DEPLANE: 20,         // min entre que el vuelo aterriza y el pasajero sale (migración+maletas)
     CUSHION: 15,         // min extra de margen al programar la salida de cada vuelta
+    MERGE_WINDOW: 0,     // min de ventana para juntar oleadas cercanas (0 = no juntar)
     etaSource: null,     // 'tomtom' | 'osrm' | 'haversine' — de dónde salieron los tiempos
     M: null, // matriz de tiempos reales (min) entre depot/aeropuerto/paradas
     // Cuando los tiempos vienen de TomTom YA traen el tráfico de la hora en que
@@ -53,6 +54,10 @@
     rt.TURNAROUND = Number(s.route_turnaround_min) || 8;
     rt.DEPLANE = Number(s.route_deplane_min) || 20;
     rt.CUSHION = Number(s.route_depart_cushion_min) || 15;
+    // Ventana para fusionar oleadas cercanas. 0 = no fusionar (comportamiento
+    // anterior, agrupando solo por hora exacta). Si la columna no existe todavía
+    // (main sin la 0056) queda en 0 y el tablero se comporta como siempre.
+    rt.MERGE_WINDOW = s.route_merge_window_min != null ? Number(s.route_merge_window_min) : 0;
   }
 
   async function rtLoad() {
@@ -146,12 +151,19 @@
     const lane = rtLaneOf(laneId);
     if (lane.type === 'lle') return rtCarComputeLle(lane);
     let t = rtToMin(lane.start), prev = lane.origin, stops = [], pax = 0, hardDL = Infinity;
+    let prevKey = null, eta = Math.round(t);
     rt.order[laneId].forEach(id => {
-      if (prev) t += rtLegMin(prev, id); pax += rt.aux[id].pax;
-      stops.push({ id, eta: Math.round(t) }); // ETA = cuando el carro LLEGA a la parada
-      t += rt.SERVICE_MIN; // subir gente + maletas antes de arrancar al siguiente
+      const k = rtStopKey(id);
+      if (k !== prevKey) {                  // portería nueva: manejar y frenar
+        if (prev) t += rtLegMin(prev, id);
+        eta = Math.round(t);                // ETA = cuando el carro LLEGA a la parada
+        t += rt.SERVICE_MIN;                // subir gente + maletas antes de arrancar
+        prev = id; prevKey = k;
+      }
+      // Los de la misma portería comparten el frenazo y la misma ETA.
+      pax += rt.aux[id].pax;
+      stops.push({ id, eta });
       hardDL = Math.min(hardDL, rtToMin(rt.aux[id].dl));
-      prev = id;
     });
     const arrival = rt.order[laneId].length ? Math.round(t + rtLegMin(prev, 'airport')) : null;
     // Holgura contra el deadline DESCONTANDO el colchón de entrega (bajar
@@ -169,11 +181,17 @@
   // reparte a las casas. El semáforo mide cuánto ESPERARÍA el pasajero.
   function rtCarComputeLle(lane) {
     let t = rtToMin(lane.start), prev = 'airport', stops = [], pax = 0;
+    let prevKey = null, eta = Math.round(t);
     rt.order[lane.id].forEach(id => {
-      t += rtLegMin(prev, id); pax += rt.aux[id].pax;
-      stops.push({ id, eta: Math.round(t) });
-      t += rt.SERVICE_MIN;
-      prev = id;
+      const k = rtStopKey(id);
+      if (k !== prevKey) {                  // se deja a varios en la misma portería de una
+        t += rtLegMin(prev, id);
+        eta = Math.round(t);
+        t += rt.SERVICE_MIN;
+        prev = id; prevKey = k;
+      }
+      pax += rt.aux[id].pax;
+      stops.push({ id, eta });
     });
     const arrival = rt.order[lane.id].length ? Math.round(t) : null; // termina en la última casa
     const ideal = rtToMin(lane.landing) + rt.DEPLANE; // cuándo sale la gente del terminal
@@ -299,6 +317,25 @@
     arr.forEach((x, i) => { const rest = arr.slice(0, i).concat(arr.slice(i + 1)); rtPermutations(rest).forEach(p => out.push([x, ...p])); });
     return out;
   }
+  // ---- Una PORTERÍA = una parada ----
+  // Nicol y Cata Rico viven las dos en el Edificio Cámbulo: el carro para UNA
+  // vez y suben las dos. Antes cada reserva era una parada distinta — se cobraba
+  // el servicio dos veces y la fuerza bruta permutaba el orden entre ellas, que
+  // es un orden que no existe. La llave sale del catálogo de residencias (0055);
+  // si la reserva no tiene residencia (pin manual) cae a la coordenada.
+  function rtStopKey(id) {
+    const a = rt.aux[id];
+    if (!a) return id;
+    if (a.resId) return 'r:' + a.resId;
+    return (a.lat != null && a.lng != null) ? `c:${a.lat.toFixed(5)},${a.lng.toFixed(5)}` : 'i:' + id;
+  }
+  // Agrupa ids por portería conservando el orden de aparición.
+  function rtGroupByStop(ids) {
+    const g = new Map();
+    ids.forEach(id => { const k = rtStopKey(id); if (!g.has(k)) g.set(k, []); g.get(k).push(id); });
+    return [...g.values()];
+  }
+  const rtPaxOf = (ids) => ids.reduce((s, id) => s + ((rt.aux[id] && rt.aux[id].pax) || 1), 0);
   // Coherencia geográfica: cuántas veces la ruta SALE de un sector y luego
   // VUELVE a él (San Antonio → Abreo → San Antonio = 1 reentrada). A igualdad
   // práctica de tiempo, la ruta que no zigzaguea es más clara para el
@@ -319,32 +356,41 @@
   // origin: 'airport' (encadenada, sale de MDE), o null → la vuelta arranca EN
   // la primera recogida (el punto de partida del conductor se define en SU
   // módulo, no aquí — decisión de la operación 2026-07-10).
+  // Permuta PORTERÍAS, no pasajeros: con 4 personas en 2 conjuntos son 2
+  // permutaciones, no 24 — y el resultado deja juntos a los de la misma puerta.
   function rtBestOrder(ids, origin = null, endAtAirport = true) {
     if (ids.length <= 1) return ids.slice();
-    const scored = rtPermutations(ids).map(perm => {
+    const groups = rtGroupByStop(ids);
+    if (groups.length === 1) return groups[0].slice();
+    const scored = rtPermutations(groups).map(perm => {
       let t = 0, prev = origin;
-      perm.forEach(id => { if (prev) t += rtLegMin(prev, id); prev = id; });
+      perm.forEach(g => { if (prev) t += rtLegMin(prev, g[0]); prev = g[0]; });
       if (endAtAirport) t += rtLegMin(prev, 'airport');
-      return { perm, t };
+      return { perm, t, flat: perm.flat() };
     });
     const best = Math.min(...scored.map(s => s.t));
     const tol = Math.max(2, best * 0.06);
     // Desempates (en orden): 1) no zigzaguear entre sectores; 2) "fluir hacia
     // el destino" — terminar en la parada más cercana al aeropuerto; 3) tiempo.
-    const finalLeg = (perm) => rtLegMin(perm[perm.length - 1], 'airport');
+    const finalLeg = (perm) => rtLegMin(perm[perm.length - 1][0], 'airport');
     return scored
       .filter(s => s.t <= best + tol)
-      .sort((a, b) => (rtZoneReentries(a.perm) - rtZoneReentries(b.perm))
+      .sort((a, b) => (rtZoneReentries(a.flat) - rtZoneReentries(b.flat))
         || (finalLeg(a.perm) - finalLeg(b.perm))
-        || (a.t - b.t))[0].perm;
+        || (a.t - b.t))[0].flat;
   }
   // Evalúa un carro (lista de paradas): mejor ruta → llegada al aeropuerto,
   // deadline más exigente y minutos de atraso (0 si llega a tiempo).
   function rtRouteEval(carStart, ids, origin = null) {
     if (!ids.length) return { arrival: null, minDL: Infinity, late: 0 };
     const ord = rtBestOrder(ids, origin);
-    let t = carStart, prev = origin;
-    ord.forEach(id => { if (prev) t += rtLegMin(prev, id); t += rt.SERVICE_MIN; prev = id; });
+    let t = carStart, prev = origin, prevKey = null;
+    ord.forEach(id => {
+      const k = rtStopKey(id);
+      if (k === prevKey) return;            // misma portería: un solo frenazo
+      if (prev) t += rtLegMin(prev, id);
+      t += rt.SERVICE_MIN; prev = id; prevKey = k;
+    });
     const arrival = t + rtLegMin(prev, 'airport');
     const minDL = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl)));
     // "Tarde" = no alcanza el deadline con el colchón de entrega incluido.
@@ -361,8 +407,13 @@
   // Vuelta de LLEGADA: arranca en MDE y reparte a las casas (no vuelve al aeropuerto).
   function rtHomesPlan(ids) {
     const ord = rtBestOrder(ids, 'airport', false);
-    let t = 0, prev = 'airport', last = 'airport';
-    ord.forEach(id => { t += rtLegMin(prev, id) + rt.SERVICE_MIN; prev = id; last = id; });
+    let t = 0, prev = 'airport', last = 'airport', prevKey = null;
+    ord.forEach(id => {
+      const k = rtStopKey(id);
+      if (k === prevKey) return;            // misma portería: ya se paró ahí
+      t += rtLegMin(prev, id) + rt.SERVICE_MIN;
+      prev = id; last = id; prevKey = k;
+    });
     return { ord, dur: t, last };
   }
 
@@ -374,12 +425,71 @@
     Object.keys(rt.aux).forEach(id => { const a = rt.aux[id]; const k = a.type + '|' + a.dl; (byKey[k] = byKey[k] || []).push(id); });
     const waves = Object.entries(byKey).map(([k, ids]) => ({ type: k.split('|')[0], dlMin: rtToMin(k.split('|')[1]), ids }))
       .sort((a, b) => a.dlMin - b.dlMin);
-    // 2) VIAJES: partir oleadas más grandes que el cupo (agrupando por sector).
     const capMax = Math.max(...rt.cars.map(rtCapOf));
+
+    // 1.b) FUSIÓN DE OLEADAS CERCANAS.
+    // Los jefes no despachan por hora exacta. Si a las 03:50 se presentan dos y
+    // a las 04:00 otros dos, y viven del mismo lado, los montan en UN carro y
+    // los dejan a todos a las 03:40. El código agrupaba por minuto exacto, así
+    // que 03:50 y 04:00 eran oleadas distintas que jamás se cruzaban: salían dos
+    // carros con dos pasajeros cada uno.
+    //
+    // Regla de fusión, que es la económica: se fusiona solo si UN carro haciendo
+    // las dos tarda MENOS que dos carros haciendo una cada uno. Eso solo se
+    // cumple cuando el desvío es corto, y rechaza por sí mismo los casos caros
+    // (pegarle Marinilla a una vuelta de Rionegro cuesta +50 min → no fusiona).
+    // El deadline no corre riesgo: manda el MÁS APRETADO del grupo, y los de
+    // hora más tarde simplemente llegan antes — que es lo que hacen ellos.
+    //
+    // Con route_merge_window_min = 0 no fusiona nada: comportamiento idéntico al
+    // anterior. Es la palanca para apagar esto sin tocar código.
+    const durDe = (tipo, ids) => tipo === 'lle' ? rtHomesPlan(ids).dur : rtTripDur(ids, null);
+    const fusionables = (tipo, base, extra) => {
+      const cand = base.concat(extra);
+      if (rtPaxOf(cand) > capMax) return false;
+      // ¿un carro sale más barato que dos? (comparten el tramo al aeropuerto)
+      return durDe(tipo, cand) <= durDe(tipo, base) + durDe(tipo, extra);
+    };
+    const W = rt.MERGE_WINDOW;
+    const pend = waves.slice();
+    const oleadas = [];
+    while (pend.length) {
+      const base = pend.shift();
+      const g = { type: base.type, dlMin: base.dlMin, ids: base.ids.slice() };
+      if (W > 0) {
+        for (let i = 0; i < pend.length; i++) {
+          const w = pend[i];
+          if (w.dlMin - g.dlMin > W) break;          // ordenadas por hora: las que siguen, peor
+          if (w.type !== g.type) continue;
+          // En una LLEGADA el carro no puede recoger antes de que aterricen TODOS,
+          // así que el que aterrizó primero espera esa diferencia. Se acota con el
+          // mismo margen que ya define "ajustado" en el resto del tablero.
+          if (g.type === 'lle' && w.dlMin - g.dlMin > Math.min(W, rt.MARGIN_TIGHT)) continue;
+          if (!fusionables(g.type, g.ids, w.ids)) continue;
+          g.ids = g.ids.concat(w.ids);
+          // La llegada se rige por el ÚLTIMO que aterriza; la salida, por el
+          // primero que debe presentarse (ya es dlMin, no cambia).
+          if (g.type === 'lle') g.dlMin = Math.max(g.dlMin, w.dlMin);
+          pend.splice(i, 1); i--;
+        }
+      }
+      oleadas.push(g);
+    }
+
+    // 2) VIAJES: partir oleadas más grandes que el cupo (agrupando por portería,
+    //    para no separar a dos personas de la misma puerta en carros distintos).
     const trips = [];
-    waves.forEach(w => {
-      const ids = w.ids.slice().sort((a, b) => rt.aux[a].zona.localeCompare(rt.aux[b].zona));
-      for (let i = 0; i < ids.length; i += capMax) trips.push({ type: w.type, dlMin: w.dlMin, ids: ids.slice(i, i + capMax) });
+    oleadas.forEach(w => {
+      if (rtPaxOf(w.ids) <= capMax) { trips.push({ type: w.type, dlMin: w.dlMin, ids: w.ids.slice() }); return; }
+      let actual = [];
+      rtGroupByStop(w.ids).forEach(porteria => {
+        let resto = porteria.slice();
+        if (rtPaxOf(actual) + rtPaxOf(resto) > capMax && actual.length) { trips.push({ type: w.type, dlMin: w.dlMin, ids: actual }); actual = []; }
+        // Una portería con más gente que el cupo se parte igual (no cabe de otra forma).
+        while (rtPaxOf(resto) > capMax) { trips.push({ type: w.type, dlMin: w.dlMin, ids: resto.slice(0, capMax) }); resto = resto.slice(capMax); }
+        actual = actual.concat(resto);
+      });
+      if (actual.length) trips.push({ type: w.type, dlMin: w.dlMin, ids: actual });
     });
     // 3) ASIGNAR cada viaje (cronológico) al mejor carro. El carro tiene POSICIÓN
     //    (null = aún no sale; 'airport' = en MDE; id de parada = última casa de
