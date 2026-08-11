@@ -7,7 +7,11 @@
   // OJO: la coord del "aeropuerto" debe ser la ROTONDA DEL TERMINAL DE PASAJEROS
   // (acceso occidental). El punto geocodificado genérico caía del lado oriental
   // de la pista y OSRM ruteaba por la zona de carga/CACOM 5 (prohibida).
-  const RT_AIRPORT = { lat: 6.1715, lng: -75.4270 }; // MDE · terminal de pasajeros (verificado vs OSRM)
+  // 10-ago-2026: pin de la profa, el punto donde de verdad para el carro. Está
+  // 126 m al sur del que había; sigue siendo el acceso occidental (comprobado:
+  // OSRM rutea igual de bien, Río Vivo→MDE 28.0 min vs 28.5 del punto anterior).
+  // Mismo valor en la BD (airports, migración 0059).
+  const RT_AIRPORT = { lat: 6.170795254426601, lng: -75.42788741654356 }; // MDE · terminal de pasajeros
   // 2026-07-25: se eliminaron RT_DEMO_AUX / RT_DEMO_CARS / RT_DEMO_DRIVERS
   // (25 auxiliares, 2 carros y 4 conductores inventados). Servían para enseñar
   // el tablero antes de que hubiera reservas reales, pero con la app en pruebas
@@ -53,6 +57,15 @@
     rt.TRAFFIC_FACTOR = Number(s.route_traffic_factor) || 1.25;
     rt.TURNAROUND = Number(s.route_turnaround_min) || 8;
     rt.DEPLANE = Number(s.route_deplane_min) || 20;
+    // Desembarque por aerolínea (0058). Si la migración no está, cada uno cae al
+    // respaldo y el tablero se comporta como antes.
+    rt.DEPLANE_TABLE = {
+      avNac: Number(s.route_deplane_av_nac_min) || rt.DEPLANE,
+      avInt: Number(s.route_deplane_av_int_min) || rt.DEPLANE,
+      jsNac: Number(s.route_deplane_js_nac_min) || rt.DEPLANE,
+      jsInt: Number(s.route_deplane_js_int_min) || rt.DEPLANE,
+      wingo: Number(s.route_deplane_wingo_min) || rt.DEPLANE,
+    };
     rt.CUSHION = Number(s.route_depart_cushion_min) || 15;
     // Ventana para fusionar oleadas cercanas. 0 = no fusionar (comportamiento
     // anterior, agrupando solo por hora exacta). Si la columna no existe todavía
@@ -117,6 +130,46 @@
   function rtBandsOfCar(carId) { return [...new Set(rt.lanes.filter(l => l.car === carId && rt.order[l.id] && rt.order[l.id].length).map(rtBandOf))].sort(); }
   const rtBandLabel = (b) => b === 'am' ? '02:30–14:00' : '14:00–01:30';
   const rtBandIcon = (b) => b === 'am' ? '☀' : '☾';
+
+  // ---- Desembarque: cuánto tarda el pasajero en salir del terminal ----
+  // No es un número solo. La operación mide entre 15 y 35 minutos según la
+  // aerolínea y si el vuelo es nacional o internacional (ver 0058). Se saca del
+  // código de vuelo, que es lo único que tenemos.
+  //
+  // OJO con los vuelos SIN SIGLA: el formulario pide "vuelo de llegada" en texto
+  // libre y dos de cada tres tripulantes escriben solo los dígitos ("5116"). Lo
+  // que sigue es INFERENCIA, no dato: los 4 dígitos que empiezan por 5 se toman
+  // como JetSmart porque el mismo vuelo llegó escrito de las dos formas el 7-ago
+  // (Fernando puso "JA5116" y Paulina "5116"). Si algún día Avianca opera un
+  // 5xxx, aquí es donde se corrige — o mejor, se arregla el formulario para que
+  // pida la sigla y esto deje de ser adivinanza.
+  function rtDeplaneVuelo(v) {
+    const s = String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!s) return null;
+    const T = rt.DEPLANE_TABLE || {};
+    const sigla = ['JEC', 'JA', 'AV', 'P5'].find(p => s.startsWith(p)) || '';
+    const num = s.slice(sigla.length);
+    if (!/^\d+$/.test(num)) return null;
+    if (sigla === 'P5') return T.wingo;
+    if (sigla === 'JEC' || sigla === 'JA') return num.startsWith('58') ? T.jsInt : T.jsNac;
+    if (sigla === 'AV') return num.length <= 3 ? T.avInt : T.avNac;
+    // Sin sigla: se deduce por la forma del número.
+    if (num.length <= 3) return T.avInt;                      // 033, 231, 43
+    if (num.length === 4 && num.startsWith('58')) return T.jsInt;
+    if (num.length === 4 && num.startsWith('5')) return T.jsNac;
+    return T.avNac;
+  }
+  // Desembarque de un GRUPO: manda el que más tarda. El carro no se puede ir con
+  // medio grupo, y en una vuelta fusionada conviven vuelos de aerolíneas
+  // distintas. Sin ningún vuelo clasificable, el respaldo de Ajustes.
+  function rtDeplaneOf(ids) {
+    let mx = null;
+    (ids || []).forEach(id => {
+      const d = rtDeplaneVuelo(rt.aux[id] && rt.aux[id].vuelo);
+      if (d != null && (mx == null || d > mx)) mx = d;
+    });
+    return mx == null ? rt.DEPLANE : mx;
+  }
 
   // Coordenadas de un punto (depot / aeropuerto / parada).
   function rtCoordsOf(key) {
@@ -194,7 +247,7 @@
       stops.push({ id, eta });
     });
     const arrival = rt.order[lane.id].length ? Math.round(t) : null; // termina en la última casa
-    const ideal = rtToMin(lane.landing) + rt.DEPLANE; // cuándo sale la gente del terminal
+    const ideal = rtToMin(lane.landing) + rtDeplaneOf(rt.order[lane.id]); // cuándo sale la gente del terminal
     const wait = Math.max(0, rtToMin(lane.start) - ideal);
     let status = 'empty';
     if (arrival != null) status = wait > 15 ? 'late' : (wait > 5 ? 'tight' : 'ontime');
@@ -461,6 +514,21 @@
       // tarde suben de 0 a 3. La prueba económica sola es mejor freno.
       return durDe(tipo, cand) <= durDe(tipo, base) + durDe(tipo, extra);
     };
+    // MISMA PORTERÍA, MISMO CARRO. Lo cazó el jefe revisando el plan del 11-ago:
+    // Josmar y Jessica viven los dos en Solare y salieron en vueltas distintas
+    // con diez minutos de diferencia. Pasó porque sus oleadas (3:50 y 4:00) no se
+    // fusionaron —juntas daban 5 pax y el cupo es 4— y el reparto por portería
+    // del paso 2 solo mira DENTRO de una oleada, así que nunca las vio juntas.
+    //
+    // Si comparten portería se fusionan igual, sin exigir cupo ni prueba
+    // económica: el paso 2 parte por cupo AGRUPANDO por portería, de modo que la
+    // pareja termina en el mismo carro y lo que se desplaza es un tercero.
+    // Mandar dos carros a la misma puerta con diez minutos de diferencia no lo
+    // hace nadie en la operación.
+    const mismaPorteria = (a, b) => {
+      const ka = new Set(a.map(rtStopKey));
+      return b.some(id => ka.has(rtStopKey(id)));
+    };
     const W = rt.MERGE_WINDOW;
     const pend = waves.slice();
     const oleadas = [];
@@ -483,7 +551,7 @@
           // así que el que aterrizó primero espera esa diferencia. Se acota con el
           // mismo margen que ya define "ajustado" en el resto del tablero.
           if (g.type === 'lle' && w.dlMin - g.dlMin > Math.min(W, rt.MARGIN_TIGHT)) continue;
-          if (!fusionables(g.type, g.ids, w.ids)) continue;
+          if (!mismaPorteria(g.ids, w.ids) && !fusionables(g.type, g.ids, w.ids)) continue;
           g.ids = g.ids.concat(w.ids);
           ultimo = w.dlMin;                          // el racimo sigue desde aquí
           // La llegada se rige por el ÚLTIMO que aterriza; la salida, por el
@@ -519,7 +587,7 @@
       let best = null;
       if (tr.type === 'lle') {
         // LLEGADA: hay que ESTAR en MDE cuando salgan (aterriza + desembarque).
-        const idealPickup = tr.dlMin + rt.DEPLANE;
+        const idealPickup = tr.dlMin + rtDeplaneOf(tr.ids);
         cs.forEach(s => {
           const goLeg = (s.pos && s.pos !== 'airport') ? rtLegMin(s.pos, 'airport') : 0;
           const readyAtMDE = s.avail + goLeg;

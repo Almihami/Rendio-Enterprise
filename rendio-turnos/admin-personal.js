@@ -362,6 +362,13 @@
     if ($('#setting-route-service')) $('#setting-route-service').value = S.route_service_min != null ? S.route_service_min : 3;
     if ($('#setting-route-traffic')) $('#setting-route-traffic').value = S.route_traffic_factor != null ? S.route_traffic_factor : 1.05;
     if ($('#setting-route-buffer')) $('#setting-route-buffer').value = S.route_airport_buffer_min != null ? S.route_airport_buffer_min : 10;
+    // Desembarque por aerolínea (0058).
+    if ($('#setting-deplane-av-nac')) $('#setting-deplane-av-nac').value = S.route_deplane_av_nac_min != null ? S.route_deplane_av_nac_min : 15;
+    if ($('#setting-deplane-av-int')) $('#setting-deplane-av-int').value = S.route_deplane_av_int_min != null ? S.route_deplane_av_int_min : 20;
+    if ($('#setting-deplane-js-nac')) $('#setting-deplane-js-nac').value = S.route_deplane_js_nac_min != null ? S.route_deplane_js_nac_min : 25;
+    if ($('#setting-deplane-js-int')) $('#setting-deplane-js-int').value = S.route_deplane_js_int_min != null ? S.route_deplane_js_int_min : 30;
+    if ($('#setting-deplane-wingo')) $('#setting-deplane-wingo').value = S.route_deplane_wingo_min != null ? S.route_deplane_wingo_min : 20;
+    if ($('#setting-deplane-fallback')) $('#setting-deplane-fallback').value = S.route_deplane_min != null ? S.route_deplane_min : 20;
     renderPriorityList();
     renderRulesEditor();
     renderVehiclesSettings();
@@ -728,6 +735,19 @@
         const n = parseFloat($('#setting-route-traffic') && $('#setting-route-traffic').value);
         return isNaN(n) ? 1.05 : Math.min(2, Math.max(1, n));
       })(),
+      // Desembarque por aerolínea (0058). Mismo patrón: 0 es válido (un vuelo
+      // que suelta a la gente de inmediato), así que no se usa `|| default`.
+      ...Object.fromEntries([
+        ['route_deplane_av_nac_min', '#setting-deplane-av-nac', 15],
+        ['route_deplane_av_int_min', '#setting-deplane-av-int', 20],
+        ['route_deplane_js_nac_min', '#setting-deplane-js-nac', 25],
+        ['route_deplane_js_int_min', '#setting-deplane-js-int', 30],
+        ['route_deplane_wingo_min', '#setting-deplane-wingo', 20],
+        ['route_deplane_min', '#setting-deplane-fallback', 20],
+      ].map(([col, sel, def]) => {
+        const n = parseInt($(sel) && $(sel).value, 10);
+        return [col, isNaN(n) ? def : Math.min(90, Math.max(0, n))];
+      })),
       route_airport_buffer_min: (() => {
         const n = parseInt($('#setting-route-buffer') && $('#setting-route-buffer').value, 10);
         return isNaN(n) ? 10 : Math.min(45, Math.max(0, n));

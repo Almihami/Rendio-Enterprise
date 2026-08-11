@@ -619,6 +619,20 @@
                 <div class="set-field"><label>Factor de tráfico</label><input id="setting-route-traffic" class="set-input" type="number" min="1" max="2" step="0.01" /><div class="set-hint">Multiplica el manejo cuando el tiempo sale de OSRM, que calcula con la vía libre. No aplica con TomTom (ese ya trae el tráfico). Default 1.05, calibrado contra la programación manual.</div></div>
                 <div class="set-field"><label>Colchón al entregar en MDE (min)</label><input id="setting-route-buffer" class="set-input" type="number" min="0" max="45" /><div class="set-hint">Bajar maletas y entrar al terminal. Llegar justo a la hora de presentación es llegar tarde. Default 10.</div></div>
               </div>
+              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Desembarque: de que aterriza a que sale del terminal</p>
+              <p class="set-hint" style="margin:2px 0 10px 2px">Con estos minutos se decide a qué hora el carro recoge en el aeropuerto. La aerolínea se saca del número de vuelo que escribe el tripulante; si no viene o no se reconoce, se usa el de respaldo. Si el carro llega antes, espera el carro; si llega después, espera la tripulante en el andén.</p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Avianca nacional (min)</label><input id="setting-deplane-av-nac" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos AV de 4 dígitos. La operación reporta 15–20. Default 15.</div></div>
+                <div class="set-field"><label>Avianca internacional (min)</label><input id="setting-deplane-av-int" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos AV de 2 o 3 dígitos. Reportado 20–30. Default 20.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>JetSmart nacional (min)</label><input id="setting-deplane-js-nac" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos JEC o JA de 4 dígitos. Reportado 25–30. Default 25.</div></div>
+                <div class="set-field"><label>JetSmart internacional (min)</label><input id="setting-deplane-js-int" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos JEC o JA que empiezan en 58. Reportado 30–35. Default 30.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Wingo (min)</label><input id="setting-deplane-wingo" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos P5, nacionales o internacionales por igual. Reportado 20–30. Default 20.</div></div>
+                <div class="set-field"><label>Respaldo, sin vuelo (min)</label><input id="setting-deplane-fallback" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Cuando la reserva no trae número de vuelo. Hoy pasa en una de cada tres llegadas. Default 20.</div></div>
+              </div>
               <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
             </div>
           </div>

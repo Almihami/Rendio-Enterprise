@@ -599,8 +599,12 @@
     // state.settings.route_* y siempre le daba undefined, así que caía a los
     // valores fijos del código y "configurable desde Ajustes" era mentira.
     const ROUTE_COLS = ', route_service_min, route_airport_buffer_min, route_traffic_factor, route_turnaround_min, route_deplane_min, route_depart_cushion_min, route_merge_window_min, route_default_capacity, route_airport_leg_min, route_margin_tight_min';
+    // 0058: desembarque por aerolínea. Escalón propio de la cascada — si la
+    // migración no está, se cae a ROUTE_COLS y el modelo usa route_deplane_min.
+    const DEPLANE_COLS = ', route_deplane_av_nac_min, route_deplane_av_int_min, route_deplane_js_nac_min, route_deplane_js_int_min, route_deplane_wingo_min';
     const BASE_COLS = 'morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours';
-    let { data, error } = await sel(BASE_COLS + ROUTE_COLS);
+    let { data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS);
+    if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit'));
@@ -641,9 +645,15 @@
     const full = { ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit, fast_start_enabled: s.fast_start_enabled, fast_start_from_hour: s.fast_start_from_hour, fast_start_to_hour: s.fast_start_to_hour, inspection_grace_minutes: s.inspection_grace_minutes };
     const conAux = { ...full, aux_wait_minutes: s.aux_wait_minutes, aux_min_lead_hours: s.aux_min_lead_hours };
     // 0056: parámetros del optimizador. Un escalón más de la cascada.
-    let { error } = await upd({ ...conAux,
+    const conRuta = { ...conAux,
       route_merge_window_min: s.route_merge_window_min, route_service_min: s.route_service_min,
-      route_traffic_factor: s.route_traffic_factor, route_airport_buffer_min: s.route_airport_buffer_min });
+      route_traffic_factor: s.route_traffic_factor, route_airport_buffer_min: s.route_airport_buffer_min };
+    // 0058: desembarque por aerolínea.
+    let { error } = await upd({ ...conRuta,
+      route_deplane_av_nac_min: s.route_deplane_av_nac_min, route_deplane_av_int_min: s.route_deplane_av_int_min,
+      route_deplane_js_nac_min: s.route_deplane_js_nac_min, route_deplane_js_int_min: s.route_deplane_js_int_min,
+      route_deplane_wingo_min: s.route_deplane_wingo_min });
+    if (error) ({ error } = await upd(conRuta));
     if (error) ({ error } = await upd(conAux));
     if (error) ({ error } = await upd(full));
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours, auto_close_hours: s.auto_close_hours, reservation_idle_minutes: s.reservation_idle_minutes, strike_limit: s.strike_limit }));
@@ -1338,7 +1348,12 @@
         pax: 1, type, reservationId: r.id,
         // Contexto para decidir sin salir del tablero.
         tel: r.auxiliar_profiles?.profiles?.phone || '',
-        vuelo: r.flights?.flight_number || (r.notes && r.notes.match(/AV-?\d+/) ? r.notes.match(/AV-?\d+/)[0] : ''),
+        // El número de vuelo decide cuánto tarda el desembarque (0058), así que
+        // ya no vale reconocer solo los "AV1234": el formulario deja escribir
+        // JA5116, P57433 o los dígitos pelados, y todos cuentan.
+        vuelo: r.flights?.flight_number
+          || (r.notes || '').match(/vuelo\s*:?\s*([A-Za-z]{0,3}\s?-?\d{2,5})/i)?.[1]?.replace(/[\s-]/g, '').toUpperCase()
+          || '',
         notas: r.notes || '',
         // 'hotel' es el flag que el tablero ya sabía pintar (chip "Hotel"), pero
         // nadie se lo llenaba: la pernocta se preguntaba y se perdía.
