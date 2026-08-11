@@ -55,6 +55,10 @@ const RESIDENCES = [
   ['Ébano Apartamentos',         6.129368, -75.378543, 'Sur'],
   ['Club Verde Terra',           6.137082, -75.371337, 'Sur'],
   ['Torres del Campo',           6.140480, -75.372380, 'Sur'],
+  // Aparecen en los planes manuales del jefe (viernes 7 y domingo 9 de agosto)
+  // pero no estaban en el catálogo original. Pines de la profa, 10-ago-2026.
+  ['Hábitat',                    6.144329, -75.371229, 'Sur'],
+  ['Portobello',                 6.144350, -75.373378, 'Sur'],
   // — Oriente: los caros. Nunca mezclar con Rionegro (medido: +50 min) —
   ['Urb. Bosque Robledal',       6.159095, -75.359778, 'Oriente'],
   ['Condominio Planté',          6.169238, -75.349558, 'Oriente'],

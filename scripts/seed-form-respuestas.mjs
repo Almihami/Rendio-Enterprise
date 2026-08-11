@@ -58,14 +58,34 @@ const ALIAS = {
   // es donde se corrige.
   'sara vanessa':     'Sara Villegas',
   'sara vanesa':      'Sara Londoño',
+  // Hoja del 10-ago (día 11): el cruce por parecido se quedaba con el apellido
+  // MATERNO y lo mandaba a Andrés Sánchez (Río Vivo, Norte). Es Andrés Ramírez,
+  // Quintas Blancas (Sur-oeste) — el mismo "Ramírez (Quintas)" de los mensajes
+  // del jefe. Dos sectores distintos: adivinar aquí es perder el viaje.
+  'camilo andres ramirez sanchez': 'Andrés Ramírez',
+  // "Carlos rincon adc (leslie acosta)": el cruce se iba a Carlos Correa
+  // (Manzanillos, Norte) por el nombre de pila. La profa confirmó que NO es
+  // Correa. La única del roster en esa fila es Leslie Acosta → Ébano, en el Sur.
+  // Si el que viaja es Carlos Rincón, falta su conjunto y hay que cambiarlo aquí.
+  'carlos rincon adc (leslie acosta)': 'Leslie Acosta',
 };
 // Tripulantes que NO estaban en la lista de residencias de Julian. La profa da
 // el conjunto directamente; el conjunto sí tiene que existir en el catálogo.
 const NUEVOS = {
   'laura idarraga': { nombre: 'Laura Idárraga', res: 'Río Vivo' },
+  // Familiares que viajan y NO son tripulantes: no tienen cuenta, pero ocupan
+  // puesto y se recogen en la casa de quien sí lo es. Sin esta entrada el cruce
+  // por parecido los confunde con la tripulante (aquí: "Melina").
+  'papa de melina': { nombre: 'Papá de Melina', res: 'Edificio Los Cerezos' },
 };
-// Filas que son más de una persona.
-const MULTI = { 'margy y andres sanchez': ['Margy', 'Andrés Sánchez'] };
+// Filas que son más de una persona. Ojo con el ORDEN: la misma pareja escribió
+// "Margy y Andres Sanchez" el 5-ago y "Andrés Sánchez y Margy" el 7 — sin la
+// segunda entrada, Margy se caía del plan en silencio (el cruce por parecido se
+// queda con Andrés y nadie la recoge).
+const MULTI = {
+  'margy y andres sanchez': ['Margy', 'Andrés Sánchez'],
+  'andres sanchez y margy': ['Andrés Sánchez', 'Margy'],
+};
 
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
   .toLowerCase().replace(/\s+/g, ' ').trim();
@@ -136,6 +156,7 @@ const corre = (f) => { const d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getU
 
 const viajes = [];
 const sinCruce = [];
+const aBrava = [];
 const vistos = new Set();
 let dupes = 0;
 for (const f of FILAS) {
@@ -143,6 +164,10 @@ for (const f of FILAS) {
   for (const p of personas) {
     const m = cruzar(p);
     if (!m) { sinCruce.push(p); continue; }
+    // Emparejado POR PARECIDO, no por nombre igual ni por alias resuelto a mano.
+    // Se lista porque un parecido malo manda el carro a otra casa: "Esteban
+    // Lopera" cruzó con "Esteban Echavarría" solo por el nombre de pila.
+    if (norm(p) !== norm(m.nombre) && !ALIAS[norm(p)] && !NUEVOS[norm(p)]) aBrava.push(`${p} → ${m.nombre} (${m.res})`);
     const dia = corre(f.fecha);
     for (const [tipo, hora] of [['sal', f.pres], ['lle', f.lleg]]) {
       if (!hora) continue;
@@ -163,6 +188,7 @@ console.log(`Filas del form: ${FILAS.length}`);
 console.log(`Viajes a crear: ${viajes.length}  (duplicados descartados: ${dupes})`);
 for (const [d, c] of Object.entries(porDia).sort()) console.log(`   ${d}: ${c.sal} salidas + ${c.lle} llegadas = ${c.sal + c.lle}`);
 if (sinCruce.length) console.log(`⚠ sin cruce: ${[...new Set(sinCruce)].join(', ')}`);
+if (aBrava.length) { console.log(`⚠ emparejados por parecido (revisar, ${new Set(aBrava).size}):`); [...new Set(aBrava)].forEach((x) => console.log(`     ${x}`)); }
 
 // Oleadas = (tipo + hora exacta) — así las agrupa el tablero.
 const oleadas = {};
