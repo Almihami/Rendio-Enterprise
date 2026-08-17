@@ -55,15 +55,36 @@ const listar = (ns) => ns.length === 1 ? ns[0]
 // Se ordena por la PRIMERA hora que va a leer quien recibe el mensaje: en una
 // llegada es el vuelo más temprano de la vuelta, no la hora con que el solver la
 // etiquetó (una vuelta puede recoger tres vuelos).
-const orden = (v) => v.tipo === 'lle'
-  ? Math.min(...v.paradas.flatMap((p) => p.personas.map((q) => min(q.dl))))
-  : min(v.paradas[0].eta);
-const bloques = [...plan.vueltas].sort((a, b) => orden(a) - orden(b));
+const orden = (v) => v.sinCarro ? min(v.dl)
+  : v.tipo === 'lle'
+    ? Math.min(...v.paradas.flatMap((p) => p.personas.map((q) => min(q.dl))))
+    : min(v.paradas[0].eta);
 
-console.log(`Programación ${plan.dia} · ${plan.traslados} traslados (${plan.salidas} salidas + ${plan.llegadas} llegadas) · ${plan.carros.length} carros\n`);
+// LOS QUE NO CABEN VAN DENTRO DEL ITINERARIO, no en una lista al final. Es
+// pedido explícito del jefe: "que la app los ponga en el itinerario pero si no
+// hay carro que nos ponga un paréntesis de que quizás no haya carro". Sacarlos
+// aparte le obligaba a cruzar dos listas a mano para ver el día completo.
+const sueltos = (plan.sinRutear || []).map((s) => ({ ...s, sinCarro: true }));
+const bloques = [...plan.vueltas, ...sueltos].sort((a, b) => orden(a) - orden(b));
+
+console.log(`Programación ${plan.dia} · ${plan.traslados} traslados (${plan.salidas} salidas + ${plan.llegadas} llegadas) · ${plan.carros.length} carros`);
+// No se anuncia un trato especial que no se está dando: si el corrimiento está
+// en 0 el día se programó igual que uno normal, y eso hay que decirlo.
+if (plan.diaLento) console.log(plan.diaLentoShift
+  ? `${plan.diaLento} — se recoge ${plan.diaLentoShift} min más tarde de lo normal`
+  : `${plan.diaLento} — programado como día normal (falta definir cuánto más tarde sacarlos)`);
+console.log('');
 
 for (const v of bloques) {
   const etiqueta = CON_CARRO ? `[${v.carro}] ` : '';
+
+  if (v.sinCarro) {
+    // Mismo renglón que los demás, con el paréntesis que él pidió: entra en la
+    // hora que le toca para que se vea el hueco donde está.
+    console.log(`${crudo(v.dl)} ${v.n} (${v.zona}) (QUIZÁS NO HAYA CARRO)`);
+    console.log('');
+    continue;
+  }
 
   if (v.tipo === 'lle') {
     // LLEGADA: la línea es por VUELO —hora de aterrizaje y número—, no por casa.
@@ -104,6 +125,5 @@ for (const v of bloques) {
 }
 
 if (plan.sinRutear?.length) {
-  console.log(`⚠ SIN CARRO (${plan.sinRutear.length}) — hay que resolverlos a mano:`);
-  for (const s of plan.sinRutear) console.log(`   ${s.dl} ${s.tipo} ${s.nombre} (${s.zona})`);
+  console.log(`(${plan.sinRutear.length} marcados "quizás no haya carro" — con ${plan.carros.length} carros no alcanzan)`);
 }

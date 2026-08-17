@@ -23,7 +23,9 @@
 //
 // OJO con --carros: la app hoy solo mira los 2 primeros vehículos de la flota
 // (Api.listRoutePlanning hace slice(0,2)). Aquí se puede pedir la flota completa
-// para ver qué pasaría con 3, que es lo que la operación usa de verdad.
+// para ver qué pasaría con más. OJO: la operación trabaja con **2 carros**
+// (confirmado por ella el 16-ago-2026). Los ensayos con 3 son hipotéticos —
+// no tomarlos como la flota real.
 
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, writeFileSync } from 'node:fs';
