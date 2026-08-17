@@ -388,6 +388,8 @@
     if ($('#setting-deplane-fallback')) $('#setting-deplane-fallback').value = S.route_deplane_min != null ? S.route_deplane_min : 20;
     // 0062: corrimiento de domingos y festivos. 0 es válido, así que no se usa `||`.
     if ($('#setting-holiday-shift')) $('#setting-holiday-shift').value = S.route_holiday_shift_min != null ? S.route_holiday_shift_min : 0;
+    // 0071: colchón de la tabla de zona. 0 = usar su tabla completa.
+    if ($('#setting-zone-cushion')) $('#setting-zone-cushion').value = S.route_zone_cushion_min != null ? S.route_zone_cushion_min : 25;
     renderRouteTables();
     renderResidenceZones();
     renderPriorityList();
@@ -893,6 +895,7 @@
         ['route_max_wait_min', '#setting-route-wait'],
         ['route_max_wait_peak_min', '#setting-route-wait-peak'],
         ['route_holiday_shift_min', '#setting-holiday-shift'],
+        ['route_zone_cushion_min', '#setting-zone-cushion'],
       ].map(([col, sel]) => {
         const n = parseInt($(sel) && $(sel).value, 10);
         return [col, isNaN(n) ? 0 : Math.min(180, Math.max(0, n))];

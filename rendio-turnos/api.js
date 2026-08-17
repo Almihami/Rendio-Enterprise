@@ -616,10 +616,18 @@
     const WAIT_COLS = ', route_max_wait_min, route_max_wait_peak_min';
     // 0062: corrimiento de domingos y festivos ("no sacarlos tan temprano").
     const HOLIDAY_COLS = ', route_holiday_shift_min';
-    // 0069: traslado privado (tarifa, cuál vehículo es la camioneta, y el interruptor).
+    // 0069/0070: traslado privado (tarifa, cuál vehículo es la camioneta, el
+    // interruptor y la ventana que aparta la camioneta).
     const PRIV_COLS = ', aux_private_price_cop, aux_private_vehicle_id, aux_private_enabled, aux_private_block_min';
+    // 0071: colchón que trae adentro su tabla de zona y que no es tiempo de
+    // manejo. Escalón propio: sin la migración queda ausente y el solver usa la
+    // tabla completa, o sea el comportamiento anterior.
+    const CUSHION_COLS = ', route_zone_cushion_min';
     const BASE_COLS = 'morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours';
-    let { data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS + PRIV_COLS);
+    const CONFIRMADO = BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS;
+    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS);
+    if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS));
+    if (error) ({ data, error } = await sel(CONFIRMADO + CUSHION_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS));
@@ -686,12 +694,16 @@
     const conTecho = { ...conAero, route_max_wait_min: s.route_max_wait_min, route_max_wait_peak_min: s.route_max_wait_peak_min };
     // 0062: corrimiento de domingos y festivos.
     const conFestivo = { ...conTecho, route_holiday_shift_min: s.route_holiday_shift_min };
-    // 0069: traslado privado.
-    let { error } = await upd({ ...conFestivo,
+    // 0069/0070: traslado privado. 0071: colchón de la tabla de zona. Cada uno
+    // baja un escalón si su migración no está, para no perder lo demás.
+    const conPrivado = { ...conFestivo,
       aux_private_price_cop: s.aux_private_price_cop,
       aux_private_vehicle_id: s.aux_private_vehicle_id,
       aux_private_enabled: s.aux_private_enabled,
-      aux_private_block_min: s.aux_private_block_min });
+      aux_private_block_min: s.aux_private_block_min };
+    let { error } = await upd({ ...conPrivado, route_zone_cushion_min: s.route_zone_cushion_min });
+    if (error) ({ error } = await upd(conPrivado));
+    if (error) ({ error } = await upd({ ...conFestivo, route_zone_cushion_min: s.route_zone_cushion_min }));
     if (error) ({ error } = await upd(conFestivo));
     if (error) ({ error } = await upd(conTecho));
     if (error) ({ error } = await upd(conAero));
@@ -1189,6 +1201,122 @@
   }
 
   // ====================================================================
+  // Repuestos — mantenimiento preventivo por pieza (0073)
+  // ====================================================================
+  // El odómetro no se pide aquí: entra solo con la inspección de inicio de
+  // turno y sube vehicles.current_km. El jefe carga UNA vez el km del último
+  // cambio de cada repuesto y el semáforo se recalcula turno a turno.
+
+  // Semáforo por vehículo × repuesto. light: nodata | green | amber | red.
+  async function listPartStatus() {
+    const { data, error } = await sb
+      .from('v_vehicle_part_status')
+      .select('*')
+      .order('internal_code')
+      .order('sort_order');
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function listPartCatalog() {
+    const { data, error } = await sb
+      .from('part_catalog')
+      .select('id, code, name, system, interval_km, interval_months, reference_particular, is_critical, note, sort_order, is_active')
+      .eq('is_active', true)
+      .order('sort_order');
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Duración real medida en nuestra operación. is_reliable = 3+ cambios.
+  async function listPartRealLife() {
+    const { data, error } = await sb.from('v_part_real_life').select('*');
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Historial de cambios. Trae el repuesto para poder comparar contra el intervalo.
+  async function listPartHistory(vehicleId, status) {
+    let q = sb.from('maintenance')
+      .select('id, vehicle_id, part_id, maintenance_type, km_at_event, duration_km, cost_cop, shop, notes, performed_at, status, reported_by, part_catalog(code, name, interval_km), vehicles(internal_code)')
+      .not('part_id', 'is', null)
+      .order('performed_at', { ascending: false })
+      .limit(200);
+    if (vehicleId) q = q.eq('vehicle_id', vehicleId);
+    if (status) q = q.eq('status', status);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Carga inicial del jefe: km y fecha del último cambio de cada repuesto.
+  // Lo que no sepa va sin last_change_km y queda como "sin dato" a propósito.
+  async function setVehiclePartBaseline(vehicleId, entries) {
+    const { data, error } = await sb.rpc('set_vehicle_part_baseline', {
+      p_vehicle_id: vehicleId, p_entries: entries,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  // Admin = queda confirmado y reinicia el semáforo. Conductor = queda pendiente.
+  async function registerPartChange(o) {
+    const { data, error } = await sb.rpc('register_part_change', {
+      p_vehicle_id: o.vehicleId, p_part_code: o.partCode, p_km: o.km,
+      p_date: o.date || null, p_cost: o.cost != null ? o.cost : null,
+      p_shop: o.shop || null, p_notes: o.notes || null,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  async function confirmPartChange(maintenanceId, accept) {
+    const { data, error } = await sb.rpc('confirm_part_change', {
+      p_maintenance_id: maintenanceId, p_accept: accept !== false,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  async function correctVehicleOdometer(vehicleId, km, reason) {
+    const { data, error } = await sb.rpc('correct_vehicle_odometer', {
+      p_vehicle_id: vehicleId, p_km: km, p_reason: reason || null,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  // vehicleId null = cambia el intervalo para toda la flota; con id = excepción
+  // para ese carro (Logan, Spark y Picanto no comparten correa ni caja).
+  async function setPartInterval(partCode, intervalKm, vehicleId) {
+    const { data, error } = await sb.rpc('set_part_interval', {
+      p_part_code: partCode, p_interval_km: intervalKm, p_vehicle_id: vehicleId || null,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  async function listInspectionTiers() {
+    const { data, error } = await sb
+      .from('inspection_tiers').select('every_km, title').eq('is_active', true).order('every_km');
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Niveles preventivos que el carro ya cruzó y todavía no se le han hecho.
+  async function pendingInspectionTiers(vehicleId) {
+    const { data, error } = await sb.rpc('pending_inspection_tiers', { p_vehicle_id: vehicleId });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function markInspectionTiersDone(vehicleId, km) {
+    const { data, error } = await sb.rpc('mark_inspection_tiers_done', { p_vehicle_id: vehicleId, p_km: km });
+    if (error) throw error;
+    return data;
+  }
+
+  // ====================================================================
   // Inspecciones — revisión/aprobación (admin) + checklist configurable
   // ====================================================================
 
@@ -1256,15 +1384,35 @@
   }
 
   // ----- Checklist configurable (admin) -----
-  async function listChecklistItems(activeOnly) {
+  async function listChecklistItems(activeOnly, includeTiers) {
     // Cascada: con category (0028) → sin category (legado), tolera migración no aplicada.
-    const sel = cols => {
+    // Desde 0073 hay ítems que solo aplican a un nivel preventivo (5k/10k/20k/40k):
+    // no son del checklist de todos los días, así que se excluyen salvo que se
+    // pidan explícitamente (Ajustes, para poder configurarlos).
+    const sel = (cols, tierFilter) => {
       let q = sb.from('inspection_checklist_items').select(cols).order('sort_order');
       if (activeOnly) q = q.eq('is_active', true);
+      if (tierFilter) q = q.is('tier_every_km', null);
       return q;
     };
-    let { data, error } = await sel('id,label,hint,category,sort_order,is_active');
-    if (error) ({ data, error } = await sel('id,label,hint,sort_order,is_active'));
+    const tf = !includeTiers;
+    let { data, error } = await sel('id,label,hint,category,sort_order,is_active', tf);
+    if (error) ({ data, error } = await sel('id,label,hint,sort_order,is_active', tf));
+    if (error) ({ data, error } = await sel('id,label,hint,sort_order,is_active', false));
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Ítems extra de los niveles preventivos que el carro ya cruzó (0073). Se
+  // suman al checklist del día solo en el turno en que toca la revisión.
+  async function listChecklistItemsForTiers(tierKms) {
+    if (!tierKms || !tierKms.length) return [];
+    const { data, error } = await sb
+      .from('inspection_checklist_items')
+      .select('id,label,hint,category,sort_order,is_active,tier_every_km')
+      .eq('is_active', true)
+      .in('tier_every_km', tierKms)
+      .order('sort_order');
     if (error) throw error;
     return data || [];
   }
@@ -1953,65 +2101,109 @@
     }));
   }
 
-  // -------------------- Chat del traslado (0052) --------------------
-  // Hilo entre el auxiliar y su conductor, atado a UNA reserva. El botón de
-  // llamar se queda: el chat es para lo que conviene que quede escrito
-  // ("portería 3, torre B"), la llamada para cuando no hay datos o hay afán.
+  // -------------------- Chat del traslado (0052 + 0067) --------------------
+  // Hilo del traslado, atado a UNA reserva. Desde 0067 tiene TRES puntas:
+  // el tripulante, su conductor y el jefe. El botón de llamar se queda: el chat
+  // es para lo que conviene que quede escrito ("portería 3, torre B"), la
+  // llamada para cuando no hay datos o hay afán.
 
   // Mensajes del hilo, del más viejo al más nuevo. Devuelve [] si la tabla aún
   // no existe (0052 sin aplicar) para no tumbar la pantalla del viaje.
+  // read_by (0067) puede no venir: si la migración no está, se cae a read_at.
   async function listReservationMessages(reservationId) {
     if (!reservationId) return [];
-    const { data, error } = await sb.from('reservation_messages')
-      .select('id, sender_profile_id, sender_role, body, read_at, created_at')
+    const base = 'id, sender_profile_id, sender_role, body, read_at, created_at';
+    let { data, error } = await sb.from('reservation_messages')
+      .select(base + ', read_by')
       .eq('reservation_id', reservationId)
       .order('created_at', { ascending: true });
+    if (error) {
+      ({ data, error } = await sb.from('reservation_messages')
+        .select(base)
+        .eq('reservation_id', reservationId)
+        .order('created_at', { ascending: true }));
+    }
     if (error) return [];
     return data || [];
   }
 
-  // Envía y avisa al otro. El RPC deduce el rol y devuelve a quién notificar:
-  // el que escribe no tiene por qué conocer el profile_id del otro.
+  // Envía y avisa a quien corresponda. El RPC deduce el rol y devuelve los
+  // destinatarios: el que escribe no tiene por qué conocer el profile_id del
+  // otro. Desde 0067 pueden ser VARIOS (el jefe le escribe al tripulante y al
+  // conductor; el tripulante sin carro asignado le escribe a los jefes).
   // El push es best-effort — que falle la notificación no puede perder el mensaje.
   async function sendReservationMessage(reservationId, body, opts) {
     const { data, error } = await sb.rpc('send_reservation_message', {
       p_reservation_id: reservationId, p_body: body,
     });
     if (error) throw error;
-    const to = data && data.recipient_profile_id;
+    let to = (data && data.recipient_profile_ids) || null;
+    if (!Array.isArray(to)) to = (data && data.recipient_profile_id) ? [data.recipient_profile_id] : [];
+    to = to.filter(Boolean);
     // Se devuelve si el aviso llegó o no: el que escribe merece saber que el
     // otro NO tiene notificaciones activadas y que el mensaje se va a quedar ahí
     // hasta que abra la app. Decir "enviado" a secas sería engañarlo.
     let notified = null;
-    if (to) {
+    if (to.length) {
+      // Cuando el destinatario cambia, el título tiene que cambiar con él. Un
+      // tripulante escribe pensando en su conductor, pero si su traslado no tiene
+      // carro el aviso les cae a los JEFES: mandarles "Mensaje de tu pasajero"
+      // les diría que son el conductor de alguien. Se avisa además de dónde
+      // aterrizar, porque el jefe lee esto desde la bandeja, no desde un viaje.
+      const titulo = data && data.to_admins
+        ? 'Un tripulante escribió y no tiene carro asignado'
+        : ((opts && opts.title) || 'Mensaje de tu traslado');
       try {
         const r = await sendPush({
-          profileIds: [to],
-          title: (opts && opts.title) || 'Mensaje de tu traslado',
+          profileIds: to,
+          title: titulo,
           body: String(body).slice(0, 120),
-          url: (opts && opts.url) || '/',
+          url: (data && data.to_admins)
+            ? '/#/reservas?chat=' + reservationId
+            : ((opts && opts.url) || '/'),
         });
         notified = (r && typeof r.sent === 'number') ? r.sent > 0 : null;
       } catch (_) { notified = false; }
     }
-    return Object.assign({}, data, { notified });
+    return Object.assign({}, data, { notified, recipients: to });
   }
 
   // Sin leer por reserva, para el badge del conductor (que lleva varias paradas
-  // a la vez). fromRole = quién escribió: 'auxiliar' si consulta el conductor.
-  // La RLS ya limita a sus propias reservas; el .in() es solo para no traer más.
-  async function countUnreadMessages(reservationIds, fromRole) {
+  // a la vez). fromRoles = quién escribió, uno o varios: para el conductor son
+  // el tripulante Y el jefe. La RLS ya limita a sus propias reservas; el .in()
+  // es solo para no traer más.
+  //
+  // Con tres puntas en el hilo, "sin leer" es por LECTOR: un mensaje del jefe al
+  // tripulante y al conductor lo puede haber abierto uno y no el otro. Por eso se
+  // filtra contra read_by y no contra read_at, que solo marca al primero.
+  async function countUnreadMessages(reservationIds, fromRoles) {
     const ids = (reservationIds || []).filter(Boolean);
     if (!ids.length) return {};
-    const { data, error } = await sb.from('reservation_messages')
-      .select('reservation_id')
-      .in('reservation_id', ids)
-      .eq('sender_role', fromRole)
-      .is('read_at', null);
+    const roles = Array.isArray(fromRoles) ? fromRoles : [fromRoles];
+    const session = await getSession();
+    const me = session && session.user ? session.user.id : null;
+    const base = 'reservation_id, read_at';
+    let { data, error } = await sb.from('reservation_messages')
+      .select(base + ', read_by').in('reservation_id', ids).in('sender_role', roles);
+    if (error) {
+      ({ data, error } = await sb.from('reservation_messages')
+        .select(base).in('reservation_id', ids).in('sender_role', roles).is('read_at', null));
+    }
     if (error) return {};
     const out = {};
-    (data || []).forEach(m => { out[m.reservation_id] = (out[m.reservation_id] || 0) + 1; });
+    (data || []).forEach(m => {
+      if (!chatUnreadFor(m, me)) return;
+      out[m.reservation_id] = (out[m.reservation_id] || 0) + 1;
+    });
     return out;
+  }
+
+  // ¿Este mensaje está sin leer PARA MÍ? Se expone porque las pantallas del
+  // tripulante y del conductor cuentan lo mismo sobre la lista que ya tienen.
+  function chatUnreadFor(msg, meId) {
+    if (!msg) return false;
+    if (Array.isArray(msg.read_by)) return !meId || !msg.read_by.includes(meId);
+    return !msg.read_at; // 0067 sin aplicar: un solo interruptor, como antes
   }
 
   async function markReservationMessagesRead(reservationId) {
@@ -2253,7 +2445,7 @@
   async function listLiveOperation() {
     const { data, error } = await sb
       .from('route_assignments')
-      .select('id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profiles(full_name, phone)), route_stops(stop_order, status, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, auxiliar_profiles(profiles(full_name)), flights(flight_number)))')
+      .select('id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profiles(full_name, phone)), route_stops(stop_order, status, reservation_id, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, auxiliar_profiles(profiles(full_name)), flights(flight_number)))')
       .in('status', ['planned', 'in_progress'])
       .order('planned_start_at');
     if (error) throw error;
@@ -2343,6 +2535,9 @@
         nextPos: nextStop && nextStop.reservations?.pickup_latitude
           ? [nextStop.reservations.pickup_latitude, nextStop.reservations.pickup_longitude]
           : null,
+        // La reserva de la próxima parada: es la que hay que reacomodar cuando
+        // este carro no alcanza (bloque D). Sin esto, "Reasignar" no sabe QUÉ mover.
+        nextReservationId: nextStop ? (nextStop.reservation_id || null) : null,
         status: done ? 'Disponible' : _opStatusLabel(stops, type),
         done,
         pos: loc ? [loc.latitude, loc.longitude] : null,
@@ -2357,6 +2552,112 @@
       day: day0,
       cars,
       feed: feed.slice(0, 12).map(e => ({ k: e.k, t: rtHHMM(e.at), h: e.h })),
+    };
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // RELEER EL PLAN PUBLICADO (bloque D)
+  //
+  // Esto NO existía. `rtLoad()` resetea el tablero en cada carga y
+  // `listRoutePlanning` devuelve siempre `plan: {}`, así que la app sabía
+  // ESCRIBIR un plan y nunca volver a leerlo. Para responder "¿dónde acomodo
+  // esta reserva que llegó tarde?" hay que partir del plan que de verdad está
+  // corriendo —con lo que ya se atendió y lo que falta— y no replanear el día
+  // desde cero: a las 4 de la mañana eso propondría un día que ya pasó a medias.
+  //
+  // Devuelve las vueltas VIVAS del día con sus paradas pendientes, el cupo del
+  // carro, los deadlines de cada pasajero y la última posición del conductor.
+  // ════════════════════════════════════════════════════════════════════
+  async function getPublishedPlan(day) {
+    const d0 = day + 'T00:00:00-05:00', d1 = day + 'T23:59:59-05:00';
+    const { data, error } = await sb.from('route_assignments')
+      .select('id, direction, status, planned_start_at, driver_profile_id, vehicle_id, ' +
+        'vehicles(license_plate, internal_code, capacity), ' +
+        'driver_profiles(profile_id, profiles(full_name)), ' +
+        'route_stops(id, stop_order, status, estimated_arrival_at, reservation_id, ' +
+        'reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, ' +
+        'residence_id, cancelled_at, auxiliar_profiles(profiles(full_name))))')
+      .in('status', ['planned', 'in_progress'])
+      .gte('planned_start_at', d0).lte('planned_start_at', d1)
+      .order('planned_start_at');
+    if (error) throw error;
+
+    const raws = data || [];
+    // Última posición conocida de cada conductor: si la vuelta ya arrancó, el
+    // punto de partida real es donde está el carro, no de donde salió.
+    const drvIds = [...new Set(raws.map(r => r.driver_profile_id).filter(Boolean))];
+    const posOf = {};
+    if (drvIds.length) {
+      const { data: locs } = await sb.from('driver_locations')
+        .select('driver_profile_id, latitude, longitude, recorded_at')
+        .in('driver_profile_id', drvIds)
+        .order('recorded_at', { ascending: false }).limit(400);
+      (locs || []).forEach(l => { if (!posOf[l.driver_profile_id]) posOf[l.driver_profile_id] = l; });
+    }
+
+    const vueltas = raws.map(ra => {
+      const stops = (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order);
+      // "Atendida" = ya no se puede mover. Es el mismo candado POR PARADA de
+      // saveRoutePlan: lo pendiente de una ruta en curso sí se puede reacomodar.
+      const atendida = (s) => s.status && s.status !== 'pending';
+      const viva = (s) => s.reservations && !s.reservations.cancelled_at;
+      const map = (s) => ({
+        stopId: s.id, rid: s.reservation_id, order: s.stop_order, status: s.status || 'pending',
+        lat: s.reservations?.pickup_latitude ?? null,
+        lng: s.reservations?.pickup_longitude ?? null,
+        resId: s.reservations?.residence_id || null,
+        address: s.reservations?.pickup_address || '',
+        name: s.reservations?.auxiliar_profiles?.profiles?.full_name || 'Tripulante',
+        pax: 1,   // una reserva = una persona (no hay pax_count en el schema)
+        dueAt: s.reservations?.required_arrival_at || null,
+        etaAt: s.estimated_arrival_at || null,
+      });
+      const vivos = stops.filter(viva);
+      const pend = vivos.filter(s => !atendida(s)).map(map);
+      const hechas = vivos.filter(atendida).map(map);
+      const pos = posOf[ra.driver_profile_id];
+      return {
+        id: ra.id,
+        type: ra.direction === 'airport_to_home' ? 'lle' : 'sal',
+        status: ra.status,
+        startAt: ra.planned_start_at,
+        vehicleId: ra.vehicle_id,
+        carro: ra.vehicles?.internal_code || ra.vehicles?.license_plate || 'Carro',
+        cap: ra.vehicles?.capacity || 4,
+        driverProfileId: ra.driver_profiles?.profile_id || null,
+        conductor: ra.driver_profiles?.profiles?.full_name || 'Sin conductor',
+        pendientes: pend,
+        atendidas: hechas,
+        // Cuántos van ya montados: cuentan para el cupo aunque no se puedan mover.
+        paxABordo: hechas.filter(s => s.status === 'picked_up').reduce((n, s) => n + s.pax, 0),
+        paxPendiente: pend.reduce((n, s) => n + s.pax, 0),
+        pos: pos ? { lat: pos.latitude, lng: pos.longitude, at: pos.recorded_at } : null,
+      };
+    });
+
+    return { day, vueltas, publicado: vueltas.some(v => v.driverProfileId) };
+  }
+
+  // Los datos de UNA reserva, para preguntar dónde cabe. Se pide aparte porque
+  // la reserva tardía justamente NO está en el plan.
+  async function getReservationForFit(reservationId) {
+    const { data, error } = await sb.from('reservations')
+      .select('id, direction, pickup_address, pickup_latitude, pickup_longitude, ' +
+        'required_arrival_at, residence_id, cancelled_at, ' +
+        'auxiliar_profiles(profiles(full_name))')
+      .eq('id', reservationId).maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      rid: data.id,
+      type: data.direction === 'airport_to_home' ? 'lle' : 'sal',
+      lat: data.pickup_latitude, lng: data.pickup_longitude,
+      resId: data.residence_id || null,
+      address: data.pickup_address || '',
+      name: data.auxiliar_profiles?.profiles?.full_name || 'Tripulante',
+      pax: 1,   // una reserva = una persona (no hay pax_count en el schema)
+      dueAt: data.required_arrival_at || null,
+      cancelled: !!data.cancelled_at,
     };
   }
 
@@ -2382,7 +2683,7 @@
     reportIncident, listEventualidades, countOpenEventualidades, acknowledgeIncident, opsAlertProfileIds, opsAlertHealth,
     startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
-    listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
+    listChecklistItems, listChecklistItemsForTiers, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
     getMyFullProfile, uploadMyAvatar,
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
@@ -2394,6 +2695,12 @@
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
     sendDriverLocation, listLiveOperation,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
+    chatUnreadFor,
+    getPublishedPlan, getReservationForFit,
     trafficMatrix, getReservationRisk, listOpenRouteRisks,
+    listPartStatus, listPartCatalog, listPartRealLife, listPartHistory,
+    setVehiclePartBaseline, registerPartChange, confirmPartChange,
+    correctVehicleOdometer, setPartInterval,
+    listInspectionTiers, pendingInspectionTiers, markInspectionTiersDone,
   };
 })();

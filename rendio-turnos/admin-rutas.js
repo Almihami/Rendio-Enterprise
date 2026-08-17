@@ -105,6 +105,10 @@
     // 0 = sin corrimiento; es el valor con el que nace, porque Julián dijo
     // "domingos y festivos no sacarlos tan temprano" pero no dio el número.
     rt.HOLIDAY_SHIFT = s.route_holiday_shift_min != null ? Number(s.route_holiday_shift_min) : 0;
+    // Colchón que trae adentro su tabla de zona y que no es tiempo de manejo
+    // (0071). Si la columna no existe todavía queda en 0 y el solver se comporta
+    // como antes de esa migración.
+    rt.ZONE_CUSHION = s.route_zone_cushion_min != null ? Number(s.route_zone_cushion_min) : 0;
   }
 
   async function rtLoad() {
@@ -196,11 +200,16 @@
     const s = String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!s) return null;
     const T = rt.DEPLANE_TABLE || {};
-    const sigla = ['JEC', 'JA', 'AV', 'P5'].find(p => s.startsWith(p)) || '';
+    // Las siglas van de la más larga a la más corta: si 'JE' fuera antes que
+    // 'JEC', "JEC123" quedaría partido en 'JE' + "C123" y se descartaría.
+    // J6 y JE también son JetSmart (confirmado por Julián el 17-ago-2026: los
+    // vuelos J65417 y J65435 del plan de ese día caían fuera de la regla).
+    const sigla = ['JEC', 'J6', 'JA', 'JE', 'AV', 'P5'].find(p => s.startsWith(p)) || '';
     const num = s.slice(sigla.length);
     if (!/^\d+$/.test(num)) return null;
     if (sigla === 'P5') return T.wingo;
-    if (sigla === 'JEC' || sigla === 'JA') return num.startsWith('58') ? T.jsInt : T.jsNac;
+    if (sigla === 'JEC' || sigla === 'JA' || sigla === 'J6' || sigla === 'JE')
+      return num.startsWith('58') ? T.jsInt : T.jsNac;
     if (sigla === 'AV') return num.length <= 3 ? T.avInt : T.avNac;
     // Sin sigla: se deduce por la forma del número.
     if (num.length <= 3) return T.avInt;                      // 033, 231, 43
@@ -506,9 +515,16 @@
     const pax = rtPaxOf(ids);
     const z = rtZonaDe(ids, dlMin, pax);
     if (!z) return durReal;                     // sin zona confirmada → como antes
+    // Su tabla de zona NO es tiempo de manejo: es manejo + colchón (ver 0071).
+    // Medido sobre sus 7 planes, pide el doble de lo que él mismo programa, y
+    // se contradice con su propia regla del tramo final por 25 min en las 20
+    // combinaciones de zona × franja. Se le descuenta el colchón, que ya está
+    // modelado aparte en route_airport_buffer_min.
+    //
     // "Domingos y festivos no sacarlos tan temprano": se recorta la
-    // anticipación. Nace en 0 (sin corrimiento) hasta que él dé el número.
-    const total = Math.max(0, z.min - (rt.esDiaLento ? rt.HOLIDAY_SHIFT : 0));
+    // anticipación. Sigue en 0 — y medir sus planes lo respalda: el del viernes
+    // 7-ago (día normal) se aparta de la tabla lo mismo que el del festivo.
+    const total = Math.max(0, z.min - rt.ZONE_CUSHION - (rt.esDiaLento ? rt.HOLIDAY_SHIFT : 0));
     // Segunda regla suya: el tramo desde la ÚLTIMA persona recogida. En una
     // vuelta de varias paradas tiene que caber dentro del total, así que
     // funciona como piso propio.

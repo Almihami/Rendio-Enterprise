@@ -50,6 +50,35 @@
   // Checklist activo: se carga desde la BD en init() (Api.listChecklistItems, 0024);
   // fallback a los fijos si la migración no está o la organización no tiene ítems.
   let ckItems = CHECKLIST_FALLBACK;
+  // Checklist de todos los días, sin los ítems de nivel preventivo. Sobre esta
+  // base se suman los del nivel cuando el carro elegido cruzó un múltiplo de km
+  // (0073): así el conductor mide espesor de pastillas el turno que toca, y no
+  // todos los días.
+  let ckBase = CHECKLIST_FALLBACK;
+  let ckTierFor = null;   // vehículo para el que ya se resolvieron los niveles
+
+  // Añade al checklist los ítems de los niveles pendientes del vehículo elegido.
+  // Best-effort: si algo falla, el conductor hace su inspección normal.
+  async function applyTierChecklist(vehicleId) {
+    ckItems = ckBase;
+    sf.tierKms = [];
+    if (!vehicleId) return;
+    try {
+      const tiers = await Api.pendingInspectionTiers(vehicleId);
+      if (!tiers || !tiers.length) return;
+      const kms = tiers.map(t => t.every_km);
+      const extra = await Api.listChecklistItemsForTiers(kms);
+      if (!extra.length) return;
+      sf.tierKms = kms;
+      ckItems = ckBase.concat(extra.map(it => ({
+        id: it.id,
+        label: it.label,
+        detail: it.hint || '',
+        // Se agrupan aparte para que se note que es la revisión del nivel.
+        category: 'Revisión de ' + Number(it.tier_every_km).toLocaleString('es-CO') + ' km',
+      })));
+    } catch (e) { /* sin 0073 o sin niveles: queda el checklist normal */ }
+  }
 
   // photo_type del enum inspection_photo_type: front|left|right|rear|dashboard (0016)
   // + glovebox|door_left|door_right (0042, fotos "sin basura").
@@ -149,6 +178,7 @@
     try {
       const items = await Api.listChecklistItems(true);
       if (items && items.length) ckItems = items.map(it => ({ id: it.id, label: it.label, detail: it.hint || '', category: it.category || 'General' }));
+      ckBase = ckItems;
     } catch (e) { /* sin 0024 o sin ítems: queda CHECKLIST_FALLBACK */ }
     // Ajustes (ventana/plazo del inicio diferido). Si falla, el botón no aparece.
     try { sf.settings = await Api.getSettings(); } catch (e) { sf.settings = null; }
@@ -333,6 +363,12 @@
   function render() {
     const wiz = $('#shift-wizard');
     if (sf.done) { renderDone(wiz); return; }
+    // Al cambiar de vehículo se recalcula si le toca revisión de nivel (0073).
+    // Es asíncrono: se repinta cuando llega, sin frenar el paso actual.
+    if (sf.vehicleId !== ckTierFor) {
+      ckTierFor = sf.vehicleId;
+      applyTierChecklist(sf.vehicleId).then(() => { if (sf.step === 1) render(); });
+    }
     switch (sf.step) {
       case 0: renderVehicle(wiz); break;
       case 1: renderChecklist(wiz); break;
@@ -1067,6 +1103,12 @@
         setState('Iniciando turno…');
         await Api.startShift(shiftId);
         sf.done = 'started';
+        // La revisión de nivel quedó hecha: no se vuelve a pedir hasta el
+        // siguiente múltiplo de km (0073). Best-effort, nunca frena el turno.
+        if (sf.tierKms && sf.tierKms.length) {
+          const kmDone = parseInt(String(sf.km || '').replace(/\D/g, ''), 10) || 0;
+          try { await Api.markInspectionTiersDone(sf.vehicleId, kmDone); } catch (_) { /* */ }
+        }
       }
       sf.reuseShiftId = null;
       sf.completing = false;

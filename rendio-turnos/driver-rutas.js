@@ -326,7 +326,11 @@
       try { return new Date(iso).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' }); }
       catch (_) { return ''; }
     };
-    el.innerHTML = msgs.map(m => `<div class="dr-msg ${m.sender_role === 'driver' ? 'mine' : 'their'}">
+    // Desde 0067 el jefe también escribe en este hilo. Un mensaje de Rendio no
+    // puede verse igual que uno del tripulante: el conductor tiene que saber
+    // quién le está hablando antes de responder.
+    el.innerHTML = msgs.map(m => `<div class="dr-msg ${m.sender_role === 'driver' ? 'mine' : 'their'}${m.sender_role === 'admin' ? ' rendio' : ''}">
+      ${m.sender_role === 'admin' ? '<em>Rendio</em>' : ''}
       <p>${drEsc(m.body)}</p><span>${hora(m.created_at)}</span></div>`).join('');
     el.scrollTop = el.scrollHeight;
   }
@@ -388,7 +392,9 @@
     const v = drVuelta(); if (!v || !window.Api?.countUnreadMessages) return;
     const ids = v.legs.map(l => l.reservationId).filter(Boolean);
     if (!ids.length) return;
-    const counts = await Api.countUnreadMessages(ids, 'auxiliar');
+    // El jefe también escribe en el hilo (0067): si no se cuenta, un mensaje de
+    // Rendio no le pone badge a la parada y el conductor no se entera.
+    const counts = await Api.countUnreadMessages(ids, ['auxiliar', 'admin']);
     const cambio = ids.some(id => (drState.unread[id] || 0) !== (counts[id] || 0));
     drState.unread = counts;
     if (cambio && !drState.chat) drRender();

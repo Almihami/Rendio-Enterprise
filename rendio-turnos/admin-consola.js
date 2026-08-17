@@ -29,6 +29,7 @@
           { id: 'solic', name: 'Solicitudes', icon: 'm-solic', desc: 'Aprobar o rechazar descansos pedidos, por franja.', tab: 'approvals' },
           { id: 'insp', name: 'Inspecciones', icon: 'm-insp', desc: 'Revisar inspecciones de inicio de turno con novedad.', tab: 'inspections' },
           { id: 'shifts', name: 'Turnos activos', icon: 'm-insp', desc: 'Turnos en curso; forzar cierre si quedó colgado.', tab: 'shifts' },
+          { id: 'parts', name: 'Repuestos', icon: 'm-insp', desc: 'Mantenimiento preventivo por kilometraje: qué pieza le toca a cada carro.', star: true, tab: 'parts' },
         ] },
         { id: 'team', name: 'Equipo', icon: 'g-team', desc: 'Personas y motivación', items: [
           { id: 'personal', name: 'Personal', icon: 'm-personal', desc: 'Conductores y admins: estado, strikes, coordinación.', tab: 'workers' },

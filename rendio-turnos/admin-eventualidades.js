@@ -13,6 +13,16 @@
   // ====================================================================
   const evtState = { items: [], filter: 'open', expanded: null, focusId: null, timer: null };
 
+  // Abre el hilo del traslado de esta eventualidad. El encabezado dice de quién
+  // y de dónde es, para no escribirle al pasajero equivocado a las 4am.
+  function evtAbrirChat(rid) {
+    const it = evtState.items.find(x => x.reservation_id === rid);
+    const pax = it ? evtPax(it) : null;
+    const r = it && it.reservations;
+    const sub = (r && r.pickup_address) ? String(r.pickup_address).slice(0, 60) : '';
+    jcOpen(rid, (pax && pax.full_name) || 'Traslado', sub);
+  }
+
   const EVT_POLL_MS = 25000; // no hay Realtime en toda la app; polling, como Operación
 
   // Cada categoría con su cara: qué se le dice al jefe y qué tan fuerte se ve.
@@ -38,6 +48,10 @@
   const EVT_SEV = { low: 'Leve', medium: 'Media', high: 'Grave' };
   const EVT_ST  = { open: 'Abierta', in_progress: 'En curso', resolved: 'Resuelta' };
   const EVT_SRC = { driver: 'el conductor', auxiliar: 'el tripulante', admin: 'un administrador', system: 'el sistema', flight_api: 'la aerolínea' };
+  // Categorías donde "¿dónde la acomodo?" es la pregunta correcta: la reserva
+  // existe y no tiene carro. En un trancón o una falla mecánica el problema es
+  // otro y el botón sobraría.
+  const EVT_ACOMODABLES = ['late_booking', 'needs_third_vehicle', 'flight_advanced', 'flight_delay'];
 
   const evtMeta = (c) => EVT_CAT[c] || { label: c || 'Novedad', icon: 'i-info', tone: 'info' };
 
@@ -86,12 +100,25 @@
     let h = null;
     try { h = await Api.opsAlertHealth(); } catch (e) { /* 0066 sin aplicar */ }
     if (!h) { box.classList.remove('show'); return; }
-    const represado = (h.mas_viejo_min || 0) >= 10 || (h.atascados || 0) > 0;
+    // TRES fallas distintas, y cada una se arregla en un sitio distinto. Darles
+    // el mismo rojo manda a revisar el lado equivocado, y un semáforo que miente
+    // deja de mirarse (0069).
     const sinDestino = (h.destinatarios || 0) === 0;
-    if (!represado && !sinDestino) { box.classList.remove('show'); return; }
+    const represado  = (h.mas_viejo_min || 0) >= 10 || (h.atascados || 0) > 0;
+    // `con_dispositivo` puede no venir si la 0069 no está aplicada: sin ese dato
+    // no se puede afirmar nada sobre los celulares, así que no se dice nada.
+    const sinCelular = h.con_dispositivo != null && h.con_dispositivo === 0 && !sinDestino;
+
+    if (!represado && !sinDestino && !sinCelular) { box.classList.remove('show'); return; }
+
     box.querySelector('span').textContent = sinDestino
       ? 'Nadie está marcado para recibir alertas y no hay administradores activos: los avisos de madrugada no le van a llegar a nadie. Revísalo en Personal.'
-      : `Los avisos no están saliendo: hay ${h.pendientes} en cola, el más viejo de hace ${h.mas_viejo_min} min. Mientras esto siga así, una eventualidad de madrugada no va a sonar en ningún celular.`;
+      : represado
+        // Esto sí es una falla técnica del canal.
+        ? `Los avisos no están saliendo: hay ${h.pendientes} en cola, el más viejo de hace ${h.mas_viejo_min} min. Mientras esto siga así, una eventualidad de madrugada no va a sonar en ningún celular.`
+        // Y esto NO: el canal está bien, lo que falta es un paso presencial que
+        // ningún arreglo de código resuelve.
+        : 'El canal de avisos está bien, pero ninguno de los jefes tiene notificaciones activadas: hay que instalar la app en la pantalla de inicio del celular y aceptar el permiso. Hasta entonces las eventualidades solo se ven entrando aquí.';
     box.classList.add('show');
   }
 
@@ -134,7 +161,7 @@
     evtState.timer = setInterval(async () => {
       // Si el admin se fue a otra pestaña, el intervalo se apaga solo.
       const panel = document.querySelector('section[data-panel="eventualidades"]');
-      if (!panel || panel.classList.contains('hidden')) { stopEvtTimer(); return; }
+      if (!panel || panel.classList.contains('hidden')) { stopEvtTimer(); jcClose(); return; }
       try {
         evtState.items = await Api.listEventualidades();
         renderEvtList();
@@ -202,6 +229,17 @@
     const tel = (pax && pax.phone)
       ? `<a class="evt-btn ghost" href="tel:${String(pax.phone).replace(/\s/g, '')}"><svg class="icon"><use href="#i-phone"/></svg>Llamar</a>`
       : '';
+    // Escribir por el hilo del traslado (0067). Le llega como push y queda
+    // constancia — a diferencia de la llamada, que a las 4am nadie contesta.
+    const escribir = it.reservation_id
+      ? `<button class="evt-btn ghost" data-evt-chat="${it.reservation_id}"><svg class="icon"><use href="#i-chat"/></svg>Escribir</button>`
+      : '';
+    // "¿Dónde la acomodo?" (bloque D). Solo donde la pregunta tiene sentido: una
+    // reserva que quedó sin carro. En una falla mecánica o un trancón la pregunta
+    // es otra, y ofrecerlo ahí sería ruido.
+    const acomodar = (it.reservation_id && EVT_ACOMODABLES.includes(it.category))
+      ? `<button class="evt-btn ghost" data-evt-fit="${it.reservation_id}"><svg class="icon"><use href="#i-route"/></svg>¿Dónde la acomodo?</button>`
+      : '';
 
     const acciones = it.status === 'resolved'
       ? `<button class="evt-btn ghost" data-evt-st="open" data-evt-id="${it.id}">Reabrir</button>`
@@ -219,7 +257,7 @@
           ${it.acknowledged_at ? `<div><span>Vista</span><b>${escapeHtml(evtWhen(it.acknowledged_at))}</b></div>` : ''}
         </div>
         ${it.resolution_notes ? `<p class="evt-note">${escapeHtml(it.resolution_notes)}</p>` : ''}
-        <div class="evt-actions">${mapa}${tel}${acciones}</div>
+        <div class="evt-actions">${mapa}${tel}${escribir}${acomodar}${acciones}</div>
       </div>` : '';
 
     return `<div class="evt-row ${m.tone}${grave ? ' grave' : ''}${open ? ' open' : ''}" data-evt-row="${it.id}">
@@ -242,6 +280,16 @@
 
     root.addEventListener('click', async (e) => {
       if (e.target.closest('#evt-refresh')) { renderEventualidades(); return; }
+
+      // El hilo del traslado (0067) es una hoja compartida con Reservas: la
+      // maneja admin-chat.js, no esta pantalla.
+      const ch = e.target.closest('[data-evt-chat]');
+      if (ch) { evtAbrirChat(ch.dataset.evtChat); return; }
+
+      // El cálculo de dónde cabe vive en admin-acomodar.js: es el mismo motor
+      // que usa Operación en vivo, no una copia para esta pantalla.
+      const fit = e.target.closest('[data-evt-fit]');
+      if (fit) { acAbrir(fit.dataset.evtFit); return; }
 
       const f = e.target.closest('#evt-bar button');
       if (f) { evtState.filter = f.dataset.evtF; renderEvtList(); return; }

@@ -449,9 +449,20 @@
       else toast('Ese conductor no tiene teléfono registrado.');
       return;
     }
-    toast(method === 'reopt'
-      ? 'Re-optimizar en vivo todavía no está conectado.'
-      : 'Reasignar una parada en vivo todavía no está conectado.');
+    // "Reasignar" ya no es un letrero: pregunta dónde cabe la parada que este
+    // carro no alcanza, sobre el plan que está corriendo (bloque D). El motor es
+    // el mismo de la bandeja — admin-acomodar.js — no una copia.
+    if (method === 'reassign') {
+      const rid = late.nextReservationId;
+      if (!rid) { toast('Ese carro no tiene una parada pendiente que reacomodar.'); return; }
+      acAbrir(rid);
+      return;
+    }
+    // Re-optimizar el día entero sigue SIN conectar, y es a propósito: el solver
+    // replanea desde cero (arranca en el depósito a las 01:30) y no sabe qué se
+    // atendió ya. A esta hora eso propondría un día que no existe. La pregunta
+    // que sí se responde bien es la de UNA parada, que es el botón de al lado.
+    toast('Re-optimizar el día entero no está conectado: a esta hora replanearía un día que ya va a medias. Usa "Reasignar" para mover una parada.');
   }
 
   // Se eliminó el intervalo que deslizaba los carros de la demo por su ruta

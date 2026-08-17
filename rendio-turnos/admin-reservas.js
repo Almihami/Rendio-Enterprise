@@ -8,7 +8,7 @@
 //   3. Las calificaciones se guardaban (0048) y NO las veía nadie. Aquí salen.
 // Comparte scope global con los demás módulos; el orden de carga está en index.html.
 
-  const rvState = { items: [], filter: 'all', day: 'all', cancelId: null, loading: false };
+  const rvState = { items: [], filter: 'all', day: 'all', cancelId: null, loading: false, focusChatId: null };
 
   const RV_ST = {
     pending:  { cls: 'warn',  label: 'Sin rutear' },
@@ -51,6 +51,15 @@
     }
     rvState.items = rows;
     renderReservasList();
+    // Si llegamos desde un push (`#/reservas?chat=<id>`), se abre directo el hilo
+    // que motivó el aviso. Se consume una sola vez: un refresco no lo reabre.
+    if (rvState.focusChatId) {
+      const rid = rvState.focusChatId;
+      rvState.focusChatId = null;
+      const r = rvState.items.find(x => x.id === rid);
+      if (r) jcOpen(rid, r.name || 'Traslado', `${r.time} · ${r.address || 'sin dirección'}`.slice(0, 60));
+      else toast('Ese traslado ya no está en la lista de la semana.');
+    }
   }
 
   function rvFiltered() {
@@ -127,6 +136,7 @@
       </div>
       <div class="rv-acts">
         ${r.phone ? `<a class="rv-ic" href="tel:${escapeHtml(r.phone.replace(/[^\d+]/g, ''))}" title="Llamar"><svg class="icon"><use href="#i-phone"/></svg></a>` : ''}
+        ${r.status !== 'cancelled' ? `<button class="rv-ic" data-rv-chat="${r.id}" title="Escribirle"><svg class="icon"><use href="#i-chat"/></svg></button>` : ''}
         ${rvCanCancel(r) && !cancelling ? `<button class="set-btn ghost" data-rv-cancel="${r.id}">Cancelar</button>` : ''}
       </div>
     </div>`;
@@ -142,6 +152,15 @@
       if (f) { rvState.filter = f.dataset.rvF; rvState.cancelId = null; renderReservasList(); return; }
       const d = e.target.closest('[data-rv-day]');
       if (d) { rvState.day = d.dataset.rvDay; rvState.cancelId = null; renderReservasList(); return; }
+      // Escribirle por el hilo del traslado (0067): le suena al tripulante y a
+      // su conductor, y queda constancia. La hoja la maneja admin-chat.js.
+      const ch = e.target.closest('[data-rv-chat]');
+      if (ch) {
+        const r = (rvState.items || []).find(x => x.id === ch.dataset.rvChat);
+        jcOpen(ch.dataset.rvChat, (r && r.name) || 'Traslado',
+          r ? `${r.time} · ${r.address || 'sin dirección'}`.slice(0, 60) : '');
+        return;
+      }
       const c = e.target.closest('[data-rv-cancel]');
       if (c) { rvState.cancelId = c.dataset.rvCancel; renderReservasList(); return; }
       if (e.target.closest('[data-rv-abort]')) { rvState.cancelId = null; renderReservasList(); return; }

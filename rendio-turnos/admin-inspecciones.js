@@ -580,7 +580,9 @@
     const view = $('#insp-v-config');
     view.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
     inspShowView('config');
-    try { inspState.checklist = await Api.listChecklistItems(false); }
+    // true al final: aquí sí se muestran los ítems de nivel preventivo (0073),
+    // para que el admin pueda verlos y editarlos aunque no salgan a diario.
+    try { inspState.checklist = await Api.listChecklistItems(false, true); }
     catch (e) { console.error(e); view.innerHTML = '<button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver</button><div class="card">No se pudo cargar el checklist.</div>'; return; }
     renderInspChecklist();
   }

@@ -400,6 +400,7 @@
     if (name === 'settings') renderSettings();
     if (name === 'balance') renderBalance();
     if (name === 'inspections') renderInspections();
+    if (name === 'parts') renderParts();
     if (name === 'shifts') renderShifts();
     if (name === 'rewards') renderRewardsAdmin();
     if (name === 'consola') renderConsola();
@@ -423,11 +424,18 @@
     const h = String(location.hash || '');
     const m = h.match(/^#\/([a-z-]+)(?:\?(.*))?$/i);
     if (!m) return false;
-    const tab = m[1] === 'eventualidades' ? 'eventualidades' : null;
+    // `#/reservas?chat=<reservation_id>` (0067) abre Reservas con el hilo de ESE
+    // traslado ya abierto. Es a donde apunta el aviso de "un tripulante escribió
+    // y no tiene carro asignado": ese mensaje NO crea una eventualidad, así que
+    // mandarlo a la bandeja sería mandarlo a una pantalla donde no está.
+    const tab = m[1] === 'eventualidades' ? 'eventualidades'
+      : m[1] === 'reservas' ? 'reservas' : null;
     if (!tab) return false;
     const params = new URLSearchParams(m[2] || '');
     const ev = params.get('ev');
     if (ev) evtState.focusId = ev;
+    const chat = params.get('chat');
+    if (chat) rvState.focusChatId = chat;
     // Se limpia el hash para que un refresco no vuelva a abrir lo mismo.
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* */ }
     setTab(tab);

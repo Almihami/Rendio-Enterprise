@@ -836,7 +836,10 @@
       try { return new Date(iso).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' }); }
       catch (_) { return ''; }
     };
-    el.innerHTML = msgs.map(m => `<div class="ax-msg ${m.sender_role === 'auxiliar' ? 'mine' : 'their'}">
+    // Desde 0067 el hilo tiene tres puntas. Un mensaje de Rendio no se puede ver
+    // igual que uno del conductor: quien lo lee tiene que saber quién le habla.
+    el.innerHTML = msgs.map(m => `<div class="ax-msg ${m.sender_role === 'auxiliar' ? 'mine' : 'their'}${m.sender_role === 'admin' ? ' rendio' : ''}">
+      ${m.sender_role === 'admin' ? '<em>Rendio</em>' : ''}
       <p>${auxEsc(m.body)}</p><span>${hora(m.created_at)}</span>
     </div>`).join('');
     el.scrollTop = el.scrollHeight;
@@ -851,7 +854,12 @@
     if (auxCurTrip() !== t) return;
     const abierto = auxState.chatOpen;
     auxState.chatMsgs = msgs;
-    auxState.chatUnread = abierto ? 0 : msgs.filter(m => m.sender_role !== 'auxiliar' && !m.read_at).length;
+    // Sin leer PARA MÍ: con tres puntas en el hilo, que el conductor haya abierto
+    // un mensaje de Rendio no significa que yo lo haya visto (0067).
+    const yo = auxState.profile?.id || null;
+    const sinLeer = (m) => window.Api?.chatUnreadFor ? Api.chatUnreadFor(m, yo)
+      : (Array.isArray(m.read_by) ? !yo || !m.read_by.includes(yo) : !m.read_at);
+    auxState.chatUnread = abierto ? 0 : msgs.filter(m => m.sender_role !== 'auxiliar' && sinLeer(m)).length;
     if (abierto) {
       auxChatBubbles();
       if (markRead && Api.markReservationMessagesRead) { try { await Api.markReservationMessagesRead(t.id); } catch (_) {} }
@@ -1647,9 +1655,12 @@
   // Dos destinos, por dos caminos que YA funcionan:
   //  · A los jefes, por push directo — es a quienes les toca decidir.
   //  · Al conductor, por el chat del traslado (0052), que de por sí le manda
-  //    push a la otra punta y además deja el aviso escrito en el hilo. Se
-  //    intenta solo si ya hay conductor: el RPC del chat falla a propósito
-  //    cuando el traslado todavía no tiene a quién avisarle.
+  //    push a la otra punta y además deja el aviso escrito en el hilo.
+  //
+  // Antes esto se intentaba solo si ya había conductor, porque el RPC del chat
+  // reventaba cuando no lo había — y el catch se comía el 🚨 en silencio, justo
+  // en el caso más grave. Desde 0067 el mensaje se guarda igual y el aviso les
+  // llega a los jefes, así que ya no hace falta el candado.
   async function auxAlarmSend(btn) {
     const a = auxState.alarm; if (!a || a.sending) return;
     const t = auxCurTrip(); if (!t) return;
@@ -1675,8 +1686,8 @@
         notifyOps(opt.sev === 'high' ? '🚨 Emergencia de un tripulante' : 'Novedad de un tripulante',
           `${quien}: ${desc}`.slice(0, 200), id);
       }
-      if (t.driver && window.Api?.sendReservationMessage) {
-        try { await Api.sendReservationMessage(t.id, `🚨 ${desc}`); } catch (_) { /* aún sin conductor asignado */ }
+      if (window.Api?.sendReservationMessage) {
+        try { await Api.sendReservationMessage(t.id, `🚨 ${desc}`); } catch (_) { /* el aviso principal ya salió */ }
       }
       auxState.alarm = null;
       auxRender();
