@@ -47,6 +47,37 @@
   --rc-header-h:57px;
 }
 
+/* Tokens del modo oscuro. Se activan con data-theme="dark" en #driver-tabs-root
+   (no en <html>): solo las pestañas del conductor están en el sistema nuevo, el
+   resto de la app y el wizard de inicio de turno siguen en claro. */
+#driver-tabs-root[data-theme="dark"]{
+  --r-bg:#0E0E10;
+  --r-card:#18181B;
+  --r-accent:#FF7A3D;
+  --r-accent-soft:#2C1A11;
+  --r-success:#34D399;
+  --r-success-soft:#11271F;
+  --r-text:#F4F4F5;
+  --r-text-2:#A1A1AA;
+  --r-text-3:#71717A;
+  --r-border:#27272A;
+  --r-border-strong:#3F3F46;
+  --r-surface-2:#1F1F22;
+  --r-h2a:#FF7A3D;      --r-h2a-soft:#2C1A11;
+  --r-a2h:#34D399;      --r-a2h-soft:#11271F;
+  --r-error:#F87171;    --r-error-soft:#3A1A1A;
+  --r-warn:#FBBF24;     --r-warn-soft:#2C2113;
+  --r-info:#60A5FA;     --r-info-soft:#1A2334;
+  --r-shadow-sm:0 1px 2px rgba(0,0,0,.3);
+  --st-ok-bg:#0F2820;--st-ok-bd:#1D4A3A;--st-ok-fg:#54DFAE;--st-ok-dot:#34D399;
+  --st-pref-bg:#2B2113;--st-pref-bd:#4A3A1C;--st-pref-fg:#F0B44A;--st-pref-dot:#F59E0B;
+  --st-no-bg:#2E1818;--st-no-bd:#4E2626;--st-no-fg:#F58585;--st-no-dot:#EF4444;
+  --st-none-bg:#1C1C1F;--st-none-bd:#333338;--st-none-fg:#7C7C85;
+  --st-lock-bg:#191919;--st-lock-bd:#2E2E32;--st-lock-fg:#8A8A93;
+  background:var(--r-bg);
+  color:var(--r-text);
+}
+
 /* ── Helpers del sistema (los pocos .r-* que usa esta pantalla) ────────── */
 svg.lucide{stroke-width:1.5}
 .r-icon-btn{width:36px;height:36px;border-radius:10px;background:transparent;border:none;display:flex;align-items:center;justify-content:center;color:var(--r-text);cursor:pointer;transition:background .15s}
@@ -190,6 +221,92 @@ svg.lucide{stroke-width:1.5}
 
 /* Solo lectura (semana cerrada / cuenta suspendida) */
 .rc-readonly{opacity:.62;pointer-events:none}
+
+/* ══ Piezas comunes de Inicio · Mi horario · Solicitudes · Perfil ═══════
+   Del entregable rc-tabs.jsx. Allá casi todo iba en estilos en línea de React;
+   acá se sacan a clases para no repetirlos en cada plantilla de string. */
+.rc-sechd{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--r-text-3);margin:22px 0 9px}
+.rc-card{width:100%;background:var(--r-card);border:1px solid var(--r-border);border-radius:16px;padding:15px;text-align:left;font:inherit;color:var(--r-text);display:block}
+button.rc-card{cursor:pointer}
+.rc-card.tight{padding:2px 15px}
+.rc-listrow{width:100%;display:flex;align-items:center;gap:12px;padding:13px 2px;background:none;border:0;border-bottom:1px solid var(--r-border);font:inherit;color:var(--r-text);text-align:left}
+.rc-listrow:last-child{border-bottom:0}
+button.rc-listrow{cursor:pointer}
+.rc-listrow .ic{color:var(--r-text-3);display:flex;flex-shrink:0}
+.rc-listrow .lbl{flex:1;font-size:14.5px;font-weight:500}
+.rc-listrow .val{font-size:13px;color:var(--r-text-2);font-weight:500}
+.rc-listrow .chev{color:var(--r-text-3);display:flex}
+.rc-empty{padding:30px 20px;text-align:center;border:1px dashed var(--r-border-strong);border-radius:16px}
+.rc-empty-ic{width:40px;height:40px;border-radius:20px;background:var(--r-surface-2);color:var(--r-text-3);display:inline-flex;align-items:center;justify-content:center}
+.rc-empty b{display:block;font-size:14.5px;font-weight:650;margin-top:10px}
+.rc-empty p{font-size:12.5px;color:var(--r-text-3);margin:4px auto 0;max-width:230px;line-height:1.45}
+
+/* ── Inicio: tarjeta grande de turno ───────────────────────────────────── */
+.rc-hero{width:100%;margin-top:18px;padding:20px;border-radius:20px;border:0;cursor:pointer;font:inherit;text-align:left;color:#fff;display:block}
+.rc-hero.start{background:var(--r-accent);box-shadow:0 10px 28px rgba(242,101,34,.26)}
+.rc-hero.live{background:var(--r-success);box-shadow:0 10px 28px rgba(16,185,129,.24);cursor:default}
+.rc-hero-top{display:flex;align-items:flex-start;justify-content:space-between}
+.rc-hero-ic{width:44px;height:44px;border-radius:14px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.rc-hero-tag{font-size:10px;font-weight:700;letter-spacing:1.4px;opacity:.85;display:flex;align-items:center;gap:6px}
+.rc-hero-t{margin-top:26px;font-size:21px;font-weight:650;letter-spacing:-.4px}
+.rc-hero-s{font-size:13px;opacity:.88;margin-top:3px;font-variant-numeric:tabular-nums}
+.rc-hero-go{margin-top:14px;display:flex;align-items:center;gap:6px;font-size:14.5px;font-weight:650}
+.rc-hero-btn{width:100%;margin-top:16px;height:46px;border-radius:13px;border:0;cursor:pointer;font:inherit;background:#fff;font-size:15px;font-weight:650}
+.rc-hero.live .rc-hero-btn{color:var(--r-success)}
+.rc-livedot{width:6px;height:6px;border-radius:3px;background:#fff;display:inline-block;animation:rpulse 1.8s infinite}
+@keyframes rpulse{0%,100%{opacity:1}50%{opacity:.35}}
+.rc-hero-note{margin-top:12px;padding:12px;border-radius:13px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3)}
+.rc-hero-note b{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
+.rc-hero-note p{font-size:11.5px;opacity:.88;margin:3px 0 0}
+.rc-hero-note button{width:100%;margin-top:9px;height:40px;border-radius:11px;border:0;cursor:pointer;font:inherit;background:#fff;color:var(--r-success);font-size:14px;font-weight:700}
+/* Tarjeta ámbar "te faltan N jornadas" */
+.rc-nudge{background:var(--r-warn-soft);border-color:transparent}
+.rc-nudge-ic{width:34px;height:34px;border-radius:17px;background:rgba(255,255,255,.55);color:var(--r-warn);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#driver-tabs-root[data-theme="dark"] .rc-nudge-ic{background:rgba(255,255,255,.1)}
+
+/* ── Mi horario ────────────────────────────────────────────────────────── */
+.rc-hday{background:var(--r-card);border:1px solid var(--r-border);border-radius:16px;padding:13px 15px}
+.rc-hday.libre{opacity:.68}
+.rc-hday-head{display:flex;align-items:baseline;gap:8px}
+.rc-hday-head b{font-size:14px;font-weight:650;letter-spacing:-.2px}
+.rc-hday-head span{font-size:11.5px;color:var(--r-text-3);font-weight:500}
+.rc-hday-head .none{margin-left:auto;font-size:12px;color:var(--r-text-3);font-weight:550}
+.rc-hday-body{display:flex;flex-direction:column;gap:6px;margin-top:9px}
+.rc-hslot{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:10px;background:var(--r-h2a-soft);color:var(--r-h2a)}
+.rc-hslot.pm{background:var(--r-a2h-soft);color:var(--r-a2h)}
+.rc-hslot.lock{background:var(--st-lock-bg);color:var(--st-lock-fg);font-size:12.5px;font-weight:600}
+.rc-hslot .k{font-size:9.5px;font-weight:700;letter-spacing:1px;width:26px;flex-shrink:0}
+.rc-hslot .t{flex:1;font-size:13.5px;font-weight:650;font-variant-numeric:tabular-nums}
+.rc-hslot .v{font-size:11.5px;font-weight:600;opacity:.75}
+.rc-hslot .lead{font-size:11.5px;font-weight:700}
+
+/* ── Solicitudes ───────────────────────────────────────────────────────── */
+.rc-solc-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.rc-solc-kind{font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--r-text-3)}
+.rc-solc-est{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:650;padding:4px 10px;border-radius:100px}
+.rc-solc-est.pendiente{background:var(--r-info-soft);color:var(--r-info)}
+.rc-solc-est.aprobada{background:var(--st-ok-bg);color:var(--st-ok-fg)}
+.rc-solc-est.rechazada{background:var(--st-no-bg);color:var(--st-no-fg)}
+.rc-solc-t{font-size:15px;font-weight:650;letter-spacing:-.25px}
+.rc-solc-m{font-size:13px;color:var(--r-text-2);margin-top:2px}
+.rc-solc-f{font-size:11.5px;color:var(--r-text-3);margin-top:7px}
+.rc-solc-nota{margin-top:9px;padding:9px 11px;border-radius:10px;background:var(--r-surface-2);font-size:12.5px;color:var(--r-text-2);line-height:1.45}
+.rc-solc-nota b{color:var(--r-text);font-weight:650}
+
+/* ── Perfil ────────────────────────────────────────────────────────────── */
+.rc-pf-head{padding-top:6px;display:flex;align-items:center;gap:14px}
+.rc-pf-avt{width:58px;height:58px;border-radius:29px;background:var(--r-accent-soft);color:var(--r-accent);display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:700;flex-shrink:0;overflow:hidden;border:0;cursor:pointer;position:relative;padding:0}
+.rc-pf-avt img{width:100%;height:100%;object-fit:cover}
+.rc-pf-name{display:block;font-family:var(--r-font-display);font-size:21px;font-weight:650;letter-spacing:-.4px}
+.rc-pf-sub{display:block;font-size:13px;color:var(--r-text-2);margin-top:2px}
+.rc-pf-km{width:100%;padding:16px;border-radius:16px;border:0;cursor:pointer;font:inherit;text-align:left;background:var(--r-accent);color:#fff;box-shadow:0 10px 28px rgba(242,101,34,.22)}
+.rc-pf-km .n{font-size:28px;font-weight:700;letter-spacing:-.6px;margin-top:6px;font-variant-numeric:tabular-nums}
+.rc-pf-km .l{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;opacity:.85}
+.rc-pf-km .s{font-size:12.5px;opacity:.9;margin-top:4px}
+.rc-strikedots{display:flex;gap:5px;margin-top:8px}
+.rc-strikedots i{width:24px;height:6px;border-radius:3px;background:var(--r-border-strong);display:block}
+.rc-strikedots i.on{background:var(--st-no-dot)}
+.rc-strikedots i.warn{background:var(--st-pref-dot)}
 
 /* ── Barra de pestañas del conductor — reviste el #driver-nav existente ── */
 /* El markup y el wiring (data-dtab en core.js) no cambian: solo el look y el

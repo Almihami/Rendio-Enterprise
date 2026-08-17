@@ -160,8 +160,9 @@
     if (!box) return;
 
     if (!sf.driverId) {
-      box.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-card text-sm text-slate-500">
-        🚗 El inicio de turno estará disponible cuando tu admin complete tu perfil de conductor.
+      box.innerHTML = `<div class="rc-note info" style="margin-top:18px">
+        <span class="rc-note-ic">${avIcon('info', 17)}</span>
+        <span>El inicio de turno estará disponible cuando tu jefe complete tu perfil de conductor.</span>
       </div>`;
       return;
     }
@@ -178,32 +179,22 @@
       sf.activeShift = open;
       const v = open.vehicles || {};
       const since = new Date(open.start_at).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
-      box.innerHTML = `<div class="rounded-2xl p-5 flex flex-col bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-card overflow-hidden">
-        <div class="flex items-start justify-between">
-          <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl">🚐</div>
-          <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/90 mt-1">
-            <span class="sf-livedot w-1.5 h-1.5 rounded-full bg-white inline-block"></span> En curso
-          </span>
+      // Tarjeta del rediseño 2026-08-16 (rc-tabs.jsx · TabInicio, estado "en curso").
+      box.innerHTML = `<div class="rc-hero live rc-in d1">
+        <div class="rc-hero-top">
+          <span class="rc-hero-ic">${avIcon('car', 24, 1.6)}</span>
+          <span class="rc-hero-tag"><span class="rc-livedot"></span>EN CURSO</span>
         </div>
-        <div class="mt-4">
-          <p class="text-xl font-extrabold leading-tight">Turno en curso · ${esc(v.internal_code || v.license_plate || 'vehículo')}</p>
-          <p class="text-xs text-white/85 mt-1">${esc([v.brand, v.model].filter(Boolean).join(' '))} · inició ${since} · salida ${fmtKm(open.opening_km)} km</p>
-        </div>
-        <div class="mt-3 flex items-center gap-2 text-sm font-bold tabular-nums">
-          <svg class="w-4 h-4 text-white/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path stroke-linecap="round" d="M12 7v5l3 2"></path></svg>
-          <span id="sf-elapsed">${fmtElapsed(open.start_at)}</span>
-          <span class="text-white/60 font-medium">trabajado</span>
-        </div>
-        ${open.inspection_due_at ? `<div class="mt-3 rounded-xl bg-white/15 border border-white/30 p-3">
-          <p class="text-[13px] font-extrabold flex items-center gap-1.5">⏳ Inspección pendiente <span id="sf-insp-left" class="font-extrabold">${fmtInspLeft(open.inspection_due_at)}</span></p>
-          <p class="text-[11px] text-white/85 mt-0.5">Hazla antes de que se venza o será un strike.</p>
-          <button id="sf-do-insp" class="tap w-full mt-2 bg-white text-emerald-700 text-sm font-extrabold py-2.5 rounded-lg active:scale-[.98]">Hacer inspección ahora</button>
+        <div class="rc-hero-t">Turno en curso</div>
+        <div class="rc-hero-s">Inició ${since} · <span id="sf-elapsed">${fmtElapsed(open.start_at)}</span> en ruta${v.internal_code || v.license_plate ? ' · ' + esc(v.internal_code || v.license_plate) : ''}</div>
+        ${open.inspection_due_at ? `<div class="rc-hero-note">
+          <b>${avIcon('clock', 14)} Inspección pendiente <span id="sf-insp-left">${fmtInspLeft(open.inspection_due_at)}</span></b>
+          <p>Hazla antes de que se venza o será un strike.</p>
+          <button id="sf-do-insp" type="button">Hacer inspección ahora</button>
         </div>` : ''}
-        <div class="mt-4 pt-4 border-t border-white/20">
-          <button id="sf-route-btn" class="tap w-full bg-white/15 border border-white/30 text-white text-base font-extrabold py-3.5 rounded-xl active:scale-[.98] flex items-center justify-center gap-2 mb-2.5"><span>🧭</span>Ruta · Trayectos de hoy</button>
-          <button id="sf-close-btn" class="tap w-full bg-white text-emerald-700 text-base font-extrabold py-3.5 rounded-xl shadow-sm active:scale-[.98]">Cerrar turno</button>
-          <p class="text-[11px] text-white/80 text-center mt-2">Kilometraje final, novedades y comprobantes de tanqueo.</p>
-        </div>
+        <button id="sf-route-btn" class="rc-hero-btn" type="button"
+          style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.32)">Ruta · Trayectos de hoy</button>
+        <button id="sf-close-btn" class="rc-hero-btn" type="button">Cerrar turno</button>
       </div>`;
       startElapsedTimer(open.start_at);
       $('#sf-close-btn').addEventListener('click', () => openClose(open));
@@ -215,18 +206,15 @@
 
     sf.reuseShiftId = open ? open.id : null;
     sf.myReservedVehicleId = open ? open.vehicle_id : null; // vehículo ya reservado en el draft
-    box.innerHTML = `<button id="sf-open-btn" class="pc-in d1 sheen tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-brand">
-      <div class="flex items-start justify-between">
-        <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl"><span class="bob inline-block">🚗</span></div>
-        <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75 mt-1">${open ? 'Sin terminar' : 'Ahora'}</span>
-      </div>
-      <div class="mt-auto">
-        <p class="text-xl font-extrabold leading-tight">${open ? 'Continuar inicio de turno' : 'Iniciar turno'}</p>
-        <p class="text-xs text-white/85 mt-1">${open ? 'Retomas el registro con el mismo turno, sin perder el avance.' : 'Turno único · inspección, fotos y kilometraje · ~5 min'}</p>
-      </div>
-      <div class="mt-3 flex items-center gap-1 text-sm font-bold">${open ? 'Continuar' : 'Empezar'}
-        <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
-      </div>
+    // Tarjeta del rediseño 2026-08-16 (rc-tabs.jsx · TabInicio, estado "iniciar").
+    box.innerHTML = `<button id="sf-open-btn" class="rc-hero start rc-in d1" type="button">
+      <span class="rc-hero-top">
+        <span class="rc-hero-ic">${avIcon('car', 24, 1.6)}</span>
+        <span class="rc-hero-tag">${open ? 'SIN TERMINAR' : 'AHORA'}</span>
+      </span>
+      <span class="rc-hero-t" style="display:block">${open ? 'Continuar inicio de turno' : 'Iniciar turno'}</span>
+      <span class="rc-hero-s" style="display:block">${open ? 'Retomas el registro con el mismo turno, sin perder el avance.' : 'Inspección, fotos y kilometraje · unos 5 minutos'}</span>
+      <span class="rc-hero-go">${open ? 'Continuar' : 'Empezar'} ${avIcon('arrowRight', 17)}</span>
     </button>`;
     $('#sf-open-btn').addEventListener('click', openWizard);
   }

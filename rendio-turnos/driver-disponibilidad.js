@@ -56,6 +56,13 @@
     calendarCheck: '<rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/>',
     swap: '<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.6 7.6 0 0 1 15 0"/>',
+    // Usados por las otras pestañas del conductor (driver-tabs.js, Perfil).
+    car: '<path d="M5 17h14M5 17v3M19 17v3M5 17l1.5-5.5a2 2 0 0 1 1.9-1.5h7.2a2 2 0 0 1 1.9 1.5L19 17M3 17h18"/><circle cx="8" cy="17" r="1.2"/><circle cx="16" cy="17" r="1.2"/>',
+    plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    fileText: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+    messageCircle: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
+    arrowRight: '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
   };
   function avIcon(name, size = 16, sw = 1.5) {
     return `<svg class="lucide" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
@@ -576,8 +583,15 @@
     });
   }
 
-  function avUpdateNavBadge(n) {
-    const btn = document.querySelector('#driver-nav .dnav-btn[data-dtab="requests"]');
+  // Badges de la barra: permisos en revisión en Solicitudes, jornadas por marcar
+  // en Disponibilidad (el diseño los pide en las dos).
+  function avUpdateNavBadge(pendientes) {
+    avSetNavDot('requests', pendientes);
+    avSetNavDot('avail', avCounts().faltan);
+  }
+
+  function avSetNavDot(tab, n) {
+    const btn = document.querySelector(`#driver-nav .dnav-btn[data-dtab="${tab}"]`);
     if (!btn) return;
     let dot = btn.querySelector('.dnav-dot');
     if (!n) { dot?.remove(); return; }

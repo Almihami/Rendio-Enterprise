@@ -279,32 +279,24 @@
           </button>
         </div>
 
-        <!-- Pestaña: Inicio -->
-        <section data-dtab="home" class="driver-panel">
-          <div class="pt-1 pb-1">
-            <h2 class="text-[22px] font-extrabold text-ink leading-tight">¿Cómo vas a operar hoy?</h2>
-            <p id="driver-home-sub" class="text-sm text-slate-500 mt-1">—</p>
+        <!-- Pestaña: Inicio — rediseño 2026-08-16 (rc-tabs.jsx · TabInicio).
+             El saludo y la tarjeta "te faltan N jornadas" los pinta
+             driver-tabs.js; la tarjeta de turno la sigue pintando shift-flow.js
+             dentro de #driver-shift-container, ya con el sistema nuevo. -->
+        <section data-dtab="home" class="driver-panel rc">
+          <div style="padding-top:6px" class="rc-in">
+            <h1 class="rc-h" id="driver-home-greet">Hola</h1>
+            <p class="rc-sub" id="driver-home-sub" style="margin-left:0;max-width:none">—</p>
           </div>
-          <div class="pt-3 space-y-3">
-            <!-- Tarjeta 1: Iniciar turno — la pinta shift-flow.js (iniciar / continuar / turno activo) -->
-            <div id="driver-shift-container"></div>
 
-            <!-- Tarjeta 2: Disponibilidad — entra al módulo y revela la barra inferior -->
-            <button id="driver-availability-card"
-                    class="pc-in d2 tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-white border-2 border-slate-200 shadow-card">
-              <div class="flex items-start justify-between">
-                <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl"><span class="float inline-block">📅</span></div>
-                <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-500 mt-1">Próxima semana</span>
-              </div>
-              <div class="mt-auto">
-                <p class="text-xl font-extrabold text-ink leading-tight">Disponibilidad de horarios</p>
-                <p id="driver-availability-card-sub" class="text-xs text-slate-500 mt-1">Marca tus turnos. El admin asigna y confirma.</p>
-              </div>
-              <div class="mt-3 flex items-center gap-1 text-sm font-bold text-brand-600">Marcar
-                <svg class="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
-              </div>
-            </button>
-          </div>
+          <!-- Tarjeta de turno (iniciar / continuar / en curso) -->
+          <div id="driver-shift-container"></div>
+
+          <!-- Tu día: la vuelta asignada, si hay -->
+          <div id="driver-home-ruta"></div>
+
+          <!-- Próxima semana: solo aparece si quedan jornadas sin marcar -->
+          <div id="driver-home-nudge"></div>
         </section>
 
         <!-- Pestaña: Disponibilidad — rediseño 2026-08-16 (driver-disponibilidad.js).
@@ -317,47 +309,47 @@
           <div id="driver-avail-root" class="rc"></div>
         </section>
 
-        <!-- Pestaña: Mi horario -->
-        <section data-dtab="schedule" class="driver-panel hidden space-y-5">
-          <div>
-            <h2 class="text-xl font-bold text-ink">Mi horario</h2>
-            <p class="text-sm text-slate-500">Tus turnos de la semana y el horario del equipo.</p>
-          </div>
-
-          <!-- Mi semana (resumen de turnos cuando hay horario publicado) -->
+        <!-- Pestaña: Mi horario — rediseño 2026-08-16 (rc-tabs.jsx · TabHorario).
+             La lista de días la pinta driver-tabs.js en #driver-week-summary.
+             El horario del equipo SE CONSERVA (el diseño no lo traía, pero es
+             funcionalidad que el conductor ya usa): baja a colapsable al final. -->
+        <section data-dtab="schedule" class="driver-panel hidden rc">
+          <div id="driver-horario-head"></div>
           <div id="driver-week-summary"></div>
 
-          <!-- Horario completo del equipo (colapsable) -->
-          <details class="bg-white border border-slate-200 rounded-2xl shadow-card overflow-hidden group">
-            <summary class="cursor-pointer px-4 py-3 text-base font-bold text-ink hover:bg-slate-50 flex items-center justify-between list-none">
-              <span>📋 Horario completo del equipo</span>
-              <span class="details-chevron text-slate-400 text-sm">▼</span>
+          <details class="rc-card" style="padding:0;overflow:hidden;margin-top:18px">
+            <summary style="cursor:pointer;padding:13px 15px;font-size:14px;font-weight:650;display:flex;align-items:center;justify-content:space-between;list-style:none">
+              <span>Horario completo del equipo</span>
+              <span class="details-chevron" style="color:var(--r-text-3);font-size:12px">▼</span>
             </summary>
-            <div class="border-t border-slate-200 p-3">
-              <p class="text-xs text-slate-500 mb-2">Tus turnos aparecen resaltados en naranja para que los ubiques rápido.</p>
+            <div style="border-top:1px solid var(--r-border);padding:12px">
+              <p style="font-size:12px;color:var(--r-text-3);margin:0 0 8px">Tus turnos aparecen resaltados para que los ubiques rápido.</p>
               <div id="driver-schedule-container" class="overflow-x-auto"></div>
             </div>
           </details>
         </section>
 
-        <!-- Pestaña: Solicitudes y cambios -->
-        <section data-dtab="requests" class="driver-panel hidden space-y-5">
-          <div>
-            <h2 class="text-xl font-bold text-ink">Solicitudes y cambios</h2>
-            <p class="text-sm text-slate-500">Tus solicitudes de disponibilidad y los cambios de turno.</p>
+        <!-- Pestaña: Solicitudes — rediseño 2026-08-16 (rc-tabs.jsx · TabSolicitudes).
+             Acá vive el estado de aprobación que antes apretaba la grilla de
+             Disponibilidad. El filtro y las tarjetas los pinta driver-tabs.js. -->
+        <section data-dtab="requests" class="driver-panel hidden rc">
+          <div style="padding-top:6px" class="rc-in">
+            <h1 class="rc-h">Solicitudes</h1>
+            <p class="rc-sub" style="margin-left:0;max-width:none">Todo lo que pediste y en qué va. Acá vive el estado de aprobación — ya no en Disponibilidad.</p>
           </div>
-          <div>
-            <h3 class="text-base font-bold text-ink mb-2">Mis solicitudes</h3>
-            <div id="driver-requests-container" class="space-y-2"></div>
+          <div style="margin-top:14px" class="rc-in d1">
+            <div class="rc-seg" id="driver-solic-filter">
+              <button data-f="todas" class="on">Todas</button>
+              <button data-f="permisos">Permisos</button>
+              <button data-f="cambios">Cambios</button>
+            </div>
           </div>
-          <div>
-            <h3 class="text-base font-bold text-ink mb-2">Cambios de turno</h3>
-            <div id="driver-swaps-container"></div>
-          </div>
+          <div id="driver-requests-container" style="margin-top:14px"></div>
+          <div id="driver-swaps-container"></div>
         </section>
 
         <!-- Pestaña: Perfil -->
-        <section data-dtab="perfil" class="driver-panel hidden">
+        <section data-dtab="perfil" class="driver-panel hidden rc">
           <div id="driver-profile-container"></div>
         </section>
 
@@ -1065,6 +1057,7 @@
   <script src="admin-recompensas.js"></script>
   <script src="driver-perfil.js"></script>
   <script src="driver-disponibilidad.js"></script>
+  <script src="driver-tabs.js"></script>
   <!-- Rutas de auxiliares (feat/rutas-modular): consola/sidebar + asignación + operación -->
   <script src="admin-consola.js"></script>
   <script src="admin-rutas.js"></script>

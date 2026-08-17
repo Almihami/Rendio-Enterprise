@@ -12,11 +12,14 @@
     state.ownAvail = await Api.getMyWeeklyAvailability(state.profile.id, state.currentWeek);
     try { state.weekSuspension = await Api.getMyWeekSuspension(state.profile.id, state.currentWeek); }
     catch (e) { state.weekSuspension = null; }
+    rcApplyTheme();
     renderDriverDays();
+    bindDriverSolicFilter();
     await renderDriverRequests();
     await renderDriverPublishedSchedule();
     await renderDriverSwaps();
-    updateDriverHome(); // mantiene fresco el sub de la tarjeta de disponibilidad en la home
+    applyDriverSolicFilter();
+    updateDriverHome(); // saludo + "Tu día" + aviso de jornadas por marcar
   }
 
   function updateDriverWeekLabel() {
