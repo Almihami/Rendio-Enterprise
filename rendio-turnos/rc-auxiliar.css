@@ -375,3 +375,203 @@
 }
 
 #auxiliar-ui .axr-ok{color:var(--a-a2h)}
+
+/* ============================================================================
+   0069 · Traslado privado
+   ============================================================================
+   Dos capas distintas a propósito:
+   · El PASO (elegir compartido/privado) vive dentro del formulario y sigue los
+     tokens del rol, para no ser una isla de otro color en mitad del flujo.
+   · La PORTADA del privado usa paleta FIJA — "papel y tinta", decisión del
+     diseñador. Es el único bloque del rol que no se apaga de noche: es la pieza
+     que vende el servicio y su carácter no depende de la hora.
+   ============================================================================ */
+
+/* ── El paso: compartido o privado ───────────────────────────────────────── */
+#auxiliar-ui .axp-lvl {
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  display: block; padding: 14px 15px; margin-bottom: 10px;
+  border-radius: 16px; border: 1.5px solid var(--a-line);
+  background: var(--a-card); transition: .14s;
+}
+#auxiliar-ui .axp-lvl.on { border-color: var(--a-accent); }
+#auxiliar-ui .axp-lvl.off { opacity: .55; cursor: not-allowed; }
+#auxiliar-ui .axp-lvl-head { display: flex; align-items: center; gap: 12px; }
+#auxiliar-ui .axp-lvl-ic {
+  width: 42px; height: 42px; border-radius: 13px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axp-lvl-ic.sh { background: var(--a-a2h-soft); color: var(--a-a2h); }
+#auxiliar-ui .axp-lvl-ic.pv { background: var(--a-h2a-soft); color: var(--a-h2a); }
+#auxiliar-ui .axp-lvl-t { flex: 1; min-width: 0; }
+#auxiliar-ui .axp-lvl-t b { display: block; font-size: 16px; font-weight: 750; letter-spacing: -.01em; }
+#auxiliar-ui .axp-lvl-t > span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 1px; }
+#auxiliar-ui .axp-lvl-p { text-align: right; flex: 0 0 auto; }
+#auxiliar-ui .axp-lvl-p b { display: block; font-size: 15px; font-weight: 750; }
+#auxiliar-ui .axp-lvl-p span { display: block; font-size: 11px; color: var(--a-t3); margin-top: 1px; }
+#auxiliar-ui .axp-lvl-li {
+  display: block; font-size: 12px; color: var(--a-t2);
+  margin: 10px 0 0 54px; line-height: 1.45;
+}
+#auxiliar-ui .axp-lvl-no {
+  display: block; font-size: 12px; font-weight: 650; color: var(--a-warn);
+  background: var(--a-warn-soft); border-radius: 9px;
+  padding: 8px 10px; margin: 10px 0 0 54px;
+}
+#auxiliar-ui .axp-more {
+  width: 100%; margin-top: 2px; padding: 11px; border-radius: 12px;
+  border: 1px solid var(--a-line); background: transparent; font: inherit;
+  font-size: 13px; font-weight: 650; color: var(--a-accent); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+#auxiliar-ui .axp-note {
+  display: flex; gap: 11px; align-items: flex-start; margin-top: 12px;
+  padding: 12px 14px; border-radius: 12px; background: var(--a-surf2);
+}
+#auxiliar-ui .axp-note .icon { color: var(--a-t2); margin-top: 2px; flex: 0 0 auto; }
+#auxiliar-ui .axp-note b { display: block; font-size: 13.5px; font-weight: 700; }
+#auxiliar-ui .axp-note span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 2px; line-height: 1.5; }
+
+/* ── La portada · paleta fija, no hereda el nocturno ─────────────────────── */
+#auxiliar-ui .axp-intro {
+  --p-ink: #1A1714; --p-ink2: #6B625A; --p-paper: #FBF9F6;
+  --p-card: #FFFFFF; --p-line: #E6E0D8; --p-gold: #8A6B3D;
+  background: var(--p-paper); color: var(--p-ink);
+}
+#auxiliar-ui .axp-hero { padding: 26px 4px 20px; text-align: center; }
+#auxiliar-ui .axp-hero-ic {
+  width: 62px; height: 62px; border-radius: 50%; margin: 0 auto 16px;
+  background: var(--p-ink); color: var(--p-paper);
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axp-hero-ic .icon { width: 28px; height: 28px; }
+#auxiliar-ui .axp-hero h1 {
+  font-size: 25px; font-weight: 700; letter-spacing: -.02em;
+  color: var(--p-ink); margin: 0; line-height: 1.2;
+}
+#auxiliar-ui .axp-hero p {
+  font-size: 14px; color: var(--p-ink2); line-height: 1.6;
+  margin: 10px auto 0; max-width: 300px;
+}
+#auxiliar-ui .axp-hero-p {
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--p-line);
+}
+#auxiliar-ui .axp-hero-p b {
+  display: block; font-size: 27px; font-weight: 700;
+  letter-spacing: -.02em; color: var(--p-gold);
+}
+#auxiliar-ui .axp-hero-p span { display: block; font-size: 12px; color: var(--p-ink2); margin-top: 3px; }
+#auxiliar-ui .axp-inc {
+  background: var(--p-card); border: 1px solid var(--p-line);
+  border-radius: 16px; padding: 4px 16px; margin-top: 4px;
+}
+#auxiliar-ui .axp-inc-row {
+  display: flex; gap: 13px; align-items: flex-start;
+  padding: 14px 0; border-top: 1px solid var(--p-line);
+}
+#auxiliar-ui .axp-inc-row:first-child { border-top: 0; }
+#auxiliar-ui .axp-inc-ic {
+  width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto;
+  background: var(--p-paper); color: var(--p-gold);
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axp-inc-row b { display: block; font-size: 14.5px; font-weight: 650; color: var(--p-ink); }
+#auxiliar-ui .axp-inc-row span { display: block; font-size: 12.5px; color: var(--p-ink2); margin-top: 2px; line-height: 1.45; }
+#auxiliar-ui .axp-fine {
+  margin-top: 14px; padding: 14px 16px; border-radius: 14px;
+  background: var(--p-card); border: 1px dashed var(--p-line);
+}
+#auxiliar-ui .axp-fine b { display: block; font-size: 13px; font-weight: 700; color: var(--p-ink); }
+#auxiliar-ui .axp-fine span { display: block; font-size: 12.5px; color: var(--p-ink2); margin-top: 4px; line-height: 1.55; }
+
+/* ── Estado de la solicitud, dentro del viaje ────────────────────────────── */
+#auxiliar-ui .axp-st {
+  display: flex; gap: 11px; align-items: flex-start;
+  padding: 13px 14px; border-radius: 13px; margin: 0 0 12px;
+}
+#auxiliar-ui .axp-st-ic {
+  width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axp-st b { display: block; font-size: 13.5px; font-weight: 750; }
+#auxiliar-ui .axp-st span.axp-st-ic { margin: 0; }
+#auxiliar-ui .axp-st div span { display: block; font-size: 12.5px; margin-top: 2px; line-height: 1.5; opacity: .9; }
+#auxiliar-ui .axp-st.wait { background: var(--a-warn-soft); color: var(--a-warn); }
+#auxiliar-ui .axp-st.wait .axp-st-ic { background: var(--a-warn); color: var(--a-card); }
+#auxiliar-ui .axp-st.ok { background: var(--a-a2h-soft); color: var(--a-a2h); }
+#auxiliar-ui .axp-st.ok .axp-st-ic { background: var(--a-a2h); color: var(--a-card); }
+#auxiliar-ui .axp-st.no { background: var(--a-surf2); color: var(--a-t2); }
+#auxiliar-ui .axp-st.no .axp-st-ic { background: var(--a-t3); color: var(--a-card); }
+
+/* Etiqueta en la tarjeta de la lista */
+#auxiliar-ui .axp-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+}
+#auxiliar-ui .axp-chip .icon { width: 12px; height: 12px; }
+#auxiliar-ui .axp-chip.wait { background: var(--a-warn-soft); color: var(--a-warn); }
+#auxiliar-ui .axp-chip.ok { background: var(--a-h2a-soft); color: var(--a-h2a); }
+#auxiliar-ui .axp-chip.no { background: var(--a-surf2); color: var(--a-t3); }
+
+/* ============================================================================
+   0069 · La cola de privados del jefe (#privados-ui)
+   ============================================================================
+   Vive en este archivo y no en styles.css a propósito: es la otra mitad de la
+   misma función, y styles.css lo está editando otra rama. Si algún día se
+   consolida, este bloque se mueve entero sin tocar nada más.
+   ============================================================================ */
+#privados-ui .pv-sec {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink3); margin: 20px 2px 10px;
+}
+#privados-ui .pv-empty {
+  border: 1px dashed var(--line); border-radius: 14px; padding: 30px 20px;
+  text-align: center; color: var(--ink2);
+}
+#privados-ui .pv-empty b { display: block; font-size: 15px; color: var(--ink); }
+#privados-ui .pv-empty span { display: block; font-size: 13px; margin: 6px auto 0; max-width: 380px; line-height: 1.5; }
+#privados-ui .pv-empty .set-btn { margin-top: 14px; }
+
+#privados-ui .pv-card {
+  border: 1px solid var(--line); border-left: 3px solid var(--line);
+  border-radius: 14px; background: #fff; padding: 15px 16px; margin-bottom: 10px;
+}
+#privados-ui .pv-card.wait { border-left-color: #B7791F; }
+#privados-ui .pv-card.ok   { border-left-color: #0B7A5C; }
+#privados-ui .pv-card.no   { border-left-color: var(--ink3); opacity: .8; }
+
+#privados-ui .pv-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+#privados-ui .pv-top b { display: block; font-size: 15.5px; font-weight: 750; }
+#privados-ui .pv-top > div > span { display: block; font-size: 13px; color: var(--ink2); margin-top: 2px; }
+#privados-ui .pv-tag {
+  flex: 0 0 auto; font-size: 11px; font-weight: 800; letter-spacing: .04em;
+  padding: 4px 10px; border-radius: 999px; text-transform: uppercase;
+}
+#privados-ui .pv-tag.wait { background: #FEF6E7; color: #B7791F; }
+#privados-ui .pv-tag.ok   { background: #E7F8F1; color: #0B7A5C; }
+#privados-ui .pv-tag.no   { background: #F1F2F4; color: var(--ink3); }
+
+#privados-ui .pv-meta { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 12px; }
+#privados-ui .pv-meta span { font-size: 13px; color: var(--ink); }
+#privados-ui .pv-meta b {
+  display: block; font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink3); margin-bottom: 2px;
+}
+#privados-ui .pv-notes {
+  margin-top: 11px; padding: 10px 12px; border-radius: 10px;
+  background: #F7F8FA; font-size: 13px; color: var(--ink2); line-height: 1.5;
+}
+#privados-ui .pv-warn {
+  display: flex; gap: 9px; align-items: flex-start; margin-top: 11px;
+  padding: 11px 13px; border-radius: 10px; background: #FEF6E7;
+  color: #8A5A0B; font-size: 12.5px; line-height: 1.5;
+}
+#privados-ui .pv-warn .icon { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; }
+#privados-ui .pv-reason {
+  margin-top: 11px; font-size: 12.5px; color: var(--ink2); line-height: 1.5;
+}
+#privados-ui .pv-acts, #privados-ui .pv-rej-acts {
+  display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px;
+}
+#privados-ui .pv-rej { margin-top: 12px; }
+#privados-ui .pv-rej .set-input { width: 100%; }

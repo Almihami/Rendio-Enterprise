@@ -364,6 +364,13 @@
     if ($('#setting-inspection-grace')) $('#setting-inspection-grace').value = state.settings.inspection_grace_minutes != null ? state.settings.inspection_grace_minutes : 90;
     if ($('#setting-aux-wait')) $('#setting-aux-wait').value = state.settings.aux_wait_minutes != null ? state.settings.aux_wait_minutes : 5;
     if ($('#setting-aux-lead')) $('#setting-aux-lead').value = state.settings.aux_min_lead_hours != null ? state.settings.aux_min_lead_hours : 6;
+    // 0069 · traslado privado. El desplegable de vehículos se llena aparte
+    // (es una consulta), pero el valor se deja puesto para que al llegar la
+    // lista quede seleccionado el que ya estaba.
+    if ($('#setting-priv-enabled')) $('#setting-priv-enabled').checked = state.settings.aux_private_enabled === true;
+    if ($('#setting-priv-price')) $('#setting-priv-price').value = state.settings.aux_private_price_cop != null ? state.settings.aux_private_price_cop : 150000;
+    if ($('#setting-priv-block')) $('#setting-priv-block').value = state.settings.aux_private_block_min != null ? state.settings.aux_private_block_min : 90;
+    fillPrivateVehicles();
     const S = state.settings;
     if ($('#setting-route-merge')) $('#setting-route-merge').value = S.route_merge_window_min != null ? S.route_merge_window_min : 30;
     if ($('#setting-route-service')) $('#setting-route-service').value = S.route_service_min != null ? S.route_service_min : 3;
@@ -854,6 +861,12 @@
         const n = parseInt($('#setting-aux-lead') && $('#setting-aux-lead').value, 10);
         return isNaN(n) ? 6 : Math.min(72, Math.max(0, n));
       })(),
+      // 0069. El vacío del desplegable es null a propósito: "sin camioneta
+      // elegida" es un estado válido, y con él la app no ofrece el privado.
+      aux_private_enabled: !!($('#setting-priv-enabled') && $('#setting-priv-enabled').checked),
+      aux_private_vehicle_id: ($('#setting-priv-vehicle') && $('#setting-priv-vehicle').value) || null,
+      aux_private_price_cop: Math.max(1, parseInt($('#setting-priv-price') && $('#setting-priv-price').value, 10) || 150000),
+      aux_private_block_min: Math.min(480, Math.max(10, parseInt($('#setting-priv-block') && $('#setting-priv-block').value, 10) || 90)),
       // Optimizador. Igual que aux_min_lead_hours, 0 es un valor VÁLIDO
       // (0 = no juntar oleadas), así que `|| default` lo pisaría.
       route_merge_window_min: (() => {
@@ -912,4 +925,21 @@
       alert('Error al guardar ajustes: ' + e.message);
     }
   }
-
+  // Llena el desplegable de "cuál carro es la camioneta" (0069). Se consulta
+  // aparte porque es una lectura de la flota, no del objeto de ajustes.
+  // Se marca el bloqueado, para que no se elija por error un carro fuera de
+  // servicio como vehículo de un servicio que se cobra.
+  async function fillPrivateVehicles() {
+    const sel = $('#setting-priv-vehicle'); if (!sel) return;
+    const actual = state.settings && state.settings.aux_private_vehicle_id;
+    let lista = null;
+    try { if (window.Api && Api.listVehiclesBasic) lista = await Api.listVehiclesBasic(); } catch (_) {}
+    if (!Array.isArray(lista)) {
+      sel.innerHTML = '<option value="">No se pudo cargar la flota</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">— Sin definir —</option>' + lista.map(v =>
+      '<option value="' + v.id + '"' + (v.id === actual ? ' selected' : '') + '>'
+      + (v.plate || '?') + ' · ' + (v.label || '') + ' (' + (v.capacity || '?') + ' puestos)'
+      + (v.status === 'blocked' ? ' — BLOQUEADO' : '') + '</option>').join('');
+  }

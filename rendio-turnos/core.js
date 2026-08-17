@@ -405,6 +405,7 @@
     if (name === 'consola') renderConsola();
     if (name === 'routes') renderRoutes();
     if (name === 'reservas') renderReservas();
+    if (name === 'privados') renderPrivados();
     if (name === 'eventualidades') renderEventualidades();
     else stopEvtTimer(); // al salir de la bandeja, frena su polling
     if (name === 'oper') renderOperacion();

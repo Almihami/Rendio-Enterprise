@@ -582,6 +582,13 @@
               <div class="set-row2" style="margin-top:14px">
                 <div class="set-field"><label>Espera en el punto (min)</label><input id="setting-aux-wait" class="set-input" type="number" min="1" max="60" /><div class="set-hint">Cuánto espera el conductor al auxiliar en la recogida. El auxiliar ve la misma cuenta regresiva, y "No se presentó" solo se habilita al vencerse. Default 5.</div></div>
                 <div class="set-field"><label>Anticipación mínima (horas)</label><input id="setting-aux-lead" class="set-input" type="number" min="0" max="72" /><div class="set-hint">Por debajo de esto se le avisa al auxiliar y el traslado queda marcado como "pedido tarde" en Reservas. No se bloquea: la operación tiene urgencias. Default 6.</div></div>
+                <div class="set-field"><label>Traslado privado (la camioneta)</label>
+                  <label class="set-checkrow"><input id="setting-priv-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Ofrecerlo a los auxiliares</span></label>
+                  <div class="set-hint">Mientras esté apagado, el auxiliar ni siquiera ve el paso: pide su traslado como siempre. Enciéndelo solo cuando la camioneta y la tarifa estén definidas.</div>
+                </div>
+                <div class="set-field"><label>Vehículo del privado</label><select id="setting-priv-vehicle" class="set-input"></select><div class="set-hint">Cuál carro se aparta para los traslados privados. De aquí sale el cupo: hay uno, luego hay un privado a la vez. Si no está en la lista, regístralo primero en Vehículos.</div></div>
+                <div class="set-field"><label>Tarifa del privado (pesos)</label><input id="setting-priv-price" class="set-input" type="number" min="1" step="1000" /><div class="set-hint">Lo que se le muestra al auxiliar por trayecto. <b>No se cobra dentro de la app</b>: queda registrado en la reserva y se liquida por fuera. El precio se congela al pedir, así que subirlo no cambia lo ya pactado.</div></div>
+                <div class="set-field"><label>La camioneta queda apartada (min)</label><input id="setting-priv-block" class="set-input" type="number" min="10" max="480" /><div class="set-hint">Cuánto tiempo antes y después de un privado NO se puede aprobar otro. De aquí sale el cupo: hay una sola camioneta. Default 90.</div></div>
               </div>
               <div class="set-divider" style="margin:16px 0 4px"></div>
               <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Optimizador de rutas</p>
@@ -830,6 +837,21 @@
             <button class="set-btn ghost" id="shifts-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
           </div>
           <div id="shifts-list"></div>
+        </div>
+      </section>
+
+      <!-- ADMIN: Privados (0069). Bandeja de decisiones, no tabla de consulta:
+           cada tarjeta es alguien esperando saber si tiene carro. -->
+      <section data-panel="privados" class="hidden">
+        <div id="privados-ui" data-theme="light">
+          <div class="sh-phead">
+            <div>
+              <h1>Privados <span class="sh-ct" id="pv-count">0</span></h1>
+              <p>Traslados que pidieron la camioneta. <b>Hay una sola</b>, así que aprobar uno la aparta para esa franja. Si niegas, el traslado no se pierde: sale en compartido y no se le cobra nada al tripulante.</p>
+            </div>
+            <button class="set-btn ghost" data-pv="refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+          </div>
+          <div id="pv-list"></div>
         </div>
       </section>
 
@@ -1110,10 +1132,12 @@
   <script src="admin-consola.js"></script>
   <script src="admin-rutas.js"></script>
   <script src="admin-reservas.js"></script>
+  <script src="admin-privados.js"></script>
   <script src="admin-operacion.js"></script>
   <script src="admin-eventualidades.js"></script>
   <!-- Rol auxiliar (pasajero) -->
   <script src="aux-residencias.js"></script>
+  <script src="aux-privado.js"></script>
   <script src="aux-presentacion.js"></script>
   <script src="auxiliar.js"></script>
   <!-- Conductor: rutas de auxiliares -->

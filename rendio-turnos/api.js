@@ -616,8 +616,11 @@
     const WAIT_COLS = ', route_max_wait_min, route_max_wait_peak_min';
     // 0062: corrimiento de domingos y festivos ("no sacarlos tan temprano").
     const HOLIDAY_COLS = ', route_holiday_shift_min';
+    // 0069: traslado privado (tarifa, cuál vehículo es la camioneta, y el interruptor).
+    const PRIV_COLS = ', aux_private_price_cop, aux_private_vehicle_id, aux_private_enabled, aux_private_block_min';
     const BASE_COLS = 'morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours';
-    let { data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS);
+    let { data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS + PRIV_COLS);
+    if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS));
@@ -646,6 +649,14 @@
       inspection_grace_minutes: (data && data.inspection_grace_minutes != null) ? data.inspection_grace_minutes : 90,
       aux_wait_minutes: (data && data.aux_wait_minutes != null) ? data.aux_wait_minutes : 5,
       aux_min_lead_hours: (data && data.aux_min_lead_hours != null) ? data.aux_min_lead_hours : 6,
+      // El privado arranca APAGADO: sin camioneta elegida ni tarifa confirmada,
+      // el auxiliar no debe ver una opción que la operación no puede prestar.
+      aux_private_enabled: (data && data.aux_private_enabled != null) ? data.aux_private_enabled : false,
+      aux_private_price_cop: (data && data.aux_private_price_cop != null) ? data.aux_private_price_cop : null,
+      aux_private_vehicle_id: (data && data.aux_private_vehicle_id) || null,
+      // Cuánto queda apartada la camioneta alrededor de un privado. De aquí
+      // sale el cupo: NO es route_turnaround_min, que vale 8 y es otra cosa (0070).
+      aux_private_block_min: (data && data.aux_private_block_min != null) ? data.aux_private_block_min : 90,
     };
   }
 
@@ -674,7 +685,14 @@
     const conAero = { ...conDeplane, route_airport_factor: s.route_airport_factor };
     const conTecho = { ...conAero, route_max_wait_min: s.route_max_wait_min, route_max_wait_peak_min: s.route_max_wait_peak_min };
     // 0062: corrimiento de domingos y festivos.
-    let { error } = await upd({ ...conTecho, route_holiday_shift_min: s.route_holiday_shift_min });
+    const conFestivo = { ...conTecho, route_holiday_shift_min: s.route_holiday_shift_min };
+    // 0069: traslado privado.
+    let { error } = await upd({ ...conFestivo,
+      aux_private_price_cop: s.aux_private_price_cop,
+      aux_private_vehicle_id: s.aux_private_vehicle_id,
+      aux_private_enabled: s.aux_private_enabled,
+      aux_private_block_min: s.aux_private_block_min });
+    if (error) ({ error } = await upd(conFestivo));
     if (error) ({ error } = await upd(conTecho));
     if (error) ({ error } = await upd(conAero));
     if (error) ({ error } = await upd(conDeplane));
@@ -1615,13 +1633,19 @@
       .eq('auxiliar_profile_id', apId).order('required_arrival_at', { ascending: true });
     // residence_id se pide en el escalón de más columnas (0055): lo usa
     // "Repetir el de siempre" para volver al mismo conjunto sin preguntar.
-    let { data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id');
+    // 0069: el nivel de servicio y el estado de la solicitud de privado.
+    let { data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, service_level, private_status, price_cop, private_reject_reason');
+    if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id'));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason'));
     if (error) ({ data, error } = await q(COLS));
     if (error) return null;
     return (data || []).map(r => ({
       id: r.id, type: r.direction === 'airport_to_home' ? 'lle' : 'sal',
       residenceId: r.residence_id || null,
+      level: r.service_level || 'shared',
+      privateStatus: r.private_status || null,
+      price: r.price_cop != null ? r.price_cop : null,
+      privateReason: r.private_reject_reason || '',
       flight: r.flights?.flight_number || (r.notes && r.notes.match(/AV-?\d+/) ? r.notes.match(/AV-?\d+/)[0] : ''),
       date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
       address: r.pickup_address, lat: r.pickup_latitude, lng: r.pickup_longitude,
@@ -1710,11 +1734,83 @@
     // existiera (0055 sin aplicar) se reintenta sin ella y la reserva igual se
     // crea con el texto y el pin, que es el camino de excepción de siempre.
     const withRes = f.residenceId ? { residence_id: f.residenceId } : {};
-    let { data, error } = await sb.from('reservations').insert({ ...payload, ...extra, ...withRes }).select('id').single();
+    // 0069. Solo se manda el NIVEL: el estado 'requested' y el precio los pone el
+    // servidor en guard_private_insert(), para que no se pueda pactar una tarifa
+    // ni auto-aprobarse desde el teléfono.
+    const withLvl = f.level === 'private' ? { service_level: 'private' } : {};
+    let { data, error } = await sb.from('reservations').insert({ ...payload, ...extra, ...withRes, ...withLvl }).select('id').single();
+    if (error && f.level === 'private') ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra, ...withRes }).select('id').single());
     if (error && f.residenceId) ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra }).select('id').single());
     if (error) ({ data, error } = await sb.from('reservations').insert(payload).select('id').single());
     if (error) throw error;
     return data.id;
+  }
+
+  // ---- Traslado privado (0069) ----
+  //
+  // El cupo NO es un parámetro: es un hecho. Hay una camioneta, luego hay como
+  // máximo un privado a la vez. Se pregunta al servidor porque el auxiliar no
+  // puede leer las reservas de los demás para averiguarlo por su cuenta.
+  async function privateBusyAt(whenISO, excludeId) {
+    const { data, error } = await sb.rpc('private_vehicle_busy_at', {
+      p_when: whenISO, p_exclude: excludeId || null,
+    });
+    if (error) throw error;
+    return data === true;
+  }
+
+  // El jefe aprueba o rechaza. El precio y el vehículo los pone el servidor: acá
+  // no se mandan para que no haya forma de pactar una tarifa desde el cliente.
+  async function decidePrivate(reservationId, approve, reason) {
+    const { data, error } = await sb.rpc('admin_decide_private', {
+      p_reservation_id: reservationId, p_approve: !!approve, p_reason: reason || null,
+    });
+    if (error) throw error;
+    return data || { ok: true };
+  }
+
+  // Cola de privados para el jefe. Los pendientes primero: son los que exigen
+  // una decisión suya, y mientras no la tome el auxiliar está esperando.
+  async function listPrivateRequests() {
+    const COLS = 'id, direction, pickup_address, required_arrival_at, notes, cancelled_at, '
+      + 'service_level, private_status, price_cop, private_reject_reason, private_decided_at, '
+      + 'auxiliar_profiles(profiles(id, full_name, phone)), vehicles:private_vehicle_id(license_plate, brand, model)';
+    const { data, error } = await sb.from('reservations').select(COLS)
+      .eq('service_level', 'private')
+      .order('required_arrival_at', { ascending: true });
+    if (error) return null;
+    return (data || []).map(r => ({
+      id: r.id,
+      type: r.direction === 'airport_to_home' ? 'lle' : 'sal',
+      addr: r.pickup_address || '',
+      whenISO: r.required_arrival_at,
+      date: (r.required_arrival_at || '').slice(0, 10),
+      time: rtHHMM(r.required_arrival_at),
+      notes: r.notes || '',
+      status: r.private_status,
+      price: r.price_cop,
+      reason: r.private_reject_reason || '',
+      decidedAt: r.private_decided_at || null,
+      cancelled: !!r.cancelled_at,
+      who: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar',
+      whoId: r.auxiliar_profiles?.profiles?.id || null,
+      phone: r.auxiliar_profiles?.profiles?.phone || '',
+      plate: r.vehicles?.license_plate || null,
+      vehicle: r.vehicles ? [r.vehicles.brand, r.vehicles.model].filter(Boolean).join(' ') : null,
+    }));
+  }
+
+  // Flota para el desplegable de Ajustes: cuál vehículo es la camioneta.
+  async function listVehiclesBasic() {
+    const { data, error } = await sb.from('vehicles')
+      .select('id, license_plate, brand, model, capacity, status')
+      .is('deleted_at', null).order('license_plate');
+    if (error) return null;
+    return (data || []).map(v => ({
+      id: v.id, plate: v.license_plate,
+      label: [v.brand, v.model].filter(Boolean).join(' ') || v.license_plate,
+      capacity: v.capacity, status: v.status,
+    }));
   }
 
   // El auxiliar cancela SU traslado (RPC de 0050). Devuelve el profile_id del
@@ -2293,6 +2389,7 @@
     listRoutePlanning, saveRouteAssignment, getRouteTables, saveRouteTables, listResidencesZones, saveResidenceZone,
     getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,
     listResidences, getMyAuxiliarPlace, saveMyResidence,
+    privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
     sendDriverLocation, listLiveOperation,
