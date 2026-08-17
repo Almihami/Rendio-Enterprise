@@ -362,6 +362,9 @@
     if ($('#setting-route-service')) $('#setting-route-service').value = S.route_service_min != null ? S.route_service_min : 3;
     if ($('#setting-route-traffic')) $('#setting-route-traffic').value = S.route_traffic_factor != null ? S.route_traffic_factor : 1.05;
     if ($('#setting-route-buffer')) $('#setting-route-buffer').value = S.route_airport_buffer_min != null ? S.route_airport_buffer_min : 10;
+    if ($('#setting-route-aero')) $('#setting-route-aero').value = S.route_airport_factor != null ? S.route_airport_factor : 0.8;
+    if ($('#setting-route-wait')) $('#setting-route-wait').value = S.route_max_wait_min != null ? S.route_max_wait_min : 0;
+    if ($('#setting-route-wait-peak')) $('#setting-route-wait-peak').value = S.route_max_wait_peak_min != null ? S.route_max_wait_peak_min : 0;
     // Desembarque por aerolínea (0058).
     if ($('#setting-deplane-av-nac')) $('#setting-deplane-av-nac').value = S.route_deplane_av_nac_min != null ? S.route_deplane_av_nac_min : 15;
     if ($('#setting-deplane-av-int')) $('#setting-deplane-av-int').value = S.route_deplane_av_int_min != null ? S.route_deplane_av_int_min : 20;
@@ -735,6 +738,20 @@
         const n = parseFloat($('#setting-route-traffic') && $('#setting-route-traffic').value);
         return isNaN(n) ? 1.05 : Math.min(2, Math.max(1, n));
       })(),
+      // 0060: corrige SOLO el tramo a/desde MDE. Va por debajo de 1 a propósito
+      // (OSRM sobreestima ese corredor), así que el mínimo no puede ser 1.
+      route_airport_factor: (() => {
+        const n = parseFloat($('#setting-route-aero') && $('#setting-route-aero').value);
+        return isNaN(n) ? 0.8 : Math.min(1.5, Math.max(0.5, n));
+      })(),
+      // 0061: techo de espera. 0 = sin techo, así que no se usa `|| default`.
+      ...Object.fromEntries([
+        ['route_max_wait_min', '#setting-route-wait'],
+        ['route_max_wait_peak_min', '#setting-route-wait-peak'],
+      ].map(([col, sel]) => {
+        const n = parseInt($(sel) && $(sel).value, 10);
+        return [col, isNaN(n) ? 0 : Math.min(180, Math.max(0, n))];
+      })),
       // Desembarque por aerolínea (0058). Mismo patrón: 0 es válido (un vuelo
       // que suelta a la gente de inmediato), así que no se usa `|| default`.
       ...Object.fromEntries([

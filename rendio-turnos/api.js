@@ -602,8 +602,16 @@
     // 0058: desembarque por aerolínea. Escalón propio de la cascada — si la
     // migración no está, se cae a ROUTE_COLS y el modelo usa route_deplane_min.
     const DEPLANE_COLS = ', route_deplane_av_nac_min, route_deplane_av_int_min, route_deplane_js_nac_min, route_deplane_js_int_min, route_deplane_wingo_min';
+    // 0060: factor propio del tramo a/desde MDE. Escalón propio también — sin la
+    // migración se cae al escalón de arriba y AIRPORT_FACTOR queda en 1, que es
+    // exactamente el comportamiento anterior.
+    const AIRPORT_COLS = ', route_airport_factor';
+    // 0061: techo de espera del primero recogido. Escalón propio, mismo motivo.
+    const WAIT_COLS = ', route_max_wait_min, route_max_wait_peak_min';
     const BASE_COLS = 'morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours';
-    let { data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS);
+    let { data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS);
+    if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS));
+    if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes'));
@@ -649,10 +657,15 @@
       route_merge_window_min: s.route_merge_window_min, route_service_min: s.route_service_min,
       route_traffic_factor: s.route_traffic_factor, route_airport_buffer_min: s.route_airport_buffer_min };
     // 0058: desembarque por aerolínea.
-    let { error } = await upd({ ...conRuta,
+    const conDeplane = { ...conRuta,
       route_deplane_av_nac_min: s.route_deplane_av_nac_min, route_deplane_av_int_min: s.route_deplane_av_int_min,
       route_deplane_js_nac_min: s.route_deplane_js_nac_min, route_deplane_js_int_min: s.route_deplane_js_int_min,
-      route_deplane_wingo_min: s.route_deplane_wingo_min });
+      route_deplane_wingo_min: s.route_deplane_wingo_min };
+    // 0060: factor del tramo al aeropuerto. 0061: techo de espera.
+    const conAero = { ...conDeplane, route_airport_factor: s.route_airport_factor };
+    let { error } = await upd({ ...conAero, route_max_wait_min: s.route_max_wait_min, route_max_wait_peak_min: s.route_max_wait_peak_min });
+    if (error) ({ error } = await upd(conAero));
+    if (error) ({ error } = await upd(conDeplane));
     if (error) ({ error } = await upd(conRuta));
     if (error) ({ error } = await upd(conAux));
     if (error) ({ error } = await upd(full));

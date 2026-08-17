@@ -33,6 +33,20 @@
     SERVICE_MIN: 4,      // min por parada: frenar, timbrar, subir gente y maletas
     AIRPORT_BUFFER: 10,  // min de colchón al entregar: bajar maletas + entrar a tiempo
     TRAFFIC_FACTOR: 1.25,// multiplica el tiempo de manejo (OSRM da flujo libre, sin tráfico)
+    // Corrección SOLO del tramo a/desde MDE. Medido contra 99 vueltas reales del
+    // jefe (6 mensajes de WhatsApp): entre casa y casa OSRM acierta —él deja 8.5
+    // min donde OSRM dice 5.8, y esos 2.7 de más son el tiempo de subir gente—,
+    // pero en el corredor a MDE OSRM sobreestima: él promete 20 min desde Olivar,
+    // Río Vivo o Cerezos donde OSRM dice 27.5, y la operación cumple todos los
+    // días. Por eso NO se corrige con TRAFFIC_FACTOR (dañaría los pasos entre
+    // casas, que están bien): el tramo al aeropuerto lleva su propio factor.
+    // 1 = comportamiento de antes. Ver scripts/comparar-con-jefe.mjs.
+    AIRPORT_FACTOR: 1,
+    // Techo de lo que el PRIMERO recogido va montado antes de presentarse. Es una
+    // regla del jefe medida sobre 99 vueltas suyas: nunca la pasa (máximos reales
+    // 45 y 60). El 60 en las dos horas pico —6-9 a.m. y 12-6 p.m.— es su modelo de
+    // tráfico, aprendido en terreno. 0 = sin techo (comportamiento anterior).
+    MAX_WAIT: 0, MAX_WAIT_PEAK: 0,
     TURNAROUND: 8,       // min en MDE entre entregar y arrancar la siguiente vuelta
     DEPLANE: 20,         // min entre que el vuelo aterriza y el pasajero sale (migración+maletas)
     CUSHION: 15,         // min extra de margen al programar la salida de cada vuelta
@@ -55,6 +69,10 @@
     rt.SERVICE_MIN = Number(s.route_service_min) || 4;
     rt.AIRPORT_BUFFER = Number(s.route_airport_buffer_min) || 10;
     rt.TRAFFIC_FACTOR = Number(s.route_traffic_factor) || 1.25;
+    rt.AIRPORT_FACTOR = Number(s.route_airport_factor) || 1;
+    // 0 es un valor válido ("sin techo"), así que no se usa `|| default`.
+    rt.MAX_WAIT = s.route_max_wait_min != null ? Number(s.route_max_wait_min) : 0;
+    rt.MAX_WAIT_PEAK = s.route_max_wait_peak_min != null ? Number(s.route_max_wait_peak_min) : 0;
     rt.TURNAROUND = Number(s.route_turnaround_min) || 8;
     rt.DEPLANE = Number(s.route_deplane_min) || 20;
     // Desembarque por aerolínea (0058). Si la migración no está, cada uno cae al
@@ -196,7 +214,12 @@
     // Con tiempos de TomTom el tráfico ya está dentro; el factor solo corrige a
     // OSRM/haversine, que calculan como si la vía estuviera libre. Si el valor
     // salió del respaldo haversine (celda sin datos), sí lleva factor.
-    return (rt.mHasTraffic && real) ? raw : raw * rt.TRAFFIC_FACTOR;
+    if (rt.mHasTraffic && real) return raw;
+    // El corredor a MDE lleva ADEMÁS su propio factor: OSRM lo sobreestima ahí y
+    // no entre casas (ver AIRPORT_FACTOR). Con tiempos de TomTom no se toca
+    // ninguno de los dos: esos ya vienen medidos de la vía.
+    const aero = (aKey === 'airport' || bKey === 'airport') ? rt.AIRPORT_FACTOR : 1;
+    return raw * rt.TRAFFIC_FACTOR * aero;
   }
 
   // Evalúa una VUELTA (lane): ETAs por parada, llegada a MDE, holgura y estado.
@@ -389,6 +412,19 @@
     return [...g.values()];
   }
   const rtPaxOf = (ids) => ids.reduce((s, id) => s + ((rt.aux[id] && rt.aux[id].pax) || 1), 0);
+
+  // Techo de espera del PRIMERO recogido, por franja de la hora de presentación.
+  // Las dos horas pico (6-9 a.m. y 12-6 p.m.) son las del jefe, no las nuestras:
+  // es su modelo de tráfico y aguanta más espera ahí. 0 = sin techo.
+  function rtTechoEspera(dlMin) {
+    const h = Math.floor(dlMin / 60) % 24;
+    const pico = (h >= 6 && h < 9) || (h >= 12 && h < 18);
+    return pico ? (rt.MAX_WAIT_PEAK || rt.MAX_WAIT) : rt.MAX_WAIT;
+  }
+  // Lo que va montado el primero de una salida: el recorrido completo más el
+  // colchón de entrega. En una llegada no aplica —ahí nadie espera dentro del
+  // carro, el pasajero sale del terminal y arranca.
+  const rtEsperaDe = (tipo, ids) => tipo === 'lle' ? 0 : rtTripDur(ids, null) + rt.AIRPORT_BUFFER;
   // La operación habla en múltiplos de 5: "recoge a las 3:15", no "a las 3:13".
   // El lado seguro depende del tipo: en una SALIDA salir antes es gratis, así que
   // va hacia abajo; en una LLEGADA adelantarse es plantarse en el terminal antes
@@ -503,9 +539,14 @@
     // Con route_merge_window_min = 0 no fusiona nada: comportamiento idéntico al
     // anterior. Es la palanca para apagar esto sin tocar código.
     const durDe = (tipo, ids) => tipo === 'lle' ? rtHomesPlan(ids).dur : rtTripDur(ids, null);
-    const fusionables = (tipo, base, extra) => {
+    const fusionables = (tipo, base, extra, dlMin) => {
       const cand = base.concat(extra);
       if (rtPaxOf(cand) > capMax) return false;
+      // TECHO DE ESPERA, como límite duro MIENTRAS arma y no solo verificado al
+      // final: juntar dos oleadas alarga el recorrido, y al primero que sube le
+      // toca todo. Antes esto se revisaba cuando ya estaba armado, y salían
+      // vueltas de 67 min montado — cosa que el jefe no hace nunca.
+      if (rtTechoEspera(dlMin) && rtEsperaDe(tipo, cand) > rtTechoEspera(dlMin)) return false;
       // ¿un carro sale más barato que dos? (comparten el tramo al aeropuerto)
       //
       // Se probó añadir un segundo freno —"el desvío no puede costar más que la
@@ -551,7 +592,7 @@
           // así que el que aterrizó primero espera esa diferencia. Se acota con el
           // mismo margen que ya define "ajustado" en el resto del tablero.
           if (g.type === 'lle' && w.dlMin - g.dlMin > Math.min(W, rt.MARGIN_TIGHT)) continue;
-          if (!mismaPorteria(g.ids, w.ids) && !fusionables(g.type, g.ids, w.ids)) continue;
+          if (!mismaPorteria(g.ids, w.ids) && !fusionables(g.type, g.ids, w.ids, g.dlMin)) continue;
           g.ids = g.ids.concat(w.ids);
           ultimo = w.dlMin;                          // el racimo sigue desde aquí
           // La llegada se rige por el ÚLTIMO que aterriza; la salida, por el
@@ -567,11 +608,18 @@
     //    para no separar a dos personas de la misma puerta en carros distintos).
     const trips = [];
     oleadas.forEach(w => {
-      if (rtPaxOf(w.ids) <= capMax) { trips.push({ type: w.type, dlMin: w.dlMin, ids: w.ids.slice() }); return; }
+      // Un viaje cabe si NO se pasa del cupo y NO se pasa del techo de espera.
+      // El techo importa aquí y no solo al fusionar: una oleada de 4 personas
+      // regadas por todo Rionegro cabe de sobra en el carro y aun así deja al
+      // primero 67 min montado. Antes esta rama se devolvía de una por caber en
+      // cupo y nadie miraba el recorrido.
+      const techo = rtTechoEspera(w.dlMin);
+      const cabe = (ids) => rtPaxOf(ids) <= capMax && (!techo || rtEsperaDe(w.type, ids) <= techo);
+      if (cabe(w.ids)) { trips.push({ type: w.type, dlMin: w.dlMin, ids: w.ids.slice() }); return; }
       let actual = [];
       rtGroupByStop(w.ids).forEach(porteria => {
         let resto = porteria.slice();
-        if (rtPaxOf(actual) + rtPaxOf(resto) > capMax && actual.length) { trips.push({ type: w.type, dlMin: w.dlMin, ids: actual }); actual = []; }
+        if (actual.length && !cabe(actual.concat(resto))) { trips.push({ type: w.type, dlMin: w.dlMin, ids: actual }); actual = []; }
         // Una portería con más gente que el cupo se parte igual (no cabe de otra forma).
         while (rtPaxOf(resto) > capMax) { trips.push({ type: w.type, dlMin: w.dlMin, ids: resto.slice(0, capMax) }); resto = resto.slice(capMax); }
         actual = actual.concat(resto);
@@ -583,6 +631,10 @@
     //    una llegada) — el tramo desde donde quedó SÍ cuenta.
     const cs = rt.cars.map(c => ({ car: c, avail: rtToMin(c.avail0 || '01:30'), vuelta: 0, pos: null }));
     const lanes = [], order = {}, unassigned = [];
+    // rtCarCompute busca la vuelta en rt.lanes: se apunta al arreglo que se está
+    // llenando para poder evaluar una vuelta apenas queda armada (ver el ajuste
+    // de la hora de salida más abajo). El llamador los vuelve a asignar al final.
+    rt.lanes = lanes; rt.order = order;
     trips.forEach(tr => {
       let best = null;
       if (tr.type === 'lle') {
@@ -623,8 +675,21 @@
       const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'sal', start: rtToHM(rtRedondea5(best.depart)), origin: best.origin };
       lanes.push(lane);
       order[lane.id] = rtBestOrder(tr.ids, best.origin);
+      // AJUSTE DE LA HORA DE SALIDA. La hora se eligió con una estimación hecha
+      // ANTES de fijar el orden de las paradas; con la ruta ya armada el recorrido
+      // suele salir más corto, y entonces el carro arrancaba antes de lo necesario.
+      // Eso no lo paga el carro: lo paga montado el primero que sube. Medido en el
+      // día del 11-ago, hasta 19 minutos de más. Se recalcula con la ruta de verdad
+      // y se retrasa la salida lo que se pueda — nunca antes de que el carro esté
+      // libre, nunca más tarde de lo que aguanta la hora de presentación.
+      const real = rtCarCompute(lane.id);
+      if (real.depart != null) {
+        const tarde = rtRedondea5(Math.max(s.avail, real.depart - rt.CUSHION));
+        if (tarde > rtToMin(lane.start)) lane.start = rtToHM(tarde);
+      }
       // tras entregar queda en MDE, disponible para la siguiente vuelta
-      s.avail = best.depart + best.dur + rt.TURNAROUND;
+      const fin = rtCarCompute(lane.id);
+      s.avail = (fin.arrival != null ? fin.arrival : rtToMin(lane.start)) + rt.TURNAROUND;
       s.pos = 'airport';
     });
     return { lanes, order, unassigned };

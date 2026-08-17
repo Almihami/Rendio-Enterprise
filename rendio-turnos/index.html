@@ -619,6 +619,15 @@
                 <div class="set-field"><label>Factor de tráfico</label><input id="setting-route-traffic" class="set-input" type="number" min="1" max="2" step="0.01" /><div class="set-hint">Multiplica el manejo cuando el tiempo sale de OSRM, que calcula con la vía libre. No aplica con TomTom (ese ya trae el tráfico). Default 1.05, calibrado contra la programación manual.</div></div>
                 <div class="set-field"><label>Colchón al entregar en MDE (min)</label><input id="setting-route-buffer" class="set-input" type="number" min="0" max="45" /><div class="set-hint">Bajar maletas y entrar al terminal. Llegar justo a la hora de presentación es llegar tarde. Default 10.</div></div>
               </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Factor del tramo al aeropuerto</label><input id="setting-route-aero" class="set-input" type="number" min="0.5" max="1.5" step="0.01" /><div class="set-hint">Corrige <b>solo</b> el viaje a/desde MDE, aparte del factor de tráfico. Va por debajo de 1 porque OSRM sobreestima ese corredor: la operación hace en 20 min lo que él calcula en 27. Entre casa y casa no se toca, ahí OSRM acierta. Medido contra 99 vueltas de la programación manual. Default 0.80.</div></div>
+              </div>
+              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Techo de espera: lo que va montado el primero que sube</p>
+              <p class="set-hint" style="margin:2px 0 10px 2px">Es una regla de la programación manual: en 99 vueltas revisadas nunca pasa de 50 min, ni de 60 en las horas pico. Sin techo, una oleada de 4 personas regadas por todo Rionegro cabe en el carro y deja al primero más de una hora adentro. <b>Ojo al ponerlo:</b> respetar el techo obliga a partir vueltas, y partir vueltas puede dejar gente sin carro si la flota no da. <b>0 = sin techo.</b></p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Techo normal (min)</label><input id="setting-route-wait" class="set-input" type="number" min="0" max="180" /><div class="set-hint">Fuera de horas pico. La programación manual usa 50.</div></div>
+                <div class="set-field"><label>Techo en hora pico (min)</label><input id="setting-route-wait-peak" class="set-input" type="number" min="0" max="180" /><div class="set-hint">De 6 a 9 a.m. y de 12 a 6 p.m., las dos franjas que la operación considera pesadas. La programación manual usa 60.</div></div>
+              </div>
               <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Desembarque: de que aterriza a que sale del terminal</p>
               <p class="set-hint" style="margin:2px 0 10px 2px">Con estos minutos se decide a qué hora el carro recoge en el aeropuerto. La aerolínea se saca del número de vuelo que escribe el tripulante; si no viene o no se reconoce, se usa el de respaldo. Si el carro llega antes, espera el carro; si llega después, espera la tripulante en el andén.</p>
               <div class="set-row2" style="margin-top:0">
