@@ -15,7 +15,7 @@
 (function () {
   'use strict';
 
-  const st = { items: null, loading: false, busy: null, rejecting: null };
+  const st = { items: null, loading: false, busy: null, rejecting: null, noAviso: null };
 
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -116,6 +116,10 @@
         Se cruza con el privado de <b>${esc(conflicto.who)}</b> (${esc(fecha(conflicto.whenISO))}). Hay una sola camioneta: si apruebas este, el servidor lo va a rechazar.
       </div>` : ''}
       ${x.status === 'rejected' && x.reason ? `<div class="pv-reason"><b>Motivo:</b> ${esc(x.reason)}</div>` : ''}
+      ${st.noAviso === x.id ? `<div class="pv-warn">
+        <svg class="icon"><use href="#i-warn"/></svg>
+        <span>Ya quedó decidido, pero <b>a ${esc(x.who)} no le llegó el aviso</b>: no tiene las notificaciones activadas. Lo va a ver cuando abra la app.${x.phone ? ' Si es urgente, llámalo al ' + esc(x.phone) + '.' : ' No tenemos su teléfono registrado.'}</span>
+      </div>` : ''}
       ${rechazando ? `<div class="pv-rej">
         <input class="set-input" id="pv-reason-${x.id}" type="text" maxlength="200"
                placeholder="¿Por qué? Lo va a leer quien pidió (opcional)" />
@@ -134,19 +138,35 @@
     st.busy = id; paint();
     try {
       const r = await Api.decidePrivate(id, aprueba, motivo);
-      // Avisarle a quien pidió: está esperando esta respuesta y no tiene forma
-      // de saberla si no abre la app.
-      if (r && r.requester_profile_id && typeof notify === 'function') {
-        notify([r.requester_profile_id],
-          aprueba ? 'Tu traslado privado quedó confirmado' : 'No alcanzó la camioneta',
-          aprueba
-            ? 'La camioneta es tuya para ese trayecto.'
-            : ((motivo ? motivo + ' ' : '') + 'Tu traslado sigue en pie en compartido, sin costo.'),
-          '/');
+      // Avisarle a quien pidió. OJO: en dev solo 3 de 102 auxiliares tienen
+      // notificaciones activadas, así que este push MUCHAS VECES no llega a
+      // ninguna parte. Por eso se manda con sendPush directo y no con notify():
+      // notify() se traga el resultado, y acá necesitamos SABER si sonó, para
+      // decírselo al jefe. Un aviso que se pierde en silencio es peor que no
+      // tenerlo: el jefe cree que ya avisó y el tripulante sigue esperando.
+      let sono = null;
+      if (r && r.requester_profile_id && window.Api?.sendPush) {
+        try {
+          const p = await Api.sendPush({
+            profileIds: [r.requester_profile_id],
+            title: aprueba ? 'Tu traslado privado quedó confirmado' : 'No alcanzó la camioneta',
+            body: aprueba
+              ? 'La camioneta es tuya para ese trayecto.'
+              : ((motivo ? motivo + ' ' : '') + 'Tu traslado sigue en pie en compartido, sin costo.'),
+            url: '/',
+          });
+          sono = (p && typeof p.sent === 'number') ? p.sent > 0 : null;
+        } catch (_) { sono = false; }
       }
       st.rejecting = null;
+      st.noAviso = sono === false ? id : null;
       await load();
-      if (typeof toast === 'function') toast(aprueba ? 'Privado aprobado.' : 'Privado negado.');
+      if (typeof toast === 'function') {
+        toast(sono === false
+          ? (aprueba ? 'Aprobado, pero no le llegó el aviso: no tiene notificaciones activadas.'
+                     : 'Negado, pero no le llegó el aviso: no tiene notificaciones activadas.')
+          : (aprueba ? 'Privado aprobado.' : 'Privado negado.'));
+      }
     } catch (e) {
       const m = (e && e.message) || '';
       if (typeof toast === 'function') {

@@ -21,6 +21,14 @@
 //  3. Paleta fija, sin modo nocturno. Es el único bloque del rol que no se
 //     apaga de noche, a propósito ("papel y tinta", decisión del diseñador).
 //
+// POR QUÉ NINGÚN TEXTO DE AQUÍ PROMETE UNA NOTIFICACIÓN
+// Se comprobó contra dev: de 102 auxiliares, **3** tienen un dispositivo con
+// notificaciones activadas. Decirle a alguien "te avisamos apenas responda" es
+// prometer un canal que 99 de cada 102 no tienen. Así que la respuesta vive
+// SIEMPRE en la pantalla del traslado, y el push es un extra que se menciona
+// como condicional. Cuando la operación logre que la gente instale la PWA, el
+// texto sigue siendo cierto — solo que además suena.
+//
 // LO QUE NO SE COBRA AQUÍ
 // No hay checkout, ni medio de pago, ni recibo. Se MUESTRA la tarifa y el cobro
 // se liquida por fuera. Rendio no tiene ninguna tabla de cobros y media pasarela
@@ -126,13 +134,13 @@
       <p class="ax-lead">Los dos te llevan. Elige con cuál vas.</p>
       ${compartido}
       ${privado}
-      ${dudoso ? `<div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>No pudimos confirmar si la camioneta está libre a esa hora. Puedes pedirla igual: si no alcanza, te avisamos y vas en compartido.</div>` : ''}
+      ${dudoso ? `<div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>No pudimos confirmar si la camioneta está libre a esa hora. Puedes pedirla igual: si no alcanza, tu traslado sale en compartido y lo verás aquí.</div>` : ''}
       <button class="axp-more" data-ax="lvl-info"><svg class="icon"><use href="#i-info"/></svg>Qué incluye el privado</button>
       ${sel === 'private' ? `
         <div class="axp-note">
           <svg class="icon"><use href="#i-clock"/></svg>
           <div><b>Lo tiene que aprobar coordinación</b>
-          <span>Es un vehículo dedicado, así que un jefe lo confirma antes. Te avisamos apenas responda. Si no se puede, tu traslado sale en compartido y no se cobra nada.</span></div>
+          <span>Es un vehículo dedicado, así que un jefe lo confirma antes. <b>La respuesta la vas a ver aquí mismo</b>, en tu traslado; y si tienes las notificaciones activadas, además te llega un aviso. Si no se puede, tu traslado sale en compartido y no se cobra nada.</span></div>
         </div>` : ''}`;
   }
 
@@ -179,7 +187,7 @@
       return `<div class="axp-st wait">
         <span class="axp-st-ic"><svg class="icon"><use href="#i-clock"/></svg></span>
         <div><b>Privado · esperando confirmación</b>
-        <span>Coordinación está revisando si la camioneta está libre a esa hora. Te avisamos apenas responda.${p ? ' Tarifa: ' + p + '.' : ''}</span></div>
+        <span>Coordinación está revisando si la camioneta está libre a esa hora. Vuelve a esta pantalla para ver la respuesta.${p ? ' Tarifa: ' + p + '.' : ''}</span></div>
       </div>`;
     }
     if (t.privateStatus === 'approved') {
