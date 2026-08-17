@@ -46,6 +46,11 @@ const JSONOUT = (process.argv.find((a) => a.startsWith('--json=')) || '').split(
 // (OSRM asume ~29 km/h en Rionegro; el plan manual del jefe implica ~40 en el
 // corredor norte→MDE). No escribe nada en la BD.
 const TRAFICO = Number((process.argv.find((a) => a.startsWith('--trafico=')) || '').split('=')[1] || 0);
+// Factor propio del tramo a/desde MDE (route_airport_factor). Solo para el ensayo.
+const AERO = Number((process.argv.find((a) => a.startsWith('--aero=')) || '').split('=')[1] || 0);
+// Techo de espera del primero recogido (route_max_wait_min / _peak). Solo ensayo.
+const TECHO = Number((process.argv.find((a) => a.startsWith('--techo=')) || '').split('=')[1] || 0);
+const TECHO_PICO = Number((process.argv.find((a) => a.startsWith('--techopico=')) || '').split('=')[1] || 0);
 // Colchón en el aeropuerto, también solo para el ensayo. El jefe deja ~20 min de
 // margen sobre la hora de presentación; el solver deja 10.
 const COLCHON = Number((process.argv.find((a) => a.startsWith('--colchon=')) || '').split('=')[1] || 0);
@@ -100,6 +105,9 @@ const usados = NCARROS ? flota.slice(0, NCARROS) : flota.slice(0, 2);   // 2 = l
 
 const { data: st } = await admin.from('app_settings').select('*').eq('id', 'singleton').maybeSingle();
 if (TRAFICO) st.route_traffic_factor = TRAFICO;      // solo en memoria, ver --trafico
+if (AERO) st.route_airport_factor = AERO;            // solo en memoria, ver --aero
+if (TECHO) st.route_max_wait_min = TECHO;            // solo en memoria, ver --techo
+if (TECHO_PICO) st.route_max_wait_peak_min = TECHO_PICO;
 if (COLCHON) st.route_airport_buffer_min = COLCHON; // solo en memoria, ver --colchon
 if (SALIDA !== null) st.route_depart_cushion_min = SALIDA; // solo en memoria, ver --salida
 
@@ -171,6 +179,10 @@ const vueltas = lanes.map((l) => {
     llega: c.arrival != null ? S.rtToHM(c.arrival) : null,
     presentacion: l.type === 'sal' && c.hardDL != null ? S.rtToHM(c.hardDL) : null,
     holgura: c.holg, espera: c.wait || 0, estado: c.status, pax: c.pax,
+    // Lo más tarde que ESTA vuelta podía arrancar y aún entregar con colchón. Si
+    // queda muy por encima de `sale`, el carro salió antes de lo necesario y esa
+    // diferencia se la come montado el primero que sube.
+    saleTarde: c.depart != null ? S.rtToHM(Math.round(c.depart)) : null,
     paradas,
   };
 }).sort((a, b) => S.rtToMin(a.sale) - S.rtToMin(b.sale));
@@ -183,6 +195,7 @@ const salida = {
     hueco: S.rt.MERGE_WINDOW, servicio: S.rt.SERVICE_MIN, colchonAeropuerto: S.rt.AIRPORT_BUFFER,
     trafico: S.rt.TRAFFIC_FACTOR, turnaround: S.rt.TURNAROUND, desembarque: S.rt.DEPLANE,
     colchonSalida: S.rt.CUSHION, cupo: S.rt.CAP,
+    factorAeropuerto: S.rt.AIRPORT_FACTOR, techoEspera: S.rt.MAX_WAIT, techoEsperaPico: S.rt.MAX_WAIT_PEAK,
   },
   carros: S.rt.cars.map((c) => ({ id: c.id, cupo: c.capacity })),
   traslados: delDia.length,

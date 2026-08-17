@@ -78,7 +78,13 @@ async function osrmMin(a, b) {
 
 // ── análisis ────────────────────────────────────────────────────────────────
 const faltantes = new Map();
-for (const [etiqueta, archivo] of [['SALIDAS 14 VUELTAS', 'plan-salidas-14vueltas.txt'], ['DOMINGO', 'plan-domingo.txt']]) {
+// Por defecto analiza los dos primeros mensajes; se le pueden pasar otros archivos
+// por argumento: node analizar-plan-jefe.mjs plan-agosto-a.txt plan-agosto-b.txt
+const ARCHIVOS = process.argv.slice(2).filter((a) => a.endsWith('.txt'));
+const OBJETIVO = ARCHIVOS.length
+  ? ARCHIVOS.map((f) => [f.replace(/^plan-|\.txt$/g, '').toUpperCase(), f])
+  : [['SALIDAS 14 VUELTAS', 'plan-salidas-14vueltas.txt'], ['DOMINGO', 'plan-domingo.txt']];
+for (const [etiqueta, archivo] of OBJETIVO) {
   const vueltas = parsePlan(readFileSync(`${DIR}/${archivo}`, 'utf8'));
   console.log(`\n\n══════════ ${etiqueta} — ${vueltas.length} bloques ══════════`);
   let salidas = 0, llegadas = 0, hotel = 0, personas = 0;
