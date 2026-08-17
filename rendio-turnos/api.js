@@ -64,9 +64,11 @@
 
   // Crea un conductor nuevo vía Edge Function (requiere sesión admin activa).
   // Devuelve { id, email, full_name, priority, can_coordinate } o lanza Error.
-  async function createDriver({ email, password, full_name, priority = 1, can_coordinate = false }) {
+  async function createDriver({ email, password, full_name, phone, priority = 1, can_coordinate = false }) {
     const { data, error } = await sb.functions.invoke('create-driver', {
-      body: { email, password, full_name, priority, can_coordinate },
+      // La Edge Function ya aceptaba `phone` (y lo valida) desde siempre; era el
+      // formulario el que nunca lo mandaba, y por eso profiles.phone quedó vacío.
+      body: { email, password, full_name, phone: phone || null, priority, can_coordinate },
     });
     if (error) {
       // sb.functions.invoke envuelve el body de error en `error.context.body` si la
@@ -93,25 +95,26 @@
   }
 
   async function listAdmins() {
-    let { data, error } = await sb
-      .from('profiles')
-      .select('id, full_name, email, role, is_active, is_coordinator')
-      .eq('role', 'admin')
-      .is('deleted_at', null)
-      .order('full_name');
-    if (error) {
-      // Fallback: la migración 0011 (is_coordinator) aún no aplicada.
-      ({ data, error } = await sb
-        .from('profiles')
-        .select('id, full_name, email, role, is_active')
-        .eq('role', 'admin')
-        .is('deleted_at', null)
-        .order('full_name'));
-      if (error) throw error;
-    }
+    const sel = (cols) => sb.from('profiles').select(cols)
+      .eq('role', 'admin').is('deleted_at', null).order('full_name');
+    // Cascada: 0063 (receives_ops_alerts) y 0011 (is_coordinator) pueden no
+    // estar aplicadas todavía.
+    let { data, error } = await sel('id, full_name, email, role, is_active, is_coordinator, receives_ops_alerts');
+    if (error) ({ data, error } = await sel('id, full_name, email, role, is_active, is_coordinator'));
+    if (error) ({ data, error } = await sel('id, full_name, email, role, is_active'));
+    if (error) throw error;
     return (data || [])
       .filter(p => p.is_active !== false)
-      .map(p => ({ ...p, is_coordinator: p.is_coordinator !== false }));
+      .map(p => ({ ...p, is_coordinator: p.is_coordinator !== false, receives_ops_alerts: p.receives_ops_alerts === true }));
+  }
+
+  // Quién recibe los avisos de eventualidades en el celular. Si nadie queda
+  // marcado, `opsAlertProfileIds` avisa a todos los admins: la operación no se
+  // puede quedar muda por un olvido.
+  async function setOpsAlerts(profileId, on) {
+    const { error } = await sb.from('profiles')
+      .update({ receives_ops_alerts: !!on }).eq('id', profileId);
+    if (error) throw error;
   }
 
   async function setAdminCoordinator(profileId, value) {
@@ -939,30 +942,123 @@
   }
 
   // Novedades/incidents para el admin: cola con estado + evidencia. `status`:
-  // 'open' | 'in_progress' | 'resolved' | 'all' (o nada = todas). Cascada por si el
-  // embed del reporter falla (dos FKs a profiles → hint por columna reporter_id).
-  async function listIncidents(status) {
+  // 'open' | 'in_progress' | 'resolved' | 'all' (o nada = todas). `scope`:
+  // 'flota' (novedades del vehículo) | 'operacion' (eventualidades de traslado).
+  //
+  // El scope NO es opcional en la práctica: sin él, la cola de Inspecciones
+  // empezaría a mostrar trancones y fallas de ruta. Va como último escalón de la
+  // cascada por si la 0063 aún no está aplicada — ahí el comportamiento vuelve a
+  // ser el de antes (todo junto), que es lo que había.
+  async function listIncidents(status, scope) {
     const base = 'id,shift_id,vehicle_id,reporter_id,category,severity,status,description,' +
       'photo_paths,resolution_notes,resolved_at,created_at,' +
       'vehicles(internal_code,license_plate,brand,model)';
-    const run = (sel) => {
+    const run = (sel, useScope) => {
       let q = sb.from('incidents').select(sel).order('created_at', { ascending: false }).limit(300);
       if (status && status !== 'all') q = q.eq('status', status);
+      if (useScope && scope) q = q.eq('scope', scope);
       return q;
     };
-    let { data, error } = await run(base + ',reporter:profiles!reporter_id(id,full_name)');
-    if (error) ({ data, error } = await run(base));
+    let { data, error } = await run(base + ',reporter:profiles!reporter_id(id,full_name)', true);
+    if (error) ({ data, error } = await run(base, true));
+    if (error) ({ data, error } = await run(base, false));
     if (error) throw error;
     return data || [];
   }
 
   // Conteo rápido de novedades ABIERTAS (para el badge de la pestaña).
-  async function countOpenIncidents() {
-    const { count, error } = await sb.from('incidents')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'open');
+  async function countOpenIncidents(scope) {
+    const run = (useScope) => {
+      let q = sb.from('incidents').select('id', { count: 'exact', head: true }).eq('status', 'open');
+      if (useScope && scope) q = q.eq('scope', scope);
+      return q;
+    };
+    let { count, error } = await run(true);
+    if (error) ({ count, error } = await run(false));
     if (error) throw error;
     return count || 0;
+  }
+
+  // ---- Eventualidades de operación (0062/0063) ----
+
+  // Reporta una eventualidad durante un traslado. Pasa por el RPC, que valida que
+  // quien reporta esté vinculado a la reserva y deriva turno, vehículo, ruta y
+  // parada: el cliente no elige nada de eso.
+  async function reportIncident({ category, description, severity, reservationId, details, latitude, longitude, photoPaths }) {
+    const { data, error } = await sb.rpc('report_incident', {
+      p_category: category,
+      p_description: description,
+      p_severity: severity || 'medium',
+      p_reservation_id: reservationId || null,
+      p_details: details || {},
+      p_latitude: latitude != null ? latitude : null,
+      p_longitude: longitude != null ? longitude : null,
+      p_photo_paths: photoPaths || [],
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  // La bandeja del jefe. Trae el contexto que hace falta para decidir sin salir
+  // de la pantalla: quién reportó, de qué traslado es, dónde pasó y con qué carro.
+  async function listEventualidades(status) {
+    const base = 'id,category,severity,status,description,details,source,scope,' +
+      'latitude,longitude,occurred_at,created_at,acknowledged_at,resolved_at,' +
+      'resolution_notes,photo_paths,reservation_id,route_assignment_id,vehicle_id,' +
+      'vehicles(internal_code,license_plate,brand,model)';
+    const aux = ',reservations(pickup_address,required_arrival_at,direction,' +
+      'auxiliar_profiles(profiles(id,full_name,phone)))';
+    const rep = ',reporter:profiles!reporter_id(id,full_name,role)';
+    const run = (sel) => {
+      let q = sb.from('incidents').select(sel)
+        .eq('scope', 'operacion')
+        .order('created_at', { ascending: false }).limit(200);
+      if (status && status !== 'all') q = q.eq('status', status);
+      return q;
+    };
+    let { data, error } = await run(base + aux + rep);
+    if (error) ({ data, error } = await run(base + rep));
+    if (error) ({ data, error } = await run(base));
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function countOpenEventualidades() {
+    const { count, error } = await sb.from('incidents')
+      .select('id', { count: 'exact', head: true })
+      .eq('scope', 'operacion').eq('status', 'open');
+    if (error) return 0; // 0063 sin aplicar: la bandeja simplemente no tiene nada
+    return count || 0;
+  }
+
+  // "La vi". Distinto de atenderla: sirve para saber que el aviso de madrugada
+  // llegó a un ser humano. No se pisa el acuse original si ya estaba.
+  async function acknowledgeIncident(id) {
+    const session = await getSession();
+    const me = session && session.user ? session.user.id : null;
+    const { error } = await sb.from('incidents')
+      .update({ acknowledged_at: new Date().toISOString(), acknowledged_by: me })
+      .eq('id', id).is('acknowledged_at', null);
+    if (error) throw error;
+  }
+
+  // A quién se le avisa una eventualidad. Los marcados en Personal; y si NADIE
+  // está marcado, a todos los admins activos: una operación sin nadie marcado no
+  // puede quedarse muda — ese es justo el problema que vinimos a resolver.
+  async function opsAlertProfileIds() {
+    const activos = (rows) => (rows || []).filter(p => p.is_active !== false).map(p => p.id);
+    try {
+      const { data, error } = await sb.from('profiles')
+        .select('id,is_active').eq('role', 'admin')
+        .eq('receives_ops_alerts', true).is('deleted_at', null);
+      if (!error) {
+        const ids = activos(data);
+        if (ids.length) return ids;
+      }
+    } catch (_) { /* 0063 sin aplicar: cae al listado completo */ }
+    const { data } = await sb.from('profiles')
+      .select('id,is_active').eq('role', 'admin').is('deleted_at', null);
+    return activos(data);
   }
 
   // Cambia el estado de una novedad. Al resolver sella resolved_at + notas; al reabrir los limpia.
@@ -1992,7 +2088,7 @@
 
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
-    listDrivers, listAdmins,
+    listDrivers, listAdmins, setOpsAlerts,
     listAllDriversForAdmin, setProfileActive, softDeleteProfile, setAdminCoordinator, setDriverPriority, setDriverCanCoordinate,
     createDriver,
     listSubmittedDriverIds,
@@ -2008,7 +2104,9 @@
     savePushSubscription, deletePushSubscription, sendPush,
     getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, driverOverrideOilBlock, registerOilChange, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
-    addIncident, listIncidents, countOpenIncidents, updateIncidentStatus, startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
+    addIncident, listIncidents, countOpenIncidents, updateIncidentStatus,
+    reportIncident, listEventualidades, countOpenEventualidades, acknowledgeIncident, opsAlertProfileIds,
+    startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
     getMyFullProfile, uploadMyAvatar,

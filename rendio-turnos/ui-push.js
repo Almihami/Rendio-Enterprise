@@ -26,12 +26,13 @@
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredInstallPrompt = e;
-      if (state.profile?.role === 'admin') return; // admins gestionan desde PC
+      // Al admin solo se le ofrece instalar desde el celular (ver setupPushUI).
+      if (state.profile?.role === 'admin' && !adminOnPhone()) return;
       btn.classList.remove('hidden');
       btnMobile.classList.remove('hidden');
     });
 
-    if (isIos && state.profile?.role !== 'admin') {
+    if (isIos && (state.profile?.role !== 'admin' || adminOnPhone())) {
       // iOS Safari nunca dispara beforeinstallprompt; mostramos botón con instrucciones.
       btn.classList.remove('hidden');
       btnMobile.classList.remove('hidden');
@@ -129,8 +130,11 @@
   // suscrito / permiso denegado → no se muestra).
   async function setupPushUI() {
     const existing = document.getElementById('enable-push-bar');
-    // El admin es un módulo web de escritorio: las notificaciones push no aplican.
-    if (state.profile?.role === 'admin') { existing?.remove(); return; }
+    // El admin en el COMPUTADOR sigue sin barra: es un módulo de escritorio y la
+    // barra se quitó a propósito en junio para no ensuciar la consola. En el
+    // CELULAR sí se muestra: es el único canal por el que un jefe se entera de
+    // una falla mecánica a las 4 de la mañana sin tener la pantalla abierta.
+    if (state.profile?.role === 'admin' && !adminOnPhone()) { existing?.remove(); return; }
     if (!pushSupported() || Notification.permission === 'denied') { existing?.remove(); return; }
     let alreadySub = false;
     try {
@@ -148,12 +152,33 @@
     const bar = document.createElement('div');
     bar.id = 'enable-push-bar';
     bar.className = 'push-bar';
-    bar.innerHTML = `<span>🔔 Activa las notificaciones: mensajes de tus pasajeros, cambios de ruta, turnos y horarios.</span>
+    const texto = state.profile.role === 'admin'
+      ? '🔔 Activa las notificaciones en este celular: es como te enteras de una falla mecánica o una emergencia de madrugada, sin tener la app abierta.'
+      : '🔔 Activa las notificaciones: mensajes de tus pasajeros, cambios de ruta, turnos y horarios.';
+    bar.innerHTML = `<span>${texto}</span>
       <button id="enable-push-btn" class="wk-btn wk-coord-on" style="flex:0 0 auto;">Activar</button>`;
     // Admin: arriba del shell. Conductor: al final del Inicio (debajo de las 2 tarjetas).
     if (state.profile.role === 'admin') host.insertBefore(bar, host.firstChild);
     else host.appendChild(bar);
     document.getElementById('enable-push-btn').addEventListener('click', enablePush);
+  }
+
+  // Aviso a los jefes de operación por una eventualidad.
+  //
+  // El push sale del dispositivo de QUIEN REPORTA: el conductor y el tripulante
+  // siempre tienen la app abierta en ese momento, así que no hace falta que la
+  // base llame a nadie. Lo que nace en el servidor —el vigilante de rutas, la API
+  // de vuelos— va por otro camino (bandeja de salida, migración 0064).
+  //
+  // La URL lleva a la eventualidad exacta, no a la app en general: a las 4am
+  // nadie quiere ponerse a buscar cuál fue.
+  async function notifyOps(title, body, incidentId) {
+    try {
+      const ids = await Api.opsAlertProfileIds();
+      if (!ids || !ids.length) return;
+      const url = incidentId ? `/#/eventualidades?ev=${incidentId}` : '/#/eventualidades';
+      await Api.sendPush({ profileIds: ids, title, body, url });
+    } catch (e) { /* el reporte ya quedó guardado; el aviso es best-effort */ }
   }
 
   // Notificación best-effort (si la Edge Function no está desplegada, ignora).

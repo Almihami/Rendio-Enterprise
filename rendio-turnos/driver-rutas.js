@@ -25,6 +25,8 @@
     // Espera en el punto: desde que marca "Llegué" corre el reloj y solo al
     // vencerse se habilita "No se presentó" (antes se podía marcar al segundo 1).
     waitTick: null,
+    // Reportar una eventualidad (0062/0063): hoja encima del mapa, sin desmontarlo.
+    report: null,
   };
   // Minutos de espera configurados en Ajustes (0050). Default 5.
   // `state` es un const de script (no vive en window): se lee directo.
@@ -555,6 +557,7 @@
           <span style="color:var(--r-text-3)">·</span>
           <span style="color:var(--r-text-2)">${m.label} · sale ${v.start}</span>
         </div>
+        <button class="dr-sos" data-dr="sos" aria-label="Emergencia mecánica"><svg class="icon"><use href="#i-warn"/></svg>SOS</button>
       </div>
       <div class="dr-ex-chips">
         <div class="dr-ex-chip ${tone}">${chipTxt}</div>
@@ -777,6 +780,132 @@
   }
 
   // ---------- eventos ----------
+  // ---------- REPORTAR UNA EVENTUALIDAD (0062/0063) ----------
+  // Antes este botón decía "próximamente" y el conductor no tenía por dónde
+  // avisar nada durante un traslado: la única vía era el checklist del inicio de
+  // turno, que ya pasó. Ahora el reporte sale con lo que el jefe necesita para
+  // decidir sin llamar a nadie: qué pasa, dónde (GPS), con qué carro y de qué
+  // traslado. Va como panel encima para no desmontar el mapa que corre debajo.
+  const DR_REP_CATS = [
+    { id: 'vehicle_problem', label: 'Falla mecánica', icon: 'i-warn' },
+    { id: 'traffic',         label: 'Trancón',        icon: 'i-route' },
+    { id: 'wrong_address',   label: 'No encuentro la dirección', icon: 'i-pin' },
+    { id: 'other',           label: 'Otra cosa',      icon: 'i-info' },
+  ];
+  const DR_REP_LABEL = (id) => (DR_REP_CATS.find(c => c.id === id) || {}).label || 'Novedad';
+
+  function drReportHTML() {
+    const r = drState.report; if (!r) return '';
+    const chip = (activo, act, val, txt) =>
+      `<button class="dr-rchip${activo ? ' on' : ''}" data-dr="${act}" data-v="${val}">${txt}</button>`;
+
+    // Preguntas propias de cada categoría: dos toques, no un formulario.
+    let extra = '';
+    if (r.cat === 'traffic') {
+      extra = `
+        <div class="dr-rq"><label>¿Cómo está el tráfico?</label><div class="dr-rrow">
+          ${chip(r.mov === 'detenido', 'rep-mov', 'detenido', 'Detenido')}
+          ${chip(r.mov === 'lento', 'rep-mov', 'lento', 'Avanza lento')}
+        </div></div>
+        <div class="dr-rq"><label>¿Por qué?</label><div class="dr-rrow">
+          ${chip(r.causa === 'accidente', 'rep-causa', 'accidente', 'Accidente')}
+          ${chip(r.causa === 'habitual', 'rep-causa', 'habitual', 'Tráfico habitual')}
+        </div></div>`;
+    } else if (r.cat === 'vehicle_problem') {
+      extra = `
+        <div class="dr-rq"><label>¿Puedes seguir manejando?</label><div class="dr-rrow">
+          ${chip(r.sev === 'medium', 'rep-sev', 'medium', 'Sí, con cuidado')}
+          ${chip(r.sev === 'high', 'rep-sev', 'high', 'No, estoy varado')}
+        </div></div>`;
+    }
+
+    const v = drVuelta(); const leg = v && v.legs[drState.legIdx];
+    const donde = drState.lastPos
+      ? 'Se envía con tu ubicación actual.'
+      : 'Sin señal de GPS: el aviso irá sin ubicación.';
+
+    return `<div class="dr-report" id="dr-report">
+      <div class="dr-rcard">
+        <div class="dr-rhead">
+          <b>Reportar novedad</b>
+          <button class="dr-icbtn" data-dr="rep-close" aria-label="Cerrar"><svg class="icon"><use href="#i-x"/></svg></button>
+        </div>
+        <div class="dr-rbody">
+          <div class="dr-rq"><label>¿Qué está pasando?</label><div class="dr-rrow wrap">
+            ${DR_REP_CATS.map(c => `<button class="dr-rchip${r.cat === c.id ? ' on' : ''}" data-dr="rep-cat" data-v="${c.id}">
+              <svg class="icon"><use href="#${c.icon}"/></svg>${c.label}</button>`).join('')}
+          </div></div>
+          ${extra}
+          <div class="dr-rq"><label>Cuéntanos en una línea</label>
+            <textarea id="dr-rep-text" maxlength="500" rows="3" placeholder="${r.cat === 'traffic' ? 'Ej: cerrada la vía a la altura de…' : 'Ej: se recalentó saliendo de…'}">${drEsc(r.text || '')}</textarea>
+          </div>
+          <p class="dr-rfoot">${donde}${leg && leg.name ? ' Va ligado al traslado de ' + drEsc((leg.name || '').split(' ')[0]) + '.' : ''}</p>
+        </div>
+        <button class="dr-rsend${r.sev === 'high' ? ' urgent' : ''}" data-dr="rep-send"${r.sending ? ' disabled' : ''}>
+          ${r.sending ? 'Enviando…' : (r.sev === 'high' ? 'Avisar YA a los jefes' : 'Enviar aviso')}
+        </button>
+      </div>
+    </div>`;
+  }
+
+  function drReportPaint() {
+    const el = document.getElementById('dr-report');
+    if (!el) return;
+    // Se conserva lo escrito al repintar por un cambio de chip.
+    const ta = document.getElementById('dr-rep-text');
+    if (ta) drState.report.text = ta.value;
+    el.outerHTML = drReportHTML();
+  }
+
+  function drReportOpen(preset) {
+    drState.report = Object.assign({ cat: null, sev: 'medium', mov: null, causa: null, text: '', sending: false }, preset || {});
+    const host = document.getElementById('driver-ruta-ui') || document.body;
+    const old = document.getElementById('dr-report'); if (old) old.remove();
+    host.insertAdjacentHTML('beforeend', drReportHTML());
+    const ta = document.getElementById('dr-rep-text'); if (ta) ta.focus();
+  }
+  function drReportClose() {
+    drState.report = null;
+    const el = document.getElementById('dr-report'); if (el) el.remove();
+  }
+
+  async function drReportSend() {
+    const r = drState.report; if (!r || r.sending) return;
+    const ta = document.getElementById('dr-rep-text');
+    const desc = (ta ? ta.value : (r.text || '')).trim();
+    if (!r.cat) { toast('Primero dinos qué está pasando.'); return; }
+    if (!desc) { toast('Cuéntanos en una línea qué pasa.'); if (ta) ta.focus(); return; }
+
+    r.text = desc; r.sending = true; drReportPaint();
+
+    const v = drVuelta(); const leg = v && v.legs[drState.legIdx];
+    const details = {};
+    if (r.cat === 'traffic') { if (r.mov) details.movimiento = r.mov; if (r.causa) details.causa = r.causa; }
+
+    try {
+      const id = await Api.reportIncident({
+        category: r.cat,
+        description: desc,
+        severity: r.sev,
+        reservationId: (leg && leg.reservationId) || null,
+        details,
+        latitude: drState.lastPos ? drState.lastPos[0] : null,
+        longitude: drState.lastPos ? drState.lastPos[1] : null,
+      });
+      // El push sale de aquí, del celular del conductor: es el único momento en
+      // que sabemos con certeza que hay una app despierta con sesión.
+      const quien = (drState.profile && drState.profile.full_name) || 'Un conductor';
+      const titulo = r.sev === 'high' ? `🚨 ${DR_REP_LABEL(r.cat)}` : DR_REP_LABEL(r.cat);
+      if (typeof notifyOps === 'function') notifyOps(titulo, `${quien}: ${desc}`.slice(0, 200), id);
+      drReportClose();
+      toast(r.sev === 'high' ? 'Aviso enviado. Los jefes ya lo están viendo.' : 'Listo, quedó reportado.');
+    } catch (e) {
+      console.error(e);
+      r.sending = false; drReportPaint();
+      toast('No se pudo enviar: ' + (e.message || 'revisa la señal'));
+    }
+  }
+
   function drBindOnce() {
     if (drState.bound) return;
     const root = drHost(); if (!root) return;
@@ -815,7 +944,21 @@
         toast('Marcado: no se presentó.'); drAdvance(); return;
       }
       if (a === 'next') { drApplyNext(); drAdvance(); return; }
-      if (a === 'report') { toast('Reportar novedad — próximamente.'); return; }
+      if (a === 'report') { drReportOpen(); return; }
+      // Botón rojo: la falla mecánica ya viene elegida y marcada como grave. Es
+      // el caso en que el jefe tiene que salir a resolver, no enterarse después.
+      if (a === 'sos') { drReportOpen({ cat: 'vehicle_problem', sev: 'high' }); return; }
+      if (a === 'rep-close') { drReportClose(); return; }
+      if (a === 'rep-cat') {
+        drState.report.cat = el.dataset.v;
+        // La falla mecánica arranca en "sí puedo seguir" salvo que venga del SOS.
+        if (el.dataset.v !== 'vehicle_problem') drState.report.sev = 'medium';
+        drReportPaint(); return;
+      }
+      if (a === 'rep-mov') { drState.report.mov = el.dataset.v; drReportPaint(); return; }
+      if (a === 'rep-causa') { drState.report.causa = el.dataset.v; drReportPaint(); return; }
+      if (a === 'rep-sev') { drState.report.sev = el.dataset.v; drReportPaint(); return; }
+      if (a === 'rep-send') { drReportSend(); return; }
       if (a === 'chat') { drChatOpen(el.dataset.rid, el.dataset.name, el.dataset.phone); return; }
       if (a === 'chat-close') { drChatClose(); return; }
       if (a === 'chat-send') { drChatSend(); return; }

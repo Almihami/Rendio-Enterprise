@@ -682,6 +682,9 @@
               <div class="set-field" style="margin-bottom:14px"><label>Nombre completo</label><input class="set-input" id="new-driver-name" type="text" placeholder="Ej: Juan Pérez García" /></div>
               <div class="set-grid2">
                 <div class="set-field"><label>Email</label><input class="set-input" id="new-driver-email" type="email" autocomplete="off" placeholder="conductor@rendio.co" /></div>
+                <!-- El teléfono no se pedía nunca, así que el botón "Llamar" de la
+                     app del tripulante y el del jefe no marcaban a nadie. -->
+                <div class="set-field"><label>Teléfono <span style="font-weight:400;opacity:.65">(para que puedan llamarlo)</span></label><input class="set-input" id="new-driver-phone" type="tel" autocomplete="off" placeholder="3001234567" /></div>
                 <div class="set-field"><label>Contraseña</label><div class="set-pwwrap"><input class="set-input mono" id="new-driver-password" type="text" autocomplete="new-password" placeholder="Mín. 8 caracteres" /><button class="set-btn ghost" id="new-driver-gen-pw" type="button" title="Generar contraseña aleatoria">Generar</button></div></div>
               </div>
               <div class="set-grid2" style="margin-top:14px">
@@ -830,6 +833,27 @@
           </div>
           <div class="rv-days" id="rv-days"></div>
           <div id="rv-list"></div>
+        </div>
+      </section>
+
+      <!-- ADMIN: Eventualidades (lo que se sale del plan mientras el traslado corre) -->
+      <section data-panel="eventualidades" class="hidden">
+        <div id="evt-ui" data-theme="light">
+          <div class="sh-phead">
+            <div>
+              <h1>Eventualidades <span class="sh-ct" id="evt-count">0</span></h1>
+              <p>Lo que reportan conductores y tripulantes <b>mientras el traslado va corriendo</b>: fallas mecánicas, trancones, emergencias a bordo. Ábrela para ver el detalle —con eso queda marcada como vista— y ciérrala cuando quede resuelta. Las novedades del vehículo en el turno siguen en Inspecciones.</p>
+            </div>
+            <button class="set-btn ghost" id="evt-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+          </div>
+          <div class="evt-unack" id="evt-unack"><svg class="icon"><use href="#i-warn"/></svg><span></span></div>
+          <div class="evt-bar" id="evt-bar">
+            <button class="on" data-evt-f="open">Abiertas <i>0</i></button>
+            <button data-evt-f="in_progress">En curso <i>0</i></button>
+            <button data-evt-f="resolved">Resueltas <i>0</i></button>
+            <button data-evt-f="all">Todas <i>0</i></button>
+          </div>
+          <div id="evt-list"></div>
         </div>
       </section>
 
@@ -1104,6 +1128,7 @@
   <script src="admin-rutas.js"></script>
   <script src="admin-reservas.js"></script>
   <script src="admin-operacion.js"></script>
+  <script src="admin-eventualidades.js"></script>
   <!-- Rol auxiliar (pasajero) -->
   <script src="auxiliar.js"></script>
   <!-- Conductor: rutas de auxiliares -->

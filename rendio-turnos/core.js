@@ -6,6 +6,12 @@
 
   const isSuspended = () => state.profile && state.profile.is_active === false;
 
+  // El admin de escritorio y el admin de celular no son el mismo usuario: el
+  // primero planea, el segundo recibe alertas de operación a las 4 de la mañana.
+  // Varias decisiones de UI (instalar la PWA, activar notificaciones) dependen de
+  // distinguirlos.
+  const adminOnPhone = () => window.matchMedia('(max-width: 820px)').matches;
+
   let lastAutoWeek = Scheduler.defaultWeekISO(new Date());
 
   const state = {
@@ -112,6 +118,12 @@
   }
 
   function bindGlobalEvents() {
+    // Si la app YA está abierta cuando toca la notificación, el service worker
+    // solo cambia el hash de la ventana existente: no hay recarga y por lo tanto
+    // no vuelve a pasar por enterApp(). Sin este oyente, el push abriría la app
+    // pero no la eventualidad.
+    window.addEventListener('hashchange', () => { try { applyDeepLink(); } catch (e) { /* */ } });
+
     $('#login-form').addEventListener('submit', onLoginSubmit);
     $('#logout-btn').addEventListener('click', onLogout);
     $('#logout-btn-mobile').addEventListener('click', onLogout);
@@ -359,19 +371,28 @@
       $('#admin-side').classList.remove('hidden');
       $('#admin-mhead').classList.remove('hidden');
       $('#admin-greeting-block').classList.remove('hidden');
-      // Admins gestionan desde PC: el botón Instalar (PWA) no aplica para ellos.
-      $('#install-btn')?.classList.add('hidden');
-      $('#install-btn-mobile')?.classList.add('hidden');
+      // El admin de escritorio sigue sin botón de Instalar (decisión de jun-2026:
+      // "los admins gestionan desde PC"). Pero el admin en el CELULAR es otra
+      // cosa: sin la PWA instalada en la pantalla de inicio, iOS no entrega
+      // notificaciones push — y sin push no hay aviso de madrugada, que es la
+      // razón de ser de las eventualidades. Por eso se muestra solo ahí.
+      if (!adminOnPhone()) {
+        $('#install-btn')?.classList.add('hidden');
+        $('#install-btn-mobile')?.classList.add('hidden');
+      }
       updateAdminGreeting();
       state.drivers = await Api.listDrivers();
       state.admins = (await Api.listAdmins()).map(a => ({ id: a.id, name: a.full_name, email: a.email, is_coordinator: a.is_coordinator !== false }));
       bindAdminSidebar();
       renderAdminSidebar();
-      setTab('consola');
+      // Si venimos de tocar una notificación, se abre esa eventualidad en vez de
+      // la consola.
+      if (!applyDeepLink()) setTab('consola');
       $('#driver-save-bar').classList.add('hidden');
       refreshInspectionsBadge();
       refreshShiftsBadge();
       refreshOilBadge();
+      refreshEventsBadge();
     } else {
       $('#app-shell').classList.remove('admin-shell');
       $('#admin-side')?.classList.add('hidden');
@@ -436,7 +457,31 @@
     if (name === 'consola') renderConsola();
     if (name === 'routes') renderRoutes();
     if (name === 'reservas') renderReservas();
+    if (name === 'eventualidades') renderEventualidades();
+    else stopEvtTimer(); // al salir de la bandeja, frena su polling
     if (name === 'oper') renderOperacion();
     else stopOperTimers(); // al salir de Operación, frena el reloj/simulación
+  }
+
+  // Enlace profundo desde una notificación push: `#/eventualidades?ev=<id>` abre
+  // la bandeja YA en la eventualidad que motivó el aviso.
+  //
+  // Sin esto el push era casi inútil: el service worker navega a `data.url`
+  // (sw.js) pero la app no tenía ruteo, así que un jefe que tocaba "Falla
+  // mecánica · Carro 2" a las 4am aterrizaba en Horario y tenía que buscarla.
+  function applyDeepLink() {
+    if (state.profile?.role !== 'admin') return false;
+    const h = String(location.hash || '');
+    const m = h.match(/^#\/([a-z-]+)(?:\?(.*))?$/i);
+    if (!m) return false;
+    const tab = m[1] === 'eventualidades' ? 'eventualidades' : null;
+    if (!tab) return false;
+    const params = new URLSearchParams(m[2] || '');
+    const ev = params.get('ev');
+    if (ev) evtState.focusId = ev;
+    // Se limpia el hash para que un refresco no vuelva a abrir lo mismo.
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* */ }
+    setTab(tab);
+    return true;
   }
 

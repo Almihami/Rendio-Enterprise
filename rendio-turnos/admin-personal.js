@@ -80,6 +80,7 @@
     const people = [
       ...admins.map(a => ({ id: a.id, name: a.full_name, email: a.email, role: 'admin',
         coord: a.is_coordinator !== false, active: true, strikes: 0, suspWeek: false, rest: '',
+        alerts: a.receives_ops_alerts === true,
         load: { am: 0, pm: 0, co: 0, total: 0 } })),
       ...drivers.map(d => ({ id: d.id, name: d.name, email: d.email, role: 'driver',
         coord: d.can_coordinate === true, active: d.active !== false,
@@ -136,6 +137,7 @@
             <div class="chips">
               <span class="statechip ${si.cls}"><span class="sdot ${si.dot}"></span>${si.label}</span>
               ${p.coord ? '<span class="statechip coord">★ Líder</span>' : ''}
+              ${adm && p.alerts ? '<span class="statechip coord">🔔 Alertas</span>' : ''}
               <span class="statechip role">${adm ? 'Administrador' : 'Conductor'}</span>
             </div>
           </div>
@@ -170,6 +172,7 @@
         </div>
         <div class="dactions">
           <button class="pc-btn ${p.coord ? 'on' : ''}" data-act="${adm ? (p.coord ? 'coord-off' : 'coord-on') : (p.coord ? 'dcoord-off' : 'dcoord-on')}" data-id="${p.id}" data-name="${nm}">${p.coord ? '✓ Lidera' : '✕ No lidera'}</button>
+          ${adm ? `<button class="pc-btn ${p.alerts ? 'on' : ''}" data-act="${p.alerts ? 'alerts-off' : 'alerts-on'}" data-id="${p.id}" data-name="${nm}" title="Recibe en su celular las eventualidades de la operación (falla mecánica, botón rojo, carro atrasado)">${p.alerts ? '🔔 Recibe alertas' : '🔕 Sin alertas'}</button>` : ''}
           ${adm ? '' : `<button class="pc-btn" data-act="strike" data-id="${p.id}" data-name="${nm}">⚠ Strike</button>
           <button class="pc-btn" data-act="strikes-history" data-id="${p.id}" data-name="${nm}">Historial</button>
           ${p.suspWeek ? `<button class="pc-btn" data-act="lift-susp" data-id="${p.id}" data-name="${nm}" data-susp-id="${p.suspRow ? p.suspRow.id : ''}">✓ Levantar suspensión</button>` : ''}
@@ -268,6 +271,8 @@
       delete: 'Conductor eliminado.',
       'coord-off': `${name} ya no entra como Líder de turno.`, 'coord-on': `${name} ahora entra como Líder de turno.`,
       'dcoord-off': `${name} ya no entra como Líder de turno.`, 'dcoord-on': `${name} ahora puede liderar.`,
+      'alerts-on': `${name} recibirá las eventualidades en su celular.`,
+      'alerts-off': `${name} ya no recibirá eventualidades.`,
     };
     try {
       if (act === 'suspend') await Api.setProfileActive(id, false);
@@ -277,8 +282,10 @@
       else if (act === 'coord-on') await Api.setAdminCoordinator(id, true);
       else if (act === 'dcoord-off') await Api.setDriverCanCoordinate(id, false);
       else if (act === 'dcoord-on') await Api.setDriverCanCoordinate(id, true);
+      else if (act === 'alerts-off') await Api.setOpsAlerts(id, false);
+      else if (act === 'alerts-on') await Api.setOpsAlerts(id, true);
       state.drivers = await Api.listDrivers();
-      state.admins = (await Api.listAdmins()).map(a => ({ id: a.id, name: a.full_name, email: a.email, is_coordinator: a.is_coordinator !== false }));
+      state.admins = (await Api.listAdmins()).map(a => ({ id: a.id, name: a.full_name, email: a.email, is_coordinator: a.is_coordinator !== false, receives_ops_alerts: a.receives_ops_alerts === true }));
       await renderWorkers();
       toast(msg[act] || 'Hecho.');
     } catch (e) {
@@ -658,6 +665,8 @@
     const password = $('#new-driver-password').value;
     const priority = parseInt($('#new-driver-priority').value, 10) || 1;
     const canCoord = $('#new-driver-can-coord').checked;
+    // Opcional, pero sin él el botón de llamar de la app queda muerto.
+    const phone = ($('#new-driver-phone')?.value || '').trim().replace(/[^\d+]/g, '');
 
     const setState = (text, tone) => {
       stateEl.textContent = text;
@@ -677,7 +686,7 @@
     setState('Creando cuenta en Supabase…', 'info');
     try {
       const created = await Api.createDriver({
-        email, password, full_name: name,
+        email, password, full_name: name, phone,
         priority, can_coordinate: canCoord,
       });
       // Refresca la lista de conductores en memoria para que aparezca al instante.
@@ -689,6 +698,7 @@
       // Limpia el form (deja el toast/cred visible).
       $('#new-driver-name').value = '';
       $('#new-driver-email').value = '';
+      if ($('#new-driver-phone')) $('#new-driver-phone').value = '';
       $('#new-driver-password').value = '';
       $('#new-driver-priority').value = '1';
       $('#new-driver-can-coord').checked = false;

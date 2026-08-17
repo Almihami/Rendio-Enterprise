@@ -51,7 +51,10 @@
     const b = $('#inspections-badge'); if (!b) return;
     try {
       const pend = inspState.items.length ? inspCounts().pending : (await Api.listInspectionsForReview('pending')).length;
-      let open = 0; try { open = await Api.countOpenIncidents(); inspState.openIncidents = open; } catch (e) { /* */ }
+      // 'flota' = solo lo del vehículo. Las eventualidades de traslado tienen su
+      // propia bandeja y su propio badge; si no se filtrara, este contador se
+      // llenaría de trancones y fallas de ruta que no se atienden desde aquí.
+      let open = 0; try { open = await Api.countOpenIncidents('flota'); inspState.openIncidents = open; } catch (e) { /* */ }
       const n = pend + open;
       b.textContent = n; b.classList.toggle('hidden', !n);
     } catch (e) { /* */ }
@@ -69,7 +72,7 @@
       if (list) list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>';
       return;
     }
-    try { inspState.openIncidents = await Api.countOpenIncidents(); } catch (e) { /* */ }
+    try { inspState.openIncidents = await Api.countOpenIncidents('flota'); } catch (e) { /* */ }
     updateNovCount();
     renderInspList();
   }
@@ -92,7 +95,28 @@
     medium: { label: 'Media', color: 'var(--amber)' },
     high:   { label: 'Grave', color: 'var(--red)' },
   };
-  const NOV_CAT = { vehicle_problem: 'Problema del vehículo', delay: 'Demora', accident: 'Accidente', fuel: 'Combustible', other: 'Otra' };
+  // Las llaves son los valores REALES del enum incident_category (0001 + 0062).
+  // Antes había tres —`delay`, `accident`, `fuel`— que nunca existieron en la base:
+  // no rompían nada porque abajo hay un fallback al nombre crudo, pero cualquier
+  // categoría de verdad se veía en inglés y en snake_case.
+  const NOV_CAT = {
+    vehicle_problem: 'Problema del vehículo',
+    cant_leave_on_time: 'No puede salir a tiempo',
+    address_change: 'Cambio de dirección',
+    wrong_address: 'Dirección equivocada',
+    driver_late: 'Conductor demorado',
+    flight_delay: 'Vuelo retrasado',
+    flight_advanced: 'Vuelo adelantado',
+    terminal_change: 'Cambio de terminal',
+    missed_flight: 'Perdió el vuelo',
+    traffic: 'Trancón',
+    aux_not_responding: 'Tripulante no responde',
+    aux_not_ready: 'Tripulante no estaba listo',
+    aux_emergency: 'Emergencia del tripulante',
+    late_booking: 'Reserva tardía',
+    needs_third_vehicle: 'Necesita un tercer vehículo',
+    other: 'Otra',
+  };
   const novWhen = (iso) => { try { return new Date(iso).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }); } catch (e) { return ''; } };
   const novMediaPaths = (it) => Array.isArray(it.photo_paths) ? it.photo_paths.filter(p => typeof p === 'string') : [];
   const novIsVideo = (p) => /\.(mp4|mov|webm|m4v)$/i.test(p);
@@ -104,7 +128,7 @@
     const list = $('#nov-list');
     if (list) list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
     try {
-      inspState.novItems = await Api.listIncidents();
+      inspState.novItems = await Api.listIncidents(null, 'flota');
     } catch (e) {
       console.error(e);
       if (list) list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las novedades.</p>';

@@ -53,6 +53,7 @@
         ] },
         { id: 'ops', name: 'Operación', icon: 'g-ops', desc: 'Monitoreo en vivo', items: [
           { id: 'oper', name: 'Operación', icon: 'm-oper', desc: 'Carros en el mapa en tiempo real y alerta de atraso antes de que ocurra.', star: true, tab: 'oper' },
+          { id: 'evt', name: 'Eventualidades', icon: 'm-insp', desc: 'Fallas mecánicas, trancones y emergencias que reportan conductores y tripulantes en plena ruta.', star: true, tab: 'eventualidades' },
           { id: 'flota', name: 'Flota', icon: 'm-flota', desc: 'Vehículos disponibles, capacidad y mantenimiento.', soon: 'build' },
         ] },
         { id: 'team', name: 'Equipo', icon: 'g-team', desc: 'Personas', items: [
@@ -71,7 +72,7 @@
   // Los badges del sidebar reusan los IDs que esperan las funciones de refresco
   // existentes (refreshPendingBadge/refreshInspectionsBadge/refreshShiftsBadge),
   // así no hay que duplicar lógica de conteo.
-  const SIDEBAR_BADGE_IDS = { approvals: 'pending-badge', inspections: 'inspections-badge', shifts: 'shifts-badge', settings: 'oil-badge' };
+  const SIDEBAR_BADGE_IDS = { approvals: 'pending-badge', inspections: 'inspections-badge', shifts: 'shifts-badge', settings: 'oil-badge', eventualidades: 'events-badge' };
 
   // Busca el módulo (y su espacio) por su tab. Devuelve {ws, group, item} o null.
   function findModuleByTab(tab) {
@@ -124,6 +125,7 @@
     try { refreshInspectionsBadge(); } catch (e) {}
     try { refreshShiftsBadge(); } catch (e) {}
     try { refreshOilBadge(); } catch (e) {}
+    try { refreshEventsBadge(); } catch (e) {}
   }
 
   // Actualiza el breadcrumb (Espacio / Módulo) de la barra superior.

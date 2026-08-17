@@ -17,6 +17,8 @@
 
   const auxState = {
     profile: null, view: 'home', step: 1, form: {}, trips: [], editingTrip: null,
+    // Botón rojo (0062/0063): hoja abierta con el motivo elegido, o null.
+    alarm: null,
     map: null, marker: null, geoTimer: null, geoReq: 0, bound: false,
     trackMap: null, ratingSel: 0, ratingTags: [], source: 'live',
     // Seguimiento EN VIVO (source==='live'): polling del RPC + tween del carro.
@@ -700,8 +702,62 @@
         ${canCancel ? auxCancelBlock(t) : ''}
         <div class="ax-spacer"></div>
       </div>
-      ${(t.status === 'assigned' && !t.readyAt) ? `<div class="ax-cta-bar"><button class="ax-btn ax-btn-primary" data-ax="confirm-pickup"><svg class="icon"><use href="#i-check"/></svg>Confirmar mi recogida</button></div>` : ''}
-      ${t.driver && !closed ? auxChatHTML(t) : ''}`;
+      ${auxCtaBar(t, closed)}
+      ${t.driver && !closed ? auxChatHTML(t) : ''}
+      ${auxState.alarm ? auxAlarmHTML(t) : ''}`;
+  }
+
+  // Barra de acción del viaje. Dos botones que resuelven la eventualidad #4:
+  //
+  //  · "Sin novedad" — en un viaje de LLEGADA es literalmente lo que pidió la
+  //    operación: el tripulante confirma que los tiempos estimados se van a
+  //    cumplir. No estrena backend: es el mismo RPC `auxiliar_confirm_ready`
+  //    (0050) que ya usaba "Confirmar mi recogida", con otro texto. Y a
+  //    propósito NO crea una eventualidad: son ~80 al día y llenarían la bandeja
+  //    del jefe hasta volverla inútil. Un "sin novedad" sirve para CALLAR, no
+  //    para avisar.
+  //
+  //  · El botón rojo — eso sí despierta a alguien.
+  function auxCtaBar(t, closed) {
+    if (closed) return '';
+    const isLle = t.type === 'lle';
+    const puedeConfirmar = t.status === 'assigned' && !t.readyAt;
+    if (!puedeConfirmar && !t.driver) return '';
+    const confirmar = puedeConfirmar
+      ? `<button class="ax-btn ax-btn-primary" data-ax="confirm-pickup"><svg class="icon"><use href="#i-check"/></svg>${
+          isLle ? 'Sin novedad, bajo a tiempo' : 'Confirmar mi recogida'}</button>`
+      : '';
+    // El botón rojo aparece desde que hay traslado en pie: la emergencia no
+    // espera a que asignen conductor.
+    const alarma = `<button class="ax-btn ax-alarm-btn" data-ax="alarm" aria-label="Tengo una novedad"><svg class="icon"><use href="#i-warn"/></svg></button>`;
+    return `<div class="ax-cta-bar">${confirmar}${alarma}</div>`;
+  }
+
+  // Hoja del botón rojo. Tres motivos y listo: quien lo aprieta está de afán.
+  const AUX_ALARM = [
+    { id: 'medica',      label: 'Emergencia médica a bordo', sev: 'high' },
+    { id: 'desembarque', label: 'Se va a demorar el desembarque', sev: 'medium' },
+    { id: 'otra',        label: 'Otra cosa que me va a retrasar', sev: 'medium' },
+  ];
+  function auxAlarmHTML(t) {
+    const a = auxState.alarm || {};
+    return `<div class="ax-alarm" id="ax-alarm">
+      <div class="ax-alarm-card">
+        <div class="ax-alarm-head">
+          <b>¿Qué está pasando?</b>
+          <button class="ax-icbtn" data-ax="alarm-close" aria-label="Cerrar"><svg class="icon"><use href="#i-x"/></svg></button>
+        </div>
+        <p class="ax-alarm-lead">Esto le llega de una vez a coordinación${t.driver ? ' y a ' + t.driver.name.split(' ')[0] : ''}.</p>
+        <div class="ax-alarm-opts">
+          ${AUX_ALARM.map(o => `<button class="ax-alarm-opt${a.motivo === o.id ? ' on' : ''}" data-ax="alarm-pick" data-v="${o.id}">${o.label}</button>`).join('')}
+        </div>
+        <textarea class="ax-input" id="ax-alarm-text" rows="2" maxlength="400" placeholder="¿Algo más que debamos saber? (opcional)">${a.text || ''}</textarea>
+        <div class="ax-alarm-acts">
+          <button class="ax-btn ax-btn-ghost" data-ax="alarm-close">Volver</button>
+          <button class="ax-btn ax-btn-danger" data-ax="alarm-send"${a.sending ? ' disabled' : ''}>${a.sending ? 'Enviando…' : 'Avisar ahora'}</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   // Cancelar en dos toques (no usamos confirm() nativo: bloquea la PWA y se ve
@@ -1336,6 +1392,52 @@
   }
   // Cancela de verdad: RPC (saca la reserva de la ruta activa) + push al
   // conductor afectado, que el propio RPC nos dice quién es.
+  // Envía la alarma del tripulante (eventualidad #4).
+  //
+  // Dos destinos, por dos caminos que YA funcionan:
+  //  · A los jefes, por push directo — es a quienes les toca decidir.
+  //  · Al conductor, por el chat del traslado (0052), que de por sí le manda
+  //    push a la otra punta y además deja el aviso escrito en el hilo. Se
+  //    intenta solo si ya hay conductor: el RPC del chat falla a propósito
+  //    cuando el traslado todavía no tiene a quién avisarle.
+  async function auxAlarmSend(btn) {
+    const a = auxState.alarm; if (!a || a.sending) return;
+    const t = auxCurTrip(); if (!t) return;
+    const ta = document.getElementById('ax-alarm-text');
+    if (ta) a.text = ta.value;
+    if (!a.motivo) { toast('Dinos qué está pasando.'); return; }
+    if (!window.Api?.reportIncident) { toast('No se pudo enviar. Intenta de nuevo.'); return; }
+
+    const opt = AUX_ALARM.find(o => o.id === a.motivo) || AUX_ALARM[2];
+    const desc = `${opt.label}${a.text && a.text.trim() ? ' — ' + a.text.trim() : ''}`;
+    a.sending = true; auxRender();
+
+    try {
+      const id = await Api.reportIncident({
+        category: 'aux_emergency',
+        description: desc,
+        severity: opt.sev,
+        reservationId: t.id,
+        details: { motivo: a.motivo },
+      });
+      const quien = (auxState.profile?.full_name || 'Un tripulante');
+      if (typeof notifyOps === 'function') {
+        notifyOps(opt.sev === 'high' ? '🚨 Emergencia de un tripulante' : 'Novedad de un tripulante',
+          `${quien}: ${desc}`.slice(0, 200), id);
+      }
+      if (t.driver && window.Api?.sendReservationMessage) {
+        try { await Api.sendReservationMessage(t.id, `🚨 ${desc}`); } catch (_) { /* aún sin conductor asignado */ }
+      }
+      auxState.alarm = null;
+      auxRender();
+      toast('Listo, ya avisamos a coordinación.');
+    } catch (e) {
+      console.error(e);
+      a.sending = false; auxRender();
+      toast('No se pudo enviar: ' + (e.message || 'revisa la señal'));
+    }
+  }
+
   async function auxDoCancel(btn) {
     const t = auxCurTrip(); if (!t) return;
     const reason = (document.getElementById('ax-cancel-reason')?.value || '').trim();
@@ -1417,6 +1519,15 @@
           .then(() => { t.readyAt = new Date().toISOString(); toast('Listo — le avisamos a tu conductor.'); auxRender(); })
           .catch(() => { el.disabled = false; toast('No se pudo confirmar. Intenta de nuevo.'); });
       }
+      // --- botón rojo: algo se salió del plan (eventualidad #4) ---
+      else if (a === 'alarm') { auxState.alarm = { motivo: null, text: '', sending: false }; auxRender(); }
+      else if (a === 'alarm-close') { auxState.alarm = null; auxRender(); }
+      else if (a === 'alarm-pick') {
+        const ta = document.getElementById('ax-alarm-text');
+        if (ta) auxState.alarm.text = ta.value;
+        auxState.alarm.motivo = el.dataset.v; auxRender();
+      }
+      else if (a === 'alarm-send') { auxAlarmSend(el); }
       // --- cancelar el traslado ---
       else if (a === 'cancel-trip') { auxState.confirmingCancel = true; auxRender(); }
       else if (a === 'cancel-abort') { auxState.confirmingCancel = false; auxRender(); }

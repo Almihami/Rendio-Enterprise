@@ -2684,3 +2684,134 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #driver-ruta-ui .dr-wait b{font-size:20px;font-variant-numeric:tabular-nums;letter-spacing:.5px}
 #driver-ruta-ui .dr-wait.over{background:#FDECEC;color:#C53030}
 #driver-ruta-ui .dr-wait.over b{font-size:15px}
+
+/* ============================================================
+   Admin · Eventualidades (bandeja de lo que se sale del plan)
+   Reusa la paleta y las piezas de Turnos activos (.sh-phead/.set-btn),
+   pero con filas plegables y tamaños de toque: esta pantalla se abre
+   en el celular a las 4 de la mañana, no en el escritorio.
+   ============================================================ */
+#evt-ui{
+  --bg:#F8FAFC; --panel:#FFFFFF; --ink:#211D18; --ink2:#6B6258; --ink3:#A39A8D;
+  --line:#E2E8F0; --line2:#CBD5E1;
+  --orange:#F26522; --orange-soft:#FCE4D6;
+  --amber:#D98A12; --amber-soft:#FBEBCF;
+  --red:#DB4B3F; --red-soft:#FADFDC;
+  --info:#2563A8; --info-soft:#E3EDF8;
+  --font:"Hanken Grotesk",system-ui,sans-serif; --mono:"Space Mono",ui-monospace,monospace;
+  font-family:var(--font); color:var(--ink);
+}
+#evt-ui *{box-sizing:border-box}
+#evt-ui .icon{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
+#evt-ui .sh-phead{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:16px}
+#evt-ui .sh-phead h1{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;display:flex;align-items:center;gap:11px;color:var(--ink)}
+#evt-ui .sh-phead h1 .sh-ct{font-size:13px;font-weight:800;font-family:var(--mono);background:var(--red-soft);color:var(--red);border-radius:999px;padding:3px 11px}
+#evt-ui .sh-phead p{font-size:13px;color:var(--ink2);margin-top:8px;max-width:660px;line-height:1.5}
+#evt-ui .sh-phead p b{color:var(--ink);font-weight:700}
+#evt-ui .set-btn{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 9px 22px rgba(242,101,34,.26)}
+#evt-ui .set-btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:none}
+
+/* Aviso de "nadie ha visto esto": lo primero que debe saltar al abrir. */
+#evt-ui .evt-unack{display:none;align-items:center;gap:10px;background:var(--red-soft);border:1px solid var(--red);color:var(--red);border-radius:13px;padding:11px 14px;margin-bottom:14px;font-size:13px;font-weight:700}
+#evt-ui .evt-unack.show{display:flex}
+#evt-ui .evt-unack .icon{width:17px;height:17px}
+
+#evt-ui .evt-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+#evt-ui .evt-bar button{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 15px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);color:var(--ink2);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer}
+#evt-ui .evt-bar button.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+#evt-ui .evt-bar button i{font-style:normal;font-family:var(--mono);font-size:11px;opacity:.7}
+
+#evt-ui #evt-list{display:grid;gap:10px}
+#evt-ui .evt-row{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line2);border-radius:14px;overflow:hidden}
+#evt-ui .evt-row.red{border-left-color:var(--red)}
+#evt-ui .evt-row.amber{border-left-color:var(--amber)}
+#evt-ui .evt-row.info{border-left-color:var(--info)}
+#evt-ui .evt-row.grave{background:var(--red-soft);border-color:var(--red)}
+#evt-ui .evt-row.open{box-shadow:0 10px 26px rgba(33,29,24,.08)}
+
+/* La cabecera entera es el botón: a una mano, de noche, no se acierta un ícono. */
+#evt-ui .evt-head{display:flex;align-items:flex-start;gap:13px;width:100%;text-align:left;background:none;border:0;padding:14px 16px;cursor:pointer;font-family:var(--font);color:inherit;min-height:56px}
+#evt-ui .evt-ic{flex:0 0 auto;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:var(--line);color:var(--ink2)}
+#evt-ui .evt-row.red .evt-ic{background:var(--red-soft);color:var(--red)}
+#evt-ui .evt-row.amber .evt-ic{background:var(--amber-soft);color:var(--amber)}
+#evt-ui .evt-row.info .evt-ic{background:var(--info-soft);color:var(--info)}
+#evt-ui .evt-ic .icon{width:17px;height:17px}
+#evt-ui .evt-txt{min-width:0;display:block}
+#evt-ui .evt-txt b{display:block;font-size:15px;font-weight:800;color:var(--ink);letter-spacing:-.01em}
+#evt-ui .evt-grave{font-style:normal;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;background:var(--red);color:#fff;border-radius:5px;padding:2px 6px;margin-left:7px;vertical-align:2px}
+#evt-ui .evt-sub{display:block;font-size:13px;color:var(--ink2);margin-top:3px;line-height:1.45}
+#evt-ui .evt-meta{display:block;font-size:11.5px;color:var(--ink3);margin-top:5px}
+#evt-ui .evt-flag{color:var(--red);font-weight:800;text-transform:uppercase;letter-spacing:.05em;font-size:10.5px;margin-left:4px}
+#evt-ui .evt-seen{color:var(--ink3);font-size:10.5px;margin-left:4px}
+
+#evt-ui .evt-body{padding:0 16px 15px 61px;border-top:1px dashed var(--line);margin-top:2px;padding-top:13px}
+#evt-ui .evt-desc{font-size:14px;color:var(--ink);line-height:1.55;white-space:pre-wrap}
+#evt-ui .evt-chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+#evt-ui .evt-chips span{height:27px;display:inline-flex;align-items:center;padding:0 11px;border-radius:8px;background:var(--amber-soft);color:var(--amber);font-size:12px;font-weight:700}
+#evt-ui .evt-kv{display:flex;gap:22px;flex-wrap:wrap;margin-top:13px}
+#evt-ui .evt-kv span{display:block;font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em}
+#evt-ui .evt-kv b{display:block;font-size:13.5px;font-weight:700;color:var(--ink);margin-top:2px}
+#evt-ui .evt-note{margin-top:12px;font-size:13px;color:var(--ink2);background:var(--bg);border-radius:10px;padding:10px 12px;line-height:1.5}
+#evt-ui .evt-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}
+#evt-ui .evt-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);font-family:var(--font);font-size:13.5px;font-weight:700;cursor:pointer;text-decoration:none}
+#evt-ui .evt-btn.dark{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+#evt-ui .evt-btn:disabled{opacity:.55;cursor:not-allowed}
+#evt-ui .evt-btn .icon{width:16px;height:16px}
+
+#evt-ui .evt-empty{text-align:center;padding:46px 20px;color:var(--ink2)}
+#evt-ui .evt-empty .icon{width:34px;height:34px;color:var(--ink3);margin:0 auto 10px}
+#evt-ui .evt-empty h3{font-size:16px;font-weight:800;color:var(--ink)}
+#evt-ui .evt-empty p{font-size:13px;margin-top:4px}
+
+@media (max-width:720px){
+  #evt-ui .sh-phead h1{font-size:22px}
+  #evt-ui .sh-phead p{font-size:12.5px}
+  #evt-ui .evt-body{padding-left:16px}
+  #evt-ui .evt-actions .evt-btn{flex:1 1 calc(50% - 5px)}
+}
+
+/* Conductor · SOS + hoja para reportar una eventualidad (0062/0063).
+   El SOS vive en la barra superior de la ejecución: tiene que alcanzarse con el
+   pulgar sin salir del mapa ni buscar en un menú. */
+#driver-ruta-ui .dr-sos{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:999px;border:0;background:var(--r-error);color:#fff;font:inherit;font-size:13px;font-weight:800;letter-spacing:.04em;cursor:pointer;box-shadow:0 8px 20px rgba(239,68,68,.35)}
+#driver-ruta-ui .dr-sos .icon{width:16px;height:16px}
+
+#driver-ruta-ui .dr-report{position:fixed;inset:0;z-index:60;background:rgba(17,17,17,.5);display:flex;align-items:flex-end;justify-content:center}
+#driver-ruta-ui .dr-rcard{width:100%;max-width:560px;max-height:92dvh;overflow:auto;background:var(--r-card);border-radius:22px 22px 0 0;padding:6px 0 max(14px,env(safe-area-inset-bottom))}
+#driver-ruta-ui .dr-rhead{display:flex;align-items:center;justify-content:space-between;padding:12px 18px 6px}
+#driver-ruta-ui .dr-rhead b{font-size:18px;font-weight:700;color:var(--r-text)}
+#driver-ruta-ui .dr-rbody{padding:6px 18px 4px}
+#driver-ruta-ui .dr-rq{margin-top:14px}
+#driver-ruta-ui .dr-rq label{display:block;font-size:13px;font-weight:600;color:var(--r-text-2);margin-bottom:8px}
+#driver-ruta-ui .dr-rrow{display:flex;gap:9px}
+#driver-ruta-ui .dr-rrow.wrap{flex-wrap:wrap}
+#driver-ruta-ui .dr-rchip{flex:1 1 auto;min-height:50px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;border-radius:14px;border:1px solid var(--r-border-strong);background:var(--r-card);color:var(--r-text);font:inherit;font-size:14px;font-weight:600;cursor:pointer;text-align:center}
+#driver-ruta-ui .dr-rrow.wrap .dr-rchip{flex:1 1 calc(50% - 5px)}
+#driver-ruta-ui .dr-rchip .icon{width:17px;height:17px;color:var(--r-text-3)}
+#driver-ruta-ui .dr-rchip.on{border-color:var(--r-accent);background:var(--r-accent-soft,#FEEEE3);color:var(--r-accent);font-weight:700}
+#driver-ruta-ui .dr-rchip.on .icon{color:var(--r-accent)}
+#driver-ruta-ui .dr-rq textarea{width:100%;border-radius:14px;border:1px solid var(--r-border-strong);background:var(--r-card);color:var(--r-text);font:inherit;font-size:15px;padding:12px 14px;resize:vertical}
+#driver-ruta-ui .dr-rq textarea:focus{outline:none;border-color:var(--r-accent)}
+#driver-ruta-ui .dr-rfoot{font-size:12.5px;color:var(--r-text-3);margin-top:10px;line-height:1.45}
+#driver-ruta-ui .dr-rsend{display:block;width:calc(100% - 36px);margin:16px 18px 4px;height:56px;border-radius:16px;border:0;background:var(--r-text);color:var(--r-card);font:inherit;font-size:16px;font-weight:700;cursor:pointer}
+#driver-ruta-ui .dr-rsend.urgent{background:var(--r-error);color:#fff}
+#driver-ruta-ui .dr-rsend:disabled{opacity:.6;cursor:not-allowed}
+
+/* Tripulante · botón rojo y su hoja (eventualidad #4).
+   Convive con "Sin novedad" en la misma barra: el botón normal ocupa el ancho y
+   el rojo queda al lado, cuadrado, imposible de apretar por error. */
+#auxiliar-ui .ax-cta-bar{display:flex;gap:10px;align-items:stretch}
+#auxiliar-ui .ax-cta-bar .ax-btn-primary{flex:1}
+#auxiliar-ui .ax-alarm-btn{flex:0 0 auto;width:54px;padding:0;background:#C53030;color:#fff;border:none}
+#auxiliar-ui .ax-alarm-btn .icon{width:22px;height:22px}
+#auxiliar-ui .ax-alarm{position:absolute;inset:0;z-index:70;background:rgba(17,17,17,.5);display:flex;align-items:flex-end}
+#auxiliar-ui .ax-alarm-card{width:100%;background:var(--a-card);border-radius:22px 22px 0 0;padding:16px 18px max(16px,env(safe-area-inset-bottom));max-height:88%;overflow:auto}
+#auxiliar-ui .ax-alarm-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#auxiliar-ui .ax-alarm-head b{font-size:18px;font-weight:700;color:var(--a-text)}
+#auxiliar-ui .ax-alarm-lead{font-size:13.5px;color:var(--a-text-2);margin-top:6px;line-height:1.5}
+#auxiliar-ui .ax-alarm-opts{display:grid;gap:9px;margin:14px 0 12px}
+#auxiliar-ui .ax-alarm-opt{min-height:54px;padding:10px 16px;border-radius:14px;border:1.5px solid var(--a-line);background:var(--a-card);color:var(--a-text);font:inherit;font-size:15px;font-weight:600;text-align:left;cursor:pointer}
+#auxiliar-ui .ax-alarm-opt.on{border-color:#C53030;background:#FDECEC;color:#C53030;font-weight:700}
+#auxiliar-ui .ax-alarm-card textarea.ax-input{min-height:64px;resize:vertical;padding-top:11px}
+#auxiliar-ui .ax-alarm-acts{display:flex;gap:10px;margin-top:14px}
+#auxiliar-ui .ax-alarm-acts .ax-btn{flex:1}
