@@ -130,19 +130,10 @@
 
     $('#auto-resolve-btn').addEventListener('click', onAutoResolve);
 
-    $('#reason-modal-cancel').addEventListener('click', closeReasonModal);
-    $('#reason-modal-save').addEventListener('click', saveReasonModal);
-    $('#reason-modal').addEventListener('click', (e) => {
-      if (e.target.id === 'reason-modal') closeReasonModal();
-    });
-
-    $('#state-picker-cancel').addEventListener('click', closeStatePicker);
-    $('#state-picker').addEventListener('click', (e) => {
-      if (e.target.id === 'state-picker') closeStatePicker();
-    });
-    $$('#state-picker .state-pick-btn').forEach(btn => {
-      btn.addEventListener('click', () => pickState(btn.dataset.pick));
-    });
+    // El modal de motivo y el selector de estado del conductor desaparecieron con
+    // el rediseño 2026-08-16. La hoja de motivo (#av-sheet) se cablea sola en
+    // driver-disponibilidad.js; acá solo queda cerrar tocando el velo.
+    $('#av-back')?.addEventListener('click', () => avCloseSheet(false));
 
     // La navegación admin se cablea en bindAdminSidebar() (sidebar por capas).
 
@@ -208,47 +199,16 @@
 
     $('#driver-prev-week').addEventListener('click', () => navigateDriverWeek(-7));
     $('#driver-next-week').addEventListener('click', () => navigateDriverWeek(7));
-    $('#driver-save-btn').addEventListener('click', onDriverSave);
-    $('#driver-mark-all-available').addEventListener('click', onMarkAllAvailable);
+    // Guardar y "Disponible toda la semana" ya no son botones fijos del shell:
+    // viven dentro de la pantalla y los cablea driver-disponibilidad.js.
     $('#driver-availability-card')?.addEventListener('click', showDriverAvailability);
     $('#driver-back-home')?.addEventListener('click', showDriverHome);
     $('#driver-nav')?.addEventListener('click', (e) => { const b = e.target.closest('[data-dtab]'); if (b) setDriverTab(b.dataset.dtab); });
   }
 
-  function onMarkAllAvailable() {
-    if (isSuspended()) {
-      toast('Tu cuenta está suspendida. Habla con tu admin para reactivarla.');
-      return;
-    }
-    const week = Scheduler.weekDates(state.currentWeek);
-    let dirtyCount = 0;
-    for (const d of week) {
-      const av = state.ownAvail[d.key];
-      if (!av) continue;
-      if (av.am !== 'available') dirtyCount++;
-      if (av.pm !== 'available') dirtyCount++;
-    }
-    if (dirtyCount === 0) {
-      flashSaveState('✓ Ya estás disponible toda la semana', 'emerald');
-      return;
-    }
-    const msg = dirtyCount === 1
-      ? 'Vas a quitar 1 marcación de descanso o no-disponibilidad de esta semana. ¿Continuar?'
-      : `Vas a quitar ${dirtyCount} marcaciones de descanso o no-disponibilidad de esta semana. ¿Continuar?`;
-    if (!confirm(msg)) return;
-    for (const d of week) {
-      state.ownAvail[d.key] = {
-        am: 'available',
-        pm: 'available',
-        am_reason: null,
-        pm_reason: null,
-        am_request: state.ownAvail[d.key]?.am_request || null,
-        pm_request: state.ownAvail[d.key]?.pm_request || null,
-      };
-    }
-    renderDriverDays();
-    flashSaveState('Cambios sin guardar', 'amber');
-  }
+  // onMarkAllAvailable() se eliminó con el rediseño 2026-08-16: el atajo de
+  // semana completa ahora es el botón "Toda la semana: Puedo" dentro de la
+  // grilla, y no necesita confirm() porque "Limpiar" deshace al instante.
 
   function getGreetingPrefix() {
     const h = new Date().getHours();
@@ -271,23 +231,15 @@
     return `${a.getDate()} ${m[a.getMonth()]} al ${b.getDate()} ${m[b.getMonth()]}`;
   }
 
+  // Título accesible de la pestaña Disponibilidad. Desde el rediseño 2026-08-16
+  // va en .sr-only: en pantalla el estado lo comunica el medidor de 14 jornadas,
+  // pero un lector de pantalla necesita el resumen en texto.
   function updateDriverGreeting() {
-    const name = firstNameOf(state.profile);
-    $('#driver-greeting').textContent = `${getGreetingPrefix()}, ${name}`;
-    const week = Scheduler.weekDates(state.currentWeek);
-    const marked = week.filter(d => !!state.ownAvail[d.key]).length;
-    const total = week.length;
-    const range = weekLabelES(state.currentWeek);
-    let sub;
-    if (marked === 0) {
-      sub = `Marca tu disponibilidad para la semana del ${range}.`;
-    } else if (marked < total) {
-      const missing = total - marked;
-      sub = `Te falta${missing === 1 ? '' : 'n'} ${missing} día${missing === 1 ? '' : 's'} por marcar para la semana del ${range}.`;
-    } else {
-      sub = `Tu disponibilidad para la semana del ${range} está lista. Puedes ajustarla si lo necesitas.`;
-    }
-    $('#driver-greeting-sub').textContent = sub;
+    const h2 = $('#driver-greeting');
+    const sub = $('#driver-greeting-sub');
+    if (!h2 || !sub) return;
+    h2.textContent = `Disponibilidad · ${getGreetingPrefix()}, ${firstNameOf(state.profile)}`;
+    sub.textContent = availabilitySummaryText();
   }
 
   function updateAdminGreeting(pendingCount) {
@@ -302,16 +254,10 @@
     $('#admin-greeting-sub').textContent = sub;
   }
 
-  function flashSaveState(text, tone) {
-    const el = $('#driver-save-state');
-    const toneCls = {
-      emerald: 'text-xs text-emerald-600 font-semibold flex-1',
-      amber:   'text-xs text-amber-600 font-semibold flex-1',
-      rose:    'text-xs text-rose-600 flex-1',
-    }[tone] || 'text-xs text-slate-500 flex-1';
-    el.textContent = text;
-    el.className = toneCls;
-  }
+  // flashSaveState() se eliminó con el rediseño 2026-08-16: escribía en
+  // #driver-save-state, el texto de la barra fija de Guardar que ya no existe.
+  // Su equivalente es la nota bajo el botón "Guardar mi semana", que la pinta
+  // avSaveBlockHtml() en driver-disponibilidad.js.
 
   function showLogin(err) {
     $('#screen-login').classList.remove('hidden');
@@ -388,7 +334,8 @@
       // Si venimos de tocar una notificación, se abre esa eventualidad en vez de
       // la consola.
       if (!applyDeepLink()) setTab('consola');
-      $('#driver-save-bar').classList.add('hidden');
+      // (Antes acá se escondía #driver-save-bar; esa barra desapareció con el
+      // rediseño de Disponibilidad del 2026-08-16.)
       refreshInspectionsBadge();
       refreshShiftsBadge();
       refreshOilBadge();

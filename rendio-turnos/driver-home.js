@@ -49,10 +49,9 @@
     if (name !== 'home') revealDriverNav(); // entrar a un módulo revela la barra
     $$('#driver-tabs-root .driver-panel').forEach(p => p.classList.toggle('hidden', p.dataset.dtab !== name));
     $$('#driver-nav .dnav-btn').forEach(b => b.classList.toggle('active', b.dataset.dtab === name));
-    // Barra de semana: solo en Disponibilidad y Mi horario.
-    $('#driver-week-bar')?.classList.toggle('hidden', !(name === 'avail' || name === 'schedule'));
-    // Barra de Guardar: solo en Disponibilidad.
-    $('#driver-save-bar')?.classList.toggle('hidden', name !== 'avail');
+    // Barra de semana: solo en Mi horario. Disponibilidad trae la suya dentro
+    // de la cabecera pegajosa desde el rediseño 2026-08-16, junto al medidor.
+    $('#driver-week-bar')?.classList.toggle('hidden', name !== 'schedule');
     if (name === 'home') updateDriverHome();
     if (name === 'perfil') renderDriverProfile();
     window.scrollTo(0, 0);

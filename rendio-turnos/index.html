@@ -64,6 +64,9 @@
   <!-- ExcelJS: para exportar el horario semanal con formato (reemplaza al CSV). -->
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
   <link rel="stylesheet" href="styles.css" />
+  <!-- Capa visual del módulo Conductor (rediseño 2026-08-16). Va DESPUÉS de
+       styles.css: reviste #driver-nav y aporta el sistema --r-* del diseñador. -->
+  <link rel="stylesheet" href="rc-conductor.css" />
 </head>
 <body class="bg-[#F8FAFC] text-slate-900 min-h-screen font-sans antialiased">
 
@@ -304,32 +307,14 @@
           </div>
         </section>
 
-        <!-- Pestaña: Disponibilidad -->
-        <section data-dtab="avail" class="driver-panel hidden space-y-5">
-          <div>
-            <h2 id="driver-greeting" class="text-xl font-bold text-ink">Disponibilidad</h2>
-            <p id="driver-greeting-sub" class="text-sm text-slate-500">Marca tus turnos de la semana. El admin asigna y confirma.</p>
-          </div>
-
-          <!-- Quick action: mark whole week as available -->
-          <button id="driver-mark-all-available"
-                  class="w-full bg-white border-2 border-brand text-brand-700 font-bold py-3 rounded-xl hover:bg-brand hover:text-white active:scale-[0.99] transition shadow-brand flex items-center justify-center gap-2">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-            </svg>
-            Disponible toda la semana
-          </button>
-
-          <!-- Day cards -->
-          <div id="driver-days" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
-
-          <!-- Legend -->
-          <div class="bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
-            <p class="font-semibold text-slate-700 mb-1">¿Qué significa cada estado?</p>
-            <p class="flex items-center gap-2"><span class="state-dot state-available"></span> <strong>Disponible</strong> — puedes trabajar. Opcional: marca preferencia AM, PM o Indistinto.</p>
-            <p class="flex items-center gap-2"><span class="state-dot state-prefer-rest"></span> <strong>Descanso</strong> — preferís descansar; el admin lo respeta si hay con quién cubrir.</p>
-            <p class="flex items-center gap-2"><span class="state-dot state-unavailable"></span> <strong>No disponible</strong> — requiere razón. Siempre pasa por aprobación del admin.</p>
-          </div>
+        <!-- Pestaña: Disponibilidad — rediseño 2026-08-16 (driver-disponibilidad.js).
+             Todo el contenido lo pinta el módulo: cabecera pegajosa con el medidor
+             de 14 jornadas, selector de brocha y grilla 7×2 que se pinta arrastrando.
+             El saludo va oculto: el módulo lo usa para el texto del contador. -->
+        <section data-dtab="avail" class="driver-panel hidden">
+          <h2 id="driver-greeting" class="sr-only">Disponibilidad</h2>
+          <p id="driver-greeting-sub" class="sr-only"></p>
+          <div id="driver-avail-root" class="rc"></div>
         </section>
 
         <!-- Pestaña: Mi horario -->
@@ -379,15 +364,10 @@
       </div>
       <!-- /driver-tabs-root -->
 
-      <!-- Save sticky bottom bar (driver) — se ubica SOBRE la barra de pestañas (ver CSS #driver-save-bar) -->
-      <div id="driver-save-bar" class="hidden fixed left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-30 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
-        <div class="max-w-lg mx-auto flex items-center justify-between gap-3">
-          <span id="driver-save-state" class="text-xs text-slate-500 flex-1"></span>
-          <button id="driver-save-btn" class="bg-brand text-white text-base font-bold px-6 py-3 rounded-xl hover:bg-brand-600 active:scale-[0.98] transition shadow-brand">
-            Guardar
-          </button>
-        </div>
-      </div>
+      <!-- La barra fija de Guardar se eliminó en el rediseño 2026-08-16: el botón
+           vive al final del contenido de Disponibilidad (ver driver-disponibilidad.js).
+           Se comía 68 px permanentes de una pantalla cuyo protagonista son las
+           14 jornadas. -->
 
       <!-- Barra de navegación inferior (solo conductor) -->
       <nav id="driver-nav">
@@ -1016,52 +996,13 @@
     </div>
   </div>
 
-  <!-- Modal: reason for "No disponible" -->
-  <div id="reason-modal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center backdrop-blur-sm">
-    <div class="bg-white rounded-t-2xl md:rounded-2xl shadow-xl w-full md:max-w-sm p-5 md:p-6">
-      <h3 class="font-bold text-lg text-ink" id="reason-modal-title">Razón de no disponibilidad</h3>
-      <p class="text-sm text-slate-500 mb-3">El admin necesita una justificación para aprobar.</p>
-      <textarea id="reason-modal-text" rows="3"
-        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-base mb-4 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none resize-none"
-        placeholder="Ej: cita médica, viaje familiar, maluco..."></textarea>
-      <div class="flex gap-2">
-        <button id="reason-modal-cancel" class="flex-1 px-3 py-3 rounded-lg border border-slate-300 hover:bg-slate-100 font-medium">Cancelar</button>
-        <button id="reason-modal-save" class="flex-1 px-3 py-3 rounded-lg bg-ink text-white hover:bg-ink-soft font-semibold">Guardar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal: state picker (driver mobile) -->
-  <div id="state-picker" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center backdrop-blur-sm">
-    <div class="bg-white rounded-t-2xl md:rounded-2xl shadow-xl w-full md:max-w-sm p-5 md:p-6">
-      <h3 class="font-bold text-lg text-ink mb-1" id="state-picker-title">Selecciona estado</h3>
-      <p class="text-sm text-slate-500 mb-4" id="state-picker-subtitle">Elige una opción para esta jornada.</p>
-      <div class="space-y-2">
-        <button data-pick="available" class="state-pick-btn w-full">
-          <span class="state-dot state-available"></span>
-          <span class="flex-1 text-left">
-            <span class="block font-semibold">Disponible</span>
-            <span class="block text-xs text-slate-500">Puedo trabajar</span>
-          </span>
-        </button>
-        <button data-pick="prefer_rest" class="state-pick-btn w-full">
-          <span class="state-dot state-prefer-rest"></span>
-          <span class="flex-1 text-left">
-            <span class="block font-semibold">Descanso</span>
-            <span class="block text-xs text-slate-500">El admin lo respeta si hay con quién cubrir</span>
-          </span>
-        </button>
-        <button data-pick="unavailable" class="state-pick-btn w-full">
-          <span class="state-dot state-unavailable"></span>
-          <span class="flex-1 text-left">
-            <span class="block font-semibold">No disponible</span>
-            <span class="block text-xs text-slate-500">Requiere razón. Siempre se aprueba por admin</span>
-          </span>
-        </button>
-      </div>
-      <button id="state-picker-cancel" class="mt-4 w-full px-3 py-3 rounded-lg border border-slate-300 hover:bg-slate-100 font-medium">Cancelar</button>
-    </div>
-  </div>
+  <!-- Hoja de motivo del conductor (rediseño 2026-08-16).
+       Reemplaza a los dos modales que había antes (#state-picker y #reason-modal):
+       ya no se elige el estado en un modal — se pinta en la grilla — y el motivo
+       se pide UNA sola vez por tanda, al levantar el dedo. La pinta y la cablea
+       driver-disponibilidad.js. -->
+  <div id="av-back" class="rc-back"></div>
+  <div id="av-sheet" class="rc-sheet" role="dialog" aria-modal="true" aria-label="Motivo de no disponibilidad"></div>
 
   <!-- Modal: iOS install instructions -->
   <div id="ios-install-modal" class="hidden fixed inset-0 z-30 bg-black/40 flex items-end md:items-center justify-center backdrop-blur-sm">
@@ -1123,6 +1064,7 @@
   <script src="driver-home.js"></script>
   <script src="admin-recompensas.js"></script>
   <script src="driver-perfil.js"></script>
+  <script src="driver-disponibilidad.js"></script>
   <!-- Rutas de auxiliares (feat/rutas-modular): consola/sidebar + asignación + operación -->
   <script src="admin-consola.js"></script>
   <script src="admin-rutas.js"></script>

@@ -166,12 +166,15 @@
     if (error) throw error;
   }
 
+  // Semilla de la semana. Desde el rediseño 2026-08-16 una jornada sin fila en
+  // driver_availability es 'unset' (Sin marcar), NO 'available': el conductor que
+  // no marcó no entra a la programación y la consolidada lo muestra en gris.
   function toAvailMap(rows, drivers) {
     const map = {};
     drivers.forEach(d => {
       map[d.id] = {};
       Scheduler.DAYS.forEach(day => {
-        map[d.id][day] = { am: 'available', pm: 'available', am_reason: null, pm_reason: null, shift_pref: 'any' };
+        map[d.id][day] = { am: 'unset', pm: 'unset', am_reason: null, pm_reason: null, shift_pref: 'any' };
       });
     });
     rows.forEach(r => {
@@ -219,7 +222,7 @@
     if (approvalsRes.error) throw approvalsRes.error;
     const own = {};
     Scheduler.DAYS.forEach(d => {
-      own[d] = { am: 'available', pm: 'available', am_reason: null, pm_reason: null, shift_pref: 'any', am_request: null, pm_request: null };
+      own[d] = { am: 'unset', pm: 'unset', am_reason: null, pm_reason: null, shift_pref: 'any', am_request: null, pm_request: null };
     });
     (availData || []).forEach(r => {
       const day = Scheduler.DAYS[r.day_of_week];
@@ -263,13 +266,13 @@
 
   async function saveDriverWeekAvailability(profileId, weekStart, ownMap) {
     const rows = Scheduler.DAYS.map((day, idx) => {
-      const row = ownMap[day] || { am: 'available', pm: 'available' };
+      const row = ownMap[day] || { am: 'unset', pm: 'unset' };
       return {
         profile_id: profileId,
         week_start_date: weekStart,
         day_of_week: idx,
-        am_state: row.am || 'available',
-        pm_state: row.pm || 'available',
+        am_state: row.am || 'unset',
+        pm_state: row.pm || 'unset',
         am_reason: row.am === 'unavailable' ? (row.am_reason || null) : null,
         pm_reason: row.pm === 'unavailable' ? (row.pm_reason || null) : null,
         shift_pref: row.shift_pref || 'any',

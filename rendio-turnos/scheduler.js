@@ -87,15 +87,23 @@
     return DYNAMIC_RULES[id] ? DYNAMIC_RULES[id].has(`${day}-${shift}`) : false;
   }
 
+  // OJO — cambio de fondo del 2026-08-16 (rediseño de Disponibilidad, Modelo A):
+  // la ausencia de dato ya NO significa 'available'. Significa 'unset' (Sin marcar),
+  // y una jornada sin marcar no entra a la generación. Antes, el conductor que no
+  // abría la app quedaba disponible por omisión y se le programaba igual.
   function getRawState(availability, profileId, day, shift) {
-    return availability?.[profileId]?.[day]?.[shift] || 'available';
+    return availability?.[profileId]?.[day]?.[shift] || 'unset';
   }
 
   function getEffectiveState(availability, profileId, day, shift) {
     const cell = availability?.[profileId]?.[day];
-    if (!cell) return 'available';
-    const raw = cell[shift] || 'available';
+    if (!cell) return 'unset';
+    const raw = cell[shift] || 'unset';
     if (raw === 'available') return 'available';
+    // 'unset' se honra tal cual: no es una petición, es la falta de respuesta.
+    // (Si no se corta acá, una solicitud vieja ya rechazada sobre una jornada que
+    // el conductor después desmarcó la volvería 'available' por la puerta de atrás.)
+    if (raw === 'unset') return 'unset';
     const req = cell[`${shift}_request`];
     if (!req) return raw;                       // sin solicitud: honor directo
     if (req.state === 'rejected') return 'available';
@@ -153,7 +161,7 @@
   function shiftPrefBias(availability, profileId, day, shift) {
     const cell = availability?.[profileId]?.[day];
     if (!cell) return 0;
-    if ((cell[shift] || 'available') !== 'available') return 0;
+    if ((cell[shift] || 'unset') !== 'available') return 0;
     const pref = cell.shift_pref;
     if (!pref || pref === 'any') return 0;
     return pref === shift ? -1 : 1;
@@ -211,10 +219,14 @@
     // iteraciones del loop (los días van en orden lun→dom). `seedPmIds` arrastra
     // el domingo PM de la semana ANTERIOR para que no madruguen el lunes (bug fix).
     let prevPmIds = new Set(seedPmIds || []);
-    const eligibleFor = (d, day, shift) =>
-      getState(availability, d.id, day, shift) !== 'unavailable' &&
-      !ruleBlocked(d, day, shift) &&
-      !(shift === 'am' && prevPmIds.has(d.id));
+    // 'unset' pesa igual que 'unavailable': quien no marcó no entra. Es el cambio
+    // que introduce el rediseño 2026-08-16; ver nota en getRawState().
+    const eligibleFor = (d, day, shift) => {
+      const st = getState(availability, d.id, day, shift);
+      return st !== 'unavailable' && st !== 'unset' &&
+        !ruleBlocked(d, day, shift) &&
+        !(shift === 'am' && prevPmIds.has(d.id));
+    };
 
     // ------- LIDERAZGO: el líder es UNO de los conductores de la jornada -------
     // El líder NO es un cupo aparte: es uno de los conductores en turno que puede
