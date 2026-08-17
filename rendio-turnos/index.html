@@ -614,7 +614,52 @@
                 <div class="set-field"><label>Wingo (min)</label><input id="setting-deplane-wingo" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos P5, nacionales o internacionales por igual. Reportado 20–30. Default 20.</div></div>
                 <div class="set-field"><label>Respaldo, sin vuelo (min)</label><input id="setting-deplane-fallback" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Cuando la reserva no trae número de vuelo. Hoy pasa en una de cada tres llegadas. Default 20.</div></div>
               </div>
+              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Domingos y festivos</p>
+              <p class="set-hint" style="margin:2px 0 10px 2px">Regla suya: "domingos y festivos no sacarlos tan temprano". Estos minutos se le <b>restan</b> a la anticipación de la tabla de abajo, o sea que la gente se recoge más tarde. Los festivos de Colombia ya están cargados con el traslado al lunes (Ley Emiliani); los domingos salen de la fecha. <b>0 = tratar el festivo como un día normal.</b></p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Recoger más tarde (min)</label><input id="setting-holiday-shift" class="set-input" type="number" min="0" max="60" /><div class="set-hint">Pendiente de que él dé el número; por eso nace en 0.</div></div>
+              </div>
               <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
+            </div>
+          </div>
+
+          <!-- LA TABLA DE TIEMPOS DE JULIÁN (0062) -->
+          <div class="set-card">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
+              <div>
+                <h2>Tabla de tiempos de la operación</h2>
+                <p>Los minutos que Julián maneja para recoger. No los calcula el sistema: los dicta él y aquí se editan.</p>
+              </div>
+            </div>
+            <div class="set-cb">
+              <p class="set-hint" style="margin:0 0 12px 2px">Estos tiempos <b>no reemplazan</b> el cálculo por carretera: mandan cuando son mayores. Así la tabla nunca promete algo que el carro no pueda hacer, y el cálculo nunca recoge más tarde de lo que él recogería. Un conjunto sin zona asignada se programa con el cálculo, como antes.</p>
+
+              <p class="set-hint" style="margin:6px 0 6px 2px;font-weight:700">De recoger al primero a llegar al aeropuerto</p>
+              <p class="set-hint" style="margin:0 0 10px 2px">Los dos números son el rango según cuánta gente va: <b>uno solo va con el mínimo</b>, tres o más con el máximo, y dos por la mitad.</p>
+              <div style="overflow-x:auto"><table class="set-matrix" id="zone-times-table"></table></div>
+
+              <p class="set-hint" style="margin:18px 0 6px 2px;font-weight:700">Solo el tramo final, desde la última persona recogida</p>
+              <p class="set-hint" style="margin:0 0 10px 2px">En una vuelta con varias paradas este tramo tiene que caber dentro del total de arriba, así que funciona como un piso aparte.</p>
+              <div style="overflow-x:auto"><table class="set-matrix" id="leg-times-table"></table></div>
+
+              <div id="zone-times-warn" class="set-hint" style="margin:14px 0 0 2px"></div>
+              <div class="set-foot"><button class="set-btn dark" id="save-route-tables-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar tabla</button></div>
+            </div>
+          </div>
+
+          <!-- ZONA DE CADA CONJUNTO -->
+          <div class="set-card">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
+              <div>
+                <h2>Zona de cada conjunto</h2>
+                <p>En cuál de las cuatro zonas de Julián cae cada residencia. Se guarda al instante.</p>
+              </div>
+            </div>
+            <div class="set-cb">
+              <p class="set-hint" style="margin:0 0 12px 2px">Esto <b>no se puede deducir</b>: los conjuntos caben en dos kilómetros a la redonda, así que por mapa salen mal. Lo tiene que decir él. Mientras una residencia esté <b>Sin asignar</b>, sus traslados se programan con el cálculo por carretera y la tabla no se les aplica.</p>
+              <div id="residence-zones"></div>
             </div>
           </div>
 

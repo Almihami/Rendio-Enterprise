@@ -379,6 +379,10 @@
     if ($('#setting-deplane-js-int')) $('#setting-deplane-js-int').value = S.route_deplane_js_int_min != null ? S.route_deplane_js_int_min : 30;
     if ($('#setting-deplane-wingo')) $('#setting-deplane-wingo').value = S.route_deplane_wingo_min != null ? S.route_deplane_wingo_min : 20;
     if ($('#setting-deplane-fallback')) $('#setting-deplane-fallback').value = S.route_deplane_min != null ? S.route_deplane_min : 20;
+    // 0062: corrimiento de domingos y festivos. 0 es válido, así que no se usa `||`.
+    if ($('#setting-holiday-shift')) $('#setting-holiday-shift').value = S.route_holiday_shift_min != null ? S.route_holiday_shift_min : 0;
+    renderRouteTables();
+    renderResidenceZones();
     renderPriorityList();
     renderRulesEditor();
     renderVehiclesSettings();
@@ -388,6 +392,122 @@
   const VEH_STATUS_ES = { available: 'Disponible', in_use: 'En uso', reserved: 'Reservado', maintenance: 'En revisión', blocked: 'Cambio de aceite' };
   let vehiclesEditId = null;       // si está editando un vehículo existente
   let vehiclesCache = [];          // para poblar el form al editar
+  // ---- LA TABLA DE TIEMPOS DE JULIÁN (0062) --------------------------------
+  // Las zonas son suyas y son fijas: si algún día agrega una, se agrega aquí y
+  // en la migración. El orden es el que él usó al dictarlas.
+  const RT_ZONAS = ['Fontibón', 'Porvenir', 'Sendai/San Antonio', 'Marinilla'];
+  const RT_FRANJA_LABEL = (f, t) => {
+    const h = (n) => n === 0 ? '12 a.m.' : n === 12 ? '12 m.' : n < 12 ? `${n} a.m.` : n === 24 ? '12 a.m.' : `${n - 12} p.m.`;
+    return `${h(f)} – ${h(t)}`;
+  };
+  let rtTablas = null;   // {zonas, tramos} tal como vinieron de la BD
+
+  async function renderRouteTables() {
+    const tz = $('#zone-times-table'), tl = $('#leg-times-table'), warn = $('#zone-times-warn');
+    if (!tz || !tl) return;
+    if (!Api.getRouteTables) { tz.innerHTML = ''; return; }
+    let t = null;
+    try { t = await Api.getRouteTables(null); } catch (e) { t = null; }
+    if (!t || !Object.keys(t.zonas || {}).length) {
+      // Sin la migración: se dice, no se finge una tabla vacía editable.
+      tz.innerHTML = '<tr><td class="franja">La tabla todavía no está en esta base de datos.</td></tr>';
+      tl.innerHTML = ''; if (warn) warn.textContent = '';
+      return;
+    }
+    rtTablas = t;
+    const franjas = (t.zonas[RT_ZONAS[0]] || []).map(r => ({ f: r.band_from, to: r.band_to }));
+    const celda = (val, asum, ds) =>
+      `<input type="number" min="0" max="240" value="${val}" class="${asum ? 'asumida' : ''}" ${ds} />`;
+
+    tz.innerHTML =
+      `<tr><th class="franja">Franja</th>${RT_ZONAS.map(z => `<th>${z}</th>`).join('')}</tr>` +
+      franjas.map(fr => {
+        const tds = RT_ZONAS.map(z => {
+          const r = (t.zonas[z] || []).find(x => x.band_from === fr.f);
+          if (!r) return '<td>—</td>';
+          const d = `data-kind="zona" data-zone="${z}" data-band="${fr.f}"`;
+          return `<td>${celda(r.min_minutes, r.asumida, d + ' data-lim="min"')}<span class="sep">/</span>${celda(r.max_minutes, r.asumida, d + ' data-lim="max"')}</td>`;
+        }).join('');
+        return `<tr><td class="franja">${RT_FRANJA_LABEL(fr.f, fr.to)}</td>${tds}</tr>`;
+      }).join('');
+
+    tl.innerHTML =
+      '<tr><th class="franja">Franja</th><th>Desde la última persona recogida</th></tr>' +
+      (t.tramos || []).map(r => {
+        const d = `data-kind="tramo" data-band="${r.band_from}"`;
+        return `<tr><td class="franja">${RT_FRANJA_LABEL(r.band_from, r.band_to)}</td>`
+          + `<td>${celda(r.min_minutes, r.asumida, d + ' data-lim="min"')}<span class="sep">/</span>${celda(r.max_minutes, r.asumida, d + ' data-lim="max"')}</td></tr>`;
+      }).join('');
+
+    // Lo que falta confirmarle, dicho sin adornos.
+    if (warn) {
+      const asum = [...(t.tramos || []), ...Object.values(t.zonas).flat()].filter(r => r.asumida).length;
+      const sin = (t.sinConfirmar || []).length;
+      warn.innerHTML = [
+        asum ? `<b>${asum} casilla${asum > 1 ? 's' : ''} con borde punteado</b>: la franja de 12 a 2 de la mañana no la dictó él, se copió de la de 7 p.m. a 12. Al guardar dejan de estar marcadas.` : '',
+        sin ? `<b>${sin} conjunto${sin > 1 ? 's' : ''} sin zona</b>: sus traslados se programan con el cálculo por carretera, no con esta tabla.` : '',
+      ].filter(Boolean).join('<br>');
+    }
+  }
+
+  async function saveRouteTables() {
+    if (!rtTablas || !Api.saveRouteTables) return;
+    const zonas = [], tramos = [];
+    document.querySelectorAll('#zone-times-table input, #leg-times-table input').forEach(inp => {
+      const n = Math.min(240, Math.max(0, parseInt(inp.value, 10) || 0));
+      const band = Number(inp.dataset.band);
+      const arr = inp.dataset.kind === 'zona' ? zonas : tramos;
+      const llave = inp.dataset.kind === 'zona'
+        ? r => r.zone === inp.dataset.zone && r.band_from === band
+        : r => r.band_from === band;
+      let row = arr.find(llave);
+      if (!row) { row = inp.dataset.kind === 'zona' ? { zone: inp.dataset.zone, band_from: band } : { band_from: band }; arr.push(row); }
+      row[inp.dataset.lim === 'min' ? 'min_minutes' : 'max_minutes'] = n;
+    });
+    // El máximo nunca por debajo del mínimo: la BD lo rechazaría y el admin se
+    // quedaría sin saber por qué. Se corrige aquí y se avisa.
+    let ajustadas = 0;
+    [...zonas, ...tramos].forEach(r => {
+      if (r.max_minutes < r.min_minutes) { r.max_minutes = r.min_minutes; ajustadas++; }
+    });
+    const btn = $('#save-route-tables-btn'); if (btn) btn.disabled = true;
+    try {
+      await Api.saveRouteTables(zonas, tramos);
+      await renderRouteTables();
+      toast(ajustadas ? `Tabla guardada (${ajustadas} máximo${ajustadas > 1 ? 's' : ''} subido${ajustadas > 1 ? 's' : ''} al mínimo).` : 'Tabla de tiempos guardada.');
+    } catch (e) {
+      toast('No se pudo guardar la tabla: ' + (e.message || e));
+    } finally { if (btn) btn.disabled = false; }
+  }
+
+  // ---- ZONA DE CADA CONJUNTO ------------------------------------------------
+  async function renderResidenceZones() {
+    const box = $('#residence-zones');
+    if (!box || !Api.listResidencesZones) return;
+    let rows = null;
+    try { rows = await Api.listResidencesZones(); } catch (e) { rows = null; }
+    if (!rows) { box.innerHTML = '<p class="set-hint">El catálogo de residencias no está disponible en esta base de datos.</p>'; return; }
+    // Sin asignar primero: es la lista de trabajo, no un detalle al final.
+    rows.sort((a, b) => (!!a.zona_jefe - !!b.zona_jefe) || a.name.localeCompare(b.name, 'es'));
+    box.innerHTML = rows.map(r => `
+      <div class="rz-row ${r.zona_jefe ? '' : 'sin'}">
+        <div class="rz-name">${escapeHtml(r.name)}<small>${escapeHtml(r.sector || "sin sector")}</small></div>
+        <select data-id="${r.id}">
+          <option value="">Sin asignar</option>
+          ${RT_ZONAS.map(z => `<option value="${escapeHtml(z)}" ${r.zona_jefe === z ? 'selected' : ''}>${escapeHtml(z)}</option>`).join('')}
+        </select>
+      </div>`).join('');
+    box.querySelectorAll('select').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        try {
+          await Api.saveResidenceZone(sel.dataset.id, sel.value);
+          sel.closest('.rz-row').classList.toggle('sin', !sel.value);
+          await renderRouteTables();   // el contador de "sin zona" cambia
+        } catch (e) { toast('No se pudo guardar la zona: ' + (e.message || e)); }
+      });
+    });
+  }
+
   async function renderVehiclesSettings() {
     const box = $('#vehicles-list');
     if (!box) return;
@@ -755,9 +875,11 @@
         return isNaN(n) ? 0.8 : Math.min(1.5, Math.max(0.5, n));
       })(),
       // 0061: techo de espera. 0 = sin techo, así que no se usa `|| default`.
+      // 0062: corrimiento de domingo/festivo. 0 = tratarlo como día normal.
       ...Object.fromEntries([
         ['route_max_wait_min', '#setting-route-wait'],
         ['route_max_wait_peak_min', '#setting-route-wait-peak'],
+        ['route_holiday_shift_min', '#setting-holiday-shift'],
       ].map(([col, sel]) => {
         const n = parseInt($(sel) && $(sel).value, 10);
         return [col, isNaN(n) ? 0 : Math.min(180, Math.max(0, n))];

@@ -154,6 +154,7 @@
     $('#clear-schedule-btn').addEventListener('click', onClearSchedule);
 
     $('#save-settings-btn').addEventListener('click', onSaveSettings);
+    $('#save-route-tables-btn')?.addEventListener('click', saveRouteTables);
 
     $('#new-driver-gen-pw')?.addEventListener('click', onGenerateDriverPassword);
     $('#new-driver-create-btn')?.addEventListener('click', onCreateDriver);

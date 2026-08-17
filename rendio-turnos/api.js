@@ -1454,6 +1454,37 @@
     return out;
   }
 
+  // Guarda la tabla editada desde Ajustes. Cada fila trae su llave natural
+  // (zona + franja), así que va por update, no por delete+insert: si a alguien
+  // se le cae la conexión a la mitad no se queda la operación sin tabla.
+  async function saveRouteTables(zonas, tramos) {
+    for (const r of zonas || []) {
+      const { error } = await sb.from('route_zone_times')
+        .update({ min_minutes: r.min_minutes, max_minutes: r.max_minutes, asumida: false })
+        .eq('zone', r.zone).eq('band_from', r.band_from);
+      if (error) throw error;
+    }
+    for (const r of tramos || []) {
+      const { error } = await sb.from('route_leg_times')
+        .update({ min_minutes: r.min_minutes, max_minutes: r.max_minutes, asumida: false })
+        .eq('band_from', r.band_from);
+      if (error) throw error;
+    }
+  }
+
+  // Catálogo de residencias con su zona, para la pantalla donde se clasifican.
+  async function listResidencesZones() {
+    const { data, error } = await sb.from('residences')
+      .select('id, name, sector, zona_jefe').eq('is_active', true).order('name');
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function saveResidenceZone(id, zona) {
+    const { error } = await sb.from('residences').update({ zona_jefe: zona || null }).eq('id', id);
+    if (error) throw error;
+  }
+
   async function listRoutePlanning(tripType) {
     // Día en hora de COLOMBIA (no UTC): un viaje de las 21:10 Col NO debe rodar
     // al día siguiente (21:10 Col = 02:10 UTC). Agrupamos por America/Bogota.
@@ -1475,7 +1506,11 @@
       // La residencia (0055) es lo que permite tratar una portería como UNA
       // parada: dos tripulantes del mismo conjunto son un solo frenazo. Va en
       // su propio reintento porque main todavía no tiene la 0055.
-      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name)');
+      // 0062: la zona de Julián viaja pegada a la residencia. Escalón propio de
+      // la cascada: sin la migración se cae al select de al lado y el tablero
+      // programa con el modelo calculado, como antes.
+      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe)');
+      if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name)');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm');
       if (res.error) res = await q(COLS);
       if (res.error) throw res.error;
@@ -1504,6 +1539,9 @@
           || (parts.length > 1 ? parts[parts.length - 1] : parts[0] || '—').trim(),
         // Llave de PARADA: dos reservas de la misma residencia son una portería.
         resId: r.residence_id || null,
+        // Zona de la tabla de tiempos de Julián (0062). null = todavía no la
+        // confirmó para ese conjunto → esa parada se programa como antes.
+        zonaJefe: r.residences?.zona_jefe || null,
         dir: r.pickup_address || '',
         lat: r.pickup_latitude, lng: r.pickup_longitude,
         dl: rtHHMM(r.required_arrival_at),
@@ -2184,7 +2222,7 @@
     getMyFullProfile, uploadMyAvatar,
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
-    listRoutePlanning, saveRouteAssignment,
+    listRoutePlanning, saveRouteAssignment, getRouteTables, saveRouteTables, listResidencesZones, saveResidenceZone,
     getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,

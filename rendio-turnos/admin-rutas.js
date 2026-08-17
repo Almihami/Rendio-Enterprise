@@ -47,6 +47,19 @@
     // 45 y 60). El 60 en las dos horas pico —6-9 a.m. y 12-6 p.m.— es su modelo de
     // tráfico, aprendido en terreno. 0 = sin techo (comportamiento anterior).
     MAX_WAIT: 0, MAX_WAIT_PEAK: 0,
+    // ---- LA TABLA DE JULIÁN (0062) ----
+    // Hasta aquí el modelo CALCULA cuánto tarda un traslado. Julián no quiere
+    // que se calcule: quiere que se CONSULTE en su tabla. Las dos cosas
+    // conviven porque responden preguntas distintas — lo que el carro PUEDE
+    // hacer (OSRM, para saber si la vuelta es viable) y a qué hora hay que
+    // RECOGER (su tabla, que trae margen adentro a propósito). Por eso se usa
+    // el MAYOR de los dos: ver rtDurProg.
+    ZONAS: null,         // {zona: [{band_from, band_to, min_minutes, max_minutes}]}
+    TRAMOS: null,        // [{band_from, band_to, min_minutes, max_minutes}] — tramo final
+    HOLIDAY_SHIFT: 0,    // min que se RECORTA la anticipación en domingo/festivo
+    esDiaLento: false,   // el día operativo es domingo o festivo
+    diaLentoNombre: null,// nombre del festivo, para poder decirlo en pantalla
+    zonasSinConfirmar: [],// conjuntos que Julián todavía no clasificó
     TURNAROUND: 8,       // min en MDE entre entregar y arrancar la siguiente vuelta
     DEPLANE: 20,         // min entre que el vuelo aterriza y el pasajero sale (migración+maletas)
     CUSHION: 15,         // min extra de margen al programar la salida de cada vuelta
@@ -89,6 +102,9 @@
     // anterior, agrupando solo por hora exacta). Si la columna no existe todavía
     // (main sin la 0056) queda en 0 y el tablero se comporta como siempre.
     rt.MERGE_WINDOW = s.route_merge_window_min != null ? Number(s.route_merge_window_min) : 0;
+    // 0 = sin corrimiento; es el valor con el que nace, porque Julián dijo
+    // "domingos y festivos no sacarlos tan temprano" pero no dio el número.
+    rt.HOLIDAY_SHIFT = s.route_holiday_shift_min != null ? Number(s.route_holiday_shift_min) : 0;
   }
 
   async function rtLoad() {
@@ -113,6 +129,21 @@
     rt.pool = Object.keys(rt.aux);
     rt.optimized = false;
     rt.M = null;
+    // TABLA DE JULIÁN (0062). Si la migración no está, getRouteTables devuelve
+    // null y todo el tablero programa como antes: la tabla no es un requisito,
+    // es una capa encima.
+    rt.ZONAS = null; rt.TRAMOS = null; rt.esDiaLento = false; rt.diaLentoNombre = null; rt.zonasSinConfirmar = [];
+    if (Api.getRouteTables) {
+      try {
+        const t = await Api.getRouteTables(rt.day);
+        if (t && Object.keys(t.zonas || {}).length) {
+          rt.ZONAS = t.zonas; rt.TRAMOS = t.tramos || [];
+          rt.esDiaLento = !!(t.esDomingo || t.esFestivo);
+          rt.diaLentoNombre = t.esFestivo ? (t.festivo || 'festivo') : (t.esDomingo ? 'domingo' : null);
+          rt.zonasSinConfirmar = t.sinConfirmar || [];
+        }
+      } catch (e) { /* sin tabla → modelo calculado, como siempre */ }
+    }
     // Conductores EN TURNO por franja (del horario publicado) para asignar AM/PM.
     rt.shift = null; rt.shiftLoaded = false;
     if (rt.source === 'live' && rt.day && Api.listDriversOnShift) {
@@ -241,6 +272,7 @@
       stops.push({ id, eta });
       hardDL = Math.min(hardDL, rtToMin(rt.aux[id].dl));
     });
+    const hastaUltima = t - rtToMin(lane.start);   // antes del tramo final
     const arrival = rt.order[laneId].length ? Math.round(t + rtLegMin(prev, 'airport')) : null;
     // Holgura contra el deadline DESCONTANDO el colchón de entrega (bajar
     // maletas + entrar): llegar "justo" a la hora de presentación ES tarde.
@@ -248,9 +280,14 @@
     let status = 'empty';
     if (arrival != null) status = holg < 0 ? 'late' : (holg < rt.MARGIN_TIGHT ? 'tight' : 'ontime');
     // Hora de salida recomendada: lo más tarde que puede arrancar esta vuelta
-    // y aún entregar con colchón — la palanca del despachador.
-    const depart = arrival != null ? hardDL - rt.AIRPORT_BUFFER - (arrival - rtToMin(lane.start)) : null;
-    return { stops, pax, arrival, hardDL, holg, status, depart };
+    // y aún entregar con colchón — la palanca del despachador. Se calcula con
+    // el tiempo PROGRAMADO, no con el medido: si no, este ajuste retrasaría la
+    // salida hasta el tiempo de OSRM y desharía la tabla de Julián.
+    const durProg = arrival != null
+      ? rtDurProg(rt.order[laneId], hardDL, arrival - rtToMin(lane.start), hastaUltima)
+      : null;
+    const depart = arrival != null ? hardDL - rt.AIRPORT_BUFFER - durProg : null;
+    return { stops, pax, arrival, hardDL, holg, status, depart, durProg };
   }
 
   // Vuelta de LLEGADA: recoge en MDE cuando el vuelo suelta a la gente y
@@ -425,6 +462,65 @@
   // colchón de entrega. En una llegada no aplica —ahí nadie espera dentro del
   // carro, el pasajero sale del terminal y arranca.
   const rtEsperaDe = (tipo, ids) => tipo === 'lle' ? 0 : rtTripDur(ids, null) + rt.AIRPORT_BUFFER;
+
+  // ---- LA TABLA DE JULIÁN ----------------------------------------------------
+  // Franja horaria a la que pertenece una hora (minutos desde medianoche). Las
+  // franjas las dictó él: 2-6, 6-9, 9-12, 12-19 y 19-24. La de 0-2 no la dio y
+  // se sembró por analogía con la de 19-24 (marcada `asumida` en la BD).
+  function rtFranja(tabla, dlMin) {
+    const h = Math.floor((((dlMin % 1440) + 1440) % 1440) / 60);
+    return (tabla || []).find(r => h >= r.band_from && h < r.band_to) || null;
+  }
+  // Dentro del rango manda cuánta gente va: "si van solo pueden ir con el
+  // tiempo mínimo, si van con personas dependiendo de la lejanía y qué tantas
+  // vayan". 1 → mínimo · 2 → el punto medio · 3 o más → máximo.
+  function rtPorGente(row, pax) {
+    if (!row) return 0;
+    if (pax <= 1) return Number(row.min_minutes) || 0;
+    if (pax >= 3) return Number(row.max_minutes) || 0;
+    return Math.round(((Number(row.min_minutes) || 0) + (Number(row.max_minutes) || 0)) / 2);
+  }
+  // Zona de una vuelta que toca varias: manda la MÁS LENTA. Un carro que pasa
+  // por Porvenir y sigue a Marinilla se rige por Marinilla, no al revés.
+  // Si alguna parada no tiene zona confirmada, la tabla NO se aplica a esa
+  // vuelta: preferimos el modelo calculado antes que inventarle una zona.
+  function rtZonaDe(ids, dlMin, pax) {
+    if (!rt.ZONAS) return null;
+    let mejor = null, mejorMin = -1;
+    for (const id of ids) {
+      const z = rt.aux[id] && rt.aux[id].zonaJefe;
+      if (!z || !rt.ZONAS[z]) return null;      // alguna sin clasificar → no aplica
+      const m = rtPorGente(rtFranja(rt.ZONAS[z], dlMin), pax);
+      if (m > mejorMin) { mejorMin = m; mejor = z; }
+    }
+    return mejor ? { zona: mejor, min: mejorMin } : null;
+  }
+  // EL NÚMERO CON EL QUE SE PROGRAMA UNA SALIDA.
+  // Nunca menos de lo que el carro puede hacer (durReal, de OSRM): la tabla no
+  // puede prometer imposibles. Nunca menos de lo que Julián recogería (su
+  // tabla): por eso el máximo y no un reemplazo.
+  //   · durReal        — recorrido completo medido, incluido el tramo final.
+  //   · hastaUltima    — del arranque a la última recogida (sin el tramo final).
+  function rtDurProg(ids, dlMin, durReal, hastaUltima) {
+    if (!rt.ZONAS || !ids || !ids.length) return durReal;
+    const pax = rtPaxOf(ids);
+    const z = rtZonaDe(ids, dlMin, pax);
+    if (!z) return durReal;                     // sin zona confirmada → como antes
+    // "Domingos y festivos no sacarlos tan temprano": se recorta la
+    // anticipación. Nace en 0 (sin corrimiento) hasta que él dé el número.
+    const total = Math.max(0, z.min - (rt.esDiaLento ? rt.HOLIDAY_SHIFT : 0));
+    // Segunda regla suya: el tramo desde la ÚLTIMA persona recogida. En una
+    // vuelta de varias paradas tiene que caber dentro del total, así que
+    // funciona como piso propio.
+    const tramo = rtPorGente(rtFranja(rt.TRAMOS, dlMin), pax);
+    return Math.max(durReal, total, hastaUltima + tramo);
+  }
+  // Partes de una vuelta: recorrido completo y cuánto de eso es antes del
+  // tramo final. Se necesitan las dos para aplicar los dos pisos de la tabla.
+  function rtTripParts(ids, origin) {
+    const e = rtRouteEval(0, ids, origin);
+    return { dur: e.arrival || 0, hastaUltima: e.hastaUltima || 0 };
+  }
   // La operación habla en múltiplos de 5: "recoge a las 3:15", no "a las 3:13".
   // El lado seguro depende del tipo: en una SALIDA salir antes es gratis, así que
   // va hacia abajo; en una LLEGADA adelantarse es plantarse en el terminal antes
@@ -486,10 +582,11 @@
       if (prev) t += rtLegMin(prev, id);
       t += rt.SERVICE_MIN; prev = id; prevKey = k;
     });
+    const hastaUltima = t;                  // antes del tramo final (piso de la tabla)
     const arrival = t + rtLegMin(prev, 'airport');
     const minDL = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl)));
     // "Tarde" = no alcanza el deadline con el colchón de entrega incluido.
-    return { arrival, minDL, late: Math.max(0, arrival + rt.AIRPORT_BUFFER - minDL) };
+    return { arrival, hastaUltima, minDL, late: Math.max(0, arrival + rt.AIRPORT_BUFFER - minDL) };
   }
   // ---- Solver MULTI-VIAJE ----
   // La unidad real de trabajo es la OLEADA: un grupo con el mismo "deben estar".
@@ -660,7 +757,10 @@
       // SALIDA (casa → MDE), como siempre — pero el origen es donde QUEDÓ el carro.
       cs.forEach(s => {
         const origin = s.pos; // null = arranca en la 1ª recogida; 'airport' o casa = tramo real
-        const dur = rtTripDur(tr.ids, origin);
+        // El tiempo con el que se PROGRAMA no es el medido: es el mayor entre
+        // lo que el carro puede hacer y lo que la tabla de Julián manda.
+        const p = rtTripParts(tr.ids, origin);
+        const dur = rtDurProg(tr.ids, tr.dlMin, p.dur, p.hastaUltima);
         const salmax = tr.dlMin - rt.AIRPORT_BUFFER - dur;
         const depart = Math.max(s.avail, salmax - rt.CUSHION);
         const late = Math.max(0, depart - salmax);
@@ -916,7 +1016,13 @@
     const how = src === 'tomtom' ? 'tiempos con tráfico previsto'
       : src === 'osrm' ? 'tiempos reales OSRM' : 'distancia estimada';
     const vueltas = rt.lanes.length;
-    toast(s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ajustada, revísala.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`);
+    // El tipo de día cambia a qué hora se recoge, así que se dice al programar:
+    // si el corrimiento está en 0, el festivo se trató como un día normal y eso
+    // también hay que decirlo, para no dar por hecho un trato que no se dio.
+    const dia = rt.diaLentoNombre
+      ? ` · ${rt.diaLentoNombre}${rt.HOLIDAY_SHIFT ? `, se recoge ${rt.HOLIDAY_SHIFT} min más tarde` : ', tratado como día normal'}`
+      : '';
+    toast((s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ajustada, revísala.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`) + dia);
   }
 
   // Persiste el plan del día: cada vuelta → route_assignment + route_stops.
