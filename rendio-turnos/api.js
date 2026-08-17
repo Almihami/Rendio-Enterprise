@@ -1613,11 +1613,15 @@
     const COLS = 'id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, cancelled_at, rating, flights(flight_number)';
     const q = cols => sb.from('reservations').select(cols)
       .eq('auxiliar_profile_id', apId).order('required_arrival_at', { ascending: true });
-    let { data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason');
+    // residence_id se pide en el escalón de más columnas (0055): lo usa
+    // "Repetir el de siempre" para volver al mismo conjunto sin preguntar.
+    let { data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id');
+    if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason'));
     if (error) ({ data, error } = await q(COLS));
     if (error) return null;
     return (data || []).map(r => ({
       id: r.id, type: r.direction === 'airport_to_home' ? 'lle' : 'sal',
+      residenceId: r.residence_id || null,
       flight: r.flights?.flight_number || (r.notes && r.notes.match(/AV-?\d+/) ? r.notes.match(/AV-?\d+/)[0] : ''),
       date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
       address: r.pickup_address, lat: r.pickup_latitude, lng: r.pickup_longitude,
@@ -1628,9 +1632,68 @@
       rated: r.rating != null, rating: r.rating || 0,
     }));
   }
+  // ---- Catálogo de residencias para el auxiliar (0055) ----
+  //
+  // La 0055 se escribió para esto y llevaba desde julio sin usarse en la app del
+  // pasajero: "El auxiliar ELIGE su conjunto de una lista; no escribe". Hasta hoy
+  // seguía escribiendo texto libre que geocodificábamos con Nominatim, que de los
+  // 41 conjuntos donde vive la tripulación conoce 4.
+  //
+  // Lee con la política de organización (p_residences_select_org), no hace falta
+  // RPC. Solo lo que el auxiliar necesita para elegir: nombre, sector y la coord
+  // verificada para pintarle el mapa. `access_note` viene en el SELECT pero hoy
+  // está vacía en las 41 filas: quien la muestre debe hacerlo solo si trae texto.
+  let _residencesCache = null;
+  async function listResidences() {
+    if (_residencesCache) return _residencesCache;
+    const { data, error } = await sb.from('residences')
+      .select('id, name, sector, access_note, latitude, longitude')
+      .eq('is_active', true).order('name');
+    if (error) return null;
+    _residencesCache = data || [];
+    return _residencesCache;
+  }
+
+  // El punto guardado del auxiliar. 64 de los 102 perfiles ya traen residence_id
+  // (lo llenó la operación al sembrar el catálogo), así que para la mayoría el
+  // paso 3 se resuelve de un toque desde el primer día.
+  // Devuelve null si no hay sesión de auxiliar; {} si la hay pero está vacío.
+  async function getMyAuxiliarPlace() {
+    const { data: u } = await sb.auth.getUser();
+    const uid = u?.user?.id; if (!uid) return null;
+    const { data, error } = await sb.from('auxiliar_profiles')
+      .select('id, residence_id, home_address, home_latitude, home_longitude, residences(id, name, sector, latitude, longitude)')
+      .eq('profile_id', uid).maybeSingle();
+    if (error || !data) return null;
+    return {
+      residenceId: data.residence_id || null,
+      residence: data.residences || null,
+      homeAddress: data.home_address || '',
+      homeLat: data.home_latitude, homeLng: data.home_longitude,
+    };
+  }
+
+  // Guarda el conjunto elegido como SU punto (p_auxiliar_profiles_update_own).
+  // No es cosmético: la próxima reserva arranca con el punto ya puesto, y el
+  // trigger fill_reservation_pickup() lo usa como respaldo si alguna vez llega
+  // una reserva sin residencia.
+  async function saveMyResidence(residenceId) {
+    const { data: u } = await sb.auth.getUser();
+    const uid = u?.user?.id; if (!uid) throw new Error('Sin sesión');
+    const { error } = await sb.from('auxiliar_profiles')
+      .update({ residence_id: residenceId || null }).eq('profile_id', uid);
+    if (error) throw error;
+    return true;
+  }
+
   // Crea una reserva del auxiliar autenticado (RLS: solo la suya).
   // Pernocta y "reserva en firme" se preguntaban en el formulario y se botaban:
   // desde 0050 tienen columna y llegan al admin.
+  //
+  // Con residencia elegida NO mandamos coordenadas: las pone el trigger
+  // fill_reservation_pickup() desde el catálogo. Mandarlas desde el cliente
+  // sería dejar que el teléfono decida dónde queda una portería que la
+  // operación ya midió a mano.
   async function createReservation(f) {
     const apId = await getMyAuxiliarProfileId(); if (!apId) throw new Error('Sin perfil de auxiliar');
     const isLle = f.type === 'lle';
@@ -1643,7 +1706,12 @@
       required_arrival_at: f.date + 'T' + f.time + ':00-05:00', notes: notes.trim() || null,
     };
     const extra = { is_overnight: !!f.isPernocta, is_firm: f.isReserva !== false };
-    let { data, error } = await sb.from('reservations').insert({ ...payload, ...extra }).select('id').single();
+    // La residencia va en su propio escalón de degradación: si la columna no
+    // existiera (0055 sin aplicar) se reintenta sin ella y la reserva igual se
+    // crea con el texto y el pin, que es el camino de excepción de siempre.
+    const withRes = f.residenceId ? { residence_id: f.residenceId } : {};
+    let { data, error } = await sb.from('reservations').insert({ ...payload, ...extra, ...withRes }).select('id').single();
+    if (error && f.residenceId) ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra }).select('id').single());
     if (error) ({ data, error } = await sb.from('reservations').insert(payload).select('id').single());
     if (error) throw error;
     return data.id;
@@ -2224,6 +2292,7 @@
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment, getRouteTables, saveRouteTables, listResidencesZones, saveResidenceZone,
     getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,
+    listResidences, getMyAuxiliarPlace, saveMyResidence,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
     sendDriverLocation, listLiveOperation,

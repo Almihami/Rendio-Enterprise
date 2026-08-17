@@ -1,0 +1,377 @@
+/* ============================================================================
+   rc-auxiliar.css — capa visual de la entrega del rol Auxiliar (2026-08-17)
+   ============================================================================
+   Va aparte de styles.css por la misma razón que rc-conductor.css: el rol
+   auxiliar es una app dentro de la app, y mezclar sus reglas con las del admin
+   ya nos costó una vez.
+
+   Todo está scopeado a #auxiliar-ui. Los tokens --a-* los define styles.css;
+   aquí solo se AÑADEN los que la entrega estrena y se redefinen bajo modo
+   nocturno.
+   ============================================================================ */
+
+#auxiliar-ui {
+  /* Superficie intermedia: styles.css tenía card y bg, faltaba el escalón de
+     enmedio que la entrega usa para bloques informativos. */
+  --a-surf2: #EFF2F5;
+  --a-h2a-soft: #FDEDE4;
+  --a-a2h-soft: #E6F7F1;
+  --a-warn: #B4690E;
+  --a-warn-soft: #FDF3E2;
+  --a-info: #2563EB;
+  --a-info-soft: #EAF1FE;
+  --a-err: #B42318;
+  --a-err-soft: #FDECEA;
+}
+
+/* ── A5 · Modo nocturno del módulo ──────────────────────────────────────────
+   NO es el dark genérico del sistema. Palabras del diseñador: es para «una
+   persona cansada, dentro de un carro oscuro, a las 11 p.m., con el brillo del
+   teléfono al máximo». Negro CÁLIDO en vez de neutro (menos deslumbre en visión
+   nocturna), texto marfil y no blanco puro (baja el contraste de ~19:1 a ~13:1,
+   sigue sobre AAA pero deja de quemar), y acentos desaturados porque el naranja
+   a tope satura demasiado en pupila dilatada.
+
+   Va en #auxiliar-ui[data-ax-night="on"], NO en <html>: el mismo criterio que
+   se usó con el conductor en agosto. Si se pusiera en la raíz, el wizard de
+   inicio de turno y todo el admin quedarían a medio pintar.
+   Los valores son los de tokens.css de la entrega, sin retocar.            */
+#auxiliar-ui[data-ax-night="on"] {
+  --a-bg:    #0B0A09;
+  --a-card:  #16130F;
+  --a-surf2: #1C1813;
+  --a-text:  #EDE6DB;
+  --a-t2:    #A29A8C;
+  --a-t3:    #6E675C;
+  --a-line:  #262119;
+  --a-line2: #211C15;
+  --a-accent:#FF8A4C;
+  --a-h2a:   #FF8A4C;
+  --a-h2a-soft: #2A1A10;
+  --a-a2h:   #3DD9A0;
+  --a-a2h-soft: #0F2820;
+  --a-hotel: #F0B44A;
+  --a-ok:    #3DD9A0;
+  --a-warn:  #F0B44A;
+  --a-warn-soft: #2B2113;
+  --a-info:  #6FA8F5;
+  --a-info-soft: #172232;
+  --a-err:   #F58585;
+  --a-err-soft: #2E1818;
+}
+/* El marco que rodea el "teléfono" también se apaga: si no, queda un halo gris
+   claro alrededor de una pantalla negra. */
+#auxiliar-root:has(#auxiliar-ui[data-ax-night="on"]) { background: #060505; }
+/* Los mapas de Leaflet salen blanquísimos de noche. No se puede teñir el tile
+   sin romper la lectura de calles, así que se baja el brillo y se calienta un
+   poco: sigue legible y deja de ser una lámpara. */
+#auxiliar-ui[data-ax-night="on"] .leaflet-tile-pane {
+  filter: brightness(.62) saturate(.75) sepia(.12);
+}
+
+/* Fondos claros fijos que quedaron en styles.css antes de que existiera el modo
+   nocturno. Son bloques pastel (verde menta, ámbar, rosa) escritos en
+   hexadecimal: sin esto, de noche quedan siete parches luminosos sobre negro.
+   Se remapean a los tokens suaves, que ya son los oscuros. */
+#auxiliar-ui[data-ax-night="on"] .ax-chip.a2h,
+#auxiliar-ui[data-ax-night="on"] .ax-opt.a2h .ax-opt-ic,
+#auxiliar-ui[data-ax-night="on"] .ax-hint.ok,
+#auxiliar-ui[data-ax-night="on"] .ax-success,
+#auxiliar-ui[data-ax-night="on"] .ax-onboard-badge,
+#auxiliar-ui[data-ax-night="on"] .ax-late.ok,
+#auxiliar-ui[data-ax-night="on"] .ax-wait {
+  background: var(--a-a2h-soft); color: var(--a-a2h);
+}
+#auxiliar-ui[data-ax-night="on"] .ax-chip.h2a,
+#auxiliar-ui[data-ax-night="on"] .ax-opt.h2a .ax-opt-ic,
+#auxiliar-ui[data-ax-night="on"] .ax-tag.on {
+  background: var(--a-h2a-soft); color: var(--a-h2a);
+}
+#auxiliar-ui[data-ax-night="on"] .ax-onboard-badge.wait,
+#auxiliar-ui[data-ax-night="on"] .ax-late.warn {
+  background: var(--a-warn-soft); color: var(--a-warn);
+}
+#auxiliar-ui[data-ax-night="on"] .ax-late.late,
+#auxiliar-ui[data-ax-night="on"] .ax-wait.over,
+#auxiliar-ui[data-ax-night="on"] .ax-hint.bad {
+  background: var(--a-err-soft); color: var(--a-err);
+}
+#auxiliar-ui[data-ax-night="on"] .ax-cancel-box {
+  background: var(--a-err-soft); border-color: var(--a-err);
+}
+#auxiliar-ui[data-ax-night="on"] .ax-btn-ghost.ax-danger {
+  color: var(--a-err); border-color: var(--a-err);
+}
+/* El hint neutro y el resto de superficies ya salen de tokens, así que no hay
+   que tocarlos. */
+
+/* La escala de demora puede traer una segunda línea: el icono se alinea arriba
+   para no quedar centrado contra dos renglones. */
+#auxiliar-ui .ax-late { align-items: flex-start; }
+#auxiliar-ui .ax-late .icon { margin-top: 1px; }
+
+/* ── Control de tema en Perfil (Automático · Claro · Nocturno) ───────────── */
+#auxiliar-ui .axn-theme { display: flex; gap: 6px; margin: 4px 0 2px; }
+#auxiliar-ui .axn-opt {
+  flex: 1; padding: 11px 6px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--a-line); background: var(--a-card);
+  color: var(--a-t2); font: inherit; font-size: 12.5px; font-weight: 700;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+#auxiliar-ui .axn-opt.on {
+  border-color: var(--a-accent); background: var(--a-h2a-soft); color: var(--a-accent);
+}
+#auxiliar-ui .axn-opt .icon { width: 16px; height: 16px; }
+#auxiliar-ui .axn-note { font-size: 12px; color: var(--a-t3); margin: 8px 2px 0; line-height: 1.5; }
+
+/* ── §7 · Paso 3 sobre el catálogo de residencias ────────────────────────── */
+#auxiliar-ui .axr-lbl {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--a-t3); margin: 16px 2px 8px;
+}
+#auxiliar-ui .axr-load {
+  display: flex; align-items: center; gap: 10px; padding: 18px 4px;
+  color: var(--a-t2); font-size: 13.5px;
+}
+#auxiliar-ui .axr-spin {
+  width: 16px; height: 16px; border-radius: 50%; flex: 0 0 auto;
+  border: 2px solid var(--a-line); border-top-color: var(--a-accent);
+  animation: axr-spin .7s linear infinite;
+}
+@keyframes axr-spin { to { transform: rotate(360deg); } }
+
+/* El punto guardado. Es el atajo del rediseño: para 64 de los 102 tripulantes
+   el paso 3 se resuelve aquí, sin buscar y sin pin. */
+#auxiliar-ui .axr-saved {
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  display: flex; align-items: center; gap: 13px; padding: 14px 15px;
+  border-radius: 14px; border: 1px solid var(--a-line); background: var(--a-card);
+}
+#auxiliar-ui .axr-saved-ic {
+  width: 40px; height: 40px; border-radius: 12px; flex: 0 0 auto;
+  background: var(--a-h2a-soft); color: var(--a-h2a);
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axr-saved-txt { flex: 1; min-width: 0; }
+#auxiliar-ui .axr-saved-txt b { display: block; font-size: 15.5px; font-weight: 700; color: var(--a-text); }
+#auxiliar-ui .axr-saved-txt > span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 1px; }
+#auxiliar-ui .axr-saved-txt em {
+  display: inline-flex; align-items: center; gap: 5px; margin-top: 5px;
+  font-size: 11px; font-style: normal; font-weight: 700; color: var(--a-a2h);
+}
+#auxiliar-ui .axr-saved-txt em .icon { width: 12px; height: 12px; }
+#auxiliar-ui .axr-chev { width: 16px; height: 16px; color: var(--a-t3); flex: 0 0 auto; }
+
+/* Buscador */
+#auxiliar-ui .axr-search { position: relative; margin-bottom: 10px; }
+#auxiliar-ui .axr-search > .icon {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  color: var(--a-t3); pointer-events: none;
+}
+#auxiliar-ui .axr-search input {
+  width: 100%; height: 50px; padding: 0 40px 0 42px; box-sizing: border-box;
+  font: inherit; font-size: 15.5px; color: var(--a-text);
+  border: 1px solid var(--a-line); border-radius: 12px;
+  background: var(--a-card); outline: none;
+}
+#auxiliar-ui .axr-search input:focus { border-color: var(--a-accent); }
+#auxiliar-ui .axr-clear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; border: 0; background: none; cursor: pointer;
+  color: var(--a-t3); display: flex; align-items: center; justify-content: center;
+}
+
+/* Lista del catálogo */
+#auxiliar-ui .axr-list {
+  border-radius: 14px; border: 1px solid var(--a-line);
+  background: var(--a-card); overflow: hidden;
+}
+#auxiliar-ui .axr-row {
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  border: 0; border-top: 1px solid var(--a-line); background: transparent;
+  padding: 13px 15px; display: flex; align-items: center; gap: 12px;
+}
+#auxiliar-ui .axr-row.first { border-top: 0; }
+#auxiliar-ui .axr-row:active { background: var(--a-surf2); }
+#auxiliar-ui .axr-row-txt { flex: 1; min-width: 0; }
+#auxiliar-ui .axr-row-txt b { display: block; font-size: 14.5px; font-weight: 650; color: var(--a-text); }
+#auxiliar-ui .axr-row-txt span { display: block; font-size: 12px; color: var(--a-t2); margin-top: 1px; }
+#auxiliar-ui .axr-none { padding: 20px 16px; text-align: center; }
+#auxiliar-ui .axr-none b { display: block; font-size: 14px; color: var(--a-text); }
+#auxiliar-ui .axr-none span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 4px; line-height: 1.5; }
+
+/* La excepción: disponible, pero sin protagonismo (borde punteado, sin relleno) */
+#auxiliar-ui .axr-manual {
+  width: 100%; margin-top: 12px; padding: 13px 15px; border-radius: 14px;
+  border: 1px dashed var(--a-line); background: transparent; font: inherit;
+  cursor: pointer; text-align: left; display: flex; align-items: center; gap: 12px;
+}
+#auxiliar-ui .axr-manual-ic {
+  width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto;
+  background: var(--a-surf2); color: var(--a-t2);
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axr-manual-txt { flex: 1; }
+#auxiliar-ui .axr-manual-txt b { display: block; font-size: 14px; font-weight: 650; color: var(--a-text); }
+#auxiliar-ui .axr-manual-txt span { display: block; font-size: 12px; color: var(--a-t2); margin-top: 1px; }
+/* Volver al catálogo desde el camino manual */
+#auxiliar-ui .axr-back-cat {
+  width: 100%; margin: 10px 0 0; padding: 12px; border-radius: 12px;
+  border: 1px solid var(--a-line); background: var(--a-card); font: inherit;
+  font-size: 13px; font-weight: 650; color: var(--a-accent); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+
+/* Confirmación del punto elegido: mapa con el pin FIJO */
+#auxiliar-ui .axr-picked {
+  border-radius: 16px; border: 1px solid var(--a-line);
+  background: var(--a-card); overflow: hidden; margin-top: 4px;
+}
+#auxiliar-ui .axr-picked-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 10px; padding: 14px 15px 12px;
+}
+#auxiliar-ui .axr-picked-head b { display: block; font-size: 17px; font-weight: 750; letter-spacing: -.01em; }
+#auxiliar-ui .axr-picked-head span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 2px; }
+#auxiliar-ui .axr-map { height: 150px; background: var(--a-surf2); }
+/* Pin fijo: sin cursor de arrastre, para que nadie intente moverlo. */
+#auxiliar-ui .axr-map .leaflet-marker-icon { cursor: default; }
+#auxiliar-ui .axr-verified {
+  display: flex; align-items: center; gap: 11px; padding: 12px 15px;
+  background: var(--a-card);
+}
+#auxiliar-ui .axr-verified-ic {
+  width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--a-a2h-soft); color: var(--a-a2h);
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axr-verified b {
+  display: block; font-size: 11px; font-weight: 750; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--a-a2h);
+}
+#auxiliar-ui .axr-verified span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 1px; }
+#auxiliar-ui .axr-save {
+  width: 100%; margin-top: 10px; padding: 12px; border-radius: 12px;
+  border: 1px solid var(--a-line); background: var(--a-card); font: inherit;
+  font-size: 13px; font-weight: 650; color: var(--a-t2); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+#auxiliar-ui .axr-save.busy { opacity: .6; }
+
+/* ── Bloque A · Presentación ─────────────────────────────────────────────── */
+/* Primer ingreso: 3 pantallas a pantalla completa, dentro del mismo marco. */
+#auxiliar-ui .axo {
+  flex: 1; display: flex; flex-direction: column;
+  padding: calc(30px + env(safe-area-inset-top, 0px)) 22px 22px;
+  overflow-y: auto;
+}
+#auxiliar-ui .axo-dots { display: flex; gap: 6px; margin-bottom: 26px; }
+#auxiliar-ui .axo-dot { width: 22px; height: 3px; border-radius: 2px; background: var(--a-line); }
+#auxiliar-ui .axo-dot.on { background: var(--a-accent); }
+#auxiliar-ui .axo-art {
+  width: 66px; height: 66px; border-radius: 20px; margin-bottom: 20px;
+  background: var(--a-h2a-soft); color: var(--a-h2a);
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axo-art .icon { width: 30px; height: 30px; }
+#auxiliar-ui .axo h1 { font-size: 25px; font-weight: 800; letter-spacing: -.02em; line-height: 1.2; margin: 0; }
+#auxiliar-ui .axo p { font-size: 14.5px; color: var(--a-t2); line-height: 1.6; margin: 10px 0 0; }
+#auxiliar-ui .axo-acts { margin-top: auto; padding-top: 26px; display: flex; flex-direction: column; gap: 8px; }
+#auxiliar-ui .axo-skip {
+  background: none; border: 0; font: inherit; font-size: 13.5px; font-weight: 650;
+  color: var(--a-t2); cursor: pointer; padding: 6px;
+}
+/* El permiso de notificaciones, con el motivo delante */
+#auxiliar-ui .axo-why {
+  border: 1px solid var(--a-line); border-radius: 14px; background: var(--a-card);
+  padding: 4px 15px; margin: 18px 0 0;
+}
+#auxiliar-ui .axo-why-row {
+  display: flex; gap: 11px; align-items: flex-start; padding: 12px 0;
+  border-top: 1px solid var(--a-line2);
+}
+#auxiliar-ui .axo-why-row:first-child { border-top: 0; }
+#auxiliar-ui .axo-why-row .icon { color: var(--a-accent); margin-top: 2px; flex: 0 0 auto; }
+#auxiliar-ui .axo-why-row b { display: block; font-size: 13.5px; font-weight: 650; }
+#auxiliar-ui .axo-why-row span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 1px; line-height: 1.45; }
+
+/* Estados adversos: sin señal / error / soporte */
+#auxiliar-ui .axs {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; text-align: center; padding: 30px 26px;
+}
+#auxiliar-ui .axs-ic {
+  width: 60px; height: 60px; border-radius: 18px; margin-bottom: 16px;
+  background: var(--a-surf2); color: var(--a-t2);
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axs-ic .icon { width: 26px; height: 26px; }
+#auxiliar-ui .axs h2 { font-size: 19px; font-weight: 750; margin: 0; letter-spacing: -.01em; }
+#auxiliar-ui .axs p { font-size: 13.5px; color: var(--a-t2); line-height: 1.6; margin: 8px 0 18px; max-width: 300px; }
+
+/* Soporte: canales reales, sin WhatsApp (hay chat propio y llamada) */
+#auxiliar-ui .axs-ch {
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  display: flex; align-items: center; gap: 12px; padding: 13px 15px;
+  border-radius: 14px; border: 1px solid var(--a-line);
+  background: var(--a-card); margin-bottom: 8px;
+}
+#auxiliar-ui .axs-ch-ic {
+  width: 36px; height: 36px; border-radius: 11px; flex: 0 0 auto;
+  background: var(--a-h2a-soft); color: var(--a-h2a);
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axs-ch-txt { flex: 1; min-width: 0; }
+#auxiliar-ui .axs-ch-txt b { display: block; font-size: 14px; font-weight: 650; }
+#auxiliar-ui .axs-ch-txt span { display: block; font-size: 12px; color: var(--a-t2); margin-top: 1px; }
+
+/* ── B2 · Escala de demora medida contra la presentación ─────────────────── */
+/* Cuatro niveles con número concreto. El nivel se decide en auxiliar.js; acá
+   solo vive el color. `ok` reusa .ax-late de styles.css. */
+#auxiliar-ui .ax-late.margin {
+  background: var(--a-info-soft); color: var(--a-info); border-color: transparent;
+}
+#auxiliar-ui .ax-late.tight {
+  background: var(--a-warn-soft); color: var(--a-warn); border-color: transparent;
+}
+#auxiliar-ui .ax-late.miss {
+  background: var(--a-err-soft); color: var(--a-err); border-color: transparent;
+}
+#auxiliar-ui .ax-late-sub {
+  display: block; font-size: 12px; font-weight: 500; opacity: .85; margin-top: 3px;
+}
+
+/* ── B3 · La política, antes de confirmar ────────────────────────────────── */
+#auxiliar-ui .axp {
+  border: 1px solid var(--a-line); border-radius: 14px;
+  background: var(--a-card); padding: 4px 15px; margin-top: 12px;
+}
+#auxiliar-ui .axp-row {
+  display: flex; gap: 11px; align-items: flex-start; padding: 12px 0;
+  border-top: 1px solid var(--a-line2);
+}
+#auxiliar-ui .axp-row:first-child { border-top: 0; }
+#auxiliar-ui .axp-row .icon { color: var(--a-t3); margin-top: 2px; flex: 0 0 auto; }
+#auxiliar-ui .axp-row b { display: block; font-size: 13.5px; font-weight: 650; }
+#auxiliar-ui .axp-row span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 1px; line-height: 1.45; }
+
+/* ── Premium I · «Repetir el de siempre» ─────────────────────────────────── */
+#auxiliar-ui .axq {
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  border-radius: 16px; border: 1px solid var(--a-line);
+  background: var(--a-card); padding: 14px 15px; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 12px;
+}
+#auxiliar-ui .axq-ic {
+  width: 38px; height: 38px; border-radius: 12px; flex: 0 0 auto;
+  background: var(--a-h2a-soft); color: var(--a-h2a);
+  display: flex; align-items: center; justify-content: center;
+}
+#auxiliar-ui .axq-txt { flex: 1; min-width: 0; }
+#auxiliar-ui .axq-txt b { display: block; font-size: 14.5px; font-weight: 700; }
+#auxiliar-ui .axq-txt span {
+  display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+#auxiliar-ui .axr-ok{color:var(--a-a2h)}
