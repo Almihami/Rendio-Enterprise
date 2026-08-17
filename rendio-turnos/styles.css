@@ -2820,3 +2820,9 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #auxiliar-ui .ax-alarm-card textarea.ax-input{min-height:64px;resize:vertical;padding-top:11px}
 #auxiliar-ui .ax-alarm-acts{display:flex;gap:10px;margin-top:14px}
 #auxiliar-ui .ax-alarm-acts .ax-btn{flex:1}
+
+/* El canal de avisos caído tiene que verse distinto de un día tranquilo: en los
+   dos casos no suena nada, y confundirlos es cómo se pierde una falla mecánica. */
+#evt-ui .evt-health{display:none;align-items:center;gap:10px;background:var(--amber-soft);border:1px solid var(--amber);color:#8a5a08;border-radius:13px;padding:11px 14px;margin-bottom:10px;font-size:13px;font-weight:600;line-height:1.45}
+#evt-ui .evt-health.show{display:flex}
+#evt-ui .evt-health .icon{width:17px;height:17px;flex:0 0 auto;color:var(--amber)}

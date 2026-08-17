@@ -925,12 +925,25 @@
     if (rt.source !== 'live' || !rt.day) { toast('Solo se publica con reservas reales.'); return; }
     const lanes = rt.lanes.filter(l => rt.order[l.id] && rt.order[l.id].length).map(l => {
       const car = rt.cars.find(c => c.id === l.car);
+      // La hora a la que el carro llega a CADA parada ya está calculada: es la
+      // que alimenta el semáforo. Antes se botaba al guardar, y por eso el
+      // vigilante de rutas (0053) terminaba juzgando la recogida en la casa
+      // contra la hora de presentación en el aeropuerto — una o dos horas más
+      // tarde de la que toca. Con esto, la alerta de "va tarde" por fin mide
+      // contra el compromiso real de esa parada.
+      const comp = rtCarCompute(l.id);
+      const etas = {};
+      (comp.stops || []).forEach(s => {
+        const a = rt.aux[s.id];
+        if (a && a.reservationId) etas[a.reservationId] = s.eta;
+      });
       return {
         vehicleId: car ? car.vehicleId : null,
         driverProfileId: rtDriverOf(l), // conductor de la FRANJA de esta vuelta (AM/PM)
         type: l.type || 'sal',
         startAt: rt.day + 'T' + (l.start || '04:00') + ':00-05:00',
         stops: rt.order[l.id].map(k => rt.aux[k] && rt.aux[k].reservationId).filter(Boolean),
+        etas,
       };
     });
     const withDriver = lanes.filter(l => l.driverProfileId).length;

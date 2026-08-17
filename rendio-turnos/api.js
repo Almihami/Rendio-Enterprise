@@ -614,8 +614,11 @@
     const AIRPORT_COLS = ', route_airport_factor';
     // 0061: techo de espera del primero recogido. Escalón propio, mismo motivo.
     const WAIT_COLS = ', route_max_wait_min, route_max_wait_peak_min';
+    // 0062: corrimiento de domingos y festivos ("no sacarlos tan temprano").
+    const HOLIDAY_COLS = ', route_holiday_shift_min';
     const BASE_COLS = 'morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours';
-    let { data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS);
+    let { data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS);
+    if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS));
@@ -669,7 +672,10 @@
       route_deplane_wingo_min: s.route_deplane_wingo_min };
     // 0060: factor del tramo al aeropuerto. 0061: techo de espera.
     const conAero = { ...conDeplane, route_airport_factor: s.route_airport_factor };
-    let { error } = await upd({ ...conAero, route_max_wait_min: s.route_max_wait_min, route_max_wait_peak_min: s.route_max_wait_peak_min });
+    const conTecho = { ...conAero, route_max_wait_min: s.route_max_wait_min, route_max_wait_peak_min: s.route_max_wait_peak_min };
+    // 0062: corrimiento de domingos y festivos.
+    let { error } = await upd({ ...conTecho, route_holiday_shift_min: s.route_holiday_shift_min });
+    if (error) ({ error } = await upd(conTecho));
     if (error) ({ error } = await upd(conAero));
     if (error) ({ error } = await upd(conDeplane));
     if (error) ({ error } = await upd(conRuta));
@@ -1024,6 +1030,15 @@
     if (error) ({ data, error } = await run(base));
     if (error) throw error;
     return data || [];
+  }
+
+  // Salud del canal de avisos (0066). Si el despacho se cae, "no llegó ninguna
+  // alerta" y "no pasó nada" se ven exactamente igual — y el jefe se entera el
+  // día que algo grave no le sonó. Esto lo hace visible.
+  async function opsAlertHealth() {
+    const { data, error } = await sb.rpc('ops_alert_health');
+    if (error) return null; // 0066 sin aplicar: la pantalla simplemente no lo muestra
+    return data;
   }
 
   async function countOpenEventualidades() {
@@ -1404,6 +1419,41 @@
   // Lee las reservas del PRÓXIMO día operativo (todas las direcciones) con
   // coordenadas, en el formato que consume el motor de rutas (admin-rutas).
   // Devuelve null → el tablero queda vacío y dice qué falta (ya no hay demo).
+  // ── Tablas de tiempos de Julián (0062) ────────────────────────────────────
+  // Devuelve null si la migración no está: el tablero entonces programa como
+  // siempre (modelo calculado con OSRM). Nunca tira — que falte la tabla no
+  // puede tumbar el tablero.
+  async function getRouteTables(day) {
+    const out = { zonas: {}, tramos: [], esFestivo: false, esDomingo: false, sinConfirmar: [] };
+    try {
+      const [z, l] = await Promise.all([
+        sb.from('route_zone_times').select('zone, band_from, band_to, min_minutes, max_minutes, asumida'),
+        sb.from('route_leg_times').select('band_from, band_to, min_minutes, max_minutes, asumida'),
+      ]);
+      if (z.error || l.error) return null;
+      (z.data || []).forEach(r => { (out.zonas[r.zone] = out.zonas[r.zone] || []).push(r); });
+      Object.values(out.zonas).forEach(a => a.sort((x, y) => x.band_from - y.band_from));
+      out.tramos = (l.data || []).sort((x, y) => x.band_from - y.band_from);
+    } catch (e) { return null; }
+    // Domingo se saca de la fecha; festivo, de la tabla (en Colombia se corren
+    // al lunes, así que no hay regla de fecha fija que valga).
+    if (day) {
+      // 'YYYY-MM-DD' + T12:00 para que el huso no corra el día.
+      out.esDomingo = new Date(day + 'T12:00:00').getDay() === 0;
+      try {
+        const { data } = await sb.from('holidays').select('day, name').eq('day', day).maybeSingle();
+        if (data) { out.esFestivo = true; out.festivo = data.name; }
+      } catch (e) { /* sin tabla de festivos → solo domingos */ }
+    }
+    // Conjuntos que Julián todavía no ha clasificado: se listan para poder
+    // preguntarle, y mientras tanto se programan con el modelo calculado.
+    try {
+      const { data } = await sb.from('residences').select('name').is('zona_jefe', null).eq('is_active', true).order('name');
+      out.sinConfirmar = (data || []).map(r => r.name);
+    } catch (e) { /* sin la columna → nada que reportar */ }
+    return out;
+  }
+
   async function listRoutePlanning(tripType) {
     // Día en hora de COLOMBIA (no UTC): un viaje de las 21:10 Col NO debe rodar
     // al día siguiente (21:10 Col = 02:10 UTC). Agrupamos por America/Bogota.
@@ -1888,8 +1938,27 @@
         status: dpid ? 'planned' : 'draft', planned_start_at: lane.startAt,
       }).select('id').single();
       if (error) { skipped++; continue; }
-      const stops = stopIds.map((rid, i) => ({ route_assignment_id: ra.id, reservation_id: rid, stop_order: i + 1 }));
-      const r2 = await sb.from('route_stops').insert(stops);
+      // La ETA por parada viaja desde el tablero (lane.etas: minutos desde
+      // medianoche). Sin ella, `route_stops.estimated_arrival_at` quedaba NULL
+      // siempre y el vigilante de 0053 caía a `required_arrival_at`, que en una
+      // salida es la hora de presentación EN EL AEROPUERTO: juzgaba la recogida
+      // en la casa contra una hora una o dos horas más tarde, y por eso solo
+      // avisaba cuando ya no había nada que hacer.
+      const etaIso = (min) => {
+        if (min == null || !isFinite(min)) return null;
+        return new Date(new Date(day + 'T00:00:00-05:00').getTime() + min * 60000).toISOString();
+      };
+      const stops = stopIds.map((rid, i) => ({
+        route_assignment_id: ra.id, reservation_id: rid, stop_order: i + 1,
+        estimated_arrival_at: etaIso(lane.etas ? lane.etas[rid] : null),
+      }));
+      let r2 = await sb.from('route_stops').insert(stops);
+      // Si la columna no estuviera disponible, se guarda el plan igual: perder la
+      // ETA degrada el vigilante, pero no publicar la ruta deja al conductor sin nada.
+      if (r2.error) {
+        r2 = await sb.from('route_stops').insert(
+          stops.map(({ estimated_arrival_at, ...s }) => s));
+      }
       if (r2.error) { skipped++; continue; }
       // Novedad real para el auxiliar: pasó de sin conductor a con conductor, o se lo cambiaron.
       if (dpid) stopIds.forEach(rid => {
@@ -2108,7 +2177,7 @@
     getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, driverOverrideOilBlock, registerOilChange, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, listIncidents, countOpenIncidents, updateIncidentStatus,
-    reportIncident, listEventualidades, countOpenEventualidades, acknowledgeIncident, opsAlertProfileIds,
+    reportIncident, listEventualidades, countOpenEventualidades, acknowledgeIncident, opsAlertProfileIds, opsAlertHealth,
     startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,

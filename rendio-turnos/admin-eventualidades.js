@@ -76,6 +76,25 @@
     return chips;
   }
 
+  // Un canal de avisos caído se ve IGUAL que un día tranquilo: en los dos casos
+  // no suena nada. Esto es lo que separa las dos cosas. Si la bandeja de salida
+  // se está represando, se dice acá arriba antes de que alguien se entere el día
+  // que una falla mecánica no le sonó.
+  async function revisarSaludDeAvisos() {
+    const box = $('#evt-health'); if (!box) return;
+    if (!window.Api?.opsAlertHealth) { box.classList.remove('show'); return; }
+    let h = null;
+    try { h = await Api.opsAlertHealth(); } catch (e) { /* 0066 sin aplicar */ }
+    if (!h) { box.classList.remove('show'); return; }
+    const represado = (h.mas_viejo_min || 0) >= 10 || (h.atascados || 0) > 0;
+    const sinDestino = (h.destinatarios || 0) === 0;
+    if (!represado && !sinDestino) { box.classList.remove('show'); return; }
+    box.querySelector('span').textContent = sinDestino
+      ? 'Nadie está marcado para recibir alertas y no hay administradores activos: los avisos de madrugada no le van a llegar a nadie. Revísalo en Personal.'
+      : `Los avisos no están saliendo: hay ${h.pendientes} en cola, el más viejo de hace ${h.mas_viejo_min} min. Mientras esto siga así, una eventualidad de madrugada no va a sonar en ningún celular.`;
+    box.classList.add('show');
+  }
+
   async function refreshEventsBadge() {
     if (state.profile?.role !== 'admin') return;
     const b = $('#events-badge'); if (!b) return;
@@ -96,6 +115,7 @@
       if (list) list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las eventualidades.</p>';
       return;
     }
+    revisarSaludDeAvisos();
     // Si llegamos desde un push, se abre directamente la que motivó el aviso.
     if (evtState.focusId) {
       const hit = evtState.items.find(x => x.id === evtState.focusId);
