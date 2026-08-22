@@ -29,7 +29,22 @@ const suave = (hm) => {
   const t = Math.round(min(hm) / 5) * 5;
   return `${Math.floor(t / 60) % 24}:${String(t % 60).padStart(2, '0')}`;
 };
-const crudo = (hm) => `${Number(hm.split(':')[0])}:${hm.split(':')[1]}`;
+// Las llegadas de madrugada vienen como 24:43 (día siguiente) para que el solver
+// las ponga al cierre del día; él las escribe 0:43. Módulo 24 al imprimir.
+const crudo = (hm) => `${Number(hm.split(':')[0]) % 24}:${hm.split(':')[1]}`;
+// LA HORA DEL "DEBEN ESTAR" NO ES LA PRESENTACIÓN. Julián lo confirmó el
+// 17-ago-2026: "a la hora que debe estar en el aeropuerto, siempre coloca antes
+// de la presentación, obviamente, porque hay trayecto desde donde se deja hasta
+// el filtro". Y dio el número: "Melina, presentación 15:55, el vehículo por más
+// tardar debe llegar 15:45". O sea presentación − colchonAeropuerto.
+// Se redondea hacia ABAJO a múltiplo de 5 porque él escribe en múltiplos de 5 y
+// porque adelantarse es gratis; llegar tarde no. Antes se imprimía la
+// presentación tal cual, así que el plan le llegaba 10 minutos corrido y con
+// horas como "Deben estar 15:32", que nunca son de él.
+const deben = (hm, colchon) => {
+  const t = Math.floor((min(hm) - colchon) / 5) * 5;
+  return `${Math.floor(t / 60) % 24}:${String(t % 60).padStart(2, '0')}`;
+};
 
 // LA SIGLA DE LA AEROLÍNEA. El formulario deja escribir solo los dígitos, pero
 // el jefe siempre escribe AV/JA/P5 — y no es cosmético: el desembarque depende
@@ -43,8 +58,24 @@ const crudo = (hm) => `${Number(hm.split(':')[0])}:${hm.split(':')[1]}`;
 const sigla = (v) => {
   if (!v) return 'Aero';
   const s = String(v).trim();
-  if (/^[a-z]/i.test(s)) return s.toUpperCase().replace(/\s+/g, '');
-  if (!/^\d{3,4}$/.test(s)) return s;          // 5 dígitos o rarezas: se deja crudo
+  // "Reserva" no es un vuelo: es lo que escribe quien llena el formulario cuando
+  // no voló. Sale por el camino de la reserva, no como sigla.
+  if (/^[a-z]/i.test(s)) {
+    if (/^reserva/i.test(s)) return null;
+    // "J6" ES COMO LA TRIPULACIÓN ESCRIBE JETSMART. El formulario del 21-ago
+    // trajo "J65116" y él lo escribió **JA5116**: no es un prefijo nuevo de
+    // aerolínea, es que teclean J6 en vez de JA. Con J6 adelante el modelo no
+    // reconocía la aerolínea y no sabía cuánto dura el desembarque.
+    const j6 = s.replace(/\s+/g, '').match(/^j6\s*(\d{4})$/i);
+    if (j6) return 'JA' + j6[1];
+    return s.toUpperCase().replace(/\s+/g, '');
+  }
+  if (!/^\d{2,4}$/.test(s)) return s;          // 5 dígitos o rarezas: se deja crudo
+  // DOS Y TRES DÍGITOS TAMBIÉN LLEVAN SIGLA. El formulario del 20-ago trajo "43"
+  // (Daniela) y "31" (Gloria) y él los escribió AV43 y AV31: en la regla que
+  // dictó, AV con 2 o 3 dígitos es vuelo internacional. Sin sigla el modelo no
+  // sabe cuánto dura el desembarque.
+  if (s.length <= 3) return 'AV' + s;
   return (s[0] === '7' ? 'P5' : s[0] === '5' ? 'JA' : 'AV') + s;
 };
 
@@ -55,7 +86,10 @@ const listar = (ns) => ns.length === 1 ? ns[0]
 // Se ordena por la PRIMERA hora que va a leer quien recibe el mensaje: en una
 // llegada es el vuelo más temprano de la vuelta, no la hora con que el solver la
 // etiquetó (una vuelta puede recoger tres vuelos).
-const orden = (v) => v.sinCarro ? min(v.dl)
+// Un suelto se ordena por la hora que se IMPRIME (en una salida, la recogida
+// `eta`; `dl` es la presentación). Ordenar por `dl` e imprimir `eta` sacaba el
+// renglón de orden: "9:26" caía después de las 10:00.
+const orden = (v) => v.sinCarro ? min(v.tipo === 'lle' ? v.dl : (v.eta || v.dl))
   : v.tipo === 'lle'
     ? Math.min(...v.paradas.flatMap((p) => p.personas.map((q) => min(q.dl))))
     : min(v.paradas[0].eta);
@@ -81,7 +115,10 @@ for (const v of bloques) {
   if (v.sinCarro) {
     // Mismo renglón que los demás, con el paréntesis que él pidió: entra en la
     // hora que le toca para que se vea el hueco donde está.
-    console.log(`${crudo(v.dl)} ${v.n} (${v.zona}) (QUIZÁS NO HAYA CARRO)`);
+    // En una SALIDA el renglón lleva la hora de RECOGIDA (v.eta); `dl` es la
+    // presentación y ponerla acá decía "recójanlo a la hora en que ya tiene que
+    // estar en el aeropuerto". En una LLEGADA sí manda la hora del vuelo.
+    console.log(`${crudo(v.eta || v.dl)} ${v.n} (${v.zona}) (QUIZÁS NO HAYA CARRO)`);
     console.log('');
     continue;
   }
@@ -93,8 +130,27 @@ for (const v of bloques) {
     // junta 21:15, 21:25 y 21:30 en un carro y escribe las tres líneas).
     const porVuelo = new Map();
     for (const p of v.paradas) for (const q of p.personas) {
-      const k = `${q.dl}|${q.vuelo || 'Aero'}`;
-      if (!porVuelo.has(k)) porVuelo.set(k, { hora: q.dl, vuelo: sigla(q.vuelo), gente: [] });
+      // LOS DE RESERVA SE RECOGEN EN EL HOTEL, no en el aeropuerto. Julián lo
+      // escribió así al corregir el plan del 18-ago: "18:30 Karol L (Hotel)" y
+      // "0:00 Yerly España (Hotel)". Y dio la regla: "si recoge en hotel, va
+      // para casa; si recoge en casa y dice hotel, va para hotel". Su "llegada"
+      // del formulario es la hora en que los pasa a recoger allá. No tienen
+      // número de vuelo justamente porque no volaron: quedaron de reserva.
+      // LA MARCA "R" DE RESERVA. Él la escribe siempre: "9:00 Andrea Núñez
+      // (Aero R)", "16:00 Juan Bedoya (Aero R)", "23:59 Fernando y Angely
+      // Rubiano (Hotel R)". Y OJO: reserva NO implica hotel — de las cuatro del
+      // 20-ago mandó dos al hotel y dos al aeropuerto, y cuál es cuál solo lo
+      // sabe él (depende de dónde los dejó al salir). Se escribe el aeropuerto,
+      // que es a donde llegó nuestra salida, con la R para que él la mueva.
+      const v = q.vuelo ? sigla(q.vuelo) : null;
+      const donde = v || (q.hotel ? 'Aero R' : 'Aero');
+      // Se agrupa por hora + vuelo. Cuando dos personas del mismo avión traen
+      // horas MUY distintas ya se unificaron antes de resolver, en
+      // plan-desde-formulario.mjs; las que llegan acá con 1 o 2 minutos de
+      // diferencia se dejan en líneas separadas, que es como las escribe él (el
+      // JA5477 del 18-ago: 13:13, 13:14 y 13:15, una línea cada una).
+      const k = `${q.dl}|${donde}`;
+      if (!porVuelo.has(k)) porVuelo.set(k, { hora: q.dl, vuelo: donde, gente: [] });
       porVuelo.get(k).gente.push(q.n);
     }
     let primera = true;
@@ -119,7 +175,7 @@ for (const v of bloques) {
     // "no sé por qué puso que iba a hotel, Juan Martínez LLEGA, en el JA5839".
     // El hotel de sus planes es otra cosa (un destino que él escribe aparte) y
     // hoy no viene en el formulario. Hasta que venga, aquí no se escribe nada.
-    console.log(`${pax > 1 ? 'Deben' : 'Debe'} estar ${crudo(v.presentacion)}`);
+    console.log(`${pax > 1 ? 'Deben' : 'Debe'} estar ${deben(v.presentacion, plan.ajustes?.colchonAeropuerto ?? 10)}`);
   }
   console.log('');
 }

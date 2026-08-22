@@ -40,7 +40,9 @@ function buscar(txt) {
 
 // ── parser de los planes ────────────────────────────────────────────────────
 const HORA = /^(\d{1,2})[:.](\d{2})\s*(.*)$/;
-const DEADLINE = /^(?:deben?\s+estar|estar)\s*(\d{1,2})[:.](\d{2})/i;
+// Escrito a mano en WhatsApp: tolera "Estás", "Estae", "Debe(n) estar" y el
+// punto y coma como separador de hora (ver planes-jefe/FORMATO.md).
+const DEADLINE = /^(?:deben?\s+)?est[aá][rse]\s*(\d{1,2})[:.;](\d{2})/i;
 const min = (h, m) => h * 60 + m;
 const hm = (t) => `${String(Math.floor(t / 60) % 24).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 

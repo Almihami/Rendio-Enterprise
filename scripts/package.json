@@ -1,0 +1,13 @@
+{
+  "name": "rendio-backend-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed:turnos": "node seed-turnos-users.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.0",
+    "pg": "^8.22.0"
+  }
+}
