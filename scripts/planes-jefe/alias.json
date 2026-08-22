@@ -1,24 +1,28 @@
 {
-  "_comentario": [
-    "COMO ESCRIBE EL FORMULARIO vs COMO ESCRIBE JULIÁN. El problema lo describió",
-    "él mismo el 18-ago-2026: 'hay muchos que ponen todo el nombre, hay otros que",
-    "no'. Cuando las dos formas no comparten ni una palabra, ninguna coincidencia",
-    "difusa las va a unir: hace falta decirlo a mano.",
-    "",
-    "La clave es como llega en el formulario; el valor, como lo escribe él en sus",
-    "planes. Todo en minúsculas y sin tildes.",
-    "",
-    "Solo van los casos IRRESOLUBLES. Si comparten alguna palabra, el amarre",
-    "difuso ya los une y no hay que meterlos aquí."
-  ],
-  "alias": {
-    "laura valentina fernandez": "lau ortiz",
-    "sara vanessa": "sara londono"
-  },
-  "_pendientes": [
-    "Confirmar con Julián: dijo 'Laura Ortiz, con él Laura Fernanda, Laura",
-    "Valentina Ortiz, o Laura Valentina Ortiz Fernandez, no me acuerdo'. La casa",
-    "(Guayacán) sí la dio con seguridad.",
-    "Sara vanessa (formulario) = Sara Londoño (Olivar) — confirmado en su plan del 20-ago: '14:30 Sara Londoño (Olivar)' es la que el formulario trae como 'Sara vanessa', presentación 15:25."
-  ]
+ "_comentario": [
+  "COMO ESCRIBE EL FORMULARIO vs COMO ESCRIBE JULIÁN. El problema lo describió",
+  "él mismo el 18-ago-2026: 'hay muchos que ponen todo el nombre, hay otros que",
+  "no'. Cuando las dos formas no comparten ni una palabra, ninguna coincidencia",
+  "difusa las va a unir: hace falta decirlo a mano.",
+  "",
+  "La clave es como llega en el formulario; el valor, como lo escribe él en sus",
+  "planes. Todo en minúsculas y sin tildes.",
+  "",
+  "Solo van los casos IRRESOLUBLES. Si comparten alguna palabra, el amarre",
+  "difuso ya los une y no hay que meterlos aquí."
+ ],
+ "alias": {
+  "laura valentina fernandez": "lau ortiz",
+  "sara vanessa": "sara londono",
+  "ximena jaramillo": "ximena posada"
+ },
+ "_pendientes": [
+  "Confirmar con Julián: dijo 'Laura Ortiz, con él Laura Fernanda, Laura",
+  "Valentina Ortiz, o Laura Valentina Ortiz Fernandez, no me acuerdo'. La casa",
+  "(Guayacán) sí la dio con seguridad.",
+  "Sara vanessa (formulario) = Sara Londoño (Olivar) — confirmado en su plan del 20-ago: '14:30 Sara Londoño (Olivar)' es la que el formulario trae como 'Sara vanessa', presentación 15:25.",
+  "Ximena jaramillo (formulario) = Ximena Posada, Porton del Rosal (sector 'Rosal') — confirmado en su plan OFICIAL del 22-ago: '9:00 Ximena (Rosal)'. El formulario le pone el apellido Jaramillo y por eso empataba con Sara Jaramillo.",
+  "Santiago Carmona: el catalogo lo tiene en Septima (con pin) y el 21-ago el jefe escribio 'Carmona (Primera)'. Son calles distintas — SIN RESOLVER, preguntar.",
+  "Carolina Londono: sigue sin casa. El 22-ago solo aparece en llegadas (JA5479 23:00 y AV8533 23:30 con Sara Londono)."
+ ]
 }
