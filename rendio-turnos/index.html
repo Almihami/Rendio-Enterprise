@@ -633,6 +633,19 @@
               <div class="set-row2" style="margin-top:0">
                 <div class="set-field"><label>Colchón a descontar (min)</label><input id="setting-zone-cushion" class="set-input" type="number" min="0" max="60" /><div class="set-hint">Default 25 = la diferencia media medida entre sus dos reglas.</div></div>
               </div>
+              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Cómo despacha Julián</p>
+              <p class="set-hint" style="margin:2px 0 10px 2px">Los tres parámetros que salieron de medir sus correcciones del 18 al 21 de agosto contra el plan del sistema. <b>Sus propios planes necesitan 3 carros simultáneos</b> (pico 11:35 el 20-ago y 16:00 el 21-ago): los dos de los trabajadores más el suyo o un Uber. Con dos, el tablero marca 6 a 9 traslados como "quizás no haya carro" que en la operación sí se hacen.</p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Carros a planear</label><input id="setting-cars-count" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Cuántos vehículos de la flota entran al plan. Default 2 = solo los de los trabajadores.</div></div>
+                <div class="set-field"><label>Madrugar como máximo (min)</label><input id="setting-rescue-early" class="set-input" type="number" min="0" max="120" /><div class="set-hint">Antes de dejar a alguien sin carro se intenta montarlo en una vuelta anterior. Él dijo 30; su rescate de Melisa Arcila fue 40. <b>0 = no rescatar.</b></div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Llenar antes que repartir</label><select id="setting-car-priority" class="set-input"><option value="1">Sí — el último carro es el último recurso</option><option value="0">No — repartir parejo entre los carros</option></select><div class="set-hint">Así despacha él. Medido con 3 carros: el error de la hora de recogida baja de 14,6 a 10,1 min y las vueltas tarde de 2 a 0.</div></div>
+                <div class="set-field"><label>Madrugar como máximo para llenar un carro (min)</label><input id="setting-max-early" class="set-input" type="number" min="0" max="180" /><div class="set-hint">Nadie se recoge más de este tiempo antes de <b>su propia</b> presentación por acompañar a otro. Medido en su corrección del 22-ago: la anticipación va de 20 a 60 min y nunca pasa de 60. <b>0 = sin límite.</b></div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Tolerancia del anillo (min)</label><input id="setting-sweep-tol" class="set-input" type="number" min="0" max="15" /><div class="set-hint"><b>El barrido:</b> cada vuelta arranca en la parada más lejana al aeropuerto y de ahí solo se acerca — nunca se devuelve. Regla suya, dictada el 21-ago. Esta tolerancia es lo que puede alejarse sin contar como devolverse: él sí salta dentro de un mismo anillo (Cerezos 28 → Río Vivo 28), pero no se sale.</div></div>
+              </div>
               <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Domingos y festivos</p>
               <p class="set-hint" style="margin:2px 0 10px 2px">Regla suya: "domingos y festivos no sacarlos tan temprano". Estos minutos se le <b>restan</b> a la anticipación de la tabla de abajo, o sea que la gente se recoge más tarde. Los festivos de Colombia ya están cargados con el traslado al lunes (Ley Emiliani); los domingos salen de la fecha. <b>Sigue en 0 a propósito:</b> medidos sus planes, el del viernes 7 de agosto —día normal— se aparta de la tabla lo mismo que el del festivo, así que no hay evidencia de que trate distinto esos días.</p>
               <div class="set-row2" style="margin-top:0">

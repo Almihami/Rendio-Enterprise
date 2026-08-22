@@ -390,6 +390,13 @@
     if ($('#setting-holiday-shift')) $('#setting-holiday-shift').value = S.route_holiday_shift_min != null ? S.route_holiday_shift_min : 0;
     // 0071: colchón de la tabla de zona. 0 = usar su tabla completa.
     if ($('#setting-zone-cushion')) $('#setting-zone-cushion').value = S.route_zone_cushion_min != null ? S.route_zone_cushion_min : 25;
+    // 0074: cómo despacha él. Sin la migración los campos quedan con el default
+    // y guardar sigue funcionando (la cascada de saveSettings baja un escalón).
+    if ($('#setting-cars-count')) $('#setting-cars-count').value = S.route_cars_count != null ? S.route_cars_count : 2;
+    if ($('#setting-rescue-early')) $('#setting-rescue-early').value = S.route_rescue_early === false ? 0 : (S.route_rescue_max_early_min != null ? S.route_rescue_max_early_min : 45);
+    if ($('#setting-car-priority')) $('#setting-car-priority').value = S.route_car_priority === false ? '0' : '1';
+    if ($('#setting-max-early')) $('#setting-max-early').value = S.route_max_early_min != null ? S.route_max_early_min : 60;
+    if ($('#setting-sweep-tol')) $('#setting-sweep-tol').value = S.route_sweep_tol_min != null ? S.route_sweep_tol_min : 2;
     renderRouteTables();
     renderResidenceZones();
     renderPriorityList();
@@ -896,10 +903,22 @@
         ['route_max_wait_peak_min', '#setting-route-wait-peak'],
         ['route_holiday_shift_min', '#setting-holiday-shift'],
         ['route_zone_cushion_min', '#setting-zone-cushion'],
+        ['route_rescue_max_early_min', '#setting-rescue-early'],
+        ['route_max_early_min', '#setting-max-early'],
+        ['route_sweep_tol_min', '#setting-sweep-tol'],
       ].map(([col, sel]) => {
         const n = parseInt($(sel) && $(sel).value, 10);
         return [col, isNaN(n) ? 0 : Math.min(180, Math.max(0, n))];
       })),
+      // 0074: cuántos carros planea el tablero y si se llena un carro antes de
+      // sacar el siguiente. El rescate se apaga poniendo la madrugada en 0, que
+      // es lo que significa "no adelantar a nadie".
+      route_cars_count: (() => {
+        const n = parseInt($('#setting-cars-count') && $('#setting-cars-count').value, 10);
+        return isNaN(n) ? 2 : Math.min(6, Math.max(1, n));
+      })(),
+      route_rescue_early: (parseInt($('#setting-rescue-early') && $('#setting-rescue-early').value, 10) || 0) > 0,
+      route_car_priority: ($('#setting-car-priority') && $('#setting-car-priority').value) !== '0',
       // Desembarque por aerolínea (0058). Mismo patrón: 0 es válido (un vuelo
       // que suelta a la gente de inmediato), así que no se usa `|| default`.
       ...Object.fromEntries([

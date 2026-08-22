@@ -623,9 +623,16 @@
     // manejo. Escalón propio: sin la migración queda ausente y el solver usa la
     // tabla completa, o sea el comportamiento anterior.
     const CUSHION_COLS = ', route_zone_cushion_min';
+    // 0074: cómo despacha Julián — cuántos carros planea el tablero, el rescate
+    // ("adelantar antes de dejar sin carro") con su tope de madrugada, y llenar
+    // un carro antes de sacar el siguiente. Escalón propio: sin la migración el
+    // solver usa sus defaults y el tablero sigue planeando 2 carros.
+    const JULIAN_COLS = ', route_cars_count, route_rescue_early, route_rescue_max_early_min, route_car_priority'
+      + ', route_sweep_tol_min, route_sweep_slack_pct, route_max_early_min';
     const BASE_COLS = 'morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours';
     const CONFIRMADO = BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS;
-    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS);
+    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS);
+    if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + CUSHION_COLS));
     if (error) ({ data, error } = await sel(BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS));
@@ -701,7 +708,17 @@
       aux_private_vehicle_id: s.aux_private_vehicle_id,
       aux_private_enabled: s.aux_private_enabled,
       aux_private_block_min: s.aux_private_block_min };
-    let { error } = await upd({ ...conPrivado, route_zone_cushion_min: s.route_zone_cushion_min });
+    // 0074: cómo despacha Julián. Escalón propio arriba de todo, mismo criterio
+    // que los anteriores: si la migración no está, se pierde solo esto.
+    const conJulian = { ...conPrivado, route_zone_cushion_min: s.route_zone_cushion_min,
+      route_cars_count: s.route_cars_count,
+      route_rescue_early: s.route_rescue_early,
+      route_rescue_max_early_min: s.route_rescue_max_early_min,
+      route_car_priority: s.route_car_priority,
+      route_sweep_tol_min: s.route_sweep_tol_min,
+      route_max_early_min: s.route_max_early_min };
+    let { error } = await upd(conJulian);
+    if (error) ({ error } = await upd({ ...conPrivado, route_zone_cushion_min: s.route_zone_cushion_min }));
     if (error) ({ error } = await upd(conPrivado));
     if (error) ({ error } = await upd({ ...conFestivo, route_zone_cushion_min: s.route_zone_cushion_min }));
     if (error) ({ error } = await upd(conFestivo));
@@ -1736,7 +1753,16 @@
     let cars = [];
     try {
       const vs = await listVehiclesForShift();
-      cars = (vs || []).slice(0, 2).map((v, i) => ({ id: v.internal_code || v.license_plate || ('Carro ' + (i + 1)), avail0: '01:30', driver: null, capacity: v.capacity || 4, vehicleId: v.id }));
+      // CUÁNTOS CARROS PLANEA EL TABLERO. Estaba clavado en 2 y por eso el
+      // tercer vehículo de la flota no existía para el planeador. Medido en las
+      // correcciones de Julián del 20 y 21 de agosto, **sus propios planes
+      // necesitan 3 carros simultáneos** (pico 11:35 y 16:00): los 2 de los
+      // trabajadores más el suyo o un Uber. Con 2 el plan deja 6-9 traslados
+      // marcados "quizás no haya carro" que en la realidad sí se hacen.
+      // Se configura en Ajustes; si la columna no existe todavía se comporta
+      // como siempre (2).
+      const nCarros = Math.max(1, Number((await getSettings())?.route_cars_count) || 2);
+      cars = (vs || []).slice(0, nCarros).map((v, i) => ({ id: v.internal_code || v.license_plate || ('Carro ' + (i + 1)), avail0: '01:30', driver: null, capacity: v.capacity || 4, vehicleId: v.id }));
     } catch (_) {}
     if (!cars.length) return { aux: {}, colors: {}, cars: [], drivers: [], plan: {}, source: 'empty', day: day0, noVehicles: true };
     let drivers = [];

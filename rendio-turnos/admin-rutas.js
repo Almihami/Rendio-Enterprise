@@ -109,6 +109,42 @@
     // (0071). Si la columna no existe todavía queda en 0 y el solver se comporta
     // como antes de esa migración.
     rt.ZONE_CUSHION = s.route_zone_cushion_min != null ? Number(s.route_zone_cushion_min) : 0;
+    // ADELANTAR ANTES DE DEJAR SIN CARRO. Regla de Julián, no un invento nuestro
+    // (ver el paso 4 de rtSolveDay). Nace ENCENDIDO porque solo puede quitar
+    // traslados sin carro: el rescate se acepta únicamente si nadie de la vuelta
+    // queda tarde y si el carro sigue llegando a lo que ya tenía después.
+    rt.RESCUE_EARLY = s.route_rescue_early != null ? !!Number(s.route_rescue_early) : true;
+    // CUÁNTO SE PUEDE MADRUGAR A ALGUIEN PARA MONTARLO EN OTRA VUELTA. Él dio el
+    // número: "30 minutos es lo máximo que acepto madrugar a alguien para
+    // montarlo con otro". Su propio rescate de Melisa Arcila la dejó 40 min
+    // antes de la presentación. Sin este tope el rescate del paso 4 acepta
+    // cualquier vuelta más temprana —"llegar antes no es tarde"— y saca a una
+    // persona de las 13:00 en la vuelta de las 3 de la mañana.
+    rt.RESCUE_MAX_EARLY = s.route_rescue_max_early_min != null ? Number(s.route_rescue_max_early_min) : 45;
+    // Preferir los primeros carros (llenar) en vez de repartir parejo.
+    rt.CAR_PRIORITY = s.route_car_priority != null ? !!Number(s.route_car_priority) : true;
+    // EL BARRIDO. Dictado por Julián el 21-ago-2026: "que hagan un barrido desde
+    // lo más lejano hasta el aeropuerto siempre... llega hasta donde Javier,
+    // desde ahí solo coja El Porvenir, Llanogrande o el aeropuerto". O sea: una
+    // vuelta de salida arranca en la parada MÁS LEJANA (en minutos de carretera,
+    // no en kilómetros) y de ahí solo puede acercarse. Nunca volver a salirse.
+    // La tolerancia existe porque él sí salta DENTRO de un mismo anillo: su
+    // propio plan del 22-ago hace Cerezos(28)→Río Vivo(28) y Piedemonte(27)→
+    // Olivar(28). Empatar no es salirse; devolverse sí.
+    rt.SWEEP_TOL = s.route_sweep_tol_min != null ? Number(s.route_sweep_tol_min) : 2;
+    // Cuánto recorrido extra se acepta para respetar el barrido. Él prefiere una
+    // vuelta que cierre a una vuelta corta que zigzaguee, y con 0 el desempate
+    // no alcanzaba a ganarle a un orden 2 min más rápido pero que se devolvía.
+    rt.SWEEP_SLACK = s.route_sweep_slack_pct != null ? Number(s.route_sweep_slack_pct) : 12;
+    // CUÁNTO SE PUEDE MADRUGAR A ALGUIEN PARA LLENAR UN CARRO. Medido sobre las
+    // 20 vueltas de su corrección del 22-ago: la anticipación (presentación
+    // menos recogida) va de 20 a 60 minutos y NUNCA pasa de 60. Las tres
+    // fusiones que deshizo pasaban de 60 — Erika iba a quedar 95 min antes de su
+    // presentación por acompañar a Sara Villegas. Preferió sacar otra vuelta.
+    // OJO: no confundir con route_max_wait_min (rtTechoEspera), que limita el
+    // recorrido del PRIMERO. Ese se probó como techo duro y empeora: bloquea
+    // fusiones buenas, satura los carros y todo el mundo madruga (MAE 13,8 → 27,2).
+    rt.MAX_EARLY = s.route_max_early_min != null ? Number(s.route_max_early_min) : 60;
   }
 
   async function rtLoad() {
@@ -471,6 +507,30 @@
   // colchón de entrega. En una llegada no aplica —ahí nadie espera dentro del
   // carro, el pasajero sale del terminal y arranca.
   const rtEsperaDe = (tipo, ids) => tipo === 'lle' ? 0 : rtTripDur(ids, null) + rt.AIRPORT_BUFFER;
+  // Lo que se le madruga al MÁS PERJUDICADO de una salida: su presentación menos
+  // la hora en que SU puerta recibe el carro. Hay que recorrer la vuelta parada
+  // por parada: el que va de último en el barrido es el más cercano al
+  // aeropuerto y casi no madruga, así que medirlos todos contra el arranque
+  // castiga fusiones que él sí hace (deshacía la de Sara Jaramillo por 10 min
+  // que ella nunca iba a esperar).
+  //   arranque T = deadline más apretado − recorrido completo
+  //   madrugada de i = (dl_i + colchón) − (T + su desplazamiento en la vuelta)
+  const rtAnticipa = (tipo, ids) => {
+    if (tipo === 'lle' || !ids.length) return 0;
+    const ord = rtBestOrder(ids, null);
+    const off = {};
+    let t = 0, prev = null, prevKey = null, tPuerta = 0;
+    ord.forEach(id => {
+      const k = rtStopKey(id);
+      if (k === prevKey) { off[id] = tPuerta; return; }   // misma portería: mismo momento
+      if (prev) t += rtLegMin(prev, id);
+      off[id] = tPuerta = t;
+      t += rt.SERVICE_MIN; prev = id; prevKey = k;
+    });
+    const dur = t + rtLegMin(prev, 'airport');
+    const minDl = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl)));
+    return Math.max(...ids.map(id => rtToMin(rt.aux[id].dl) - minDl + dur - (off[id] || 0))) + rt.AIRPORT_BUFFER;
+  };
 
   // ---- LA TABLA DE JULIÁN ----------------------------------------------------
   // Franja horaria a la que pertenece una hora (minutos desde medianoche). Las
@@ -524,7 +584,20 @@
     // "Domingos y festivos no sacarlos tan temprano": se recorta la
     // anticipación. Sigue en 0 — y medir sus planes lo respalda: el del viernes
     // 7-ago (día normal) se aparta de la tabla lo mismo que el del festivo.
-    const total = Math.max(0, z.min - rt.ZONE_CUSHION - (rt.esDiaLento ? rt.HOLIDAY_SHIFT : 0));
+    // EL COLCHÓN SOLO APLICA A VUELTAS DE VARIAS PARADAS. Medido sobre las 31
+    // vueltas de salida de sus dos correcciones (18 y 19 de agosto): con varias
+    // paradas el tramo final le da 18 min de promedio —nueve de dieciséis son
+    // exactamente 15—, y con UNA sola parada 29. Es lógico: su tabla de zona va
+    // "del primero al aeropuerto", así que en una vuelta multi-parada ya lleva
+    // adentro el recorrido entre casas que el solver calcula aparte, y sumarlo
+    // dos veces era lo que inflaba. Con una sola parada no hay nada que
+    // duplicar: el número de la tabla ES el viaje.
+    // Se comprueba con el caso que él corrigió: Jolene sola en Olivar
+    // (= Fontibón, franja 12-19 → 50 min), presentación 15:04, colchón de
+    // aeropuerto 10 → recogerla 14:04, que es exactamente lo que dijo
+    // ("tenía que haber puesto 14:04 o 14:05").
+    const colchon = ids.length > 1 ? rt.ZONE_CUSHION : 0;
+    const total = Math.max(0, z.min - colchon - (rt.esDiaLento ? rt.HOLIDAY_SHIFT : 0));
     // Segunda regla suya: el tramo desde la ÚLTIMA persona recogida. En una
     // vuelta de varias paradas tiene que caber dentro del total, así que
     // funciona como piso propio.
@@ -565,6 +638,19 @@
   // módulo, no aquí — decisión de la operación 2026-07-10).
   // Permuta PORTERÍAS, no pasajeros: con 4 personas en 2 conjuntos son 2
   // permutaciones, no 24 — y el resultado deja juntos a los de la misma puerta.
+  // Minutos que la vuelta se DEVUELVE: suma de los pasos en que la siguiente
+  // parada queda MÁS LEJOS del aeropuerto que la anterior (más allá de la
+  // tolerancia del anillo). 0 = barre limpio de afuera hacia adentro.
+  // Solo aplica a SALIDAS: en una llegada el carro sale del aeropuerto y se
+  // aleja, el barrido es al revés y de eso no hay dictado suyo todavía.
+  function rtSweepBack(perm) {
+    let back = 0;
+    for (let i = 0; i < perm.length - 1; i++) {
+      const a = rtLegMin(perm[i][0], 'airport'), b = rtLegMin(perm[i + 1][0], 'airport');
+      if (b - a > rt.SWEEP_TOL) back += b - a - rt.SWEEP_TOL;
+    }
+    return back;
+  }
   function rtBestOrder(ids, origin = null, endAtAirport = true) {
     if (ids.length <= 1) return ids.slice();
     const groups = rtGroupByStop(ids);
@@ -576,13 +662,18 @@
       return { perm, t, flat: perm.flat() };
     });
     const best = Math.min(...scored.map(s => s.t));
-    const tol = Math.max(2, best * 0.06);
-    // Desempates (en orden): 1) no zigzaguear entre sectores; 2) "fluir hacia
-    // el destino" — terminar en la parada más cercana al aeropuerto; 3) tiempo.
+    // En una salida se abre la ventana (SWEEP_SLACK) para que un orden que barre
+    // limpio pueda ganarle a uno un par de minutos más rápido que se devuelve.
+    const tol = endAtAirport ? Math.max(2, best * (rt.SWEEP_SLACK / 100)) : Math.max(2, best * 0.06);
+    // Desempates (en orden): 1) EL BARRIDO — no devolverse (solo salidas);
+    // 2) no zigzaguear entre sectores; 3) "fluir hacia el destino" — terminar en
+    // la parada más cercana al aeropuerto; 4) tiempo.
     const finalLeg = (perm) => rtLegMin(perm[perm.length - 1][0], 'airport');
+    const back = (perm) => endAtAirport ? rtSweepBack(perm) : 0;
     return scored
       .filter(s => s.t <= best + tol)
-      .sort((a, b) => (rtZoneReentries(a.flat) - rtZoneReentries(b.flat))
+      .sort((a, b) => (back(a.perm) - back(b.perm))
+        || (rtZoneReentries(a.flat) - rtZoneReentries(b.flat))
         || (finalLeg(a.perm) - finalLeg(b.perm))
         || (a.t - b.t))[0].flat;
   }
@@ -634,6 +725,12 @@
     const waves = Object.entries(byKey).map(([k, ids]) => ({ type: k.split('|')[0], dlMin: rtToMin(k.split('|')[1]), ids }))
       .sort((a, b) => a.dlMin - b.dlMin);
     const capMax = Math.max(...rt.cars.map(rtCapOf));
+    // LLENAR ANTES QUE REPARTIR. El desempate era `s.vuelta * 1000`: reparto
+    // parejo entre los carros. Julián hace lo contrario — llena un carro y saca
+    // el siguiente solo cuando el anterior no alcanza, porque el tercero es su
+    // propio carro o un Uber. Con reparto parejo, al darle 3 carros el solver
+    // abría vueltas nuevas en vez de juntar gente y se alejaba de sus horas.
+    const rtDesempate = (s) => (rt.CAR_PRIORITY ? s.idx : s.vuelta) * 1000;
 
     // 1.b) FUSIÓN DE OLEADAS CERCANAS.
     // Los jefes no despachan por hora exacta. Si a las 03:50 se presentan dos y
@@ -660,6 +757,16 @@
       // toca todo. Antes esto se revisaba cuando ya estaba armado, y salían
       // vueltas de 67 min montado — cosa que el jefe no hace nunca.
       if (rtTechoEspera(dlMin) && rtEsperaDe(tipo, cand) > rtTechoEspera(dlMin)) return false;
+      // NO ROMPER EL BARRIDO PARA FUSIONAR. Es la parte que faltaba: reordenar
+      // dentro de la vuelta no sirve si la vuelta ya nació mal compuesta. El
+      // 22-ago él deshizo tres de mis fusiones justo por esto — Javier (Ébano)
+      // pegado a Fontibón, y Sara Villegas (Cámbulo, la más cerca del
+      // aeropuerto) de cabeza en una vuelta que después salía a Piedemonte y
+      // Olivar. En los tres casos prefirió sacar otra vuelta corta. O sea: el
+      // barrido es restricción, llenar el carro es preferencia.
+      if (tipo === 'sal' && rtSweepBack(rtGroupByStop(rtBestOrder(cand, null))) > 0) return false;
+      // Y no madrugar a nadie más de la cuenta por acompañar a otro.
+      if (rt.MAX_EARLY && rtAnticipa(tipo, cand) > rt.MAX_EARLY) return false;
       // ¿un carro sale más barato que dos? (comparten el tramo al aeropuerto)
       //
       // Se probó añadir un segundo freno —"el desvío no puede costar más que la
@@ -727,7 +834,8 @@
       // primero 67 min montado. Antes esta rama se devolvía de una por caber en
       // cupo y nadie miraba el recorrido.
       const techo = rtTechoEspera(w.dlMin);
-      const cabe = (ids) => rtPaxOf(ids) <= capMax && (!techo || rtEsperaDe(w.type, ids) <= techo);
+      const cabe = (ids) => rtPaxOf(ids) <= capMax && (!techo || rtEsperaDe(w.type, ids) <= techo)
+        && (!rt.MAX_EARLY || rtAnticipa(w.type, ids) <= rt.MAX_EARLY);
       if (cabe(w.ids)) { trips.push({ type: w.type, dlMin: w.dlMin, ids: w.ids.slice() }); return; }
       let actual = [];
       rtGroupByStop(w.ids).forEach(porteria => {
@@ -742,7 +850,11 @@
     // 3) ASIGNAR cada viaje (cronológico) al mejor carro. El carro tiene POSICIÓN
     //    (null = aún no sale; 'airport' = en MDE; id de parada = última casa de
     //    una llegada) — el tramo desde donde quedó SÍ cuenta.
-    const cs = rt.cars.map(c => ({ car: c, avail: rtToMin(c.avail0 || '01:30'), vuelta: 0, pos: null }));
+    // El ORDEN de los carros importa: en la operación hay 2 carros de los
+    // trabajadores y el tercero es el del jefe o un Uber, o sea el último
+    // recurso. `idx` permite preferir los primeros en vez de repartir parejo
+    // (ver el desempate de la asignación).
+    const cs = rt.cars.map((c, idx) => ({ car: c, idx, avail: rtToMin(c.avail0 || '01:30'), vuelta: 0, pos: null }));
     const lanes = [], order = {}, unassigned = [];
     // rtCarCompute busca la vuelta en rt.lanes: se apunta al arreglo que se está
     // llenando para poder evaluar una vuelta apenas queda armada (ver el ajuste
@@ -757,7 +869,7 @@
           const goLeg = (s.pos && s.pos !== 'airport') ? rtLegMin(s.pos, 'airport') : 0;
           const readyAtMDE = s.avail + goLeg;
           const wait = Math.max(0, readyAtMDE - idealPickup); // min que esperaría el pasajero
-          const key = wait * 100000 + s.vuelta * 1000 + s.avail;
+          const key = wait * 100000 + rtDesempate(s) + s.avail;
           if (!best || key < best.key) best = { key, s, wait, pickup: Math.max(idealPickup, readyAtMDE) };
         });
         if (!best || best.wait > 15) { unassigned.push(...tr.ids); return; }
@@ -780,7 +892,7 @@
         const salmax = tr.dlMin - rt.AIRPORT_BUFFER - dur;
         const depart = Math.max(s.avail, salmax - rt.CUSHION);
         const late = Math.max(0, depart - salmax);
-        const key = late * 100000 + s.vuelta * 1000 + s.avail; // factible → balance → quien lleve más rato libre
+        const key = late * 100000 + rtDesempate(s) + s.avail;  // factible → carro → quien lleve más rato libre
         if (!best || key < best.key) best = { key, s, origin, depart, late, dur };
       });
       if (!best || best.late > 15) { unassigned.push(...tr.ids); return; }
@@ -808,6 +920,79 @@
       s.avail = (fin.arrival != null ? fin.arrival : rtToMin(lane.start)) + rt.TURNAROUND;
       s.pos = 'airport';
     });
+
+    // 4) ANTES DE DEJAR A ALGUIEN SIN CARRO, ADELANTARLO. Es regla suya, dicha
+    //    con sus palabras y vista dos veces: a Melisa Arcila (presentación
+    //    13:20) la sacó a las 12:20 con "estar 12:40" en vez de dejarla sin
+    //    carro, y en su corrección del 21-ago metió juntos a los que nosotros
+    //    dejábamos afuera (Melina 9:50 + Erika 10:00 en una vuelta a las 9:10,
+    //    Duvan + Francisco a las 12:40). El principio: **salir antes es gratis,
+    //    llegar tarde no**.
+    //
+    //    El paso 3 los descarta porque a SU hora ya no hay carro libre. Acá se
+    //    intenta montarlos en una vuelta de salida YA ARMADA que sale antes,
+    //    adelantando la salida de esa vuelta lo necesario. Se acepta solo si:
+    //      · cabe en el cupo del carro,
+    //      · con la parada nueva NADIE de la vuelta queda tarde (rtCarCompute
+    //        mide contra el deadline más apretado de los que van, que ahora
+    //        incluye al rescatado),
+    //      · el carro puede salir a esa hora (no estaba ocupado antes), y
+    //      · sigue llegando a tiempo a la vuelta que ya tenía después.
+    //    Si no se cumple algo, la persona se queda sin carro y se reporta: es
+    //    justo donde él pone su propio carro o un Uber.
+    if (rt.RESCUE_EARLY && unassigned.length) {
+      const techoDe = (ids) => { const dl = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl))); return rtTechoEspera(dl); };
+      const siguienteDelCarro = (lane) => lanes.find(l => l.car === lane.car && l.vuelta === lane.vuelta + 1);
+      const anteriorDelCarro = (lane) => lanes.find(l => l.car === lane.car && l.vuelta === lane.vuelta - 1);
+      const quedan = [];
+      for (const id of unassigned) {
+        if (rt.aux[id]?.type !== 'sal') { quedan.push(id); continue; }
+        let mejor = null;
+        for (const lane of lanes) {
+          if (lane.type !== 'sal') continue;
+          const previo = order[lane.id] || [];
+          if (!previo.length) continue;
+          const cap = rtCapOf(rt.cars.find(c => c.id === lane.car) || {});
+          if (rtPaxOf(previo) + rt.aux[id].pax > cap) continue;
+          // Solo hacia ATRÁS en el tiempo: la vuelta tiene que entregar antes de
+          // la hora del rescatado, nunca después.
+          const antes = { order: previo, start: lane.start };
+          const dur0 = (rtCarCompute(lane.id).arrival ?? 0) - rtToMin(lane.start);
+          order[lane.id] = rtBestOrder(previo.concat([id]), lane.origin);
+          const r = rtCarCompute(lane.id);
+          let ok = false, arranque = null;
+          if (r.arrival != null && r.depart != null) {
+            const prev = anteriorDelCarro(lane);
+            const libre = prev ? (rtCarCompute(prev.id).arrival ?? rtToMin(prev.start)) + rt.TURNAROUND
+                               : rtToMin((rt.cars.find(c => c.id === lane.car) || {}).avail0 || '01:30');
+            arranque = rtRedondea5(Math.max(libre, r.depart - rt.CUSHION));
+            lane.start = rtToHM(arranque);
+            const r2 = rtCarCompute(lane.id);
+            const techo = techoDe(order[lane.id]);
+            const sig = siguienteDelCarro(lane);
+            // Tope de madrugada: al rescatado no se le puede entregar mucho antes
+            // de SU hora (r2.holg mide contra el más apretado de la vuelta, que
+            // suele ser otro).
+            const suyo = rtToMin(rt.aux[id].dl) - rt.AIRPORT_BUFFER - r2.arrival;
+            ok = r2.status !== 'late' && r2.holg >= 0
+              && suyo <= rt.RESCUE_MAX_EARLY
+              && arranque >= libre
+              && (!techo || rtEsperaDe('sal', order[lane.id]) <= techo)
+              && (!sig || (r2.arrival + rt.TURNAROUND) <= rtToMin(sig.start));
+            // Entre varias vueltas posibles gana la que MENOS se alarga: es la
+            // que menos tiempo extra le mete montado al que ya iba.
+            if (ok) {
+              const costo = (r2.arrival - rtToMin(lane.start)) - dur0;
+              if (!mejor || costo < mejor.costo) mejor = { lane, order: order[lane.id], start: lane.start, costo };
+            }
+          }
+          order[lane.id] = antes.order; lane.start = antes.start;   // deshacer la prueba
+        }
+        if (mejor) { order[mejor.lane.id] = mejor.order; mejor.lane.start = mejor.start; }
+        else quedan.push(id);
+      }
+      unassigned.length = 0; unassigned.push(...quedan);
+    }
     return { lanes, order, unassigned };
   }
 
