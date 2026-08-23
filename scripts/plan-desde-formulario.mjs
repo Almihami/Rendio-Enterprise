@@ -354,6 +354,11 @@ if (process.argv.some((a) => a.startsWith('--buffer='))) ajustes.route_airport_b
 // A/B del rescate ("adelantar antes de dejar sin carro"): --sin-rescate lo apaga.
 if (process.argv.includes('--sin-rescate')) ajustes.route_rescue_early = 0;
 if (process.argv.some((a) => a.startsWith('--madrugada='))) ajustes.route_rescue_max_early_min = arg('madrugada', 45);
+// --madrugada-max= es route_max_early_min: cuánto puede madrugar una persona
+// por acompañar a otra. Está en 60 porque en sus 20 vueltas del 22-ago la
+// anticipación nunca pasa de ahí. Pero eso es su MÁXIMO, no su costumbre: sobre
+// 102 recogidas suyas el promedio es 44,6 y la mediana 45.
+if (process.argv.some((a) => a.startsWith('--madrugada-max='))) ajustes.route_max_early_min = arg('madrugada-max', 60);
 if (process.argv.includes('--llenar')) ajustes.route_car_priority = 1;
 if (HUECO) ajustes.route_merge_window_min = HUECO;
 if (TECHO) ajustes.route_max_wait_min = TECHO;
@@ -364,6 +369,18 @@ let SRC = readFileSync(RUTAS_JS, 'utf8');
 // La regla `ids.length > 1` salió de 31 vueltas suyas (18 y 19 de agosto); sus
 // correcciones del 20 y 21 la contradicen (tramos de 15-30 min donde la tabla
 // pide 35-50). Se prueba acá antes de tocar la app.
+// ENSAYO: el techo de madrugada medido con la MISMA duración con la que se
+// programa. rtAnticipa usa rtLegMin (el tiempo real de OSRM) y el solver coloca
+// la vuelta con rtDurProg (la tabla de Julián, más larga): se comprueba con un
+// viaje corto y se agenda con uno largo, y la diferencia se la come montado el
+// primero. Por eso hay gente esperando 85 min con el techo en 60.
+if (process.argv.includes('--techo-real')) {
+  const antes = SRC;
+  SRC = SRC.replace(
+    "    const dur = t + rtLegMin(prev, 'airport');\n    const minDl = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl)));\n    return Math.max(...ids.map(id => rtToMin(rt.aux[id].dl) - minDl + dur - (off[id] || 0))) + rt.AIRPORT_BUFFER;",
+    "    const dur = t + rtLegMin(prev, 'airport');\n    const minDl = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl)));\n    const durP = rtDurProg(ids, minDl, dur, t);\n    return Math.max(...ids.map(id => rtToMin(rt.aux[id].dl) - minDl + durP - (off[id] || 0))) + rt.AIRPORT_BUFFER;");
+  if (SRC === antes) { console.error('⚠  no encontré el final de rtAnticipa en admin-rutas.js'); process.exit(3); }
+}
 if (process.argv.includes('--colchon-siempre')) {
   const antes = SRC;
   SRC = SRC.replace('const colchon = ids.length > 1 ? rt.ZONE_CUSHION : 0;', 'const colchon = rt.ZONE_CUSHION;');
