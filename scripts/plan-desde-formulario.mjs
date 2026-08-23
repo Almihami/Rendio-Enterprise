@@ -391,6 +391,14 @@ const salida = {
   diaLento: S.rt.diaLentoNombre,
   diaLentoShift: S.rt.esDiaLento ? S.rt.HOLIDAY_SHIFT : 0,
   conTabla: !!S.rt.ZONAS,
+  // QUIEN NO SE PUDO PROGRAMAR TIENE QUE SALIR EN EL MENSAJE, NO SOLO EN LA
+  // CONSOLA. Hasta el 23-ago estas listas se imprimían acá y el mensaje de
+  // WhatsApp salía sin esa persona y sin decirlo: Santiago Carmona desapareció
+  // entero (salida y llegada) porque su casa no tiene pin. Un renglón de menos
+  // no se nota; una advertencia sí.
+  faltaPin: [...new Set(faltaPin)],
+  sinCasa: [...new Set(sinCasa)],
+  ambiguos: [...new Set(ambiguos)],
   vueltas,
   // LOS QUE NO CABEN TAMBIÉN NECESITAN SU HORA DE RECOGIDA. Antes solo se
   // pasaba `dl`, que en una salida es la PRESENTACIÓN, y el formato la imprimía

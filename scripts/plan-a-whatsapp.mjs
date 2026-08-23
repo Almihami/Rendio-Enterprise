@@ -70,18 +70,24 @@ const sigla = (v) => {
     if (j6) return 'JA' + j6[1];
     return s.toUpperCase().replace(/\s+/g, '');
   }
-  if (!/^\d{2,4}$/.test(s)) return s;          // 5 dígitos o rarezas: se deja crudo
+  // CEROS A LA IZQUIERDA: el formulario del 23-ago trajo "043" y él escribe
+  // AV43 (su plan del 20-ago, con el mismo vuelo). Sin quitarlos salía "AV043".
+  const n = s.replace(/^0+(?=\d)/, '');
+  if (!/^\d{2,4}$/.test(n)) return n;          // 5 dígitos o rarezas: se deja crudo
   // DOS Y TRES DÍGITOS TAMBIÉN LLEVAN SIGLA. El formulario del 20-ago trajo "43"
   // (Daniela) y "31" (Gloria) y él los escribió AV43 y AV31: en la regla que
   // dictó, AV con 2 o 3 dígitos es vuelo internacional. Sin sigla el modelo no
   // sabe cuánto dura el desembarque.
-  if (s.length <= 3) return 'AV' + s;
-  return (s[0] === '7' ? 'P5' : s[0] === '5' ? 'JA' : 'AV') + s;
+  if (n.length <= 3) return 'AV' + n;
+  return (n[0] === '7' ? 'P5' : n[0] === '5' ? 'JA' : 'AV') + n;
 };
 
 // "Erika, Jolene y Juanita" — como los escribe él.
-const listar = (ns) => ns.length === 1 ? ns[0]
-  : ns.slice(0, -1).join(', ') + ' y ' + ns[ns.length - 1];
+// El nombre sale tal como lo escribió la persona en el formulario — corregirlo
+// sería adivinar. Lo único que se limpia son los espacios de más ("Sara  valencia").
+const limpio = (n) => String(n).replace(/\s+/g, ' ').trim();
+const listar = (ns0) => { const ns = ns0.map(limpio); return ns.length === 1 ? ns[0]
+  : ns.slice(0, -1).join(', ') + ' y ' + ns[ns.length - 1]; };
 
 // Se ordena por la PRIMERA hora que va a leer quien recibe el mensaje: en una
 // llegada es el vuelo más temprano de la vuelta, no la hora con que el solver la
@@ -183,3 +189,12 @@ for (const v of bloques) {
 if (plan.sinRutear?.length) {
   console.log(`(${plan.sinRutear.length} marcados "quizás no haya carro" — con ${plan.carros.length} carros no alcanzan)`);
 }
+
+// LOS QUE QUEDARON POR FUERA VAN AL FINAL DEL MENSAJE. Antes solo se avisaban
+// por consola y el mensaje salía sin ellos, callado: el 23-ago Santiago Carmona
+// desapareció entero porque su casa ("Primera") no tiene coordenada. Es mejor
+// que Julián lea "a este no lo programé y por qué" a que cuente los renglones.
+const pendientes = [];
+if (plan.faltaPin?.length) pendientes.push(`Sin programar, nos falta la coordenada de la casa: ${plan.faltaPin.join(' · ')}`);
+if (plan.sinCasa?.length) pendientes.push(`Sin programar, no sabemos dónde vive: ${plan.sinCasa.join(' · ')}`);
+if (pendientes.length) { console.log(''); pendientes.forEach((l) => console.log(l)); }
