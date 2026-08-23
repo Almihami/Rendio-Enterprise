@@ -197,4 +197,5 @@ if (plan.sinRutear?.length) {
 const pendientes = [];
 if (plan.faltaPin?.length) pendientes.push(`Sin programar, nos falta la coordenada de la casa: ${plan.faltaPin.join(' · ')}`);
 if (plan.sinCasa?.length) pendientes.push(`Sin programar, no sabemos dónde vive: ${plan.sinCasa.join(' · ')}`);
+if (plan.habituales?.length) pendientes.push(`Suelen ir y hoy el formulario no los trae — ¿van?: ${plan.habituales.join(' · ')}`);
 if (pendientes.length) { console.log(''); pendientes.forEach((l) => console.log(l)); }

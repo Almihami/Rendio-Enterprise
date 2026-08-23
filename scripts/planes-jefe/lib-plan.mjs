@@ -45,6 +45,17 @@ export function catalogo(filas) {
     };
   });
 
+  // "EDIFICIO" NO IDENTIFICA A NADIE. El jefe escribe "Edificio Ébano" y salía
+  // AMBIGUO contra Edificio Los Cerezos, Cámbulo, Sendai, Las Margaritas y
+  // Eucalipto: la palabra genérica pesaba lo mismo que "Ébano". Igual con
+  // "El Llanito" (Llanito vs Casa azul Llanito). El renglón ambiguo se descarta
+  // en silencio, así que una casa que él YA dijo se perdía: 30 de sus 186
+  // vueltas quedaban sin coordenada por esto. Una raíz que está en muchos
+  // conjuntos pesa menos, en proporción a en cuántos aparece.
+  const df = new Map();
+  for (const c of CAT) for (const r of c.raices) df.set(r, (df.get(r) || 0) + 1);
+  const peso = (r) => 2 / (df.get(r) || 1);
+
   const cache = new Map();
   function buscar(txt) {
     const t = norm(txt);
@@ -64,7 +75,7 @@ export function catalogo(filas) {
 
     const puntuado = CAT.map((c) => {
       let s = 0;
-      for (const r of raices) if (c.raices.has(r)) s += 2;         // palabra fuerte compartida
+      for (const r of raices) if (c.raices.has(r)) s += peso(r);   // palabra fuerte compartida, descontando las genéricas
       if (s === 0 && (c.compacto.includes(compacto) || compacto.includes(c.compacto))) s = 1;
       // Desempate: "Bosques" es Bosques del Norte, no Urb. Bosque Robledal.
       if (s > 0 && c.n.startsWith(t)) s += 1;
@@ -75,7 +86,15 @@ export function catalogo(filas) {
 
     if (!puntuado.length) return null;
     const mejor = puntuado[0];
-    const empate = puntuado.filter((x) => x.s === mejor.s);
+    let empate = puntuado.filter((x) => Math.abs(x.s - mejor.s) < 1e-9);
+    // DESEMPATE POR CONTENCIÓN: "El Llanito" empata con Llanito y con Casa azul
+    // Llanito. El que cabe entero dentro de lo que él escribió es el que quiso
+    // decir; el otro trae palabras ("casa", "azul") que él no puso.
+    if (empate.length > 1) {
+      const cabe = empate.filter((x) => [...x.c.raices].every((r) => raices.has(r)));
+      if (cabe.length === 1) return cabe[0].c;
+      if (cabe.length) empate = cabe;
+    }
     if (empate.length > 1) return { ...mejor.c, ambiguo: empate.map((x) => x.c.nombre) };
     return mejor.c;
   }

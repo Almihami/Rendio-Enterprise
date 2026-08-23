@@ -111,6 +111,14 @@ pasos entre casas). La perilla que sí mueve el error es la **ventana de fusión
 
 ## Lo que sigue abierto
 
+**0. El colchón real son 20 minutos, no 10** (dato del 23-ago, `_colchon-real.mjs`).
+Sobre las **70 vueltas de salida** del 19 al 23 de agosto, su "deben estar" cae a
+una mediana de **20 min antes de la presentación** (promedio 17,8; rango −20 a
++50; medianas por día 10 · 22 · 20 · 20 · 20). Nuestro solver apunta siempre a
+10. No es contradicción con su frase de "por más tardar debe llegar 15:45": 10 es
+el **límite**, 20 es la **puntería**. Cambiarlo suelto empeora todo (ver arriba);
+hay que cambiarlo junto con las duraciones, y eso todavía no cuadra.
+
 **1. El colchón del aeropuerto es decisión suya, no cálculo.** Nuestro solver exige
 llegar `route_airport_buffer_min` = 10 min antes de la presentación, como límite
 duro. Él no: sobre los 18 bloques de su plan oficial del 22-ago el colchón va de
@@ -163,3 +171,25 @@ Error absoluto medio de la hora de recogida, persona por persona:
 | 21-ago | su corrección | **9,7** → 8,3 (día no usado para calibrar) |
 | 22-ago | su corrección de salidas | 13,8 → **9,4** (barrido + techo de madrugada) |
 | 22-ago | su **plan oficial** | 13,3 → **8,7** · 15 de 34 dentro de ±5 min · 3 con 20+ |
+| 23-ago | su corrección | **9,4** · 25 de 31 emparejadas |
+
+Medido el 23-ago sobre los cinco días con formulario (19 al 23), el error medio
+está clavado en **~10 min** y **ninguna perilla lo baja**:
+
+| variante | 19 | 20 | 21 | 22 | 23 | media |
+|---|---|---|---|---|---|---|
+| como está hoy | 10,8 | 11,2 | 10,3 | 8,4 | 9,4 | **10,0** |
+| sin tabla de zona | 12,2 | 13,0 | 10,7 | 8,6 | **7,6** | 10,4 |
+| colchón de zona siempre | 10,2 | 12,0 | 10,8 | 8,3 | 8,8 | 10,0 |
+| entregar 20 min antes | 11,0 | 15,8 | 12,8 | 13,6 | 15,3 | 13,7 |
+| 20 min antes + sin tabla | 11,3 | 14,1 | 11,8 | 12,6 | 12,7 | 12,5 |
+
+**No mover nada.** Lo que se ve bien en un día se cae en otros dos: "sin tabla"
+gana el 23 y pierde el 19 y el 20. Es la trampa de calibrar contra la última
+corrección.
+
+**Y explica por qué el modelo acierta: por compensación.** Sus vueltas duran
+menos que las nuestras (en la madrugada del 23, 20-30 min contra nuestros 35-50)
+pero él entrega mucho antes de la presentación. Las dos cuentas se cancelan.
+Arreglar una sola **empeora** el resultado, y por eso subir el colchón a 20 sale
+peor que dejarlo en 10 aunque 20 sea su número real.

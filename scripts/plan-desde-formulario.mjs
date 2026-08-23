@@ -66,6 +66,25 @@ const PLANES_JEFE = PLAN_JEFE === 'todos'
       .sort((a, b) => statSync(DIR_JEFE + b).mtimeMs - statSync(DIR_JEFE + a).mtimeMs)
   : PLAN_JEFE ? [PLAN_JEFE] : [];
 const mapaJefe = new Map();
+// EL PLAN MÁS NUEVO MANDA — TAMBIÉN CUANDO ÉL LE CAMBIA EL NOMBRE A LA PERSONA.
+// El mapa se llena del más nuevo al más viejo y una clave ya puesta no se pisa,
+// pero eso solo protege la clave EXACTA. El 23-ago Sara Jaramillo salió a
+// Cámbulo: el formulario la trae como "Sara Jaramillo Mesa", que es como el jefe
+// la escribió el 19-ago (Cámbulo), y el empate exacto con ese nombre viejo le
+// ganaba a "Sara Jaramillo (Quintas amarillas)" del 21 y del 22. O sea que una
+// corrección suya revivía tres días después por escribir el apellido de más.
+// Un nombre viejo que es el mismo de uno más nuevo (mismo nombre de pila y el
+// resto contenido en el otro) ya no entra: la casa nueva es la que vale.
+const mismaPersona = (a, b) => {
+  const pa = a.split(' ').filter(Boolean), pb = b.split(' ').filter(Boolean);
+  if (!pa.length || !pb.length) return false;
+  const igual = (x, y) => x === y || (x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x)));
+  if (!igual(pa[0], pb[0])) return false;                       // el de pila tiene que ser el mismo
+  const corto = pa.length <= pb.length ? pa : pb, largo = corto === pa ? pb : pa;
+  if (corto.length < 2) return false;                           // "sara" a secas no identifica a nadie
+  return corto.every((x) => largo.some((y) => igual(x, y)));    // uno contenido en el otro
+};
+const hayVersionMasNueva = (n) => [...mapaJefe.keys()].some((k) => k !== n && mismaPersona(k, n));
 for (const archivo of PLANES_JEFE) {
   for (const v of leerPlan(DIR_JEFE, archivo)) {
     for (const p of v.paradas) {
@@ -85,14 +104,38 @@ for (const archivo of PLANES_JEFE) {
         // aerolíneas que él dictó). Un conjunto no lleva dos dígitos seguidos.
         if (/\d{2,}/.test(p.lugar)) continue;
         p.quien.split(/\s*,\s*|\s+y\s+/i).map((x) => norm(x)).filter(Boolean)
-          .forEach((n) => { if (!mapaJefe.has(n)) mapaJefe.set(n, { sinPin: p.lugar }); });
+          .forEach((n) => { if (!mapaJefe.has(n) && !hayVersionMasNueva(n)) mapaJefe.set(n, { sinPin: p.lugar }); });
         continue;
       }
       // "farid, Manu V y lady" son varias personas en una línea.
       p.quien.split(/\s*,\s*|\s+y\s+/i).map((x) => norm(x)).filter(Boolean)
-        .forEach((n) => { if (!mapaJefe.has(n)) mapaJefe.set(n, c); });
+        .forEach((n) => { if (!mapaJefe.has(n) && !hayVersionMasNueva(n)) mapaJefe.set(n, c); });
     }
   }
+}
+
+// SUS HABITUALES. El 23-ago programó a cinco personas que el formulario no
+// trajo (Margy, Alfonso, Yalimar, Josselin, Daniela Villa) y el plan salió sin
+// ellas, callado. No son gente nueva: salen en cuatro y cinco de sus siete
+// planes. Cuando alguien así no aparece en el formulario, el dato raro es la
+// ausencia — se avisa al final del mensaje y él decide.
+// Los planes del DÍA que se está armando no cuentan (ese todavía no existe
+// cuando se programa de verdad).
+// Solo los planes RECIENTES. Con los trece del corpus salían 38 nombres —
+// tripulantes que rotaron o que él dejó de programar hace semanas— y una lista
+// así no se lee, se ignora. Con las últimas seis correcciones suyas la
+// pregunta es concreta.
+const RECIENTES = 6;
+const vecesJefe = new Map();
+let nPlanesJefe = 0;
+for (const archivo of PLANES_JEFE) {
+  if (archivo.includes(DIA)) continue;
+  if (nPlanesJefe >= RECIENTES) break;
+  nPlanesJefe++;
+  const vistos = new Set();
+  for (const v of leerPlan(DIR_JEFE, archivo)) for (const p of v.paradas)
+    for (const q of (p.quien || '').split(/\s*,\s*|\s+y\s+/i)) { const n = norm(q); if (n) vistos.add(n); }
+  for (const n of vistos) vecesJefe.set(n, (vecesJefe.get(n) || 0) + 1);
 }
 
 const cat = JSON.parse(readFileSync(CATALOGO, 'utf8'));
@@ -302,6 +345,12 @@ ajustes.route_airport_factor = AERO;
 // PWA: --colchon= es route_zone_cushion_min y --sintabla ignora la tabla de zona
 // (vuelve al modelo de distancias reales + factor de aeropuerto).
 if (COLCHON != null) ajustes.route_zone_cushion_min = COLCHON;
+// --buffer= es route_airport_buffer_min: a cuántos minutos ANTES de la
+// presentación se apunta a entregar. La app usa 10 porque él dijo "por más
+// tardar debe llegar 15:45" para una presentación de 15:55 — pero eso es el
+// límite, no la puntería. En sus 70 vueltas de salida del 19 al 23 de agosto la
+// mediana real es 20.
+if (process.argv.some((a) => a.startsWith('--buffer='))) ajustes.route_airport_buffer_min = arg('buffer', 10);
 // A/B del rescate ("adelantar antes de dejar sin carro"): --sin-rescate lo apaga.
 if (process.argv.includes('--sin-rescate')) ajustes.route_rescue_early = 0;
 if (process.argv.some((a) => a.startsWith('--madrugada='))) ajustes.route_rescue_max_early_min = arg('madrugada', 45);
@@ -383,8 +432,33 @@ const vueltas = lanes.map((l) => {
   };
 }).sort((a, b) => S.rtToMin(a.sale) - S.rtToMin(b.sale));
 
+// Habituales suyos que hoy el formulario no trae. Se compara por palabras, con
+// la misma tolerancia de siempre ("Josselin" / "Josselyn", "Yalimar Peñaranda").
+const palForm = filas.map((f) => norm(f.nombre).split(' ').filter((x) => x.length >= 3));
+// Una letra de diferencia es la misma persona: el formulario trae "Melins" y él
+// escribe "Melina", "Josselin" y "Josselyn" son la misma. Sin esta tolerancia
+// salían en la lista personas que sí venían en el formulario.
+const dist1 = (a, b) => { if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, f = 0;
+  while (i < a.length && j < b.length) { if (a[i] === b[j]) { i++; j++; continue; }
+    if (++f > 1) return false;
+    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; } }
+  return f + (a.length - i) + (b.length - j) <= 1; };
+const igualPal = (x, y) => x === y || (x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x) || dist1(x, y)));
+const enFormulario = (n) => palForm.some((f) => n.split(' ').filter((x) => x.length >= 3).some((w) => f.some((y) => igualPal(w, y))));
+// "josselin", "josselyn" y "joss" son el mismo renglón: se deja el que él usó
+// más veces.
+const habituales = [];
+for (const [n, c] of [...vecesJefe].sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)) {
+  if (c < 3 || enFormulario(n)) continue;
+  if (habituales.some((h) => mismaPersona(h.n, n) || igualPal(h.n.split(' ')[0], n.split(' ')[0]))) continue;
+  habituales.push({ n, c });
+}
+const habitualesTxt = habituales.map(({ n, c }) => `${n} (${c}/${nPlanesJefe})`);
+
 const salida = {
   dia: DIA, fuenteTiempos: fuente,
+  habituales: habitualesTxt, planesJefe: nPlanesJefe,
   ajustes: { hueco: S.rt.MERGE_WINDOW, servicio: S.rt.SERVICE_MIN, colchonAeropuerto: S.rt.AIRPORT_BUFFER, trafico: S.rt.TRAFFIC_FACTOR, turnaround: S.rt.TURNAROUND, desembarque: S.rt.DEPLANE, colchonSalida: S.rt.CUSHION, cupo: S.rt.CAP, factorAeropuerto: S.rt.AIRPORT_FACTOR, techoEspera: S.rt.MAX_WAIT, techoEsperaPico: S.rt.MAX_WAIT_PEAK },
   carros: S.rt.cars.map((c) => ({ id: c.id, cupo: c.capacity })),
   traslados: nSal + nLle, salidas: nSal, llegadas: nLle,
