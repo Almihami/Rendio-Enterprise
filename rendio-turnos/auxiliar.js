@@ -747,10 +747,14 @@
   }
 
   // ---------- confirmar → crea la reserva (BD real o demo) → confirmación ----------
-  // Construye la tarjeta local de un traslado a partir del formulario. Se saca
-  // aparte porque desde 2026-08-25 un mismo pedido puede producir DOS: la ida y
-  // el regreso del mismo día.
-  function auxTripCard(f) {
+  // Construye el traslado en memoria a partir del formulario. Se saca aparte
+  // porque desde 2026-08-25 un mismo pedido puede producir DOS: la ida y el
+  // regreso del mismo día.
+  //
+  // OJO CON EL NOMBRE: auxTripCard() ya existe y es OTRA cosa — la que PINTA la
+  // tarjeta. Llamar a esta igual la pisaba (gana la última declaración) y toda
+  // la pantalla de viajes salía «[object Object]».
+  function auxNuevoTrip(f) {
     return {
       id: 't' + Date.now() + Math.random().toString(36).slice(2, 6),
       type: f.type, flight: f.flight, date: f.date, time: f.time,
@@ -769,7 +773,7 @@
 
   async function auxSubmit() {
     const f = auxState.form;
-    const trip = auxTripCard(f);
+    const trip = auxNuevoTrip(f);
     // Persistir en dev si hay sesión real; si falla, no se inventa nada.
     try { trip.id = await Api.createReservation(f); }
     catch (e) { toast('No se pudo guardar tu traslado. Revisa la conexión e intenta otra vez.'); return; }
@@ -797,7 +801,7 @@
         notes: ((f.notes || '') + ' · Regreso del mismo día').trim(),
       };
       try {
-        const bt = auxTripCard(back);
+        const bt = auxNuevoTrip(back);
         bt.id = await Api.createReservation(back);
         auxState.trips.unshift(bt);
       } catch (e) {
