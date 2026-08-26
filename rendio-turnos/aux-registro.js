@@ -292,7 +292,7 @@
         </label>
         <div class="rg-err${e.pass && st.touched.pass ? '' : ' vacio'}" data-rg-err="pass">${errHTML('pass', e.pass)}</div>
         ${st.err ? `<div class="ax-hint bad"><svg class="icon"><use href="#i-warn"/></svg>${esc(st.err)}</div>` : ''}
-        <div class="ax-spacer rg-spacer2"></div>
+        <div class="ax-spacer"></div>
       </div>
       <div class="ax-cta-bar rg-cta">
         <button class="ax-btn ax-btn-primary" data-rg="crear" ${(!datosOk() || st.busy) ? 'disabled' : ''}>

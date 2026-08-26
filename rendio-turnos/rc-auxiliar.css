@@ -687,10 +687,6 @@
   display: block;
 }
 #auxiliar-ui .rg-cta .ax-btn-primary { width: 100%; }
-/* La pantalla de datos es la única con dos botones apilados: su barra mide
-   ~130 px y el hueco de 96 del .ax-spacer normal dejaba el último campo
-   debajo del botón. */
-#auxiliar-ui .rg-spacer2 { height: 150px; }
 
 /* ============================================================================
    0075 · El padrón de tripulantes (#tripulantes-ui)

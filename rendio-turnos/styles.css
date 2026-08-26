@@ -2255,14 +2255,22 @@ details[open] .details-chevron { transform: rotate(180deg); }
   --a-accent:#F4791F;--a-h2a:#F26522;--a-a2h:#10B981;--a-hotel:#F59E0B;--a-ok:#0B7A5C;--a-radius:16px;
   width:100%;max-width:480px;height:100%;background:var(--a-bg);color:var(--a-text);display:flex;flex-direction:column;
   font-family:Inter,system-ui,-apple-system,sans-serif;position:relative;box-shadow:0 0 48px rgba(0,0,0,.08)}
+/* border-box para todo el rol.
+   Sin esto, cada .ax-toggle / .ax-opt / .ax-trip mide «100% del ancho MÁS sus
+   28-35 px de relleno y borde», o sea que se sale de la pantalla y arrastra el
+   formulario entero de lado: en el teléfono se veía «atos del vuelo» en vez de
+   «Datos del vuelo». Lo tienen todos los demás paneles (#settings-ui, #rv-ui,
+   #oper-ui…); el rol auxiliar era el único que dependía del preflight de
+   Tailwind, que llega por CDN y en dev puede no llegar. */
+#auxiliar-ui, #auxiliar-ui *, #auxiliar-ui *::before, #auxiliar-ui *::after{box-sizing:border-box}
 #auxiliar-ui .icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
-#auxiliar-ui .ax-body{flex:1;overflow-y:auto;padding:0 18px;-webkit-overflow-scrolling:touch}
+#auxiliar-ui .ax-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 18px;-webkit-overflow-scrolling:touch}
 /* Barra PWA del auxiliar: Instalar app + Activar notificaciones */
 #auxiliar-ui .ax-pwa{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
 #auxiliar-ui .ax-pwa.hidden{display:none}
 #auxiliar-ui .ax-pwa-btn{flex:1;min-width:140px;padding:11px 12px;border-radius:12px;border:1px solid var(--a-line);background:var(--a-card,#fff);color:var(--a-accent);font-size:13px;font-weight:700;cursor:pointer}
 #auxiliar-ui .ax-pwa-btn.hidden{display:none}
-#auxiliar-ui .ax-spacer{height:96px}
+#auxiliar-ui .ax-spacer{height:150px}
 #auxiliar-ui .hidden{display:none}
 
 /* Header — #auxiliar-root es fixed inset:0, así que el encabezado arranca en el
