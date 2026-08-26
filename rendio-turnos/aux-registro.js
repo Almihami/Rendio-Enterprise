@@ -8,11 +8,21 @@
 //
 // EL RECORRIDO (los cuatro pasos que ve el tripulante)
 //   1. datos   — nombre completo, correo, teléfono, contraseña.
-//   2. codigo  — el código que le llegó al correo. Acá es donde se verifica que
-//                el correo existe de verdad: sin eso no se crea perfil.
-//   3. perfil  — aerolínea, conjunto, apartamento y —si aplica— su segunda
-//                unidad. Esto ya corre CON sesión, contra signup_catalogs().
-//   4. listo   — bienvenida y entrada a la app.
+//   2. perfil  — aerolínea, conjunto, apartamento y —si aplica— su segunda
+//                unidad. Ya corre CON sesión, contra signup_catalogs().
+//   3. listo   — bienvenida y entrada a la app.
+//
+// FALTA UN PASO Y NO ES UN OLVIDO
+// Entre 1 y 2 iba la verificación del correo con un código de dígitos. Se sacó
+// el 2026-08-25: el correo que Supabase presta para pruebas admite unos 2
+// mensajes por hora y con eso no se puede abrir el registro a nadie. El paso
+// está terminado y probado, guardado en
+// correo-registro/PENDIENTE-verificacion-correo.js, con las instrucciones para
+// volver a ponerlo el día que el proyecto tenga plan pago.
+//
+// LO QUE ESO IMPLICA HOY: el correo NO se comprueba. Cualquiera puede
+// registrarse con la dirección que quiera, incluida la de otra persona. Es una
+// decisión tomada a sabiendas para poder avanzar, no un descuido.
 //
 // DÓNDE SE PINTA
 // Dentro de #auxiliar-ui, el mismo contenedor del rol auxiliar. No es pereza:
@@ -23,9 +33,7 @@
 // pantalla parpadee.
 //
 // LO QUE NO HACE, A PROPÓSITO
-//  · No manda él el correo: lo manda Supabase con su plantilla. Ver
-//    correo-registro/ (raíz de rendio-turnos) — la plantilla y los pasos que
-//    hay que dar en el panel de Supabase.
+//  · No verifica el correo: ver arriba.
 //  · No decide la fecha de ingreso ni la organización: eso lo hace
 //    register_auxiliar() en el servidor (0076). Desde el teléfono no se puede
 //    pactar la antigüedad de uno mismo.
@@ -35,12 +43,6 @@
 
 (function () {
   'use strict';
-
-  // Cuántas casillas tiene el código. Supabase lo emite con la longitud que
-  // tenga configurada el proyecto en Authentication → Email OTP Length; este
-  // proyecto (dev) emite 8. Si algún día se baja a 6 en el panel, se cambia
-  // acá y no hay que tocar nada más.
-  const OTP_LEN = (window.RENDIO_CONFIG && window.RENDIO_CONFIG.OTP_LENGTH) || 8;
 
   const st = {
     view: 'datos',
@@ -53,13 +55,6 @@
     },
     touched: {},        // qué campos ya perdieron el foco (para no pintar rojo mientras escribe)
     showPass: false,
-    // ¿Este registro pasó por el código del correo? Lo decide Supabase al
-    // registrar, no nosotros: ver crear().
-    conCodigo: true,
-    otp: '', otpState: 'idle', otpMsg: '',
-    resendIn: 0, resendTimer: null,
-    linkMode: false,    // camino de rescate: pegar el enlace del correo
-    linkVal: '',
     cat: null, q: '', q2: '',
     picking: 1,         // qué unidad se está eligiendo en la hoja del buscador (1 o 2)
     busy: false, err: '',
@@ -149,7 +144,6 @@
     st.f.name = cleanName(user?.user_metadata?.full_name || '');
     st.f.phone = user?.user_metadata?.phone || '';
     st.f.email = user?.email || '';
-    st.conCodigo = false;   // lo que hubiera que verificar, ya se verificó
     st.view = 'perfil';
     show();
     render();
@@ -157,16 +151,12 @@
   }
 
   function reset() {
-    if (st.resendTimer) { clearInterval(st.resendTimer); st.resendTimer = null; }
     destroyMap();
     st.view = 'datos';
     st.f = { name: '', email: '', phone: '', pass: '', airlineId: null,
       resId: null, unit: '', hasSecond: false, resId2: null, unit2: '',
       manual: false, address: '', lat: null, lng: null, locConfirmed: false };
     st.touched = {}; st.showPass = false;
-    st.conCodigo = true;
-    st.otp = ''; st.otpState = 'idle'; st.otpMsg = '';
-    st.resendIn = 0; st.linkMode = false; st.linkVal = '';
     st.cat = null; st.q = ''; st.q2 = ''; st.picking = 1;
     st.busy = false; st.err = ''; st.profile = null;
   }
@@ -189,7 +179,6 @@
     const el = root(); if (!el) return;
     el.innerHTML =
       st.view === 'datos' ? datosHTML()
-      : st.view === 'codigo' ? codigoHTML()
       : st.view === 'perfil' ? perfilHTML()
       : listoHTML();
     afterRender();
@@ -221,10 +210,9 @@
     </button>`;
   }
 
-  // Cuántos pasos tiene el registro. Son 3 con verificación de correo y 2 sin
-  // ella; los puntos y el «1/3» no pueden anunciar un paso que no va a existir.
-  const nPasos = () => (st.conCodigo ? 3 : 2);
-  const nPaso = (v) => v === 'datos' ? 1 : v === 'codigo' ? 2 : nPasos();
+  // Dos pasos: los datos y el perfil. Serán tres el día que vuelva la
+  // verificación del correo (correo-registro/PENDIENTE-verificacion-correo.js).
+  const nPasos = () => 2;
 
   function head(step, backAction) {
     const n = nPasos();
@@ -314,49 +302,6 @@
       </div>`;
   }
 
-  function codigoHTML() {
-    const boxes = [];
-    for (let i = 0; i < OTP_LEN; i++) {
-      const d = st.otp[i] || '';
-      boxes.push(`<input class="rg-otp-box${d ? ' on' : ''}${st.otpState === 'error' ? ' bad' : ''}"
-        data-rg-otp="${i}" type="text" inputmode="numeric" maxlength="1" value="${esc(d)}"
-        autocomplete="${i === 0 ? 'one-time-code' : 'off'}" aria-label="Dígito ${i + 1}" />`);
-    }
-    const msg =
-      st.otpState === 'verifying' ? `<span class="rg-otp-msg">Verificando…</span>`
-      : st.otpState === 'error' ? `<span class="rg-otp-msg bad">${esc(st.otpMsg || 'El código no es válido o ya venció.')}</span>`
-      : st.otpState === 'ok' ? `<span class="rg-otp-msg ok"><svg class="icon"><use href="#i-check"/></svg>Código correcto</span>`
-      : `<span class="rg-otp-msg tip">Puedes pegarlo completo.</span>`;
-    return `
-      ${head(nPaso('codigo'), 'volver-datos')}
-      <div class="ax-body">
-        <h1 class="ax-form-title">Verifica tu correo</h1>
-        <p class="ax-lead">Te enviamos un código de ${OTP_LEN} dígitos a <b>${esc(st.f.email)}</b>.</p>
-        <div class="rg-otp">${boxes.join('')}</div>
-        <div class="rg-otp-state">${msg}</div>
-        <div class="rg-resend">
-          ¿No te llegó?
-          ${st.resendIn > 0
-            ? `<span class="rg-resend-wait">Reenviar en 0:${String(st.resendIn).padStart(2, '0')}</span>`
-            : `<button class="ax-link" data-rg="reenviar">Reenviar código</button>`}
-        </div>
-        <button class="ax-link rg-center" data-rg="volver-datos">Cambiar el correo</button>
-
-        ${st.linkMode ? `
-          <div class="ax-sec">¿Te llegó un enlace en vez de un código?</div>
-          <div class="rg-link-box">
-            <p>Pega acá el enlace completo del correo y lo abrimos por ti.</p>
-            <input class="ax-input" data-rg-field="linkVal" type="text"
-                   value="${esc(st.linkVal)}" placeholder="https://…" autocapitalize="none" spellcheck="false" />
-            <button class="ax-btn ax-btn-ghost" data-rg="usar-enlace" ${st.linkVal ? '' : 'disabled'}>Usar el enlace</button>
-          </div>`
-          : `<button class="ax-link rg-center rg-soft" data-rg="modo-enlace">Me llegó un enlace, no un código</button>`}
-
-        <div class="ax-hint"><svg class="icon"><use href="#i-clock"/></svg>El código vence a los 60 minutos. Si se te venció, pide otro.</div>
-        <div class="ax-spacer"></div>
-      </div>`;
-  }
-
   // ---------- paso 3 ----------
   function airlineHTML() {
     const list = st.cat?.airlines || [];
@@ -441,7 +386,7 @@
     const f = st.f;
     const cargando = !st.cat;
     return `
-      ${head(nPaso('perfil'), null)}
+      ${head(2, null)}
       <div class="ax-body">
         <h1 class="ax-form-title">Ya casi</h1>
         <p class="ax-lead">Esto queda guardado: no vas a tener que escribirlo otra vez.</p>
@@ -521,10 +466,6 @@
   // Después de pintar: foco del código y mapa del camino manual
   // ---------------------------------------------------------------------------
   function afterRender() {
-    if (st.view === 'codigo' && st.otpState !== 'ok') {
-      const i = Math.min(st.otp.length, OTP_LEN - 1);
-      root()?.querySelector(`[data-rg-otp="${i}"]`)?.focus();
-    }
     if (st.view === 'perfil' && st.f.manual && st.f.address && st.f.lat != null) {
       mountMap(st.f.lat, st.f.lng);
     } else if (!(st.view === 'perfil' && st.f.manual)) {
@@ -608,7 +549,6 @@
       const t = ev.target;
       if (t.dataset.rgField) return onField(t.dataset.rgField, t.value);
       if (t.dataset.rgQ) return onQuery(parseInt(t.dataset.rgQ, 10), t.value);
-      if (t.dataset.rgOtp != null) return onOtpInput(parseInt(t.dataset.rgOtp, 10), t);
     });
 
     // El rojo aparece al SALIR del campo, no mientras se escribe.
@@ -621,30 +561,13 @@
     }, true);
 
     el.addEventListener('keydown', (ev) => {
-      if (ev.target.dataset?.rgOtp != null) return onOtpKey(ev);
       if (ev.key === 'Enter' && ev.target.dataset?.rgField && st.view === 'datos' && datosOk()) {
         ev.preventDefault(); onAction('crear');
       }
     });
-
-    el.addEventListener('paste', (ev) => {
-      if (ev.target.dataset?.rgOtp == null) return;
-      const t = (ev.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, OTP_LEN);
-      if (!t) return;
-      ev.preventDefault();
-      st.otp = t; st.otpState = 'idle';
-      render();
-      if (t.length === OTP_LEN) verify(t);
-    });
   }
 
   function onField(key, val) {
-    if (key === 'linkVal') {
-      st.linkVal = val;
-      const btn = root()?.querySelector('[data-rg="usar-enlace"]');
-      if (btn) btn.disabled = !val.trim();
-      return;
-    }
     st.f[key] = val;
     if (key === 'address') {
       // No se geocodifica en cada tecla: se espera a que deje de escribir.
@@ -684,41 +607,6 @@
     if (fresh) cont.innerHTML = fresh.innerHTML;
   }
 
-  function onOtpInput(i, input) {
-    const ch = (input.value || '').replace(/\D/g, '').slice(-1);
-    const arr = st.otp.padEnd(OTP_LEN, ' ').split('');
-    arr[i] = ch || ' ';
-    st.otp = arr.join('').replace(/\s+$/, '');
-    input.value = ch;
-    if (st.otpState === 'error') { st.otpState = 'idle'; st.otpMsg = ''; refreshOtpState(); }
-    if (ch && i < OTP_LEN - 1) root()?.querySelector(`[data-rg-otp="${i + 1}"]`)?.focus();
-    input.classList.toggle('on', !!ch);
-    const full = st.otp.replace(/\s/g, '');
-    if (full.length === OTP_LEN) verify(full);
-  }
-
-  function onOtpKey(ev) {
-    const i = parseInt(ev.target.dataset.rgOtp, 10);
-    if (ev.key === 'Backspace' && !ev.target.value && i > 0) {
-      ev.preventDefault();
-      const prev = root()?.querySelector(`[data-rg-otp="${i - 1}"]`);
-      if (prev) { prev.value = ''; prev.classList.remove('on'); prev.focus(); }
-      const arr = st.otp.padEnd(OTP_LEN, ' ').split(''); arr[i - 1] = ' ';
-      st.otp = arr.join('').replace(/\s+$/, '');
-    }
-    if (ev.key === 'ArrowLeft' && i > 0) root()?.querySelector(`[data-rg-otp="${i - 1}"]`)?.focus();
-    if (ev.key === 'ArrowRight' && i < OTP_LEN - 1) root()?.querySelector(`[data-rg-otp="${i + 1}"]`)?.focus();
-  }
-
-  function refreshOtpState() {
-    const box = root()?.querySelector('.rg-otp-state');
-    if (!box) return;
-    const tmp = document.createElement('div');
-    tmp.innerHTML = codigoHTML();
-    box.innerHTML = tmp.querySelector('.rg-otp-state')?.innerHTML || '';
-    root()?.querySelectorAll('.rg-otp-box').forEach(b => b.classList.toggle('bad', st.otpState === 'error'));
-  }
-
   async function onAction(a, el) {
     if (a === 'salir') return leave();
     if (a === 'ver-pass') { st.showPass = !st.showPass; return render(); }
@@ -730,10 +618,6 @@
       return render();
     }
     if (a === 'crear') return crear();
-    if (a === 'volver-datos') { st.view = 'datos'; st.otp = ''; st.otpState = 'idle'; st.err = ''; return render(); }
-    if (a === 'reenviar') return reenviar();
-    if (a === 'modo-enlace') { st.linkMode = true; return render(); }
-    if (a === 'usar-enlace') return usarEnlace();
     if (a === 'airline') { st.f.airlineId = el.dataset.id; return render(); }
     if (a === 'res-pick') {
       const n = parseInt(el.dataset.n, 10);
@@ -792,25 +676,21 @@
         email: st.f.email.trim(), password: st.f.pass,
         fullName: cleanName(st.f.name), phone: st.f.phone.trim(),
       });
-      // Quién decide si hay paso de código: SUPABASE, no este archivo.
+      // Con «Confirm email» APAGADO en Supabase (que es como está el proyecto),
+      // signUp devuelve la sesión de una y se puede seguir derecho al perfil.
       //
-      // Con «Confirm email» encendido, signUp devuelve usuario SIN sesión y
-      // manda el correo → hay que verificar. Con la confirmación apagada
-      // devuelve la sesión de una y no hay nada que verificar: enseñarle unas
-      // casillas para un código que nadie mandó sería dejarlo trancado.
-      //
-      // Se lee de la respuesta y no de una bandera nuestra a propósito: el día
-      // que se encienda la confirmación (cuando haya SMTP propio) el paso
-      // reaparece solo, sin tocar ni desplegar nada.
-      if (data && data.session) {
-        st.conCodigo = false;
-        st.view = 'perfil';
-        loadCat();
-      } else {
-        st.conCodigo = true;
-        st.view = 'codigo'; st.otp = ''; st.otpState = 'idle';
-        startResendClock();
+      // Si algún día alguien vuelve a encender esa opción en el panel sin
+      // devolver el paso del código, signUp deja al usuario creado pero SIN
+      // sesión, y desde acá no hay forma de continuar. No se le puede dejar el
+      // botón girando: se le dice qué pasó y a quién avisarle. Es un callejón
+      // de configuración, no del tripulante.
+      if (!data || !data.session) {
+        throw new Error(
+          'Tu cuenta quedó creada, pero falta un paso de confirmación que ahora '
+          + 'mismo no está disponible. Avísale al coordinador para que la activen.');
       }
+      st.view = 'perfil';
+      loadCat();
     } catch (e) {
       st.err = mensajeSignup(e);
     } finally { st.busy = false; render(); }
@@ -834,76 +714,6 @@
     if (m.includes('password'))
       return 'La contraseña no cumple: usa mínimo 8 caracteres.';
     return e?.message || 'No pudimos crear la cuenta. Intenta de nuevo.';
-  }
-
-  function startResendClock() {
-    if (st.resendTimer) clearInterval(st.resendTimer);
-    st.resendIn = 60;
-    st.resendTimer = setInterval(() => {
-      st.resendIn--;
-      if (st.resendIn <= 0) { clearInterval(st.resendTimer); st.resendTimer = null; }
-      if (st.view !== 'codigo') return;
-      const w = root()?.querySelector('.rg-resend');
-      if (!w) return;
-      const tmp = document.createElement('div');
-      tmp.innerHTML = codigoHTML();
-      w.innerHTML = tmp.querySelector('.rg-resend')?.innerHTML || '';
-    }, 1000);
-  }
-
-  async function reenviar() {
-    try {
-      await Api.resendSignupOtp(st.f.email.trim());
-      say('Te lo mandamos otra vez. Revisa también la carpeta de spam.');
-      startResendClock(); render();
-    } catch (e) {
-      st.otpState = 'error'; st.otpMsg = mensajeSignup(e); refreshOtpState();
-    }
-  }
-
-  async function verify(code) {
-    if (st.otpState === 'verifying' || st.otpState === 'ok') return;
-    st.otpState = 'verifying'; refreshOtpState();
-    try {
-      await Api.verifySignupOtp(st.f.email.trim(), code);
-      st.otpState = 'ok'; refreshOtpState();
-      setTimeout(() => { st.view = 'perfil'; render(); loadCat(); }, 550);
-    } catch (e) {
-      st.otpState = 'error';
-      // Un solo mensaje para los dos casos a propósito: Supabase responde
-      // «Token has expired or is invalid» tanto si el código está mal como si
-      // se venció, y no hay forma de distinguirlos. Decir «ya venció» cuando en
-      // realidad se equivocó de dígito manda a pedir otro código —y a gastar
-      // uno de los pocos correos por hora— para nada.
-      st.otpMsg = 'El código no coincide o ya venció. Revísalo, o pide uno nuevo.';
-      st.otp = '';
-      render();
-    }
-  }
-
-  // Rescate: mientras la plantilla del correo no lleve el código, Supabase manda
-  // un enlace. En vez de dejar al tripulante trancado, se acepta el enlace pegado
-  // y se saca el token de ahí.
-  async function usarEnlace() {
-    const v = (st.linkVal || '').trim(); if (!v) return;
-    try {
-      let hash = null;
-      try {
-        const u = new URL(v);
-        hash = u.searchParams.get('token_hash') || u.searchParams.get('token');
-        if (!hash && u.hash) hash = new URLSearchParams(u.hash.slice(1)).get('token_hash');
-      } catch (_) { hash = /^[A-Za-z0-9_-]{10,}$/.test(v) ? v : null; }
-      if (!hash) throw new Error('link');
-      await Api.verifySignupTokenHash(hash);
-      st.otpState = 'ok'; render();
-      setTimeout(() => { st.view = 'perfil'; render(); loadCat(); }, 400);
-    } catch (e) {
-      st.otpState = 'error';
-      st.otpMsg = e?.message === 'link'
-        ? 'Ese enlace no se entiende. Cópialo completo desde el correo.'
-        : 'El enlace no sirvió: puede que ya se haya usado o vencido.';
-      refreshOtpState();
-    }
   }
 
   async function loadCat() {

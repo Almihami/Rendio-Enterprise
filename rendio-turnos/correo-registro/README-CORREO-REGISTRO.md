@@ -1,62 +1,60 @@
-# El correo del registro — APAGADO POR AHORA
+# Verificación del correo — SACADA DEL REGISTRO
 
-**Estado a 2026-08-25: la verificación por correo está apagada a propósito.**
-El correo que Supabase presta para pruebas admite ~2 mensajes por hora (medido:
-el segundo intento devolvió `429 email rate limit exceeded`), así que no sirve
-para que se registren tripulantes de verdad. Se retoma cuando haya un servidor
-de correo propio.
+**Estado a 2026-08-25: el registro NO verifica el correo.** El paso del código
+se quitó del flujo; está entero y probado en
+`PENDIENTE-verificacion-correo.js`, en esta misma carpeta, con las
+instrucciones para devolverlo.
 
-## Cómo se apaga y cómo se vuelve a encender
+## Por qué se quitó
 
-**Supabase → Authentication → Sign In / Providers → Email → «Confirm email»**
+El correo que Supabase presta en el plan gratuito admite unos **2 mensajes por
+hora**. No es una estimación: al probar el registro dos veces seguidas, el
+segundo intento respondió `429 email rate limit exceeded`. Con ese tope el
+registro no se puede abrir a los tripulantes — el tercero de la fila se queda
+sin código. Se retoma cuando el proyecto tenga plan pago o un SMTP propio.
 
-- **Apagado** (lo de ahora): al registrarse, Supabase devuelve la sesión de una.
-  La app se salta el paso del código sola y el registro queda de 2 pasos.
-- **Encendido**: Supabase manda el correo y no devuelve sesión. La app pone el
-  paso del código sola y el registro pasa a 3 pasos.
+## Lo que hay que tener apagado para que el registro funcione HOY
 
-**No hay que tocar ni desplegar nada para cambiar entre los dos.** La app lo
-decide leyendo lo que Supabase le responde al registrar, no una bandera nuestra
-(ver `crear()` en `aux-registro.js`). La pantalla del código y todo lo suyo
-—reenvío con cuenta regresiva, pegar el código, el camino de rescate por
-enlace— siguen en el repositorio, probados, esperando.
+**Supabase → Authentication → Sign In / Providers → Email → «Confirm email»:
+APAGADO.**
 
----
+Esto no es opcional y no depende del código. Con esa opción encendida, Supabase
+crea el usuario pero NO devuelve sesión, y desde el navegador no hay forma de
+continuar: la app se lo dice al usuario en vez de dejarlo trancado, pero el
+registro no se completa. Es un interruptor del servidor, no una pantalla.
 
-# Lo que hay que hacer el día que se retome
+## Lo que se pierde mientras tanto, dicho claro
 
-## 1. La plantilla del correo (5 minutos)
+**El correo no se comprueba.** Cualquiera puede registrarse con la dirección
+que quiera, incluida la de otra persona. Es una decisión tomada a sabiendas
+para poder avanzar, no un descuido. Dos consecuencias prácticas:
 
-**Supabase → Authentication → Emails → Confirm signup**
+- Un correo mal escrito no se detecta hasta que alguien intente escribirle.
+- El registro queda abierto a cualquiera con el enlace. Vale la pena mirar de
+  vez en cuando el padrón (**Rutas → Tripulantes**) hasta que vuelva la
+  verificación.
 
-- **Asunto:** `Tu código de Rendio: {{ .Token }}`
-- **Cuerpo:** pegar el contenido de `confirmacion-registro.html` (esta misma
-  carpeta), tal cual.
+## El día que se retome
 
-Lo único que no se puede tocar de esa plantilla es `{{ .Token }}`: ese es el
-código que la app pide. La plantilla que Supabase trae de fábrica manda
-`{{ .ConfirmationURL }}` — un enlace — y por eso hay que reemplazarla.
+1. Conseguir el servidor de correo: **Project Settings → Authentication → SMTP
+   Settings**. Resend, SendGrid o Amazon SES — gratis en el volumen que hace
+   falta, pero alguien tiene que crear la cuenta y verificar el dominio de
+   Rendio.
+2. Pegar la plantilla de `confirmacion-registro.html` en **Authentication →
+   Emails → Confirm signup**, con el asunto `Tu código de Rendio: {{ .Token }}`.
+   Lo único intocable es `{{ .Token }}`: ese es el código que la app pide. La
+   plantilla de fábrica manda un enlace, y por eso hay que reemplazarla.
+3. Encender **«Confirm email»**.
+4. Devolver el código siguiendo las instrucciones de la cabecera de
+   `PENDIENTE-verificacion-correo.js`.
 
-## 2. El servidor de correo (esto es el motivo del apagón)
+### Dos datos que ya costó averiguar
 
-**Supabase → Project Settings → Authentication → SMTP Settings**
-
-Hace falta conectar un servidor propio: Resend, SendGrid o Amazon SES. Es
-gratis en el volumen que necesitamos, pero alguien tiene que crear la cuenta y
-verificar el dominio de Rendio.
-
-## 3. Cuántos dígitos tiene el código
-
-Este proyecto emite códigos de **8** dígitos. La app pinta 8 casillas porque lee
-`OTP_LENGTH` de `config.js`. Si en **Authentication → Email OTP Length** se baja
-a 6 (que es lo más común), hay que poner `OTP_LENGTH: 6` en `config.js` — es una
-línea, y es el único sitio donde el número está escrito.
-
-## 4. Dominios que Supabase rechaza
-
-`@rendio.demo` y `@example.com` **no sirven** para registrarse: Supabase valida
-el dominio y los rechaza con «Email address is invalid». Los usuarios de prueba
-de dev (`*@rendio.demo`) se crearon con la llave de servicio, que se salta esa
-validación; el registro desde la app no puede.
-
-Para probar el registro hay que usar un correo real o uno `@rendio.co`.
+- Este proyecto emite códigos de **8 dígitos**, no 6 (**Authentication → Email
+  OTP Length**). La app lee el número de `OTP_LENGTH` en `config.js`, que
+  también se quitó y hay que devolver.
+- `@rendio.demo` y `@example.com` **no sirven** para registrarse: Supabase
+  valida el dominio y los rechaza con «Email address is invalid». Los usuarios
+  de prueba de dev (`*@rendio.demo`) existen porque se crearon con la llave de
+  servicio, que se salta esa validación. Para probar hay que usar un correo
+  real o uno `@rendio.co`.

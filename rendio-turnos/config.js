@@ -7,9 +7,5 @@ window.RENDIO_CONFIG = {
   // Stack LOCAL (para probar Etapa 1 del módulo conductor):
   // SUPABASE_URL: 'http://127.0.0.1:54321',
   // SUPABASE_ANON_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
-  // Dígitos del código de verificación del registro (0075). Es lo que emite
-  // Supabase según Authentication → Email OTP Length; este proyecto emite 8.
-  // Si se cambia allá, se cambia acá: es el único sitio donde está el número.
-  OTP_LENGTH: 8,
   VAPID_PUBLIC_KEY: 'BDbSeYdp1m3324kEA_t4naZMFm_T-iPMmjsSaMkrIcsnZ2jvXEhOarlP6sztOGTySex8gP1FQ0zMFwv96bpvUTE',
 };

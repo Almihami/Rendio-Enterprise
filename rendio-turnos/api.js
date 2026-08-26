@@ -31,13 +31,18 @@
   // ==========================================================================
   // Registro del tripulante (0075 + 0076)
   //
-  // Son las cuatro llamadas del alta, en el orden en que ocurren. Viven acá y no
-  // en aux-registro.js por la regla de la casa: todo lo que habla con Supabase
-  // pasa por api.js.
+  // Las tres llamadas del alta, en el orden en que ocurren. Viven acá y no en
+  // aux-registro.js por la regla de la casa: todo lo que habla con Supabase pasa
+  // por api.js.
+  //
+  // Eran cuatro: en medio iba la verificación del correo con un código. Se sacó
+  // el 2026-08-25 porque el correo prestado de Supabase admite ~2 mensajes por
+  // hora. Está guardada, entera y probada, en
+  // correo-registro/PENDIENTE-verificacion-correo.js.
   // ==========================================================================
 
-  // 1. Crea el usuario en auth.users SIN confirmar y dispara el correo con el
-  //    código. El nombre y el teléfono viajan como metadata para poder retomar
+  // 1. Crea el usuario y devuelve la sesión — el proyecto tiene «Confirm email»
+  //    apagado. El nombre y el teléfono viajan como metadata para poder retomar
   //    el registro si cierra la app antes de terminar (Registro.resume).
   async function signUpAuxiliar({ email, password, fullName, phone }) {
     const { data, error } = await sb.auth.signUp({
@@ -55,29 +60,7 @@
     return data;
   }
 
-  // 2. El código de 6/8 dígitos. Devuelve sesión: a partir de acá hay auth.uid().
-  async function verifySignupOtp(email, token) {
-    const { data, error } = await sb.auth.verifyOtp({ email, token, type: 'signup' });
-    if (error) throw error;
-    return data;
-  }
-
-  // 2-bis. Rescate mientras la plantilla del correo no lleve el código y mande
-  //        un enlace: se acepta el token del enlace pegado.
-  async function verifySignupTokenHash(tokenHash) {
-    let { data, error } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: 'signup' });
-    if (error) ({ data, error } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: 'email' }));
-    if (error) throw error;
-    return data;
-  }
-
-  async function resendSignupOtp(email) {
-    const { error } = await sb.auth.resend({ type: 'signup', email });
-    if (error) throw error;
-    return true;
-  }
-
-  // 3. Lo único que puede leer quien ya verificó su correo pero todavía no tiene
+  // 2. Lo único que puede leer quien ya tiene sesión pero todavía no tiene
   //    perfil. Los conjuntos vienen SIN coordenadas, a propósito (ver 0076).
   async function signupCatalogs() {
     const { data, error } = await sb.rpc('signup_catalogs');
@@ -85,7 +68,7 @@
     return { airlines: data?.airlines || [], residences: data?.residences || [] };
   }
 
-  // 4. El alta. El correo NO se manda: lo lee el servidor de auth.users.
+  // 3. El alta. El correo NO se manda: lo lee el servidor de auth.users.
   async function registerAuxiliar(f) {
     const { data, error } = await sb.rpc('register_auxiliar', {
       p_full_name: f.fullName,
@@ -2896,7 +2879,7 @@
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment, getRouteTables, saveRouteTables, listResidencesZones, saveResidenceZone,
-    signUpAuxiliar, verifySignupOtp, verifySignupTokenHash, resendSignupOtp, signupCatalogs, registerAuxiliar,
+    signUpAuxiliar, signupCatalogs, registerAuxiliar,
     listAuxiliares, setAuxiliarJoinedAt, listAirlines, createAirline, setAirlineActive,
     getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,
     listResidences, getMyAuxiliarPlace, saveMyResidence,
