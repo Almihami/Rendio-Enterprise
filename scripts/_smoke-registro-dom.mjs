@@ -107,6 +107,26 @@ t('llega a la bienvenida', /Bienvenido/.test(txt()), txt().slice(0,90));
 t('saluda por el primer nombre', /Bienvenido, Ana/.test(txt()));
 t('explica lo de la hora de llegada', /hora de llegada|estar en el aeropuerto/i.test(txt()));
 
+console.log('\n── el botón de sol/luna ──');
+// AuxPresentacion no está cargado en esta prueba: el botón no debe aparecer ni
+// reventar. Se carga y se vuelve a pintar para probarlo de verdad.
+t('sin el módulo de tema, no pinta el botón (y no revienta)', !ui().querySelector('[data-rg="tema"]'));
+window.eval(readFileSync(APP+'aux-presentacion.js','utf8'));
+R.start();
+t('con el módulo, aparece el botón', !!ui().querySelector('[data-rg="tema"]'));
+const modo = () => ui().getAttribute('data-ax-night');
+const icono = () => ui().querySelector('[data-rg="tema"] use')?.getAttribute('href');
+const antes = modo();
+click('[data-rg="tema"]');
+t('al tocarlo cambia el modo', modo() !== antes, antes+' → '+modo());
+t('y el icono pasa a mostrar el camino contrario',
+  (modo()==='on' && icono()==='#i-sun') || (modo()==='off' && icono()==='#i-moon'), modo()+' / '+icono());
+t('la preferencia queda guardada', ['light','night'].includes(window.localStorage.getItem('rendio.aux.night')),
+  String(window.localStorage.getItem('rendio.aux.night')));
+click('[data-rg="tema"]');
+t('vuelve al otro modo', modo()===antes, modo());
+t('sigue estando en el paso 1', /Crea tu cuenta/.test(txt()));
+
 console.log('\n── retomar un registro a medias ──');
 await R.resume({ email:'otra@gmail.com', user_metadata:{ full_name:'Sofía Marcela Ossa Bedoya', phone:'3123334455' } });
 await wait();
