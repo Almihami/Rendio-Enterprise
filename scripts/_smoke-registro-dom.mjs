@@ -127,6 +127,28 @@ click('[data-rg="tema"]');
 t('vuelve al otro modo', modo()===antes, modo());
 t('sigue estando en el paso 1', /Crea tu cuenta/.test(txt()));
 
+console.log('\n── sin verificación de correo (Confirm email apagado) ──');
+// Supabase devuelve sesión de una: no hay código que pedir y el registro pasa
+// a tener 2 pasos, no 3.
+window.Api.signUpAuxiliar = async () => ({ session: { access_token: 'x' }, user: {} });
+window.localStorage.removeItem('rendio.aux.night');
+R.start();
+set('name','Ana Lucía Restrepo Vélez'); set('email','ana.restrepo@gmail.com');
+set('phone','3105557788'); set('pass','MiClave2026');
+t('la primera pantalla no promete un total que aún no sabe', !/1\/\d/.test(txt()), txt().slice(0,60));
+click('[data-rg="crear"]'); await wait(); await wait();
+t('salta el código y va derecho al perfil', /Ya casi/.test(txt()), txt().slice(0,90));
+t('no pinta ninguna casilla de código', ui().querySelectorAll('.rg-otp-box').length===0);
+t('y el contador dice 2/2', /2\/2/.test(txt()), txt().slice(0,60));
+// …y si vuelve a estar encendida, el paso reaparece solo
+window.Api.signUpAuxiliar = async () => ({ session: null, user: {} });
+R.start();
+set('name','Ana Lucía Restrepo Vélez'); set('email','ana.restrepo@gmail.com');
+set('phone','3105557788'); set('pass','MiClave2026');
+click('[data-rg="crear"]'); await wait(); await wait();
+t('con la confirmación encendida vuelve a pedir el código', /Verifica tu correo/.test(txt()));
+t('y vuelve a ser 2/3', /2\/3/.test(txt()), txt().slice(0,60));
+
 console.log('\n── retomar un registro a medias ──');
 await R.resume({ email:'otra@gmail.com', user_metadata:{ full_name:'Sofía Marcela Ossa Bedoya', phone:'3123334455' } });
 await wait();
