@@ -675,8 +675,7 @@
    él, en el iPhone el botón queda encima de la barra del gesto de inicio y se
    toca a medias. */
 #auxiliar-ui .rg-cta {
-  /* La posición ya la da .ax-cta-bar: pegada abajo con su área segura.
-     Apilados, no en fila.
+  /* Apilados, no en fila.
      .ax-cta-bar es flex por defecto (styles.css) porque en el rol auxiliar la
      usan parejas de botones del mismo peso — «Cancelar / Confirmar». Acá no:
      «Continuar» es la acción y «Ya tengo cuenta» es una salida. En fila, el

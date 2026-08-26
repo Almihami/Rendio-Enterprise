@@ -2269,18 +2269,20 @@ html,body{overflow-x:hidden}
    Tailwind, que llega por CDN y en dev puede no llegar. */
 #auxiliar-ui, #auxiliar-ui *, #auxiliar-ui *::before, #auxiliar-ui *::after{box-sizing:border-box}
 #auxiliar-ui .icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
-#auxiliar-ui .ax-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 18px;-webkit-overflow-scrolling:touch}
+#auxiliar-ui .ax-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 18px;-webkit-overflow-scrolling:touch}
 /* Barra PWA del auxiliar: Instalar app + Activar notificaciones */
 #auxiliar-ui .ax-pwa{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
 #auxiliar-ui .ax-pwa.hidden{display:none}
 #auxiliar-ui .ax-pwa-btn{flex:1;min-width:140px;padding:11px 12px;border-radius:12px;border:1px solid var(--a-line);background:var(--a-card,#fff);color:var(--a-accent);font-size:13px;font-weight:700;cursor:pointer}
 #auxiliar-ui .ax-pwa-btn.hidden{display:none}
-#auxiliar-ui .ax-spacer{height:150px}
+/* Ya no reserva sitio para la barra (que ahora ocupa el suyo): solo deja un
+   respiro al final del formulario. */
+#auxiliar-ui .ax-spacer{height:12px}
 #auxiliar-ui .hidden{display:none}
 
 /* Header — #auxiliar-root es fixed inset:0, así que el encabezado arranca en el
    borde superior de la pantalla: sin el inset queda bajo el reloj del iPhone. */
-#auxiliar-ui .ax-head{display:flex;align-items:flex-start;justify-content:space-between;padding:calc(22px + env(safe-area-inset-top,0px)) 18px 10px}
+#auxiliar-ui .ax-head{flex:0 0 auto;display:flex;align-items:flex-start;justify-content:space-between;padding:calc(22px + env(safe-area-inset-top,0px)) 18px 10px}
 #auxiliar-ui .ax-head h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:2px 0 0}
 #auxiliar-ui .ax-hi{font-size:13px;color:var(--a-t2);font-weight:500}
 #auxiliar-ui .ax-avatar{width:42px;height:42px;border-radius:50%;background:var(--a-accent);color:#fff;font-weight:800;font-size:16px;border:none;cursor:pointer}
@@ -2312,21 +2314,28 @@ html,body{overflow-x:hidden}
 #auxiliar-ui .ax-empty span{font-size:13px;color:var(--a-t2)}
 
 /* CTA bar + botones */
-/* La barra de acción se pega abajo del todo, respetando el área segura.
-   Antes estaba fija a 62 px «por la barra de pestañas» — pero las pestañas
-   solo existen en Inicio, Viajes y Perfil. En el pedido, el detalle del
-   viaje, la confirmación y el privado no hay pestañas, así que esos 62 px
-   eran un hueco por el que se veía pasar el contenido POR DEBAJO del botón.
-   Quien sí tiene pestañas se marca con .with-tabs. */
-#auxiliar-ui .ax-cta-bar{position:absolute;left:0;right:0;bottom:env(safe-area-inset-bottom,0px);padding:12px 18px;background:linear-gradient(to top,var(--a-bg) 70%,transparent)}
-#auxiliar-ui .ax-cta-bar.with-tabs{bottom:calc(62px + env(safe-area-inset-bottom,0px))}
+/* La barra de acción NO flota: ocupa su sitio.
+
+   Estaba en position:absolute sobre el cuerpo, y el cuerpo le pasaba por
+   detrás: se veía media tarjeta asomando por encima del botón y otra por
+   debajo. El degradado que lo disimulaba no alcanza cuando lo que pasa
+   detrás son tarjetas blancas sobre fondo claro.
+
+   #auxiliar-ui ya es una columna flex con .ax-body en flex:1, así que
+   basta con dejar la barra como un hijo más: el cuerpo se encoge solo y el
+   contenido NUNCA queda debajo del botón. De paso se acaban los
+   espaciadores para «hacerle hueco» a algo que flotaba.
+
+   Lo mismo para .ax-tabs, por la misma razón. */
+#auxiliar-ui .ax-cta-bar{flex:0 0 auto;padding:12px 18px calc(12px + env(safe-area-inset-bottom,0px));background:var(--a-bg)}
+#auxiliar-ui .ax-cta-bar.with-tabs{padding-bottom:12px}
 #auxiliar-ui .ax-btn{width:100%;height:52px;border-radius:14px;border:none;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:.14s}
 #auxiliar-ui .ax-btn-primary{background:var(--a-accent);color:#fff;box-shadow:0 8px 20px rgba(244,121,31,.28)}
 #auxiliar-ui .ax-btn-primary:disabled{background:var(--a-line);color:var(--a-t3);box-shadow:none;cursor:not-allowed}
 #auxiliar-ui .ax-btn-ghost{background:var(--a-card);color:var(--a-text);border:1.5px solid var(--a-line);height:46px;margin-top:10px}
 
 /* Tabs inferiores */
-#auxiliar-ui .ax-tabs{position:absolute;left:0;right:0;bottom:0;height:calc(62px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);background:var(--a-card);border-top:1px solid var(--a-line);display:flex}
+#auxiliar-ui .ax-tabs{flex:0 0 auto;height:calc(62px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);background:var(--a-card);border-top:1px solid var(--a-line);display:flex}
 #auxiliar-ui .ax-tab{flex:1;border:none;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--a-t3);font-size:11px;font-weight:600;cursor:pointer}
 #auxiliar-ui .ax-tab.on{color:var(--a-accent)}
 
@@ -2338,7 +2347,7 @@ html,body{overflow-x:hidden}
    .ax-head, el encabezado del inicio, sí lo tenía desde siempre — por eso el
    inicio se veía bien y el resto no. En el navegador env() vale 0 y todo queda
    como estaba. */
-#auxiliar-ui .ax-form-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(18px + env(safe-area-inset-top,0px)) 18px 18px}
+#auxiliar-ui .ax-form-head{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(18px + env(safe-area-inset-top,0px)) 18px 18px}
 #auxiliar-ui .ax-form-head b{font-size:15px;font-weight:800}
 #auxiliar-ui .ax-icbtn{width:38px;height:38px;border-radius:11px;border:1.5px solid var(--a-line);background:var(--a-card);color:var(--a-text);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
 #auxiliar-ui .ax-steps{display:flex;gap:6px;flex:1;justify-content:center}
