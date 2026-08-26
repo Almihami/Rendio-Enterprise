@@ -28,6 +28,160 @@
     return data;
   }
 
+  // ==========================================================================
+  // Registro del tripulante (0075 + 0076)
+  //
+  // Son las cuatro llamadas del alta, en el orden en que ocurren. Viven acá y no
+  // en aux-registro.js por la regla de la casa: todo lo que habla con Supabase
+  // pasa por api.js.
+  // ==========================================================================
+
+  // 1. Crea el usuario en auth.users SIN confirmar y dispara el correo con el
+  //    código. El nombre y el teléfono viajan como metadata para poder retomar
+  //    el registro si cierra la app antes de terminar (Registro.resume).
+  async function signUpAuxiliar({ email, password, fullName, phone }) {
+    const { data, error } = await sb.auth.signUp({
+      email, password,
+      options: { data: { full_name: fullName, phone, pending_role: 'auxiliar' } },
+    });
+    if (error) throw error;
+    // Supabase, con la protección contra enumeración de correos activada,
+    // responde 200 y un usuario "vacío" cuando el correo YA existe y está
+    // confirmado. No es un éxito: es la forma educada de no confirmar que esa
+    // persona tiene cuenta. Se detecta por identities vacío.
+    if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      throw new Error('User already registered');
+    }
+    return data;
+  }
+
+  // 2. El código de 6/8 dígitos. Devuelve sesión: a partir de acá hay auth.uid().
+  async function verifySignupOtp(email, token) {
+    const { data, error } = await sb.auth.verifyOtp({ email, token, type: 'signup' });
+    if (error) throw error;
+    return data;
+  }
+
+  // 2-bis. Rescate mientras la plantilla del correo no lleve el código y mande
+  //        un enlace: se acepta el token del enlace pegado.
+  async function verifySignupTokenHash(tokenHash) {
+    let { data, error } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: 'signup' });
+    if (error) ({ data, error } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: 'email' }));
+    if (error) throw error;
+    return data;
+  }
+
+  async function resendSignupOtp(email) {
+    const { error } = await sb.auth.resend({ type: 'signup', email });
+    if (error) throw error;
+    return true;
+  }
+
+  // 3. Lo único que puede leer quien ya verificó su correo pero todavía no tiene
+  //    perfil. Los conjuntos vienen SIN coordenadas, a propósito (ver 0076).
+  async function signupCatalogs() {
+    const { data, error } = await sb.rpc('signup_catalogs');
+    if (error) throw error;
+    return { airlines: data?.airlines || [], residences: data?.residences || [] };
+  }
+
+  // 4. El alta. El correo NO se manda: lo lee el servidor de auth.users.
+  async function registerAuxiliar(f) {
+    const { data, error } = await sb.rpc('register_auxiliar', {
+      p_full_name: f.fullName,
+      p_phone: f.phone,
+      p_airline_id: f.airlineId || null,
+      p_residence_id: f.residenceId || null,
+      p_residence_unit: f.unit || null,
+      p_residence_id_2: f.residenceId2 || null,
+      p_residence_unit_2: f.unit2 || null,
+      p_home_address: f.address || null,
+      p_home_latitude: f.lat != null ? f.lat : null,
+      p_home_longitude: f.lng != null ? f.lng : null,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  // ==========================================================================
+  // Tripulantes, del lado del admin (0075)
+  // ==========================================================================
+
+  // El padrón de tripulantes. p_auxiliar_profiles_select_admin ya deja al admin
+  // verlos todos; acá solo se juntan con su perfil, su aerolínea y sus dos
+  // unidades para poder pintar una tabla.
+  async function listAuxiliares() {
+    const COLS = 'id, profile_id, joined_at, airline_id, residence_unit, residence_unit_2, '
+      + 'home_address, residence_id, residence_id_2, '
+      + 'airlines(id, name), '
+      + 'residences!auxiliar_profiles_residence_id_fkey(id, name, sector), '
+      + 'res2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector), '
+      + 'profiles(id, full_name, email, phone, is_active, created_at)';
+    let { data, error } = await sb.from('auxiliar_profiles').select(COLS);
+    // Si 0075 no estuviera aplicada, se cae a lo que había antes: sin aerolínea
+    // ni antigüedad ni segunda unidad, pero con el padrón visible.
+    if (error) ({ data, error } = await sb.from('auxiliar_profiles')
+      .select('id, profile_id, residence_unit, home_address, residence_id, residences!auxiliar_profiles_residence_id_fkey(id, name, sector), profiles(id, full_name, email, phone, is_active, created_at)'));
+    if (error) throw error;
+    return (data || [])
+      .filter(a => a.profiles && !a.profiles.deleted_at)
+      .map(a => ({
+        id: a.id, profileId: a.profile_id,
+        name: a.profiles?.full_name || '—',
+        email: a.profiles?.email || '',
+        phone: a.profiles?.phone || '',
+        active: a.profiles?.is_active !== false,
+        createdAt: a.profiles?.created_at || null,
+        joinedAt: a.joined_at || null,
+        airlineId: a.airline_id || null,
+        airline: a.airlines?.name || '',
+        res1: a.residences ? { name: a.residences.name, sector: a.residences.sector } : null,
+        unit1: a.residence_unit || '',
+        res2: a.res2 ? { name: a.res2.name, sector: a.res2.sector } : null,
+        unit2: a.residence_unit_2 || '',
+        homeAddress: a.home_address || '',
+      }))
+      .sort((x, y) => x.name.localeCompare(y.name, 'es'));
+  }
+
+  // La corrección de antigüedad de los que ya llevaban tiempo con Rendio. El
+  // trigger guard_auxiliar_joined_at() solo la deja pasar si quien llama es
+  // admin: acá no hay que comprobar nada, la base lo hace.
+  async function setAuxiliarJoinedAt(auxProfileId, isoDate) {
+    const { error } = await sb.from('auxiliar_profiles')
+      .update({ joined_at: isoDate || null }).eq('id', auxProfileId);
+    if (error) throw error;
+    return true;
+  }
+
+  // --- Catálogo de aerolíneas (lo administra el jefe, sin desplegar código) ---
+  async function listAirlines(includeInactive) {
+    let q = sb.from('airlines').select('id, name, iata_code, sort_order, is_active')
+      .order('sort_order').order('name');
+    if (!includeInactive) q = q.eq('is_active', true);
+    const { data, error } = await q;
+    if (error) return [];
+    return data || [];
+  }
+  async function createAirline({ name, code }) {
+    // `state` es un const de core.js (no vive en window): se lee con guarda,
+    // igual que en auxiliar.js, para no reventar si el módulo aún no cargó.
+    let org = (typeof state !== 'undefined' && state.profile) ? state.profile.organization_id : null;
+    if (!org) org = (await getCurrentProfile())?.organization_id;
+    if (!org) throw new Error('No pudimos determinar la organización');
+    const { error } = await sb.from('airlines').insert({
+      organization_id: org, name: (name || '').trim(),
+      iata_code: (code || '').trim() || null, sort_order: 100,
+    });
+    if (error) throw error;
+    return true;
+  }
+  async function setAirlineActive(id, active) {
+    const { error } = await sb.from('airlines').update({ is_active: !!active }).eq('id', id);
+    if (error) throw error;
+    return true;
+  }
+
   async function listDrivers() {
     const sel = cols => sb.from('profiles').select(cols)
       .eq('role', 'driver').is('deleted_at', null).order('full_name');
@@ -1808,7 +1962,10 @@
     // residence_id se pide en el escalón de más columnas (0055): lo usa
     // "Repetir el de siempre" para volver al mismo conjunto sin preguntar.
     // 0069: el nivel de servicio y el estado de la solicitud de privado.
-    let { data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, service_level, private_status, price_cop, private_reject_reason');
+    // 0075: residence_unit, para que «Repetir el de siempre» vuelva al mismo
+    // apartamento y no solo al mismo conjunto.
+    let { data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, residence_unit, service_level, private_status, price_cop, private_reject_reason');
+    if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, service_level, private_status, price_cop, private_reject_reason'));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id'));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason'));
     if (error) ({ data, error } = await q(COLS));
@@ -1816,6 +1973,7 @@
     return (data || []).map(r => ({
       id: r.id, type: r.direction === 'airport_to_home' ? 'lle' : 'sal',
       residenceId: r.residence_id || null,
+      residenceUnit: r.residence_unit || null,
       level: r.service_level || 'shared',
       privateStatus: r.private_status || null,
       price: r.price_cop != null ? r.price_cop : null,
@@ -1859,13 +2017,25 @@
   async function getMyAuxiliarPlace() {
     const { data: u } = await sb.auth.getUser();
     const uid = u?.user?.id; if (!uid) return null;
-    const { data, error } = await sb.from('auxiliar_profiles')
-      .select('id, residence_id, home_address, home_latitude, home_longitude, residences(id, name, sector, latitude, longitude)')
-      .eq('profile_id', uid).maybeSingle();
+    // El embed va con el NOMBRE de la llave foránea, no como `residences(...)`:
+    // desde 0075 hay DOS caminos de auxiliar_profiles a residences y PostgREST
+    // responde PGRST201 («ambiguous embedding») si no se le dice cuál. El
+    // nombre existe desde 0055, así que sirve también en el escalón de abajo.
+    const BASE = 'id, residence_id, home_address, home_latitude, home_longitude, residences!auxiliar_profiles_residence_id_fkey(id, name, sector, latitude, longitude)';
+    // La segunda unidad (0075) va en su propio escalón: si la columna no
+    // existiera, el auxiliar sigue trabajando con una sola como siempre.
+    const q = (cols) => sb.from('auxiliar_profiles').select(cols).eq('profile_id', uid).maybeSingle();
+    let { data, error } = await q(BASE + ', residence_unit, residence_unit_2, residence_id_2, residencia2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector, latitude, longitude)');
+    if (error) ({ data, error } = await q(BASE + ', residence_unit'));
+    if (error) ({ data, error } = await q(BASE));
     if (error || !data) return null;
     return {
       residenceId: data.residence_id || null,
       residence: data.residences || null,
+      unit: data.residence_unit || '',
+      residenceId2: data.residence_id_2 || null,
+      residence2: data.residencia2 || null,
+      unit2: data.residence_unit_2 || '',
       homeAddress: data.home_address || '',
       homeLat: data.home_latitude, homeLng: data.home_longitude,
     };
@@ -1907,13 +2077,19 @@
     // La residencia va en su propio escalón de degradación: si la columna no
     // existiera (0055 sin aplicar) se reintenta sin ella y la reserva igual se
     // crea con el texto y el pin, que es el camino de excepción de siempre.
-    const withRes = f.residenceId ? { residence_id: f.residenceId } : {};
+    // 0075: con dos unidades el apartamento cambia por pedido, así que viaja en
+    // la reserva. Si no viene, el trigger lo hereda del perfil (el de la unidad
+    // que corresponda al conjunto, no el de la otra).
+    const withRes = f.residenceId
+      ? { residence_id: f.residenceId, ...(f.residenceUnit ? { residence_unit: f.residenceUnit } : {}) }
+      : {};
     // 0069. Solo se manda el NIVEL: el estado 'requested' y el precio los pone el
     // servidor en guard_private_insert(), para que no se pueda pactar una tarifa
     // ni auto-aprobarse desde el teléfono.
     const withLvl = f.level === 'private' ? { service_level: 'private' } : {};
     let { data, error } = await sb.from('reservations').insert({ ...payload, ...extra, ...withRes, ...withLvl }).select('id').single();
     if (error && f.level === 'private') ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra, ...withRes }).select('id').single());
+    if (error && f.residenceId && f.residenceUnit) ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra, residence_id: f.residenceId }).select('id').single());
     if (error && f.residenceId) ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra }).select('id').single());
     if (error) ({ data, error } = await sb.from('reservations').insert(payload).select('id').single());
     if (error) throw error;
@@ -2392,10 +2568,15 @@
   // El conductor lee SU ruta del día (route_assignments asignadas a él) → vueltas.
   async function listMyVueltasForDriver(profileId) {
     const dpid = await getMyDriverProfileId(profileId); if (!dpid) return null;
-    const { data, error } = await sb.from('route_assignments')
-      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
+    let { data, error } = await sb.from('route_assignments')
+      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, residence_unit, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true });
+    // 0075 puede no estar aplicada: sin el apartamento la ruta se pinta igual.
+    if (error) ({ data, error } = await sb.from('route_assignments')
+      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
+      .eq('driver_profile_id', dpid)
+      .order('planned_start_at', { ascending: true }));
     if (error) return null;
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
     const MDE = { name: 'Aeropuerto MDE', addr: 'Terminal de pasajeros · José María Córdova', lat: 6.1715, lng: -75.4270 };
@@ -2409,6 +2590,7 @@
       const stops = (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order).map(s => {
         const r = s.reservations || {};
         return { name: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar', addr: r.pickup_address || '',
+          unit: r.residence_unit || '',
           lat: r.pickup_latitude, lng: r.pickup_longitude, flight: r.flights?.flight_number || '',
           dl: rtHHMM(r.required_arrival_at), kind: type === 'lle' ? 'dropoff' : 'pickup',
           phone: r.auxiliar_profiles?.profiles?.phone || '', notes: r.notes || '',
@@ -2714,6 +2896,8 @@
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment, getRouteTables, saveRouteTables, listResidencesZones, saveResidenceZone,
+    signUpAuxiliar, verifySignupOtp, verifySignupTokenHash, resendSignupOtp, signupCatalogs, registerAuxiliar,
+    listAuxiliares, setAuxiliarJoinedAt, listAirlines, createAirline, setAirlineActive,
     getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,
     listResidences, getMyAuxiliarPlace, saveMyResidence,
     privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,

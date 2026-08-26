@@ -575,3 +575,184 @@
 }
 #privados-ui .pv-rej { margin-top: 12px; }
 #privados-ui .pv-rej .set-input { width: 100%; }
+
+/* ── Registro del tripulante (aux-registro.js) ───────────────────────────────
+   Vive en el mismo contenedor que el rol auxiliar y reusa casi todo (ax-input,
+   ax-btn, ax-opt, axr-search/list…). Lo de abajo es solo lo que estrena: el
+   error en rojo del formulario, las casillas del código y la bienvenida.
+   Hereda el modo nocturno solo: todo sale de los tokens --a-*.             */
+
+/* El campo mal llenado. El jefe lo pidió textual — «que si no llenan nombres y
+   apellidos, pues les salga como rojo». */
+#auxiliar-ui .ax-input.bad { border-color: var(--a-err); background: var(--a-err-soft); }
+#auxiliar-ui .rg-err {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--a-err);
+  margin: 6px 2px 0; line-height: 1.4;
+}
+#auxiliar-ui .rg-err .icon { width: 14px; height: 14px; margin-top: 1px; flex: 0 0 auto; }
+/* El contenedor del error existe siempre (para poder llenarlo sin repintar);
+   vacío no debe ocupar ni un píxel. */
+#auxiliar-ui .rg-err.vacio { display: none; }
+#auxiliar-ui .rg-tip { font-size: 11.5px; color: var(--a-t3); margin: 6px 2px 0; line-height: 1.45; }
+
+/* Contraseña con el botón de ver/ocultar dentro del campo. */
+#auxiliar-ui .rg-pw { position: relative; display: block; }
+#auxiliar-ui .rg-pw .ax-input { padding-right: 68px; }
+#auxiliar-ui .rg-pw-eye {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: 0; color: var(--a-accent);
+  font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; padding: 6px;
+}
+
+/* Las casillas del código.
+   Se reparten el ancho con flex en vez de medir 48px fijos: el código de este
+   proyecto trae 8 dígitos y ocho casillas fijas no caben en un teléfono de
+   360 px — se salían de la pantalla. */
+#auxiliar-ui .rg-otp { display: flex; gap: 6px; margin-top: 18px; }
+#auxiliar-ui .rg-otp-box {
+  flex: 1 1 0; min-width: 0; height: 56px;
+  text-align: center; font-family: 'Space Mono', ui-monospace, monospace;
+  font-size: 20px; font-weight: 700; color: var(--a-text);
+  background: var(--a-card); border: 2px solid var(--a-line); border-radius: 11px;
+  box-sizing: border-box; padding: 0; transition: border-color .14s, color .14s;
+}
+#auxiliar-ui .rg-otp-box:focus { outline: none; border-color: var(--a-accent); }
+#auxiliar-ui .rg-otp-box.on { border-color: var(--a-accent); }
+#auxiliar-ui .rg-otp-box.bad { border-color: var(--a-err); color: var(--a-err); }
+
+#auxiliar-ui .rg-otp-state { min-height: 22px; margin-top: 14px; text-align: center; }
+#auxiliar-ui .rg-otp-msg { font-size: 12.5px; color: var(--a-t2); display: inline-flex; align-items: center; gap: 6px; }
+#auxiliar-ui .rg-otp-msg.bad { color: var(--a-err); font-weight: 600; }
+#auxiliar-ui .rg-otp-msg.ok  { color: var(--a-ok); font-weight: 700; }
+#auxiliar-ui .rg-otp-msg.tip { color: var(--a-t3); }
+#auxiliar-ui .rg-otp-msg .icon { width: 15px; height: 15px; }
+
+#auxiliar-ui .rg-resend { margin-top: 22px; text-align: center; font-size: 12.5px; color: var(--a-t2); }
+#auxiliar-ui .rg-resend-wait { color: var(--a-t3); }
+#auxiliar-ui .rg-center { display: block; margin: 10px auto 0; text-align: center; font-size: 12.5px; }
+#auxiliar-ui .rg-soft { color: var(--a-t3); font-weight: 600; }
+
+/* Camino de rescate mientras la plantilla del correo mande enlace y no código. */
+#auxiliar-ui .rg-link-box { background: var(--a-surf2); border-radius: 12px; padding: 12px 14px; }
+#auxiliar-ui .rg-link-box p { font-size: 12px; color: var(--a-t2); margin: 0 0 8px; line-height: 1.45; }
+#auxiliar-ui .rg-link-box .ax-btn-ghost { margin-top: 10px; }
+
+/* El conjunto ya elegido, con su botón de cambiar. */
+#auxiliar-ui .rg-picked {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--a-card); border: 1.5px solid var(--a-accent);
+  border-radius: 12px; padding: 13px 14px;
+}
+#auxiliar-ui .rg-picked-txt b { display: block; font-size: 14.5px; font-weight: 800; }
+#auxiliar-ui .rg-picked-txt span { display: block; font-size: 12px; color: var(--a-t2); margin-top: 2px; }
+#auxiliar-ui .rg-picked .ax-link { margin-left: auto; font-size: 12.5px; flex: 0 0 auto; }
+
+/* Bienvenida. */
+#auxiliar-ui .rg-listo { padding-top: 46px; }
+#auxiliar-ui .rg-listo-ic {
+  width: 62px; height: 62px; border-radius: 50%;
+  background: var(--a-a2h-soft); color: var(--a-ok);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 20px;
+}
+#auxiliar-ui .rg-listo-ic .icon { width: 30px; height: 30px; }
+#auxiliar-ui .rg-listo .axp { margin-top: 20px; }
+
+/* El registro no tiene barra inferior de navegación, así que su CTA va pegado
+   abajo. NO se hace con .ax-cta-bar:last-child: en el formulario del rol
+   auxiliar la barra TAMBIÉN es el último hijo, y la regla le movería el botón
+   62 px encima de su propia navegación. */
+#auxiliar-ui .rg-cta { bottom: 0; }
+
+/* ============================================================================
+   0075 · El padrón de tripulantes (#tripulantes-ui)
+   ============================================================================
+   Mismo criterio que el bloque de privados de arriba: vive acá y no en
+   styles.css porque es la otra mitad de una función nueva. Reusa .set-btn y
+   repite el encabezado .sh-phead, que es como está resuelto en los demás
+   paneles (cada uno lo redefine bajo su propio id).
+
+   Nace responsive: el jefe pidió poder usar el admin desde el celular, y esta
+   es la primera pantalla que se escribe después de ese pedido. En escritorio es
+   una tabla de cinco columnas; por debajo de 900 px cada tripulante se apila
+   como ficha, que es la única forma de que cinco datos quepan en 360 px sin
+   letra de 9 puntos.
+   ============================================================================ */
+#tripulantes-ui .sh-phead { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 16px; }
+#tripulantes-ui .sh-phead h1 { font-size: 26px; font-weight: 800; letter-spacing: -.03em; line-height: 1; display: flex; align-items: center; gap: 11px; color: var(--ink); }
+#tripulantes-ui .sh-phead h1 .sh-ct { font-size: 13px; font-weight: 800; font-family: var(--mono); background: var(--amber-soft); color: var(--amber); border-radius: 999px; padding: 3px 11px; }
+#tripulantes-ui .sh-phead p { font-size: 13px; color: var(--ink2); margin-top: 8px; max-width: 660px; line-height: 1.5; }
+#tripulantes-ui .sh-phead p b { color: var(--ink); font-weight: 700; }
+#tripulantes-ui .tp-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+#tripulantes-ui .tp-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+#tripulantes-ui .tp-search { position: relative; flex: 1 1 260px; min-width: 0; }
+#tripulantes-ui .tp-search > .icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--ink3); pointer-events: none; }
+#tripulantes-ui .tp-search input { width: 100%; box-sizing: border-box; padding: 10px 12px 10px 36px; border: 1px solid var(--line); border-radius: 10px; font-family: inherit; font-size: 14px; color: var(--ink); background: #fff; }
+#tripulantes-ui .tp-search input:focus { outline: none; border-color: var(--amber); }
+#tripulantes-ui .tp-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+#tripulantes-ui .tp-filters button { border: 1px solid var(--line); background: #fff; color: var(--ink2); font-family: inherit; font-size: 12.5px; font-weight: 700; padding: 8px 12px; border-radius: 999px; cursor: pointer; }
+#tripulantes-ui .tp-filters button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+#tripulantes-ui .tp-nota { display: flex; gap: 10px; align-items: flex-start; background: var(--amber-soft); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
+#tripulantes-ui .tp-nota .icon { width: 17px; height: 17px; color: var(--amber); flex: 0 0 auto; margin-top: 1px; }
+#tripulantes-ui .tp-nota b { display: block; font-size: 13.5px; color: var(--ink); }
+#tripulantes-ui .tp-nota span { display: block; font-size: 12.5px; color: var(--ink2); margin-top: 2px; }
+
+#tripulantes-ui .tp-list { display: flex; flex-direction: column; gap: 8px; }
+#tripulantes-ui .tp-row { border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+#tripulantes-ui .tp-row.open { border-color: var(--amber); }
+#tripulantes-ui .tp-main {
+  display: grid; align-items: center; gap: 14px; padding: 13px 15px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, .8fr) minmax(0, 1.6fr) minmax(0, 1fr) auto;
+}
+#tripulantes-ui .tp-who b { display: block; font-size: 14.5px; font-weight: 700; color: var(--ink); }
+#tripulantes-ui .tp-who span { display: block; font-size: 12px; color: var(--ink3); margin-top: 2px; word-break: break-word; }
+#tripulantes-ui .tp-air { font-size: 13px; font-weight: 700; color: var(--ink2); }
+#tripulantes-ui .tp-punto { font-size: 12.5px; color: var(--ink2); line-height: 1.5; }
+#tripulantes-ui .tp-punto b { color: var(--ink); font-weight: 700; }
+#tripulantes-ui .tp-punto2 { margin-top: 3px; color: var(--ink3); }
+#tripulantes-ui .tp-tag { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; background: var(--line); color: var(--ink2); border-radius: 4px; padding: 1px 5px; margin-right: 6px; }
+#tripulantes-ui .tp-ant b { display: block; font-size: 13.5px; font-weight: 800; color: var(--ink); }
+#tripulantes-ui .tp-ant b.falta { color: var(--amber); }
+#tripulantes-ui .tp-ant b.raro { color: #C53030; }
+#tripulantes-ui .tp-ant span { display: block; font-size: 11.5px; color: var(--ink3); margin-top: 2px; }
+#tripulantes-ui .tp-edit { white-space: nowrap; }
+
+#tripulantes-ui .tp-editor { border-top: 1px solid var(--line); padding: 13px 15px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+#tripulantes-ui .tp-editor label { font-size: 12.5px; font-weight: 700; color: var(--ink2); display: flex; align-items: center; gap: 8px; }
+#tripulantes-ui .tp-editor input { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; font-family: inherit; font-size: 14px; color: var(--ink); }
+#tripulantes-ui .tp-editor p { flex: 1 1 260px; font-size: 11.5px; color: var(--ink3); line-height: 1.5; margin: 0; }
+
+#tripulantes-ui .tp-empty { border: 1px dashed var(--line); border-radius: 14px; padding: 30px 20px; text-align: center; color: var(--ink2); }
+#tripulantes-ui .tp-empty b { display: block; font-size: 15px; color: var(--ink); }
+#tripulantes-ui .tp-empty span { display: block; font-size: 13px; margin: 6px auto 0; max-width: 400px; line-height: 1.5; }
+#tripulantes-ui .tp-empty .set-btn { margin-top: 14px; }
+
+#tripulantes-ui #tp-air-box { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 16px; background: #FBFBFC; }
+#tripulantes-ui .tp-air-head b { font-size: 14.5px; color: var(--ink); }
+#tripulantes-ui .tp-air-head span { display: block; font-size: 12.5px; color: var(--ink2); margin-top: 3px; line-height: 1.5; }
+#tripulantes-ui .tp-air-list { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+#tripulantes-ui .tp-air-row { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+#tripulantes-ui .tp-air-row b { font-size: 13.5px; color: var(--ink); }
+#tripulantes-ui .tp-air-row.off { opacity: .55; }
+#tripulantes-ui .tp-air-row .set-btn { margin-left: auto; }
+#tripulantes-ui .tp-air-new { display: flex; gap: 8px; flex-wrap: wrap; }
+#tripulantes-ui .tp-air-new input { border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; font-family: inherit; font-size: 13.5px; color: var(--ink); }
+#tripulantes-ui .tp-air-new input:first-child { flex: 1 1 200px; min-width: 0; }
+#tripulantes-ui .tp-air-new input:nth-child(2) { width: 90px; }
+#tripulantes-ui .tp-air-nota { font-size: 11.5px; color: var(--ink3); margin: 10px 0 0; line-height: 1.5; }
+
+/* El celular: cada tripulante como ficha apilada, no como fila de tabla. */
+@media (max-width: 900px) {
+  #tripulantes-ui .tp-main { grid-template-columns: 1fr auto; row-gap: 10px; align-items: start; }
+  #tripulantes-ui .tp-who { grid-column: 1; }
+  #tripulantes-ui .tp-edit { grid-column: 2; grid-row: 1; }
+  #tripulantes-ui .tp-air { grid-column: 1 / -1; }
+  #tripulantes-ui .tp-punto { grid-column: 1 / -1; }
+  #tripulantes-ui .tp-ant { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; }
+  #tripulantes-ui .tp-ant span { margin-top: 0; }
+  #tripulantes-ui .tp-editor { flex-direction: column; align-items: stretch; }
+  #tripulantes-ui .tp-editor label { flex-direction: column; align-items: flex-start; gap: 6px; }
+  #tripulantes-ui .tp-editor input { width: 100%; box-sizing: border-box; }
+}

@@ -34,6 +34,9 @@
     failed: false,
     q: '',            // texto del buscador
     saving: false,
+    // Con dos unidades: el tripulante pidió salir de un tercer sitio hoy, así
+    // que se le abre el catálogo completo en vez del selector de dos.
+    otro: false,
   };
 
   // Comparación sin acentos ni mayúsculas: nadie escribe "Cámbulo" con tilde en
@@ -68,6 +71,48 @@
   }
 
   const byId = (id) => (st.cat || []).find(r => r.id === id) || null;
+
+  // ── Dos unidades (0075) ──────────────────────────────────────────────────
+  // «Unidad» es el apartamento. Quien registró dos sitios elige en CADA pedido
+  // de cuál sale: es lo que pidió el jefe — «a los que tengan la otra opción de
+  // unidad, que se le abra como una selección: sea la unidad 1 o sea la 2».
+  // Se modela como la pareja completa conjunto+apartamento, así que la elección
+  // puede cambiar la portería a la que va el carro, no solo el timbre.
+  const hasTwo = () => !!(st.place?.residenceId && st.place?.residenceId2);
+  function unitN(n) {
+    if (!st.place) return null;
+    const id = n === 1 ? st.place.residenceId : st.place.residenceId2;
+    if (!id) return null;
+    const r = byId(id) || (n === 1 ? st.place.residence : st.place.residence2);
+    if (!r) return null;
+    return { n, id, res: r, unit: (n === 1 ? st.place.unit : st.place.unit2) || '' };
+  }
+  // Cuál de las dos está elegida en este pedido (o null si ninguna).
+  function chosenN(f) {
+    if (!hasTwo() || !f.residenceId) return null;
+    if (f.residenceId === st.place.residenceId && (f.residenceUnit || '') === (st.place.unit || '')) return 1;
+    if (f.residenceId === st.place.residenceId2 && (f.residenceUnit || '') === (st.place.unit2 || '')) return 2;
+    return null;
+  }
+  function unitCardHTML(u, sel) {
+    return `<button class="ax-opt${sel ? ' sel' : ''}" data-ax="res-unit" data-n="${u.n}">
+      <span class="ax-opt-ic axr-unit-ic"><svg class="icon"><use href="#i-home"/></svg></span>
+      <div><b>${esc(u.unit || 'Unidad ' + u.n)}</b><span>${esc(u.res.name)}${u.res.sector ? ' · ' + esc(u.res.sector) : ''}</span></div>
+      <span class="ax-radio">${sel ? '<svg class="icon"><use href="#i-check"/></svg>' : ''}</span>
+    </button>`;
+  }
+  function unitChooserHTML(f) {
+    const a = unitN(1), b = unitN(2);
+    if (!a || !b) return '';
+    const c = chosenN(f);
+    return `
+      <div class="axr-lbl">¿De cuál sales?</div>
+      ${unitCardHTML(a, c === 1)}
+      ${unitCardHTML(b, c === 2)}
+      <div class="axr-otro">
+        <button class="ax-link" data-ax="res-otro">Hoy salgo de otro lado</button>
+      </div>`;
+  }
   // El punto guardado solo cuenta si sigue vivo en el catálogo: si la operación
   // desactivó el conjunto, no se le ofrece como atajo.
   function savedRes() {
@@ -91,6 +136,12 @@
       return `<div class="axr-load"><span class="axr-spin"></span>Cargando los puntos de recogida…</div>`;
     }
     if (st.failed || !st.cat || !st.cat.length) return null;
+    // Con dos unidades registradas, lo primero es elegir de cuál sale. Solo si
+    // dice «hoy salgo de otro lado» (st.otro) se le muestra el catálogo entero.
+    if (hasTwo() && !st.otro) {
+      const cuerpo = unitChooserHTML(f);
+      if (cuerpo) return cuerpo + (chosenN(f) ? confirmHTML(f, true) : '');
+    }
     if (f.residenceId) return confirmHTML(f);
     return pickHTML(f);
   }
@@ -150,11 +201,13 @@
       </button>`;
   }
 
-  function confirmHTML(f) {
+  // `compacto` = viene colgado del selector de dos unidades: ya se sabe cuál es
+  // y por qué, así que sobran el botón de cambiar y el de guardar como mi punto.
+  function confirmHTML(f, compacto) {
     const r = byId(f.residenceId) || st.place?.residence;
     if (!r) return null;
     const isLle = f.type === 'lle';
-    const yaEsSuPunto = st.place?.residenceId === r.id;
+    const yaEsSuPunto = compacto || st.place?.residenceId === r.id;
     return `
       <div class="axr-picked">
         <div class="axr-picked-head">
@@ -162,7 +215,7 @@
             <b>${esc(r.name)}</b>
             ${r.sector ? `<span>${esc(r.sector)}</span>` : ''}
           </div>
-          <button class="ax-link" data-ax="res-change">Cambiar</button>
+          ${compacto ? '' : `<button class="ax-link" data-ax="res-change">Cambiar</button>`}
         </div>
         <div id="axr-map" class="axr-map"></div>
         <div class="axr-verified">
@@ -217,10 +270,20 @@
   // ---------- eventos ----------
   // Devuelve true si consumió el clic (auxiliar.js repinta) y 'silent' si ya se
   // encargó del repintado por su cuenta.
+  // OJO con los nombres: auxiliar.js solo delega en este módulo las acciones que
+  // empiezan por `res-`. Una acción que se llame «unit-pick» llega al dispatcher
+  // general, no la reclama nadie y el botón queda muerto sin decir nada.
   function handle(action, el, f) {
     if (action === 'res-pick') {
       const r = byId(el.dataset.id); if (!r) return true;
       f.residenceId = r.id;
+      // El apartamento solo se arrastra si el conjunto elegido es uno de los
+      // suyos; si eligió otro sitio, el apartamento del perfil no significa
+      // nada ahí y mandarlo mandaría al conductor a timbrar a una puerta que
+      // no existe.
+      f.residenceUnit = (st.place && r.id === st.place.residenceId) ? (st.place.unit || null)
+        : (st.place && r.id === st.place.residenceId2) ? (st.place.unit2 || null)
+        : null;
       // El texto y la coord se guardan solo para PINTAR (resumen del paso 4 y
       // tarjetas). Al crear la reserva NO se envían: los pone el trigger desde
       // el catálogo. Ver createReservation en api.js.
@@ -228,6 +291,24 @@
       f.lat = r.latitude; f.lng = r.longitude;
       f.locConfirmed = true; f.manualAddr = false;
       st.q = '';
+      return true;
+    }
+    if (action === 'res-unit') {
+      const u = unitN(parseInt(el.dataset.n, 10)); if (!u) return true;
+      f.residenceId = u.id;
+      f.residenceUnit = u.unit || null;
+      f.address = u.res.name + (u.res.sector ? ', ' + u.res.sector : '');
+      f.lat = u.res.latitude; f.lng = u.res.longitude;
+      f.locConfirmed = true; f.manualAddr = false;
+      return true;
+    }
+    if (action === 'res-otro') {
+      // No borra lo elegido a lo bruto: si ya había una unidad puesta se
+      // conserva hasta que escoja otra cosa, para no dejar el paso en rojo.
+      st.otro = true; st.q = '';
+      f.residenceId = null; f.residenceUnit = null;
+      f.address = ''; f.lat = null; f.lng = null; f.locConfirmed = false;
+      destroyMap();
       return true;
     }
     if (action === 'res-change') {
@@ -301,9 +382,14 @@
   // La maqueta del diseñador tampoco autoselecciona: pone «Tus puntos» arriba.
   // Es un toque, no cero — y siempre el mismo.
 
+  // Un pedido nuevo arranca limpio: si el anterior terminó en «hoy salgo de otro
+  // lado», el siguiente tiene que volver a ofrecerle sus dos unidades.
+  function newTrip() { st.otro = false; st.q = ''; }
+
   window.AuxResidencias = {
-    load, html, handle, afterRender, ready, onQuery, destroyMap,
+    load, html, handle, afterRender, ready, onQuery, destroyMap, newTrip,
     hasCatalog: () => !!(st.cat && st.cat.length),
+    hasTwoUnits: hasTwo,
     count: () => (st.cat || []).length,
   };
 })();

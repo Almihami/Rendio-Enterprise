@@ -59,7 +59,7 @@
           { id: 'flota', name: 'Flota', icon: 'm-flota', desc: 'Vehículos disponibles, capacidad y mantenimiento.', soon: 'build' },
         ] },
         { id: 'team', name: 'Equipo', icon: 'g-team', desc: 'Personas', items: [
-          { id: 'personas', name: 'Personas', icon: 'm-personas', desc: 'Auxiliares y sus datos de recogida.', soon: 'build' },
+          { id: 'personas', name: 'Tripulantes', icon: 'm-personas', desc: 'Los TCP que se registraron solos: aerolínea, punto de recogida, sus dos unidades y la antigüedad con Rendio.', tab: 'tripulantes' },
         ] },
         { id: 'data', name: 'Análisis', icon: 'g-data', desc: 'Reportes', items: [
           { id: 'metricas', name: 'Métricas', icon: 'm-metricas', desc: 'Rutas a tiempo, km y ocupación de carros.', soon: 'build' },

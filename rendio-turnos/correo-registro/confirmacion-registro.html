@@ -1,0 +1,73 @@
+<!-- Plantilla del correo de confirmación del registro del tripulante (0075).
+     Se pega en: Supabase → Authentication → Emails → Confirm signup.
+     El asunto va aparte: «Tu código de Rendio: {{ .Token }}»
+
+     LA LÍNEA QUE NO SE PUEDE BORRAR es {{ .Token }}: ese es el código que la app
+     pide en la pantalla de verificación. La plantilla que Supabase trae de
+     fábrica NO lo incluye (manda {{ .ConfirmationURL }}), y por eso hay que
+     cambiarla: sin esto llega un enlace y la pantalla de las casillas no sirve.
+
+     Sin imágenes externas a propósito: media empresa bloquea las imágenes
+     remotas en el correo y el logo llegaría como un cuadro roto. El nombre va
+     como texto sobre el naranja de la marca, que se ve igual en todas partes. -->
+<div style="margin:0;padding:0;background:#F6F7F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F6F7F9;padding:32px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#FFFFFF;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(16,24,40,.06);">
+
+        <!-- Cabecera -->
+        <tr><td style="background:#F4791F;padding:26px 28px;">
+          <div style="font-size:20px;font-weight:800;color:#FFFFFF;letter-spacing:-.02em;">Rendio Enterprises</div>
+          <div style="font-size:12px;color:#FFE2CB;margin-top:3px;letter-spacing:.08em;text-transform:uppercase;">Transporte de tripulaciones</div>
+        </td></tr>
+
+        <!-- Cuerpo -->
+        <tr><td style="padding:30px 28px 8px;">
+          <h1 style="margin:0;font-size:21px;font-weight:800;color:#101828;letter-spacing:-.02em;">Bienvenido a bordo</h1>
+          <p style="margin:12px 0 0;font-size:14.5px;line-height:1.6;color:#475467;">
+            Gracias por crear tu cuenta. Desde ahora no vas a tener que escribir tu nombre ni tu
+            dirección otra vez: entras a la app y pides tu traslado.
+          </p>
+          <p style="margin:18px 0 0;font-size:14.5px;line-height:1.6;color:#475467;">
+            Escribe este código en la app para confirmar tu correo:
+          </p>
+        </td></tr>
+
+        <!-- El código -->
+        <tr><td style="padding:18px 28px 4px;" align="center">
+          <div style="display:inline-block;background:#FFF4EC;border:1px solid #FFE2CB;border-radius:12px;padding:16px 26px;">
+            <div style="font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:30px;font-weight:700;letter-spacing:.16em;color:#101828;">{{ .Token }}</div>
+          </div>
+          <div style="font-size:12px;color:#98A2B3;margin-top:12px;">Vence en 60 minutos.</div>
+        </td></tr>
+
+        <!-- Qué sigue -->
+        <tr><td style="padding:24px 28px 4px;">
+          <div style="border-top:1px solid #EAECF0;padding-top:20px;">
+            <p style="margin:0 0 10px;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#98A2B3;">Lo que sigue</p>
+            <p style="margin:0 0 8px;font-size:13.5px;line-height:1.6;color:#475467;">
+              <b style="color:#101828;">1.</b> Eliges tu aerolínea y tu conjunto de una lista — ya tenemos ubicadas las porterías de Rionegro.
+            </p>
+            <p style="margin:0 0 8px;font-size:13.5px;line-height:1.6;color:#475467;">
+              <b style="color:#101828;">2.</b> Si te quedas en dos sitios, registras los dos y eliges de cuál sales en cada viaje.
+            </p>
+            <p style="margin:0;font-size:13.5px;line-height:1.6;color:#475467;">
+              <b style="color:#101828;">3.</b> Listo. Nos dices a qué hora quieres estar en el aeropuerto y nosotros calculamos a qué hora pasa el carro.
+            </p>
+          </div>
+        </td></tr>
+
+        <!-- Pie -->
+        <tr><td style="padding:24px 28px 28px;">
+          <div style="border-top:1px solid #EAECF0;padding-top:16px;">
+            <p style="margin:0;font-size:11.5px;line-height:1.6;color:#98A2B3;">
+              Si no fuiste tú quien pidió esta cuenta, ignora este correo: sin el código no se crea nada.
+            </p>
+            <p style="margin:10px 0 0;font-size:11.5px;color:#98A2B3;">© Rendio Enterprises · Rionegro, Antioquia</p>
+          </div>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</div>

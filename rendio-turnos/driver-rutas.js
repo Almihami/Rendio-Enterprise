@@ -262,7 +262,7 @@
         <div class="dr-stop-n ${cls}">${badge}</div>
         <div class="dr-stop-b">
           <div class="r1"><span class="nm">${isApt ? 'Aeropuerto MDE' : l.name}</span>${time ? `<span class="eta">${time}</span>` : ''}</div>
-          <div class="ad">${l.addr || ''}</div>
+          <div class="ad">${l.addr || ''}${l.unit ? ` · <b>${l.unit}</b>` : ''}</div>
         </div>
       </div>`;
     }).join('');
@@ -575,7 +575,7 @@
         <div class="dr-sheet-b">
           <div class="dr-aux">
             <div class="dr-aux-av ${tone}">${isApt ? '✈' : drIni(leg.name)}</div>
-            <div class="dr-aux-t"><div class="nm">${isApt ? 'Aeropuerto MDE' : leg.name}</div><div class="ad">${leg.addr || ''}</div></div>
+            <div class="dr-aux-t"><div class="nm">${isApt ? 'Aeropuerto MDE' : leg.name}</div><div class="ad">${leg.addr || ''}${leg.unit ? ` · <b>${leg.unit}</b>` : ''}</div></div>
             ${contacts}
           </div>
           ${mid}

@@ -534,8 +534,19 @@
     return `
       ${auxField('Número de vuelo', 'flight', f.flight || '', 'Ej: AV-9412')}
       ${auxField('Fecha del vuelo', 'date', f.date || '', '', 'date', `min="${auxTodayISO()}"`)}
-      ${auxField(isLle ? 'Hora de aterrizaje' : 'Hora de presentación', 'time', f.time || '', isLle ? '06:18' : '05:10', 'time')}
-      <div id="ax-time-hints">${auxTimeHints()}</div>`;
+      ${auxField(isLle ? 'Hora de aterrizaje' : 'Hora en que quieres estar en el aeropuerto',
+        'time', f.time || '', isLle ? '06:18' : '05:10', 'time')}
+      ${isLle ? '' : `<div class="ax-geo-hint">No es tu hora de presentación: es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.</div>`}
+      <div id="ax-time-hints">${auxTimeHints()}</div>
+      ${isLle ? '' : `
+        <div class="ax-sec">El regreso</div>
+        ${auxToggle('Regreso el mismo día', 'sameDayBack', f.sameDayBack,
+          'Si vuelves hoy mismo, lo dejamos pedido de una vez y no tienes que volver a entrar.')}
+        ${f.sameDayBack ? `
+          ${auxField('Hora a la que aterrizas de vuelta', 'backTime', f.backTime || '', '19:40', 'time')}
+          ${auxField('Número del vuelo de regreso (opcional)', 'backFlight', f.backFlight || '', 'Ej: AV-9413')}
+          <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Quedan dos traslados: el de ida y el de regreso. Puedes cancelar cualquiera por separado.</div>`
+          : ''}`}`;
   }
   // Va en su propio contenedor porque se repinta en cada tecla (junto con el
   // CTA) sin remontar los inputs — si no, el botón se deshabilitaba sin decir
@@ -545,7 +556,7 @@
     const lead = auxLeadCheck(f);
     if (lead) return `<div class="ax-hint ${lead.level === 'bad' ? 'bad' : ''}"><svg class="icon"><use href="#i-info"/></svg>${lead.text}</div>`;
     if (!f.time) return '';
-    return `<div class="ax-hint ok"><svg class="icon"><use href="#i-clock"/></svg>${isLle ? 'Te esperamos al bajar del avión.' : `Recogida estimada <b>${auxSuggestPickup(f.time)}</b> · te dejamos en MDE antes de tu presentación.`}</div>`;
+    return `<div class="ax-hint ok"><svg class="icon"><use href="#i-clock"/></svg>${isLle ? 'Te esperamos al bajar del avión.' : `Recogida estimada <b>${auxSuggestPickup(f.time)}</b> · te dejamos en MDE a la hora que pediste.`}</div>`;
   }
 
   // Paso 3. Desde la entrega del 17-ago el camino PRINCIPAL es elegir el
@@ -591,8 +602,12 @@
         <div class="ax-sum-head ${m.cls}"><svg class="icon"><use href="#${m.ic}"/></svg>${m.label} · ${m.desc}</div>
         ${row('Vuelo', f.flight || '—')}
         ${row('Fecha', f.date ? auxDateES(f.date) : '—')}
-        ${row(f.type === 'lle' ? 'Aterriza' : 'Presentación', auxHM(f.time))}
+        ${row(f.type === 'lle' ? 'Aterriza' : 'Estar en el aeropuerto', auxHM(f.time))}
+        ${f.type !== 'lle' && f.sameDayBack && f.backTime
+          ? row('Regreso (aterriza)', auxHM(f.backTime) + (f.backFlight ? ' · ' + f.backFlight : ''))
+          : ''}
         ${row(f.residenceId ? (f.type === 'lle' ? 'Te dejamos en' : 'Te recogemos en') : 'Dirección', auxShortAddr(f.address))}
+        ${f.residenceUnit ? row('Unidad', f.residenceUnit) : ''}
         ${f.residenceId ? `<div class="ax-sum-row"><span>Ubicación</span><b class="axr-ok">Verificada</b></div>` : ''}
         ${window.AuxPrivado && AuxPrivado.enabled()
           ? row('Servicio', f.level === 'private'
@@ -642,7 +657,8 @@
     const paso3Listo = window.AuxResidencias
       ? AuxResidencias.ready(f) : !!(f.address && f.locConfirmed);
     const disabled = (kind === 'tipo' && !f.type)
-      || (kind === 'vuelo' && (!f.flight || !f.date || !f.time || badDate))
+      || (kind === 'vuelo' && (!f.flight || !f.date || !f.time || badDate
+            || (f.sameDayBack && !f.backTime)))
       || (kind === 'donde' && !paso3Listo)
       || (kind === 'nivel' && !f.level)
       || (kind === 'revisar' && badDate);
@@ -731,13 +747,16 @@
   }
 
   // ---------- confirmar → crea la reserva (BD real o demo) → confirmación ----------
-  async function auxSubmit() {
-    const f = auxState.form;
-    const trip = {
-      id: 't' + Date.now(),
+  // Construye la tarjeta local de un traslado a partir del formulario. Se saca
+  // aparte porque desde 2026-08-25 un mismo pedido puede producir DOS: la ida y
+  // el regreso del mismo día.
+  function auxTripCard(f) {
+    return {
+      id: 't' + Date.now() + Math.random().toString(36).slice(2, 6),
       type: f.type, flight: f.flight, date: f.date, time: f.time,
       address: f.address, lat: f.lat, lng: f.lng,
       residenceId: f.residenceId || null,
+      residenceUnit: f.residenceUnit || null,
       // 0069. El estado y el precio los pone el SERVIDOR; acá se guardan solo
       // para pintar la pantalla mientras llega el siguiente refresco.
       level: f.level === 'private' ? 'private' : 'shared',
@@ -746,11 +765,48 @@
       isPernocta: !!f.isPernocta, isReserva: f.isReserva !== false, notes: f.notes || '',
       status: 'pending', driver: null, rated: false,
     };
-    // Persistir en dev si hay sesión real; si falla, sigue como demo local.
+  }
+
+  async function auxSubmit() {
+    const f = auxState.form;
+    const trip = auxTripCard(f);
+    // Persistir en dev si hay sesión real; si falla, no se inventa nada.
     try { trip.id = await Api.createReservation(f); }
     catch (e) { toast('No se pudo guardar tu traslado. Revisa la conexión e intenta otra vez.'); return; }
     auxState.trips.unshift(trip);
+
+    // ── El regreso del mismo día ──
+    // Son DOS reservas y no una con dos horas: el asignador rutea por momento
+    // comprometido, y la ida y el regreso caen en oleadas distintas, con carros
+    // distintos. Guardarlo como un solo registro obligaría a partirlo después.
+    //
+    // La ida ya quedó guardada. Si el regreso falla, NO se deshace la ida — se
+    // le dice qué pasó y qué le falta. Perder el traslado que sí quedó, porque
+    // el segundo no pasó, sería peor que quedar a medias sabiéndolo.
+    if (f.type !== 'lle' && f.sameDayBack && f.backTime) {
+      const back = {
+        ...f, type: 'lle',
+        time: f.backTime,
+        flight: f.backFlight || f.flight,
+        // Marcarlo como pernocta al regreso no tiene sentido: la pernocta es
+        // del viaje de ida.
+        isPernocta: false,
+        // El regreso es siempre compartido: el privado se pide para un tramo
+        // concreto y se aprueba uno a uno (0069).
+        level: 'shared',
+        notes: ((f.notes || '') + ' · Regreso del mismo día').trim(),
+      };
+      try {
+        const bt = auxTripCard(back);
+        bt.id = await Api.createReservation(back);
+        auxState.trips.unshift(bt);
+      } catch (e) {
+        toast('Guardamos tu ida, pero el regreso no quedó. Pídelo aparte desde «Pedir traslado».');
+      }
+    }
+
     auxState.step = 1; auxState.form = {};
+    if (window.AuxResidencias) AuxResidencias.newTrip();
     auxState.editingTrip = trip.id; auxState.view = 'confirm';
     auxRender();
   }
@@ -1753,7 +1809,7 @@
       if (a === 'new') {
         auxState.view = 'form'; auxState.step = 1; auxState.form = { isReserva: true };
         // El catálogo se pide ya, para que el paso 3 no muestre spinner.
-        if (window.AuxResidencias) AuxResidencias.load();
+        if (window.AuxResidencias) { AuxResidencias.newTrip(); AuxResidencias.load(); }
         if (window.AuxPrivado) AuxPrivado.resetCupo();
         auxRender();
       }
@@ -1765,8 +1821,9 @@
           isReserva: true, type: last.type,
           notes: last.notes || '',
           residenceId: last.residenceId || null,
+          residenceUnit: last.residenceUnit || null,
         };
-        if (window.AuxResidencias) AuxResidencias.load();
+        if (window.AuxResidencias) { AuxResidencias.newTrip(); AuxResidencias.load(); }
         // Si el traslado anterior salió de un conjunto del catálogo, se repite
         // el conjunto. Si venía del camino manual (sin residencia), el paso 3 se
         // pide normal: repetir una dirección escrita a mano repetiría también su

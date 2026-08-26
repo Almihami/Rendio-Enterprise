@@ -60,8 +60,18 @@
       if (session) {
         const profile = await Api.getCurrentProfile();
         if (!profile) {
-          await Api.signOut();
-          nextAction = () => showLogin('Tu cuenta no tiene perfil asociado.');
+          // Un tripulante que verificó su correo y cerró la app antes de
+          // terminar el paso 3 cae exactamente aquí: tiene sesión y no tiene
+          // perfil. Antes se le cerraba la sesión y se le decía «tu cuenta no
+          // tiene perfil asociado», que para él es una pared. Ahora se le
+          // retoma el registro donde iba.
+          const pend = session.user?.user_metadata?.pending_role === 'auxiliar';
+          if (pend && window.AuxRegistro) {
+            nextAction = () => AuxRegistro.resume(session.user);
+          } else {
+            await Api.signOut();
+            nextAction = () => showLogin('Tu cuenta no tiene perfil asociado.');
+          }
         } else {
           // Suspendido: lo dejamos entrar a ver el banner; el módulo se bloquea.
           state.profile = profile;
@@ -125,6 +135,9 @@
     window.addEventListener('hashchange', () => { try { applyDeepLink(); } catch (e) { /* */ } });
 
     $('#login-form').addEventListener('submit', onLoginSubmit);
+    $('#login-signup')?.addEventListener('click', () => {
+      if (window.AuxRegistro) AuxRegistro.start();
+    });
     $('#logout-btn').addEventListener('click', onLogout);
     $('#logout-btn-mobile').addEventListener('click', onLogout);
 
@@ -295,6 +308,18 @@
     location.reload();
   }
 
+  // Entrada directa con un perfil ya resuelto. La usa el registro del tripulante
+  // al terminar: recargar la página funcionaría, pero se ve como si la app se
+  // hubiera caído justo cuando acaba de crear su cuenta.
+  window.enterAppAs = async function (profile) {
+    if (!profile) { location.reload(); return; }
+    state.profile = profile;
+    document.getElementById('auxiliar-root')?.classList.add('hidden');
+    const ui = document.getElementById('auxiliar-ui');
+    if (ui) ui.innerHTML = '';
+    await enterApp();
+  };
+
   async function enterApp() {
     $('#screen-login').classList.add('hidden');
     $('#app-shell').classList.remove('hidden');
@@ -407,6 +432,7 @@
     if (name === 'routes') renderRoutes();
     if (name === 'reservas') renderReservas();
     if (name === 'privados') renderPrivados();
+    if (name === 'tripulantes') renderTripulantes();
     if (name === 'eventualidades') renderEventualidades();
     else stopEvtTimer(); // al salir de la bandeja, frena su polling
     if (name === 'oper') renderOperacion();

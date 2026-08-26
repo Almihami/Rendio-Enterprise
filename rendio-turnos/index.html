@@ -104,6 +104,15 @@
           </button>
           <p id="login-error" class="hidden text-sm text-rose-600 text-center"></p>
         </form>
+        <!-- Puerta de entrada del tripulante: hasta hoy la cuenta se la creaba
+             el equipo a mano. -->
+        <div class="mt-5 pt-5 border-t border-slate-100 text-center">
+          <p class="text-sm text-slate-500">¿Eres tripulante y es tu primera vez?</p>
+          <button type="button" id="login-signup"
+                  class="mt-2 w-full border border-brand text-brand text-base font-semibold py-3 rounded-lg hover:bg-brand-50 active:scale-[0.98] transition">
+            Crear mi cuenta
+          </button>
+        </div>
       </div>
       <p class="text-xs text-slate-400 text-center mt-6">© Rendio Enterprises</p>
     </div>
@@ -927,6 +936,36 @@
 
       <!-- ADMIN: Privados (0069). Bandeja de decisiones, no tabla de consulta:
            cada tarjeta es alguien esperando saber si tiene carro. -->
+      <section data-panel="tripulantes" class="hidden">
+        <div id="tripulantes-ui" data-theme="light">
+          <div class="sh-phead">
+            <div>
+              <h1>Tripulantes <span class="sh-ct" id="tp-count">0</span></h1>
+              <p>Los TCP que se crearon cuenta desde la app. Acá se corrige la <b>fecha de ingreso</b>
+                 de quienes ya llevaban tiempo con Rendio — el registro la estampa con el día en que
+                 abrieron la app, y de esa fecha salen los beneficios por antigüedad.</p>
+            </div>
+            <div class="tp-acts">
+              <button class="set-btn ghost" data-tp="air">Aerolíneas</button>
+              <button class="set-btn ghost" data-tp="reload"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+            </div>
+          </div>
+          <div id="tp-air-box" class="hidden"></div>
+          <div class="tp-tools">
+            <div class="tp-search">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input id="tp-search" type="text" placeholder="Busca por nombre, correo, aerolínea o conjunto" autocomplete="off" />
+            </div>
+            <div class="tp-filters">
+              <button class="on" data-tp="filtro" data-f="todos">Todos</button>
+              <button data-tp="filtro" data-f="sin-fecha">Sin fecha de ingreso</button>
+              <button data-tp="filtro" data-f="dos-unidades">Con dos unidades</button>
+            </div>
+          </div>
+          <div id="tp-body"></div>
+        </div>
+      </section>
+
       <section data-panel="privados" class="hidden">
         <div id="privados-ui" data-theme="light">
           <div class="sh-phead">
@@ -1256,12 +1295,14 @@
   <script src="admin-consola.js"></script>
   <script src="admin-rutas.js"></script>
   <script src="admin-reservas.js"></script>
+  <script src="admin-tripulantes.js"></script>
   <script src="admin-privados.js"></script>
   <script src="admin-operacion.js"></script>
   <script src="admin-eventualidades.js"></script>
   <script src="admin-chat.js"></script>
   <script src="admin-acomodar.js"></script>
   <!-- Rol auxiliar (pasajero) -->
+  <script src="aux-registro.js"></script>
   <script src="aux-residencias.js"></script>
   <script src="aux-privado.js"></script>
   <script src="aux-presentacion.js"></script>
