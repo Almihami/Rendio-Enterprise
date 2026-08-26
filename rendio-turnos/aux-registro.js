@@ -53,6 +53,9 @@
     },
     touched: {},        // qué campos ya perdieron el foco (para no pintar rojo mientras escribe)
     showPass: false,
+    // ¿Este registro pasó por el código del correo? Lo decide Supabase al
+    // registrar, no nosotros: ver crear().
+    conCodigo: true,
     otp: '', otpState: 'idle', otpMsg: '',
     resendIn: 0, resendTimer: null,
     linkMode: false,    // camino de rescate: pegar el enlace del correo
@@ -146,6 +149,7 @@
     st.f.name = cleanName(user?.user_metadata?.full_name || '');
     st.f.phone = user?.user_metadata?.phone || '';
     st.f.email = user?.email || '';
+    st.conCodigo = false;   // lo que hubiera que verificar, ya se verificó
     st.view = 'perfil';
     show();
     render();
@@ -160,6 +164,7 @@
       resId: null, unit: '', hasSecond: false, resId2: null, unit2: '',
       manual: false, address: '', lat: null, lng: null, locConfirmed: false };
     st.touched = {}; st.showPass = false;
+    st.conCodigo = true;
     st.otp = ''; st.otpState = 'idle'; st.otpMsg = '';
     st.resendIn = 0; st.linkMode = false; st.linkVal = '';
     st.cat = null; st.q = ''; st.q2 = ''; st.picking = 1;
@@ -216,16 +221,27 @@
     </button>`;
   }
 
+  // Cuántos pasos tiene el registro. Son 3 con verificación de correo y 2 sin
+  // ella; los puntos y el «1/3» no pueden anunciar un paso que no va a existir.
+  const nPasos = () => (st.conCodigo ? 3 : 2);
+  const nPaso = (v) => v === 'datos' ? 1 : v === 'codigo' ? 2 : nPasos();
+
   function head(step, backAction) {
+    const n = nPasos();
+    // En la PRIMERA pantalla no se pinta el avance, y no es un olvido: cuántos
+    // pasos hay lo decide Supabase al registrar (¿pide código o no?), y todavía
+    // no ha contestado. Anunciar «1/3» y saltar a «2/2» es peor que no decir
+    // nada — el avance aparece cuando ya se sabe de verdad.
+    const avance = step > 1;
     const dots = [];
-    for (let i = 1; i <= 3; i++) dots.push(`<span class="ax-dot ${i <= step ? 'on' : ''}"></span>`);
+    for (let i = 1; i <= n; i++) dots.push(`<span class="ax-dot ${i <= step ? 'on' : ''}"></span>`);
     return `
       <div class="ax-form-head">
         ${backAction
           ? `<button class="ax-icbtn" data-rg="${backAction}" aria-label="Atrás"><svg class="icon"><use href="#i-back"/></svg></button>`
           : `<span style="width:38px"></span>`}
-        <div class="ax-steps">${dots.join('')}</div>
-        <div class="rg-head-r">${themeBtnHTML()}<span class="ax-step-n">${step}/3</span></div>
+        <div class="ax-steps">${avance ? dots.join('') : ''}</div>
+        <div class="rg-head-r">${themeBtnHTML()}${avance ? `<span class="ax-step-n">${step}/${n}</span>` : ''}</div>
       </div>`;
   }
 
@@ -312,7 +328,7 @@
       : st.otpState === 'ok' ? `<span class="rg-otp-msg ok"><svg class="icon"><use href="#i-check"/></svg>Código correcto</span>`
       : `<span class="rg-otp-msg tip">Puedes pegarlo completo.</span>`;
     return `
-      ${head(2, 'volver-datos')}
+      ${head(nPaso('codigo'), 'volver-datos')}
       <div class="ax-body">
         <h1 class="ax-form-title">Verifica tu correo</h1>
         <p class="ax-lead">Te enviamos un código de ${OTP_LEN} dígitos a <b>${esc(st.f.email)}</b>.</p>
@@ -425,7 +441,7 @@
     const f = st.f;
     const cargando = !st.cat;
     return `
-      ${head(3, null)}
+      ${head(nPaso('perfil'), null)}
       <div class="ax-body">
         <h1 class="ax-form-title">Ya casi</h1>
         <p class="ax-lead">Esto queda guardado: no vas a tener que escribirlo otra vez.</p>
@@ -772,12 +788,29 @@
     if (st.busy || !datosOk()) return;
     st.busy = true; st.err = ''; render();
     try {
-      await Api.signUpAuxiliar({
+      const data = await Api.signUpAuxiliar({
         email: st.f.email.trim(), password: st.f.pass,
         fullName: cleanName(st.f.name), phone: st.f.phone.trim(),
       });
-      st.view = 'codigo'; st.otp = ''; st.otpState = 'idle';
-      startResendClock();
+      // Quién decide si hay paso de código: SUPABASE, no este archivo.
+      //
+      // Con «Confirm email» encendido, signUp devuelve usuario SIN sesión y
+      // manda el correo → hay que verificar. Con la confirmación apagada
+      // devuelve la sesión de una y no hay nada que verificar: enseñarle unas
+      // casillas para un código que nadie mandó sería dejarlo trancado.
+      //
+      // Se lee de la respuesta y no de una bandera nuestra a propósito: el día
+      // que se encienda la confirmación (cuando haya SMTP propio) el paso
+      // reaparece solo, sin tocar ni desplegar nada.
+      if (data && data.session) {
+        st.conCodigo = false;
+        st.view = 'perfil';
+        loadCat();
+      } else {
+        st.conCodigo = true;
+        st.view = 'codigo'; st.otp = ''; st.otpState = 'idle';
+        startResendClock();
+      }
     } catch (e) {
       st.err = mensajeSignup(e);
     } finally { st.busy = false; render(); }

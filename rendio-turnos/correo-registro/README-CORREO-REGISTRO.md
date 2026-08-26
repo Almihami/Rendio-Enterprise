@@ -1,17 +1,31 @@
-# El correo del registro — lo que falta hacer a mano
+# El correo del registro — APAGADO POR AHORA
 
-El registro del tripulante está terminado y probado, **menos dos cosas que solo
-se pueden cambiar desde el panel de Supabase** (no hay migración ni código que
-las resuelva: son configuración del servicio de correo del proyecto).
+**Estado a 2026-08-25: la verificación por correo está apagada a propósito.**
+El correo que Supabase presta para pruebas admite ~2 mensajes por hora (medido:
+el segundo intento devolvió `429 email rate limit exceeded`), así que no sirve
+para que se registren tripulantes de verdad. Se retoma cuando haya un servidor
+de correo propio.
 
-Mientras no se hagan, el registro funciona pero llega un **enlace** en vez del
-código de dígitos. La app tiene un camino de rescate para eso — en la pantalla
-del código hay un «Me llegó un enlace, no un código» donde se pega el enlace y
-sigue igual —, pero no es lo que se pidió y no es lo que el tripulante espera.
+## Cómo se apaga y cómo se vuelve a encender
+
+**Supabase → Authentication → Sign In / Providers → Email → «Confirm email»**
+
+- **Apagado** (lo de ahora): al registrarse, Supabase devuelve la sesión de una.
+  La app se salta el paso del código sola y el registro queda de 2 pasos.
+- **Encendido**: Supabase manda el correo y no devuelve sesión. La app pone el
+  paso del código sola y el registro pasa a 3 pasos.
+
+**No hay que tocar ni desplegar nada para cambiar entre los dos.** La app lo
+decide leyendo lo que Supabase le responde al registrar, no una bandera nuestra
+(ver `crear()` en `aux-registro.js`). La pantalla del código y todo lo suyo
+—reenvío con cuenta regresiva, pegar el código, el camino de rescate por
+enlace— siguen en el repositorio, probados, esperando.
 
 ---
 
-## 1. La plantilla del correo (5 minutos, obligatorio)
+# Lo que hay que hacer el día que se retome
+
+## 1. La plantilla del correo (5 minutos)
 
 **Supabase → Authentication → Emails → Confirm signup**
 
@@ -23,22 +37,13 @@ Lo único que no se puede tocar de esa plantilla es `{{ .Token }}`: ese es el
 código que la app pide. La plantilla que Supabase trae de fábrica manda
 `{{ .ConfirmationURL }}` — un enlace — y por eso hay que reemplazarla.
 
-## 2. El servidor de correo (esto sí es un tapón de verdad)
+## 2. El servidor de correo (esto es el motivo del apagón)
 
 **Supabase → Project Settings → Authentication → SMTP Settings**
 
-Hoy el proyecto usa el correo que Supabase presta para pruebas, y ese tiene un
-**límite de unos 2 correos por hora**. Está medido, no supuesto: al probar el
-registro dos veces seguidas el segundo intento respondió
-`429 email rate limit exceeded`.
-
-Con ese límite, el registro no se puede abrir a los tripulantes: el tercero de
-la fila se queda sin código. Hace falta conectar un servidor de correo propio
-(Resend, SendGrid o Amazon SES). Es gratis en el rango que necesitamos, pero
-alguien tiene que crear la cuenta y verificar el dominio de Rendio — por eso no
-lo dejé hecho.
-
-Mientras tanto, para probar entre nosotros, dos correos por hora alcanzan.
+Hace falta conectar un servidor propio: Resend, SendGrid o Amazon SES. Es
+gratis en el volumen que necesitamos, pero alguien tiene que crear la cuenta y
+verificar el dominio de Rendio.
 
 ## 3. Cuántos dígitos tiene el código
 
