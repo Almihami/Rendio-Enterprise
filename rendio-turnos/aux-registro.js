@@ -190,6 +190,32 @@
     afterRender();
   }
 
+  // Sol / luna.
+  //
+  // El rol auxiliar se pone oscuro solo entre las 7 p.m. y las 6 a.m. (regla del
+  // diseñador: quien sale a las 3 a.m. no debería recibir un fogonazo blanco).
+  // El selector de las tres opciones vive en la pestaña de perfil… que durante
+  // el registro todavía no existe: quien se registra de noche no tenía forma de
+  // cambiarlo. Este botón es esa forma.
+  //
+  // Solo dos estados y no los tres: en un botón de encabezado, «automático» no
+  // se puede dibujar sin explicarlo. Tocarlo fija la preferencia; el modo
+  // automático se recupera desde el perfil una vez dentro de la app.
+  function esNoche() {
+    return window.AuxPresentacion ? AuxPresentacion.isNight() : false;
+  }
+  // Se pinta el icono de a DÓNDE va, no de dónde está: es lo que hace que se
+  // entienda sin tocarlo.
+  function themeBtnHTML() {
+    if (!window.AuxPresentacion) return '';
+    const noche = esNoche();
+    return `<button class="ax-icbtn rg-tema" data-rg="tema"
+      aria-label="${noche ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}"
+      title="${noche ? 'Modo claro' : 'Modo oscuro'}">
+      <svg class="icon"><use href="#${noche ? 'i-sun' : 'i-moon'}"/></svg>
+    </button>`;
+  }
+
   function head(step, backAction) {
     const dots = [];
     for (let i = 1; i <= 3; i++) dots.push(`<span class="ax-dot ${i <= step ? 'on' : ''}"></span>`);
@@ -197,10 +223,18 @@
       <div class="ax-form-head">
         ${backAction
           ? `<button class="ax-icbtn" data-rg="${backAction}" aria-label="Atrás"><svg class="icon"><use href="#i-back"/></svg></button>`
-          : `<span style="width:36px"></span>`}
+          : `<span style="width:38px"></span>`}
         <div class="ax-steps">${dots.join('')}</div>
-        <span class="ax-step-n">${step}/3</span>
+        <div class="rg-head-r">${themeBtnHTML()}<span class="ax-step-n">${step}/3</span></div>
       </div>`;
+  }
+
+  // La bienvenida no tiene pasos ni botón de atrás, pero sí tiene que poder
+  // cambiar el tema: es la pantalla donde más gente se va a quedar mirando.
+  function headSolo() {
+    return `<div class="ax-form-head rg-head-solo">
+      <span></span><div class="rg-head-r">${themeBtnHTML()}</div>
+    </div>`;
   }
 
   // Campo con error en rojo.
@@ -443,6 +477,7 @@
   function listoHTML() {
     const nombre = (st.profile?.full_name || st.f.name).split(' ')[0];
     return `
+      ${headSolo()}
       <div class="ax-body rg-listo">
         <div class="rg-listo-ic"><svg class="icon"><use href="#i-check"/></svg></div>
         <h1 class="ax-form-title">Bienvenido, ${esc(nombre)}</h1>
@@ -671,6 +706,13 @@
   async function onAction(a, el) {
     if (a === 'salir') return leave();
     if (a === 'ver-pass') { st.showPass = !st.showPass; return render(); }
+    if (a === 'tema') {
+      if (!window.AuxPresentacion) return;
+      // setThemePref ya repinta el contenedor (aplica data-ax-night); render()
+      // es para que el icono pase a mostrar el camino contrario.
+      AuxPresentacion.setThemePref(esNoche() ? 'light' : 'night');
+      return render();
+    }
     if (a === 'crear') return crear();
     if (a === 'volver-datos') { st.view = 'datos'; st.otp = ''; st.otpState = 'idle'; st.err = ''; return render(); }
     if (a === 'reenviar') return reenviar();
