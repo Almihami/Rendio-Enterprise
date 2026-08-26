@@ -674,7 +674,23 @@
    El env() de abajo es el mismo cuidado que el de arriba en .ax-form-head: sin
    él, en el iPhone el botón queda encima de la barra del gesto de inicio y se
    toca a medias. */
-#auxiliar-ui .rg-cta { bottom: env(safe-area-inset-bottom, 0px); }
+#auxiliar-ui .rg-cta {
+  bottom: env(safe-area-inset-bottom, 0px);
+  /* Apilados, no en fila.
+     .ax-cta-bar es flex por defecto (styles.css) porque en el rol auxiliar la
+     usan parejas de botones del mismo peso — «Cancelar / Confirmar». Acá no:
+     «Continuar» es la acción y «Ya tengo cuenta» es una salida. En fila, el
+     primario quedaba MÁS PEQUEÑO que el secundario (flex:1 contra width:100%)
+     y encima a la izquierda, que es el peor sitio para el pulgar de una
+     persona diestra. Apilados, el primario ocupa todo el ancho, va arriba y
+     cae justo bajo el pulgar. */
+  display: block;
+}
+#auxiliar-ui .rg-cta .ax-btn-primary { width: 100%; }
+/* La pantalla de datos es la única con dos botones apilados: su barra mide
+   ~130 px y el hueco de 96 del .ax-spacer normal dejaba el último campo
+   debajo del botón. */
+#auxiliar-ui .rg-spacer2 { height: 150px; }
 
 /* ============================================================================
    0075 · El padrón de tripulantes (#tripulantes-ui)
