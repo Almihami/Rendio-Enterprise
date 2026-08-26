@@ -22,7 +22,7 @@ const CAT = { airlines:[{id:'a1',name:'Avianca'},{id:'a2',name:'JetSMART'},{id:'
   residences:[{id:'r1',name:'Olivar Apartamentos',sector:'Norte'},{id:'r2',name:'Solare',sector:'Llanogrande'},{id:'r3',name:'Cámbulo',sector:'Norte'}] };
 window.Api = {
   getSession: async()=>null, signOut: async()=>{}, getCurrentProfile: async()=>({id:'p1',full_name:'Ana Lucía Restrepo Vélez',role:'auxiliar'}),
-  signUpAuxiliar: async()=>({}), verifySignupOtp: async(e,t)=>{ if(t!=='12345678') throw new Error('Token has expired or is invalid'); return {}; },
+  signUpAuxiliar: async()=>({ session:{access_token:'x'}, user:{} }), verifySignupOtp: async(e,t)=>{ if(t!=='12345678') throw new Error('Token has expired or is invalid'); return {}; },
   resendSignupOtp: async()=>true, signupCatalogs: async()=>CAT, registerAuxiliar: async()=>({ok:true}),
 };
 const src = readFileSync(APP+'aux-registro.js','utf8');
@@ -60,22 +60,15 @@ t('con todo bien, el botón se habilita', !ui().querySelector('[data-rg="crear"]
 click('[data-rg="ver-pass"]');
 t('el ojo muestra la contraseña', ui().querySelector('[data-rg-field="pass"]').type==='text');
 
-console.log('\n── paso 2 · el código ──');
-click('[data-rg="crear"]'); await wait();
-t('pasa a verificar el correo', /Verifica tu correo/.test(txt()), txt().slice(0,90));
-t('pinta 8 casillas (OTP_LENGTH)', ui().querySelectorAll('.rg-otp-box').length===8);
-t('dice a qué correo lo mandó', /ana\.restrepo@gmail\.com/.test(txt()));
-t('el reenvío arranca en cuenta regresiva', /Reenviar en 0:/.test(txt()));
-// código equivocado
-const boxes = () => ui().querySelectorAll('.rg-otp-box');
-const teclear = async (code) => { for(let i=0;i<code.length;i++){ const b=boxes()[i]; b.value=code[i]; b.dispatchEvent(new window.Event('input',{bubbles:true})); } await wait(); };
-await teclear('11111111');
-t('código equivocado → lo dice y no avanza', /no coincide o ya venció/.test(txt()), txt().slice(0,140));
-t('y no dice "ya venció" a secas (Supabase no los distingue)', !/^.*Ese código ya venció\./.test(txt()));
-await teclear('12345678'); await wait(); await new Promise(r=>setTimeout(r,700));
-t('código bueno → pasa al paso 3', /Ya casi/.test(txt()), txt().slice(0,90));
+console.log('\n── del paso 1 al perfil, sin código de por medio ──');
+// La verificación por correo se sacó el 25-ago (correo-registro/
+// PENDIENTE-verificacion-correo.js). signUp devuelve sesión y se sigue derecho.
+click('[data-rg="crear"]'); await wait(); await wait();
+t('pasa derecho al perfil', /Ya casi/.test(txt()), txt().slice(0,90));
+t('no pinta ninguna casilla de código', ui().querySelectorAll('.rg-otp-box').length===0);
+t('el registro es de 2 pasos', /2\/2/.test(txt()), txt().slice(0,60));
 
-console.log('\n── paso 3 · aerolínea, conjunto y unidades ──');
+console.log('\n── paso 2 · aerolínea, conjunto y unidades ──');
 await wait();
 t('lista las 4 aerolíneas', ui().querySelectorAll('[data-rg="airline"]').length===4);
 t('lista los conjuntos', ui().querySelectorAll('[data-rg="res-pick"]').length===3);
@@ -101,7 +94,7 @@ t('se ven las dos unidades', /Solare/.test(txt()) && /Olivar/.test(txt()));
 click('[data-rg="toggle"][data-key="hasSecond"]');   // apagar la segunda
 t('apagar la segunda la limpia', !window.AuxRegistro.state.f.resId2);
 
-console.log('\n── paso 4 · bienvenida ──');
+console.log('\n── paso 3 · bienvenida ──');
 click('.ax-cta-bar .ax-btn-primary'); await wait(); await wait();
 t('llega a la bienvenida', /Bienvenido/.test(txt()), txt().slice(0,90));
 t('saluda por el primer nombre', /Bienvenido, Ana/.test(txt()));
@@ -127,32 +120,24 @@ click('[data-rg="tema"]');
 t('vuelve al otro modo', modo()===antes, modo());
 t('sigue estando en el paso 1', /Crea tu cuenta/.test(txt()));
 
-console.log('\n── sin verificación de correo (Confirm email apagado) ──');
-// Supabase devuelve sesión de una: no hay código que pedir y el registro pasa
-// a tener 2 pasos, no 3.
-window.Api.signUpAuxiliar = async () => ({ session: { access_token: 'x' }, user: {} });
+console.log('\n── si alguien enciende «Confirm email» sin devolver el paso ──');
+// signUp deja el usuario creado pero SIN sesión: desde el navegador no hay
+// forma de seguir. No puede quedarse el botón girando en silencio.
+window.Api.signUpAuxiliar = async () => ({ session: null, user: {} });
 window.localStorage.removeItem('rendio.aux.night');
 R.start();
 set('name','Ana Lucía Restrepo Vélez'); set('email','ana.restrepo@gmail.com');
 set('phone','3105557788'); set('pass','MiClave2026');
-t('la primera pantalla no promete un total que aún no sabe', !/1\/\d/.test(txt()), txt().slice(0,60));
 click('[data-rg="crear"]'); await wait(); await wait();
-t('salta el código y va derecho al perfil', /Ya casi/.test(txt()), txt().slice(0,90));
-t('no pinta ninguna casilla de código', ui().querySelectorAll('.rg-otp-box').length===0);
-t('y el contador dice 2/2', /2\/2/.test(txt()), txt().slice(0,60));
-// …y si vuelve a estar encendida, el paso reaparece solo
-window.Api.signUpAuxiliar = async () => ({ session: null, user: {} });
-R.start();
-set('name','Ana Lucía Restrepo Vélez'); set('email','ana.restrepo@gmail.com');
-set('phone','3105557788'); set('pass','MiClave2026');
-click('[data-rg="crear"]'); await wait(); await wait();
-t('con la confirmación encendida vuelve a pedir el código', /Verifica tu correo/.test(txt()));
-t('y vuelve a ser 2/3', /2\/3/.test(txt()), txt().slice(0,60));
+t('lo dice en vez de dejarlo trancado', /falta un paso de confirmación/.test(txt()), txt().slice(0,220));
+t('y se queda en la pantalla de datos', /Crea tu cuenta/.test(txt()));
+t('el botón vuelve a estar activo para reintentar', !ui().querySelector('[data-rg="crear"]').disabled);
+window.Api.signUpAuxiliar = async () => ({ session: { access_token: 'x' }, user: {} });
 
 console.log('\n── retomar un registro a medias ──');
 await R.resume({ email:'otra@gmail.com', user_metadata:{ full_name:'Sofía Marcela Ossa Bedoya', phone:'3123334455' } });
 await wait();
-t('retoma directo en el paso 3', /Ya casi/.test(txt()));
+t('retoma directo en el paso del perfil', /Ya casi/.test(txt()));
 t('conserva el nombre que ya había dado', window.AuxRegistro.state.f.name==='Sofía Marcela Ossa Bedoya');
 
 console.log(`\n${ok}/${ok+bad} pasaron${bad?' · '+bad+' FALLARON':''}`);
