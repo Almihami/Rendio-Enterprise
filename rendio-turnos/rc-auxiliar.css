@@ -669,8 +669,12 @@
 /* El registro no tiene barra inferior de navegación, así que su CTA va pegado
    abajo. NO se hace con .ax-cta-bar:last-child: en el formulario del rol
    auxiliar la barra TAMBIÉN es el último hijo, y la regla le movería el botón
-   62 px encima de su propia navegación. */
-#auxiliar-ui .rg-cta { bottom: 0; }
+   62 px encima de su propia navegación.
+
+   El env() de abajo es el mismo cuidado que el de arriba en .ax-form-head: sin
+   él, en el iPhone el botón queda encima de la barra del gesto de inicio y se
+   toca a medias. */
+#auxiliar-ui .rg-cta { bottom: env(safe-area-inset-bottom, 0px); }
 
 /* ============================================================================
    0075 · El padrón de tripulantes (#tripulantes-ui)

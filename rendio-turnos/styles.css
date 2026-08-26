@@ -2311,7 +2311,14 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #auxiliar-ui .ax-tab.on{color:var(--a-accent)}
 
 /* Formulario */
-#auxiliar-ui .ax-form-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px}
+/* El padding de arriba lleva el área segura del iPhone. Sin esto, en la PWA
+   instalada el encabezado queda DEBAJO de la isla dinámica y del reloj: se ve
+   recortado y el botón de atrás no se deja tocar. Le pasaba a los cinco sitios
+   que usan esta clase (pedido, privado, soporte, detalle del viaje y registro);
+   .ax-head, el encabezado del inicio, sí lo tenía desde siempre — por eso el
+   inicio se veía bien y el resto no. En el navegador env() vale 0 y todo queda
+   como estaba. */
+#auxiliar-ui .ax-form-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(18px + env(safe-area-inset-top,0px)) 18px 18px}
 #auxiliar-ui .ax-form-head b{font-size:15px;font-weight:800}
 #auxiliar-ui .ax-icbtn{width:38px;height:38px;border-radius:11px;border:1.5px solid var(--a-line);background:var(--a-card);color:var(--a-text);display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
 #auxiliar-ui .ax-steps{display:flex;gap:6px;flex:1;justify-content:center}
