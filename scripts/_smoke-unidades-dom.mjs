@@ -90,6 +90,27 @@ t('el regreso sale del mismo conjunto y apartamento', creadas[1]?.residenceId===
 t('el regreso lleva su propio número de vuelo', creadas[1]?.flight==='AV-9413');
 t('el regreso NO va como pernocta', creadas[1]?.isPernocta===false);
 
+console.log('\n── la pantalla «Mis viajes» con viajes de verdad ──');
+// Se pinta el inicio con un traslado ya guardado. Esta prueba nace de un bug
+// real: una función nueva se llamó igual que la que pinta las tarjetas, la
+// pisó, y toda la pantalla mostraba «[object Object]». Las pruebas de antes no
+// lo vieron porque ninguna llegaba a pintar una tarjeta.
+window.Auxiliar.state.trips = [{
+  id:'r1', type:'sal', flight:'AV-9412', date:'2026-12-20', time:'05:10',
+  address:'Solare, Llanogrande', residenceId:'r2', residenceUnit:'Casa 8',
+  lat:6.11, lng:-75.42, level:'shared', isPernocta:false, isReserva:true,
+  notes:'', status:'pending', driver:null, rated:false,
+}];
+window.Auxiliar.state.source='live';
+window.Auxiliar.state.view='home'; window.Auxiliar.rerender(); await wait();
+t('«Mis viajes» NO muestra [object Object]', !/\[object Object\]/.test(ui().innerHTML), txt().slice(0,160));
+t('pinta el próximo viaje', /Próximo viaje/i.test(txt()));
+t('con su vuelo', /AV-9412/.test(txt()), txt().slice(0,220));
+t('y su punto de recogida', /Solare/.test(txt()));
+// la pestaña de viajes usa la misma tarjeta
+window.Auxiliar.state.view='viajes'; window.Auxiliar.rerender(); await wait();
+t('la pestaña Viajes tampoco', !/\[object Object\]/.test(ui().innerHTML) && /AV-9412/.test(txt()), txt().slice(0,160));
+
 console.log('\n── el padrón del admin ──');
 window.Api.listAuxiliares=async()=>[
   {id:'a1',profileId:'p1',name:'Ana Lucía Restrepo Vélez',email:'ana@gmail.com',phone:'3105557788',active:true,
