@@ -292,7 +292,7 @@
       </div>
       <div class="ax-cta-bar rg-cta">
         <button class="ax-btn ax-btn-primary" data-rg="crear" ${(!datosOk() || st.busy) ? 'disabled' : ''}>
-          ${st.busy ? 'Enviando el código…' : 'Continuar'}${st.busy ? '' : '<svg class="icon"><use href="#i-arrow"/></svg>'}
+          ${st.busy ? 'Enviando el código…' : 'Continuar'}
         </button>
         <button class="ax-btn ax-btn-ghost" data-rg="salir">Ya tengo cuenta</button>
       </div>`;
@@ -787,8 +787,13 @@
   // tripulante a las 11 de la noche. Se traducen los tres que de verdad pasan.
   function mensajeSignup(e) {
     const m = (e?.message || '').toLowerCase();
+    // OJO con este texto: mientras el proyecto use el correo prestado de
+    // Supabase el tope es de ~2 mensajes POR HORA, no por minuto. Decir «espera
+    // un minuto» manda a la gente a reintentar en balde y a creer que la app
+    // está rota. Cuando haya SMTP propio (ver correo-registro/) este caso
+    // prácticamente deja de ocurrir.
     if (m.includes('rate limit') || m.includes('too many'))
-      return 'Estamos enviando muchos correos en este momento. Espera un minuto y vuelve a intentar.';
+      return 'Ahora mismo no podemos enviar más correos. No es tu cuenta: es un tope nuestro. Intenta de nuevo en un rato, o avísale al coordinador.';
     if (m.includes('already registered') || m.includes('already been registered'))
       return 'Ese correo ya tiene cuenta. Vuelve e inicia sesión.';
     if (m.includes('invalid') && m.includes('email'))
