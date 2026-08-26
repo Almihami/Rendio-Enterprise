@@ -200,7 +200,7 @@
         ${past.length ? `<div class="ax-sec">Anteriores</div>${past.slice(0, 3).map(t => auxTripCard(t)).join('')}` : ''}
         <div class="ax-spacer"></div>
       </div>
-      <div class="ax-cta-bar">
+      <div class="ax-cta-bar with-tabs">
         <button class="ax-btn ax-btn-primary" data-ax="new"><svg class="icon"><use href="#i-plus"/></svg>Pedir traslado</button>
       </div>
       ${auxTabsHTML('inicio')}`;

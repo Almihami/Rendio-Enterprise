@@ -24,10 +24,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Librerías LOCALES, no de un CDN. Se bajaron a /vendor el 2026-08-07
+       (main) porque cuando cdn.tailwindcss.com o unpkg no responden, la app no
+       se degrada: sale CRUDA, ilegible y sin mapas. Dev se quedó con el bug
+       hasta el 25-ago, cuando el jefe abrió el enlace y vio una pantalla gris
+       con dos letras gigantes. -->
+  <script src="vendor/tailwind-3.4.17.js"></script>
   <!-- Leaflet: mapa real (OpenStreetMap) para la Operación en vivo de Rutas. -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+  <script src="vendor/leaflet/leaflet.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -60,9 +65,9 @@
       },
     };
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="vendor/supabase-js-2.111.0.min.js"></script>
   <!-- ExcelJS: para exportar el horario semanal con formato (reemplaza al CSV). -->
-  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script defer src="vendor/exceljs-4.4.0.min.js"></script>
   <link rel="stylesheet" href="styles.css" />
   <!-- Capa visual del módulo Conductor (rediseño 2026-08-16). Va DESPUÉS de
        styles.css: reviste #driver-nav y aporta el sistema --r-* del diseñador. -->
