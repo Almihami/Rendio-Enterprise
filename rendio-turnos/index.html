@@ -65,6 +65,8 @@
       },
     };
   </script>
+  <!-- supabase-js local (misma build 2.111.0 que servía jsdelivr). Si este script
+       no cargaba, el login no funcionaba aunque la pantalla se viera bien. -->
   <script src="vendor/supabase-js-2.111.0.min.js"></script>
   <!-- ExcelJS: para exportar el horario semanal con formato (reemplaza al CSV). -->
   <script defer src="vendor/exceljs-4.4.0.min.js"></script>
@@ -575,7 +577,7 @@
               </div>
               <div class="set-row2" style="margin-top:14px">
                 <div class="set-field"><label>Líderes de turno por jornada</label><input id="setting-coord-slots" class="set-input" type="number" min="1" max="4" /><div class="set-hint">Cuántos líderes de turno se asignan en AM y en PM.</div></div>
-                <div class="set-field"><label>Horas por turno</label><input id="setting-shift-hours" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Para el cálculo de horas en Balance.</div></div>
+                <div class="set-field"><label>Horas por turno</label><input id="setting-shift-hours" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Estimado de horas en “Mi perfil” del conductor. El Balance usa horas reales (inicio→cierre).</div></div>
               </div>
               <div class="set-row2" style="margin-top:14px">
                 <div class="set-field"><label>Auto-cierre de turno (horas)</label><input id="setting-auto-close-hours" class="set-input" type="number" min="1" max="72" /><div class="set-hint">Si un turno sigue activo más de X horas, se cierra solo y libera el vehículo (red de seguridad).</div></div>
@@ -798,12 +800,12 @@
 
       <!-- =============== ADMIN: BALANCE TAB (paleta limpia) =============== -->
       <!-- Rediseño visual scopeado bajo #balance-ui. Lógica intacta:
-           renderBalance / onGenerateBalance / onDownloadBalanceCsv en admin-balance.js. -->
+           renderBalance / onGenerateBalance / onDownloadBalanceXlsx en admin-balance.js. -->
       <section data-panel="balance" class="hidden">
         <div id="balance-ui">
           <div class="rl-phead">
             <h1>Balance de turnos</h1>
-            <p>Cuenta turnos de horarios <b>publicados</b>. Cada turno (manejo o liderazgo) = <b>12 h</b>.</p>
+            <p>Suma las <b>horas reales trabajadas</b> (inicio → cierre de cada turno). No se calcula del horario publicado.</p>
           </div>
 
           <div class="bal-controls">
@@ -812,7 +814,7 @@
             <button class="rl-btn ghost" id="balance-month">Mes actual</button>
             <button class="rl-btn" id="balance-generate"><svg class="icon"><use href="#i-play"/></svg>Generar informe</button>
             <div class="rl-spacer"></div>
-            <button class="rl-btn green" id="balance-csv"><svg class="icon"><use href="#i-download"/></svg>Descargar CSV</button>
+            <button class="rl-btn green" id="balance-xlsx"><svg class="icon"><use href="#i-download"/></svg>Descargar Excel</button>
           </div>
 
           <div class="bal-summary" id="balance-summary"></div>
