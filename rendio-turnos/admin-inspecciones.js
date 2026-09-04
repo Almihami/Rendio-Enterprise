@@ -365,12 +365,16 @@
     let closeData = null;
     try {
       if (insp.shift_id) {
-        const [byShift, receipts] = await Promise.all([
+        const [byShift, receipts, fuel] = await Promise.all([
           Api.listInspectionsByShift(insp.shift_id).catch(() => []),
           Api.listFuelReceiptsForShift(insp.shift_id).catch(() => []),
+          (Api.getShiftFuelStatus ? Api.getShiftFuelStatus(insp.shift_id) : Promise.resolve(null)).catch(() => null),
         ]);
         const final = (byShift || []).find(i => i.kind === 'final') || null;
-        if (final || (receipts && receipts.length)) closeData = { final, receipts: receipts || [] };
+        // `fuel` cuenta también: un turno que dice "no pude tanquear" no tiene
+        // recibos, y sin esto la tarjeta de cierre no se armaría y el motivo
+        // —lo único que el jefe quería ver— no se pintaría en ningún lado.
+        if (final || (receipts && receipts.length) || fuel) closeData = { final, receipts: receipts || [], fuel };
       }
     } catch (e) { console.error(e); }
     const paths = (insp.inspection_photos || []).map(p => p.storage_path);
@@ -486,7 +490,18 @@
         <div class="pgrid" style="margin-top:8px">
           ${receipts.map(r => { const u = urls[r.storage_path]; return `<div class="photo"${u ? ` data-insp-photo="${u}"` : ''}>${u ? `<img src="${u}" alt="comprobante">` : `<svg class="icon"><use href="#i-cam"/></svg>`}<span class="plabel">$${(Number(r.amount_cop) || 0).toLocaleString('es-CO')}</span></div>`; }).join('')}
         </div>
-      </div>` : '<p class="csub" style="margin-top:10px">Sin comprobantes de tanqueo.</p>';
+      </div>`
+      // TRES CASOS, NO DOS (0077). Antes cualquier turno sin recibos decía "Sin
+      // comprobantes de tanqueo", que ahora sería mentir a medias: no distingue
+      // al que avisó que no pudo del que simplemente no adjuntó nada. Y saber
+      // POR QUÉ no se tanqueó es justo lo que pidió el jefe.
+      : (closeData.fuel && closeData.fuel.fueled === false)
+        ? `<div class="note" style="margin-top:12px;background:var(--amber-50,#fffbeb);border-color:var(--amber,#f59e0b)">
+             <b>No se pudo tanquear.</b> ${escapeHtml(closeData.fuel.no_fuel_reason || 'Sin motivo registrado.')}
+           </div>`
+        : (closeData.fuel && closeData.fuel.fueled === true)
+          ? '<p class="csub" style="margin-top:10px">Dijo que sí tanqueó, pero no adjuntó comprobantes.</p>'
+          : '<p class="csub" style="margin-top:10px">Sin comprobantes de tanqueo.</p>';
     return `<div class="card" style="margin-top:16px">
       <h2><svg class="icon"><use href="#i-check"/></svg>Cierre de turno</h2>
       <p class="csub">Información registrada por el conductor al cerrar el turno.</p>

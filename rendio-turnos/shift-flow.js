@@ -118,11 +118,16 @@
     _timer: null,         // intervalo del cronómetro en vivo
     close: null,          // estado del flujo de cierre (ver newCloseState)
     settings: null,       // ajustes (ventana/plazo de inicio diferido)
+    noFuelReasons: [],    // catálogo de motivos de "no pude tanquear" (0077)
     completing: false,    // completando la inspección diferida de un turno activo
   };
 
   function newCloseState() {
-    return { km: '', novedad: false, novedadText: '', severity: 'media', media: [], receipts: [], attest: false, saving: false, done: null };
+    // fueled: null = todavía no contestó · true = tanqueó · false = no pudo.
+    // Arranca en null a propósito: la pregunta es obligatoria, y un default
+    // sería contestar por el conductor.
+    return { km: '', novedad: false, novedadText: '', severity: 'media', media: [], receipts: [], attest: false, saving: false, done: null,
+             fueled: null, noFuelReasonId: null, noFuelText: '' };
   }
 
   function sfToast(msg) {
@@ -182,6 +187,10 @@
     } catch (e) { /* sin 0024 o sin ítems: queda CHECKLIST_FALLBACK */ }
     // Ajustes (ventana/plazo del inicio diferido). Si falla, el botón no aparece.
     try { sf.settings = await Api.getSettings(); } catch (e) { sf.settings = null; }
+    // Motivos de "no pude tanquear" (0077), configurables por el admin igual que
+    // el checklist. Si la migración no está, queda [] y el cierre pide el motivo
+    // como texto libre en vez de romperse.
+    try { sf.noFuelReasons = await Api.listNoFuelReasons(); } catch (e) { sf.noFuelReasons = []; }
     await renderCard();
   }
 
@@ -1196,11 +1205,36 @@
   function closeKmNum() { const d = String(sf.close.km).replace(/\D/g, ''); return d ? parseInt(d, 10) : 0; }
   function closeOpenKm() { return Number(sf.activeShift && sf.activeShift.opening_km) || 0; }
   function closeKmValid() { const n = closeKmNum(); return n > 0 && n >= closeOpenKm(); }
-  // Comprobante de tanqueo OBLIGATORIO: al menos uno, y cada uno con valor > 0.
-  // No se habilita "Confirmar cierre" hasta cumplirlo.
+  // EL COMPROBANTE YA NO ES OBLIGATORIO SIEMPRE (Julián, 3-sep-2026). Hasta hoy
+  // había que adjuntarlo sí o sí, porque tanquear era obligatorio antes de
+  // entregar el carro — pero se hacía en el cambio de turno, CON LOS TRIPULANTES
+  // A BORDO, y se quejaron. Ahora el conductor tanquea un par de horas antes,
+  // sin pasajeros, y si no alcanzó dice por qué.
+  //
+  //   fueled === true  → comprobante obligatorio, igual que siempre.
+  //   fueled === false → sin comprobante, pero con motivo.
+  //   fueled === null  → todavía no contestó: el cierre NO se habilita.
   function receiptsValid() { return sf.close.receipts.length >= 1 && sf.close.receipts.every(r => (r.amount || 0) > 0); }
+  // El motivo del catálogo basta, salvo que pida texto (el "Otro"): ahí hay que
+  // escribir. Mismo criterio que novedadValid.
+  function fuelValid() {
+    if (sf.close.fueled === true) return receiptsValid();
+    if (sf.close.fueled !== false) return false;
+    const r = (sf.noFuelReasons || []).find(x => x.id === sf.close.noFuelReasonId);
+    if (!r) return sf.close.noFuelText.trim().length > 0;   // sin catálogo: texto libre
+    return !r.requires_text || sf.close.noFuelText.trim().length > 0;
+  }
+  // ¿Toca mostrar la cajita de texto? Con "Otro" (requires_text) siempre, y
+  // también si la base todavía no tiene el catálogo: ahí el texto libre es lo
+  // único que queda para que el motivo no se pierda.
+  function noFuelNeedsText() {
+    if (sf.close.fueled !== false) return false;
+    if (!(sf.noFuelReasons || []).length) return true;
+    const r = sf.noFuelReasons.find(x => x.id === sf.close.noFuelReasonId);
+    return !!(r && r.requires_text);
+  }
   function novedadValid() { return !sf.close.novedad || sf.close.novedadText.trim().length > 0; }
-  function closeAllValid() { return closeKmValid() && sf.close.attest && novedadValid() && receiptsValid(); }
+  function closeAllValid() { return closeKmValid() && sf.close.attest && novedadValid() && fuelValid(); }
   function fuelTotal() { return sf.close.receipts.reduce((s, r) => s + (r.amount || 0), 0); }
 
   function updateCloseConfirm() {
@@ -1234,6 +1268,30 @@
   }
 
   function setCloseNovedad(on) { sf.close.novedad = on; if (!on) { sf.close.novedadText = ''; } renderClose(); }
+
+  // Sí/no del tanqueo. Al pasar a "no" hay que SOLTAR los comprobantes que ya
+  // hubiera adjuntado: si solo se ocultaran, submitClose los subiría igual
+  // (mira receipts.length, no la casilla) y quedaría un turno que dice "no
+  // tanqueé" con recibos colgando. Se revocan los objectURL para no dejar
+  // blobs vivos en memoria, igual que hace rmReceipt.
+  function setCloseFueled(v) {
+    if (sf.close.fueled === v) return;
+    sf.close.fueled = v;
+    if (v === false) {
+      sf.close.receipts.forEach(r => r && r.url && URL.revokeObjectURL(r.url));
+      sf.close.receipts = [];
+    } else {
+      sf.close.noFuelReasonId = null;
+      sf.close.noFuelText = '';
+    }
+    renderClose();
+  }
+  function setNoFuelReason(id) {
+    sf.close.noFuelReasonId = id;
+    const r = (sf.noFuelReasons || []).find(x => x.id === id);
+    if (r && !r.requires_text) sf.close.noFuelText = '';   // el texto solo vive con "Otro"
+    renderClose();
+  }
 
   async function onAddCloseMedia(input, kind) {
     const f = input.files && input.files[0]; input.value = '';
@@ -1350,18 +1408,35 @@
 
         <section>
           <div class="flex items-center justify-between mb-2">
-            <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">Comprobantes de tanqueo <span class="text-rose-500">*</span></h3>
-            <span id="cl-fuel-total" class="text-[12px] font-bold text-slate-400">$${fuelTotal().toLocaleString('es-CO')}</span>
+            <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">¿Ya pudo tanquear? <span class="text-rose-500">*</span></h3>
+            ${sf.close.fueled === true ? `<span id="cl-fuel-total" class="text-[12px] font-bold text-slate-400">$${fuelTotal().toLocaleString('es-CO')}</span>` : ''}
           </div>
-          <p class="text-[12px] ${sf.close.receipts.length ? 'text-slate-500' : 'text-rose-600 font-semibold'} mb-3 -mt-1">${sf.close.receipts.length ? 'Adjunta los recibos de gasolina pagados en el turno (foto + valor).' : 'Obligatorio: adjunta al menos un recibo de gasolina (foto + valor) para cerrar el turno.'}</p>
-          <div class="space-y-2.5">${receiptRows}</div>
-          <button id="cl-add-receipt" class="mt-2.5 w-full rounded-xl border-2 border-dashed border-brand-300 bg-brand-50 text-brand-700 font-bold py-3 text-sm flex items-center justify-center gap-2 active:scale-[.98]">＋ Agregar comprobante</button>
-          <input id="cl-file-receipt" type="file" accept="image/*" class="hidden">
+          <div class="grid grid-cols-2 gap-2">
+            <button id="cl-fuel-si" class="rounded-xl border-2 py-3 text-sm font-bold flex items-center justify-center gap-2 ${sf.close.fueled === true ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'}">✓ Sí tanqueé</button>
+            <button id="cl-fuel-no" class="rounded-xl border-2 py-3 text-sm font-bold flex items-center justify-center gap-2 ${sf.close.fueled === false ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-500'}">✕ No pude</button>
+          </div>
+
+          ${sf.close.fueled === null ? `<p class="text-[12px] text-slate-500 mt-2.5">Puedes tanquear antes de venir al cambio de turno, sin pasajeros. Si no alcanzaste, dinos por qué.</p>` : ''}
+
+          ${sf.close.fueled === true ? `<div class="pt-3">
+            <p class="text-[12px] ${sf.close.receipts.length ? 'text-slate-500' : 'text-rose-600 font-semibold'} mb-3">${sf.close.receipts.length ? 'Adjunta los recibos de gasolina pagados en el turno (foto + valor).' : 'Adjunta al menos un recibo de gasolina (foto + valor) para cerrar el turno.'}</p>
+            <div class="space-y-2.5">${receiptRows}</div>
+            <button id="cl-add-receipt" class="mt-2.5 w-full rounded-xl border-2 border-dashed border-brand-300 bg-brand-50 text-brand-700 font-bold py-3 text-sm flex items-center justify-center gap-2 active:scale-[.98]">＋ Agregar comprobante</button>
+            <input id="cl-file-receipt" type="file" accept="image/*" class="hidden">
+          </div>` : ''}
+
+          ${sf.close.fueled === false ? `<div class="pt-3 space-y-2">
+            <p class="text-[12px] font-semibold text-slate-500">¿Por qué no se pudo tanquear?</p>
+            ${(sf.noFuelReasons || []).length ? (sf.noFuelReasons || []).map(r => `
+              <button data-nofuel="${esc(r.id)}" class="w-full text-left rounded-xl border-2 px-3.5 py-2.5 text-[13.5px] font-semibold ${sf.close.noFuelReasonId === r.id ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-slate-200 bg-white text-slate-600'}">${esc(r.label)}</button>`).join('')
+              : `<p class="text-[12px] text-slate-400">Escribe el motivo.</p>`}
+            ${noFuelNeedsText() ? `<textarea id="cl-nofuel-text" rows="2" placeholder="Cuéntanos qué pasó…" class="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:border-brand-400 resize-none">${esc(sf.close.noFuelText)}</textarea>` : ''}
+          </div>` : ''}
         </section>
 
         <label class="flex gap-3 items-start rounded-xl bg-white border border-slate-200 px-3.5 py-3 cursor-pointer">
           <input id="cl-attest" type="checkbox" class="mt-0.5 w-5 h-5 accent-brand-600 shrink-0" ${sf.close.attest ? 'checked' : ''}>
-          <span class="text-[12.5px] text-slate-600 leading-snug">Confirmo que la información del cierre (kilometraje, novedades y comprobantes) es correcta.</span>
+          <span class="text-[12.5px] text-slate-600 leading-snug">Confirmo que la información del cierre (kilometraje, novedades y tanqueo) es correcta.</span>
         </label>
       </div>
       <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-5 py-3 z-10" style="padding-bottom:calc(12px + env(safe-area-inset-bottom));">
@@ -1383,8 +1458,15 @@
     const av = $('#cl-add-video'); if (av) av.addEventListener('click', () => $('#cl-file-video').click());
     const fp = $('#cl-file-photo'); if (fp) fp.addEventListener('change', (e) => onAddCloseMedia(e.target, 'photo'));
     const fv = $('#cl-file-video'); if (fv) fv.addEventListener('change', (e) => onAddCloseMedia(e.target, 'video'));
-    $('#cl-add-receipt').addEventListener('click', () => $('#cl-file-receipt').click());
-    $('#cl-file-receipt').addEventListener('change', (e) => onAddReceipt(e.target));
+    $('#cl-fuel-si').addEventListener('click', () => setCloseFueled(true));
+    $('#cl-fuel-no').addEventListener('click', () => setCloseFueled(false));
+    wiz.querySelectorAll('[data-nofuel]').forEach(b => b.addEventListener('click', () => setNoFuelReason(b.dataset.nofuel)));
+    // Igual que el texto de la novedad: se engancha aquí y NO re-renderiza, o se
+    // pierde el foco del teclado en cada letra.
+    const nft = $('#cl-nofuel-text'); if (nft) nft.addEventListener('input', (e) => { sf.close.noFuelText = e.target.value; updateCloseConfirm(); });
+    // Los comprobantes solo existen en el DOM cuando dijo que sí tanqueó.
+    const ar = $('#cl-add-receipt'); if (ar) ar.addEventListener('click', () => $('#cl-file-receipt').click());
+    const fr = $('#cl-file-receipt'); if (fr) fr.addEventListener('change', (e) => onAddReceipt(e.target));
     wiz.querySelectorAll('[data-rm-media]').forEach(b => b.addEventListener('click', () => rmCloseMedia(Number(b.dataset.rmMedia))));
     wiz.querySelectorAll('[data-rm-receipt]').forEach(b => b.addEventListener('click', () => rmReceipt(Number(b.dataset.rmReceipt))));
     wiz.querySelectorAll('[data-receipt-amt]').forEach(inp => inp.addEventListener('input', (e) => onReceiptAmount(Number(inp.dataset.receiptAmt), e.target)));
@@ -1412,7 +1494,10 @@
           mediaPaths.push(path);
         }
       }
-      if (sf.close.receipts.length) {
+      // El `fueled === true` no sobra: sin él, un recibo adjuntado antes de
+      // cambiar a "no pude" se subiría igual. setCloseFueled ya vacía la lista,
+      // pero esto es el cinturón — aquí es donde se escribe en la BD.
+      if (sf.close.fueled === true && sf.close.receipts.length) {
         const rows = [];
         for (let i = 0; i < sf.close.receipts.length; i++) {
           const r = sf.close.receipts[i];
@@ -1426,6 +1511,9 @@
       setState('Cerrando turno…');
       const res = await Api.closeShift(sh.id, {
         closingKm, hasNovedad: sf.close.novedad, novedadText: sf.close.novedadText, severity: sf.close.severity, mediaPaths,
+        fueled: sf.close.fueled,
+        noFuelReasonId: sf.close.fueled === false ? sf.close.noFuelReasonId : null,
+        noFuelReason: sf.close.fueled === false ? sf.close.noFuelText.trim() : null,
       });
       // ¿El vehículo quedó en cambio de aceite al cerrar? (para avisarle al conductor)
       let vehBlocked = false;
@@ -1436,6 +1524,12 @@
         novedad: sf.close.novedad,
         receipts: sf.close.receipts.length,
         fuel: fuelTotal(),
+        fueled: sf.close.fueled,
+        // Lo que se le muestra al conductor. El texto que queda GUARDADO lo
+        // arma el servidor desde el catálogo (0077); esto es solo el reflejo.
+        noFuelLabel: sf.close.fueled === false
+          ? (((sf.noFuelReasons || []).find(r => r.id === sf.close.noFuelReasonId) || {}).label || sf.close.noFuelText.trim())
+          : '',
         vehBlocked,
       };
       sf.close.done = true;
@@ -1465,7 +1559,9 @@
         <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Km recorridos</span><span class="font-bold text-emerald-600">+${(s.kmDriven || 0).toLocaleString('es-CO')} km</span></div>
         <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Duración</span><span class="font-bold text-ink">${esc(s.duration || '—')}</span></div>
         <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Novedades</span><span class="font-bold text-ink">${s.novedad ? '1 reportada' : 'Ninguna'}</span></div>
-        <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Comprobantes</span><span class="font-bold text-ink">${s.receipts || 0}${s.fuel ? ' · $' + s.fuel.toLocaleString('es-CO') : ''}</span></div>
+        ${s.fueled === false
+          ? `<div class="flex justify-between gap-3 px-4 py-3 text-sm"><span class="text-slate-500 shrink-0">Tanqueo</span><span class="font-bold text-amber-700 text-right">No se pudo${s.noFuelLabel ? `<span class="block font-medium text-[12px] text-slate-500 leading-snug mt-0.5">${esc(s.noFuelLabel)}</span>` : ''}</span></div>`
+          : `<div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Comprobantes</span><span class="font-bold text-ink">${s.receipts || 0}${s.fuel ? ' · $' + s.fuel.toLocaleString('es-CO') : ''}</span></div>`}
       </div>
       <button id="cl-done-btn" class="mt-8 px-6 py-3 rounded-xl bg-brand text-white shadow-brand font-bold active:scale-[0.98] transition">Volver al inicio</button>
     </div>`;

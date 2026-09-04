@@ -1086,17 +1086,62 @@
   }
 
   // SECURITY DEFINER: cierra el turno (inspección final + libera vehículo + novedad).
-  async function closeShift(shiftId, { closingKm, hasNovedad, novedadText, severity, mediaPaths } = {}) {
-    const { data, error } = await sb.rpc('close_shift', {
+  //
+  // LA CASCADA NO ES ADORNO. Desde 0077 el RPC recibe tres parámetros más (el
+  // tanqueo). Si este código llega a un ambiente donde esa migración todavía no
+  // está aplicada, la llamada con nueve argumentos falla y EL CONDUCTOR NO PUEDE
+  // CERRAR SU TURNO — se queda con el carro tomado y el siguiente no puede
+  // arrancar. Por eso se reintenta con la firma vieja de seis, igual que hace
+  // saveSettings. Se pierde el dato del tanqueo, no el cierre.
+  async function closeShift(shiftId, { closingKm, hasNovedad, novedadText, severity, mediaPaths, fueled, noFuelReasonId, noFuelReason } = {}) {
+    const base = {
       p_shift_id: shiftId,
       p_closing_km: closingKm,
       p_has_novedad: !!hasNovedad,
       p_novedad_text: novedadText || null,
       p_severity: severity || 'low',
       p_media_paths: mediaPaths || [],
+    };
+    let { data, error } = await sb.rpc('close_shift', {
+      ...base,
+      p_fueled: fueled == null ? null : !!fueled,
+      p_no_fuel_reason_id: noFuelReasonId || null,
+      p_no_fuel_reason: noFuelReason || null,
     });
+    // PGRST202 / 42883 = no existe una función con esa firma → base sin 0077.
+    if (error && /PGRST202|42883|Could not find the function|does not exist/i.test(error.code + ' ' + error.message)) {
+      ({ data, error } = await sb.rpc('close_shift', base));
+    }
     if (error) throw error;
     return data;
+  }
+
+  // Catálogo de motivos de "no pude tanquear" (0077). Lo edita el admin; el
+  // conductor solo lo lee. Devuelve [] si la migración no está: el cierre
+  // entonces se comporta como antes en vez de tirar.
+  async function listNoFuelReasons() {
+    try {
+      const { data, error } = await sb.from('no_fuel_reasons')
+        .select('id, label, requires_text, sort_order')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  // Admin: cómo quedó el tanqueo de un turno. Va aparte de los comprobantes
+  // porque un turno sin recibos puede tener motivo, y uno viejo no tiene ni lo
+  // uno ni lo otro (fueled = null, "no se preguntó").
+  async function getShiftFuelStatus(shiftId) {
+    try {
+      const { data, error } = await sb.from('shifts')
+        .select('fueled, no_fuel_reason')
+        .eq('id', shiftId)
+        .maybeSingle();
+      if (error) return null;
+      return data || null;
+    } catch (e) { return null; }
   }
 
   // Admin: todas las inspecciones de un turno (inicial + final) para la tarjeta.
@@ -2887,6 +2932,7 @@
     addIncident, listIncidents, countOpenIncidents, updateIncidentStatus,
     reportIncident, listEventualidades, countOpenEventualidades, acknowledgeIncident, opsAlertProfileIds, opsAlertHealth,
     startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
+    listNoFuelReasons, getShiftFuelStatus,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, listChecklistItemsForTiers, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
     getMyFullProfile, uploadMyAvatar,
