@@ -105,12 +105,10 @@
     try { return new Date(iso + 'T12:00:00').toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' }); }
     catch (_) { return iso; }
   }
-  // Recogida estimada = 1h antes de la presentación (salida) — solo referencia visual.
-  function auxSuggestPickup(time) {
-    if (!time || !/^\d{2}:\d{2}$/.test(time)) return '--:--';
-    let [h, m] = time.split(':').map(Number); h = (h + 23) % 24;
-    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-  }
+  // AQUÍ VIVÍA auxSuggestPickup (presentación − 1 h). Se eliminó el 3-sep-2026:
+  // era la única fuente de las dos horas de recogida que la app prometía antes
+  // de que existiera ruta. No se vuelve a poner sin una hora que venga del
+  // asignador.
 
   // ---------- render raíz ----------
   function auxRender() {
@@ -306,7 +304,7 @@
       </div>
       <div class="ax-trip-bot">
         <span><svg class="icon"><use href="#i-clock"/></svg>${auxDateES(t.date)} · ${t.type === 'lle' ? 'llega' : 'pres.'} ${auxHM(t.time)}</span>
-        <span class="ax-flight">${t.flight}</span>
+        <span class="ax-flight">${t.flight || ''}</span>
       </div>
     </button>`;
   }
@@ -532,7 +530,13 @@
     const isLle = auxState.form.type === 'lle';
     const f = auxState.form;
     return `
-      ${auxField('Número de vuelo', 'flight', f.flight || '', 'Ej: AV-9412')}
+      ${/* SOLO EL VUELO DE LLEGADA (Julián, 25-ago-2026): "omitir ese primer
+           número de vuelo, realmente solo nos interesa saber el vuelo de
+           llegada". En una salida el número de ida no se usa para nada — lo que
+           manda es a qué hora tiene que estar en MDE. En una llegada este mismo
+           campo SÍ es el vuelo que aterriza, y ahí es obligatorio: es el que se
+           rastrea cuando el avión se retrasa. */ ''}
+      ${isLle ? auxField('Número de vuelo', 'flight', f.flight || '', 'Ej: AV-9412') : ''}
       ${auxField('Fecha del vuelo', 'date', f.date || '', '', 'date', `min="${auxTodayISO()}"`)}
       ${auxField(isLle ? 'Hora de aterrizaje' : 'Hora en que quieres estar en el aeropuerto',
         'time', f.time || '', isLle ? '06:18' : '05:10', 'time')}
@@ -544,7 +548,7 @@
           'Si vuelves hoy mismo, lo dejamos pedido de una vez y no tienes que volver a entrar.')}
         ${f.sameDayBack ? `
           ${auxField('Hora a la que aterrizas de vuelta', 'backTime', f.backTime || '', '19:40', 'time')}
-          ${auxField('Número del vuelo de regreso (opcional)', 'backFlight', f.backFlight || '', 'Ej: AV-9413')}
+          ${auxField('Número del vuelo con el que aterrizas', 'backFlight', f.backFlight || '', 'Ej: AV-9413')}
           <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Quedan dos traslados: el de ida y el de regreso. Puedes cancelar cualquiera por separado.</div>`
           : ''}`}`;
   }
@@ -556,7 +560,14 @@
     const lead = auxLeadCheck(f);
     if (lead) return `<div class="ax-hint ${lead.level === 'bad' ? 'bad' : ''}"><svg class="icon"><use href="#i-info"/></svg>${lead.text}</div>`;
     if (!f.time) return '';
-    return `<div class="ax-hint ok"><svg class="icon"><use href="#i-clock"/></svg>${isLle ? 'Te esperamos al bajar del avión.' : `Recogida estimada <b>${auxSuggestPickup(f.time)}</b> · te dejamos en MDE a la hora que pediste.`}</div>`;
+    // NO SE DA HORA DE RECOGIDA AQUÍ (Julián, 25-ago-2026). Antes decía
+    // "Recogida estimada 09:30", sacada de presentación − 1 h clavada. Esa hora
+    // se pinta ANTES de que exista ruta, así que la app comprometía algo que
+    // nadie había decidido — y encima el margen no daba: su tabla cobra 50 min
+    // desde Olivar en franja 12–19, o sea 10 de sobra sobre la hora que
+    // prometíamos. Él pidió un rango con 20 min de gabela y "a espera de
+    // confirmación"; la decisión fue más simple: no prometer hora.
+    return `<div class="ax-hint ok"><svg class="icon"><use href="#i-clock"/></svg>${isLle ? 'Te esperamos al bajar del avión.' : 'Te dejamos en MDE a la hora que pediste. La hora de recogida te la confirmamos cuando armemos la ruta del día.'}</div>`;
   }
 
   // Paso 3. Desde la entrega del 17-ago el camino PRINCIPAL es elegir el
@@ -600,7 +611,7 @@
     return `
       <div class="ax-sum">
         <div class="ax-sum-head ${m.cls}"><svg class="icon"><use href="#${m.ic}"/></svg>${m.label} · ${m.desc}</div>
-        ${row('Vuelo', f.flight || '—')}
+        ${f.flight ? row('Vuelo', f.flight) : ''}
         ${row('Fecha', f.date ? auxDateES(f.date) : '—')}
         ${row(f.type === 'lle' ? 'Aterriza' : 'Estar en el aeropuerto', auxHM(f.time))}
         ${f.type !== 'lle' && f.sameDayBack && f.backTime
@@ -657,8 +668,8 @@
     const paso3Listo = window.AuxResidencias
       ? AuxResidencias.ready(f) : !!(f.address && f.locConfirmed);
     const disabled = (kind === 'tipo' && !f.type)
-      || (kind === 'vuelo' && (!f.flight || !f.date || !f.time || badDate
-            || (f.sameDayBack && !f.backTime)))
+      || (kind === 'vuelo' && ((f.type === 'lle' && !f.flight) || !f.date || !f.time || badDate
+            || (f.sameDayBack && (!f.backTime || !f.backFlight))))
       || (kind === 'donde' && !paso3Listo)
       || (kind === 'nivel' && !f.level)
       || (kind === 'revisar' && badDate);
@@ -821,7 +832,7 @@
     const timeline = [
       { t: 'Ahora', label: 'Traslado solicitado', done: true },
       { t: 'En minutos', label: 'Asignamos tu conductor', done: false },
-      { t: t.type === 'lle' ? auxHM(t.time) : auxSuggestPickup(t.time), label: t.type === 'lle' ? 'Recogida en el aeropuerto' : 'Recogida en tu dirección', done: false },
+      { t: t.type === 'lle' ? auxHM(t.time) : 'Te confirmamos la hora', label: t.type === 'lle' ? 'Recogida en el aeropuerto' : 'Recogida en tu dirección', done: false },
     ];
     return `
       <div class="ax-body ax-center">

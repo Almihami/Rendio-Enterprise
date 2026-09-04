@@ -36,7 +36,7 @@
           { id: 'recomp', name: 'Recompensas', icon: 'm-recomp', desc: 'Premios por kilometraje y solicitudes de redención.', tab: 'rewards' },
         ] },
         { id: 'data', name: 'Análisis', icon: 'g-data', desc: 'Reportes', items: [
-          { id: 'balance', name: 'Balance', icon: 'm-balance', desc: 'Informe de turnos por persona, horas y CSV.', tab: 'balance' },
+          { id: 'balance', name: 'Balance', icon: 'm-balance', desc: 'Horas reales por persona y descarga en Excel.', tab: 'balance' },
         ] },
         { id: 'cfg', name: 'Configuración', icon: 'g-cfg', desc: 'Parámetros', items: [
           { id: 'ajustes', name: 'Ajustes', icon: 'm-ajustes', desc: 'Cupos, antigüedad, descansos fijos y alta de conductor.', tab: 'settings' },
