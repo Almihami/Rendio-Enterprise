@@ -24,11 +24,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-  <!-- Tailwind servido desde nuestro propio dominio (antes: https://cdn.tailwindcss.com).
-       Si el CDN externo fallaba (red mala, DNS, bloqueador), la app se veía SIN estilos:
-       todas las pantallas apiladas, porque hasta la clase `hidden` es de Tailwind.
-       Local + precacheado en el Service Worker = siempre carga. -->
+  <!-- Librerías LOCALES, no de un CDN. Se bajaron a /vendor el 2026-08-07
+       (main) porque cuando cdn.tailwindcss.com o unpkg no responden, la app no
+       se degrada: sale CRUDA, ilegible y sin mapas. Dev se quedó con el bug
+       hasta el 25-ago, cuando el jefe abrió el enlace y vio una pantalla gris
+       con dos letras gigantes. -->
   <script src="vendor/tailwind-3.4.17.js"></script>
+  <!-- Leaflet: mapa real (OpenStreetMap) para la Operación en vivo de Rutas. -->
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+  <script src="vendor/leaflet/leaflet.js"></script>
   <script>
     tailwind.config = {
       theme: {
@@ -67,6 +71,11 @@
   <!-- ExcelJS: para exportar el horario semanal con formato (reemplaza al CSV). -->
   <script defer src="vendor/exceljs-4.4.0.min.js"></script>
   <link rel="stylesheet" href="styles.css" />
+  <!-- Capa visual del módulo Conductor (rediseño 2026-08-16). Va DESPUÉS de
+       styles.css: reviste #driver-nav y aporta el sistema --r-* del diseñador. -->
+  <link rel="stylesheet" href="rc-conductor.css" />
+  <!-- Rol auxiliar: capa visual de la entrega 2026-08-17 (incluye el modo nocturno) -->
+  <link rel="stylesheet" href="rc-auxiliar.css" />
 </head>
 <body class="bg-[#F8FAFC] text-slate-900 min-h-screen font-sans antialiased">
 
@@ -102,6 +111,15 @@
           </button>
           <p id="login-error" class="hidden text-sm text-rose-600 text-center"></p>
         </form>
+        <!-- Puerta de entrada del tripulante: hasta hoy la cuenta se la creaba
+             el equipo a mano. -->
+        <div class="mt-5 pt-5 border-t border-slate-100 text-center">
+          <p class="text-sm text-slate-500">¿Eres tripulante y es tu primera vez?</p>
+          <button type="button" id="login-signup"
+                  class="mt-2 w-full border border-brand text-brand text-base font-semibold py-3 rounded-lg hover:bg-brand-50 active:scale-[0.98] transition">
+            Crear mi cuenta
+          </button>
+        </div>
       </div>
       <p class="text-xs text-slate-400 text-center mt-6">© Rendio Enterprises</p>
     </div>
@@ -135,6 +153,11 @@
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
       <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
       <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.6 9.6a2.4 2.4 0 0 1-3.4 0l-1.6-1.6a2.4 2.4 0 0 1 0-3.4z"/><path d="M14.7 6.3 18 3l3 3-3.3 3.3"/></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a9 9 0 1 1 16 0"/><path d="m12 14 4-4"/><circle cx="12" cy="15" r="1.6"/></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+      <symbol id="i-hist" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 11l2 2 4-4"/></symbol>
       <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h11M19 6h1M4 12h1M9 12h11M4 18h7M15 18h5"/><circle cx="17" cy="6" r="2"/><circle cx="7" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></symbol>
       <symbol id="i-zzz" viewBox="0 0 24 24"><path d="M5 7h7l-7 10h7"/><path d="M14 4h6l-6 7h6"/></symbol>
       <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
@@ -145,8 +168,86 @@
       <symbol id="i-next" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
       <symbol id="i-warn" viewBox="0 0 24 24"><path d="m21 19-9-16-9 16Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
       <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></symbol>
+      <!-- ===== Rutas de auxiliares: iconos Consola + Asignación ===== -->
+      <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></symbol>
+      <symbol id="i-plane" viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></symbol>
+      <symbol id="i-van" viewBox="0 0 24 24"><path d="M3 13V7a1 1 0 0 1 1-1h9l4 4h3a1 1 0 0 1 1 1v2"/><path d="M3 13h19v4H3z"/><circle cx="7.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></symbol>
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></symbol>
+      <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></symbol>
+      <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M15 4v16M9 9l-3 3 3 3"/><rect x="3" y="4" width="18" height="16" rx="2"/></symbol>
+      <symbol id="i-shift" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="5" r="2.4"/><path d="M8.4 19H15a3.6 3.6 0 0 0 0-7.2H9A3.6 3.6 0 0 1 9 4.6h6.6"/></symbol>
+      <symbol id="i-exit" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/></symbol>
+      <symbol id="i-go" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></symbol>
+      <symbol id="g-plan" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></symbol>
+      <symbol id="g-review" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5 6l-3 6v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3-6a2 2 0 0 0-1.8-1H6.8A2 2 0 0 0 5 6z"/></symbol>
+      <symbol id="g-ops" viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"/></symbol>
+      <symbol id="g-team" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3.2 3.2 0 0 1 0 5.6M21 19a5.5 5.5 0 0 0-3.5-5.1"/></symbol>
+      <symbol id="g-data" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+      <symbol id="g-cfg" viewBox="0 0 24 24"><path d="M4 6h11M19 6h1M4 12h1M9 12h11M4 18h7M15 18h5"/><circle cx="17" cy="6" r="2"/><circle cx="7" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></symbol>
+      <symbol id="m-horario" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M8 13h3v3H8z"/></symbol>
+      <symbol id="m-disp" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M9 14l2 2 4-4"/></symbol>
+      <symbol id="m-solic" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h4"/></symbol>
+      <symbol id="m-insp" viewBox="0 0 24 24"><path d="M9 11l2 2 4-4"/><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+      <symbol id="m-personal" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></symbol>
+      <symbol id="m-recomp" viewBox="0 0 24 24"><circle cx="12" cy="9" r="6"/><path d="M9 14.5 8 22l4-2 4 2-1-7.5"/></symbol>
+      <symbol id="m-balance" viewBox="0 0 24 24"><path d="M12 3v18M5 7l-3 6a3 3 0 0 0 6 0zM19 7l-3 6a3 3 0 0 0 6 0zM5 7h14"/></symbol>
+      <symbol id="m-ajustes" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 0 1 0-4h.1A1.6 1.6 0 0 0 2.6 7Z"/></symbol>
+      <symbol id="m-asign" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></symbol>
+      <symbol id="m-reservas" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M7 3v4M17 3v4M9 15l2 2 4-4"/></symbol>
+      <symbol id="m-vuelos" viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></symbol>
+      <symbol id="m-oper" viewBox="0 0 24 24"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+      <symbol id="m-flota" viewBox="0 0 24 24"><path d="M3 13V7a1 1 0 0 1 1-1h9l4 4h3a1 1 0 0 1 1 1v2"/><path d="M3 13h19v4H3z"/><circle cx="7.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></symbol>
+      <symbol id="m-personas" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3.2 3.2 0 0 1 0 5.6M21 19a5.5 5.5 0 0 0-3.5-5.1"/></symbol>
+      <symbol id="m-metricas" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+      <!-- Operación en vivo -->
+      <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l2 6 4-14 2 8h6"/></symbol>
+      <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7M21 16v5h-5M15 15l6 6M3 8V3h5M9 9 3 3"/></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/></symbol>
+      <symbol id="i-loc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
     </svg>
-    <header class="bg-white border-b border-[#E2E8F0] sticky top-0 z-20 shadow-sm">
+
+    <!-- ===== SIDEBAR ADMIN (navegación por capas — reemplaza la barra de pestañas) ===== -->
+    <aside id="admin-side" class="hidden" aria-label="Navegación del administrador">
+      <div class="sbrand">
+        <button class="brand-btn" id="adm-brand" data-cnmod="consola" title="Ir a la Consola">
+          <span class="logo"><b>Rendio</b><i></i></span>
+        </button>
+        <button class="collapse" id="adm-collapse" title="Colapsar menú" aria-label="Colapsar menú"><svg class="icon"><use href="#i-collapse"/></svg></button>
+      </div>
+      <div class="wsw">
+        <div class="lbl">Espacio de trabajo</div>
+        <div class="wstabs" id="adm-wstabs">
+          <button data-ws="turnos" class="on"><svg class="icon"><use href="#i-shift"/></svg><span>Turnos</span></button>
+          <button data-ws="rutas"><svg class="icon"><use href="#i-route"/></svg><span>Rutas</span></button>
+        </div>
+      </div>
+      <nav class="snav" id="adm-snav"></nav>
+      <div class="sfoot">
+        <div class="sf-i" id="adm-home" data-cnmod="consola"><span class="ni-ic"><svg class="icon"><use href="#i-layers"/></svg></span><span class="ni-tx">Consola</span></div>
+        <div class="sf-i" id="adm-logout"><span class="ni-ic"><svg class="icon"><use href="#i-exit"/></svg></span><span class="ni-tx">Salir</span></div>
+      </div>
+    </aside>
+    <!-- Velo para cerrar el sidebar en móvil -->
+    <div id="admin-side-scrim" class="hidden"></div>
+
+    <!-- ===== Barra superior del admin (breadcrumb) ===== -->
+    <div id="admin-mhead" class="adm-mhead hidden">
+      <button class="adm-ibtn" id="adm-mobmenu" aria-label="Abrir menú"><svg class="icon"><use href="#i-menu"/></svg></button>
+      <div class="crumb"><span id="adm-cb-ws">Turnos</span><span class="sep">/</span><b id="adm-cb-title">Consola</b></div>
+      <button class="adm-ibtn" id="adm-logout-top" title="Salir" aria-label="Salir" style="margin-left:auto"><svg class="icon"><use href="#i-exit"/></svg></button>
+    </div>
+
+    <header id="app-header" class="bg-white border-b border-[#E2E8F0] sticky top-0 z-20 shadow-sm">
       <div class="max-w-[1680px] mx-auto px-4 py-3 flex items-center justify-between gap-3">
         <a href="#" class="flex items-center gap-2 shrink-0">
           <img src="assets/logo-icon.png" alt="Rendio" class="h-8 w-8 md:hidden" />
@@ -176,34 +277,10 @@
         </div>
       </div>
 
-      <!-- Admin tabs: scrolleables en mobile -->
-      <nav id="admin-nav" class="hidden border-t border-[#E2E8F0] bg-white">
-        <div class="max-w-[1680px] mx-auto px-2 md:px-4 flex gap-1 overflow-x-auto no-scrollbar">
-          <button data-tab="schedule" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Horario</button>
-          <button data-tab="availability" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Disponibilidad</button>
-          <button data-tab="approvals" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent relative">
-            Solicitudes
-            <span id="pending-badge" class="hidden absolute top-1 -right-1 bg-rose-600 text-white text-[10px] rounded-full px-1.5 py-0.5 font-bold">0</span>
-          </button>
-          <button data-tab="inspections" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent relative">
-            Inspecciones
-            <span id="inspections-badge" class="hidden absolute top-1 -right-1 bg-rose-600 text-white text-[10px] rounded-full px-1.5 py-0.5 font-bold">0</span>
-          </button>
-          <button data-tab="shifts" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent relative">
-            Turnos activos
-            <span id="shifts-badge" class="hidden absolute top-1 -right-1 bg-rose-600 text-white text-[10px] rounded-full px-1.5 py-0.5 font-bold">0</span>
-          </button>
-          <button data-tab="workers" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Personal</button>
-          <button data-tab="settings" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent relative">Ajustes
-            <span id="oil-badge" class="hidden absolute top-1 -right-1 bg-rose-600 text-white text-[11px] rounded-full w-4 h-4 flex items-center justify-center font-black leading-none" title="Cambio de aceite pendiente: revisa Vehículos">!</span>
-          </button>
-          <button data-tab="balance" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Balance</button>
-          <button data-tab="rewards" class="tab-btn shrink-0 px-3 py-2.5 text-sm rounded-none border-b-2 border-transparent">Recompensas</button>
-        </div>
-      </nav>
+      <!-- La navegación admin ahora vive en el sidebar (#admin-side). -->
     </header>
 
-    <main class="flex-1 max-w-[1680px] mx-auto w-full px-4 py-5 md:py-6 pb-24 md:pb-6">
+    <main id="app-main" class="flex-1 max-w-[1680px] mx-auto w-full px-4 py-5 md:py-6 pb-24 md:pb-6">
 
       <!-- =============== DRIVER VIEW =============== -->
       <!-- HOME del conductor: "¿Cómo vas a operar hoy?" — dúo de tarjetas apiladas -->
@@ -225,118 +302,87 @@
           </button>
         </div>
 
-        <!-- Pestaña: Inicio -->
-        <section data-dtab="home" class="driver-panel">
-          <div class="pt-1 pb-1">
-            <h2 class="text-[22px] font-extrabold text-ink leading-tight">¿Cómo vas a operar hoy?</h2>
-            <p id="driver-home-sub" class="text-sm text-slate-500 mt-1">—</p>
+        <!-- Pestaña: Inicio — rediseño 2026-08-16 (rc-tabs.jsx · TabInicio).
+             El saludo y la tarjeta "te faltan N jornadas" los pinta
+             driver-tabs.js; la tarjeta de turno la sigue pintando shift-flow.js
+             dentro de #driver-shift-container, ya con el sistema nuevo. -->
+        <section data-dtab="home" class="driver-panel rc">
+          <div style="padding-top:6px" class="rc-in">
+            <h1 class="rc-h" id="driver-home-greet">Hola</h1>
+            <p class="rc-sub" id="driver-home-sub" style="margin-left:0;max-width:none">—</p>
           </div>
-          <div class="pt-3 space-y-3">
-            <!-- Tarjeta 1: Iniciar turno — la pinta shift-flow.js (iniciar / continuar / turno activo) -->
-            <div id="driver-shift-container"></div>
 
-            <!-- Tarjeta 2: Disponibilidad — entra al módulo y revela la barra inferior -->
-            <button id="driver-availability-card"
-                    class="pc-in d2 tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-white border-2 border-slate-200 shadow-card">
-              <div class="flex items-start justify-between">
-                <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center text-2xl"><span class="float inline-block">📅</span></div>
-                <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-500 mt-1">Próxima semana</span>
-              </div>
-              <div class="mt-auto">
-                <p class="text-xl font-extrabold text-ink leading-tight">Disponibilidad de horarios</p>
-                <p id="driver-availability-card-sub" class="text-xs text-slate-500 mt-1">Marca tus turnos. El admin asigna y confirma.</p>
-              </div>
-              <div class="mt-3 flex items-center gap-1 text-sm font-bold text-brand-600">Marcar
-                <svg class="w-4 h-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
-              </div>
-            </button>
-          </div>
+          <!-- Tarjeta de turno (iniciar / continuar / en curso) -->
+          <div id="driver-shift-container"></div>
+
+          <!-- Tu día: la vuelta asignada, si hay -->
+          <div id="driver-home-ruta"></div>
+
+          <!-- Próxima semana: solo aparece si quedan jornadas sin marcar -->
+          <div id="driver-home-nudge"></div>
         </section>
 
-        <!-- Pestaña: Disponibilidad -->
-        <section data-dtab="avail" class="driver-panel hidden space-y-5">
-          <div>
-            <h2 id="driver-greeting" class="text-xl font-bold text-ink">Disponibilidad</h2>
-            <p id="driver-greeting-sub" class="text-sm text-slate-500">Marca tus turnos de la semana. El admin asigna y confirma.</p>
-          </div>
-
-          <!-- Quick action: mark whole week as available -->
-          <button id="driver-mark-all-available"
-                  class="w-full bg-white border-2 border-brand text-brand-700 font-bold py-3 rounded-xl hover:bg-brand hover:text-white active:scale-[0.99] transition shadow-brand flex items-center justify-center gap-2">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-            </svg>
-            Disponible toda la semana
-          </button>
-
-          <!-- Day cards -->
-          <div id="driver-days" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
-
-          <!-- Legend -->
-          <div class="bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
-            <p class="font-semibold text-slate-700 mb-1">¿Qué significa cada estado?</p>
-            <p class="flex items-center gap-2"><span class="state-dot state-available"></span> <strong>Disponible</strong> — puedes trabajar. Opcional: marca preferencia AM, PM o Indistinto.</p>
-            <p class="flex items-center gap-2"><span class="state-dot state-prefer-rest"></span> <strong>Descanso</strong> — preferís descansar; el admin lo respeta si hay con quién cubrir.</p>
-            <p class="flex items-center gap-2"><span class="state-dot state-unavailable"></span> <strong>No disponible</strong> — requiere razón. Siempre pasa por aprobación del admin.</p>
-          </div>
+        <!-- Pestaña: Disponibilidad — rediseño 2026-08-16 (driver-disponibilidad.js).
+             Todo el contenido lo pinta el módulo: cabecera pegajosa con el medidor
+             de 14 jornadas, selector de brocha y grilla 7×2 que se pinta arrastrando.
+             El saludo va oculto: el módulo lo usa para el texto del contador. -->
+        <section data-dtab="avail" class="driver-panel hidden">
+          <h2 id="driver-greeting" class="sr-only">Disponibilidad</h2>
+          <p id="driver-greeting-sub" class="sr-only"></p>
+          <div id="driver-avail-root" class="rc"></div>
         </section>
 
-        <!-- Pestaña: Mi horario -->
-        <section data-dtab="schedule" class="driver-panel hidden space-y-5">
-          <div>
-            <h2 class="text-xl font-bold text-ink">Mi horario</h2>
-            <p class="text-sm text-slate-500">Tus turnos de la semana y el horario del equipo.</p>
-          </div>
-
-          <!-- Mi semana (resumen de turnos cuando hay horario publicado) -->
+        <!-- Pestaña: Mi horario — rediseño 2026-08-16 (rc-tabs.jsx · TabHorario).
+             La lista de días la pinta driver-tabs.js en #driver-week-summary.
+             El horario del equipo SE CONSERVA (el diseño no lo traía, pero es
+             funcionalidad que el conductor ya usa): baja a colapsable al final. -->
+        <section data-dtab="schedule" class="driver-panel hidden rc">
+          <div id="driver-horario-head"></div>
           <div id="driver-week-summary"></div>
 
-          <!-- Horario completo del equipo (colapsable) -->
-          <details class="bg-white border border-slate-200 rounded-2xl shadow-card overflow-hidden group">
-            <summary class="cursor-pointer px-4 py-3 text-base font-bold text-ink hover:bg-slate-50 flex items-center justify-between list-none">
-              <span>📋 Horario completo del equipo</span>
-              <span class="details-chevron text-slate-400 text-sm">▼</span>
+          <details class="rc-card" style="padding:0;overflow:hidden;margin-top:18px">
+            <summary style="cursor:pointer;padding:13px 15px;font-size:14px;font-weight:650;display:flex;align-items:center;justify-content:space-between;list-style:none">
+              <span>Horario completo del equipo</span>
+              <span class="details-chevron" style="color:var(--r-text-3);font-size:12px">▼</span>
             </summary>
-            <div class="border-t border-slate-200 p-3">
-              <p class="text-xs text-slate-500 mb-2">Tus turnos aparecen resaltados en naranja para que los ubiques rápido.</p>
+            <div style="border-top:1px solid var(--r-border);padding:12px">
+              <p style="font-size:12px;color:var(--r-text-3);margin:0 0 8px">Tus turnos aparecen resaltados para que los ubiques rápido.</p>
               <div id="driver-schedule-container" class="overflow-x-auto"></div>
             </div>
           </details>
         </section>
 
-        <!-- Pestaña: Solicitudes y cambios -->
-        <section data-dtab="requests" class="driver-panel hidden space-y-5">
-          <div>
-            <h2 class="text-xl font-bold text-ink">Solicitudes y cambios</h2>
-            <p class="text-sm text-slate-500">Tus solicitudes de disponibilidad y los cambios de turno.</p>
+        <!-- Pestaña: Solicitudes — rediseño 2026-08-16 (rc-tabs.jsx · TabSolicitudes).
+             Acá vive el estado de aprobación que antes apretaba la grilla de
+             Disponibilidad. El filtro y las tarjetas los pinta driver-tabs.js. -->
+        <section data-dtab="requests" class="driver-panel hidden rc">
+          <div style="padding-top:6px" class="rc-in">
+            <h1 class="rc-h">Solicitudes</h1>
+            <p class="rc-sub" style="margin-left:0;max-width:none">Todo lo que pediste y en qué va. Acá vive el estado de aprobación — ya no en Disponibilidad.</p>
           </div>
-          <div>
-            <h3 class="text-base font-bold text-ink mb-2">Mis solicitudes</h3>
-            <div id="driver-requests-container" class="space-y-2"></div>
+          <div style="margin-top:14px" class="rc-in d1">
+            <div class="rc-seg" id="driver-solic-filter">
+              <button data-f="todas" class="on">Todas</button>
+              <button data-f="permisos">Permisos</button>
+              <button data-f="cambios">Cambios</button>
+            </div>
           </div>
-          <div>
-            <h3 class="text-base font-bold text-ink mb-2">Cambios de turno</h3>
-            <div id="driver-swaps-container"></div>
-          </div>
+          <div id="driver-requests-container" style="margin-top:14px"></div>
+          <div id="driver-swaps-container"></div>
         </section>
 
         <!-- Pestaña: Perfil -->
-        <section data-dtab="perfil" class="driver-panel hidden">
+        <section data-dtab="perfil" class="driver-panel hidden rc">
           <div id="driver-profile-container"></div>
         </section>
 
       </div>
       <!-- /driver-tabs-root -->
 
-      <!-- Save sticky bottom bar (driver) — se ubica SOBRE la barra de pestañas (ver CSS #driver-save-bar) -->
-      <div id="driver-save-bar" class="hidden fixed left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 z-30 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
-        <div class="max-w-lg mx-auto flex items-center justify-between gap-3">
-          <span id="driver-save-state" class="text-xs text-slate-500 flex-1"></span>
-          <button id="driver-save-btn" class="bg-brand text-white text-base font-bold px-6 py-3 rounded-xl hover:bg-brand-600 active:scale-[0.98] transition shadow-brand">
-            Guardar
-          </button>
-        </div>
-      </div>
+      <!-- La barra fija de Guardar se eliminó en el rediseño 2026-08-16: el botón
+           vive al final del contenido de Disponibilidad (ver driver-disponibilidad.js).
+           Se comía 68 px permanentes de una pantalla cuyo protagonista son las
+           14 jornadas. -->
 
       <!-- Barra de navegación inferior (solo conductor) -->
       <nav id="driver-nav">
@@ -552,7 +598,116 @@
                 <div class="set-field"><label>Plazo para la inspección (min)</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint">Si no la hace en este tiempo → strike automático. Default 90.</div></div>
                 <div class="set-field"></div>
               </div>
+              <div class="set-divider" style="margin:16px 0 4px"></div>
+              <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Traslados de auxiliares</p>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Espera en el punto (min)</label><input id="setting-aux-wait" class="set-input" type="number" min="1" max="60" /><div class="set-hint">Cuánto espera el conductor al auxiliar en la recogida. El auxiliar ve la misma cuenta regresiva, y "No se presentó" solo se habilita al vencerse. Default 5.</div></div>
+                <div class="set-field"><label>Anticipación mínima (horas)</label><input id="setting-aux-lead" class="set-input" type="number" min="0" max="72" /><div class="set-hint">Por debajo de esto se le avisa al auxiliar y el traslado queda marcado como "pedido tarde" en Reservas. No se bloquea: la operación tiene urgencias. Default 6.</div></div>
+                <div class="set-field"><label>Traslado privado (la camioneta)</label>
+                  <label class="set-checkrow"><input id="setting-priv-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Ofrecerlo a los auxiliares</span></label>
+                  <div class="set-hint">Mientras esté apagado, el auxiliar ni siquiera ve el paso: pide su traslado como siempre. Enciéndelo solo cuando la camioneta y la tarifa estén definidas.</div>
+                </div>
+                <div class="set-field"><label>Vehículo del privado</label><select id="setting-priv-vehicle" class="set-input"></select><div class="set-hint">Cuál carro se aparta para los traslados privados. De aquí sale el cupo: hay uno, luego hay un privado a la vez. Si no está en la lista, regístralo primero en Vehículos.</div></div>
+                <div class="set-field"><label>Tarifa del privado (pesos)</label><input id="setting-priv-price" class="set-input" type="number" min="1" step="1000" /><div class="set-hint">Lo que se le muestra al auxiliar por trayecto. <b>No se cobra dentro de la app</b>: queda registrado en la reserva y se liquida por fuera. El precio se congela al pedir, así que subirlo no cambia lo ya pactado.</div></div>
+                <div class="set-field"><label>La camioneta queda apartada (min)</label><input id="setting-priv-block" class="set-input" type="number" min="10" max="480" /><div class="set-hint">Cuánto tiempo antes y después de un privado NO se puede aprobar otro. De aquí sale el cupo: hay una sola camioneta. Default 90.</div></div>
+              </div>
+              <div class="set-divider" style="margin:16px 0 4px"></div>
+              <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Optimizador de rutas</p>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Juntar oleadas dentro de (min)</label><input id="setting-route-merge" class="set-input" type="number" min="0" max="120" /><div class="set-hint">Quien se presenta hasta estos minutos después puede subirse al mismo carro. Solo los junta si un carro sale más barato que dos, así que un desvío caro se rechaza solo. <b>0 = no juntar</b> (una vuelta por hora exacta). Default 30.</div></div>
+                <div class="set-field"><label>Minutos por portería</label><input id="setting-route-service" class="set-input" type="number" min="0" max="20" /><div class="set-hint">Lo que se pierde el carro en cada parada. Es por portería, no por persona: dos del mismo conjunto son un solo frenazo. Default 3.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Factor de tráfico</label><input id="setting-route-traffic" class="set-input" type="number" min="1" max="2" step="0.01" /><div class="set-hint">Multiplica el manejo cuando el tiempo sale de OSRM, que calcula con la vía libre. No aplica con TomTom (ese ya trae el tráfico). Default 1.05, calibrado contra la programación manual.</div></div>
+                <div class="set-field"><label>Colchón al entregar en MDE (min)</label><input id="setting-route-buffer" class="set-input" type="number" min="0" max="45" /><div class="set-hint">Bajar maletas y entrar al terminal. Llegar justo a la hora de presentación es llegar tarde. Default 10.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Factor del tramo al aeropuerto</label><input id="setting-route-aero" class="set-input" type="number" min="0.5" max="1.5" step="0.01" /><div class="set-hint">Corrige <b>solo</b> el viaje a/desde MDE, aparte del factor de tráfico. Va por debajo de 1 porque OSRM sobreestima ese corredor: la operación hace en 20 min lo que él calcula en 27. Entre casa y casa no se toca, ahí OSRM acierta. Medido contra 99 vueltas de la programación manual. Default 0.80.</div></div>
+              </div>
+              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Techo de espera: lo que va montado el primero que sube</p>
+              <p class="set-hint" style="margin:2px 0 10px 2px">Es una regla de la programación manual: en 99 vueltas revisadas nunca pasa de 50 min, ni de 60 en las horas pico. Sin techo, una oleada de 4 personas regadas por todo Rionegro cabe en el carro y deja al primero más de una hora adentro. <b>Ojo al ponerlo:</b> respetar el techo obliga a partir vueltas, y partir vueltas puede dejar gente sin carro si la flota no da. <b>0 = sin techo.</b></p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Techo normal (min)</label><input id="setting-route-wait" class="set-input" type="number" min="0" max="180" /><div class="set-hint">Fuera de horas pico. La programación manual usa 50.</div></div>
+                <div class="set-field"><label>Techo en hora pico (min)</label><input id="setting-route-wait-peak" class="set-input" type="number" min="0" max="180" /><div class="set-hint">De 6 a 9 a.m. y de 12 a 6 p.m., las dos franjas que la operación considera pesadas. La programación manual usa 60.</div></div>
+              </div>
+              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Desembarque: de que aterriza a que sale del terminal</p>
+              <p class="set-hint" style="margin:2px 0 10px 2px">Con estos minutos se decide a qué hora el carro recoge en el aeropuerto. La aerolínea se saca del número de vuelo que escribe el tripulante; si no viene o no se reconoce, se usa el de respaldo. Si el carro llega antes, espera el carro; si llega después, espera la tripulante en el andén.</p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Avianca nacional (min)</label><input id="setting-deplane-av-nac" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos AV de 4 dígitos. La operación reporta 15–20. Default 15.</div></div>
+                <div class="set-field"><label>Avianca internacional (min)</label><input id="setting-deplane-av-int" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos AV de 2 o 3 dígitos. Reportado 20–30. Default 20.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>JetSmart nacional (min)</label><input id="setting-deplane-js-nac" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos JEC o JA de 4 dígitos. Reportado 25–30. Default 25.</div></div>
+                <div class="set-field"><label>JetSmart internacional (min)</label><input id="setting-deplane-js-int" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos JEC o JA que empiezan en 58. Reportado 30–35. Default 30.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Wingo (min)</label><input id="setting-deplane-wingo" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos P5, nacionales o internacionales por igual. Reportado 20–30. Default 20.</div></div>
+                <div class="set-field"><label>Respaldo, sin vuelo (min)</label><input id="setting-deplane-fallback" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Cuando la reserva no trae número de vuelo. Hoy pasa en una de cada tres llegadas. Default 20.</div></div>
+              </div>
+              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Colchón de la tabla de zona</p>
+              <p class="set-hint" style="margin:2px 0 10px 2px">Su tabla de zona <b>no es tiempo de manejo: es manejo más un colchón.</b> Medido contra 7 planes suyos: cuando viaja una sola persona, "del primero al aeropuerto" y "desde la última persona recogida" son el mismo viaje, y su tabla de zona pide 25 minutos más en las 20 combinaciones de zona por franja. Sin descontarlo, el sistema programaba 45 de 51 vueltas con 15+ minutos de sobra y pedía carros que no existen. <b>0 = usar su tabla completa</b>, como antes de esta corrección.</p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Colchón a descontar (min)</label><input id="setting-zone-cushion" class="set-input" type="number" min="0" max="60" /><div class="set-hint">Default 25 = la diferencia media medida entre sus dos reglas.</div></div>
+              </div>
+              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Cómo despacha Julián</p>
+              <p class="set-hint" style="margin:2px 0 10px 2px">Los tres parámetros que salieron de medir sus correcciones del 18 al 21 de agosto contra el plan del sistema. <b>Sus propios planes necesitan 3 carros simultáneos</b> (pico 11:35 el 20-ago y 16:00 el 21-ago): los dos de los trabajadores más el suyo o un Uber. Con dos, el tablero marca 6 a 9 traslados como "quizás no haya carro" que en la operación sí se hacen.</p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Carros a planear</label><input id="setting-cars-count" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Cuántos vehículos de la flota entran al plan. Default 2 = solo los de los trabajadores.</div></div>
+                <div class="set-field"><label>Madrugar como máximo (min)</label><input id="setting-rescue-early" class="set-input" type="number" min="0" max="120" /><div class="set-hint">Antes de dejar a alguien sin carro se intenta montarlo en una vuelta anterior. Él dijo 30; su rescate de Melisa Arcila fue 40. <b>0 = no rescatar.</b></div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Llenar antes que repartir</label><select id="setting-car-priority" class="set-input"><option value="1">Sí — el último carro es el último recurso</option><option value="0">No — repartir parejo entre los carros</option></select><div class="set-hint">Así despacha él. Medido con 3 carros: el error de la hora de recogida baja de 14,6 a 10,1 min y las vueltas tarde de 2 a 0.</div></div>
+                <div class="set-field"><label>Madrugar como máximo para llenar un carro (min)</label><input id="setting-max-early" class="set-input" type="number" min="0" max="180" /><div class="set-hint">Nadie se recoge más de este tiempo antes de <b>su propia</b> presentación por acompañar a otro. Medido en su corrección del 22-ago: la anticipación va de 20 a 60 min y nunca pasa de 60. <b>0 = sin límite.</b></div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Tolerancia del anillo (min)</label><input id="setting-sweep-tol" class="set-input" type="number" min="0" max="15" /><div class="set-hint"><b>El barrido:</b> cada vuelta arranca en la parada más lejana al aeropuerto y de ahí solo se acerca — nunca se devuelve. Regla suya, dictada el 21-ago. Esta tolerancia es lo que puede alejarse sin contar como devolverse: él sí salta dentro de un mismo anillo (Cerezos 28 → Río Vivo 28), pero no se sale.</div></div>
+              </div>
+              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Domingos y festivos</p>
+              <p class="set-hint" style="margin:2px 0 10px 2px">Regla suya: "domingos y festivos no sacarlos tan temprano". Estos minutos se le <b>restan</b> a la anticipación de la tabla de abajo, o sea que la gente se recoge más tarde. Los festivos de Colombia ya están cargados con el traslado al lunes (Ley Emiliani); los domingos salen de la fecha. <b>Sigue en 0 a propósito:</b> medidos sus planes, el del viernes 7 de agosto —día normal— se aparta de la tabla lo mismo que el del festivo, así que no hay evidencia de que trate distinto esos días.</p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Recoger más tarde (min)</label><input id="setting-holiday-shift" class="set-input" type="number" min="0" max="60" /><div class="set-hint">En 0: sus planes no muestran diferencia medible entre día normal y festivo.</div></div>
+              </div>
               <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
+            </div>
+          </div>
+
+          <!-- LA TABLA DE TIEMPOS DE JULIÁN (0062) -->
+          <div class="set-card">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
+              <div>
+                <h2>Tabla de tiempos de la operación</h2>
+                <p>Los minutos que Julián maneja para recoger. No los calcula el sistema: los dicta él y aquí se editan.</p>
+              </div>
+            </div>
+            <div class="set-cb">
+              <p class="set-hint" style="margin:0 0 12px 2px">Estos tiempos <b>no reemplazan</b> el cálculo por carretera: mandan cuando son mayores. Así la tabla nunca promete algo que el carro no pueda hacer, y el cálculo nunca recoge más tarde de lo que él recogería. Un conjunto sin zona asignada se programa con el cálculo, como antes.</p>
+
+              <p class="set-hint" style="margin:6px 0 6px 2px;font-weight:700">De recoger al primero a llegar al aeropuerto</p>
+              <p class="set-hint" style="margin:0 0 10px 2px">Los dos números son el rango según cuánta gente va: <b>uno solo va con el mínimo</b>, tres o más con el máximo, y dos por la mitad.</p>
+              <div style="overflow-x:auto"><table class="set-matrix" id="zone-times-table"></table></div>
+
+              <p class="set-hint" style="margin:18px 0 6px 2px;font-weight:700">Solo el tramo final, desde la última persona recogida</p>
+              <p class="set-hint" style="margin:0 0 10px 2px">En una vuelta con varias paradas este tramo tiene que caber dentro del total de arriba, así que funciona como un piso aparte.</p>
+              <div style="overflow-x:auto"><table class="set-matrix" id="leg-times-table"></table></div>
+
+              <div id="zone-times-warn" class="set-hint" style="margin:14px 0 0 2px"></div>
+              <div class="set-foot"><button class="set-btn dark" id="save-route-tables-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar tabla</button></div>
+            </div>
+          </div>
+
+          <!-- ZONA DE CADA CONJUNTO -->
+          <div class="set-card">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
+              <div>
+                <h2>Zona de cada conjunto</h2>
+                <p>En cuál de las cuatro zonas de Julián cae cada residencia. Se guarda al instante.</p>
+              </div>
+            </div>
+            <div class="set-cb">
+              <p class="set-hint" style="margin:0 0 12px 2px">Esto <b>no se puede deducir</b>: los conjuntos caben en dos kilómetros a la redonda, así que por mapa salen mal. Lo tiene que decir él. Mientras una residencia esté <b>Sin asignar</b>, sus traslados se programan con el cálculo por carretera y la tabla no se les aplica.</p>
+              <div id="residence-zones"></div>
             </div>
           </div>
 
@@ -592,6 +747,9 @@
               <div class="set-field" style="margin-bottom:14px"><label>Nombre completo</label><input class="set-input" id="new-driver-name" type="text" placeholder="Ej: Juan Pérez García" /></div>
               <div class="set-grid2">
                 <div class="set-field"><label>Email</label><input class="set-input" id="new-driver-email" type="email" autocomplete="off" placeholder="conductor@rendio.co" /></div>
+                <!-- El teléfono no se pedía nunca, así que el botón "Llamar" de la
+                     app del tripulante y el del jefe no marcaban a nadie. -->
+                <div class="set-field"><label>Teléfono <span style="font-weight:400;opacity:.65">(para que puedan llamarlo)</span></label><input class="set-input" id="new-driver-phone" type="tel" autocomplete="off" placeholder="3001234567" /></div>
                 <div class="set-field"><label>Contraseña</label><div class="set-pwwrap"><input class="set-input mono" id="new-driver-password" type="text" autocomplete="new-password" placeholder="Mín. 8 caracteres" /><button class="set-btn ghost" id="new-driver-gen-pw" type="button" title="Generar contraseña aleatoria">Generar</button></div></div>
               </div>
               <div class="set-grid2" style="margin-top:14px">
@@ -707,6 +865,68 @@
         <div class="insp-lbx" id="insp-lbx"><button class="x" id="insp-lbx-close" aria-label="Cerrar">&times;</button><img id="insp-lbx-img" alt="Foto de inspección"></div>
       </section>
 
+      <!-- =============== ADMIN: REPUESTOS TAB ===============
+           Diseño UX (Rendio Admin - Repuestos); tokens del app, scopeado bajo
+           #parts-ui. Lo pintan renderParts / renderPartsVehicle / renderPartsVida /
+           renderPartsPlan / renderPartsBaseline en admin-repuestos.js.
+           El odómetro NO se digita aquí: entra con la inspección de inicio de
+           turno y el jefe solo carga una vez el km del último cambio. -->
+      <section data-panel="parts" class="hidden">
+        <div id="parts-ui" data-theme="light">
+          <!-- Vista: estado de la flota -->
+          <div class="view on" id="pt-v-estado">
+            <div class="phead">
+              <div>
+                <h1>Repuestos <span class="ct" id="pt-count">0</span></h1>
+                <p>Control de mantenimiento preventivo por kilometraje. El odómetro entra solo con la <b>inspección de inicio de turno</b>; aquí se ve qué pieza le toca a cada carro y qué tan cerca está del límite.</p>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
+                <div class="seg" id="pt-tabs">
+                  <button data-v="estado" class="on"><svg class="icon" style="width:13px;height:13px"><use href="#i-gauge"/></svg>Estado</button>
+                  <button data-v="vida"><svg class="icon" style="width:13px;height:13px"><use href="#i-chart"/></svg>Vida real</button>
+                  <button data-v="plan"><svg class="icon" style="width:13px;height:13px"><use href="#i-list"/></svg>Intervalos y plan</button>
+                </div>
+                <button class="btn" id="pt-open-reg"><svg class="icon"><use href="#i-plus"/></svg>Registrar cambio</button>
+              </div>
+            </div>
+            <div class="rule1">
+              <span class="ri"><svg class="icon"><use href="#i-warn"/></svg></span>
+              <div class="rt"><b>El semáforo avisa, no detiene el carro.</b> Ningún repuesto vencido bloquea el vehículo: la decisión de sacarlo a ruta es del jefe. Un carro parado en el aeropuerto cuesta más que el repuesto, y una pieza al límite también.</div>
+              <div class="legend">
+                <span><i style="background:var(--green)"></i>Al día</span>
+                <span><i style="background:var(--amber)"></i>Por vencer</span>
+                <span><i style="background:var(--red)"></i>Vencido</span>
+                <span><i style="background:var(--line2)"></i>Sin dato</span>
+              </div>
+            </div>
+            <div id="pt-pending" style="margin-bottom:20px"></div>
+            <div class="kpis" id="pt-kpis"></div>
+            <div class="sech"><h2>Flota</h2><span class="rule"></span><span class="hint">Toca un carro para ver sus repuestos</span></div>
+            <div class="vcards" id="pt-vcards"></div>
+            <div class="sech"><h2>Qué hay que cambiar</h2><span class="rule"></span><span class="hint">Ordenado por urgencia</span></div>
+            <div class="seg" id="pt-filter" style="margin-bottom:14px">
+              <button data-f="red" class="on"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Vencidos <span class="n" data-c="red">0</span></button>
+              <button data-f="amber">Por vencer <span class="n" data-c="amber">0</span></button>
+              <button data-f="alert">Todo lo que pide acción <span class="n" data-c="alert">0</span></button>
+              <button data-f="nodata">Sin dato <span class="n" data-c="nodata">0</span></button>
+            </div>
+            <div id="pt-list"></div>
+            <div class="sech"><h2>Últimos cambios registrados</h2><span class="rule"></span><span class="hint">Cada registro alimenta la vida real</span></div>
+            <div class="card" style="margin-bottom:0"><div id="pt-hist"></div></div>
+          </div>
+          <!-- Vista: detalle del vehículo (la pinta renderPartsVehicle) -->
+          <div class="view" id="pt-v-veh"></div>
+          <!-- Vista: vida real (la pinta renderPartsVida) -->
+          <div class="view" id="pt-v-vida"></div>
+          <!-- Vista: intervalos y plan (la pinta renderPartsPlan) -->
+          <div class="view" id="pt-v-plan"></div>
+          <!-- Vista: carga inicial del jefe (la pinta renderPartsBaseline) -->
+          <div class="view" id="pt-v-carga"></div>
+          <!-- Cajón lateral de "Registrar cambio" (position:fixed) -->
+          <div id="parts-drawer-root"></div>
+        </div>
+      </section>
+
       <!-- ADMIN: Turnos activos (red de seguridad de cierre) -->
       <section data-panel="shifts" class="hidden">
         <div id="shifts-ui" data-theme="light">
@@ -718,6 +938,239 @@
             <button class="set-btn ghost" id="shifts-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
           </div>
           <div id="shifts-list"></div>
+        </div>
+      </section>
+
+      <!-- ADMIN: Privados (0069). Bandeja de decisiones, no tabla de consulta:
+           cada tarjeta es alguien esperando saber si tiene carro. -->
+      <section data-panel="tripulantes" class="hidden">
+        <div id="tripulantes-ui" data-theme="light">
+          <div class="sh-phead">
+            <div>
+              <h1>Tripulantes <span class="sh-ct" id="tp-count">0</span></h1>
+              <p>Los TCP que se crearon cuenta desde la app. Acá se corrige la <b>fecha de ingreso</b>
+                 de quienes ya llevaban tiempo con Rendio — el registro la estampa con el día en que
+                 abrieron la app, y de esa fecha salen los beneficios por antigüedad.</p>
+            </div>
+            <div class="tp-acts">
+              <button class="set-btn ghost" data-tp="air">Aerolíneas</button>
+              <button class="set-btn ghost" data-tp="reload"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+            </div>
+          </div>
+          <div id="tp-air-box" class="hidden"></div>
+          <div class="tp-tools">
+            <div class="tp-search">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input id="tp-search" type="text" placeholder="Busca por nombre, correo, aerolínea o conjunto" autocomplete="off" />
+            </div>
+            <div class="tp-filters">
+              <button class="on" data-tp="filtro" data-f="todos">Todos</button>
+              <button data-tp="filtro" data-f="sin-fecha">Sin fecha de ingreso</button>
+              <button data-tp="filtro" data-f="dos-unidades">Con dos unidades</button>
+            </div>
+          </div>
+          <div id="tp-body"></div>
+        </div>
+      </section>
+
+      <section data-panel="privados" class="hidden">
+        <div id="privados-ui" data-theme="light">
+          <div class="sh-phead">
+            <div>
+              <h1>Privados <span class="sh-ct" id="pv-count">0</span></h1>
+              <p>Traslados que pidieron la camioneta. <b>Hay una sola</b>, así que aprobar uno la aparta para esa franja. Si niegas, el traslado no se pierde: sale en compartido y no se le cobra nada al tripulante.</p>
+            </div>
+            <button class="set-btn ghost" data-pv="refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+          </div>
+          <div id="pv-list"></div>
+        </div>
+      </section>
+
+      <!-- ADMIN: Reservas (tabla operativa de traslados del día) -->
+      <section data-panel="reservas" class="hidden">
+        <div id="rv-ui" data-theme="light">
+          <div class="sh-phead">
+            <div>
+              <h1>Reservas <span class="sh-ct" id="rv-count">0</span></h1>
+              <p>Traslados pedidos por los auxiliares. Aquí ves el detalle uno por uno, quién confirmó su recogida, quién pidió tarde y las calificaciones. Si un vuelo se cae, <b>cancela el traslado</b>: sale de la ruta del conductor y les avisamos a los dos.</p>
+            </div>
+            <button class="set-btn ghost" id="rv-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+          </div>
+          <div class="rv-bar">
+            <button class="rv-fbtn on" data-rv-f="all">Todas <i></i></button>
+            <button class="rv-fbtn" data-rv-f="active">En pie <i></i></button>
+            <button class="rv-fbtn" data-rv-f="pending">Sin rutear <i></i></button>
+            <button class="rv-fbtn" data-rv-f="cancelled">Canceladas <i></i></button>
+            <button class="rv-fbtn" data-rv-f="rated">Calificadas <i></i></button>
+          </div>
+          <div class="rv-days" id="rv-days"></div>
+          <div id="rv-list"></div>
+        </div>
+      </section>
+
+      <!-- ADMIN: Eventualidades (lo que se sale del plan mientras el traslado corre) -->
+      <section data-panel="eventualidades" class="hidden">
+        <div id="evt-ui" data-theme="light">
+          <div class="sh-phead">
+            <div>
+              <h1>Eventualidades <span class="sh-ct" id="evt-count">0</span></h1>
+              <p>Lo que reportan conductores y tripulantes <b>mientras el traslado va corriendo</b>: fallas mecánicas, trancones, emergencias a bordo. Ábrela para ver el detalle —con eso queda marcada como vista— y ciérrala cuando quede resuelta. Las novedades del vehículo en el turno siguen en Inspecciones.</p>
+            </div>
+            <button class="set-btn ghost" id="evt-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+          </div>
+          <div class="evt-health" id="evt-health"><svg class="icon"><use href="#i-warn"/></svg><span></span></div>
+          <div class="evt-unack" id="evt-unack"><svg class="icon"><use href="#i-warn"/></svg><span></span></div>
+          <div class="evt-bar" id="evt-bar">
+            <button class="on" data-evt-f="open">Abiertas <i>0</i></button>
+            <button data-evt-f="in_progress">En curso <i>0</i></button>
+            <button data-evt-f="resolved">Resueltas <i>0</i></button>
+            <button data-evt-f="all">Todas <i>0</i></button>
+          </div>
+          <div id="evt-list"></div>
+        </div>
+      </section>
+
+      <!-- ===================== RUTAS: CONSOLA (hub por capas) ===================== -->
+      <section data-panel="consola" class="hidden">
+        <div id="consola-ui" data-theme="light">
+          <div class="mscroll">
+            <div class="mwrap">
+              <div class="whead">
+                <div>
+                  <h1 id="cn-title">Turnos <span class="wtag turnos" id="cn-tag">0 módulos</span></h1>
+                  <p id="cn-sub"></p>
+                </div>
+              </div>
+              <div class="strat">
+                <span class="si"><svg class="icon"><use href="#i-layers"/></svg></span>
+                <div class="stx"><b>Navegación por capas.</b> Los módulos se agrupan por necesidad dentro de cada espacio de trabajo, así la consola escala sin alargar la barra de pestañas.</div>
+                <div class="lvls"><span class="pill">Espacio</span><span class="ar">→</span><span class="pill">Grupo</span><span class="ar">→</span><span class="pill">Módulo</span></div>
+              </div>
+              <div id="cn-groups"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== RUTAS: ASIGNACIÓN (planeación) ===================== -->
+      <section data-panel="routes" class="hidden">
+        <div id="routes-ui" data-theme="light">
+          <div class="sub">
+            <h1 id="rt-h1">Rutas del día</h1>
+            <div class="daypick">
+              <button class="nav" id="rt-dayprev" title="Día anterior"><svg class="icon"><use href="#i-l"/></svg></button>
+              <b id="rt-dayLabel">Hoy</b>
+              <button class="nav" id="rt-daynext" title="Día siguiente"><svg class="icon"><use href="#i-r"/></svg></button>
+            </div>
+            <div class="spacer"></div>
+            <div class="daystat">
+              <div class="ds"><b id="rt-dsTotal">0</b><span>Auxiliares</span></div>
+              <div class="ds" id="rt-dsRut"><b>0</b><span>Ruteados</span></div>
+              <div class="ds ok" id="rt-dsTime"><b>—</b><span>A tiempo</span></div>
+              <div class="ds" id="rt-dsEta" title="Pulsa Optimizar para calcular tiempos reales."><b>—</b><span>ETAs</span></div>
+            </div>
+            <button class="btn" id="rt-optBtn"><svg class="icon"><use href="#i-bolt"/></svg>Optimizar</button>
+            <button class="btn primary" id="rt-saveBtn" style="display:none"><svg class="icon"><use href="#i-save"/></svg>Publicar plan</button>
+          </div>
+          <div class="alert" id="rt-alert">
+            <svg class="icon"><use href="#i-warn"/></svg>
+            <span id="rt-alertTx">Una ruta no llega a tiempo a la hora de presentación.</span>
+            <button class="fix" id="rt-alertFix">Ver cuál</button>
+          </div>
+          <div class="stage">
+            <aside class="pool">
+              <div class="pool-h">
+                <div class="t"><svg class="icon" style="width:16px;height:16px"><use href="#i-user"/></svg><b>Sin rutear</b><span class="c" id="rt-poolCount">0</span></div>
+                <p>Arrastra un auxiliar a un carro. El deadline en rojo es la <b>hora de presentación</b> (no negociable).</p>
+              </div>
+              <div class="pool-list" id="rt-poolList"></div>
+            </aside>
+            <section class="lanes" id="rt-lanes">
+          <!-- Día completo: Reloj 24h dual (diseño /Visual/admin-clock.jsx) -->
+          <section class="clockpanel" id="rt-clockPanel">
+            <div class="clock-h">
+              <b>Día completo</b>
+              <div class="clock-legend">
+                <span class="lg"><i style="background:#F26522"></i>Salida (casa → MDE)</span>
+                <span class="lg"><i style="background:#F59E0B"></i>Con hotel</span>
+                <span class="lg"><i style="background:#10B981"></i>Llegada (MDE → casa)</span>
+                <span class="lg"><i class="nowline"></i>Ahora</span>
+              </div>
+            </div>
+            <div id="rt-clock"></div>
+            <p class="clock-hint">Cada anillo es un carro; cada arco, una vuelta. Toca un arco para ir a su carril · <b>toca una hora o arrastra la aguja</b> para recorrer el día · toca el centro para volver a ahora.</p>
+          </section>
+              <div id="rt-laneWrap"></div>
+            </section>
+          </div>
+          <div class="ovl" id="rt-ovl"><div class="box"><div class="ring"></div><b>Optimizando rutas…</b><p>Agrupando por cercanía y respetando cada hora de presentación.</p><div class="step" id="rt-ovlStep"></div></div></div>
+          <!-- Previsualización del trayecto: recorrido real por carretera (OSRM) -->
+          <div class="mapovl" id="rt-mapOvl">
+            <div class="mapbox">
+              <div class="maphead">
+                <div><b id="rt-mapTitle">Trayecto</b><span id="rt-mapSub"></span></div>
+                <button class="mapclose" data-mapclose title="Cerrar"><svg class="icon"><use href="#i-x"/></svg></button>
+              </div>
+              <div id="rt-mapCanvas"></div>
+            </div>
+          </div>
+          <div class="scrim" id="rt-scrim"></div>
+          <aside class="drawer" id="rt-drawer"></aside>
+        </div>
+      </section>
+
+      <!-- ===================== RUTAS: OPERACIÓN EN VIVO (mapa real OSM) ===================== -->
+      <section data-panel="oper" class="hidden">
+        <div id="oper-ui" data-theme="light">
+          <div class="op-top">
+            <h1>Operación en vivo</h1>
+            <span class="op-live"><span class="op-pulse"></span>En vivo</span>
+            <span class="op-clock" id="oper-clock">--:--:--</span>
+            <span class="op-spacer"></span>
+            <span class="op-stub" title="Tráfico (Google/TomTom) y vuelos (AeroDataBox) requieren API key de pago"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Tráfico y vuelos: pendiente API key</span>
+          </div>
+          <div class="op-stage">
+            <!-- IZQUIERDA: lista de carros -->
+            <aside class="op-cars">
+              <div class="op-cars-h">
+                <div class="op-kpis">
+                  <div class="op-kpi ok" id="oper-kOn"><b>0</b><span>A tiempo</span></div>
+                  <div class="op-kpi bad" id="oper-kLate"><b>0</b><span>En riesgo</span></div>
+                  <div class="op-kpi" id="oper-kDone"><b>0</b><span>Completó</span></div>
+                </div>
+              </div>
+              <div class="op-cars-l" id="oper-carlist"></div>
+            </aside>
+
+            <!-- CENTRO: mapa real OSM (Leaflet) -->
+            <section class="op-mapwrap">
+              <div id="oper-map"></div>
+              <div class="op-legend">
+                <div class="op-li"><span class="op-sw" style="background:var(--green)"></span>A tiempo</div>
+                <div class="op-li"><span class="op-sw" style="background:var(--amber)"></span>Ajustado</div>
+                <div class="op-li"><span class="op-sw" style="background:var(--red)"></span>Va tarde</div>
+              </div>
+              <!-- Alerta de atraso (regla #1: avisar antes de llegar tarde) -->
+              <div class="op-delay" id="oper-delay">
+                <div class="op-delay-h">
+                  <span class="op-ic"><svg class="icon"><use href="#i-warn"/></svg></span>
+                  <div><b id="oper-delayTitle"></b><div class="op-sub" id="oper-delaySub"></div></div>
+                  <button class="op-close" id="oper-delayClose" aria-label="Cerrar"><svg class="icon"><use href="#i-x"/></svg></button>
+                </div>
+                <div class="op-delay-acts">
+                  <button class="op-dact primary" id="oper-actReopt"><svg class="icon"><use href="#i-bolt"/></svg>Re-optimizar</button>
+                  <button class="op-dact" id="oper-actReassign"><svg class="icon"><use href="#i-shuffle"/></svg>Reasignar parada</button>
+                  <button class="op-dact" id="oper-actCall"><svg class="icon"><use href="#i-phone"/></svg>Contactar conductor</button>
+                </div>
+              </div>
+            </section>
+
+            <!-- DERECHA: feed de actividad -->
+            <aside class="op-feed">
+              <div class="op-feed-h"><svg class="icon"><use href="#i-activity"/></svg><b>Actividad en vivo</b></div>
+              <div class="op-feed-l" id="oper-feed"></div>
+            </aside>
+          </div>
         </div>
       </section>
 
@@ -736,52 +1189,13 @@
     </div>
   </div>
 
-  <!-- Modal: reason for "No disponible" -->
-  <div id="reason-modal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center backdrop-blur-sm">
-    <div class="bg-white rounded-t-2xl md:rounded-2xl shadow-xl w-full md:max-w-sm p-5 md:p-6">
-      <h3 class="font-bold text-lg text-ink" id="reason-modal-title">Razón de no disponibilidad</h3>
-      <p class="text-sm text-slate-500 mb-3">El admin necesita una justificación para aprobar.</p>
-      <textarea id="reason-modal-text" rows="3"
-        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-base mb-4 focus:border-brand focus:ring-2 focus:ring-brand-100 outline-none resize-none"
-        placeholder="Ej: cita médica, viaje familiar, maluco..."></textarea>
-      <div class="flex gap-2">
-        <button id="reason-modal-cancel" class="flex-1 px-3 py-3 rounded-lg border border-slate-300 hover:bg-slate-100 font-medium">Cancelar</button>
-        <button id="reason-modal-save" class="flex-1 px-3 py-3 rounded-lg bg-ink text-white hover:bg-ink-soft font-semibold">Guardar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal: state picker (driver mobile) -->
-  <div id="state-picker" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end md:items-center justify-center backdrop-blur-sm">
-    <div class="bg-white rounded-t-2xl md:rounded-2xl shadow-xl w-full md:max-w-sm p-5 md:p-6">
-      <h3 class="font-bold text-lg text-ink mb-1" id="state-picker-title">Selecciona estado</h3>
-      <p class="text-sm text-slate-500 mb-4" id="state-picker-subtitle">Elige una opción para esta jornada.</p>
-      <div class="space-y-2">
-        <button data-pick="available" class="state-pick-btn w-full">
-          <span class="state-dot state-available"></span>
-          <span class="flex-1 text-left">
-            <span class="block font-semibold">Disponible</span>
-            <span class="block text-xs text-slate-500">Puedo trabajar</span>
-          </span>
-        </button>
-        <button data-pick="prefer_rest" class="state-pick-btn w-full">
-          <span class="state-dot state-prefer-rest"></span>
-          <span class="flex-1 text-left">
-            <span class="block font-semibold">Descanso</span>
-            <span class="block text-xs text-slate-500">El admin lo respeta si hay con quién cubrir</span>
-          </span>
-        </button>
-        <button data-pick="unavailable" class="state-pick-btn w-full">
-          <span class="state-dot state-unavailable"></span>
-          <span class="flex-1 text-left">
-            <span class="block font-semibold">No disponible</span>
-            <span class="block text-xs text-slate-500">Requiere razón. Siempre se aprueba por admin</span>
-          </span>
-        </button>
-      </div>
-      <button id="state-picker-cancel" class="mt-4 w-full px-3 py-3 rounded-lg border border-slate-300 hover:bg-slate-100 font-medium">Cancelar</button>
-    </div>
-  </div>
+  <!-- Hoja de motivo del conductor (rediseño 2026-08-16).
+       Reemplaza a los dos modales que había antes (#state-picker y #reason-modal):
+       ya no se elige el estado en un modal — se pinta en la grilla — y el motivo
+       se pide UNA sola vez por tanda, al levantar el dedo. La pinta y la cablea
+       driver-disponibilidad.js. -->
+  <div id="av-back" class="rc-back"></div>
+  <div id="av-sheet" class="rc-sheet" role="dialog" aria-modal="true" aria-label="Motivo de no disponibilidad"></div>
 
   <!-- Modal: iOS install instructions -->
   <div id="ios-install-modal" class="hidden fixed inset-0 z-30 bg-black/40 flex items-end md:items-center justify-center backdrop-blur-sm">
@@ -812,6 +1226,53 @@
   <!-- Wizard de inicio de turno (pantalla completa) — lo renderiza shift-flow.js -->
   <div id="shift-wizard" class="hidden fixed inset-0 z-30 bg-slate-50 overflow-y-auto overscroll-contain"></div>
 
+  <!-- Rol Auxiliar (pasajero): pantalla propia full-screen — la renderiza auxiliar.js -->
+  <section id="auxiliar-root" class="hidden">
+    <div id="auxiliar-ui" data-theme="light"></div>
+  </section>
+
+  <!-- Ruta del día del conductor (pantalla completa) — se abre al terminar el
+       inicio de turno; la renderiza driver-rutas.js -->
+  <div id="driver-ruta-root" class="hidden"></div>
+
+  <!-- Hilo del traslado desde el lado del jefe (0067). Vive suelto, no dentro
+       de un panel: se abre igual desde Eventualidades y desde Reservas, y la
+       pantalla de abajo no pierde su filtro ni su polling. Lo maneja
+       admin-chat.js -->
+  <div class="jc-sheet hidden" id="jefe-chat">
+    <div class="jc-card">
+      <div class="jc-head">
+        <div class="jc-who">
+          <b id="jc-name">Traslado</b>
+          <span id="jc-sub"></span>
+        </div>
+        <button class="jc-btn" id="jc-close">Cerrar</button>
+      </div>
+      <div class="jc-body" id="jc-body"></div>
+      <div class="jc-foot">
+        <input id="jc-input" type="text" maxlength="500" placeholder="Escríbele al tripulante…" autocomplete="off">
+        <button class="jc-btn dark" id="jc-send">Enviar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- "¿Dónde acomodo esta reserva?" (bloque D). Vive suelto por lo mismo que
+       #jefe-chat: se abre desde la bandeja y desde Operación sin desmontar la
+       pantalla de abajo. Lo maneja admin-acomodar.js -->
+  <div class="ac-sheet hidden" id="acomodar">
+    <div class="ac-card">
+      <div class="ac-head">
+        <div class="ac-who">
+          <b>¿Dónde la acomodo?</b>
+          <span id="ac-sub"></span>
+        </div>
+        <button class="ac-btn" id="ac-again" title="Volver a calcular">Recalcular</button>
+        <button class="ac-btn" id="ac-close">Cerrar</button>
+      </div>
+      <div class="ac-body" id="ac-body"></div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="hidden fixed bottom-20 md:bottom-4 left-1/2 -translate-x-1/2 z-40 bg-ink text-white px-4 py-2.5 rounded-full text-sm font-medium shadow-lg"></div>
 
@@ -826,6 +1287,7 @@
   <script src="core.js"></script>
   <script src="admin-turnos-activos.js"></script>
   <script src="admin-inspecciones.js"></script>
+  <script src="admin-repuestos.js"></script>
   <script src="horario.js"></script>
   <script src="admin-solicitudes.js"></script>
   <script src="admin-disponibilidad.js"></script>
@@ -834,6 +1296,26 @@
   <script src="driver-home.js"></script>
   <script src="admin-recompensas.js"></script>
   <script src="driver-perfil.js"></script>
+  <script src="driver-disponibilidad.js"></script>
+  <script src="driver-tabs.js"></script>
+  <!-- Rutas de auxiliares (feat/rutas-modular): consola/sidebar + asignación + operación -->
+  <script src="admin-consola.js"></script>
+  <script src="admin-rutas.js"></script>
+  <script src="admin-reservas.js"></script>
+  <script src="admin-tripulantes.js"></script>
+  <script src="admin-privados.js"></script>
+  <script src="admin-operacion.js"></script>
+  <script src="admin-eventualidades.js"></script>
+  <script src="admin-chat.js"></script>
+  <script src="admin-acomodar.js"></script>
+  <!-- Rol auxiliar (pasajero) -->
+  <script src="aux-registro.js"></script>
+  <script src="aux-residencias.js"></script>
+  <script src="aux-privado.js"></script>
+  <script src="aux-presentacion.js"></script>
+  <script src="auxiliar.js"></script>
+  <!-- Conductor: rutas de auxiliares -->
+  <script src="driver-rutas.js"></script>
   <script src="ui-push.js"></script>
 
   <!-- PWA: registrar service worker + detectar updates -->

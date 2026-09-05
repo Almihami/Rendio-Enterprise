@@ -50,6 +50,35 @@
   // Checklist activo: se carga desde la BD en init() (Api.listChecklistItems, 0024);
   // fallback a los fijos si la migración no está o la organización no tiene ítems.
   let ckItems = CHECKLIST_FALLBACK;
+  // Checklist de todos los días, sin los ítems de nivel preventivo. Sobre esta
+  // base se suman los del nivel cuando el carro elegido cruzó un múltiplo de km
+  // (0073): así el conductor mide espesor de pastillas el turno que toca, y no
+  // todos los días.
+  let ckBase = CHECKLIST_FALLBACK;
+  let ckTierFor = null;   // vehículo para el que ya se resolvieron los niveles
+
+  // Añade al checklist los ítems de los niveles pendientes del vehículo elegido.
+  // Best-effort: si algo falla, el conductor hace su inspección normal.
+  async function applyTierChecklist(vehicleId) {
+    ckItems = ckBase;
+    sf.tierKms = [];
+    if (!vehicleId) return;
+    try {
+      const tiers = await Api.pendingInspectionTiers(vehicleId);
+      if (!tiers || !tiers.length) return;
+      const kms = tiers.map(t => t.every_km);
+      const extra = await Api.listChecklistItemsForTiers(kms);
+      if (!extra.length) return;
+      sf.tierKms = kms;
+      ckItems = ckBase.concat(extra.map(it => ({
+        id: it.id,
+        label: it.label,
+        detail: it.hint || '',
+        // Se agrupan aparte para que se note que es la revisión del nivel.
+        category: 'Revisión de ' + Number(it.tier_every_km).toLocaleString('es-CO') + ' km',
+      })));
+    } catch (e) { /* sin 0073 o sin niveles: queda el checklist normal */ }
+  }
 
   // photo_type del enum inspection_photo_type: front|left|right|rear|dashboard (0016)
   // + glovebox|door_left|door_right (0042, fotos "sin basura").
@@ -89,11 +118,16 @@
     _timer: null,         // intervalo del cronómetro en vivo
     close: null,          // estado del flujo de cierre (ver newCloseState)
     settings: null,       // ajustes (ventana/plazo de inicio diferido)
+    noFuelReasons: [],    // catálogo de motivos de "no pude tanquear" (0077)
     completing: false,    // completando la inspección diferida de un turno activo
   };
 
   function newCloseState() {
-    return { km: '', novedad: false, novedadText: '', severity: 'media', media: [], receipts: [], attest: false, saving: false, done: null };
+    // fueled: null = todavía no contestó · true = tanqueó · false = no pudo.
+    // Arranca en null a propósito: la pregunta es obligatoria, y un default
+    // sería contestar por el conductor.
+    return { km: '', novedad: false, novedadText: '', severity: 'media', media: [], receipts: [], attest: false, saving: false, done: null,
+             fueled: null, noFuelReasonId: null, noFuelText: '' };
   }
 
   function sfToast(msg) {
@@ -149,9 +183,14 @@
     try {
       const items = await Api.listChecklistItems(true);
       if (items && items.length) ckItems = items.map(it => ({ id: it.id, label: it.label, detail: it.hint || '', category: it.category || 'General' }));
+      ckBase = ckItems;
     } catch (e) { /* sin 0024 o sin ítems: queda CHECKLIST_FALLBACK */ }
     // Ajustes (ventana/plazo del inicio diferido). Si falla, el botón no aparece.
     try { sf.settings = await Api.getSettings(); } catch (e) { sf.settings = null; }
+    // Motivos de "no pude tanquear" (0077), configurables por el admin igual que
+    // el checklist. Si la migración no está, queda [] y el cierre pide el motivo
+    // como texto libre en vez de romperse.
+    try { sf.noFuelReasons = await Api.listNoFuelReasons(); } catch (e) { sf.noFuelReasons = []; }
     await renderCard();
   }
 
@@ -160,8 +199,9 @@
     if (!box) return;
 
     if (!sf.driverId) {
-      box.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-card text-sm text-slate-500">
-        🚗 El inicio de turno estará disponible cuando tu admin complete tu perfil de conductor.
+      box.innerHTML = `<div class="rc-note info" style="margin-top:18px">
+        <span class="rc-note-ic">${avIcon('info', 17)}</span>
+        <span>El inicio de turno estará disponible cuando tu jefe complete tu perfil de conductor.</span>
       </div>`;
       return;
     }
@@ -178,53 +218,42 @@
       sf.activeShift = open;
       const v = open.vehicles || {};
       const since = new Date(open.start_at).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
-      box.innerHTML = `<div class="rounded-2xl p-5 flex flex-col bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-card overflow-hidden">
-        <div class="flex items-start justify-between">
-          <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl">🚐</div>
-          <span class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/90 mt-1">
-            <span class="sf-livedot w-1.5 h-1.5 rounded-full bg-white inline-block"></span> En curso
-          </span>
+      // Tarjeta del rediseño 2026-08-16 (rc-tabs.jsx · TabInicio, estado "en curso").
+      box.innerHTML = `<div class="rc-hero live rc-in d1">
+        <div class="rc-hero-top">
+          <span class="rc-hero-ic">${avIcon('car', 24, 1.6)}</span>
+          <span class="rc-hero-tag"><span class="rc-livedot"></span>EN CURSO</span>
         </div>
-        <div class="mt-4">
-          <p class="text-xl font-extrabold leading-tight">Turno en curso · ${esc(v.internal_code || v.license_plate || 'vehículo')}</p>
-          <p class="text-xs text-white/85 mt-1">${esc([v.brand, v.model].filter(Boolean).join(' '))} · inició ${since} · salida ${fmtKm(open.opening_km)} km</p>
-        </div>
-        <div class="mt-3 flex items-center gap-2 text-sm font-bold tabular-nums">
-          <svg class="w-4 h-4 text-white/80" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path stroke-linecap="round" d="M12 7v5l3 2"></path></svg>
-          <span id="sf-elapsed">${fmtElapsed(open.start_at)}</span>
-          <span class="text-white/60 font-medium">trabajado</span>
-        </div>
-        ${open.inspection_due_at ? `<div class="mt-3 rounded-xl bg-white/15 border border-white/30 p-3">
-          <p class="text-[13px] font-extrabold flex items-center gap-1.5">⏳ Inspección pendiente <span id="sf-insp-left" class="font-extrabold">${fmtInspLeft(open.inspection_due_at)}</span></p>
-          <p class="text-[11px] text-white/85 mt-0.5">Hazla antes de que se venza o será un strike.</p>
-          <button id="sf-do-insp" class="tap w-full mt-2 bg-white text-emerald-700 text-sm font-extrabold py-2.5 rounded-lg active:scale-[.98]">Hacer inspección ahora</button>
+        <div class="rc-hero-t">Turno en curso</div>
+        <div class="rc-hero-s">Inició ${since} · <span id="sf-elapsed">${fmtElapsed(open.start_at)}</span> en ruta${v.internal_code || v.license_plate ? ' · ' + esc(v.internal_code || v.license_plate) : ''}</div>
+        ${open.inspection_due_at ? `<div class="rc-hero-note">
+          <b>${avIcon('clock', 14)} Inspección pendiente <span id="sf-insp-left">${fmtInspLeft(open.inspection_due_at)}</span></b>
+          <p>Hazla antes de que se venza o será un strike.</p>
+          <button id="sf-do-insp" type="button">Hacer inspección ahora</button>
         </div>` : ''}
-        <div class="mt-4 pt-4 border-t border-white/20">
-          <button id="sf-close-btn" class="tap w-full bg-white text-emerald-700 text-base font-extrabold py-3.5 rounded-xl shadow-sm active:scale-[.98]">Cerrar turno</button>
-          <p class="text-[11px] text-white/80 text-center mt-2">Kilometraje final, novedades y comprobantes de tanqueo.</p>
-        </div>
+        <button id="sf-route-btn" class="rc-hero-btn" type="button"
+          style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.32)">Ruta · Trayectos de hoy</button>
+        <button id="sf-close-btn" class="rc-hero-btn" type="button">Cerrar turno</button>
       </div>`;
       startElapsedTimer(open.start_at);
       $('#sf-close-btn').addEventListener('click', () => openClose(open));
       $('#sf-do-insp')?.addEventListener('click', () => openCompletion(open));
+      $('#sf-route-btn')?.addEventListener('click', () => { if (window.DriverRutas) DriverRutas.open(sf.profile); });
       return;
     }
     stopElapsedTimer();
 
     sf.reuseShiftId = open ? open.id : null;
     sf.myReservedVehicleId = open ? open.vehicle_id : null; // vehículo ya reservado en el draft
-    box.innerHTML = `<button id="sf-open-btn" class="pc-in d1 sheen tap w-full text-left rounded-2xl p-5 h-[200px] flex flex-col bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-brand">
-      <div class="flex items-start justify-between">
-        <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-2xl"><span class="bob inline-block">🚗</span></div>
-        <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75 mt-1">${open ? 'Sin terminar' : 'Ahora'}</span>
-      </div>
-      <div class="mt-auto">
-        <p class="text-xl font-extrabold leading-tight">${open ? 'Continuar inicio de turno' : 'Iniciar turno'}</p>
-        <p class="text-xs text-white/85 mt-1">${open ? 'Retomas el registro con el mismo turno, sin perder el avance.' : 'Turno único · inspección, fotos y kilometraje · ~5 min'}</p>
-      </div>
-      <div class="mt-3 flex items-center gap-1 text-sm font-bold">${open ? 'Continuar' : 'Empezar'}
-        <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
-      </div>
+    // Tarjeta del rediseño 2026-08-16 (rc-tabs.jsx · TabInicio, estado "iniciar").
+    box.innerHTML = `<button id="sf-open-btn" class="rc-hero start rc-in d1" type="button">
+      <span class="rc-hero-top">
+        <span class="rc-hero-ic">${avIcon('car', 24, 1.6)}</span>
+        <span class="rc-hero-tag">${open ? 'SIN TERMINAR' : 'AHORA'}</span>
+      </span>
+      <span class="rc-hero-t" style="display:block">${open ? 'Continuar inicio de turno' : 'Iniciar turno'}</span>
+      <span class="rc-hero-s" style="display:block">${open ? 'Retomas el registro con el mismo turno, sin perder el avance.' : 'Inspección, fotos y kilometraje · unos 5 minutos'}</span>
+      <span class="rc-hero-go">${open ? 'Continuar' : 'Empezar'} ${avIcon('arrowRight', 17)}</span>
     </button>`;
     $('#sf-open-btn').addEventListener('click', openWizard);
   }
@@ -343,6 +372,12 @@
   function render() {
     const wiz = $('#shift-wizard');
     if (sf.done) { renderDone(wiz); return; }
+    // Al cambiar de vehículo se recalcula si le toca revisión de nivel (0073).
+    // Es asíncrono: se repinta cuando llega, sin frenar el paso actual.
+    if (sf.vehicleId !== ckTierFor) {
+      ckTierFor = sf.vehicleId;
+      applyTierChecklist(sf.vehicleId).then(() => { if (sf.step === 1) render(); });
+    }
     switch (sf.step) {
       case 0: renderVehicle(wiz); break;
       case 1: renderChecklist(wiz); break;
@@ -1077,6 +1112,12 @@
         setState('Iniciando turno…');
         await Api.startShift(shiftId);
         sf.done = 'started';
+        // La revisión de nivel quedó hecha: no se vuelve a pedir hasta el
+        // siguiente múltiplo de km (0073). Best-effort, nunca frena el turno.
+        if (sf.tierKms && sf.tierKms.length) {
+          const kmDone = parseInt(String(sf.km || '').replace(/\D/g, ''), 10) || 0;
+          try { await Api.markInspectionTiersDone(sf.vehicleId, kmDone); } catch (_) { /* */ }
+        }
       }
       sf.reuseShiftId = null;
       sf.completing = false;
@@ -1118,13 +1159,17 @@
       icon = '✓'; iconCls = 'bg-brand-50 text-brand-600'; title = '¡Listo, en ruta!';
       body = `Turno activo con el ${veh} desde ${fmtKm(sf.km)} km. Maneja con calma.`; btnCls = 'bg-brand text-white shadow-brand';
     }
+    // Con el turno activo, el siguiente paso natural es VER LA RUTA DEL DÍA.
+    const activeTurno = !(d === 'aborted' || d === 'completed-noapt');
     wiz.innerHTML = `<div class="max-w-lg mx-auto min-h-screen flex flex-col items-center justify-center text-center px-8 bg-slate-50">
       <div class="w-20 h-20 rounded-full ${iconCls} text-4xl flex items-center justify-center mb-5">${icon}</div>
       <h1 class="text-2xl font-extrabold text-ink">${title}</h1>
       <p class="text-[15px] text-slate-500 mt-2 leading-relaxed max-w-xs">${body}</p>
-      <button id="sf-done-btn" class="mt-8 px-6 py-3 rounded-xl ${btnCls} font-bold active:scale-[0.98] transition">Volver al inicio</button>
+      ${activeTurno ? `<button id="sf-route-btn" class="mt-8 w-full max-w-xs px-6 py-3.5 rounded-xl bg-brand text-white font-extrabold shadow-brand active:scale-[0.98] transition flex items-center justify-center gap-2"><span>🧭</span>Ver mi ruta del día</button>
+      <button id="sf-done-btn" class="mt-3 px-6 py-2.5 text-slate-500 font-semibold">Volver al inicio</button>`
+      : `<button id="sf-done-btn" class="mt-8 px-6 py-3 rounded-xl ${btnCls} font-bold active:scale-[0.98] transition">Volver al inicio</button>`}
     </div>`;
-    $('#sf-done-btn').addEventListener('click', () => {
+    const cleanup = () => {
       Object.values(sf.photos).forEach(p => p && p.url && URL.revokeObjectURL(p.url));
       sf.photos = {};
       sf.extraPhotos.forEach(p => p && p.url && URL.revokeObjectURL(p.url));
@@ -1132,6 +1177,11 @@
       sf.completing = false;
       closeWizard();
       renderCard();
+    };
+    $('#sf-done-btn').addEventListener('click', cleanup);
+    $('#sf-route-btn')?.addEventListener('click', () => {
+      cleanup();
+      if (window.DriverRutas) DriverRutas.open(sf.profile);
     });
   }
 
@@ -1155,11 +1205,36 @@
   function closeKmNum() { const d = String(sf.close.km).replace(/\D/g, ''); return d ? parseInt(d, 10) : 0; }
   function closeOpenKm() { return Number(sf.activeShift && sf.activeShift.opening_km) || 0; }
   function closeKmValid() { const n = closeKmNum(); return n > 0 && n >= closeOpenKm(); }
-  // Comprobante de tanqueo OBLIGATORIO: al menos uno, y cada uno con valor > 0.
-  // No se habilita "Confirmar cierre" hasta cumplirlo.
+  // EL COMPROBANTE YA NO ES OBLIGATORIO SIEMPRE (Julián, 3-sep-2026). Hasta hoy
+  // había que adjuntarlo sí o sí, porque tanquear era obligatorio antes de
+  // entregar el carro — pero se hacía en el cambio de turno, CON LOS TRIPULANTES
+  // A BORDO, y se quejaron. Ahora el conductor tanquea un par de horas antes,
+  // sin pasajeros, y si no alcanzó dice por qué.
+  //
+  //   fueled === true  → comprobante obligatorio, igual que siempre.
+  //   fueled === false → sin comprobante, pero con motivo.
+  //   fueled === null  → todavía no contestó: el cierre NO se habilita.
   function receiptsValid() { return sf.close.receipts.length >= 1 && sf.close.receipts.every(r => (r.amount || 0) > 0); }
+  // El motivo del catálogo basta, salvo que pida texto (el "Otro"): ahí hay que
+  // escribir. Mismo criterio que novedadValid.
+  function fuelValid() {
+    if (sf.close.fueled === true) return receiptsValid();
+    if (sf.close.fueled !== false) return false;
+    const r = (sf.noFuelReasons || []).find(x => x.id === sf.close.noFuelReasonId);
+    if (!r) return sf.close.noFuelText.trim().length > 0;   // sin catálogo: texto libre
+    return !r.requires_text || sf.close.noFuelText.trim().length > 0;
+  }
+  // ¿Toca mostrar la cajita de texto? Con "Otro" (requires_text) siempre, y
+  // también si la base todavía no tiene el catálogo: ahí el texto libre es lo
+  // único que queda para que el motivo no se pierda.
+  function noFuelNeedsText() {
+    if (sf.close.fueled !== false) return false;
+    if (!(sf.noFuelReasons || []).length) return true;
+    const r = sf.noFuelReasons.find(x => x.id === sf.close.noFuelReasonId);
+    return !!(r && r.requires_text);
+  }
   function novedadValid() { return !sf.close.novedad || sf.close.novedadText.trim().length > 0; }
-  function closeAllValid() { return closeKmValid() && sf.close.attest && novedadValid() && receiptsValid(); }
+  function closeAllValid() { return closeKmValid() && sf.close.attest && novedadValid() && fuelValid(); }
   function fuelTotal() { return sf.close.receipts.reduce((s, r) => s + (r.amount || 0), 0); }
 
   function updateCloseConfirm() {
@@ -1193,6 +1268,30 @@
   }
 
   function setCloseNovedad(on) { sf.close.novedad = on; if (!on) { sf.close.novedadText = ''; } renderClose(); }
+
+  // Sí/no del tanqueo. Al pasar a "no" hay que SOLTAR los comprobantes que ya
+  // hubiera adjuntado: si solo se ocultaran, submitClose los subiría igual
+  // (mira receipts.length, no la casilla) y quedaría un turno que dice "no
+  // tanqueé" con recibos colgando. Se revocan los objectURL para no dejar
+  // blobs vivos en memoria, igual que hace rmReceipt.
+  function setCloseFueled(v) {
+    if (sf.close.fueled === v) return;
+    sf.close.fueled = v;
+    if (v === false) {
+      sf.close.receipts.forEach(r => r && r.url && URL.revokeObjectURL(r.url));
+      sf.close.receipts = [];
+    } else {
+      sf.close.noFuelReasonId = null;
+      sf.close.noFuelText = '';
+    }
+    renderClose();
+  }
+  function setNoFuelReason(id) {
+    sf.close.noFuelReasonId = id;
+    const r = (sf.noFuelReasons || []).find(x => x.id === id);
+    if (r && !r.requires_text) sf.close.noFuelText = '';   // el texto solo vive con "Otro"
+    renderClose();
+  }
 
   async function onAddCloseMedia(input, kind) {
     const f = input.files && input.files[0]; input.value = '';
@@ -1309,18 +1408,35 @@
 
         <section>
           <div class="flex items-center justify-between mb-2">
-            <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">Comprobantes de tanqueo <span class="text-rose-500">*</span></h3>
-            <span id="cl-fuel-total" class="text-[12px] font-bold text-slate-400">$${fuelTotal().toLocaleString('es-CO')}</span>
+            <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">¿Ya pudo tanquear? <span class="text-rose-500">*</span></h3>
+            ${sf.close.fueled === true ? `<span id="cl-fuel-total" class="text-[12px] font-bold text-slate-400">$${fuelTotal().toLocaleString('es-CO')}</span>` : ''}
           </div>
-          <p class="text-[12px] ${sf.close.receipts.length ? 'text-slate-500' : 'text-rose-600 font-semibold'} mb-3 -mt-1">${sf.close.receipts.length ? 'Adjunta los recibos de gasolina pagados en el turno (foto + valor).' : 'Obligatorio: adjunta al menos un recibo de gasolina (foto + valor) para cerrar el turno.'}</p>
-          <div class="space-y-2.5">${receiptRows}</div>
-          <button id="cl-add-receipt" class="mt-2.5 w-full rounded-xl border-2 border-dashed border-brand-300 bg-brand-50 text-brand-700 font-bold py-3 text-sm flex items-center justify-center gap-2 active:scale-[.98]">＋ Agregar comprobante</button>
-          <input id="cl-file-receipt" type="file" accept="image/*" class="hidden">
+          <div class="grid grid-cols-2 gap-2">
+            <button id="cl-fuel-si" class="rounded-xl border-2 py-3 text-sm font-bold flex items-center justify-center gap-2 ${sf.close.fueled === true ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'}">✓ Sí tanqueé</button>
+            <button id="cl-fuel-no" class="rounded-xl border-2 py-3 text-sm font-bold flex items-center justify-center gap-2 ${sf.close.fueled === false ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-500'}">✕ No pude</button>
+          </div>
+
+          ${sf.close.fueled === null ? `<p class="text-[12px] text-slate-500 mt-2.5">Puedes tanquear antes de venir al cambio de turno, sin pasajeros. Si no alcanzaste, dinos por qué.</p>` : ''}
+
+          ${sf.close.fueled === true ? `<div class="pt-3">
+            <p class="text-[12px] ${sf.close.receipts.length ? 'text-slate-500' : 'text-rose-600 font-semibold'} mb-3">${sf.close.receipts.length ? 'Adjunta los recibos de gasolina pagados en el turno (foto + valor).' : 'Adjunta al menos un recibo de gasolina (foto + valor) para cerrar el turno.'}</p>
+            <div class="space-y-2.5">${receiptRows}</div>
+            <button id="cl-add-receipt" class="mt-2.5 w-full rounded-xl border-2 border-dashed border-brand-300 bg-brand-50 text-brand-700 font-bold py-3 text-sm flex items-center justify-center gap-2 active:scale-[.98]">＋ Agregar comprobante</button>
+            <input id="cl-file-receipt" type="file" accept="image/*" class="hidden">
+          </div>` : ''}
+
+          ${sf.close.fueled === false ? `<div class="pt-3 space-y-2">
+            <p class="text-[12px] font-semibold text-slate-500">¿Por qué no se pudo tanquear?</p>
+            ${(sf.noFuelReasons || []).length ? (sf.noFuelReasons || []).map(r => `
+              <button data-nofuel="${esc(r.id)}" class="w-full text-left rounded-xl border-2 px-3.5 py-2.5 text-[13.5px] font-semibold ${sf.close.noFuelReasonId === r.id ? 'border-brand-400 bg-brand-50 text-brand-700' : 'border-slate-200 bg-white text-slate-600'}">${esc(r.label)}</button>`).join('')
+              : `<p class="text-[12px] text-slate-400">Escribe el motivo.</p>`}
+            ${noFuelNeedsText() ? `<textarea id="cl-nofuel-text" rows="2" placeholder="Cuéntanos qué pasó…" class="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:border-brand-400 resize-none">${esc(sf.close.noFuelText)}</textarea>` : ''}
+          </div>` : ''}
         </section>
 
         <label class="flex gap-3 items-start rounded-xl bg-white border border-slate-200 px-3.5 py-3 cursor-pointer">
           <input id="cl-attest" type="checkbox" class="mt-0.5 w-5 h-5 accent-brand-600 shrink-0" ${sf.close.attest ? 'checked' : ''}>
-          <span class="text-[12.5px] text-slate-600 leading-snug">Confirmo que la información del cierre (kilometraje, novedades y comprobantes) es correcta.</span>
+          <span class="text-[12.5px] text-slate-600 leading-snug">Confirmo que la información del cierre (kilometraje, novedades y tanqueo) es correcta.</span>
         </label>
       </div>
       <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-5 py-3 z-10" style="padding-bottom:calc(12px + env(safe-area-inset-bottom));">
@@ -1342,8 +1458,15 @@
     const av = $('#cl-add-video'); if (av) av.addEventListener('click', () => $('#cl-file-video').click());
     const fp = $('#cl-file-photo'); if (fp) fp.addEventListener('change', (e) => onAddCloseMedia(e.target, 'photo'));
     const fv = $('#cl-file-video'); if (fv) fv.addEventListener('change', (e) => onAddCloseMedia(e.target, 'video'));
-    $('#cl-add-receipt').addEventListener('click', () => $('#cl-file-receipt').click());
-    $('#cl-file-receipt').addEventListener('change', (e) => onAddReceipt(e.target));
+    $('#cl-fuel-si').addEventListener('click', () => setCloseFueled(true));
+    $('#cl-fuel-no').addEventListener('click', () => setCloseFueled(false));
+    wiz.querySelectorAll('[data-nofuel]').forEach(b => b.addEventListener('click', () => setNoFuelReason(b.dataset.nofuel)));
+    // Igual que el texto de la novedad: se engancha aquí y NO re-renderiza, o se
+    // pierde el foco del teclado en cada letra.
+    const nft = $('#cl-nofuel-text'); if (nft) nft.addEventListener('input', (e) => { sf.close.noFuelText = e.target.value; updateCloseConfirm(); });
+    // Los comprobantes solo existen en el DOM cuando dijo que sí tanqueó.
+    const ar = $('#cl-add-receipt'); if (ar) ar.addEventListener('click', () => $('#cl-file-receipt').click());
+    const fr = $('#cl-file-receipt'); if (fr) fr.addEventListener('change', (e) => onAddReceipt(e.target));
     wiz.querySelectorAll('[data-rm-media]').forEach(b => b.addEventListener('click', () => rmCloseMedia(Number(b.dataset.rmMedia))));
     wiz.querySelectorAll('[data-rm-receipt]').forEach(b => b.addEventListener('click', () => rmReceipt(Number(b.dataset.rmReceipt))));
     wiz.querySelectorAll('[data-receipt-amt]').forEach(inp => inp.addEventListener('input', (e) => onReceiptAmount(Number(inp.dataset.receiptAmt), e.target)));
@@ -1371,7 +1494,10 @@
           mediaPaths.push(path);
         }
       }
-      if (sf.close.receipts.length) {
+      // El `fueled === true` no sobra: sin él, un recibo adjuntado antes de
+      // cambiar a "no pude" se subiría igual. setCloseFueled ya vacía la lista,
+      // pero esto es el cinturón — aquí es donde se escribe en la BD.
+      if (sf.close.fueled === true && sf.close.receipts.length) {
         const rows = [];
         for (let i = 0; i < sf.close.receipts.length; i++) {
           const r = sf.close.receipts[i];
@@ -1385,6 +1511,9 @@
       setState('Cerrando turno…');
       const res = await Api.closeShift(sh.id, {
         closingKm, hasNovedad: sf.close.novedad, novedadText: sf.close.novedadText, severity: sf.close.severity, mediaPaths,
+        fueled: sf.close.fueled,
+        noFuelReasonId: sf.close.fueled === false ? sf.close.noFuelReasonId : null,
+        noFuelReason: sf.close.fueled === false ? sf.close.noFuelText.trim() : null,
       });
       // ¿El vehículo quedó en cambio de aceite al cerrar? (para avisarle al conductor)
       let vehBlocked = false;
@@ -1395,6 +1524,12 @@
         novedad: sf.close.novedad,
         receipts: sf.close.receipts.length,
         fuel: fuelTotal(),
+        fueled: sf.close.fueled,
+        // Lo que se le muestra al conductor. El texto que queda GUARDADO lo
+        // arma el servidor desde el catálogo (0077); esto es solo el reflejo.
+        noFuelLabel: sf.close.fueled === false
+          ? (((sf.noFuelReasons || []).find(r => r.id === sf.close.noFuelReasonId) || {}).label || sf.close.noFuelText.trim())
+          : '',
         vehBlocked,
       };
       sf.close.done = true;
@@ -1424,7 +1559,9 @@
         <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Km recorridos</span><span class="font-bold text-emerald-600">+${(s.kmDriven || 0).toLocaleString('es-CO')} km</span></div>
         <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Duración</span><span class="font-bold text-ink">${esc(s.duration || '—')}</span></div>
         <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Novedades</span><span class="font-bold text-ink">${s.novedad ? '1 reportada' : 'Ninguna'}</span></div>
-        <div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Comprobantes</span><span class="font-bold text-ink">${s.receipts || 0}${s.fuel ? ' · $' + s.fuel.toLocaleString('es-CO') : ''}</span></div>
+        ${s.fueled === false
+          ? `<div class="flex justify-between gap-3 px-4 py-3 text-sm"><span class="text-slate-500 shrink-0">Tanqueo</span><span class="font-bold text-amber-700 text-right">No se pudo${s.noFuelLabel ? `<span class="block font-medium text-[12px] text-slate-500 leading-snug mt-0.5">${esc(s.noFuelLabel)}</span>` : ''}</span></div>`
+          : `<div class="flex justify-between px-4 py-3 text-sm"><span class="text-slate-500">Comprobantes</span><span class="font-bold text-ink">${s.receipts || 0}${s.fuel ? ' · $' + s.fuel.toLocaleString('es-CO') : ''}</span></div>`}
       </div>
       <button id="cl-done-btn" class="mt-8 px-6 py-3 rounded-xl bg-brand text-white shadow-brand font-bold active:scale-[0.98] transition">Volver al inicio</button>
     </div>`;

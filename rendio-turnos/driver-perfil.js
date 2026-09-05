@@ -48,60 +48,121 @@
     box.scrollTop = 0; window.scrollTo(0, 0);
   }
 
+  // Perfil del rediseño 2026-08-16 (rc-tabs.jsx · TabPerfil).
+  // Se conservan dos cosas que el diseño no traía pero que ya están en producción
+  // y el conductor usa: la tarjeta de recompensas por km y el detalle de strikes.
+  // Los vencimientos que muestra "Documentos" salen de datos reales
+  // (driver_profiles.license/eps/arl_expires_at, vehicles.soat/tecnomec_expires_at);
+  // la fila que no tenga fecha en BD no se dibuja.
   function profileMainHtml() {
     const d = state.profileData; const p = d.prof; const dp = p.driver || {};
     const av = p.avatar_url;
-    const lic = dp.license_number ? `${escapeHtml(dp.license_number)}${dp.license_expires_at ? ' · vence ' + new Date(dp.license_expires_at).getFullYear() : ''}` : '—';
     const sc = d.activeStrikes.length;
-    const strikeCard = strikeCardHtml(sc, d.susp);
     const next = d.rewards.find(r => r.km_threshold > d.kmTotal);
     const faltan = next ? next.km_threshold - d.kmTotal : 0;
     const ov = d.openShift && d.openShift.vehicles ? d.openShift.vehicles : null;
+    const tier = currentTier(d.kmTotal, d.rewards);
+
+    const docs = [
+      ['Licencia de conducción', dp.license_expires_at, 'fileText'],
+      ['EPS', dp.eps_expires_at, 'shield'],
+      ['ARL', dp.arl_expires_at, 'shield'],
+      ['SOAT del vehículo', ov && ov.soat_expires_at, 'shield'],
+      ['Tecnomecánica', ov && ov.tecnomec_expires_at, 'fileText'],
+    ].filter(([, fecha]) => !!fecha);
+
     return `
-      <div class="pt-1 pb-2"><h2 class="text-[22px] font-extrabold text-ink leading-tight">Perfil</h2></div>
-      <div class="space-y-5 pb-6">
-        <div class="flex items-center gap-4">
-          <button id="pf-avatar-btn" class="relative w-20 h-20 rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-white text-2xl font-extrabold flex items-center justify-center shadow-brand ring-4 ring-white overflow-hidden active:scale-95">
-            ${av ? `<img src="${escapeHtml(av)}" class="w-full h-full object-cover">` : escapeHtml(initialsOf(p.full_name || 'Conductor'))}
-            <span class="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-white text-brand-600 border-2 border-white flex items-center justify-center text-[11px]">✎</span>
-          </button>
-          <input id="pf-avatar-input" type="file" accept="image/*" class="hidden">
-          <div>
-            <p class="text-xl font-extrabold text-ink">${escapeHtml(p.full_name || 'Conductor')}</p>
-            <p class="text-sm text-slate-500">Conductor${p.home_base ? ' · ' + escapeHtml(p.home_base) : ''}</p>
-            ${p.is_active === false ? '<p class="text-[11px] text-rose-600 font-bold mt-1">Cuenta suspendida</p>' : '<p class="text-[11px] text-emerald-600 font-bold mt-1 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Activo</p>'}
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3">
-          ${pfField('Cédula', p.document_id || '—')}
-          ${pfField('Teléfono', p.phone || '—')}
-          ${pfField('Licencia', lic)}
-          ${pfField('Base', p.home_base || '—')}
-        </div>
-
-        ${strikeCard}
-
-        <button id="pf-rewards-btn" class="sheen w-full text-left rounded-2xl p-5 bg-gradient-to-br from-brand-500 to-brand-600 text-white shadow-brand active:scale-[.99] transition">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-white/85">🎁 Recompensas</span>
-            ${currentTier(d.kmTotal, d.rewards) ? `<span class="text-[10px] font-bold bg-white/20 rounded-full px-2 py-0.5">Nivel ${TIER_META[currentTier(d.kmTotal, d.rewards)].label}</span>` : ''}
-          </div>
-          <p class="text-3xl font-extrabold mt-2 tabular-nums">${d.kmTotal.toLocaleString('es-CO')} <span class="text-base font-bold text-white/80">km</span></p>
-          <p class="text-[12px] text-white/85 mt-2">${next ? `Te faltan ${faltan.toLocaleString('es-CO')} km para ${escapeHtml(next.title)}` : (d.rewards.length ? '¡Todo desbloqueado!' : 'Aún no hay recompensas configuradas')}</p>
-          <span class="inline-flex items-center gap-1 mt-3 text-sm font-bold">Ver recompensas →</span>
+      <div class="rc-pf-head rc-in">
+        <button id="pf-avatar-btn" class="rc-pf-avt" type="button">
+          ${av ? `<img src="${escapeHtml(av)}" alt="">` : escapeHtml(initialsOf(p.full_name || 'Conductor'))}
         </button>
+        <input id="pf-avatar-input" type="file" accept="image/*" class="hidden">
+        <span>
+          <span class="rc-pf-name">${escapeHtml(p.full_name || 'Conductor')}</span>
+          <span class="rc-pf-sub">Conductor${p.document_id ? ' · C.C. ' + escapeHtml(p.document_id) : ''}${p.home_base ? ' · ' + escapeHtml(p.home_base) : ''}</span>
+        </span>
+      </div>
 
-        <div class="rounded-2xl bg-white border border-slate-200 shadow-card flex items-center gap-3 px-4 py-3.5">
-          <span class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-lg shrink-0">🚐</span>
-          <div class="flex-1"><p class="text-sm font-semibold text-ink">Vehículo actual</p><p class="text-[11px] text-slate-400">${ov ? escapeHtml((ov.internal_code || ov.license_plate || '') + ' · ' + [ov.brand, ov.model].filter(Boolean).join(' ')) : 'Sin turno activo'}</p></div>
+      <div style="margin-top:16px" class="rc-in d1">${profileStrikeNoteHtml(sc, d.susp)}</div>
+
+      <div class="rc-sechd">Recompensas por kilómetro</div>
+      <button id="pf-rewards-btn" class="rc-pf-km rc-in d2" type="button">
+        <span class="l">${tier ? `Nivel ${TIER_META[tier].label}` : 'Kilómetros acumulados'}</span>
+        <span class="n" style="display:block">${d.kmTotal.toLocaleString('es-CO')} km</span>
+        <span class="s" style="display:block">${next ? `Te faltan ${faltan.toLocaleString('es-CO')} km para ${escapeHtml(next.title)}` : (d.rewards.length ? '¡Todo desbloqueado!' : 'Aún no hay recompensas configuradas')}</span>
+      </button>
+
+      <div class="rc-sechd">Mi vehículo</div>
+      <div class="rc-card rc-in d3">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="width:40px;height:40px;border-radius:12px;background:var(--r-surface-2);color:var(--r-text-2);display:flex;align-items:center;justify-content:center;flex-shrink:0">${avIcon('car', 21)}</span>
+          <span style="flex:1;min-width:0">
+            <span style="display:block;font-size:15px;font-weight:650">${ov ? escapeHtml(ov.internal_code || ov.license_plate || '—') : 'Sin turno activo'}</span>
+            <span style="display:block;font-size:12.5px;color:var(--r-text-2);margin-top:1px">${ov ? escapeHtml([ov.brand, ov.model, ov.color].filter(Boolean).join(' · ')) : 'Aparece cuando inicies turno'}</span>
+          </span>
         </div>
+      </div>
 
-        <button id="pf-logout" class="w-full text-center text-sm font-bold text-rose-500 py-2">Cerrar sesión</button>
-      </div>`;
+      ${docs.length ? `
+        <div class="rc-sechd">Documentos</div>
+        <div class="rc-card tight rc-in d3">
+          ${docs.map(([label, fecha, ic], i) => {
+            const dt = new Date(fecha + 'T00:00:00');
+            const dias = Math.round((dt - new Date()) / 86400000);
+            const tono = dias < 0 ? 'var(--r-error)' : (dias <= 30 ? 'var(--r-warn)' : null);
+            const txt = dias < 0 ? 'Vencido' : `Vence ${dt.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+            return `<div class="rc-listrow"${i === docs.length - 1 ? ' style="border-bottom:0"' : ''}>
+              <span class="ic"${tono ? ` style="color:${tono}"` : ''}>${avIcon(ic, 18)}</span>
+              <span class="lbl">${escapeHtml(label)}</span>
+              <span class="val"${tono ? ` style="color:${tono};font-weight:650"` : ''}>${txt}</span>
+            </div>`;
+          }).join('')}
+        </div>` : ''}
+
+      <div class="rc-sechd">Preferencias</div>
+      <div class="rc-card rc-in d3">
+        <div style="font-size:13.5px;font-weight:600;margin-bottom:9px">Tema de la app</div>
+        <div class="rc-seg" id="pf-theme">
+          <button data-t="light" class="${rcTheme() === 'light' ? 'on' : ''}" type="button">Claro</button>
+          <button data-t="dark" class="${rcTheme() === 'dark' ? 'on' : ''}" type="button">Oscuro</button>
+        </div>
+        <p style="font-size:11.5px;color:var(--r-text-3);margin:9px 0 0;line-height:1.45">
+          El modo oscuro baja el brillo en los turnos de madrugada y gasta menos batería.
+        </p>
+      </div>
+
+      <div class="rc-card tight" style="margin-top:10px">
+        <button class="rc-listrow" id="pf-strikes-btn" type="button">
+          <span class="ic">${avIcon('alert', 18)}</span>
+          <span class="lbl">Mis strikes</span>
+          <span class="val">${sc === 0 ? 'Ninguno' : `${sc} de 3`}</span>
+          <span class="chev">${avIcon('chevronRight', 16)}</span>
+        </button>
+        <button class="rc-listrow" id="pf-logout" type="button" style="border-bottom:0">
+          <span class="ic" style="color:var(--r-error)">${avIcon('x', 18)}</span>
+          <span class="lbl" style="color:var(--r-error)">Cerrar sesión</span>
+        </button>
+      </div>
+      <div style="height:20px"></div>`;
   }
-  function pfField(label, val) {
-    return `<div class="rounded-2xl bg-white border border-slate-200 p-3.5"><p class="text-[10px] text-slate-400 font-bold uppercase tracking-wide">${escapeHtml(label)}</p><p class="text-sm font-bold text-ink mt-0.5">${escapeHtml(String(val))}</p></div>`;
+
+  // Nota de strikes: verde sin strikes, ámbar con uno, rojo de dos en adelante.
+  function profileStrikeNoteHtml(count, susp) {
+    if (susp) {
+      return `<div class="rc-note err"><span class="rc-note-ic">${avIcon('alert', 17)}</span>
+        <span><b>Suspendido la próxima semana.</b> Por acumular 3 strikes. Habla con tu jefe.</span></div>`;
+    }
+    if (count === 0) {
+      return `<div class="rc-note ok"><span class="rc-note-ic">${avIcon('shield', 17)}</span>
+        <span><b>Sin strikes.</b> Buen historial — sigue así.</span></div>`;
+    }
+    const tone = count >= 2 ? 'err' : 'warn';
+    const dots = [1, 2, 3].map(i => `<i class="${i <= count ? (count >= 2 ? 'on' : 'warn') : ''}"></i>`).join('');
+    return `<div class="rc-note ${tone}" style="flex-direction:column;align-items:stretch">
+      <span style="display:flex;gap:10px"><span class="rc-note-ic">${avIcon('alert', 17)}</span>
+      <span><b>${count} de 3 strikes.</b> ${count >= 2 ? 'Uno más y te suspenden una semana.' : 'Revisa el motivo y cuida tu operación.'}</span></span>
+      <span class="rc-strikedots">${dots}</span>
+    </div>`;
   }
   function currentTier(km, rewards) {
     const unlocked = rewards.filter(r => km >= r.km_threshold);
@@ -109,23 +170,8 @@
     const top = unlocked[unlocked.length - 1];
     return top.tier in TIER_META ? top.tier : null;
   }
-  function strikeCardHtml(count, susp) {
-    let cls, icon, titleCol, title, sub;
-    if (susp) { cls = 'bg-rose-50 border-2 border-rose-300'; icon = '🚫'; titleCol = 'text-rose-700'; title = 'Suspendido la próxima semana'; sub = 'Por acumular 3 strikes'; }
-    else if (count >= 2) { cls = 'bg-rose-50 border-2 border-rose-200'; icon = '🚨'; titleCol = 'text-rose-700'; title = `${count} de 3 strikes`; sub = '¡Cuidado! Un strike más y te suspenden'; }
-    else if (count === 1) { cls = 'bg-amber-50 border-2 border-amber-200'; icon = '⚠️'; titleCol = 'text-amber-700'; title = '1 de 3 strikes'; sub = 'Revisa el motivo y cuida tu operación'; }
-    else { cls = 'bg-white border border-slate-200 shadow-card'; icon = '✅'; titleCol = 'text-emerald-700'; title = 'Sin strikes'; sub = 'Buen historial — sigue así'; }
-    const dotCol = count >= 2 || susp ? 'bg-rose-500' : (count === 1 ? 'bg-amber-500' : 'bg-emerald-500');
-    const dots = [1, 2, 3].map(i => `<div class="w-6 h-1.5 rounded-full ${i <= count ? dotCol : 'bg-slate-200'}"></div>`).join('');
-    return `<button id="pf-strikes-btn" class="w-full text-left rounded-2xl p-4 ${cls} active:scale-[.99] transition">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-xl shrink-0 shadow-sm">${icon}</div>
-        <div class="flex-1 min-w-0"><p class="text-sm font-extrabold ${titleCol}">${title}</p><p class="text-xs text-slate-500">${sub}</p></div>
-        <span class="${titleCol} font-bold">›</span>
-      </div>
-      <div class="flex gap-1.5 mt-3">${dots}</div>
-    </button>`;
-  }
+  // strikeCardHtml() se retiró con el rediseño 2026-08-16: la reemplaza
+  // profileStrikeNoteHtml(), que usa la pieza RcNote del sistema nuevo.
 
   function strikesViewHtml() {
     const d = state.profileData;
@@ -223,6 +269,13 @@
     $('#pf-logout')?.addEventListener('click', onLogout);
     $('#pf-avatar-btn')?.addEventListener('click', () => $('#pf-avatar-input')?.click());
     $('#pf-avatar-input')?.addEventListener('change', onPickAvatar);
+    // Tema claro/oscuro de las pestañas del conductor (rediseño 2026-08-16).
+    $('#pf-theme')?.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-t]');
+      if (!b) return;
+      rcSetTheme(b.dataset.t);
+      $('#pf-theme').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    });
     box.querySelectorAll('[data-redeem]').forEach(b => b.addEventListener('click', () => onRedeem(b.dataset.redeem)));
   }
 
@@ -258,290 +311,60 @@
     }
   }
 
-  // Saludo de la home ("Carlos · Martes 10 de junio") + estado de la tarjeta de disponibilidad.
+  // La home del conductor la pinta driver-tabs.js desde el rediseño 2026-08-16
+  // (saludo, "Tu día" con la vuelta asignada y el aviso de jornadas por marcar).
   function updateDriverHome() {
-    const sub = $('#driver-home-sub');
-    if (sub && state.profile) {
-      const name = firstNameOf(state.profile);
-      const today = new Date().toLocaleDateString('es-CO',
-        { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Bogota' });
-      sub.textContent = `${name} · ${today.charAt(0).toUpperCase()}${today.slice(1)}`;
-    }
-    const cardSub = $('#driver-availability-card-sub');
-    if (cardSub) cardSub.textContent = availabilitySummaryText();
+    renderDriverInicio();
   }
 
-  function availabilitySummaryText() {
-    const own = state.ownAvail || {};
-    const week = Scheduler.weekDates(state.currentWeek);
-    const marked = week.filter(d => !!own[d.key]).length;
-    const total = week.length;
-    const range = weekLabelES(state.currentWeek);
-    if (marked === 0) return `Marca tus turnos para la semana del ${range}. El admin asigna y confirma.`;
-    if (marked < total) {
-      const missing = total - marked;
-      return `Te falta${missing === 1 ? '' : 'n'} ${missing} día${missing === 1 ? '' : 's'} por marcar para la semana del ${range}.`;
-    }
-    return `Disponibilidad lista para la semana del ${range}. Puedes ajustarla.`;
-  }
+  // La pantalla de Disponibilidad (tarjetas por día, selector de estado en modal,
+  // fila Prefiero AM/PM y barra fija de Guardar) se reemplazó por completo el
+  // 2026-08-16 con el rediseño del diseñador: ahora vive en driver-disponibilidad.js
+  // (grilla 7×2 que se pinta arrastrando + medidor de 14 jornadas). Allá quedaron
+  // renderDriverDays() y availabilitySummaryText(), que este archivo sigue llamando.
 
-  function renderDriverDays() {
-    const week = Scheduler.weekDates(state.currentWeek);
-    const todayISO = new Date().toISOString().slice(0,10);
-    const wrap = $('#driver-days');
-    const reopen = reopenInfo(state.currentWeek);
-    const suspended = isSuspended();
-    const locked = suspended || weekAvailClosed(state.currentWeek);
-    const soon = !locked && !reopen.active && Scheduler.availabilityClosingSoon(state.currentWeek);
-    const banner = suspended
-      ? `<div class="mb-3 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800 font-semibold">🚫 Tu cuenta está suspendida. No puedes marcar disponibilidad ni hacer solicitudes hasta que tu admin te reactive.</div>`
-      : (reopen.active
-      ? `<div class="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 font-semibold">✅ El jefe reabrió esta semana hasta las ${hhmmCO(reopen.until)}. Corrige y guarda antes de esa hora.</div>`
-      : (locked
-      ? `<div class="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 font-semibold">🔒 La disponibilidad de esta semana cerró el domingo 2:00 PM. Habla con tu jefe.</div>`
-      : (soon
-        ? `<div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 font-semibold">⚠ La disponibilidad de esta semana cierra HOY a las 2:00 PM. Guarda antes.</div>`
-        : `<div class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 font-semibold">ℹ️ Tienes hasta el domingo 2:00 PM para guardar la disponibilidad de esta semana.</div>`)));
-    const suspWeekBanner = state.weekSuspension
-      ? `<div class="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 font-semibold">🚫 Estás suspendido esta semana${state.weekSuspension.source === 'strikes' ? ' por acumular 3 strikes' : ''}. No entras en la generación de turnos. Habla con tu jefe.</div>`
-      : '';
-    wrap.innerHTML = banner + suspWeekBanner + week.map(d => {
-      const av = state.ownAvail[d.key] || { am: 'available', pm: 'available', shift_pref: 'any' };
-      const isWeekend = d.key === 'sat' || d.key === 'sun';
-      const isToday = d.date === todayISO;
-      const cls = ['day-card'];
-      if (isWeekend) cls.push('is-weekend');
-      if (isToday) cls.push('is-today');
-      // Bloqueo por parametrización del propio conductor: 🔒, solo lectura.
-      const amBlocked = Scheduler.ruleBlocked(state.profile, d.key, 'am');
-      const pmBlocked = Scheduler.ruleBlocked(state.profile, d.key, 'pm');
-      // El selector AM/PM/Indistinto solo aparece si AM Y PM están disponibles
-      // (si pediste descanso/no disponible o hay bloqueo, la preferencia no aplica).
-      const bothAvailable = av.am === 'available' && av.pm === 'available' && !amBlocked && !pmBlocked;
-      const pref = av.shift_pref || 'any';
-      const prefBtn = (val, label) => `<button class="pref-btn ${pref === val ? 'pref-on' : ''}" data-pref-day="${d.key}" data-pref-val="${val}">${label}</button>`;
-      const prefRow = bothAvailable ? `<div class="day-pref-row">
-        <span class="day-pref-label">Prefiero:</span>
-        ${prefBtn('any', 'Indistinto')}
-        ${prefBtn('am', 'AM')}
-        ${prefBtn('pm', 'PM')}
-      </div>` : '';
-      const shiftBtn = (shift, label, blocked, state) => blocked
-        ? `<button class="shift-btn shift-btn-blocked" data-day="${d.key}" data-shift="${shift}" data-state="blocked" data-blocked="1" disabled title="Tu jefe configuró este día/jornada como descanso fijo">
-            <span class="shift-btn-label">${label}</span>
-            <span class="shift-btn-state">🔒 Bloqueado</span>
-          </button>`
-        : `<button class="shift-btn" data-day="${d.key}" data-shift="${shift}" data-state="${state}">
-            <span class="shift-btn-label">${label}</span>
-            <span class="shift-btn-state">${stateLabelShort(state)} ${approvalBadgeHtml(shift === 'am' ? av.am_request : av.pm_request)}</span>
-          </button>`;
-      const fixedNote = (amBlocked || pmBlocked)
-        ? `<p class="day-fixed-note">🔒 Descanso fijo configurado por tu jefe.</p>` : '';
-      return `<div class="${cls.join(' ')}">
-        <div class="day-card-header">
-          <div>
-            <p class="day-card-day">${d.label}</p>
-            <p class="day-card-date">${d.dayNum} ${monthShort(d.date)} ${isToday ? '· HOY' : ''}</p>
-          </div>
-        </div>
-        <div class="day-card-actions">
-          ${shiftBtn('am', 'MAÑANA', amBlocked, av.am)}
-          ${shiftBtn('pm', 'TARDE', pmBlocked, av.pm)}
-        </div>
-        ${fixedNote}
-        ${prefRow}
-        ${(amBlocked && pmBlocked) ? '' : `<button class="day-all-btn" data-day="${d.key}" data-shift="whole">Todo el día</button>`}
-      </div>`;
-    }).join('');
 
-    wrap.querySelectorAll('.shift-btn, .day-all-btn, .pref-btn').forEach(btn => {
-      if (suspended) btn.disabled = true;
-    });
-    wrap.querySelectorAll('.shift-btn, .day-all-btn').forEach(btn => {
-      btn.addEventListener('click', () => openStatePicker(btn.dataset.day, btn.dataset.shift));
-    });
-    wrap.querySelectorAll('.pref-btn').forEach(btn => {
-      btn.addEventListener('click', () => setDayPref(btn.dataset.prefDay, btn.dataset.prefVal));
-    });
-    const saveBtn = $('#driver-save-btn');
-    if (saveBtn) saveBtn.disabled = locked;
-    const markBtn = $('#driver-mark-all-available');
-    if (markBtn) markBtn.disabled = suspended;
-    $('#driver-save-state').textContent = '';
-    updateDriverGreeting();
-  }
+  // Tarjetas de permiso del rediseño 2026-08-16 (rc-tabs.jsx · TabSolicitudes).
+  // El estado de aprobación vive acá desde que salió de la grilla de Disponibilidad.
+  const SOLIC_EST = { pending: ['pendiente', 'En revisión', 'clock'], approved: ['aprobada', 'Aprobada', 'check'], rejected: ['rechazada', 'Negada', 'x'] };
 
-  function monthShort(iso) {
-    const m = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-    return m[new Date(iso + 'T00:00:00').getMonth()];
-  }
-
-  function stateLabelShort(s) {
-    return { available: 'Disponible', prefer_rest: 'Descanso', unavailable: 'No disponible' }[s] || s;
-  }
-
-  function setDayPref(day, value) {
-    if (isSuspended()) {
-      toast('Tu cuenta está suspendida. Habla con tu admin para reactivarla.');
-      return;
-    }
-    if (weekAvailClosed(state.currentWeek)) {
-      toast('La disponibilidad de esta semana ya cerró.');
-      return;
-    }
-    state.ownAvail[day] = state.ownAvail[day] || { am: 'available', pm: 'available' };
-    state.ownAvail[day].shift_pref = value;
-    renderDriverDays();
-    flashSaveState('Cambios sin guardar', 'amber');
-  }
-
-  // State picker -------------------------------------------------------
-
-  let pickerContext = null;
-
-  function shiftBlockedForMe(day, shift) {
-    return Scheduler.ruleBlocked(state.profile, day, shift);
-  }
-
-  function openStatePicker(day, shift) {
-    if (isSuspended()) {
-      toast('Tu cuenta está suspendida. Habla con tu admin para reactivarla.');
-      return;
-    }
-    if (weekAvailClosed(state.currentWeek)) {
-      toast('La disponibilidad de esta semana ya cerró (domingo 2:00 PM). Habla con tu jefe.');
-      return;
-    }
-    // Jornada con descanso fijo: no editable por el conductor.
-    if (shift !== 'whole' && shiftBlockedForMe(day, shift)) {
-      toast('Esta jornada es un descanso fijo configurado por tu jefe.');
-      return;
-    }
-    pickerContext = { day, shift };
-    const dayLabel = Scheduler.DAY_LABELS_ES[day];
-    const shiftLabel = shift === 'whole' ? 'todo el día' : (shift === 'am' ? 'Mañana' : 'Tarde');
-    $('#state-picker-title').textContent = `${dayLabel} · ${shiftLabel}`;
-    $('#state-picker-subtitle').textContent = 'Elige una opción para esta jornada.';
-    $('#state-picker').classList.remove('hidden');
-  }
-
-  function closeStatePicker() {
-    pickerContext = null;
-    $('#state-picker').classList.add('hidden');
-  }
-
-  function pickState(value) {
-    if (!pickerContext) return;
-    const { day, shift } = pickerContext;
-    if (value === 'unavailable') {
-      const current = shift === 'whole'
-        ? (state.ownAvail[day]?.am_reason || state.ownAvail[day]?.pm_reason)
-        : state.ownAvail[day]?.[`${shift}_reason`];
-      closeStatePicker();
-      openReasonModal({ day, shift, currentReason: current || '' });
-      return;
-    }
-    state.ownAvail[day] = state.ownAvail[day] || { am: 'available', pm: 'available' };
-    if (shift === 'whole') {
-      if (!shiftBlockedForMe(day, 'am')) { state.ownAvail[day].am = value; state.ownAvail[day].am_reason = null; }
-      if (!shiftBlockedForMe(day, 'pm')) { state.ownAvail[day].pm = value; state.ownAvail[day].pm_reason = null; }
-    } else {
-      state.ownAvail[day][shift] = value;
-      state.ownAvail[day][`${shift}_reason`] = null;
-    }
-    closeStatePicker();
-    renderDriverDays();
-  }
-
-  // Reason modal --------------------------------------------------------
-
-  let reasonContext = null;
-
-  function openReasonModal({ day, shift, currentReason }) {
-    reasonContext = { day, shift };
-    const dayLabel = Scheduler.DAY_LABELS_ES[day];
-    const shiftLabel = shift === 'whole' ? 'todo el día' : (shift === 'am' ? 'Mañana' : 'Tarde');
-    $('#reason-modal-title').textContent = `Razón — ${dayLabel} (${shiftLabel})`;
-    $('#reason-modal-text').value = currentReason || '';
-    $('#reason-modal').classList.remove('hidden');
-    setTimeout(() => $('#reason-modal-text').focus(), 50);
-  }
-
-  function closeReasonModal() {
-    reasonContext = null;
-    $('#reason-modal').classList.add('hidden');
-  }
-
-  function saveReasonModal() {
-    if (!reasonContext) return;
-    const reason = $('#reason-modal-text').value.trim();
-    if (!reason) { alert('La razón no puede estar vacía.'); return; }
-    const { day, shift } = reasonContext;
-    state.ownAvail[day] = state.ownAvail[day] || { am: 'available', pm: 'available' };
-    if (shift === 'whole') {
-      if (!shiftBlockedForMe(day, 'am')) { state.ownAvail[day].am = 'unavailable'; state.ownAvail[day].am_reason = reason; }
-      if (!shiftBlockedForMe(day, 'pm')) { state.ownAvail[day].pm = 'unavailable'; state.ownAvail[day].pm_reason = reason; }
-    } else {
-      state.ownAvail[day][shift] = 'unavailable';
-      state.ownAvail[day][`${shift}_reason`] = reason;
-    }
-    closeReasonModal();
-    renderDriverDays();
-  }
-
-  async function onDriverSave() {
-    if (isSuspended()) {
-      $('#driver-save-state').textContent = 'Suspendido: no puedes guardar. Habla con tu admin.';
-      $('#driver-save-state').className = 'text-xs text-rose-600 flex-1';
-      return;
-    }
-    if (weekAvailClosed(state.currentWeek)) {
-      $('#driver-save-state').textContent = 'Cerrado: la disponibilidad de esta semana cerró el domingo 2:00 PM.';
-      $('#driver-save-state').className = 'text-xs text-rose-600 flex-1';
-      return;
-    }
-    const btn = $('#driver-save-btn');
-    btn.disabled = true;
-    btn.textContent = 'Guardando…';
-    try {
-      await Api.saveDriverWeekAvailability(state.profile.id, state.currentWeek, state.ownAvail);
-      await refreshDriverView();
-      $('#driver-save-state').textContent = '✓ Guardado';
-      $('#driver-save-state').className = 'text-xs text-emerald-600 font-semibold flex-1';
-      setTimeout(() => { $('#driver-save-state').textContent = ''; }, 2500);
-    } catch (e) {
-      $('#driver-save-state').textContent = 'Error: ' + e.message;
-      $('#driver-save-state').className = 'text-xs text-rose-600 flex-1';
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Guardar';
-    }
+  function solicCardHtml({ est, kind, titulo, motivo, fecha, nota }) {
+    const [cls, label, ic] = SOLIC_EST[est] || SOLIC_EST.pending;
+    return `<div class="rc-card" style="margin-bottom:9px">
+      <div class="rc-solc-head">
+        <span class="rc-solc-kind">${escapeHtml(kind)}</span>
+        <span class="rc-solc-est ${cls}">${avIcon(ic, 12)}${label}</span>
+      </div>
+      <div class="rc-solc-t">${escapeHtml(titulo)}</div>
+      ${motivo ? `<div class="rc-solc-m">${escapeHtml(motivo)}</div>` : ''}
+      ${fecha ? `<div class="rc-solc-f">${escapeHtml(fecha)}</div>` : ''}
+      ${nota ? `<div class="rc-solc-nota"><b>Tu jefe:</b> ${escapeHtml(nota)}</div>` : ''}
+    </div>`;
   }
 
   async function renderDriverRequests() {
     const box = $('#driver-requests-container');
+    if (!box) return;
     try {
       const reqs = await Api.listMyApprovalRequests(state.profile.id, state.currentWeek);
-      const icons = { pending: '⏳', approved: '✓', rejected: '✗' };
-      const reqCards = reqs.map(r => {
-        const dayLabel = Scheduler.DAY_LABELS_ES[Scheduler.DAYS[r.day_of_week]] || '—';
-        const kindLabel = r.kind === 'unavailable' ? 'No disponible' : 'Descanso';
-        const stateLabel = { pending: 'Pendiente', approved: 'Aprobada', rejected: 'Rechazada' }[r.state] || r.state;
-        return `<div class="request-card" data-state="${r.state}">
-          <div class="request-card-icon">${icons[r.state] || '?'}</div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-semibold text-ink">${dayLabel} · ${r.shift.toUpperCase()}</p>
-            <p class="text-xs text-slate-600">${kindLabel} · <strong>${stateLabel}</strong></p>
-            ${r.reason ? `<p class="text-xs text-slate-500 mt-1">${escapeHtml(r.reason)}</p>` : ''}
-            ${r.admin_note ? `<p class="text-xs text-slate-500 mt-1 italic">Nota admin: ${escapeHtml(r.admin_note)}</p>` : ''}
-          </div>
-        </div>`;
-      }).join('');
+      const nice = (dayKey) => {
+        const l = Scheduler.DAY_LABELS_ES[dayKey] || '—';
+        return l.charAt(0) + l.slice(1).toLowerCase();
+      };
+      const reqCards = reqs.map(r => solicCardHtml({
+        est: r.state,
+        kind: 'Permiso',
+        titulo: `${nice(Scheduler.DAYS[r.day_of_week])} · ${r.shift === 'am' ? 'Mañana' : 'Tarde'}`,
+        motivo: r.reason || (r.kind === 'prefer_rest' ? 'Prefiero no trabajar' : 'No puedo'),
+        fecha: r.resolved_at
+          ? `${r.state === 'approved' ? 'Aprobada' : 'Negada'} el ${new Date(r.resolved_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })}`
+          : 'Esperando respuesta de tu jefe',
+        nota: r.admin_note || null,
+      })).join('');
 
-      // Descansos entre semana sin solicitud formal: se muestran como
-      // "Pendiente — se confirma al publicar" para que el conductor sepa que
-      // su intención está registrada (el scheduler la respeta) pero el admin
-      // decide al publicar el horario.
+      // Descansos entre semana sin solicitud formal: el conductor debe saber que
+      // su intención está registrada (el generador la respeta) aunque el admin
+      // solo la confirme al publicar el horario.
       const haveReq = new Set(reqs.map(r => `${r.day_of_week}-${r.shift}`));
       const pendingCards = [];
       Scheduler.DAYS.forEach((dayKey, idx) => {
@@ -549,23 +372,25 @@
         if (!cell) return;
         ['am', 'pm'].forEach(sh => {
           if (cell[sh] === 'prefer_rest' && !haveReq.has(`${idx}-${sh}`)) {
-            const dayLabel = Scheduler.DAY_LABELS_ES[dayKey] || '—';
-            pendingCards.push(`<div class="request-card" data-state="pending">
-              <div class="request-card-icon">⏳</div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm font-semibold text-ink">${dayLabel} · ${sh.toUpperCase()}</p>
-                <p class="text-xs text-slate-600">Descanso · <strong>Pendiente</strong></p>
-                <p class="text-xs text-slate-500 mt-1">Se confirma cuando el admin publique el horario.</p>
-              </div>
-            </div>`);
+            pendingCards.push(solicCardHtml({
+              est: 'pending', kind: 'Permiso',
+              titulo: `${nice(dayKey)} · ${sh === 'am' ? 'Mañana' : 'Tarde'}`,
+              motivo: 'Prefiero no trabajar',
+              fecha: 'Se confirma cuando tu jefe publique el horario',
+            }));
           }
         });
       });
 
-      box.innerHTML = (reqCards + pendingCards.join('')) ||
-        '<p class="text-xs text-slate-500 bg-white border border-slate-200 rounded-xl p-4 text-center">No tienes solicitudes esta semana.</p>';
+      box.innerHTML = (reqCards + pendingCards.join('')) || `
+        <div class="rc-empty">
+          <span class="rc-empty-ic">${avIcon('check', 20)}</span>
+          <b>Sin permisos esta semana</b>
+          <p>Los permisos salen de marcar «No puedo» en Disponibilidad.</p>
+        </div>`;
+      applyDriverSolicFilter();
     } catch (e) {
-      box.innerHTML = `<p class="text-sm text-rose-600 p-3">Error: ${e.message}</p>`;
+      box.innerHTML = `<div class="rc-note err" style="margin-bottom:9px"><span class="rc-note-ic">${avIcon('alert', 17)}</span><span>No se pudieron cargar tus permisos: ${escapeHtml(e.message)}</span></div>`;
     }
   }
 
@@ -574,11 +399,13 @@
     const summaryBox = $('#driver-week-summary');
     const sch = await Api.getSchedule(state.currentWeek);
     if (!sch || !sch.published) {
-      container.innerHTML = '<p class="p-6 text-sm text-slate-500 text-center">Esta semana no tiene horario publicado todavía.</p>';
+      container.innerHTML = '<p style="padding:20px;font-size:13px;color:var(--r-text-3);text-align:center">Esta semana no tiene horario publicado todavía.</p>';
+      renderDriverHorarioHead(null);
       if (summaryBox) {
-        summaryBox.innerHTML = `<div class="rounded-xl border border-brand-100 bg-gradient-to-br from-brand-50 to-white p-4 shadow-card">
-          <p class="text-sm font-bold text-ink">Mi semana</p>
-          <p class="text-sm text-slate-600 mt-1.5">Tu horario aún no está publicado para esta semana.</p>
+        summaryBox.innerHTML = `<div class="rc-empty rc-in d1" style="margin-top:16px">
+          <span class="rc-empty-ic">${avIcon('calendarCheck', 20)}</span>
+          <b>Todavía no hay horario</b>
+          <p>Tu jefe publica la semana el domingo. Te avisamos cuando esté.</p>
         </div>`;
       }
       return;
@@ -606,25 +433,8 @@
       if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', lead: (day.coord_am || []).includes(meId) });
       if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', lead: (day.coord_pm || []).includes(meId) });
     });
-    if (summaryBox) {
-      if (!myShifts.length) {
-        summaryBox.innerHTML = `<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
-          <p class="text-sm font-bold text-ink">Mi semana</p>
-          <p class="text-sm text-slate-500 mt-1">No tienes turnos asignados esta semana.</p>
-        </div>`;
-      } else {
-        const horas = myShifts.length * ((state.settings && state.settings.shift_hours) || 12);
-        const items = myShifts.map(s => `<li class="flex items-center justify-between border-b border-slate-100 last:border-0 py-1.5">
-          <span class="text-sm text-ink">${s.d.label} ${s.d.dayNum}</span>
-          <span class="text-xs font-semibold ${s.lead ? 'text-orange-600' : 'text-slate-600'}">${s.shift}${s.lead ? ' · ★ Líder' : ''}</span>
-        </li>`).join('');
-        summaryBox.innerHTML = `<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
-          <p class="text-sm font-bold text-ink">Mi semana</p>
-          <p class="text-xs text-slate-500 mt-0.5 mb-2">${myShifts.length} turno${myShifts.length === 1 ? '' : 's'} · ${horas} h aprox.</p>
-          <ul>${items}</ul>
-        </div>`;
-      }
-    }
+    renderDriverHorarioHead(myShifts.length);
+    if (summaryBox) summaryBox.innerHTML = driverWeekListHtml(week, myShifts);
 
     let html = '<table class="w-full text-xs" id="schedule-table">';
     html += '<caption class="text-base font-bold py-3">HORARIO SEMANAL</caption>';
@@ -664,6 +474,58 @@
     });
     html += '</tbody></table>';
     container.innerHTML = html;
+  }
+
+  // Lista de la semana del rediseño 2026-08-16 (rc-tabs.jsx · TabHorario): una
+  // tarjeta por día con sus jornadas.
+  //
+  // El diseño mostraba además hora de inicio/fin, placa y tipo de vuelta
+  // (salida/llegada/hotel). Ninguno de los tres existe hoy en el horario
+  // publicado: weekly_schedules.data solo guarda ids de conductor por
+  // mañana/tarde. Las ranuras están puestas y vacías — el día que la BD tenga
+  // esos campos, se llenan solas y no hay que volver a tocar esta plantilla.
+  function driverWeekListHtml(week, myShifts) {
+    const mine = {};
+    myShifts.forEach(s => { mine[`${s.d.key}-${s.shift.toLowerCase()}`] = s; });
+    const mon = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+    const slot = (dayKey, sh) => {
+      const s = mine[`${dayKey}-${sh}`];
+      if (!s) {
+        // Descanso fijo de contrato: se distingue de "no le tocó turno".
+        if (Scheduler.ruleBlocked(state.profile, dayKey, sh)) {
+          return `<div class="rc-hslot lock">${avIcon('lock', 13)} Descanso fijo de contrato</div>`;
+        }
+        return '';
+      }
+      // hora y placa: ranuras vacías hasta que el horario publicado las traiga.
+      const hora = s.hora || '';
+      const placa = s.placa || '';
+      return `<div class="rc-hslot ${sh}">
+        <span class="k">${sh.toUpperCase()}</span>
+        <span class="t">${escapeHtml(hora)}</span>
+        ${s.lead ? '<span class="lead">★ Líder</span>' : ''}
+        ${placa ? `<span class="v">${escapeHtml(placa)}</span>` : ''}
+      </div>`;
+    };
+
+    return `<div style="margin-top:16px;display:flex;flex-direction:column;gap:8px" class="rc-in d1">
+      ${week.map(d => {
+        const am = slot(d.key, 'am');
+        const pm = slot(d.key, 'pm');
+        const libre = !am && !pm;
+        const dNum = new Date(d.date + 'T00:00:00').getDate();
+        const dMon = mon[new Date(d.date + 'T00:00:00').getMonth()];
+        const nombre = d.label.charAt(0) + d.label.slice(1).toLowerCase();
+        return `<div class="rc-hday${libre ? ' libre' : ''}">
+          <div class="rc-hday-head">
+            <b>${nombre}</b><span>${dNum} ${dMon}</span>
+            ${libre ? '<span class="none">Sin turno</span>' : ''}
+          </div>
+          ${libre ? '' : `<div class="rc-hday-body">${am}${pm}</div>`}
+        </div>`;
+      }).join('')}
+    </div>`;
   }
 
   // ====================== Cambios de turno entre conductores (Fase 3) ======================
@@ -731,14 +593,22 @@
     }).join('');
 
     const canPropose = drivingShiftsOf(data, meId).length > 0 && !state.weekSuspension;
+    // Rediseño 2026-08-16: "Pedir cambio de turno" sube a acción principal de la
+    // pantalla (botón sólido de ancho completo), como pide la nota de alineación
+    // del diseñador — una sola jerarquía de botón por pantalla.
     box.innerHTML = `
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="text-sm font-bold text-ink">Cambios de turno</h3>
-        ${canPropose ? '<button id="swap-propose-btn" class="wk-btn wk-coord-on" style="flex:0 0 auto;">+ Proponer cambio</button>' : ''}
-      </div>
       ${incomingHtml || ''}
       ${othersHtml || ''}
-      ${(!incoming.length && !others.length) ? '<p class="text-xs text-slate-500 bg-white border border-slate-200 rounded-xl p-3 text-center">No tienes cambios de turno esta semana.</p>' : ''}`;
+      ${(!incoming.length && !others.length) ? `
+        <div class="rc-empty">
+          <span class="rc-empty-ic">${avIcon('swap', 20, 1.6)}</span>
+          <b>Sin cambios de turno</b>
+          <p>Los cambios de turno los pides con el botón de abajo.</p>
+        </div>` : ''}
+      ${canPropose ? `<button id="swap-propose-btn" class="r-btn r-btn-primary" type="button"
+          style="width:100%;margin-top:14px;height:54px;font-size:16px;border-radius:14px">
+          ${avIcon('plus', 19)} Pedir cambio de turno
+        </button>` : ''}`;
 
     document.getElementById('swap-propose-btn')?.addEventListener('click', openSwapModal);
     box.querySelectorAll('[data-swap-accept]').forEach(b => b.addEventListener('click', () => onSwapDecision(b.dataset.swapAccept, 'accepted', b)));

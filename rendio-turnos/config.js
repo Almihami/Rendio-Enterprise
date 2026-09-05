@@ -1,8 +1,11 @@
 // Configuración del módulo rendio-turnos.
 // El ANON_KEY es público por diseño en Supabase; los datos están protegidos por RLS.
-// Apuntando a rendio-MAIN (producción).
+// Apuntando a rendio-DEV.
 window.RENDIO_CONFIG = {
-  SUPABASE_URL: 'https://wvuurnfdrrdondrbbkhd.supabase.co',
-  SUPABASE_ANON_KEY: 'sb_publishable_u9QZT5XbV3vYF7G_Am0Ffg_Ia8q8IFC',
-  VAPID_PUBLIC_KEY: 'BBc3nfT77VmmxRKXGkhcER_Ti8ZWch-12S8WjZuYcn6LpRKyAktgN9Yzu6u4J3IFfWDThcncb09O6e-0UdYJ7uE',
+  SUPABASE_URL: 'https://lxlphbafhtphulanhzlp.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_Jj4JIZ870ZY1wJMWpY8U6A_6Jz7icoo',
+  // Stack LOCAL (para probar Etapa 1 del módulo conductor):
+  // SUPABASE_URL: 'http://127.0.0.1:54321',
+  // SUPABASE_ANON_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
+  VAPID_PUBLIC_KEY: 'BDbSeYdp1m3324kEA_t4naZMFm_T-iPMmjsSaMkrIcsnZ2jvXEhOarlP6sztOGTySex8gP1FQ0zMFwv96bpvUTE',
 };

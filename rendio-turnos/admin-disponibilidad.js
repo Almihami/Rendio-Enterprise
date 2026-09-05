@@ -13,10 +13,14 @@
 
   // Estado visual de un slot (paleta limpia) a partir del estado crudo +
   // la solicitud de aprobación + el bloqueo por parametrización.
-  //   avail = trabaja · req = descanso pedido · off = aprobado · rej = rechazado · lock = fijo
+  //   avail = trabaja · req = descanso pedido · off = aprobado · rej = rechazado
+  //   lock = fijo · none = sin marcar (el conductor no respondió: no entra a la
+  //   generación desde el rediseño 2026-08-16)
   function availVisual(av, shift, blocked) {
     if (blocked) return 'lock';
-    if ((av[shift] || 'available') === 'available') return 'avail';
+    const raw = av[shift] || 'unset';
+    if (raw === 'unset') return 'none';
+    if (raw === 'available') return 'avail';
     const req = av[`${shift}_request`];
     if (req && req.state === 'approved') return 'off';
     if (req && req.state === 'rejected') return 'rej';
@@ -47,7 +51,7 @@
     state.drivers.forEach(d => {
       vis[d.id] = {};
       week.forEach(day => {
-        const av = state.availability[d.id]?.[day.key] || { am: 'available', pm: 'available' };
+        const av = state.availability[d.id]?.[day.key] || { am: 'unset', pm: 'unset' };
         vis[d.id][day.key] = {
           am: availVisual(av, 'am', Scheduler.ruleBlocked(d, day.key, 'am')),
           pm: availVisual(av, 'pm', Scheduler.ruleBlocked(d, day.key, 'pm')),
@@ -56,10 +60,10 @@
     });
 
     // Resumen.
-    let nReq = 0, nOff = 0, nLock = 0;
+    let nReq = 0, nOff = 0, nLock = 0, nNone = 0;
     state.drivers.forEach(d => week.forEach(day => ['am', 'pm'].forEach(b => {
       const v = vis[d.id][day.key][b];
-      if (v === 'req') nReq++; else if (v === 'off') nOff++; else if (v === 'lock') nLock++;
+      if (v === 'req') nReq++; else if (v === 'off') nOff++; else if (v === 'lock') nLock++; else if (v === 'none') nNone++;
     })));
     const working = (dayKey, b) => state.drivers.filter(d => {
       const v = vis[d.id][dayKey][b]; return v === 'avail' || v === 'rej';
@@ -71,7 +75,8 @@
       <div class="av-scard" data-jump="pending"><div class="ic blue"><svg class="icon"><use href="#i-clock"/></svg></div><div><div class="n">${nReq}</div><div class="l">Descansos pedidos</div></div></div>
       <div class="av-scard"><div class="ic rest"><svg class="icon"><use href="#i-zzz"/></svg></div><div><div class="n">${nOff}</div><div class="l">Descansos aprobados</div></div></div>
       <div class="av-scard"><div class="ic lock"><svg class="icon"><use href="#i-lock"/></svg></div><div><div class="n">${nLock}</div><div class="l">Descansos fijos</div></div></div>
-      <div class="av-scard"><div class="ic warn"><svg class="icon"><use href="#i-warn"/></svg></div><div><div class="n">${underCupo}</div><div class="l">Slots bajo cupo</div></div></div>`;
+      <div class="av-scard"><div class="ic warn"><svg class="icon"><use href="#i-warn"/></svg></div><div><div class="n">${underCupo}</div><div class="l">Slots bajo cupo</div></div></div>
+      <div class="av-scard"><div class="ic none"><svg class="icon"><use href="#i-clock"/></svg></div><div><div class="n">${nNone}</div><div class="l">Sin marcar</div></div></div>`;
 
     // Cabecera.
     head.innerHTML = `<tr><th class="namehead">Conductor</th>${week.map((d, i) => `<th><div class="dcell${WKND.includes(i) ? ' wknd' : ''}"><div class="dow">${d.label.slice(0, 3)}</div><div class="dnum">${d.dayNum}</div></div></th>`).join('')}</tr>`;
@@ -97,11 +102,11 @@
       const role = d.can_coordinate ? 'Líder de turno' : 'Conductor';
       html += `<tr><td class="name"><div class="person"><span class="av-avt" style="background:${colorOfId(d.id)}">${escapeHtml(initialsOf(d.name))}</span><div><b>${escapeHtml(d.name)}</b><span>${role}</span></div></div></td>`;
       week.forEach((day, i) => {
-        const av = state.availability[d.id]?.[day.key] || { am: 'available', pm: 'available' };
+        const av = state.availability[d.id]?.[day.key] || { am: 'unset', pm: 'unset' };
         const cell = (b) => {
           const v = vis[d.id][day.key][b];
           const blocked = v === 'lock';
-          const rawState = blocked ? 'blocked' : (av[b] || 'available');
+          const rawState = blocked ? 'blocked' : (av[b] || 'unset');
           const reason = av[`${b}_reason`];
           const ic = ICON[v] ? `<svg class="icon ic"><use href="#${ICON[v]}"/></svg>` : '';
           const tip = blocked ? ' title="Descanso fijo (parametrización)"' : (reason ? ` title="${escapeAttr(reason)}"` : '');
@@ -133,13 +138,16 @@
       toast('Bloqueado por parametrización. Se edita en las reglas del conductor.');
       return;
     }
-    const order = ['available', 'prefer_rest', 'unavailable'];
-    const next = order[(order.indexOf(btn.dataset.state) + 1) % order.length];
+    // 'unset' entra al ciclo para que el admin pueda deshacer una marcación suya
+    // y devolver la jornada a "sin marcar" (la consolidada es editable).
+    const order = ['unset', 'available', 'prefer_rest', 'unavailable'];
+    const cur = order.indexOf(btn.dataset.state);
+    const next = order[(cur < 0 ? 0 : cur + 1) % order.length];
     const id = btn.dataset.id;
     const day = btn.dataset.day;
     const shift = btn.dataset.shift;
     state.availability[id] = state.availability[id] || {};
-    state.availability[id][day] = state.availability[id][day] || { am: 'available', pm: 'available' };
+    state.availability[id][day] = state.availability[id][day] || { am: 'unset', pm: 'unset' };
 
     const existingReq = state.availability[id][day][`${shift}_request`];
     if (existingReq && (existingReq.state === 'approved' || existingReq.state === 'rejected')) {

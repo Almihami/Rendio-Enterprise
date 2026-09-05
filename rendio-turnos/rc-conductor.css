@@ -1,0 +1,324 @@
+/* ============================================================================
+   rc-conductor.css — capa visual del módulo Conductor (rediseño 2026-08-16).
+
+   Origen: entrega del diseñador (rc-conductor.css + los tokens --r-* de
+   tokens.css). Adaptado a la PWA: el prototipo vivía dentro de un marco de
+   iPhone con `.rc-app{position:absolute;inset:0}` y barra de pestañas propia;
+   acá el contenido va en el flujo normal de #app-main y la barra de pestañas
+   sigue siendo #driver-nav (mismo markup y mismo wiring en core.js), solo
+   revestida con el look nuevo.
+
+   Convive con styles.css + Tailwind: todo lo de acá va prefijado rc- / av- /
+   ex- / r-, que no colisiona con nada existente (verificado).
+   ========================================================================= */
+
+/* ── Tokens del sistema del diseñador (subconjunto que usa el conductor) ── */
+:root{
+  --r-bg:#F8F8F6;
+  --r-card:#FFFFFF;
+  --r-accent:#F26522;
+  --r-accent-soft:#FEEEE3;
+  --r-success:#10B981;
+  --r-success-soft:#E7F8F1;
+  --r-text:#18181B;
+  --r-text-2:#71717A;
+  --r-text-3:#A1A1AA;
+  --r-border:#E4E4E7;
+  --r-border-strong:#D4D4D8;
+  --r-surface-2:#F4F4F1;
+  --r-error:#EF4444;
+  --r-error-soft:#FEECEC;
+  --r-warn:#F59E0B;
+  --r-warn-soft:#FEF4E2;
+  --r-info:#3B82F6;
+  --r-info-soft:#EAF2FE;
+  --r-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;
+  --r-font-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter",system-ui,sans-serif;
+  --r-shadow-sm:0 1px 2px rgba(20,20,30,0.04);
+
+  /* Vocabulario de estados de disponibilidad */
+  --st-ok-bg:#E7F8F1;--st-ok-bd:#B4E6D3;--st-ok-fg:#056B4E;--st-ok-dot:#10B981;
+  --st-pref-bg:#FEF4E2;--st-pref-bd:#F5DBA6;--st-pref-fg:#8A5A08;--st-pref-dot:#F59E0B;
+  --st-no-bg:#FEECEC;--st-no-bd:#F6C8C8;--st-no-fg:#A32222;--st-no-dot:#EF4444;
+  --st-none-bg:#F4F4F1;--st-none-bd:#D8D8D2;--st-none-fg:#8A8A82;
+  --st-lock-bg:#EFEFEC;--st-lock-bd:#D4D4D0;--st-lock-fg:#71717A;
+
+  /* Alto del header sticky de la app — lo usa .rc-sticky para pegarse debajo. */
+  --rc-header-h:57px;
+}
+
+/* Tokens del modo oscuro. Se activan con data-theme="dark" en #driver-tabs-root
+   (no en <html>): solo las pestañas del conductor están en el sistema nuevo, el
+   resto de la app y el wizard de inicio de turno siguen en claro. */
+#driver-tabs-root[data-theme="dark"]{
+  --r-bg:#0E0E10;
+  --r-card:#18181B;
+  --r-accent:#FF7A3D;
+  --r-accent-soft:#2C1A11;
+  --r-success:#34D399;
+  --r-success-soft:#11271F;
+  --r-text:#F4F4F5;
+  --r-text-2:#A1A1AA;
+  --r-text-3:#71717A;
+  --r-border:#27272A;
+  --r-border-strong:#3F3F46;
+  --r-surface-2:#1F1F22;
+  --r-h2a:#FF7A3D;      --r-h2a-soft:#2C1A11;
+  --r-a2h:#34D399;      --r-a2h-soft:#11271F;
+  --r-error:#F87171;    --r-error-soft:#3A1A1A;
+  --r-warn:#FBBF24;     --r-warn-soft:#2C2113;
+  --r-info:#60A5FA;     --r-info-soft:#1A2334;
+  --r-shadow-sm:0 1px 2px rgba(0,0,0,.3);
+  --st-ok-bg:#0F2820;--st-ok-bd:#1D4A3A;--st-ok-fg:#54DFAE;--st-ok-dot:#34D399;
+  --st-pref-bg:#2B2113;--st-pref-bd:#4A3A1C;--st-pref-fg:#F0B44A;--st-pref-dot:#F59E0B;
+  --st-no-bg:#2E1818;--st-no-bd:#4E2626;--st-no-fg:#F58585;--st-no-dot:#EF4444;
+  --st-none-bg:#1C1C1F;--st-none-bd:#333338;--st-none-fg:#7C7C85;
+  --st-lock-bg:#191919;--st-lock-bd:#2E2E32;--st-lock-fg:#8A8A93;
+  background:var(--r-bg);
+  color:var(--r-text);
+}
+
+/* ── Helpers del sistema (los pocos .r-* que usa esta pantalla) ────────── */
+svg.lucide{stroke-width:1.5}
+.r-icon-btn{width:36px;height:36px;border-radius:10px;background:transparent;border:none;display:flex;align-items:center;justify-content:center;color:var(--r-text);cursor:pointer;transition:background .15s}
+.r-icon-btn:hover{background:var(--r-surface-2)}
+.r-btn{height:56px;border-radius:14px;border:none;font-family:inherit;font-size:17px;font-weight:600;letter-spacing:-.2px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;transition:transform .12s ease,background .15s ease,opacity .15s ease;-webkit-tap-highlight-color:transparent}
+.r-btn:active{transform:scale(.98)}
+.r-btn-primary{background:var(--r-accent);color:#fff}
+.r-btn-primary[disabled]{background:var(--r-border);color:var(--r-text-3);cursor:not-allowed}
+.r-btn-secondary{background:transparent;color:var(--r-text);border:1px solid var(--r-border-strong)}
+.r-btn-ghost{background:transparent;color:var(--r-text-2)}
+.r-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:100px;font-size:12px;font-weight:500;background:var(--r-surface-2);color:var(--r-text-2)}
+
+/* ── Contenedor de la pantalla ─────────────────────────────────────────── */
+/* Reemplaza a .rc-app/.rc-pad del prototipo: allá el shell era absoluto dentro
+   del teléfono; acá es una columna centrada dentro del main que ya scrollea. */
+.rc{font-family:var(--r-font);color:var(--r-text);max-width:520px;margin:0 auto}
+.rc *{box-sizing:border-box}
+
+/* ── Cabecera de progreso pegajosa ─────────────────────────────────────── */
+/* z-index 10: por debajo del #app-header (z-20) para que se meta debajo, no encima. */
+.rc-sticky{position:sticky;top:var(--rc-header-h);z-index:10;background:var(--r-bg);padding:8px 16px 12px;margin:0 -16px;box-shadow:0 12px 12px -12px rgba(0,0,0,.06)}
+.av-meter{display:flex;gap:3px;height:6px;margin-top:9px}
+.av-meter i{flex:1;border-radius:3px;background:var(--st-none-bd);transition:background .35s cubic-bezier(.2,.9,.3,1)}
+.av-meter i[data-s="puedo"]{background:var(--st-ok-dot)}
+.av-meter i[data-s="pref"]{background:var(--st-pref-dot)}
+.av-meter i[data-s="no"]{background:var(--st-no-dot)}
+.av-meter i[data-s="lock"]{background:var(--st-lock-bd)}
+.av-count{font-variant-numeric:tabular-nums;font-weight:650}
+.av-status{display:flex;align-items:center;gap:8px;margin-top:8px;white-space:nowrap}
+.av-status .av-left{font-size:13.5px;font-weight:600;flex:1 1 auto;min-width:0}
+.av-status .av-cut{margin-left:auto;flex-shrink:0;font-size:11.5px;font-weight:650;display:flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
+.rc-weeknav{display:flex;align-items:center;gap:6px;padding-top:4px}
+.rc-weeknav .r-icon-btn{width:30px;height:30px}
+.rc-weeknav-mid{flex:1;text-align:center}
+.rc-weeknav-mid .rc-eyebrow{font-size:10px}
+.rc-weeknav-label{font-size:15.5px;font-weight:650;letter-spacing:-.3px;margin-top:1px}
+
+/* ── Grilla 7×2 ────────────────────────────────────────────────────────── */
+.av-grid{display:grid;grid-template-columns:54px 1fr 1fr;gap:7px;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.av-colhead{font-size:10px;font-weight:700;letter-spacing:1.1px;color:var(--r-text-3);text-align:center;padding-bottom:1px}
+.av-day{display:flex;flex-direction:column;justify-content:center;gap:1px;cursor:pointer;background:none;border:0;padding:0 2px 0 0;font-family:inherit;text-align:left;color:var(--r-text);border-radius:8px;transition:background .15s}
+.av-day:active{background:var(--r-surface-2)}
+.av-day b{font-size:14px;font-weight:650;letter-spacing:-.2px;line-height:1.1}
+.av-day span{font-size:10.5px;color:var(--r-text-3);font-weight:500;font-variant-numeric:tabular-nums}
+.av-day.is-today b{color:var(--r-accent)}
+
+.av-cell{height:54px;border-radius:12px;border:1.5px solid var(--st-none-bd);background:var(--st-none-bg);color:var(--st-none-fg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;font-family:inherit;
+  font-size:12.5px;font-weight:600;letter-spacing:-.1px;white-space:nowrap;transition:background .2s,border-color .2s,color .2s,transform .16s cubic-bezier(.2,1.5,.4,1);
+  -webkit-tap-highlight-color:transparent;position:relative;overflow:hidden}
+.av-cell[data-s="none"]{border-style:dashed}
+.av-cell[data-s="puedo"]{background:var(--st-ok-bg);border-color:var(--st-ok-bd);color:var(--st-ok-fg)}
+.av-cell[data-s="pref"]{background:var(--st-pref-bg);border-color:var(--st-pref-bd);color:var(--st-pref-fg)}
+.av-cell[data-s="no"]{background:var(--st-no-bg);border-color:var(--st-no-bd);color:var(--st-no-fg)}
+.av-cell[data-s="lock"]{background:var(--st-lock-bg);border-color:var(--st-lock-bd);color:var(--st-lock-fg);cursor:not-allowed;
+  background-image:repeating-linear-gradient(45deg,transparent 0 5px,rgba(0,0,0,.035) 5px 10px)}
+.av-cell.just-set{animation:avPop .34s cubic-bezier(.2,1.5,.4,1)}
+.av-cell:not([data-s="lock"]):active{transform:scale(.955)}
+@keyframes avPop{0%{transform:scale(.9)}55%{transform:scale(1.045)}100%{transform:scale(1)}}
+.av-cell-ic{display:flex;opacity:.9}
+
+/* ── Selector de brocha ────────────────────────────────────────────────── */
+.av-brush{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:5px;background:var(--r-surface-2);border-radius:14px}
+.av-brush-btn{border:1.5px solid transparent;background:transparent;border-radius:10px;padding:9px 4px 8px;cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;font-weight:650;color:var(--r-text-2);transition:all .2s;letter-spacing:-.1px}
+.av-brush-btn i{width:9px;height:9px;border-radius:5px;display:block;flex-shrink:0;transition:transform .2s cubic-bezier(.2,1.5,.4,1)}
+.av-brush-btn span{white-space:nowrap;font-size:11.5px}
+.av-brush-btn.on{background:var(--r-card);box-shadow:var(--r-shadow-sm)}
+.av-brush-btn.on i{transform:scale(1.35)}
+.av-brush-btn[data-k="puedo"] i{background:var(--st-ok-dot)}
+.av-brush-btn[data-k="pref"] i{background:var(--st-pref-dot)}
+.av-brush-btn[data-k="no"] i{background:var(--st-no-dot)}
+.av-brush-btn[data-k="puedo"].on{color:var(--st-ok-fg);border-color:var(--st-ok-bd)}
+.av-brush-btn[data-k="pref"].on{color:var(--st-pref-fg);border-color:var(--st-pref-bd)}
+.av-brush-btn[data-k="no"].on{color:var(--st-no-fg);border-color:var(--st-no-bd)}
+.av-hint{font-size:12.5px;line-height:1.45;color:var(--r-text-2);margin:9px 2px 0;min-height:34px;transition:opacity .2s}
+.av-hint b{color:var(--r-text);font-weight:650}
+
+/* ── Barra de guardar (al final del contenido, no fija) ────────────────── */
+.rc-save-btn{height:44px;padding:0 22px;border-radius:12px;border:0;background:var(--r-accent);color:#fff;font-family:inherit;font-size:15px;font-weight:650;
+  cursor:pointer;display:flex;align-items:center;gap:7px;transition:transform .12s,background .2s,opacity .2s;flex-shrink:0}
+.rc-save-btn:active{transform:scale(.97)}
+.rc-save-btn[disabled]{background:var(--r-border);color:var(--r-text-3);cursor:not-allowed}
+.rc-save-btn.done{background:var(--st-ok-dot)}
+.rc-save-btn.full{width:100%;height:54px;font-size:16px;justify-content:center;border-radius:14px}
+.rc-check path{stroke-dasharray:22;stroke-dashoffset:22;animation:rcDraw .42s .04s cubic-bezier(.2,.9,.3,1) forwards}
+@keyframes rcDraw{to{stroke-dashoffset:0}}
+.rc-savenote{font-size:12px;color:var(--r-text-3);text-align:center;line-height:1.45;margin:10px 6px 0}
+.rc-savenote.ok{color:var(--st-ok-fg)}
+.rc-blocked{margin-top:22px;padding:14px 15px;border-radius:14px;background:var(--r-error-soft);color:var(--r-error);display:flex;gap:10px;align-items:center;font-size:13.5px;font-weight:600}
+
+/* ── Hoja inferior (motivo) ────────────────────────────────────────────── */
+.rc-back{position:fixed;inset:0;background:rgba(10,10,10,.42);opacity:0;pointer-events:none;transition:opacity .3s;z-index:70;backdrop-filter:blur(2px)}
+.rc-back.open{opacity:1;pointer-events:auto}
+.rc-sheet{position:fixed;left:0;right:0;bottom:0;z-index:80;background:var(--r-card);border-radius:22px 22px 0 0;padding:10px 20px calc(30px + env(safe-area-inset-bottom));
+  transform:translateY(100%);transition:transform .38s cubic-bezier(.16,1,.3,1);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 -10px 40px rgba(0,0,0,.16);
+  max-width:520px;margin:0 auto;font-family:var(--r-font);color:var(--r-text)}
+.rc-sheet.open{transform:translateY(0)}
+.rc-grab{width:38px;height:4px;border-radius:2px;background:var(--r-border-strong);margin:0 auto 14px;flex-shrink:0}
+.rc-sheet h3{font-family:var(--r-font-display);font-size:20px;font-weight:650;letter-spacing:-.4px;margin:0 0 4px}
+.rc-sheet-sub{font-size:13.5px;color:var(--r-text-2);margin:0 0 12px;line-height:1.45}
+.rc-sheet-sub b{color:var(--r-text)}
+.rc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.rc-chips .r-chip{border:1px solid var(--r-border);cursor:pointer;font:inherit;font-size:12px;padding:6px 11px}
+.rc-chips .r-chip.on{background:var(--r-accent-soft);color:var(--r-accent)}
+.rc-ta{width:100%;border:1.5px solid var(--r-border);border-radius:12px;padding:11px 12px;font-family:inherit;font-size:15px;resize:none;
+  background:var(--r-bg);color:var(--r-text);outline:none;transition:border-color .18s}
+.rc-ta:focus{border-color:var(--r-accent)}
+.rc-sheet-actions{display:flex;gap:9px;margin-top:14px}
+.rc-sheet-actions .r-btn{height:48px;font-size:15px;border-radius:13px}
+.rc-sheet-foot{font-size:11.5px;color:var(--r-text-3);text-align:center;margin:11px 0 0;line-height:1.4}
+.rc-sheet-foot b{color:var(--r-text-2)}
+
+/* ── Utilidades compartidas ────────────────────────────────────────────── */
+.rc-seg{display:flex;gap:4px;padding:4px;background:var(--r-surface-2);border-radius:12px}
+.rc-seg button{flex:1;padding:8px 6px;border:0;border-radius:9px;background:transparent;font-family:inherit;font-size:12.5px;font-weight:600;
+  color:var(--r-text-2);cursor:pointer;transition:all .2s;letter-spacing:-.1px}
+.rc-seg button.on{background:var(--r-card);color:var(--r-text);box-shadow:var(--r-shadow-sm)}
+.rc-note{display:flex;gap:10px;padding:12px 13px;border-radius:13px;font-size:13px;line-height:1.45;font-weight:500;align-items:flex-start}
+.rc-note b{font-weight:650}
+.rc-note.info{background:var(--r-info-soft);color:var(--r-info)}
+.rc-note.warn{background:var(--r-warn-soft);color:var(--r-warn)}
+.rc-note.err{background:var(--r-error-soft);color:var(--r-error)}
+.rc-note.ok{background:var(--r-success-soft);color:var(--r-success)}
+.rc-note .rc-note-ic{flex-shrink:0;margin-top:1px;display:flex}
+.rc-h{font-family:var(--r-font-display);font-size:25px;font-weight:650;letter-spacing:-.6px;margin:0;line-height:1.12}
+.rc-sub{font-size:14px;color:var(--r-text-2);margin:5px auto 0;line-height:1.45;max-width:300px}
+.rc-eyebrow{font-size:11px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--r-text-3)}
+.rc-in{animation:rcIn .46s cubic-bezier(.16,1,.3,1) both}
+.rc-in.d1{animation-delay:.05s}.rc-in.d2{animation-delay:.11s}.rc-in.d3{animation-delay:.17s}
+@keyframes rcIn{from{opacity:0;transform:translateY(11px)}to{opacity:1;transform:none}}
+
+/* Fila que enlaza a Solicitudes */
+.rc-link-row{width:100%;margin-top:20px;display:flex;align-items:center;gap:11px;padding:13px 14px;background:var(--r-card);
+  border:1px solid var(--r-border);border-radius:14px;cursor:pointer;font:inherit;color:var(--r-text);text-align:left;font-family:var(--r-font)}
+.rc-link-ic{width:28px;height:28px;border-radius:14px;background:var(--r-info-soft);color:var(--r-info);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.rc-link-row .t{flex:1;min-width:0}
+.rc-link-row .t b{display:block;font-size:13.5px;font-weight:650}
+.rc-link-row .t span{display:block;font-size:12px;color:var(--r-text-3);margin-top:1px}
+.rc-link-chev{color:var(--r-text-3);display:flex}
+
+/* Solo lectura (semana cerrada / cuenta suspendida) */
+.rc-readonly{opacity:.62;pointer-events:none}
+
+/* ══ Piezas comunes de Inicio · Mi horario · Solicitudes · Perfil ═══════
+   Del entregable rc-tabs.jsx. Allá casi todo iba en estilos en línea de React;
+   acá se sacan a clases para no repetirlos en cada plantilla de string. */
+.rc-sechd{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--r-text-3);margin:22px 0 9px}
+.rc-card{width:100%;background:var(--r-card);border:1px solid var(--r-border);border-radius:16px;padding:15px;text-align:left;font:inherit;color:var(--r-text);display:block}
+button.rc-card{cursor:pointer}
+.rc-card.tight{padding:2px 15px}
+.rc-listrow{width:100%;display:flex;align-items:center;gap:12px;padding:13px 2px;background:none;border:0;border-bottom:1px solid var(--r-border);font:inherit;color:var(--r-text);text-align:left}
+.rc-listrow:last-child{border-bottom:0}
+button.rc-listrow{cursor:pointer}
+.rc-listrow .ic{color:var(--r-text-3);display:flex;flex-shrink:0}
+.rc-listrow .lbl{flex:1;font-size:14.5px;font-weight:500}
+.rc-listrow .val{font-size:13px;color:var(--r-text-2);font-weight:500}
+.rc-listrow .chev{color:var(--r-text-3);display:flex}
+.rc-empty{padding:30px 20px;text-align:center;border:1px dashed var(--r-border-strong);border-radius:16px}
+.rc-empty-ic{width:40px;height:40px;border-radius:20px;background:var(--r-surface-2);color:var(--r-text-3);display:inline-flex;align-items:center;justify-content:center}
+.rc-empty b{display:block;font-size:14.5px;font-weight:650;margin-top:10px}
+.rc-empty p{font-size:12.5px;color:var(--r-text-3);margin:4px auto 0;max-width:230px;line-height:1.45}
+
+/* ── Inicio: tarjeta grande de turno ───────────────────────────────────── */
+.rc-hero{width:100%;margin-top:18px;padding:20px;border-radius:20px;border:0;cursor:pointer;font:inherit;text-align:left;color:#fff;display:block}
+.rc-hero.start{background:var(--r-accent);box-shadow:0 10px 28px rgba(242,101,34,.26)}
+.rc-hero.live{background:var(--r-success);box-shadow:0 10px 28px rgba(16,185,129,.24);cursor:default}
+.rc-hero-top{display:flex;align-items:flex-start;justify-content:space-between}
+.rc-hero-ic{width:44px;height:44px;border-radius:14px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.rc-hero-tag{font-size:10px;font-weight:700;letter-spacing:1.4px;opacity:.85;display:flex;align-items:center;gap:6px}
+.rc-hero-t{margin-top:26px;font-size:21px;font-weight:650;letter-spacing:-.4px}
+.rc-hero-s{font-size:13px;opacity:.88;margin-top:3px;font-variant-numeric:tabular-nums}
+.rc-hero-go{margin-top:14px;display:flex;align-items:center;gap:6px;font-size:14.5px;font-weight:650}
+.rc-hero-btn{width:100%;margin-top:16px;height:46px;border-radius:13px;border:0;cursor:pointer;font:inherit;background:#fff;font-size:15px;font-weight:650}
+.rc-hero.live .rc-hero-btn{color:var(--r-success)}
+.rc-livedot{width:6px;height:6px;border-radius:3px;background:#fff;display:inline-block;animation:rpulse 1.8s infinite}
+@keyframes rpulse{0%,100%{opacity:1}50%{opacity:.35}}
+.rc-hero-note{margin-top:12px;padding:12px;border-radius:13px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3)}
+.rc-hero-note b{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
+.rc-hero-note p{font-size:11.5px;opacity:.88;margin:3px 0 0}
+.rc-hero-note button{width:100%;margin-top:9px;height:40px;border-radius:11px;border:0;cursor:pointer;font:inherit;background:#fff;color:var(--r-success);font-size:14px;font-weight:700}
+/* Tarjeta ámbar "te faltan N jornadas" */
+.rc-nudge{background:var(--r-warn-soft);border-color:transparent}
+.rc-nudge-ic{width:34px;height:34px;border-radius:17px;background:rgba(255,255,255,.55);color:var(--r-warn);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#driver-tabs-root[data-theme="dark"] .rc-nudge-ic{background:rgba(255,255,255,.1)}
+
+/* ── Mi horario ────────────────────────────────────────────────────────── */
+.rc-hday{background:var(--r-card);border:1px solid var(--r-border);border-radius:16px;padding:13px 15px}
+.rc-hday.libre{opacity:.68}
+.rc-hday-head{display:flex;align-items:baseline;gap:8px}
+.rc-hday-head b{font-size:14px;font-weight:650;letter-spacing:-.2px}
+.rc-hday-head span{font-size:11.5px;color:var(--r-text-3);font-weight:500}
+.rc-hday-head .none{margin-left:auto;font-size:12px;color:var(--r-text-3);font-weight:550}
+.rc-hday-body{display:flex;flex-direction:column;gap:6px;margin-top:9px}
+.rc-hslot{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:10px;background:var(--r-h2a-soft);color:var(--r-h2a)}
+.rc-hslot.pm{background:var(--r-a2h-soft);color:var(--r-a2h)}
+.rc-hslot.lock{background:var(--st-lock-bg);color:var(--st-lock-fg);font-size:12.5px;font-weight:600}
+.rc-hslot .k{font-size:9.5px;font-weight:700;letter-spacing:1px;width:26px;flex-shrink:0}
+.rc-hslot .t{flex:1;font-size:13.5px;font-weight:650;font-variant-numeric:tabular-nums}
+.rc-hslot .v{font-size:11.5px;font-weight:600;opacity:.75}
+.rc-hslot .lead{font-size:11.5px;font-weight:700}
+
+/* ── Solicitudes ───────────────────────────────────────────────────────── */
+.rc-solc-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.rc-solc-kind{font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--r-text-3)}
+.rc-solc-est{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:650;padding:4px 10px;border-radius:100px}
+.rc-solc-est.pendiente{background:var(--r-info-soft);color:var(--r-info)}
+.rc-solc-est.aprobada{background:var(--st-ok-bg);color:var(--st-ok-fg)}
+.rc-solc-est.rechazada{background:var(--st-no-bg);color:var(--st-no-fg)}
+.rc-solc-t{font-size:15px;font-weight:650;letter-spacing:-.25px}
+.rc-solc-m{font-size:13px;color:var(--r-text-2);margin-top:2px}
+.rc-solc-f{font-size:11.5px;color:var(--r-text-3);margin-top:7px}
+.rc-solc-nota{margin-top:9px;padding:9px 11px;border-radius:10px;background:var(--r-surface-2);font-size:12.5px;color:var(--r-text-2);line-height:1.45}
+.rc-solc-nota b{color:var(--r-text);font-weight:650}
+
+/* ── Perfil ────────────────────────────────────────────────────────────── */
+.rc-pf-head{padding-top:6px;display:flex;align-items:center;gap:14px}
+.rc-pf-avt{width:58px;height:58px;border-radius:29px;background:var(--r-accent-soft);color:var(--r-accent);display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:700;flex-shrink:0;overflow:hidden;border:0;cursor:pointer;position:relative;padding:0}
+.rc-pf-avt img{width:100%;height:100%;object-fit:cover}
+.rc-pf-name{display:block;font-family:var(--r-font-display);font-size:21px;font-weight:650;letter-spacing:-.4px}
+.rc-pf-sub{display:block;font-size:13px;color:var(--r-text-2);margin-top:2px}
+.rc-pf-km{width:100%;padding:16px;border-radius:16px;border:0;cursor:pointer;font:inherit;text-align:left;background:var(--r-accent);color:#fff;box-shadow:0 10px 28px rgba(242,101,34,.22)}
+.rc-pf-km .n{font-size:28px;font-weight:700;letter-spacing:-.6px;margin-top:6px;font-variant-numeric:tabular-nums}
+.rc-pf-km .l{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;opacity:.85}
+.rc-pf-km .s{font-size:12.5px;opacity:.9;margin-top:4px}
+.rc-strikedots{display:flex;gap:5px;margin-top:8px}
+.rc-strikedots i{width:24px;height:6px;border-radius:3px;background:var(--r-border-strong);display:block}
+.rc-strikedots i.on{background:var(--st-no-dot)}
+.rc-strikedots i.warn{background:var(--st-pref-dot)}
+
+/* ── Barra de pestañas del conductor — reviste el #driver-nav existente ── */
+/* El markup y el wiring (data-dtab en core.js) no cambian: solo el look y el
+   swap de emoji por SVG, que hace driver-disponibilidad.js al arrancar. */
+#driver-nav.rc-nav{background:var(--r-card);border-top:1px solid var(--r-border);box-shadow:none;padding-bottom:env(safe-area-inset-bottom)}
+#driver-nav.rc-nav .dnav-btn{gap:3px;padding:9px 2px 6px;color:var(--r-text-3);font-family:var(--r-font);font-size:10px;font-weight:600;letter-spacing:.1px;position:relative;transition:color .18s}
+#driver-nav.rc-nav .dnav-btn.active{color:var(--r-accent)}
+#driver-nav.rc-nav .dnav-ic{display:flex;align-items:center;justify-content:center;font-size:0;filter:none;opacity:1;transition:transform .28s cubic-bezier(.2,1.4,.4,1)}
+#driver-nav.rc-nav .dnav-btn.active .dnav-ic{transform:translateY(-2px)}
+#driver-nav.rc-nav .dnav-dot{position:absolute;top:5px;right:calc(50% - 16px);min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:var(--r-accent);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid var(--r-card)}
+
+@media (prefers-reduced-motion:reduce){
+  .rc-in,.av-cell.just-set{animation:none}
+  .rc,.rc-sheet,.rc-back,#driver-nav.rc-nav *{transition-duration:.01ms!important}
+}

@@ -6,12 +6,24 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v77';
+const CACHE_VERSION = 'rendio-turnos-v139';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/offline.html',
+  // Librerías locales (2026-08-25 en dev; venían de main). Van en el shell
+  // para que la app abra sin red y —sobre todo— para que no dependa de que
+  // un CDN de terceros responda: cuando no respondía, la app salía cruda.
+  // ExcelJS NO va acá a propósito: es 1 MB y solo lo usa el admin al
+  // descargar el horario; se cachea solo cuando alguien lo pide.
+  '/vendor/tailwind-3.4.17.js',
+  '/vendor/supabase-js-2.111.0.min.js',
+  '/vendor/leaflet/leaflet.js',
+  '/vendor/leaflet/leaflet.css',
+  '/vendor/leaflet/images/marker-icon.png',
+  '/vendor/leaflet/images/marker-icon-2x.png',
+  '/vendor/leaflet/images/marker-shadow.png',
   '/config.js',
   '/supabase-client.js',
   '/scheduler.js',
@@ -20,6 +32,7 @@ const APP_SHELL = [
   '/core.js',
   '/admin-turnos-activos.js',
   '/admin-inspecciones.js',
+  '/admin-repuestos.js',
   '/horario.js',
   '/admin-solicitudes.js',
   '/admin-disponibilidad.js',
@@ -28,13 +41,27 @@ const APP_SHELL = [
   '/driver-home.js',
   '/admin-recompensas.js',
   '/driver-perfil.js',
+  '/driver-disponibilidad.js',
+  '/driver-tabs.js',
+  '/admin-consola.js',
+  '/admin-rutas.js',
+  '/admin-reservas.js',
+  '/admin-tripulantes.js',
+  '/admin-privados.js',
+  '/admin-operacion.js',
+  '/admin-eventualidades.js',
+  '/aux-registro.js',
+  '/aux-residencias.js',
+  '/aux-privado.js',
+  '/aux-presentacion.js',
+  '/admin-chat.js',
+  '/admin-acomodar.js',
+  '/auxiliar.js',
+  '/driver-rutas.js',
   '/ui-push.js',
   '/styles.css',
-  // Librerías propias (antes venían de CDNs externos que el SW no podía cachear:
-  // si la red del usuario los bloqueaba o fallaba, la app cargaba sin estilos y
-  // sin poder hacer login). Ahora son del mismo origen → entran al precache.
-  '/vendor/tailwind-3.4.17.js',
-  '/vendor/supabase-js-2.111.0.min.js',
+  '/rc-conductor.css',
+  '/rc-auxiliar.css',
   '/manifest.json',
   '/assets/logo.png',
   '/assets/logo-icon.png',
