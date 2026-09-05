@@ -197,5 +197,11 @@ if (plan.sinRutear?.length) {
 const pendientes = [];
 if (plan.faltaPin?.length) pendientes.push(`Sin programar, nos falta la coordenada de la casa: ${plan.faltaPin.join(' · ')}`);
 if (plan.sinCasa?.length) pendientes.push(`Sin programar, no sabemos dónde vive: ${plan.sinCasa.join(' · ')}`);
+// UN NOMBRE QUE NO SE PUDO AMARRAR SE CAÍA DEL MENSAJE SIN DECIR NADA. El
+// 28-ago "KAREN DANIELA SUAREZ CARREÑO" empataba con Daniela Villa y con
+// Daniela Hincapié, así que el plan la descartó entera —salida Y llegada— y el
+// mensaje no la mencionaba. Que alguien desaparezca en silencio es peor que
+// dejarla sin carro: nadie la va a echar de menos hasta que llame.
+if (plan.ambiguos?.length) pendientes.push(`Sin programar, no sabemos quién es (el nombre empata con dos personas): ${plan.ambiguos.join(' · ')}`);
 if (plan.habituales?.length) pendientes.push(`Suelen ir y hoy el formulario no los trae — ¿van?: ${plan.habituales.join(' · ')}`);
 if (pendientes.length) { console.log(''); pendientes.forEach((l) => console.log(l)); }

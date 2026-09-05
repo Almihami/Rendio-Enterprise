@@ -386,6 +386,74 @@ if (process.argv.includes('--colchon-siempre')) {
   SRC = SRC.replace('const colchon = ids.length > 1 ? rt.ZONE_CUSHION : 0;', 'const colchon = rt.ZONE_CUSHION;');
   if (SRC === antes) { console.error('⚠  no encontré la línea del colchón en admin-rutas.js'); process.exit(3); }
 }
+
+// ENSAYO: LA TABLA SE MIDE DESDE LA PRIMERA RECOGIDA, NO DESDE QUE ARRANCA EL
+// CARRO. Su tabla dice, textual, "de recoger al PRIMERO a llegar al aeropuerto"
+// (0062). El solver la estaba usando como duración de TODA la vuelta, así que
+// el recorrido en vacío hasta la casa se comía los minutos de la tabla: el
+// 27-ago Erika (Olivar, franja 12-19 → 50 min) salía con 22 min de vacío desde
+// MDE y quedaba recogida 38 min antes de su presentación en vez de 60. Se
+// separa el vacío y se le suma encima.
+if (process.argv.includes('--tabla-desde-recogida')) {
+  let n = 0;
+  const a1 = `        const p = rtTripParts(tr.ids, origin);
+        const dur = rtDurProg(tr.ids, tr.dlMin, p.dur, p.hastaUltima);`;
+  const b1 = `        const p = rtTripParts(tr.ids, origin);
+        const p0 = rtTripParts(tr.ids, null);
+        const vacio = Math.max(0, (p.dur || 0) - (p0.dur || 0));
+        const dur = vacio + rtDurProg(tr.ids, tr.dlMin, p0.dur, p0.hastaUltima);`;
+  if (SRC.includes(a1)) { SRC = SRC.replace(a1, b1); n++; }
+  const a2 = `    const durProg = arrival != null
+      ? rtDurProg(rt.order[laneId], hardDL, arrival - rtToMin(lane.start), hastaUltima)
+      : null;`;
+  const b2 = `    const vacioLane = (arrival != null && lane.origin && rt.order[laneId].length)
+      ? Math.max(0, rtLegMin(lane.origin, rt.order[laneId][0])) : 0;
+    const durProg = arrival != null
+      ? vacioLane + rtDurProg(rt.order[laneId], hardDL, arrival - rtToMin(lane.start) - vacioLane, Math.max(0, hastaUltima - vacioLane))
+      : null;`;
+  if (SRC.includes(a2)) { SRC = SRC.replace(a2, b2); n++; }
+  if (n !== 2) { console.error(`⚠  --tabla-desde-recogida: parcheé ${n}/2 sitios en admin-rutas.js`); process.exit(3); }
+}
+
+// ENSAYO: LA MISMA PORTERÍA TAMPOCO PUEDE MADRUGAR A NADIE DE MÁS. La fusión
+// por portería compartida (que existe porque el jefe cazó a Josmar y Jessica
+// saliendo de Solare en dos carros con 10 min de diferencia, 11-ago) se salta
+// `fusionables` ENTERO, y ahí adentro está el techo de madrugada. Resultado el
+// 28-ago: Melisa (presentación 3:30), Farid y Sara vanessa (4:00) los tres de
+// Olivar quedan en una sola recogida a las 2:52, y los dos de las 4:00 madrugan
+// 68 min con el techo en 50.
+//
+// Que él junte la misma puerta con 10 min de diferencia no quiere decir que la
+// junte con 30: medido en sus 9 planes, PARTE un mismo conjunto en dos
+// recogidas 10 veces (6-ago Olivar 2:50 y 3:25 · 7-ago Olivar 2:50 y 3:20 ·
+// 16-ago Olivar 3:25 y 4:20 · 21-ago Origen 2:50 y 3:30…). O sea: comparten
+// puerta es razón para ir juntos, no para madrugar a uno media hora.
+if (process.argv.includes('--porteria-con-techo')) {
+  const antes = SRC;
+  SRC = SRC.replace(
+    '      if (!mismaPorteria(g.ids, w.ids) && !fusionables(g.type, g.ids, w.ids, g.dlMin)) continue;',
+    `      const juntosPort = g.ids.concat(w.ids);
+          const porteriaOK = mismaPorteria(g.ids, w.ids)
+            && (!rt.MAX_EARLY || rtAnticipa(g.type, juntosPort) <= rt.MAX_EARLY);
+          if (!porteriaOK && !fusionables(g.type, g.ids, w.ids, g.dlMin)) continue;`);
+  if (SRC === antes) { console.error('⚠  no encontré la fusión por portería en admin-rutas.js'); process.exit(3); }
+}
+
+// ENSAYO: EL COLCHÓN DE SALIDA NO SE APILA SOBRE LA TABLA. rt.CUSHION son
+// minutos extra de margen al arrancar; su tabla YA trae margen adentro. Cuando
+// él corrigió a Jolene (sola en Olivar, presentación 15:04) dio "14:04 o 14:05"
+// = presentación − 10 de colchón de aeropuerto − 50 de tabla, sin nada más.
+// Con el CUSHION encima daría 13:59, que él no dijo.
+if (process.argv.includes('--sin-colchon-sobre-tabla')) {
+  const antes = SRC;
+  SRC = SRC.replace(
+    `        const salmax = tr.dlMin - rt.AIRPORT_BUFFER - dur;
+        const depart = Math.max(s.avail, salmax - rt.CUSHION);`,
+    `        const salmax = tr.dlMin - rt.AIRPORT_BUFFER - dur;
+        const mandaTabla = rtZonaDe(tr.ids, tr.dlMin, rtPaxOf(tr.ids)) != null;
+        const depart = Math.max(s.avail, salmax - (mandaTabla ? 0 : rt.CUSHION));`);
+  if (SRC === antes) { console.error('⚠  no encontré salmax/CUSHION en admin-rutas.js'); process.exit(3); }
+}
 const iFin = SRC.indexOf('return { lanes, order, unassigned };');
 const solverSrc = SRC.slice(0, SRC.indexOf('\n  }', iFin) + 4);
 const CSRC = readFileSync(CONSOLA_JS, 'utf8');

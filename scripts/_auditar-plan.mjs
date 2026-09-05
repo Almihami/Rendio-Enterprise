@@ -65,7 +65,10 @@ if (maxPax > 4) fallos.push(`una vuelta lleva ${maxPax} personas`);
 // 4 · COBERTURA: nadie del formulario puede desaparecer callado. Si no se pudo
 //     programar, tiene que estar declarado en el mensaje.
 console.log('\n── COBERTURA ──');
-const declarado = new Set([...(plan.faltaPin || []), ...(plan.sinCasa || [])].map((s) => String(s).split('→')[0].trim()));
+// `ambiguos` también cuenta como declarado desde el 28-ago: el mensaje ya los
+// nombra ("no sabemos quién es"). Antes no estaba en esta lista y KAREN DANIELA
+// SUAREZ CARREÑO figuraba como desaparecida en silencio cuando sí se avisaba.
+const declarado = new Set([...(plan.faltaPin || []), ...(plan.sinCasa || []), ...(plan.ambiguos || [])].map((s) => String(s).split('→')[0].trim()));
 for (const r of form) {
   const tiene = (tipo) => plan.vueltas.some((v) => v.tipo === tipo && v.paradas.some((p) => p.personas.some((x) => x.n === r.nombre)));
   const declara = [...declarado].some((d) => r.nombre.includes(d) || d.includes(r.nombre));
