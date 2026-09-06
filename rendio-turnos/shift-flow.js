@@ -539,9 +539,14 @@
     sf.extraPhotos = Array.isArray(extras)
       ? extras.filter(Boolean).map(b => ({ blob: b, url: URL.createObjectURL(b), size: b.size }))
       : [];
-    // Lo devuelve al paso donde estaba, sin pasarse del que puede sostener.
+    // Vuelve al PASO 1 (vehículo), con el carro ya preseleccionado, en vez de
+    // saltar directo al kilometraje. No es por prudencia de más: mientras la app
+    // estuvo muerta, el barrido pudo liberar el carro y dejarlo sin reserva. Pasar
+    // otra vez por este paso vuelve a reservarlo (reserveAndAdvance) y, si otro
+    // conductor ya se lo llevó, se entera AHORA y no al final. Los pasos que ya
+    // tiene completos se pasan de un toque.
+    sf.step = 0;
     const tomadas = Object.keys(sf.photos).length;
-    sf.step = tomadas >= PHOTO_SLOTS.length ? 3 : (Object.keys(sf.checklist).length ? 2 : 1);
     return tomadas > 0 || Object.keys(sf.checklist).length > 0;
   }
 

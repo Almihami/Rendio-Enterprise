@@ -962,10 +962,16 @@
         .from('shifts')
         .update({ vehicle_id: vehicleId, opening_km: openingKm, status: 'inspection_in_progress' })
         .eq('id', reuseId)
+        // NUNCA revivir un turno cerrado. Si lo cerró un admin —o el barrido de
+        // reservas abandonadas—, la fila ya tiene end_at y su nota de cierre:
+        // devolverla a 'inspection_in_progress' dejaría un turno cerrado y en
+        // curso a la vez, y ese turno zombi contaría mal en el Balance. Sin
+        // coincidencia, cae abajo y se crea uno nuevo, que es lo correcto.
+        .neq('status', 'closed')
         .select('id')
         .single();
       if (!error && data) return data.id;
-      // si falla (p.ej. lo cerró un admin), cae a crear uno nuevo
+      // si falla (lo cerraron, o ya no existe), cae a crear uno nuevo
     }
     const { data, error } = await sb
       .from('shifts')
