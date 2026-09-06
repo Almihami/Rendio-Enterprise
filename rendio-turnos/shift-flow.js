@@ -4,9 +4,12 @@
 //   2. Checklist pre-operacional  5. Novedades / observaciones
 //   3. Fotos (8: 5 exteriores + guantera y 2 puertas)  6. Confirmar e iniciar
 //
-// Persistencia (al confirmar, en orden):
-//   fotos → bucket 'inspections' · shift → shifts · inspección → inspections
-//   → inspection_photos · novedades → incidents · RPC start_shift/abort_shift.
+// Persistencia (al confirmar, en orden) — REORDENADO el 2026-09-06:
+//   1. shift → shifts  2. inspección → inspections  3. RPC start_shift/abort_shift
+//   …el turno ya está asegurado…
+//   4. fotos → bucket 'inspections'  5. inspection_photos  6. novedades → incidents
+// Los pasos 4-6 van con reintentos y NO pueden tumbar el turno. Ver onConfirm
+// para por qué (caso Juan Esteban, producción).
 //
 // Integración: app.js llama ShiftFlow.init(profile) al entrar como conductor.
 (function () {
@@ -279,6 +282,8 @@
     sf.signed = false;
     sf.saving = false;
     sf.done = null;
+    sf.secured = false;      // ¿el turno ya quedó registrado? (ver onConfirm)
+    sf.fotosFallidas = [];   // fotos que no lograron subir pese a los reintentos
 
     const wiz = $('#shift-wizard');
     wiz.classList.remove('hidden');
@@ -984,6 +989,38 @@
     $('#sf-confirm').addEventListener('click', onConfirm);
   }
 
+  // Reintento con espera creciente. La subida de una foto por celular en carretera
+  // falla por nada —un bache de señal de un segundo— y antes eso bastaba para tumbar
+  // el inicio de turno completo. Tres intentos (0,8s y 1,6s de espera) cubren el bache
+  // sin dejar al conductor esperando si de verdad no hay red.
+  async function conReintento(fn, intentos = 3) {
+    let ultimo;
+    for (let i = 1; i <= intentos; i++) {
+      try { return await fn(); }
+      catch (e) {
+        ultimo = e;
+        // Un rechazo del servidor (permiso, vehículo ocupado) no mejora reintentando.
+        if (/VEHICLE_|NOT_A_DRIVER|NOT_SHIFT_OWNER|INVALID_SHIFT_STATUS|403|401/.test(e && e.message || '')) break;
+        if (i < intentos) await new Promise(r => setTimeout(r, 800 * i));
+      }
+    }
+    throw ultimo;
+  }
+
+  // start_shift con reintento, pero verificando antes de dar por perdido el turno.
+  // Si el servidor ya lo activó y lo que se perdió fue la RESPUESTA, el reintento
+  // rebota con INVALID_SHIFT_STATUS ("ya está active"). Eso no es un fallo: el
+  // conductor está en ruta. Preguntamos por su turno abierto antes de asustarlo.
+  async function arrancarTurno(shiftId) {
+    try {
+      return await conReintento(() => Api.startShift(shiftId));
+    } catch (e) {
+      const abierto = await Api.getMyOpenShift(sf.driverId).catch(() => null);
+      if (abierto && (abierto.status === 'active' || abierto.status === 'closing')) return abierto;
+      throw e;
+    }
+  }
+
   async function onConfirm() {
     if (sf.saving) return;
     sf.saving = true;
@@ -1029,39 +1066,25 @@
       }
       const today = new Date().toISOString().slice(0, 10);
 
-      const slots = activePhotoSlots().filter(s => sf.photos[s.id]);
-      const photoRows = [];
-      for (let i = 0; i < slots.length; i++) {
-        const s = slots[i];
-        setState(`Subiendo fotos (${i + 1}/${slots.length})…`);
-        const path = `${org}/${v.id}/${today}/${inspectionId}/${s.id}.jpg`;
-        await Api.uploadInspectionPhoto(path, sf.photos[s.id].blob);
-        photoRows.push({
-          inspection_id: inspectionId,
-          organization_id: org,
-          photo_type: s.id,
-          storage_path: path,
-          size_bytes: sf.photos[s.id].size,
-        });
-      }
-
-      // Fotos adicionales (a criterio del conductor): photo_type 'extra', path único.
-      for (let i = 0; i < sf.extraPhotos.length; i++) {
-        const ep = sf.extraPhotos[i];
-        setState(`Subiendo foto adicional (${i + 1}/${sf.extraPhotos.length})…`);
-        const path = `${org}/${v.id}/${today}/${inspectionId}/extra-${i + 1}.jpg`;
-        await Api.uploadInspectionPhoto(path, ep.blob);
-        photoRows.push({
-          inspection_id: inspectionId,
-          organization_id: org,
-          photo_type: 'extra',
-          storage_path: path,
-          size_bytes: ep.size,
-        });
-      }
-
+      // ORDEN DEL GUARDADO — cambiado el 2026-09-06 tras el caso de Juan Esteban.
+      //
+      // ANTES: se subían las 8 fotos y SOLO al final se creaba la inspección y se
+      // activaba el turno. Eran 11 peticiones encadenadas y el turno no existía
+      // hasta la última: si el teléfono se moría en la foto 8 (iOS descartando la
+      // página, o un bache de señal), no quedaba NI inspección NI turno — solo
+      // fotos huérfanas en el Storage. El conductor había hecho los 12 minutos de
+      // trabajo y la app no guardaba nada. Peor: el turno quedaba de borrador
+      // reteniendo el vehículo, y una hora después release_stale_reservations lo
+      // cerraba en silencio ("RESERVA EXPIRADA"). Él se enteraba por su cuenta.
+      //
+      // AHORA: primero se registra la inspección y se decide el turno (3 peticiones
+      // de texto, ~2 segundos) y DESPUÉS se suben las fotos, con reintentos y sin
+      // poder de tumbar nada. Si una foto se pierde de verdad, queda una inspección
+      // con un hueco visible en vez de un turno que nunca existió: mejor dato.
       setState('Registrando inspección…');
-      await Api.createInspection({
+      // Con reintento: createInspection es idempotente (si la inicial ya existe,
+      // atrapa el duplicado y devuelve la que hay), así que reintentar es seguro.
+      const filaInspeccion = {
         id: inspectionId,
         organization_id: org,
         shift_id: shiftId,
@@ -1078,23 +1101,8 @@
         is_apt: sf.isApt,
         signed_name: (sf.profile && sf.profile.full_name) || null,
         notes: sf.note || null,
-      });
-      await Api.addInspectionPhotos(photoRows);
-
-      if (issues.length) {
-        setState('Reportando novedad…');
-        const sevMap = { leve: 'low', media: 'medium', grave: 'high' };
-        const description = `Inspección de inicio de turno — ${issues.map(i => i.label).join(', ')}. ${sf.note || ''}`.trim();
-        await Api.addIncident({
-          organizationId: org,
-          reporterId: sf.profile.id,
-          shiftId,
-          vehicleId: v.id,
-          category: 'vehicle_problem',
-          severity: sevMap[sf.severity] || 'low',
-          description,
-        });
-      }
+      };
+      await conReintento(() => Api.createInspection(filaInspeccion));
 
       if (sf.completing) {
         // La inspección quedó registrada; limpiamos el plazo. El turno sigue activo.
@@ -1110,7 +1118,7 @@
         sf.done = 'aborted';
       } else {
         setState('Iniciando turno…');
-        await Api.startShift(shiftId);
+        await arrancarTurno(shiftId);
         sf.done = 'started';
         // La revisión de nivel quedó hecha: no se vuelve a pedir hasta el
         // siguiente múltiplo de km (0073). Best-effort, nunca frena el turno.
@@ -1119,12 +1127,79 @@
           try { await Api.markInspectionTiersDone(sf.vehicleId, kmDone); } catch (_) { /* */ }
         }
       }
+
+      // A PARTIR DE AQUÍ EL TURNO YA ESTÁ ASEGURADO. Nada de lo que sigue puede
+      // tumbarlo: si el teléfono se muere ahora, el conductor ya está en turno y
+      // al reabrir la app ve "Turno en curso". Por eso todo lo de abajo va con
+      // reintentos y captura su propio error en vez de propagarlo.
+      sf.secured = true;
+
+      // Las fotos: cada una con 3 intentos. Una que falle de verdad no arrastra a
+      // las demás — se anota y se le avisa al conductor al final.
+      const slots = activePhotoSlots().filter(s => sf.photos[s.id]);
+      const pendientes = slots.map(s => ({
+        path: `${org}/${v.id}/${today}/${inspectionId}/${s.id}.jpg`,
+        blob: sf.photos[s.id].blob, size: sf.photos[s.id].size,
+        type: s.id, label: s.label || s.id,
+      })).concat(sf.extraPhotos.map((ep, i) => ({
+        path: `${org}/${v.id}/${today}/${inspectionId}/extra-${i + 1}.jpg`,
+        blob: ep.blob, size: ep.size,
+        type: 'extra', label: `adicional ${i + 1}`,
+      })));
+
+      const photoRows = [];
+      const fallidas = [];
+      for (let i = 0; i < pendientes.length; i++) {
+        const f = pendientes[i];
+        setState(`Subiendo fotos (${i + 1}/${pendientes.length})…`);
+        try {
+          await conReintento(() => Api.uploadInspectionPhoto(f.path, f.blob));
+          photoRows.push({
+            inspection_id: inspectionId,
+            organization_id: org,
+            photo_type: f.type,
+            storage_path: f.path,
+            size_bytes: f.size,
+          });
+        } catch (e) {
+          console.error('foto ' + f.label, e);
+          fallidas.push(f.label);
+        }
+      }
+      sf.fotosFallidas = fallidas;
+      // Registrar las que sí subieron (addInspectionPhotos ya deduplica).
+      if (photoRows.length) {
+        try { await conReintento(() => Api.addInspectionPhotos(photoRows)); }
+        catch (e) { console.error('registro de fotos', e); }
+      }
+
+      if (issues.length) {
+        setState('Reportando novedad…');
+        const sevMap = { leve: 'low', media: 'medium', grave: 'high' };
+        const description = `Inspección de inicio de turno — ${issues.map(i => i.label).join(', ')}. ${sf.note || ''}`.trim();
+        try {
+          await conReintento(() => Api.addIncident({
+            organizationId: org,
+            reporterId: sf.profile.id,
+            shiftId,
+            vehicleId: v.id,
+            category: 'vehicle_problem',
+            severity: sevMap[sf.severity] || 'low',
+            description,
+          }));
+        } catch (e) { console.error('novedad', e); }
+      }
+
       sf.reuseShiftId = null;
       sf.completing = false;
       render();
     } catch (e) {
       console.error(e);
       setState('');
+      // Si el turno ya quedó asegurado, esto NO es un fallo del inicio: lo que se
+      // cayó fue algo posterior. Mentirle con "no se pudo completar" lo mandaría a
+      // repetir un turno que ya existe (y a chocar contra ALREADY_ON_SHIFT).
+      if (sf.secured) { sf.reuseShiftId = null; sf.completing = false; sf.saving = false; render(); return; }
       btn.disabled = false;
       sf.saving = false;
       const msg = (e && e.message) || 'error desconocido';
@@ -1161,10 +1236,19 @@
     }
     // Con el turno activo, el siguiente paso natural es VER LA RUTA DEL DÍA.
     const activeTurno = !(d === 'aborted' || d === 'completed-noapt');
+    // Aviso honesto: el turno quedó bien, pero alguna foto no subió. Antes esto no
+    // podía pasar porque un fallo de foto tumbaba el turno entero; ahora el turno
+    // se salva y lo que hay que decir es exactamente qué faltó.
+    const fallidas = sf.fotosFallidas || [];
+    const avisoFotos = fallidas.length ? `<div class="mt-5 w-full max-w-xs rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-left">
+      <p class="text-[13px] font-bold text-amber-800">Tu turno quedó registrado, pero ${fallidas.length === 1 ? 'una foto no subió' : `${fallidas.length} fotos no subieron`}</p>
+      <p class="text-[13px] text-amber-700 mt-1 leading-snug">Faltó: ${esc(fallidas.join(', '))}. Avísale a tu jefe para que quede constancia.</p>
+    </div>` : '';
     wiz.innerHTML = `<div class="max-w-lg mx-auto min-h-screen flex flex-col items-center justify-center text-center px-8 bg-slate-50">
       <div class="w-20 h-20 rounded-full ${iconCls} text-4xl flex items-center justify-center mb-5">${icon}</div>
       <h1 class="text-2xl font-extrabold text-ink">${title}</h1>
       <p class="text-[15px] text-slate-500 mt-2 leading-relaxed max-w-xs">${body}</p>
+      ${avisoFotos}
       ${activeTurno ? `<button id="sf-route-btn" class="mt-8 w-full max-w-xs px-6 py-3.5 rounded-xl bg-brand text-white font-extrabold shadow-brand active:scale-[0.98] transition flex items-center justify-center gap-2"><span>🧭</span>Ver mi ruta del día</button>
       <button id="sf-done-btn" class="mt-3 px-6 py-2.5 text-slate-500 font-semibold">Volver al inicio</button>`
       : `<button id="sf-done-btn" class="mt-8 px-6 py-3 rounded-xl ${btnCls} font-bold active:scale-[0.98] transition">Volver al inicio</button>`}
