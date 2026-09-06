@@ -17,7 +17,25 @@
 // REQUIERE jsdom:  cd rendio-backend && npm install --no-save jsdom
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'fs';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 const APP = new URL('../../rendio-turnos/', import.meta.url).pathname;
+
+// Una sola "base del teléfono" compartida entre corridas: así se puede simular
+// que la app se muere y el conductor vuelve a abrirla con lo que había guardado.
+let IDB = null;
+// Contadores para vigilar el costo: cuántas veces se abre la base y cuánto se
+// escribe. El arreglo no puede volver lenta una app que hoy funciona bien.
+let aperturas = 0, escrituras = 0, bytesEscritos = 0;
+function nuevaIdb() { IDB = new IDBFactory(); aperturas = 0; escrituras = 0; bytesEscritos = 0; }
+function instrumentar(win) {
+  const real = IDB;
+  win.indexedDB = {
+    open: (...a) => { aperturas++; return real.open(...a); },
+    deleteDatabase: (...a) => real.deleteDatabase(...a),
+    databases: (...a) => real.databases(...a),
+  };
+  win.IDBKeyRange = IDBKeyRange;
+}
 
 let ok = 0, bad = 0;
 const t = (n, c, d = '') => { if (c) { ok++; console.log('  ✓ ' + n); } else { bad++; console.log('  ✗ ' + n + (d ? ' → ' + d : '')); } };
@@ -32,11 +50,13 @@ const LAS_8 = ['front', 'rear', 'left', 'right', 'dashboard', 'glovebox', 'door_
 
 // fallaHasta: cuántas veces seguidas debe fallar la subida de door_right.
 // Infinity = se cayó de verdad (el caso de Juan Esteban).
-async function correr({ fallaHasta }) {
+async function correr({ fallaHasta, pararEn = null, sinIdb = false }) {
   const dom = new JSDOM(readFileSync(APP + 'index.html', 'utf8'),
     { runScripts: 'outside-only', pretendToBeVisual: true, url: 'http://localhost/' });
   const { window } = dom;
   global.window = window; global.document = window.document;
+  if (sinIdb) window.indexedDB = undefined;   // control: como estaba antes del arreglo
+  else if (IDB) instrumentar(window);
   window.RENDIO_CONFIG = {}; window.toast = () => {};
   // Los fallos de foto son a propósito: la app los registra con console.error y
   // ensuciarían la salida de la prueba.
@@ -115,7 +135,15 @@ async function correr({ fallaHasta }) {
   };
 
   // — abrir el asistente —
-  pulsar('sf-open-btn'); await esperar(200);
+  pulsar('sf-open-btn'); await esperar(250);
+  // Si veníamos de una muerte de la app, acá ya debió recuperar el avance.
+  // sfToast escribe en #toast: ahí se lee el aviso de recuperación.
+  const recuperado = {
+    aviso: (doc.getElementById('toast') || {}).textContent || '',
+    fotos: wiz().querySelectorAll('[data-slot] img').length,
+    texto: txt(),
+  };
+  if (pararEn === 'recuperar') { await esperar(300); return { recuperado, texto: txt(), html: wiz().innerHTML }; }
   // — paso 1: vehículo —
   pulsar('[data-vehicle="v1"]'); await esperar(100);
   pulsar('sf-next'); await esperar(200);
@@ -123,15 +151,24 @@ async function correr({ fallaHasta }) {
   pulsar('sf-all-ok'); await esperar(100);
   pulsar('sf-next'); await esperar(150);
   // — paso 3: las 8 fotos, una por una, como el conductor —
+  // Se cronometra SOLO el trabajo de la app (capturar, comprimir, repintar y
+  // guardar), sin las esperas artificiales de la prueba.
+  let msFotos = 0;
   for (const slot of LAS_8) {
+    const t = Date.now();
     q(`[data-slot="${slot}"]`).click();
     const input = doc.getElementById('sf-photo-input');
-    const file = new window.File(['x'], slot + '.jpg', { type: 'image/jpeg' });
+    const file = new window.File(['x'.repeat(300 * 1024)], slot + '.jpg', { type: 'image/jpeg' });
     Object.defineProperty(input, 'files', { value: [file], configurable: true });
     input.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 0));   // deja correr el manejador
+    msFotos += Date.now() - t;
     await esperar(40);
   }
   const capturadas = LAS_8.length;
+  // Aquí es donde se murió el teléfono de Juan Esteban en su segundo intento:
+  // con el checklist marcado y las fotos tomadas, ANTES de pulsar confirmar.
+  if (pararEn === 'fotos') { await esperar(600); return { capturadas, muerto: true, msFotos }; }
   pulsar('sf-next'); await esperar(150);
   // — paso 4: kilometraje —
   const km = doc.getElementById('sf-km');
@@ -183,6 +220,35 @@ t('subieron las 8', B.subidas.length === 8, String(B.subidas.length));
 t('se registraron las 8 en la BD', B.filasFoto.length === 8, String(B.filasFoto.length));
 t('el turno arrancó', B.orden.includes('ARRANCAR TURNO'));
 t('NO le muestra ningún aviso de foto perdida', !/no subió/.test(B.texto));
+
+console.log('\n══ ESCENARIO C · la app se muere ANTES de confirmar (2º intento del 6-sep) ══');
+nuevaIdb();
+const t0 = Date.now();
+const C1 = await correr({ fallaHasta: 0, pararEn: 'fotos' });
+const msPrimera = Date.now() - t0;
+t('el conductor alcanzó a tomar las 8 fotos antes de morirse la app', C1.capturadas === 8);
+
+// La app "muere": ventana nueva, misma base del teléfono. Es lo que hace Safari
+// cuando descarta la pestaña y el conductor vuelve a entrar.
+const C2 = await correr({ fallaHasta: 0, pararEn: 'recuperar' });
+t('al volver a abrir, LE AVISA que recuperó el avance', /Recuperamos tu avance/.test(C2.recuperado.aviso), C2.recuperado.aviso);
+t('le devuelve las 8 fotos', /8 fotos/.test(C2.recuperado.aviso), C2.recuperado.aviso);
+t('NO lo devuelve al paso 1 a empezar de cero', !/Paso 1 de 6/.test(C2.recuperado.texto), C2.recuperado.texto.slice(0, 90));
+t('lo deja listo para continuar, no para repetir', /Paso 4 de 6|Kilometraje/.test(C2.recuperado.texto), C2.recuperado.texto.slice(0, 90));
+
+console.log('\n══ COSTO · el arreglo no puede volver lenta la app ══');
+// Control: la MISMA inspección sin persistencia (como estaba antes del arreglo).
+const guardaIdb = IDB; IDB = null;
+const CTRL = await correr({ fallaHasta: 0, pararEn: 'fotos', sinIdb: true });
+IDB = guardaIdb;
+const conIdb = C1.msFotos, sinIdbMs = CTRL.msFotos;
+console.log(`  capturar las 8 fotos (300 KB c/u) SIN guardar en el teléfono: ${sinIdbMs} ms`);
+console.log(`  capturar las 8 fotos guardándolas en el teléfono:            ${conIdb} ms`);
+console.log(`  diferencia: ${conIdb - sinIdbMs} ms en toda la inspección`);
+console.log(`  aperturas de la base del teléfono: ${aperturas} (1 por carga de la app)`);
+t('abre la base una sola vez por sesión, no una por cada toque', aperturas <= 2, String(aperturas));
+t('guardar no le suma ni medio segundo a la captura completa', (conIdb - sinIdbMs) < 500,
+  `${conIdb - sinIdbMs} ms`);
 
 // Volcado del markup REAL de la pantalla final, para mirarlo con el CSS de verdad
 // en un navegador: jsdom no hace layout y el aviso nuevo hay que VERLO.
