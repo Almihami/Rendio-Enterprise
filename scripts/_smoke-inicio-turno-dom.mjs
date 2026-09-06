@@ -1,14 +1,15 @@
 // EL INICIO DE TURNO SOBREVIVE A QUE SE CAIGA UNA FOTO.
 //
 // Regresión del caso REAL del 6-sep-2026 (Juan Esteban, producción): terminó el
-// asistente completo, subieron 7 de las 8 fotos y el teléfono se murió antes de
-// la octava. Con el orden viejo —fotos primero, turno al final— no quedó NI
-// inspección NI turno: 12 minutos de trabajo perdidos, el carro retenido por un
-// borrador fantasma, y una hora después release_stale_reservations lo cerró en
-// silencio. Él se enteró solo, a las 10 de la mañana.
+// asistente completo, subieron 7 de las 8 fotos que se pedían entonces y el
+// teléfono se murió antes de la octava (hoy son 11: ver LAS_FIJAS). Con el orden
+// viejo —fotos primero, turno al final— no quedó NI inspección NI turno: 12
+// minutos de trabajo perdidos, el carro retenido por un borrador fantasma, y una
+// hora después release_stale_reservations lo cerró en silencio. Él se enteró
+// solo, a las 10 de la mañana.
 //
 // Esta prueba maneja el asistente por los MISMOS botones que toca el conductor y
-// comprueba que, con la foto 8 fallando igual que ese día, el turno sí arranca.
+// comprueba que, con una foto fallando igual que ese día, el turno sí arranca.
 //
 // LO QUE ESTO NO CUBRE: jsdom no hace layout ni corre un iPhone. Que el aviso de
 // "una foto no subió" se lea bien en pantalla pequeña, y sobre todo que Safari no
@@ -46,7 +47,13 @@ const CHECK = [
   { id: 'c2', label: 'Llantas en buen estado', category: 'Llantas' },
 ];
 const VEHICULO = { id: 'v1', internal_code: 'HYU376', license_plate: 'HYU376', brand: 'Hyundai', model: 'Accent', status: 'available', current_km: 238000 };
-const LAS_8 = ['front', 'rear', 'left', 'right', 'dashboard', 'glovebox', 'door_left', 'door_right'];
+// Las fotos fijas y obligatorias del wizard, en el mismo orden que PHOTO_SLOTS
+// (shift-flow.js). Si allá se agrega o se quita una, hay que reflejarlo acá: la
+// prueba maneja el asistente por los botones y no puede pasar de paso si falta
+// alguna. Las 3 últimas las pidió el jefe el 6-sep-2026 (migración 0079).
+const LAS_FIJAS = ['front', 'rear', 'left', 'right', 'dashboard', 'glovebox',
+                   'property_card', 'door_left', 'door_right', 'road_kit', 'spare_tire'];
+const N = LAS_FIJAS.length;
 
 // fallaHasta: cuántas veces seguidas debe fallar la subida de door_right.
 // Infinity = se cayó de verdad (el caso de Juan Esteban).
@@ -158,11 +165,14 @@ async function correr({ fallaHasta, pararEn = null, sinIdb = false }) {
   // — paso 2: checklist —
   pulsar('sf-all-ok'); await esperar(100);
   pulsar('sf-next'); await esperar(150);
-  // — paso 3: las 8 fotos, una por una, como el conductor —
+  // — paso 3: todas las fotos fijas, una por una, como el conductor —
+  // Antes de tocar ninguna: la cuadrícula vacía, que es la que hay que mirar con
+  // CSS real (jsdom no hace layout; ver DUMP_PASO_FOTOS abajo).
+  if (pararEn === 'paso-fotos') return { html: wiz().innerHTML, texto: txt() };
   // Se cronometra SOLO el trabajo de la app (capturar, comprimir, repintar y
   // guardar), sin las esperas artificiales de la prueba.
   let msFotos = 0;
-  for (const slot of LAS_8) {
+  for (const slot of LAS_FIJAS) {
     const t = Date.now();
     q(`[data-slot="${slot}"]`).click();
     const input = doc.getElementById('sf-photo-input');
@@ -173,10 +183,10 @@ async function correr({ fallaHasta, pararEn = null, sinIdb = false }) {
     msFotos += Date.now() - t;
     await esperar(40);
   }
-  const capturadas = LAS_8.length;
+  const capturadas = LAS_FIJAS.length;
   // Aquí es donde se murió el teléfono de Juan Esteban en su segundo intento:
   // con el checklist marcado y las fotos tomadas, ANTES de pulsar confirmar.
-  if (pararEn === 'fotos') { await esperar(600); return { capturadas, muerto: true, msFotos }; }
+  if (pararEn === 'fotos') { await esperar(600); return { capturadas, muerto: true, msFotos, html: wiz().innerHTML }; }
   pulsar('sf-next'); await esperar(150);
   // — paso 4: kilometraje —
   const km = doc.getElementById('sf-km');
@@ -197,10 +207,10 @@ async function correr({ fallaHasta, pararEn = null, sinIdb = false }) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-console.log('\n══ ESCENARIO A · la foto 8 se cae de verdad (el caso del 6-sep) ══');
+console.log('\n══ ESCENARIO A · una foto se cae de verdad (el caso del 6-sep) ══');
 const A = await correr({ fallaHasta: Infinity });
 
-t('el conductor sí logró capturar las 8 fotos', A.capturadas === 8, String(A.capturadas));
+t(`el conductor sí logró capturar las ${N} fotos`, A.capturadas === N, String(A.capturadas));
 t('EL TURNO ARRANCÓ pese a la foto perdida', A.orden.includes('ARRANCAR TURNO'));
 t('la inspección quedó registrada', A.orden.includes('inspección'));
 
@@ -212,10 +222,10 @@ const iFoto1 = A.orden.findIndex(x => x.startsWith('foto:'));
 t('la inspección se registra ANTES de subir fotos', iInsp >= 0 && iInsp < iFoto1, A.orden.join(' → '));
 t('el turno arranca ANTES de subir fotos', iArr >= 0 && iArr < iFoto1, A.orden.join(' → '));
 
-t('subió las 7 que sí pudo', A.subidas.length === 7, A.subidas.join(','));
+t(`subió las ${N - 1} que sí pudo`, A.subidas.length === N - 1, A.subidas.join(','));
 t('la que falló fue door_right', !A.subidas.includes('door_right'));
 t('reintentó la foto 3 veces antes de rendirse', A.intentosPorFoto.door_right === 3, String(A.intentosPorFoto.door_right));
-t('registró en la BD las 7 que sí subieron', A.filasFoto.length === 7, String(A.filasFoto.length));
+t(`registró en la BD las ${N - 1} que sí subieron`, A.filasFoto.length === N - 1, String(A.filasFoto.length));
 t('le dice al conductor que está en ruta', /Listo, en ruta/.test(A.texto), A.texto.slice(0, 120));
 t('y le avisa honestamente que faltó una foto', /una foto no subió/.test(A.texto), A.texto.slice(0, 200));
 t('le dice CUÁL faltó', /Puerta pasajero/.test(A.texto));
@@ -224,8 +234,8 @@ t('NO le dice que no se pudo completar', !/No se pudo completar/.test(A.texto));
 console.log('\n══ ESCENARIO B · bache de señal: falla 2 veces y a la tercera entra ══');
 const B = await correr({ fallaHasta: 2 });
 t('el reintento salvó la foto', B.subidas.includes('door_right'), B.subidas.join(','));
-t('subieron las 8', B.subidas.length === 8, String(B.subidas.length));
-t('se registraron las 8 en la BD', B.filasFoto.length === 8, String(B.filasFoto.length));
+t(`subieron las ${N}`, B.subidas.length === N, String(B.subidas.length));
+t(`se registraron las ${N} en la BD`, B.filasFoto.length === N, String(B.filasFoto.length));
 t('el turno arrancó', B.orden.includes('ARRANCAR TURNO'));
 t('NO le muestra ningún aviso de foto perdida', !/no subió/.test(B.texto));
 
@@ -234,13 +244,13 @@ nuevaIdb();
 const t0 = Date.now();
 const C1 = await correr({ fallaHasta: 0, pararEn: 'fotos' });
 const msPrimera = Date.now() - t0;
-t('el conductor alcanzó a tomar las 8 fotos antes de morirse la app', C1.capturadas === 8);
+t(`el conductor alcanzó a tomar las ${N} fotos antes de morirse la app`, C1.capturadas === N);
 
 // La app "muere": ventana nueva, misma base del teléfono. Es lo que hace Safari
 // cuando descarta la pestaña y el conductor vuelve a entrar.
 const C2 = await correr({ fallaHasta: 0, pararEn: 'recuperar' });
 t('al volver a abrir, LE AVISA que recuperó el avance', /Recuperamos tu avance/.test(C2.recuperado.aviso), C2.recuperado.aviso);
-t('le devuelve las 8 fotos', /8 fotos/.test(C2.recuperado.aviso), C2.recuperado.aviso);
+t(`le devuelve las ${N} fotos`, new RegExp(`${N} fotos`).test(C2.recuperado.aviso), C2.recuperado.aviso);
 // Vuelve al paso del vehículo A PROPÓSITO: mientras la app estuvo muerta el
 // barrido pudo liberar el carro, y hay que volver a reservarlo antes de seguir.
 t('vuelve por el paso del vehículo para re-reservar el carro', /Paso 1 de 6/.test(C2.recuperado.texto), C2.recuperado.texto.slice(0, 90));
@@ -253,8 +263,8 @@ const guardaIdb = IDB; IDB = null;
 const CTRL = await correr({ fallaHasta: 0, pararEn: 'fotos', sinIdb: true });
 IDB = guardaIdb;
 const conIdb = C1.msFotos, sinIdbMs = CTRL.msFotos;
-console.log(`  capturar las 8 fotos (300 KB c/u) SIN guardar en el teléfono: ${sinIdbMs} ms`);
-console.log(`  capturar las 8 fotos guardándolas en el teléfono:            ${conIdb} ms`);
+console.log(`  capturar las ${N} fotos (300 KB c/u) SIN guardar en el teléfono: ${sinIdbMs} ms`);
+console.log(`  capturar las ${N} fotos guardándolas en el teléfono:            ${conIdb} ms`);
 console.log(`  diferencia: ${conIdb - sinIdbMs} ms en toda la inspección`);
 console.log(`  aperturas de la base del teléfono: ${aperturas} (1 por carga de la app)`);
 t('abre la base una sola vez por sesión, no una por cada toque', aperturas <= 2, String(aperturas));
@@ -264,6 +274,28 @@ t('guardar no le suma ni medio segundo a la captura completa', (conIdb - sinIdbM
 // Volcado del markup REAL de la pantalla final, para mirarlo con el CSS de verdad
 // en un navegador: jsdom no hace layout y el aviso nuevo hay que VERLO.
 //   DUMP_HTML=/tmp/final.html node scripts/_smoke-inicio-turno-dom.mjs
+// El paso 3 con las 11 casillas vacías, para abrirlo en un navegador de verdad:
+//   DUMP_PASO_FOTOS=/tmp/paso3.html node scripts/_smoke-inicio-turno-dom.mjs
+if (process.env.DUMP_PASO_FOTOS) {
+  const { writeFileSync } = await import('fs');
+  // Base del teléfono limpia: si no, restaura el avance del escenario C y sale la
+  // cuadrícula ya llena en vez de la vacía, que es la que se quiere mirar.
+  nuevaIdb();
+  const P = await correr({ fallaHasta: 0, pararEn: 'paso-fotos' });
+  // Se reusa el <head> del index real (tailwind con los colores de marca, las
+  // hojas de estilo, la fuente): lo que se mira es la pantalla de verdad y no una
+  // maqueta parecida. Servirlo desde rendio-turnos/ para que las rutas resuelvan.
+  const indexHtml = readFileSync(APP + 'index.html', 'utf8');
+  const head = indexHtml.match(/<head[\s\S]*?<\/head>/i)[0];
+  // Las clases del contenedor real: sin ellas no hay overlay ni scroll propio y
+  // la pantalla se mira distinta a como se ve en el teléfono.
+  const WIZ_CLASS = (indexHtml.match(/id="shift-wizard" class="([^"]*)"/) || [, ''])[1].replace('hidden', '').trim();
+  writeFileSync(process.env.DUMP_PASO_FOTOS,
+    `<!doctype html><html lang="es">${head}<body class="bg-slate-50">
+<div id="shift-wizard" class="${WIZ_CLASS}">${P.html}</div></body></html>`);
+  console.log('\nPaso 3 (11 casillas vacías) volcado en ' + process.env.DUMP_PASO_FOTOS);
+}
+
 if (process.env.DUMP_HTML) {
   const { writeFileSync } = await import('fs');
   writeFileSync(process.env.DUMP_HTML, A.html);
