@@ -284,6 +284,7 @@
     sf.done = null;
     sf.secured = false;      // ¿el turno ya quedó registrado? (ver onConfirm)
     sf.fotosFallidas = [];   // fotos que no lograron subir pese a los reintentos
+    _ultimoGuardado = '';    // borrador nuevo: que la primera grabación sí ocurra
 
     const wiz = $('#shift-wizard');
     wiz.classList.remove('hidden');
@@ -308,6 +309,16 @@
       sfToast('No hay vehículos registrados todavía. Habla con tu admin.');
       return;
     }
+    // ¿Quedó avance de un intento anterior que se murió a media inspección?
+    // Se lo devolvemos en vez de hacerle repetir el checklist y las 8 fotos.
+    try {
+      if (await restaurarAvance()) {
+        const n = Object.keys(sf.photos).length;
+        sfToast(n
+          ? `Recuperamos tu avance: ${n} foto${n === 1 ? '' : 's'} y el checklist. Sigue donde ibas.`
+          : 'Recuperamos tu avance. Sigue donde ibas.');
+      }
+    } catch (e) { /* sin borrador recuperable: arranca limpio */ }
     render();
   }
 
@@ -321,7 +332,9 @@
 
   function tryExit() {
     const hasProgress = sf.vehicleId || Object.keys(sf.checklist).length || Object.keys(sf.photos).length;
-    if (sf.done || !hasProgress || confirm('¿Salir del inicio de turno? Se pierde el avance de la inspección.')) {
+    // Ya no se pierde nada al salir: el avance queda guardado en el teléfono y lo
+    // recupera al volver. Decirle "se pierde el avance" sería mentirle.
+    if (sf.done || !hasProgress || confirm('¿Salir del inicio de turno? Tu avance queda guardado y lo retomas al volver.')) {
       closeWizard();
       renderCard();
     }
@@ -374,8 +387,167 @@
     $('#sf-exit')?.addEventListener('click', tryExit);
   }
 
+  // ====================================================================
+  // Borrador del asistente, guardado en el teléfono (IndexedDB)
+  // ====================================================================
+  // POR QUÉ: el avance —vehículo, los 27 ítems del checklist, las 8 fotos, el
+  // kilometraje— vivía SOLO en la memoria de la página. Safari en iOS descarta la
+  // pestaña cuando el conductor bloquea el teléfono o se cambia de app, y al
+  // volver el asistente arrancaba EN BLANCO: 12 minutos de trabajo a la basura.
+  //
+  // Le pasó a Juan Esteban el 6-sep-2026 en su segundo intento (reservó 06:55, la
+  // app se recargó sola a las 06:58 y se rindió a las 07:05), y es la forma de
+  // 9 de los 26 turnos que se han perdido como borrador en producción. El
+  // reordenamiento del guardado cubre los otros 17; esto cubre estos 9.
+  //
+  // Va en IndexedDB y no en localStorage porque hay que guardar las fotos, que son
+  // Blobs (~300 KB cada una ya comprimidas) y localStorage solo admite texto.
+  const BD_NOMBRE = 'rendio-turno';
+  const BD_META = 'meta', BD_FOTOS = 'fotos';
+  const BD_VALIDO_H = 12;   // un borrador de ayer no sirve: el carro y el km cambiaron
+
+  // RENDIMIENTO: la conexión se abre UNA vez y se reutiliza. Abrir IndexedDB en
+  // cada guardado costaría una apertura por cada toque del checklist (27) y eso sí
+  // se nota en un teléfono. Nunca se cierra mientras la página viva; si el
+  // navegador la cierra por su cuenta (onclose), la siguiente llamada la reabre.
+  let _bd = null, _bdAbriendo = null;
+  function bdAbrir() {
+    if (_bd) return Promise.resolve(_bd);
+    if (_bdAbriendo) return _bdAbriendo;
+    _bdAbriendo = new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error('sin IndexedDB'));
+      const req = indexedDB.open(BD_NOMBRE, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(BD_META)) db.createObjectStore(BD_META);
+        if (!db.objectStoreNames.contains(BD_FOTOS)) db.createObjectStore(BD_FOTOS);
+      };
+      req.onsuccess = () => { _bd = req.result; _bd.onclose = () => { _bd = null; }; res(_bd); };
+      req.onerror = () => rej(req.error || new Error('no abrió IndexedDB'));
+    });
+    _bdAbriendo.catch(() => {}).then(() => { _bdAbriendo = null; });
+    return _bdAbriendo;
+  }
+  function bdOp(db, store, modo, fn) {
+    return new Promise((res, rej) => {
+      const tx = db.transaction(store, modo);
+      const pet = fn(tx.objectStore(store));
+      tx.oncomplete = () => res(pet && pet.result);
+      tx.onerror = () => rej(tx.error);
+    });
+  }
+  // Todo el guardado es "mejor esfuerzo": si el navegador no deja (modo privado,
+  // sin cuota), el asistente sigue funcionando exactamente como antes.
+  async function bdGuardar(store, clave, valor) {
+    try { const db = await bdAbrir(); await bdOp(db, store, 'readwrite', s => s.put(valor, clave)); }
+    catch (e) { /* sin persistencia: se pierde el avance, como antes */ }
+  }
+  async function bdLeerTodo() {
+    try {
+      const db = await bdAbrir();
+      const meta = await bdOp(db, BD_META, 'readonly', s => s.get('actual'));
+      const fotos = {};
+      await new Promise((res) => {
+        const tx = db.transaction(BD_FOTOS, 'readonly');
+        const cur = tx.objectStore(BD_FOTOS).openCursor();
+        cur.onsuccess = () => { const c = cur.result; if (c) { fotos[c.key] = c.value; c.continue(); } else res(); };
+        cur.onerror = () => res();
+      });
+
+      return { meta, fotos };
+    } catch (e) { return { meta: null, fotos: {} }; }
+  }
+  async function bdBorrarBorrador() {
+    try {
+      const db = await bdAbrir();
+      await bdOp(db, BD_META, 'readwrite', s => s.clear());
+      await bdOp(db, BD_FOTOS, 'readwrite', s => s.clear());
+
+    } catch (e) { /* */ }
+  }
+  async function bdBorrarFotos() {
+    try { const db = await bdAbrir(); await bdOp(db, BD_FOTOS, 'readwrite', s => s.clear()); }
+    catch (e) { /* */ }
+  }
+
+  // Guarda lo barato (todo menos las fotos). Se llama en cada render, pero NO
+  // escribe en cada render:
+  //   · agrupa los toques seguidos en una sola escritura (marcar los 27 ítems del
+  //     checklist son 27 repintados y una sola grabación, no 27);
+  //   · si nada cambió de verdad, no escribe nada.
+  // Nunca se espera (no es await): el repintado no depende de que grabe.
+  let _guardarTimer = null, _ultimoGuardado = '';
+  function guardarAvance() {
+    if (sf.done || sf.secured) return;         // ya terminó: no hay nada que rescatar
+    clearTimeout(_guardarTimer);
+    _guardarTimer = setTimeout(escribirAvance, 400);
+  }
+  function escribirAvance() {
+    if (sf.done || sf.secured) return;
+    const snap = {
+      cuando: Date.now(),
+      driverId: sf.driverId,
+      shiftId: sf.reuseShiftId,
+      vehicleId: sf.vehicleId,
+      completing: !!sf.completing,
+      step: sf.step,
+      checklist: { ...sf.checklist },
+      km: sf.km,
+      note: sf.note,
+      severity: sf.severity,
+      isApt: sf.isApt,
+      // Los ids de las fotos guardadas: si una no alcanzó a escribirse, no la
+      // damos por buena al restaurar.
+      slots: Object.keys(sf.photos),
+      extras: sf.extraPhotos.length,
+    };
+    // La marca de tiempo cambia siempre; se compara sin ella para no grabar de
+    // gratis cuando el conductor solo navegó entre pasos.
+    const huella = JSON.stringify({ ...snap, cuando: 0 });
+    if (huella === _ultimoGuardado) return;
+    _ultimoGuardado = huella;
+    bdGuardar(BD_META, 'actual', snap);
+  }
+
+  // Restaura el avance si el borrador es de ESTE conductor, reciente, y del MISMO
+  // vehículo. Lo del vehículo no es un detalle: pegarle a la inspección del carro B
+  // las fotos que se tomaron del carro A sería peor que no guardar nada.
+  async function restaurarAvance() {
+    const { meta, fotos } = await bdLeerTodo();
+    if (!meta || meta.driverId !== sf.driverId) return false;
+    if (!(Date.now() - meta.cuando < BD_VALIDO_H * 3600e3)) { bdBorrarBorrador(); return false; }
+    if (!meta.vehicleId) return false;
+    // openWizard es siempre el inicio normal; un borrador de "completar inspección
+    // diferida" es otro flujo (el turno ya está activo) y no se restaura acá.
+    if (meta.completing) return false;
+    // El vehículo del borrador tiene que seguir siendo suyo (o estar libre).
+    const v = (sf.vehicles || []).find(x => x.id === meta.vehicleId);
+    if (!v) { bdBorrarBorrador(); return false; }
+
+    sf.vehicleId = meta.vehicleId;
+    sf.checklist = meta.checklist || {};
+    sf.km = meta.km || '';
+    sf.note = meta.note || '';
+    sf.severity = meta.severity || null;
+    sf.isApt = meta.isApt !== false;
+    sf.photos = {};
+    for (const [slot, blob] of Object.entries(fotos)) {
+      if (slot === '__extras__' || !blob) continue;
+      sf.photos[slot] = { blob, url: URL.createObjectURL(blob), size: blob.size };
+    }
+    const extras = fotos.__extras__;
+    sf.extraPhotos = Array.isArray(extras)
+      ? extras.filter(Boolean).map(b => ({ blob: b, url: URL.createObjectURL(b), size: b.size }))
+      : [];
+    // Lo devuelve al paso donde estaba, sin pasarse del que puede sostener.
+    const tomadas = Object.keys(sf.photos).length;
+    sf.step = tomadas >= PHOTO_SLOTS.length ? 3 : (Object.keys(sf.checklist).length ? 2 : 1);
+    return tomadas > 0 || Object.keys(sf.checklist).length > 0;
+  }
+
   function render() {
     const wiz = $('#shift-wizard');
+    guardarAvance();
     if (sf.done) { renderDone(wiz); return; }
     // Al cambiar de vehículo se recalcula si le toca revisión de nivel (0073).
     // Es asíncrono: se repinta cuando llega, sin frenar el paso actual.
@@ -511,7 +683,20 @@
     );
     bindChrome();
     wiz.querySelectorAll('[data-vehicle]').forEach(btn => {
-      btn.addEventListener('click', () => { sf.vehicleId = btn.dataset.vehicle; render(); });
+      btn.addEventListener('click', () => {
+        // Si se cambia de carro, las fotos que hubiera son del carro anterior:
+        // atarlas a la inspección de este sería falsear la evidencia.
+        if (sf.vehicleId && sf.vehicleId !== btn.dataset.vehicle && Object.keys(sf.photos).length) {
+          Object.values(sf.photos).forEach(p => p && p.url && URL.revokeObjectURL(p.url));
+          sf.photos = {};
+          sf.extraPhotos.forEach(p => p && p.url && URL.revokeObjectURL(p.url));
+          sf.extraPhotos = [];
+          bdBorrarFotos();
+          sfToast('Cambiaste de vehículo: hay que tomar las fotos de este carro.');
+        }
+        sf.vehicleId = btn.dataset.vehicle;
+        render();
+      });
     });
     wiz.querySelectorAll('[data-oil-override]').forEach(btn => {
       btn.addEventListener('click', () => onOilOverride(btn.dataset.oilOverride));
@@ -766,10 +951,14 @@
         const blob = await compressPhoto(file);
         if (sf._slot === '__extra__') {
           sf.extraPhotos.push({ blob, url: URL.createObjectURL(blob), size: blob.size });
+          bdGuardar(BD_FOTOS, '__extras__', sf.extraPhotos.map(p => p.blob));
         } else {
           const prev = sf.photos[sf._slot];
           if (prev && prev.url) URL.revokeObjectURL(prev.url);
           sf.photos[sf._slot] = { blob, url: URL.createObjectURL(blob), size: blob.size };
+          // Al teléfono, en cuanto se toma: si Safari descarta la página, la foto
+          // sobrevive y no hay que volver a bajarse del carro a repetirla.
+          bdGuardar(BD_FOTOS, sf._slot, blob);
         }
         sf._slot = null;
         render();
@@ -1133,6 +1322,9 @@
       // al reabrir la app ve "Turno en curso". Por eso todo lo de abajo va con
       // reintentos y captura su propio error en vez de propagarlo.
       sf.secured = true;
+      // El turno ya está en la base: el borrador del teléfono deja de servir y se
+      // borra, para que el próximo inicio no arranque con las fotos de este.
+      bdBorrarBorrador();
 
       // Las fotos: cada una con 3 intentos. Una que falle de verdad no arrastra a
       // las demás — se anota y se le avisa al conductor al final.
