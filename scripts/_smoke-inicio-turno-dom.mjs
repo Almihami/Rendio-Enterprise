@@ -143,7 +143,15 @@ async function correr({ fallaHasta, pararEn = null, sinIdb = false }) {
     fotos: wiz().querySelectorAll('[data-slot] img').length,
     texto: txt(),
   };
-  if (pararEn === 'recuperar') { await esperar(300); return { recuperado, texto: txt(), html: wiz().innerHTML }; }
+  if (pararEn === 'recuperar') {
+    await esperar(300);
+    // Avanza el paso del vehículo y comprueba que el checklist siguió marcado.
+    const btnSeguir = doc.getElementById('sf-next');
+    const continuarBloqueado = !btnSeguir || btnSeguir.disabled;
+    if (!continuarBloqueado) { btnSeguir.click(); await esperar(250); }
+    const checklistMarcado = wiz().querySelectorAll('[data-check][data-val="ok"].bg-brand').length;
+    return { recuperado, continuarBloqueado, checklistMarcado, texto: txt(), html: wiz().innerHTML };
+  }
   // — paso 1: vehículo —
   pulsar('[data-vehicle="v1"]'); await esperar(100);
   pulsar('sf-next'); await esperar(200);
@@ -233,8 +241,11 @@ t('el conductor alcanzó a tomar las 8 fotos antes de morirse la app', C1.captur
 const C2 = await correr({ fallaHasta: 0, pararEn: 'recuperar' });
 t('al volver a abrir, LE AVISA que recuperó el avance', /Recuperamos tu avance/.test(C2.recuperado.aviso), C2.recuperado.aviso);
 t('le devuelve las 8 fotos', /8 fotos/.test(C2.recuperado.aviso), C2.recuperado.aviso);
-t('NO lo devuelve al paso 1 a empezar de cero', !/Paso 1 de 6/.test(C2.recuperado.texto), C2.recuperado.texto.slice(0, 90));
-t('lo deja listo para continuar, no para repetir', /Paso 4 de 6|Kilometraje/.test(C2.recuperado.texto), C2.recuperado.texto.slice(0, 90));
+// Vuelve al paso del vehículo A PROPÓSITO: mientras la app estuvo muerta el
+// barrido pudo liberar el carro, y hay que volver a reservarlo antes de seguir.
+t('vuelve por el paso del vehículo para re-reservar el carro', /Paso 1 de 6/.test(C2.recuperado.texto), C2.recuperado.texto.slice(0, 90));
+t('pero con el carro ya seleccionado, listo para continuar', !C2.continuarBloqueado, 'el botón Continuar salió deshabilitado');
+t('y conserva el checklist marcado', C2.checklistMarcado === 2, String(C2.checklistMarcado));
 
 console.log('\n══ COSTO · el arreglo no puede volver lenta la app ══');
 // Control: la MISMA inspección sin persistencia (como estaba antes del arreglo).
