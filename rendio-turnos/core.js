@@ -10,7 +10,13 @@
   // primero planea, el segundo recibe alertas de operación a las 4 de la mañana.
   // Varias decisiones de UI (instalar la PWA, activar notificaciones) dependen de
   // distinguirlos.
-  const adminOnPhone = () => window.matchMedia('(max-width: 820px)').matches;
+  // 768px NO es un número al azar: es el MISMO corte con el que styles.css pasa el
+  // admin a una columna y convierte el sidebar en cajón deslizante. Estuvo en 820
+  // y los dos umbrales se contradecían: entre 769 y 820 la app se creía celular
+  // mientras el layout seguía siendo el de escritorio. En esa franja —donde cae un
+  // computador con el zoom del navegador subido— el aviso de notificaciones se
+  // pintaba encima del sidebar. Si se cambia este número, cámbiese el del CSS.
+  const adminOnPhone = () => window.matchMedia('(max-width: 768px)').matches;
 
   let lastAutoWeek = Scheduler.defaultWeekISO(new Date());
 

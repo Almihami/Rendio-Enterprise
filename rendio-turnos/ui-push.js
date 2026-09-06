@@ -129,6 +129,8 @@
   // Inyecta el botón "Activar notificaciones" si aplica (no soportado / ya
   // suscrito / permiso denegado → no se muestra).
   async function setupPushUI() {
+    // El vigilante de abajo puede dispararlo antes de que alguien entre.
+    if (!state || !state.profile) return;
     const existing = document.getElementById('enable-push-bar');
     // El admin en el COMPUTADOR sigue sin barra: es un módulo de escritorio y la
     // barra se quitó a propósito en junio para no ensuciar la consola. En el
@@ -144,24 +146,50 @@
     if (alreadySub) { existing?.remove(); return; }
 
     // Contenedor según el rol (conductor: dentro de la pestaña Inicio).
+    //
+    // OJO CON EL ADMIN: antes esta barra se metía como primer hijo de #app-shell,
+    // pero en el rol admin ese elemento es una REJILLA con las posiciones puestas
+    // a mano (#admin-side en la columna 1; #admin-mhead y #app-main en la 2). Un
+    // hijo suelto, sin posición asignada, lo colocaba el navegador solo: caía en
+    // la columna del sidebar y partía el texto en siete líneas dentro de 330 px.
+    // Se veía en la franja donde los dos umbrales se contradecían (ver
+    // adminOnPhone en core.js). Metiéndola en #app-main —la columna del
+    // contenido— queda bien a cualquier ancho, aunque los cortes vuelvan a
+    // separarse: no depende de que la rejilla tenga una columna o dos.
     const host = state.profile.role === 'admin'
-      ? document.getElementById('app-shell')
+      ? document.getElementById('app-main')
       : document.querySelector('#driver-tabs-root [data-dtab="home"]');
     if (!host) return;
     if (existing) return; // ya está
     const bar = document.createElement('div');
     bar.id = 'enable-push-bar';
     bar.className = 'push-bar';
+    // Corto a propósito: es un aviso, no un instructivo. El detalle de por qué
+    // importa ya lo sabe quien lo activa, y siete líneas en un aviso no se leen.
     const texto = state.profile.role === 'admin'
-      ? '🔔 Activa las notificaciones en este celular: es como te enteras de una falla mecánica o una emergencia de madrugada, sin tener la app abierta.'
+      ? '🔔 Activa las notificaciones y entérate de una emergencia de madrugada sin tener la app abierta.'
       : '🔔 Activa las notificaciones: mensajes de tus pasajeros, cambios de ruta, turnos y horarios.';
     bar.innerHTML = `<span>${texto}</span>
       <button id="enable-push-btn" class="wk-btn wk-coord-on" style="flex:0 0 auto;">Activar</button>`;
-    // Admin: arriba del shell. Conductor: al final del Inicio (debajo de las 2 tarjetas).
+    // Admin: arriba del contenido. Conductor: al final del Inicio (bajo las 2 tarjetas).
     if (state.profile.role === 'admin') host.insertBefore(bar, host.firstChild);
     else host.appendChild(bar);
     document.getElementById('enable-push-btn').addEventListener('click', enablePush);
   }
+
+  // El "¿es un celular?" se evaluaba UNA sola vez, al entrar. Si el jefe cambiaba
+  // el zoom del navegador o el tamaño de la ventana, la barra se quedaba puesta
+  // (o no aparecía) hasta recargar. Ahora se vuelve a decidir cuando la condición
+  // cambia de verdad, que es como se descubrió esto: con el zoom del navegador,
+  // una ventana de escritorio baja de 820 px CSS y la app la toma por celular.
+  function watchAdminPhone() {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia('(max-width: 768px)');
+    const alCambiar = () => { setupPushUI().catch(() => {}); };
+    if (mq.addEventListener) mq.addEventListener('change', alCambiar);
+    else if (mq.addListener) mq.addListener(alCambiar);   // Safari viejo
+  }
+  watchAdminPhone();
 
   // Aviso a los jefes de operación por una eventualidad.
   //
