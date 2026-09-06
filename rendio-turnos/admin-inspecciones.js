@@ -12,8 +12,10 @@
     grave: { cls: 'grave', label: 'Grave', text: 'Grave · requiere atención', color: 'var(--red)' },
   };
   const INSP_ST = { pending: ['pend', 'Pendiente', 'i-warn'], approved: ['appr', 'Aprobada', 'i-check'], rejected: ['rej', 'Rechazada', 'i-x'] };
-  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero', glovebox: 'Guantera', door_left: 'Puerta cond.', door_right: 'Puerta pas.', damage: 'Golpe/daño', extra: 'Adicional' };
-  const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard', 'glovebox', 'door_left', 'door_right'];
+  const PHOTO_LABELS = { front: 'Frontal', rear: 'Trasera', left: 'Lat. izq.', right: 'Lat. der.', dashboard: 'Tablero', glovebox: 'Guantera', property_card: 'Tarjeta prop.', door_left: 'Puerta cond.', door_right: 'Puerta pas.', road_kit: 'Kit carretera', spare_tire: 'Llanta rep.', damage: 'Golpe/daño', extra: 'Adicional' };
+  // Mismo orden que el wizard del conductor (shift-flow.js PHOTO_SLOTS): el admin
+  // las revisa en el orden en que el conductor las tomó.
+  const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard', 'glovebox', 'property_card', 'door_left', 'door_right', 'road_kit', 'spare_tire'];
 
   function inspShowView(v) {
     $$('#inspections-ui .view').forEach(s => s.classList.toggle('on', s.id === 'insp-v-' + v));
@@ -322,8 +324,17 @@
     return inspState.items.find(x => x.id === id) || inspState.autoItems.find(x => x.id === id) || (inspState.current && inspState.current.id === id ? inspState.current : null);
   }
 
+  // La tira de miniaturas de la tarjeta es DECORACIÓN: iconos grises fijos, no las
+  // fotos de verdad (esas se cargan solo al abrir el detalle). A propósito NO va
+  // atada a PHOTO_ORDER: al pasar de 8 a 11 tipos (0079) la tira crecía 123 px y,
+  // como la tercera columna de .icard mide `auto`, se comía el nombre del
+  // conductor —de 189 a 66 px— en paneles angostos. El detalle sí las muestra
+  // todas, con su nombre. Si algún día han de ser las fotos reales, es otro
+  // trabajo: hay que pedirlas en la consulta de la lista.
+  const THUMBS_DECORATIVOS = 8;
   function inspThumbsHtml() {
-    return `<div class="thumbs">${PHOTO_ORDER.map(() => `<span class="thumb"><svg class="icon"><use href="#i-cam"/></svg></span>`).join('')}</div>`;
+    return `<div class="thumbs">${Array.from({ length: THUMBS_DECORATIVOS },
+      () => `<span class="thumb"><svg class="icon"><use href="#i-cam"/></svg></span>`).join('')}</div>`;
   }
   function inspCardHtml(it) {
     const sev = INSP_SEV[inspSeverityOf(it)] || INSP_SEV.media;
@@ -390,7 +401,7 @@
     const st = INSP_ST[insp.review_status] || INSP_ST.pending;
     const items = inspChecklistOf(insp);
     const fallas = items.filter(i => i.result === 'issue').length;
-    // Orden: los 5 ángulos fijos primero (en orden), luego golpe y adicionales.
+    // Orden: los 11 fijos primero (en el orden del wizard), luego golpe y adicionales.
     const photoRank = (t) => { const i = PHOTO_ORDER.indexOf(t); return i === -1 ? 99 : i; };
     const photos = (insp.inspection_photos || []).slice().sort((a, b) => photoRank(a.photo_type) - photoRank(b.photo_type));
     const photosHtml = photos.length ? photos.map(p => {
