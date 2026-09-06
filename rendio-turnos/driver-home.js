@@ -39,7 +39,16 @@
 
   // ---- Navegación del conductor: pestañas inferiores (home/avail/schedule/requests) ----
 
-  // Muestra la barra inferior (la primera vez que el conductor entra a un módulo).
+  // Muestra la barra inferior.
+  //
+  // ANTES SOLO APARECÍA AL ENTRAR A UN MÓDULO, y eso dejaba al conductor
+  // encerrado en Inicio: la barra era el único camino a Mi horario, Solicitudes
+  // y Perfil, y la barra no salía hasta haber ido a uno de ellos. El único
+  // atajo era el aviso de "te faltan jornadas por marcar", que desaparece en
+  // cuanto marca la semana (driver-tabs.js, renderDriverHomeNudge).
+  //
+  // Lo reportó la profa el 4-sep-2026 mirando la app de Daniel en PRODUCCIÓN:
+  // turno en curso, disponibilidad ya marcada, y sin barra. Sin salida.
   function revealDriverNav() {
     if (state.driverNavRevealed) return;
     state.driverNavRevealed = true;
@@ -49,7 +58,7 @@
 
   function setDriverTab(name) {
     state.driverTab = name;
-    if (name !== 'home') revealDriverNav(); // entrar a un módulo revela la barra
+    revealDriverNav();   // siempre: Inicio también es una pestaña de la barra
     $$('#driver-tabs-root .driver-panel').forEach(p => p.classList.toggle('hidden', p.dataset.dtab !== name));
     $$('#driver-nav .dnav-btn').forEach(b => b.classList.toggle('active', b.dataset.dtab === name));
     // Barra de semana: solo en Mi horario. Disponibilidad trae la suya dentro
