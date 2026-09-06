@@ -148,7 +148,7 @@ async function correr({ fallaHasta }) {
   // Los reintentos esperan 0,8s y 1,6s: hay que dejarlos correr enteros.
   await esperar(4000);
 
-  return { orden, subidas, filasFoto, texto: txt(), capturadas, intentosPorFoto };
+  return { orden, subidas, filasFoto, texto: txt(), capturadas, intentosPorFoto, html: wiz().innerHTML };
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -184,5 +184,16 @@ t('se registraron las 8 en la BD', B.filasFoto.length === 8, String(B.filasFoto.
 t('el turno arrancó', B.orden.includes('ARRANCAR TURNO'));
 t('NO le muestra ningún aviso de foto perdida', !/no subió/.test(B.texto));
 
+// Volcado del markup REAL de la pantalla final, para mirarlo con el CSS de verdad
+// en un navegador: jsdom no hace layout y el aviso nuevo hay que VERLO.
+//   DUMP_HTML=/tmp/final.html node scripts/_smoke-inicio-turno-dom.mjs
+if (process.env.DUMP_HTML) {
+  const { writeFileSync } = await import('fs');
+  writeFileSync(process.env.DUMP_HTML, A.html);
+  console.log('\nHTML de la pantalla final volcado en ' + process.env.DUMP_HTML);
+}
+
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ` · ${bad} FALLARON` : ''}`);
+console.log('NO cubierto: layout real. Que el aviso se lea en un iPhone —y sobre todo');
+console.log('que Safari no mate la página a media subida— solo se ve en un teléfono.');
 process.exit(bad ? 1 : 0);
