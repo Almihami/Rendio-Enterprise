@@ -4,9 +4,12 @@
 //   2. Checklist pre-operacional  5. Novedades / observaciones
 //   3. Fotos (8: 5 exteriores + guantera y 2 puertas)  6. Confirmar e iniciar
 //
-// Persistencia (al confirmar, en orden):
-//   fotos → bucket 'inspections' · shift → shifts · inspección → inspections
-//   → inspection_photos · novedades → incidents · RPC start_shift/abort_shift.
+// Persistencia (al confirmar, en orden) — REORDENADO el 2026-09-06:
+//   1. shift → shifts  2. inspección → inspections  3. RPC start_shift/abort_shift
+//   …el turno ya está asegurado…
+//   4. fotos → bucket 'inspections'  5. inspection_photos  6. novedades → incidents
+// Los pasos 4-6 van con reintentos y NO pueden tumbar el turno. Ver onConfirm
+// para por qué (caso Juan Esteban, producción).
 //
 // Integración: app.js llama ShiftFlow.init(profile) al entrar como conductor.
 (function () {
@@ -279,6 +282,9 @@
     sf.signed = false;
     sf.saving = false;
     sf.done = null;
+    sf.secured = false;      // ¿el turno ya quedó registrado? (ver onConfirm)
+    sf.fotosFallidas = [];   // fotos que no lograron subir pese a los reintentos
+    _ultimoGuardado = '';    // borrador nuevo: que la primera grabación sí ocurra
 
     const wiz = $('#shift-wizard');
     wiz.classList.remove('hidden');
@@ -303,6 +309,16 @@
       sfToast('No hay vehículos registrados todavía. Habla con tu admin.');
       return;
     }
+    // ¿Quedó avance de un intento anterior que se murió a media inspección?
+    // Se lo devolvemos en vez de hacerle repetir el checklist y las 8 fotos.
+    try {
+      if (await restaurarAvance()) {
+        const n = Object.keys(sf.photos).length;
+        sfToast(n
+          ? `Recuperamos tu avance: ${n} foto${n === 1 ? '' : 's'} y el checklist. Sigue donde ibas.`
+          : 'Recuperamos tu avance. Sigue donde ibas.');
+      }
+    } catch (e) { /* sin borrador recuperable: arranca limpio */ }
     render();
   }
 
@@ -316,7 +332,9 @@
 
   function tryExit() {
     const hasProgress = sf.vehicleId || Object.keys(sf.checklist).length || Object.keys(sf.photos).length;
-    if (sf.done || !hasProgress || confirm('¿Salir del inicio de turno? Se pierde el avance de la inspección.')) {
+    // Ya no se pierde nada al salir: el avance queda guardado en el teléfono y lo
+    // recupera al volver. Decirle "se pierde el avance" sería mentirle.
+    if (sf.done || !hasProgress || confirm('¿Salir del inicio de turno? Tu avance queda guardado y lo retomas al volver.')) {
       closeWizard();
       renderCard();
     }
@@ -369,8 +387,172 @@
     $('#sf-exit')?.addEventListener('click', tryExit);
   }
 
+  // ====================================================================
+  // Borrador del asistente, guardado en el teléfono (IndexedDB)
+  // ====================================================================
+  // POR QUÉ: el avance —vehículo, los 27 ítems del checklist, las 8 fotos, el
+  // kilometraje— vivía SOLO en la memoria de la página. Safari en iOS descarta la
+  // pestaña cuando el conductor bloquea el teléfono o se cambia de app, y al
+  // volver el asistente arrancaba EN BLANCO: 12 minutos de trabajo a la basura.
+  //
+  // Le pasó a Juan Esteban el 6-sep-2026 en su segundo intento (reservó 06:55, la
+  // app se recargó sola a las 06:58 y se rindió a las 07:05), y es la forma de
+  // 9 de los 26 turnos que se han perdido como borrador en producción. El
+  // reordenamiento del guardado cubre los otros 17; esto cubre estos 9.
+  //
+  // Va en IndexedDB y no en localStorage porque hay que guardar las fotos, que son
+  // Blobs (~300 KB cada una ya comprimidas) y localStorage solo admite texto.
+  const BD_NOMBRE = 'rendio-turno';
+  const BD_META = 'meta', BD_FOTOS = 'fotos';
+  const BD_VALIDO_H = 12;   // un borrador de ayer no sirve: el carro y el km cambiaron
+
+  // RENDIMIENTO: la conexión se abre UNA vez y se reutiliza. Abrir IndexedDB en
+  // cada guardado costaría una apertura por cada toque del checklist (27) y eso sí
+  // se nota en un teléfono. Nunca se cierra mientras la página viva; si el
+  // navegador la cierra por su cuenta (onclose), la siguiente llamada la reabre.
+  let _bd = null, _bdAbriendo = null;
+  function bdAbrir() {
+    if (_bd) return Promise.resolve(_bd);
+    if (_bdAbriendo) return _bdAbriendo;
+    _bdAbriendo = new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error('sin IndexedDB'));
+      const req = indexedDB.open(BD_NOMBRE, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(BD_META)) db.createObjectStore(BD_META);
+        if (!db.objectStoreNames.contains(BD_FOTOS)) db.createObjectStore(BD_FOTOS);
+      };
+      req.onsuccess = () => { _bd = req.result; _bd.onclose = () => { _bd = null; }; res(_bd); };
+      req.onerror = () => rej(req.error || new Error('no abrió IndexedDB'));
+    });
+    _bdAbriendo.catch(() => {}).then(() => { _bdAbriendo = null; });
+    return _bdAbriendo;
+  }
+  function bdOp(db, store, modo, fn) {
+    return new Promise((res, rej) => {
+      const tx = db.transaction(store, modo);
+      const pet = fn(tx.objectStore(store));
+      tx.oncomplete = () => res(pet && pet.result);
+      tx.onerror = () => rej(tx.error);
+    });
+  }
+  // Todo el guardado es "mejor esfuerzo": si el navegador no deja (modo privado,
+  // sin cuota), el asistente sigue funcionando exactamente como antes.
+  async function bdGuardar(store, clave, valor) {
+    try { const db = await bdAbrir(); await bdOp(db, store, 'readwrite', s => s.put(valor, clave)); }
+    catch (e) { /* sin persistencia: se pierde el avance, como antes */ }
+  }
+  async function bdLeerTodo() {
+    try {
+      const db = await bdAbrir();
+      const meta = await bdOp(db, BD_META, 'readonly', s => s.get('actual'));
+      const fotos = {};
+      await new Promise((res) => {
+        const tx = db.transaction(BD_FOTOS, 'readonly');
+        const cur = tx.objectStore(BD_FOTOS).openCursor();
+        cur.onsuccess = () => { const c = cur.result; if (c) { fotos[c.key] = c.value; c.continue(); } else res(); };
+        cur.onerror = () => res();
+      });
+
+      return { meta, fotos };
+    } catch (e) { return { meta: null, fotos: {} }; }
+  }
+  async function bdBorrarBorrador() {
+    try {
+      const db = await bdAbrir();
+      await bdOp(db, BD_META, 'readwrite', s => s.clear());
+      await bdOp(db, BD_FOTOS, 'readwrite', s => s.clear());
+
+    } catch (e) { /* */ }
+  }
+  async function bdBorrarFotos() {
+    try { const db = await bdAbrir(); await bdOp(db, BD_FOTOS, 'readwrite', s => s.clear()); }
+    catch (e) { /* */ }
+  }
+
+  // Guarda lo barato (todo menos las fotos). Se llama en cada render, pero NO
+  // escribe en cada render:
+  //   · agrupa los toques seguidos en una sola escritura (marcar los 27 ítems del
+  //     checklist son 27 repintados y una sola grabación, no 27);
+  //   · si nada cambió de verdad, no escribe nada.
+  // Nunca se espera (no es await): el repintado no depende de que grabe.
+  let _guardarTimer = null, _ultimoGuardado = '';
+  function guardarAvance() {
+    if (sf.done || sf.secured) return;         // ya terminó: no hay nada que rescatar
+    clearTimeout(_guardarTimer);
+    _guardarTimer = setTimeout(escribirAvance, 400);
+  }
+  function escribirAvance() {
+    if (sf.done || sf.secured) return;
+    const snap = {
+      cuando: Date.now(),
+      driverId: sf.driverId,
+      shiftId: sf.reuseShiftId,
+      vehicleId: sf.vehicleId,
+      completing: !!sf.completing,
+      step: sf.step,
+      checklist: { ...sf.checklist },
+      km: sf.km,
+      note: sf.note,
+      severity: sf.severity,
+      isApt: sf.isApt,
+      // Los ids de las fotos guardadas: si una no alcanzó a escribirse, no la
+      // damos por buena al restaurar.
+      slots: Object.keys(sf.photos),
+      extras: sf.extraPhotos.length,
+    };
+    // La marca de tiempo cambia siempre; se compara sin ella para no grabar de
+    // gratis cuando el conductor solo navegó entre pasos.
+    const huella = JSON.stringify({ ...snap, cuando: 0 });
+    if (huella === _ultimoGuardado) return;
+    _ultimoGuardado = huella;
+    bdGuardar(BD_META, 'actual', snap);
+  }
+
+  // Restaura el avance si el borrador es de ESTE conductor, reciente, y del MISMO
+  // vehículo. Lo del vehículo no es un detalle: pegarle a la inspección del carro B
+  // las fotos que se tomaron del carro A sería peor que no guardar nada.
+  async function restaurarAvance() {
+    const { meta, fotos } = await bdLeerTodo();
+    if (!meta || meta.driverId !== sf.driverId) return false;
+    if (!(Date.now() - meta.cuando < BD_VALIDO_H * 3600e3)) { bdBorrarBorrador(); return false; }
+    if (!meta.vehicleId) return false;
+    // openWizard es siempre el inicio normal; un borrador de "completar inspección
+    // diferida" es otro flujo (el turno ya está activo) y no se restaura acá.
+    if (meta.completing) return false;
+    // El vehículo del borrador tiene que seguir siendo suyo (o estar libre).
+    const v = (sf.vehicles || []).find(x => x.id === meta.vehicleId);
+    if (!v) { bdBorrarBorrador(); return false; }
+
+    sf.vehicleId = meta.vehicleId;
+    sf.checklist = meta.checklist || {};
+    sf.km = meta.km || '';
+    sf.note = meta.note || '';
+    sf.severity = meta.severity || null;
+    sf.isApt = meta.isApt !== false;
+    sf.photos = {};
+    for (const [slot, blob] of Object.entries(fotos)) {
+      if (slot === '__extras__' || !blob) continue;
+      sf.photos[slot] = { blob, url: URL.createObjectURL(blob), size: blob.size };
+    }
+    const extras = fotos.__extras__;
+    sf.extraPhotos = Array.isArray(extras)
+      ? extras.filter(Boolean).map(b => ({ blob: b, url: URL.createObjectURL(b), size: b.size }))
+      : [];
+    // Vuelve al PASO 1 (vehículo), con el carro ya preseleccionado, en vez de
+    // saltar directo al kilometraje. No es por prudencia de más: mientras la app
+    // estuvo muerta, el barrido pudo liberar el carro y dejarlo sin reserva. Pasar
+    // otra vez por este paso vuelve a reservarlo (reserveAndAdvance) y, si otro
+    // conductor ya se lo llevó, se entera AHORA y no al final. Los pasos que ya
+    // tiene completos se pasan de un toque.
+    sf.step = 0;
+    const tomadas = Object.keys(sf.photos).length;
+    return tomadas > 0 || Object.keys(sf.checklist).length > 0;
+  }
+
   function render() {
     const wiz = $('#shift-wizard');
+    guardarAvance();
     if (sf.done) { renderDone(wiz); return; }
     // Al cambiar de vehículo se recalcula si le toca revisión de nivel (0073).
     // Es asíncrono: se repinta cuando llega, sin frenar el paso actual.
@@ -506,7 +688,20 @@
     );
     bindChrome();
     wiz.querySelectorAll('[data-vehicle]').forEach(btn => {
-      btn.addEventListener('click', () => { sf.vehicleId = btn.dataset.vehicle; render(); });
+      btn.addEventListener('click', () => {
+        // Si se cambia de carro, las fotos que hubiera son del carro anterior:
+        // atarlas a la inspección de este sería falsear la evidencia.
+        if (sf.vehicleId && sf.vehicleId !== btn.dataset.vehicle && Object.keys(sf.photos).length) {
+          Object.values(sf.photos).forEach(p => p && p.url && URL.revokeObjectURL(p.url));
+          sf.photos = {};
+          sf.extraPhotos.forEach(p => p && p.url && URL.revokeObjectURL(p.url));
+          sf.extraPhotos = [];
+          bdBorrarFotos();
+          sfToast('Cambiaste de vehículo: hay que tomar las fotos de este carro.');
+        }
+        sf.vehicleId = btn.dataset.vehicle;
+        render();
+      });
     });
     wiz.querySelectorAll('[data-oil-override]').forEach(btn => {
       btn.addEventListener('click', () => onOilOverride(btn.dataset.oilOverride));
@@ -761,10 +956,14 @@
         const blob = await compressPhoto(file);
         if (sf._slot === '__extra__') {
           sf.extraPhotos.push({ blob, url: URL.createObjectURL(blob), size: blob.size });
+          bdGuardar(BD_FOTOS, '__extras__', sf.extraPhotos.map(p => p.blob));
         } else {
           const prev = sf.photos[sf._slot];
           if (prev && prev.url) URL.revokeObjectURL(prev.url);
           sf.photos[sf._slot] = { blob, url: URL.createObjectURL(blob), size: blob.size };
+          // Al teléfono, en cuanto se toma: si Safari descarta la página, la foto
+          // sobrevive y no hay que volver a bajarse del carro a repetirla.
+          bdGuardar(BD_FOTOS, sf._slot, blob);
         }
         sf._slot = null;
         render();
@@ -984,6 +1183,38 @@
     $('#sf-confirm').addEventListener('click', onConfirm);
   }
 
+  // Reintento con espera creciente. La subida de una foto por celular en carretera
+  // falla por nada —un bache de señal de un segundo— y antes eso bastaba para tumbar
+  // el inicio de turno completo. Tres intentos (0,8s y 1,6s de espera) cubren el bache
+  // sin dejar al conductor esperando si de verdad no hay red.
+  async function conReintento(fn, intentos = 3) {
+    let ultimo;
+    for (let i = 1; i <= intentos; i++) {
+      try { return await fn(); }
+      catch (e) {
+        ultimo = e;
+        // Un rechazo del servidor (permiso, vehículo ocupado) no mejora reintentando.
+        if (/VEHICLE_|NOT_A_DRIVER|NOT_SHIFT_OWNER|INVALID_SHIFT_STATUS|403|401/.test(e && e.message || '')) break;
+        if (i < intentos) await new Promise(r => setTimeout(r, 800 * i));
+      }
+    }
+    throw ultimo;
+  }
+
+  // start_shift con reintento, pero verificando antes de dar por perdido el turno.
+  // Si el servidor ya lo activó y lo que se perdió fue la RESPUESTA, el reintento
+  // rebota con INVALID_SHIFT_STATUS ("ya está active"). Eso no es un fallo: el
+  // conductor está en ruta. Preguntamos por su turno abierto antes de asustarlo.
+  async function arrancarTurno(shiftId) {
+    try {
+      return await conReintento(() => Api.startShift(shiftId));
+    } catch (e) {
+      const abierto = await Api.getMyOpenShift(sf.driverId).catch(() => null);
+      if (abierto && (abierto.status === 'active' || abierto.status === 'closing')) return abierto;
+      throw e;
+    }
+  }
+
   async function onConfirm() {
     if (sf.saving) return;
     sf.saving = true;
@@ -1029,39 +1260,25 @@
       }
       const today = new Date().toISOString().slice(0, 10);
 
-      const slots = activePhotoSlots().filter(s => sf.photos[s.id]);
-      const photoRows = [];
-      for (let i = 0; i < slots.length; i++) {
-        const s = slots[i];
-        setState(`Subiendo fotos (${i + 1}/${slots.length})…`);
-        const path = `${org}/${v.id}/${today}/${inspectionId}/${s.id}.jpg`;
-        await Api.uploadInspectionPhoto(path, sf.photos[s.id].blob);
-        photoRows.push({
-          inspection_id: inspectionId,
-          organization_id: org,
-          photo_type: s.id,
-          storage_path: path,
-          size_bytes: sf.photos[s.id].size,
-        });
-      }
-
-      // Fotos adicionales (a criterio del conductor): photo_type 'extra', path único.
-      for (let i = 0; i < sf.extraPhotos.length; i++) {
-        const ep = sf.extraPhotos[i];
-        setState(`Subiendo foto adicional (${i + 1}/${sf.extraPhotos.length})…`);
-        const path = `${org}/${v.id}/${today}/${inspectionId}/extra-${i + 1}.jpg`;
-        await Api.uploadInspectionPhoto(path, ep.blob);
-        photoRows.push({
-          inspection_id: inspectionId,
-          organization_id: org,
-          photo_type: 'extra',
-          storage_path: path,
-          size_bytes: ep.size,
-        });
-      }
-
+      // ORDEN DEL GUARDADO — cambiado el 2026-09-06 tras el caso de Juan Esteban.
+      //
+      // ANTES: se subían las 8 fotos y SOLO al final se creaba la inspección y se
+      // activaba el turno. Eran 11 peticiones encadenadas y el turno no existía
+      // hasta la última: si el teléfono se moría en la foto 8 (iOS descartando la
+      // página, o un bache de señal), no quedaba NI inspección NI turno — solo
+      // fotos huérfanas en el Storage. El conductor había hecho los 12 minutos de
+      // trabajo y la app no guardaba nada. Peor: el turno quedaba de borrador
+      // reteniendo el vehículo, y una hora después release_stale_reservations lo
+      // cerraba en silencio ("RESERVA EXPIRADA"). Él se enteraba por su cuenta.
+      //
+      // AHORA: primero se registra la inspección y se decide el turno (3 peticiones
+      // de texto, ~2 segundos) y DESPUÉS se suben las fotos, con reintentos y sin
+      // poder de tumbar nada. Si una foto se pierde de verdad, queda una inspección
+      // con un hueco visible en vez de un turno que nunca existió: mejor dato.
       setState('Registrando inspección…');
-      await Api.createInspection({
+      // Con reintento: createInspection es idempotente (si la inicial ya existe,
+      // atrapa el duplicado y devuelve la que hay), así que reintentar es seguro.
+      const filaInspeccion = {
         id: inspectionId,
         organization_id: org,
         shift_id: shiftId,
@@ -1078,23 +1295,8 @@
         is_apt: sf.isApt,
         signed_name: (sf.profile && sf.profile.full_name) || null,
         notes: sf.note || null,
-      });
-      await Api.addInspectionPhotos(photoRows);
-
-      if (issues.length) {
-        setState('Reportando novedad…');
-        const sevMap = { leve: 'low', media: 'medium', grave: 'high' };
-        const description = `Inspección de inicio de turno — ${issues.map(i => i.label).join(', ')}. ${sf.note || ''}`.trim();
-        await Api.addIncident({
-          organizationId: org,
-          reporterId: sf.profile.id,
-          shiftId,
-          vehicleId: v.id,
-          category: 'vehicle_problem',
-          severity: sevMap[sf.severity] || 'low',
-          description,
-        });
-      }
+      };
+      await conReintento(() => Api.createInspection(filaInspeccion));
 
       if (sf.completing) {
         // La inspección quedó registrada; limpiamos el plazo. El turno sigue activo.
@@ -1110,7 +1312,7 @@
         sf.done = 'aborted';
       } else {
         setState('Iniciando turno…');
-        await Api.startShift(shiftId);
+        await arrancarTurno(shiftId);
         sf.done = 'started';
         // La revisión de nivel quedó hecha: no se vuelve a pedir hasta el
         // siguiente múltiplo de km (0073). Best-effort, nunca frena el turno.
@@ -1119,12 +1321,82 @@
           try { await Api.markInspectionTiersDone(sf.vehicleId, kmDone); } catch (_) { /* */ }
         }
       }
+
+      // A PARTIR DE AQUÍ EL TURNO YA ESTÁ ASEGURADO. Nada de lo que sigue puede
+      // tumbarlo: si el teléfono se muere ahora, el conductor ya está en turno y
+      // al reabrir la app ve "Turno en curso". Por eso todo lo de abajo va con
+      // reintentos y captura su propio error en vez de propagarlo.
+      sf.secured = true;
+      // El turno ya está en la base: el borrador del teléfono deja de servir y se
+      // borra, para que el próximo inicio no arranque con las fotos de este.
+      bdBorrarBorrador();
+
+      // Las fotos: cada una con 3 intentos. Una que falle de verdad no arrastra a
+      // las demás — se anota y se le avisa al conductor al final.
+      const slots = activePhotoSlots().filter(s => sf.photos[s.id]);
+      const pendientes = slots.map(s => ({
+        path: `${org}/${v.id}/${today}/${inspectionId}/${s.id}.jpg`,
+        blob: sf.photos[s.id].blob, size: sf.photos[s.id].size,
+        type: s.id, label: s.label || s.id,
+      })).concat(sf.extraPhotos.map((ep, i) => ({
+        path: `${org}/${v.id}/${today}/${inspectionId}/extra-${i + 1}.jpg`,
+        blob: ep.blob, size: ep.size,
+        type: 'extra', label: `adicional ${i + 1}`,
+      })));
+
+      const photoRows = [];
+      const fallidas = [];
+      for (let i = 0; i < pendientes.length; i++) {
+        const f = pendientes[i];
+        setState(`Subiendo fotos (${i + 1}/${pendientes.length})…`);
+        try {
+          await conReintento(() => Api.uploadInspectionPhoto(f.path, f.blob));
+          photoRows.push({
+            inspection_id: inspectionId,
+            organization_id: org,
+            photo_type: f.type,
+            storage_path: f.path,
+            size_bytes: f.size,
+          });
+        } catch (e) {
+          console.error('foto ' + f.label, e);
+          fallidas.push(f.label);
+        }
+      }
+      sf.fotosFallidas = fallidas;
+      // Registrar las que sí subieron (addInspectionPhotos ya deduplica).
+      if (photoRows.length) {
+        try { await conReintento(() => Api.addInspectionPhotos(photoRows)); }
+        catch (e) { console.error('registro de fotos', e); }
+      }
+
+      if (issues.length) {
+        setState('Reportando novedad…');
+        const sevMap = { leve: 'low', media: 'medium', grave: 'high' };
+        const description = `Inspección de inicio de turno — ${issues.map(i => i.label).join(', ')}. ${sf.note || ''}`.trim();
+        try {
+          await conReintento(() => Api.addIncident({
+            organizationId: org,
+            reporterId: sf.profile.id,
+            shiftId,
+            vehicleId: v.id,
+            category: 'vehicle_problem',
+            severity: sevMap[sf.severity] || 'low',
+            description,
+          }));
+        } catch (e) { console.error('novedad', e); }
+      }
+
       sf.reuseShiftId = null;
       sf.completing = false;
       render();
     } catch (e) {
       console.error(e);
       setState('');
+      // Si el turno ya quedó asegurado, esto NO es un fallo del inicio: lo que se
+      // cayó fue algo posterior. Mentirle con "no se pudo completar" lo mandaría a
+      // repetir un turno que ya existe (y a chocar contra ALREADY_ON_SHIFT).
+      if (sf.secured) { sf.reuseShiftId = null; sf.completing = false; sf.saving = false; render(); return; }
       btn.disabled = false;
       sf.saving = false;
       const msg = (e && e.message) || 'error desconocido';
@@ -1161,10 +1433,19 @@
     }
     // Con el turno activo, el siguiente paso natural es VER LA RUTA DEL DÍA.
     const activeTurno = !(d === 'aborted' || d === 'completed-noapt');
+    // Aviso honesto: el turno quedó bien, pero alguna foto no subió. Antes esto no
+    // podía pasar porque un fallo de foto tumbaba el turno entero; ahora el turno
+    // se salva y lo que hay que decir es exactamente qué faltó.
+    const fallidas = sf.fotosFallidas || [];
+    const avisoFotos = fallidas.length ? `<div class="mt-5 w-full max-w-xs rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-left">
+      <p class="text-[13px] font-bold text-amber-800">Tu turno quedó registrado, pero ${fallidas.length === 1 ? 'una foto no subió' : `${fallidas.length} fotos no subieron`}</p>
+      <p class="text-[13px] text-amber-700 mt-1 leading-snug">Faltó: ${esc(fallidas.join(', '))}. Avísale a tu jefe para que quede constancia.</p>
+    </div>` : '';
     wiz.innerHTML = `<div class="max-w-lg mx-auto min-h-screen flex flex-col items-center justify-center text-center px-8 bg-slate-50">
       <div class="w-20 h-20 rounded-full ${iconCls} text-4xl flex items-center justify-center mb-5">${icon}</div>
       <h1 class="text-2xl font-extrabold text-ink">${title}</h1>
       <p class="text-[15px] text-slate-500 mt-2 leading-relaxed max-w-xs">${body}</p>
+      ${avisoFotos}
       ${activeTurno ? `<button id="sf-route-btn" class="mt-8 w-full max-w-xs px-6 py-3.5 rounded-xl bg-brand text-white font-extrabold shadow-brand active:scale-[0.98] transition flex items-center justify-center gap-2"><span>🧭</span>Ver mi ruta del día</button>
       <button id="sf-done-btn" class="mt-3 px-6 py-2.5 text-slate-500 font-semibold">Volver al inicio</button>`
       : `<button id="sf-done-btn" class="mt-8 px-6 py-3 rounded-xl ${btnCls} font-bold active:scale-[0.98] transition">Volver al inicio</button>`}
