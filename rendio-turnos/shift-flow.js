@@ -2,7 +2,8 @@
 // Wizard de 6 pasos fiel al diseño de /Visual (Conductor.html):
 //   1. Selección de vehículo   4. Kilometraje inicial
 //   2. Checklist pre-operacional  5. Novedades / observaciones
-//   3. Fotos (8: 5 exteriores + guantera y 2 puertas)  6. Confirmar e iniciar
+//   3. Fotos (11: 4 exteriores, tablero, guantera, tarjeta,   6. Confirmar e iniciar
+//      2 puertas, kit de carretera y llanta de repuesto)
 //
 // Persistencia (al confirmar, en orden) — REORDENADO el 2026-09-06:
 //   1. shift → shifts  2. inspección → inspections  3. RPC start_shift/abort_shift
@@ -84,17 +85,26 @@
   }
 
   // photo_type del enum inspection_photo_type: front|left|right|rear|dashboard (0016)
-  // + glovebox|door_left|door_right (0042, fotos "sin basura").
+  // + glovebox|door_left|door_right (0042, fotos "sin basura")
+  // + road_kit|property_card|spare_tire (0079, pedido del jefe).
+  // El orden es el de una sola vuelta al carro: exterior → puesto de conducción
+  // → guantera (donde vive la tarjeta) → puertas → baúl. Las tres últimas son la
+  // prueba de tres ítems que el checklist ya pregunta (seg_kit, doc_tarjeta,
+  // lla_repuesto): antes se respondían con un toque y nadie las veía.
   const PHOTO_SLOTS = [
-    { id: 'front',      label: 'Frontal',            detail: 'Placa visible, parachoques completo' },
-    { id: 'rear',       label: 'Trasera',            detail: 'Placa, stops, baúl' },
-    { id: 'left',       label: 'Lateral izquierdo',  detail: 'Lado del conductor, retrovisor' },
-    { id: 'right',      label: 'Lateral derecho',    detail: 'Lado del pasajero, retrovisor' },
-    { id: 'dashboard',  label: 'Interior / tablero', detail: 'Asientos, tablero y odómetro visibles' },
-    { id: 'glovebox',   label: 'Guantera',           detail: 'Ábrela: debe verse vacía, sin basura' },
-    { id: 'door_left',  label: 'Puerta conductor',   detail: 'Bolsillo interno vacío, sin basura' },
-    { id: 'door_right', label: 'Puerta pasajero',    detail: 'Bolsillo interno vacío, sin basura' },
+    { id: 'front',         label: 'Frontal',              detail: 'Placa visible, parachoques completo' },
+    { id: 'rear',          label: 'Trasera',              detail: 'Placa, stops, baúl' },
+    { id: 'left',          label: 'Lateral izquierdo',    detail: 'Lado del conductor, retrovisor' },
+    { id: 'right',         label: 'Lateral derecho',      detail: 'Lado del pasajero, retrovisor' },
+    { id: 'dashboard',     label: 'Interior / tablero',   detail: 'Asientos, tablero y odómetro visibles' },
+    { id: 'glovebox',      label: 'Guantera',             detail: 'Ábrela: debe verse vacía, sin basura' },
+    { id: 'property_card', label: 'Tarjeta de propiedad', detail: 'Completa y legible: placa y datos del carro' },
+    { id: 'door_left',     label: 'Puerta conductor',     detail: 'Bolsillo interno vacío, sin basura' },
+    { id: 'door_right',    label: 'Puerta pasajero',      detail: 'Bolsillo interno vacío, sin basura' },
+    { id: 'road_kit',      label: 'Kit de carretera',     detail: 'Todo a la vista: gato, cruceta, triángulos, extintor' },
+    { id: 'spare_tire',    label: 'Llanta de repuesto',   detail: 'Su compartimiento abierto: que esté y esté sujeta' },
   ];
+
 
   const TOTAL_STEPS = 6;
 
@@ -255,7 +265,7 @@
         <span class="rc-hero-tag">${open ? 'SIN TERMINAR' : 'AHORA'}</span>
       </span>
       <span class="rc-hero-t" style="display:block">${open ? 'Continuar inicio de turno' : 'Iniciar turno'}</span>
-      <span class="rc-hero-s" style="display:block">${open ? 'Retomas el registro con el mismo turno, sin perder el avance.' : 'Inspección, fotos y kilometraje · unos 5 minutos'}</span>
+      <span class="rc-hero-s" style="display:block">${open ? 'Retomas el registro con el mismo turno, sin perder el avance.' : 'Inspección, fotos y kilometraje · unos 6 minutos'}</span>
       <span class="rc-hero-go">${open ? 'Continuar' : 'Empezar'} ${avIcon('arrowRight', 17)}</span>
     </button>`;
     $('#sf-open-btn').addEventListener('click', openWizard);
@@ -310,7 +320,7 @@
       return;
     }
     // ¿Quedó avance de un intento anterior que se murió a media inspección?
-    // Se lo devolvemos en vez de hacerle repetir el checklist y las 8 fotos.
+    // Se lo devolvemos en vez de hacerle repetir el checklist y las 11 fotos.
     try {
       if (await restaurarAvance()) {
         const n = Object.keys(sf.photos).length;
@@ -390,7 +400,7 @@
   // ====================================================================
   // Borrador del asistente, guardado en el teléfono (IndexedDB)
   // ====================================================================
-  // POR QUÉ: el avance —vehículo, los 27 ítems del checklist, las 8 fotos, el
+  // POR QUÉ: el avance —vehículo, los 27 ítems del checklist, las 11 fotos, el
   // kilometraje— vivía SOLO en la memoria de la página. Safari en iOS descarta la
   // pestaña cuando el conductor bloquea el teléfono o se cambia de app, y al
   // volver el asistente arrancaba EN BLANCO: 12 minutos de trabajo a la basura.
@@ -875,8 +885,8 @@
   }
 
   function renderPhotos(wiz) {
-    // Las 5 fijas son obligatorias; la del golpe es opcional y solo aparece si
-    // se marcó un golpe en el checklist.
+    // Las fijas (PHOTO_SLOTS) son todas obligatorias; la del golpe es opcional y
+    // solo aparece si se marcó un golpe en el checklist.
     const takenFixed = PHOTO_SLOTS.filter(s => sf.photos[s.id]).length;
     const allTaken = takenFixed === PHOTO_SLOTS.length;
     const showDamage = hasGolpe();
@@ -922,7 +932,7 @@
     wiz.innerHTML = shellHtml(
       `Inicio de turno · Paso 3 de ${TOTAL_STEPS}`,
       'Fotos del vehículo',
-      showDamage ? `${PHOTO_SLOTS.length} fotos + la del golpe que reportaste.` : `${PHOTO_SLOTS.length} fotos (exterior + guantera y puertas). Toca cada una para capturar.`,
+      showDamage ? `${PHOTO_SLOTS.length} fotos + la del golpe que reportaste.` : `${PHOTO_SLOTS.length} fotos (exterior, interior, documentos y baúl). Toca cada una para capturar.`,
       `<div class="grid grid-cols-2 gap-2.5">${cells}</div>
        ${extraSection}
        <input id="sf-photo-input" type="file" accept="image/*" capture="environment" class="hidden" />
@@ -1262,10 +1272,11 @@
 
       // ORDEN DEL GUARDADO — cambiado el 2026-09-06 tras el caso de Juan Esteban.
       //
-      // ANTES: se subían las 8 fotos y SOLO al final se creaba la inspección y se
-      // activaba el turno. Eran 11 peticiones encadenadas y el turno no existía
-      // hasta la última: si el teléfono se moría en la foto 8 (iOS descartando la
-      // página, o un bache de señal), no quedaba NI inspección NI turno — solo
+      // ANTES: se subían todas las fotos y SOLO al final se creaba la inspección
+      // y se activaba el turno. Era una cadena de peticiones —una por foto, más
+      // las de texto— y el turno no existía hasta la última: si el teléfono se
+      // moría en la penúltima foto (iOS descartando la página, o un bache de
+      // señal), no quedaba NI inspección NI turno — solo
       // fotos huérfanas en el Storage. El conductor había hecho los 12 minutos de
       // trabajo y la app no guardaba nada. Peor: el turno quedaba de borrador
       // reteniendo el vehículo, y una hora después release_stale_reservations lo
