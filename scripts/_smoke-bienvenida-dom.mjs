@@ -79,14 +79,22 @@ t('Perfil ofrece verla otra vez', !!ui().querySelector('[data-ax="onb-again"]'),
 ui().querySelector('[data-ax="onb-again"]').click();
 t('y se abre', window.Auxiliar.state.view === 'onboarding' && !!ui().querySelector('.axo-ruta'));
 
-console.log('\n── quien ya la había visto ANTES del cambio no la ve de nuevo ──');
-// La llave vieja era una sola para todo el navegador.
+console.log('\n── la marca vieja del navegador ya no manda ──');
+// Era UNA sola llave para todo el aparato. Como las tres pantallas se rehicieron
+// enteras el 7-sep, quien vio las de antes no ha visto estas: se le muestran una
+// vez. Lo que NO puede pasar es que esa marca deje sin bienvenida a una cuenta
+// nueva, que fue el caso real.
 window.localStorage.clear();
 window.localStorage.setItem('rendio.aux.onboarded', '1');
 await entrar(ANA);
-t('respeta la marca vieja', window.Auxiliar.state.view === 'home');
+t('quien vio la bienvenida vieja ve la nueva una vez', window.Auxiliar.state.view === 'onboarding');
+window.AuxPresentacion.markOnboarded();
+t('y al marcarla se limpia la llave del navegador entero',
+  window.localStorage.getItem('rendio.aux.onboarded') === null);
+await entrar(ANA);
+t('a esa persona ya no le sale otra vez', window.Auxiliar.state.view === 'home');
 await entrar(NUEVO);
-t('pero la marca vieja NO se le hereda a otra cuenta', window.Auxiliar.state.view === 'onboarding');
+t('y a la cuenta nueva le sale igual', window.Auxiliar.state.view === 'onboarding');
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: el movimiento. jsdom no anima ni dibuja — que el avión trace la');
