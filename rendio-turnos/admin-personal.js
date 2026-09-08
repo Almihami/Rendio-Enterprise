@@ -873,7 +873,7 @@
       // 0069. El vacío del desplegable es null a propósito: "sin camioneta
       // elegida" es un estado válido, y con él la app no ofrece el privado.
       aux_private_enabled: !!($('#setting-priv-enabled') && $('#setting-priv-enabled').checked),
-      aux_private_vehicle_id: ($('#setting-priv-vehicle') && $('#setting-priv-vehicle').value) || null,
+      aux_private_vehicle_id: privVehiculoAGuardar(),
       aux_private_price_cop: Math.max(1, parseInt($('#setting-priv-price') && $('#setting-priv-price').value, 10) || 150000),
       aux_private_block_min: Math.min(480, Math.max(10, parseInt($('#setting-priv-block') && $('#setting-priv-block').value, 10) || 90)),
       // Optimizador. Igual que aux_min_lead_hours, 0 es un valor VÁLIDO
@@ -937,12 +937,26 @@
         return isNaN(n) ? 10 : Math.min(45, Math.max(0, n));
       })(),
     };
+    // ENCENDIDO SIN CAMIONETA NO ES ENCENDIDO. La app ofrece el privado solo si
+    // se cumplen las tres: interruptor + camioneta + tarifa (aux-privado.js).
+    // Marcar la casilla y dejar el desplegable en «— Sin definir —» se guardaba
+    // sin decir nada, y el jefe quedaba viendo el privado «encendido» mientras
+    // al tripulante no le salía el paso. Se guarda todo lo demás, esto no, y se
+    // dice por qué.
+    let avisoPrivado = '';
+    if (next.aux_private_enabled && !next.aux_private_vehicle_id) {
+      next.aux_private_enabled = false;
+      if ($('#setting-priv-enabled')) $('#setting-priv-enabled').checked = false;
+      avisoPrivado = 'El traslado privado NO quedó encendido: falta elegir cuál carro es la camioneta. '
+        + 'Lo demás sí se guardó.';
+    }
     try {
       await Api.saveSettings(next);
       state.settings = { ...state.settings, ...next };
       const saved = $('#set-saved-params');
       if (saved) { saved.classList.add('show'); setTimeout(() => saved.classList.remove('show'), 1800); }
       toast('Ajustes guardados.');
+      if (avisoPrivado) alert(avisoPrivado);
     } catch (e) {
       alert('Error al guardar ajustes: ' + e.message);
     }
@@ -954,14 +968,41 @@
   async function fillPrivateVehicles() {
     const sel = $('#setting-priv-vehicle'); if (!sel) return;
     const actual = state.settings && state.settings.aux_private_vehicle_id;
+    // `data-flota` dice si lo que se ve en el desplegable es la flota de verdad.
+    // Mientras carga —o si la consulta falló— lo que muestre NO es una elección
+    // del jefe, y guardar no puede tomarlo como tal. Ver privVehiculoAGuardar().
+    sel.dataset.flota = 'cargando';
     let lista = null;
     try { if (window.Api && Api.listVehiclesBasic) lista = await Api.listVehiclesBasic(); } catch (_) {}
     if (!Array.isArray(lista)) {
       sel.innerHTML = '<option value="">No se pudo cargar la flota</option>';
+      sel.dataset.flota = 'fallo';
       return;
     }
     sel.innerHTML = '<option value="">— Sin definir —</option>' + lista.map(v =>
       '<option value="' + v.id + '"' + (v.id === actual ? ' selected' : '') + '>'
       + (v.plate || '?') + ' · ' + (v.label || '') + ' (' + (v.capacity || '?') + ' puestos)'
       + (v.status === 'blocked' ? ' — BLOQUEADO' : '') + '</option>').join('');
+    sel.dataset.flota = 'ok';
+  }
+
+  // QUÉ CAMIONETA SE MANDA A GUARDAR.
+  //
+  // Antes era `select.value || null`, y ahí había un fallo silencioso feo: el
+  // desplegable nace VACÍO en index.html y se llena con una consulta aparte
+  // (fillPrivateVehicles), sin bloquear el botón de Guardar. Si esa consulta
+  // fallaba —o si el jefe alcanzaba a guardar antes de que llegara—, se
+  // escribía `aux_private_vehicle_id = NULL` aunque el jefe estuviera cambiando
+  // los strikes y no hubiera tocado el privado. Y sin camioneta el privado no
+  // se ofrece: quedaba apagado sin que nadie lo apagara, con el interruptor
+  // todavía marcado en la pantalla.
+  //
+  // Ahora: si lo que hay en pantalla no es la flota de verdad, se manda la
+  // camioneta que YA estaba guardada. Vaciarla a mano sí vale — eso es una
+  // decisión, no un accidente.
+  function privVehiculoAGuardar() {
+    const sel = $('#setting-priv-vehicle');
+    const guardada = (state.settings && state.settings.aux_private_vehicle_id) || null;
+    if (!sel || sel.dataset.flota !== 'ok') return guardada;
+    return sel.value || null;
   }

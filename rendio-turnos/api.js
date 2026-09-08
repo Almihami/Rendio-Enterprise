@@ -785,6 +785,17 @@
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until'));
     if (error) ({ data, error } = await sel('morning_label, afternoon_label, morning_slots, afternoon_slots'));
     if (error) throw error;
+    // EL PRIVADO DEJA DE SER REHÉN DE LAS COLUMNAS DE RUTAS.
+    // PRIV_COLS solo se pide pegado a CONFIRMADO, que arrastra ~40 columnas de
+    // otras diez migraciones. Si faltara UNA sola de ellas, la cascada bajaba a
+    // un escalón sin `aux_private_*` y el privado salía apagado —con la fila
+    // leída y `_loaded: true`, así que ni el aviso nuevo lo notaba—. Aquí se
+    // piden SOLAS antes de darlas por apagadas: si esta consulta también falla,
+    // entonces sí es que 0069/0070 no están aplicadas.
+    if (data && !('aux_private_enabled' in data)) {
+      const { data: priv } = await sel(PRIV_COLS.replace(/^,\s*/, ''));
+      if (priv) Object.assign(data, priv);
+    }
     const base = { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2, coord_slots: 1, shift_hours: 12, auto_close_hours: 14 };
     return {
       ...base, ...(data || {}),

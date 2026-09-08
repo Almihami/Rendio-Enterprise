@@ -66,6 +66,17 @@
     auxState.profile = profile;
     auxState.view = 'home';
     auxBindOnce();
+    // LOS AJUSTES SE VUELVEN A LEER AQUÍ. core.js los lee UNA vez al entrar a la
+    // app y nadie más los refresca en este rol: si el jefe enciende el traslado
+    // privado mientras el tripulante tiene la PWA abierta —que es lo normal, no
+    // se cierra nunca—, sin esto no lo ve hasta reiniciarla del todo. Y como
+    // «Reintentar» vuelve a pasar por auxInit, ese botón ahora sí arregla lo que
+    // promete. Si falla, se sigue con lo que ya había: no se pierde nada.
+    try {
+      if (window.Api?.getSettings && typeof state !== 'undefined') {
+        state.settings = await Api.getSettings();
+      }
+    } catch (_) {}
     // Modo nocturno antes de pintar: si se aplicara después, la primera pantalla
     // aparece en claro y da un fogonazo blanco a las 3 de la mañana.
     if (window.AuxPresentacion) {
