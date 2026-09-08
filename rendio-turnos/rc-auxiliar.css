@@ -259,28 +259,266 @@
 #auxiliar-ui .axr-save.busy { opacity: .6; }
 
 /* ── Bloque A · Presentación ─────────────────────────────────────────────── */
-/* Primer ingreso: 3 pantallas a pantalla completa, dentro del mismo marco. */
+/* Primer ingreso: 3 pantallas a pantalla completa, dentro del mismo marco.
+   REHECHAS el 7-sep-2026. Lo anterior era un icono de 30 px en un cuadrado
+   redondeado, todo pegado arriba a la izquierda y un hueco muerto hasta el
+   botón. La profa lo dijo sin rodeos: «muy estáticas, no están centradas, no
+   muestran nada nuevo». Ahora:
+     · el eje es el CENTRO — escena y texto centrados, botón abajo;
+     · cada pantalla trae una escena SVG que se anima al entrar y cuenta lo
+       mismo que el título (la ruta se traza, el pin cae, el carro llega);
+     · el texto entra escalonado detrás de la escena, no de golpe.
+   Todo es CSS: ni librerías ni imágenes. Y se apaga entero con «reducir
+   movimiento» (al final del bloque), donde el estado base ya es el final —
+   por eso ninguna regla de aquí deja algo invisible esperando su animación. */
 #auxiliar-ui .axo {
   flex: 1; display: flex; flex-direction: column;
-  padding: calc(30px + env(safe-area-inset-top, 0px)) 22px 22px;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 22px 20px;
   overflow-y: auto;
 }
-#auxiliar-ui .axo-dots { display: flex; gap: 6px; margin-bottom: 26px; }
-#auxiliar-ui .axo-dot { width: 22px; height: 3px; border-radius: 2px; background: var(--a-line); }
-#auxiliar-ui .axo-dot.on { background: var(--a-accent); }
-#auxiliar-ui .axo-art {
-  width: 66px; height: 66px; border-radius: 20px; margin-bottom: 20px;
-  background: var(--a-h2a-soft); color: var(--a-h2a);
-  display: flex; align-items: center; justify-content: center;
+/* Encabezado: en qué pantalla va y la salida. El conteo en texto es para quien
+   no distinga los puntos (y para lectores de pantalla, que los ignoran). */
+#auxiliar-ui .axo-top {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 32px; flex: 0 0 auto;
 }
-#auxiliar-ui .axo-art .icon { width: 30px; height: 30px; }
-#auxiliar-ui .axo h1 { font-size: 25px; font-weight: 800; letter-spacing: -.02em; line-height: 1.2; margin: 0; }
-#auxiliar-ui .axo p { font-size: 14.5px; color: var(--a-t2); line-height: 1.6; margin: 10px 0 0; }
-#auxiliar-ui .axo-acts { margin-top: auto; padding-top: 26px; display: flex; flex-direction: column; gap: 8px; }
+#auxiliar-ui .axo-count {
+  font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--a-t3, var(--a-t2));
+}
 #auxiliar-ui .axo-skip {
   background: none; border: 0; font: inherit; font-size: 13.5px; font-weight: 650;
   color: var(--a-t2); cursor: pointer; padding: 6px;
 }
+/* El escenario se come el espacio sobrante: es lo que centra la pantalla. */
+#auxiliar-ui .axo-stage {
+  flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+  min-height: 168px; padding: 8px 0;
+}
+#auxiliar-ui .axo-stage-sm { flex: 0 0 auto; min-height: 132px; }
+#auxiliar-ui .axo-scene { width: 100%; max-width: 320px; height: auto; display: block; }
+#auxiliar-ui .axo-copy { flex: 0 0 auto; text-align: center; }
+#auxiliar-ui .axo-copy h1 {
+  font-size: 26px; font-weight: 800; letter-spacing: -.025em; line-height: 1.18; margin: 0;
+}
+#auxiliar-ui .axo-copy p {
+  font-size: 14.5px; color: var(--a-t2); line-height: 1.6; margin: 10px auto 0; max-width: 32ch;
+}
+/* Los puntos ahora son botones: tocarlos salta a esa pantalla. El activo se
+   estira en vez de solo cambiar de color — se ve de reojo cuánto falta. */
+#auxiliar-ui .axo-dots {
+  display: flex; gap: 7px; justify-content: center; margin: 22px 0 0; flex: 0 0 auto;
+}
+#auxiliar-ui .axo-dot {
+  width: 7px; height: 7px; padding: 0; border: 0; border-radius: 99px;
+  background: var(--a-line); cursor: pointer;
+  transition: width .32s cubic-bezier(.2,.8,.3,1), background .32s ease;
+}
+#auxiliar-ui .axo-dot.seen { background: var(--a-accent); opacity: .45; }
+#auxiliar-ui .axo-dot.on { width: 26px; background: var(--a-accent); }
+#auxiliar-ui .axo-acts {
+  margin-top: 18px; padding-bottom: 4px; display: flex; flex-direction: column; gap: 6px;
+  flex: 0 0 auto;
+}
+/* El permiso conserva su lista, así que no se centra a la fuerza: la escena es
+   más pequeña y el texto sigue centrado, pero las razones se leen alineadas. */
+#auxiliar-ui .axo-ask .axo-copy h1 { font-size: 23px; }
+#auxiliar-ui .axo-ask .axo-acts { margin-top: 14px; }
+
+/* ── Entrada escalonada ──────────────────────────────────────────────────── */
+@keyframes axo-in { from { opacity: 0; transform: translateY(16px); } }
+@keyframes axo-pop { from { opacity: 0; transform: scale(.9); } }
+#auxiliar-ui .axo .axo-scene { animation: axo-pop .55s cubic-bezier(.2,.8,.3,1) both; }
+#auxiliar-ui .axo .axo-copy h1 { animation: axo-in .5s .16s cubic-bezier(.2,.7,.3,1) both; }
+#auxiliar-ui .axo .axo-copy p  { animation: axo-in .5s .26s cubic-bezier(.2,.7,.3,1) both; }
+#auxiliar-ui .axo .axo-why     { animation: axo-in .5s .3s cubic-bezier(.2,.7,.3,1) both; }
+#auxiliar-ui .axo .axo-dots    { animation: axo-in .45s .34s cubic-bezier(.2,.7,.3,1) both; }
+#auxiliar-ui .axo .axo-acts    { animation: axo-in .45s .4s cubic-bezier(.2,.7,.3,1) both; }
+
+/* ── Escenas ─────────────────────────────────────────────────────────────── */
+/* Comunes */
+/* El halo es ambiente, no un objeto: con relleno plano se veía como una mancha
+   marrón detrás del dibujo. Es un degradado que se apaga en el borde, y respira
+   despacio para que la pantalla no quede del todo quieta. */
+#auxiliar-ui .axo-scene .ax-g0 { stop-color: var(--a-h2a); stop-opacity: .26; }
+#auxiliar-ui .axo-scene .ax-g1 { stop-color: var(--a-h2a); stop-opacity: 0; }
+#auxiliar-ui .axo-scene .ax-glow {
+  fill: url(#axo-glow);
+  transform-box: view-box; transform-origin: 50% 50%;
+  animation: ax-breathe 7s ease-in-out infinite;
+}
+@keyframes ax-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+#auxiliar-ui .axo-scene { --ax-ink: var(--a-text); }
+
+/* 1 · La ruta se traza sola y el avión la recorre
+   El bloque de abajo a la izquierda es un GLOBO DE CHAT (idea de la profa,
+   7-sep): lo que el tripulante hace es escribir lo que necesita — y de ese
+   mensaje sale la ruta. El avión no es una flecha quieta al final: es una
+   silueta que RECORRE la línea, una y otra vez, siguiendo su curva.
+   El recorrido usa offset-path, que sigue la trayectoria de verdad (y gira el
+   avión con ella). Donde no exista, queda la animación de reserva de más
+   abajo: el avión hace el mismo viaje en línea recta. */
+#auxiliar-ui .axo-ruta .ax-bub { fill: var(--a-card); stroke: var(--a-line); stroke-width: 2; }
+#auxiliar-ui .axo-ruta .ax-card .ax-l1,
+#auxiliar-ui .axo-ruta .ax-card .ax-l2,
+#auxiliar-ui .axo-ruta .ax-card .ax-l3 { fill: var(--a-line); }
+#auxiliar-ui .axo-ruta .ax-card .ax-l1 { animation: axo-in .4s .45s both; }
+#auxiliar-ui .axo-ruta .ax-card .ax-l2 { animation: axo-in .4s .57s both; }
+#auxiliar-ui .axo-ruta .ax-card .ax-l3 { animation: axo-in .4s .69s both; fill: var(--a-accent); opacity: .55; }
+#auxiliar-ui .axo-ruta .ax-track {
+  stroke: var(--a-line); stroke-width: 3; stroke-linecap: round; stroke-dasharray: .5 9;
+}
+#auxiliar-ui .axo-ruta .ax-route {
+  stroke: var(--a-accent); stroke-width: 3.5; stroke-linecap: round;
+  /* 140,7 es el largo real del trazo (ver la nota del bloque @supports): con un
+     número mayor la línea se queda quieta al principio, esperando a que el
+     desfase baje del largo de verdad. */
+  stroke-dasharray: 140.7; stroke-dashoffset: 0;
+  animation: ax-draw 1.2s .3s cubic-bezier(.4,.1,.3,1) both;
+}
+@keyframes ax-draw { from { stroke-dashoffset: 140.7; } }
+#auxiliar-ui .axo-ruta .ax-dot { fill: var(--a-accent); }
+
+/* Reserva: sin offset-path el avión viaja en recta y la línea se dibuja sola
+   una vez. Es el comportamiento de antes, para navegadores viejos. */
+#auxiliar-ui .axo-ruta .ax-plane {
+  fill: var(--a-accent);
+  transform: translate(168px, 40px) rotate(-34deg);
+  animation: ax-fly 3.6s .5s cubic-bezier(.45,.05,.55,.95) infinite;
+}
+@keyframes ax-fly {
+  0%   { transform: translate(44px, 100px) rotate(-18deg); opacity: 0; }
+  10%  { opacity: 1; }
+  60%  { transform: translate(168px, 40px) rotate(-34deg); opacity: 1; }
+  74%  { transform: translate(196px, 26px) rotate(-34deg); opacity: 0; }
+  100% { transform: translate(196px, 26px) rotate(-34deg); opacity: 0; }
+}
+
+/* Lo bueno: el avión va PEGADO a la curva, se inclina con ella y VA DEJANDO LA
+   LÍNEA DETRÁS (profa, 7-sep: «que mientras ande trace la línea»). Antes la
+   ruta se dibujaba una vez al entrar y después el avión pasaba por encima de
+   algo ya hecho — que es lo que se veía estático.
+
+   CÓMO QUEDAN SINCRONIZADOS, que es lo delicado: el avance del avión
+   (offset-distance) y el largo dibujado de la línea (stroke-dashoffset) son dos
+   animaciones distintas, así que solo van juntas si recorren la MISMA curva de
+   progreso. Por eso las dos tienen igual duración, igual retardo, igual
+   cubic-bezier y —clave— keyframes en los MISMOS porcentajes (0 y 60): un
+   fotograma intermedio en una sola de ellas parte su interpolación en dos
+   tramos y la punta de la línea se despega del avión. Las opacidades van en
+   animaciones aparte justo por eso.
+
+   140.7 = el largo real del trazo, medido con path.getTotalLength(). Si se
+   cambia la curva de la ruta hay que volver a medirlo, o la línea termina antes
+   o después que el avión. Comprobado en el navegador: la punta de la línea y el
+   avión no se separan más de 0,03 de las 140,7 unidades del trazo. */
+@supports (offset-path: path("M0 0L1 1")) {
+  #auxiliar-ui .axo-ruta .ax-route {
+    stroke-dasharray: 140.7; stroke-dashoffset: 140.7;
+    animation: ax-trail 3.6s .5s cubic-bezier(.45,.05,.55,.95) infinite,
+               ax-trailfade 3.6s .5s linear infinite;
+  }
+  @keyframes ax-trail { 0% { stroke-dashoffset: 140.7; } 60% { stroke-dashoffset: 0; } }
+  /* La estela se borra al final del ciclo: si se quedara, la segunda vuelta
+     sería otra vez un avión sobre una línea ya hecha. */
+  @keyframes ax-trailfade { 0%, 72% { opacity: 1; } 88%, 100% { opacity: 0; } }
+
+  #auxiliar-ui .axo-ruta .ax-plane {
+    offset-path: path("M44 100C92 96 130 76 168 40");
+    offset-rotate: auto;
+    /* El avión se dibuja a tamaño de icono y se agranda aquí: así la silueta
+       conserva el trazo fino y se lee como avión y no como mancha. */
+    transform: scale(1.3);
+    animation: ax-travel 3.6s .5s cubic-bezier(.45,.05,.55,.95) infinite,
+               ax-planefade 3.6s .5s linear infinite;
+  }
+  @keyframes ax-travel { 0% { offset-distance: 0%; } 60% { offset-distance: 100%; } }
+  @keyframes ax-planefade { 0%, 3% { opacity: 0; } 10%, 68% { opacity: 1; } 80%, 100% { opacity: 0; } }
+}
+
+/* 2 · El pin cae en la portería y queda verificado */
+#auxiliar-ui .axo-punto .ax-map rect:first-child { fill: var(--a-surf2); stroke: var(--a-line); stroke-width: 2; }
+#auxiliar-ui .axo-punto .ax-st { stroke: var(--a-line); stroke-width: 2.5; stroke-linecap: round; }
+#auxiliar-ui .axo-punto .ax-blk { fill: var(--a-line); opacity: .75; }
+#auxiliar-ui .axo-punto .ax-pin { fill: var(--a-accent); animation: ax-drop 1s .35s cubic-bezier(.3,1.3,.5,1) both; }
+#auxiliar-ui .axo-punto .ax-pin-hole { fill: var(--a-card); }
+@keyframes ax-drop {
+  0%   { transform: translateY(-86px); opacity: 0; }
+  30%  { opacity: 1; }
+  62%  { transform: translateY(7px); }
+  80%  { transform: translateY(-4px); }
+  100% { transform: translateY(0); }
+}
+#auxiliar-ui .axo-punto .ax-ring {
+  fill: none; stroke: var(--a-accent); stroke-width: 2.5; opacity: 0;
+  transform-box: view-box; transform-origin: 140px 118px;
+  animation: ax-ping 2.4s 1.2s ease-out infinite;
+}
+#auxiliar-ui .axo-punto .ax-ring2 { animation-delay: 2s; }
+@keyframes ax-ping {
+  0%   { transform: scale(.5); opacity: .75; }
+  70%  { transform: scale(2.1); opacity: 0; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+#auxiliar-ui .axo-punto .ax-ok circle { fill: var(--a-a2h, #10B981); }
+#auxiliar-ui .axo-punto .ax-tick { stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+#auxiliar-ui .axo-punto .ax-ok {
+  transform-box: view-box; transform-origin: 188px 82px;
+  animation: axo-pop .5s 1.15s cubic-bezier(.2,1.4,.4,1) both;
+}
+
+/* 3 · El carro llega, con quién lo maneja */
+#auxiliar-ui .axo-cond .ax-road { stroke: var(--a-line); stroke-width: 3; stroke-linecap: round; }
+#auxiliar-ui .axo-cond .ax-dashes {
+  stroke: var(--a-line); stroke-width: 3; stroke-linecap: round; opacity: .8;
+  animation: ax-move 1.1s linear infinite;
+}
+@keyframes ax-move { from { transform: translateX(0); } to { transform: translateX(-40px); } }
+#auxiliar-ui .axo-cond .ax-car { animation: ax-drivein 1.1s .25s cubic-bezier(.25,.9,.3,1) both; }
+@keyframes ax-drivein {
+  0%   { transform: translateX(-230px); opacity: 0; }
+  20%  { opacity: 1; }
+  82%  { transform: translateX(9px); }
+  100% { transform: translateX(0); }
+}
+#auxiliar-ui .axo-cond .ax-body { fill: var(--a-accent); }
+#auxiliar-ui .axo-cond .ax-win { fill: var(--a-card); stroke: var(--a-accent); stroke-width: 2; }
+#auxiliar-ui .axo-cond .ax-wheel { fill: var(--a-text); }
+#auxiliar-ui .axo-cond .ax-chip rect:first-child { fill: var(--a-card); stroke: var(--a-line); stroke-width: 2; }
+#auxiliar-ui .axo-cond .ax-av { fill: var(--a-h2a-soft); stroke: var(--a-accent); stroke-width: 2; }
+#auxiliar-ui .axo-cond .ax-chip .ax-l1 { fill: var(--a-line); }
+#auxiliar-ui .axo-cond .ax-chip .ax-l2 { fill: var(--a-accent); opacity: .6; }
+#auxiliar-ui .axo-cond .ax-chip {
+  transform-box: view-box; transform-origin: 140px 66px;
+  animation: axo-pop .5s 1.05s cubic-bezier(.2,1.35,.4,1) both;
+}
+
+/* 4 · La campana del permiso */
+#auxiliar-ui .axo-bell .ax-bell {
+  fill: var(--a-accent);
+  transform-box: view-box; transform-origin: 140px 30px;
+  animation: ax-swing 2.8s .4s ease-in-out infinite;
+}
+@keyframes ax-swing {
+  0%, 62%, 100% { transform: rotate(0deg); }
+  68% { transform: rotate(9deg); }
+  74% { transform: rotate(-7deg); }
+  80% { transform: rotate(5deg); }
+  86% { transform: rotate(-3deg); }
+}
+#auxiliar-ui .axo-bell .ax-clap { fill: var(--a-accent); }
+#auxiliar-ui .axo-bell .ax-wave {
+  stroke: var(--a-accent); stroke-width: 3; stroke-linecap: round; fill: none;
+  transform-box: view-box; transform-origin: 140px 73px;
+  animation: ax-waves 2.8s .4s ease-out infinite;
+}
+#auxiliar-ui .axo-bell .ax-w2 { animation-delay: .5s; }
+@keyframes ax-waves {
+  0%, 55% { opacity: 0; transform: scale(.85); }
+  70%     { opacity: .9; transform: scale(1); }
+  100%    { opacity: 0; transform: scale(1.15); }
+}
+
 /* El permiso de notificaciones, con el motivo delante */
 #auxiliar-ui .axo-why {
   border: 1px solid var(--a-line); border-radius: 14px; background: var(--a-card);
@@ -294,6 +532,18 @@
 #auxiliar-ui .axo-why-row .icon { color: var(--a-accent); margin-top: 2px; flex: 0 0 auto; }
 #auxiliar-ui .axo-why-row b { display: block; font-size: 13.5px; font-weight: 650; }
 #auxiliar-ui .axo-why-row span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 1px; line-height: 1.45; }
+
+/* Quien pidió menos movimiento ve las mismas pantallas, quietas. No se apaga
+   solo el adorno: se apaga TODO, incluida la entrada del texto, porque el
+   estado base de cada regla de arriba ya es el estado final. */
+@media (prefers-reduced-motion: reduce) {
+  #auxiliar-ui .axo *, #auxiliar-ui .axo-scene * { animation: none !important; }
+  #auxiliar-ui .axo-dot { transition: none; }
+  /* La ruta es la excepción: su estado base es «sin dibujar» porque la dibuja
+     el avión. Quieta se muestra completa, con el avión ya al final. */
+  #auxiliar-ui .axo-ruta .ax-route { stroke-dashoffset: 0 !important; opacity: 1 !important; }
+  #auxiliar-ui .axo-ruta .ax-plane { offset-distance: 100% !important; opacity: 1 !important; }
+}
 
 /* Estados adversos: sin señal / error / soporte */
 #auxiliar-ui .axs {
@@ -779,3 +1029,27 @@
   #tripulantes-ui .tp-editor label { flex-direction: column; align-items: flex-start; gap: 6px; }
   #tripulantes-ui .tp-editor input { width: 100%; box-sizing: border-box; }
 }
+
+/* ── Atajos de fecha del vuelo (7-sep-2026) ──────────────────────────────────
+   La fecha entra puesta en MAÑANA. Estos tres botones existen para que eso se
+   VEA (el que está puesto va encendido) y para cambiarla sin abrir el
+   calendario del sistema, que en iOS es una rueda y cuesta tres gestos.       */
+#auxiliar-ui .ax-daychips { display: flex; gap: 8px; margin: -6px 0 14px; flex-wrap: wrap; }
+#auxiliar-ui .ax-daychip {
+  flex: 1 1 0; min-width: 84px; padding: 9px 10px; border-radius: 12px;
+  border: 1px solid var(--a-line); background: var(--a-card); font: inherit;
+  cursor: pointer; text-align: center; display: block;
+  transition: border-color .18s ease, background .18s ease, color .18s ease;
+}
+#auxiliar-ui .ax-daychip b { display: block; font-size: 13.5px; font-weight: 700; color: var(--a-text); }
+#auxiliar-ui .ax-daychip span { display: block; font-size: 11.5px; color: var(--a-t2); margin-top: 1px; }
+#auxiliar-ui .ax-daychip.on { border-color: var(--a-accent); background: var(--a-h2a-soft); }
+#auxiliar-ui .ax-daychip.on b { color: var(--a-accent); }
+#auxiliar-ui .ax-daychip.otro { cursor: default; }
+
+/* El punto que pusimos nosotros lo dice, y dice cómo cambiarlo. */
+#auxiliar-ui .axr-auto {
+  display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 2px;
+  font-size: 12.5px; line-height: 1.45; color: var(--a-t2);
+}
+#auxiliar-ui .axr-auto .icon { width: 16px; height: 16px; color: var(--a-a2h, #10B981); flex: 0 0 auto; margin-top: 1px; }

@@ -34,6 +34,10 @@
     failed: false,
     q: '',            // texto del buscador
     saving: false,
+    // El auxiliar pidió cambiar el punto que le pusimos solo. Mientras esté en
+    // true no se vuelve a autocompletar: si no, tocar «Cambiar» devolvería el
+    // mismo punto en el siguiente repintado y el botón parecería roto.
+    picking: false,
     // Con dos unidades: el tripulante pidió salir de un tercer sitio hoy, así
     // que se le abre el catálogo completo en vez del selector de dos.
     otro: false,
@@ -118,6 +122,37 @@
   function savedRes() {
     const id = st.place?.residenceId; if (!id) return null;
     return byId(id) || (st.place.residence || null);
+  }
+
+  // ── Autocompletar el punto del registro (profa, 7-sep-2026) ──────────────
+  //
+  // «Si solo tiene una dirección asociada, que se autocomplete; si tiene 2, que
+  // despliegue una lista.» Es lo que el registro promete cuando pide el punto:
+  // «esto queda guardado, no vas a tener que escribirlo otra vez».
+  //
+  // Debajo de esta función vivía la nota que decía justo lo contrario. Sus dos
+  // razones se atendieron, no se ignoraron:
+  //  · «Unas veces abría resuelto y otras no»: eso pasaba porque se autoelegía
+  //    con lo que hubiera llegado. Ahora solo se autocompleta con el catálogo YA
+  //    cargado, y mientras carga el paso muestra su propio estado — así que el
+  //    resultado es el mismo siempre.
+  //  · «Quien se acaba de mudar necesita ver la lista»: la ve en un toque con
+  //    «Cambiar», y el paso dice que el punto lo pusimos nosotros.
+  // Con DOS unidades no se autocompleta nada: adivinar de cuál de sus dos casas
+  // sale hoy es justo lo que el jefe pidió preguntar.
+  function autofill(f) {
+    if (!st.cat || !st.cat.length) return false;   // sin catálogo no hay qué poner
+    if (f.residenceId || f.manualAddr) return false;
+    if (st.picking || st.otro) return false;       // lo está cambiando a mano
+    if (hasTwo()) return false;                    // dos unidades → elige él
+    const r = savedRes(); if (!r) return false;
+    f.residenceId = r.id;
+    f.residenceUnit = st.place?.unit || null;
+    f.address = r.name + (r.sector ? ', ' + r.sector : '');
+    f.lat = r.latitude; f.lng = r.longitude;
+    f.locConfirmed = true; f.manualAddr = false;
+    f.placeAuto = true;                            // para decirlo en pantalla
+    return true;
   }
 
   // ¿El paso 3 está resuelto? Con residencia elegida sí — la coordenada la pone
@@ -217,6 +252,8 @@
           </div>
           ${compacto ? '' : `<button class="ax-link" data-ax="res-change">Cambiar</button>`}
         </div>
+        ${f.placeAuto ? `<div class="axr-auto"><svg class="icon"><use href="#i-check"/></svg>
+          Es el punto que dejaste en tu registro. Si hoy sales de otro lado, toca «Cambiar».</div>` : ''}
         <div id="axr-map" class="axr-map"></div>
         <div class="axr-verified">
           <span class="axr-verified-ic"><svg class="icon"><use href="#i-check"/></svg></span>
@@ -289,7 +326,7 @@
       // el catálogo. Ver createReservation en api.js.
       f.address = r.name + (r.sector ? ', ' + r.sector : '');
       f.lat = r.latitude; f.lng = r.longitude;
-      f.locConfirmed = true; f.manualAddr = false;
+      f.locConfirmed = true; f.manualAddr = false; f.placeAuto = false;
       st.q = '';
       return true;
     }
@@ -305,22 +342,25 @@
     if (action === 'res-otro') {
       // No borra lo elegido a lo bruto: si ya había una unidad puesta se
       // conserva hasta que escoja otra cosa, para no dejar el paso en rojo.
-      st.otro = true; st.q = '';
+      st.otro = true; st.q = ''; f.placeAuto = false;
       f.residenceId = null; f.residenceUnit = null;
       f.address = ''; f.lat = null; f.lng = null; f.locConfirmed = false;
       destroyMap();
       return true;
     }
     if (action === 'res-change') {
+      st.picking = true;                 // no se lo volvamos a poner solo
       f.residenceId = null; f.address = ''; f.lat = null; f.lng = null;
-      f.locConfirmed = false;
+      f.locConfirmed = false; f.placeAuto = false;
       destroyMap();
       return true;
     }
+    if (action === 'res-retry') { retry(); return true; }
     if (action === 'res-manual') {
       // Camino de excepción: el de siempre. Se limpia la residencia para que no
       // queden los dos puestos y gane el que no eligió.
-      f.manualAddr = true; f.residenceId = null;
+      st.picking = true;
+      f.manualAddr = true; f.residenceId = null; f.placeAuto = false;
       f.address = ''; f.lat = null; f.lng = null; f.locConfirmed = false;
       destroyMap();
       return true;
@@ -374,21 +414,27 @@
     return true;
   }
 
-  // Deliberadamente NO se autoselecciona el punto guardado.
-  //
-  // Se probó y se descartó: el atajo quedaba dependiendo de si el catálogo ya
-  // había llegado (unas veces el paso 3 abría resuelto y otras no, con los
-  // mismos datos), y sobre todo, quien se acaba de mudar necesita VER la lista.
-  // La maqueta del diseñador tampoco autoselecciona: pone «Tus puntos» arriba.
-  // Es un toque, no cero — y siempre el mismo.
+  // Volver a intentar la carga del catálogo. Existe porque el paso 3 ya no se
+  // cae en silencio al camino manual cuando la lista no llegó: lo dice y ofrece
+  // reintentar (la causa típica es la sesión, no la red).
+  function retry() {
+    st.cat = null; st.failed = false; st.loading = false;
+    load();
+  }
 
   // Un pedido nuevo arranca limpio: si el anterior terminó en «hoy salgo de otro
   // lado», el siguiente tiene que volver a ofrecerle sus dos unidades.
-  function newTrip() { st.otro = false; st.q = ''; }
+  function newTrip() { st.otro = false; st.q = ''; st.picking = false; }
 
   window.AuxResidencias = {
     load, html, handle, afterRender, ready, onQuery, destroyMap, newTrip,
+    autofill, retry,
     hasCatalog: () => !!(st.cat && st.cat.length),
+    // El catálogo no está disponible (falló o llegó vacío). No es lo mismo que
+    // «no hay conjuntos»: hoy la causa más común es entrar sin sesión, y ahí la
+    // consulta responde cero filas sin error por la RLS de la tabla.
+    unavailable: () => !st.loading && !(st.cat && st.cat.length),
+    loading: () => st.loading,
     hasTwoUnits: hasTwo,
     count: () => (st.cat || []).length,
   };
