@@ -305,6 +305,12 @@
         </div>
         <div class="ax-sec">Apariencia</div>
         ${window.AuxPresentacion ? AuxPresentacion.themeHTML() : ''}
+        ${window.AuxPresentacion ? `
+        <button class="axs-ch" data-ax="onb-again">
+          <span class="axs-ch-ic"><svg class="icon"><use href="#i-play"/></svg></span>
+          <span class="axs-ch-txt"><b>Ver la bienvenida otra vez</b><span>Las tres pantallas del primer día.</span></span>
+          <svg class="icon axr-chev"><use href="#i-chev"/></svg>
+        </button>` : ''}
         <div class="ax-sec">App</div>
         <div id="ax-pwa-bar" class="ax-pwa hidden">
           <button class="ax-pwa-btn hidden" data-ax="install">📲 Instalar app</button>
@@ -1984,6 +1990,11 @@
         const fin = () => { auxState.view = 'home'; auxRender(); };
         if (typeof enablePush === 'function') Promise.resolve(enablePush()).then(fin, fin);
         else fin();
+      }
+      // Volver a ver la bienvenida desde Perfil. Sirve para el que se la saltó
+      // —y para probarla sin tener que borrar el almacenamiento del navegador.
+      else if (a === 'onb-again') {
+        auxState.view = 'onboarding'; auxState.onbStep = 0; auxRender();
       }
       else if (a === 'onb-later') {
         if (window.AuxPresentacion) AuxPresentacion.markOnboarded();

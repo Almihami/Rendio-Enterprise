@@ -184,11 +184,50 @@
       </svg>`,
   };
 
+  // LA MARCA ES POR PERSONA, NO POR NAVEGADOR (7-sep-2026).
+  //
+  // Estaba en una sola llave, `rendio.aux.onboarded`, así que el navegador
+  // entero quedaba «ya presentado»: quien creara una cuenta nueva en un aparato
+  // donde alguien ya había entrado NO veía la bienvenida. Se descubrió probando
+  // en producción con un tripulante recién registrado, que es justo el caso al
+  // que va dirigida la pantalla.
+  //
+  // Se guarda por id de perfil. La llave vieja se sigue respetando para quien ya
+  // la tenga (no vale volverles a mostrar el tour a los que ya lo vieron), pero
+  // solo cuenta para el primero que entre después del cambio.
+  function quien() {
+    try {
+      const p = (window.Auxiliar && window.Auxiliar.state && window.Auxiliar.state.profile) || null;
+      return p && p.id ? String(p.id) : null;
+    } catch (_) { return null; }
+  }
   function onboarded() {
-    try { return localStorage.getItem(KEY_ONB) === '1'; } catch (_) { return true; }
+    try {
+      const id = quien();
+      if (id && localStorage.getItem(KEY_ONB + '.' + id) === '1') return true;
+      // Migración silenciosa: el que ya tenía la llave vieja se la queda como
+      // suya la primera vez, y de ahí en adelante cada cuenta va por su lado.
+      if (localStorage.getItem(KEY_ONB) === '1') {
+        if (id) localStorage.setItem(KEY_ONB + '.' + id, '1');
+        localStorage.removeItem(KEY_ONB);
+        return true;
+      }
+      return false;
+    } catch (_) { return true; }
   }
   function markOnboarded() {
-    try { localStorage.setItem(KEY_ONB, '1'); } catch (_) {}
+    try {
+      const id = quien();
+      localStorage.setItem(id ? KEY_ONB + '.' + id : KEY_ONB, '1');
+    } catch (_) {}
+  }
+  // Para volver a verla desde Perfil: se borra la marca de ESTA cuenta.
+  function resetOnboarding() {
+    try {
+      const id = quien();
+      if (id) localStorage.removeItem(KEY_ONB + '.' + id);
+      localStorage.removeItem(KEY_ONB);
+    } catch (_) {}
   }
 
   // La pantalla. Tres cambios sobre lo que había:
@@ -332,7 +371,7 @@
     // tema
     applyTheme: apply, watchTheme: watch, themeHTML, themePref: pref, setThemePref: setPref, isNight,
     // primer ingreso
-    onboarded, markOnboarded, slideHTML, notifyHTML, bindSwipe, slideCount: SLIDES.length,
+    onboarded, markOnboarded, resetOnboarding, slideHTML, notifyHTML, bindSwipe, slideCount: SLIDES.length,
     // estados
     offlineHTML, supportHTML,
   };
