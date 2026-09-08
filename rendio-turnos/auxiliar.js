@@ -66,6 +66,17 @@
     auxState.profile = profile;
     auxState.view = 'home';
     auxBindOnce();
+    // LOS AJUSTES SE VUELVEN A LEER AQUÍ. core.js los lee UNA vez al entrar a la
+    // app y nadie más los refresca en este rol: si el jefe enciende el traslado
+    // privado mientras el tripulante tiene la PWA abierta —que es lo normal, no
+    // se cierra nunca—, sin esto no lo ve hasta reiniciarla del todo. Y como
+    // «Reintentar» vuelve a pasar por auxInit, ese botón ahora sí arregla lo que
+    // promete. Si falla, se sigue con lo que ya había: no se pierde nada.
+    try {
+      if (window.Api?.getSettings && typeof state !== 'undefined') {
+        state.settings = await Api.getSettings();
+      }
+    } catch (_) {}
     // Modo nocturno antes de pintar: si se aplicara después, la primera pantalla
     // aparece en claro y da un fogonazo blanco a las 3 de la mañana.
     if (window.AuxPresentacion) {
@@ -81,7 +92,12 @@
     auxState.source = Array.isArray(trips) ? 'live' : 'error';
     // Primer ingreso: solo si los datos cargaron. Si la app está sin señal, lo
     // primero que tiene que ver es que no hay señal, no un tour de bienvenida.
-    if (auxState.source === 'live' && window.AuxPresentacion && !AuxPresentacion.onboarded()) {
+    // La EXCEPCIÓN es la vista previa local (#preview-auxiliar en localhost, la
+    // que arma core.js sin cuenta): ahí nunca hay datos, así que con la regla de
+    // arriba las pantallas de bienvenida no se podían ver ni para revisarlas.
+    // En vista previa se muestran siempre, aunque ya se hayan visto.
+    const enPreview = String(auxState.profile?.id || '').startsWith('preview-');
+    if (window.AuxPresentacion && (enPreview || (auxState.source === 'live' && !AuxPresentacion.onboarded()))) {
       auxState.view = 'onboarding'; auxState.onbStep = 0;
     }
     auxRender();
@@ -118,6 +134,12 @@
     if (auxState.view === 'onboarding') {
       const P = window.AuxPresentacion;
       root.innerHTML = !P ? '' : (auxState.onbStep >= P.slideCount ? P.notifyHTML() : P.slideHTML(auxState.onbStep));
+      // Deslizar entre pantallas. Se ata aquí porque el HTML se acaba de rehacer.
+      if (P && P.bindSwipe) {
+        P.bindSwipe(root,
+          () => { auxState.onbStep = Math.min(P.slideCount, auxState.onbStep + 1); auxRender(); },
+          () => { if (auxState.onbStep > 0) { auxState.onbStep--; auxRender(); } });
+      }
       return;
     }
     if (auxState.view === 'form') { root.innerHTML = auxFormHTML(); auxAfterFormRender(); return; }
@@ -165,6 +187,20 @@
   const auxUpcoming = () => auxState.trips.filter(t => !AUX_CLOSED.includes(t.status));
   const auxPast = () => auxState.trips.filter(t => AUX_CLOSED.includes(t.status));
 
+  // La app no pudo leer la configuración de la operación (app_settings). Pasa
+  // sin sesión: la consulta responde cero filas por RLS y api.js cae a los
+  // valores de arranque, entre ellos «privado apagado». Sin este aviso, el
+  // tripulante ve una app COMPLETA a la que le faltan opciones en silencio —
+  // que fue justo lo que pasó al probar el flujo el 7-sep-2026: el paso del
+  // traslado privado no salía y nada decía por qué.
+  function auxSettingsWarnHTML() {
+    const s = (typeof state !== 'undefined') ? state.settings : null;
+    if (!s || s._loaded !== false) return '';
+    return `<div class="ax-hint bad"><svg class="icon"><use href="#i-warn"/></svg>
+      No pudimos leer la configuración de la operación, así que la app está mostrando lo mínimo:
+      pueden faltarte opciones (por ejemplo, el traslado privado). Suele ser la sesión — vuelve a entrar.</div>`;
+  }
+
   function auxHomeHTML() {
     const upcoming = auxUpcoming();
     const past = auxPast();
@@ -182,6 +218,7 @@
           <button class="ax-pwa-btn hidden" data-ax="install">📲 Instalar app</button>
           <button class="ax-pwa-btn hidden" data-ax="enable-push">🔔 Activar notificaciones</button>
         </div>
+        ${auxSettingsWarnHTML()}
         ${auxState.source === 'error' ? `
           <div class="ax-empty">
             <div class="ax-empty-ic"><svg class="icon"><use href="#i-info"/></svg></div>
@@ -525,6 +562,44 @@
   function auxTodayISO() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
   }
+  // Un día corrido en hora de Colombia (0 = hoy, 1 = mañana...). Se cuenta sobre
+  // el ISO de Bogotá, no sobre el reloj del teléfono: un tripulante que aterriza
+  // de un internacional trae el aparato en otra zona y "mañana" no es el mismo.
+  function auxDayISO(n) {
+    const [y, m, d] = auxTodayISO().split('-').map(Number);
+    const t = new Date(Date.UTC(y, m - 1, d + n));
+    return t.toISOString().slice(0, 10);
+  }
+  // LA FECHA ARRANCA EN MAÑANA (profa, 7-sep-2026): "esto lo llena diariamente,
+  // debería autoasignarse al día siguiente". El pedido normal es para el vuelo
+  // de mañana — y el de hoy casi siempre viola las 6 h de anticipación, así que
+  // dejar el campo vacío obligaba a escribir todos los días la única fecha que
+  // la app podía haber puesto sola. Sigue siendo un campo editable: los atajos
+  // de abajo y el calendario nativo cambian el día en un toque.
+  const auxDefaultDate = () => auxDayISO(1);
+  // Los tres días que cubren casi todos los pedidos, más el calendario para el
+  // resto. El elegido se pinta encendido, así que la fecha puesta por defecto
+  // se VE (si se pusiera calladamente, el auxiliar no sabría que va a pedir
+  // para mañana hasta el resumen del último paso).
+  function auxDateChips(f) {
+    const hoy = auxTodayISO();
+    const dias = [
+      { iso: hoy, label: 'Hoy' },
+      { iso: auxDayISO(1), label: 'Mañana' },
+      { iso: auxDayISO(2), label: 'Pasado' },
+    ];
+    const otro = f.date && !dias.some(d => d.iso === f.date);
+    return `
+      <div class="ax-daychips">
+        ${dias.map(d => `<button class="ax-daychip${f.date === d.iso ? ' on' : ''}" data-ax="date" data-iso="${d.iso}">
+          <b>${d.label}</b><span>${auxDateCorto(d.iso)}</span></button>`).join('')}
+        ${otro ? `<span class="ax-daychip on otro"><b>Otro día</b><span>${auxDateCorto(f.date)}</span></span>` : ''}
+      </div>`;
+  }
+  function auxDateCorto(iso) {
+    try { return new Date(iso + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }); }
+    catch (_) { return iso; }
+  }
 
   function auxStep2() {
     const isLle = auxState.form.type === 'lle';
@@ -538,6 +613,7 @@
            rastrea cuando el avión se retrasa. */ ''}
       ${isLle ? auxField('Número de vuelo', 'flight', f.flight || '', 'Ej: AV-9412') : ''}
       ${auxField('Fecha del vuelo', 'date', f.date || '', '', 'date', `min="${auxTodayISO()}"`)}
+      ${auxDateChips(f)}
       ${auxField(isLle ? 'Hora de aterrizaje' : 'Hora en que quieres estar en el aeropuerto',
         'time', f.time || '', isLle ? '06:18' : '05:10', 'time')}
       ${isLle ? '' : `<div class="ax-geo-hint">No es tu hora de presentación: es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.</div>`}
@@ -579,6 +655,8 @@
     const f = auxState.form;
     const isLle = f.type === 'lle';
     if (window.AuxResidencias) {
+      // Punto del registro ya puesto: el caso normal es no tener que elegir nada.
+      AuxResidencias.autofill(f);
       const cat = AuxResidencias.html(f);
       if (cat != null) return cat;
     }
@@ -586,8 +664,20 @@
     const volver = (window.AuxResidencias && AuxResidencias.hasCatalog() && f.manualAddr)
       ? `<button class="axr-back-cat" data-ax="res-catalog"><svg class="icon"><use href="#i-back"/></svg>Volver a la lista de conjuntos</button>`
       : '';
+    // ANTES ESTE CAMINO SE TOMABA EN SILENCIO. Si el catálogo no llegaba, el
+    // paso pedía la dirección a mano como si eso fuera lo normal, y el auxiliar
+    // —que ya había dejado su punto en el registro— se preguntaba por qué se la
+    // volvían a pedir. Es exactamente lo que pasa al abrir la app SIN SESIÓN: la
+    // RLS de `residences` responde cero filas sin error. Ahora se dice.
+    const sinCatalogo = !f.manualAddr && window.AuxResidencias && AuxResidencias.unavailable();
+    const aviso = sinCatalogo ? `
+      <div class="ax-hint bad"><svg class="icon"><use href="#i-warn"/></svg>
+        No pudimos cargar tus puntos de recogida guardados, así que toca escribir la dirección.
+        Si acabas de abrir la app, reintenta; si sigue igual, avisa a coordinación.</div>
+      <button class="ax-btn ax-btn-ghost" data-ax="res-retry"><svg class="icon"><use href="#i-refresh"/></svg>Reintentar</button>` : '';
     return `
       ${volver}
+      ${aviso}
       ${auxField(isLle ? 'Dirección donde te dejamos' : 'Dirección de recogida', 'address', f.address || '', 'Cra 51 #49-06, Centro')}
       <div class="ax-geo-hint">${isLle ? 'Casa, hotel o donde te quedes.' : 'Casa, hotel o donde estés esa noche.'}</div>
       <div id="ax-map" class="ax-map ${f.address ? '' : 'hidden'}"></div>
@@ -1822,7 +1912,8 @@
       if (a === 'install') { if (window.rendioInstall) window.rendioInstall.prompt(); return; }
       if (a === 'enable-push') { if (typeof enablePush === 'function') Promise.resolve(enablePush()).then(() => auxSetupPwa()); return; }
       if (a === 'new') {
-        auxState.view = 'form'; auxState.step = 1; auxState.form = { isReserva: true };
+        auxState.view = 'form'; auxState.step = 1;
+        auxState.form = { isReserva: true, date: auxDefaultDate() };
         // El catálogo se pide ya, para que el paso 3 no muestre spinner.
         if (window.AuxResidencias) { AuxResidencias.newTrip(); AuxResidencias.load(); }
         if (window.AuxPrivado) AuxPrivado.resetCupo();
@@ -1834,6 +1925,7 @@
         auxState.view = 'form'; auxState.step = 2;
         auxState.form = {
           isReserva: true, type: last.type,
+          date: auxDefaultDate(),
           notes: last.notes || '',
           residenceId: last.residenceId || null,
           residenceUnit: last.residenceUnit || null,
@@ -1872,6 +1964,12 @@
       else if (a === 'onb-next') {
         auxState.onbStep++;
         auxRender();
+      }
+      // Tocar un punto salta a esa pantalla (y deslizar hace lo mismo: ver
+      // bindSwipe). No se deja pasar del permiso, que es el final del camino.
+      else if (a === 'onb-go') {
+        const n = parseInt(el.dataset.i, 10);
+        if (!isNaN(n)) { auxState.onbStep = Math.max(0, n); auxRender(); }
       }
       else if (a === 'onb-skip') {
         // Saltar salta el tour, pero NO el permiso: es lo único de las cuatro
@@ -1915,6 +2013,7 @@
         } else auxSubmit();
       }
       else if (a === 'type') { auxState.form.type = el.dataset.type; auxRender(); }
+      else if (a === 'date') { auxState.form.date = el.dataset.iso; auxRender(); }
       else if (a === 'toggle') { const k = el.dataset.key; auxState.form[k] = !auxState.form[k]; auxRender(); }
       else if (a === 'pin-confirm') { auxState.form.locConfirmed = true; auxRefreshPinRow(); toast('Ubicación confirmada.'); }
       else if (a === 'pin-edit') { auxState.form.locConfirmed = false; auxRefreshPinRow(); }
