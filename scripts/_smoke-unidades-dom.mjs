@@ -55,7 +55,7 @@ t('lo aclara para que no lo confundan', /No es tu hora de presentación/.test(tx
 
 console.log('\n── el pedido: el regreso el mismo día ──');
 t('ofrece el regreso del mismo día', /Regreso el mismo día/.test(txt()));
-set('flight','AV-9412'); set('date','2026-12-20'); set('time','05:10');
+set('date','2026-12-20'); set('time','05:10');   // una salida no pide vuelo (25-ago)
 t('sin regreso, el botón se habilita', !ui().querySelector('[data-ax="next"]').hasAttribute('disabled'));
 click('[data-ax="toggle"][data-key="sameDayBack"]');
 t('al marcarlo, pide la hora del regreso', /Hora a la que aterrizas de vuelta/.test(txt()));
@@ -112,9 +112,12 @@ window.Auxiliar.state.view='viajes'; window.Auxiliar.rerender(); await wait();
 t('la pestaña Viajes tampoco', !/\[object Object\]/.test(ui().innerHTML) && /AV-9412/.test(txt()), txt().slice(0,160));
 
 console.log('\n── el padrón del admin ──');
+// La fecha de ingreso del primero se calcula: estaba clavada en el 25-ago y la
+// prueba «Desde hoy» solo pasaba ese día.
+const HOY=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
 window.Api.listAuxiliares=async()=>[
   {id:'a1',profileId:'p1',name:'Ana Lucía Restrepo Vélez',email:'ana@gmail.com',phone:'3105557788',active:true,
-   createdAt:'2026-08-25T10:00:00Z',joinedAt:'2026-08-25',airline:'Wingo',
+   createdAt:HOY+'T10:00:00Z',joinedAt:HOY,airline:'Wingo',
    res1:{name:'Solare',sector:'Llanogrande'},unit1:'Torre 1 · 501',res2:{name:'Olivar Apartamentos'},unit2:'Casa 8',homeAddress:''},
   {id:'a2',profileId:'p2',name:'Julián Andrés López Mesa',email:'julian@gmail.com',phone:'',active:true,
    createdAt:'2026-08-20T10:00:00Z',joinedAt:null,airline:'',res1:null,unit1:'',res2:null,unit2:'',homeAddress:'Cra 51 #49-06'},

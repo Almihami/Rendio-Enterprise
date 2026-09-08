@@ -33,28 +33,53 @@ window.Auxiliar.state.view='form'; window.Auxiliar.state.step=1; window.Auxiliar
 window.AuxResidencias.newTrip(); window.AuxResidencias.load(); await wait(80);
 window.Auxiliar.rerender();
 click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]');
-set('flight','AV-9412'); set('date','2026-12-20'); set('time','05:10');
+// En una SALIDA no hay campo de vuelo desde el 25-ago (solo interesa el de
+// llegada). Pedirlo aquí es lo que tenía esta prueba rota.
+set('date','2026-12-20'); set('time','05:10');
 click('[data-ax="next"]'); await wait();
 console.log('\n── paso 3 con UNA unidad ──');
 t('NO pregunta de cuál unidad sale', !/De cuál sales/.test(txt()), txt().slice(0,160));
-t('ofrece su punto guardado como atajo', /Tu punto/.test(txt()));
-t('y el catálogo completo debajo', ui().querySelectorAll('[data-ax="res-pick"]').length>=2);
-click('[data-ax="res-pick"][data-id="r1"]'); await wait();
-t('al elegir su conjunto, lo confirma', /Ubicación verificada/.test(txt()));
+// 7-sep-2026: con UNA unidad el paso ya no ofrece un atajo que haya que tocar,
+// llega resuelto. Es lo que pidió la profa: «si solo tiene una dirección
+// asociada, que se autocomplete».
+t('llega con su punto ya puesto', /Ubicación verificada/.test(txt()), txt().slice(0,200));
+t('y dice que lo pusimos nosotros', /el punto que dejaste en tu registro/.test(txt()));
+t('con el conjunto del perfil', window.Auxiliar.state.form.residenceId==='r1');
 t('arrastra el apartamento del perfil', window.Auxiliar.state.form.residenceUnit==='Torre 3 · 302');
+t('el botón queda habilitado sin tocar nada', !ui().querySelector('[data-ax="next"]').hasAttribute('disabled'));
 click('[data-ax="next"]'); await wait();
 t('el resumen lleva la unidad', /UnidadTorre 3 · 302/.test(txt()), txt().slice(0,240));
 click('[data-ax="next"]'); await wait(120);
 t('crea UNA sola reserva (no marcó regreso)', creadas.length===1, 'creadas='+creadas.length);
 t('con conjunto y apartamento', creadas[0]?.residenceId==='r1' && creadas[0]?.residenceUnit==='Torre 3 · 302');
 
-console.log('\n── elegir un conjunto que NO es el suyo ──');
+console.log('\n── cambiar el punto que se puso solo ──');
 window.Auxiliar.state.view='form'; window.Auxiliar.state.step=3;
-window.Auxiliar.state.form={isReserva:true,type:'sal',flight:'AV-1',date:'2026-12-21',time:'06:00'};
+window.Auxiliar.state.form={isReserva:true,type:'sal',date:'2026-12-21',time:'06:00'};
 window.AuxResidencias.newTrip(); window.Auxiliar.rerender(); await wait();
+click('[data-ax="res-change"]'); await wait();
+t('«Cambiar» abre la lista', /Tu punto/.test(txt()) && ui().querySelectorAll('[data-ax="res-pick"]').length>=2);
+t('y NO se lo vuelve a poner solo', !window.Auxiliar.state.form.residenceId,
+  'quedó: '+window.Auxiliar.state.form.residenceId);
+
+console.log('\n── elegir un conjunto que NO es el suyo ──');
 click('[data-ax="res-pick"][data-id="r2"]'); await wait();
 t('no le pega el apartamento de su otro conjunto', !window.Auxiliar.state.form.residenceUnit,
   'quedó: '+window.Auxiliar.state.form.residenceUnit);
+
+console.log('\n── la fecha llega puesta en mañana ──');
+// Se entra por el botón de verdad («Pedir traslado»), que es donde se arma el
+// formulario: si se monta el estado a mano, la fecha por defecto no se prueba.
+window.Auxiliar.state.view='home'; window.Auxiliar.state.source='live'; window.Auxiliar.rerender(); await wait();
+click('[data-ax="new"]'); await wait();
+const manana=new Date(Date.now()+86400000).toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+t('el pedido nuevo arranca con la fecha de mañana', window.Auxiliar.state.form.date===manana,
+  'quedó: '+window.Auxiliar.state.form.date+' · esperada: '+manana);
+click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]'); await wait();
+t('el campo de fecha la muestra', ui().querySelector('[data-field="date"]').value===manana);
+t('y el atajo «Mañana» está encendido', !!ui().querySelector('.ax-daychip.on'));
+t('se puede cambiar a hoy con un toque', (()=>{ const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  click(`[data-ax="date"][data-iso="${hoy}"]`); return window.Auxiliar.state.form.date===hoy; })());
 
 console.log(`\n${ok}/${ok+bad} pasaron${bad?' · '+bad+' FALLARON':''}`);
 process.exit(bad?1:0);
