@@ -192,9 +192,12 @@
   // en producción con un tripulante recién registrado, que es justo el caso al
   // que va dirigida la pantalla.
   //
-  // Se guarda por id de perfil. La llave vieja se sigue respetando para quien ya
-  // la tenga (no vale volverles a mostrar el tour a los que ya lo vieron), pero
-  // solo cuenta para el primero que entre después del cambio.
+  // Se guarda por id de perfil. La llave VIEJA se ignora a propósito: estas tres
+  // pantallas se rehicieron enteras el 7-sep-2026 (otras escenas, otro texto,
+  // movimiento), así que quien vio las de antes no ha visto estas. Se le muestran
+  // una vez y ya. Heredarle la marca vieja a la primera cuenta que entrara era
+  // peor: dejaba sin bienvenida justo al tripulante recién creado, que es el
+  // caso que destapó todo esto.
   function quien() {
     try {
       const p = (window.Auxiliar && window.Auxiliar.state && window.Auxiliar.state.profile) || null;
@@ -204,21 +207,15 @@
   function onboarded() {
     try {
       const id = quien();
-      if (id && localStorage.getItem(KEY_ONB + '.' + id) === '1') return true;
-      // Migración silenciosa: el que ya tenía la llave vieja se la queda como
-      // suya la primera vez, y de ahí en adelante cada cuenta va por su lado.
-      if (localStorage.getItem(KEY_ONB) === '1') {
-        if (id) localStorage.setItem(KEY_ONB + '.' + id, '1');
-        localStorage.removeItem(KEY_ONB);
-        return true;
-      }
-      return false;
+      if (!id) return localStorage.getItem(KEY_ONB) === '1';   // sin perfil, lo de antes
+      return localStorage.getItem(KEY_ONB + '.' + id) === '1';
     } catch (_) { return true; }
   }
   function markOnboarded() {
     try {
       const id = quien();
       localStorage.setItem(id ? KEY_ONB + '.' + id : KEY_ONB, '1');
+      if (id) localStorage.removeItem(KEY_ONB);   // la llave de todo el navegador ya no manda
     } catch (_) {}
   }
   // Para volver a verla desde Perfil: se borra la marca de ESTA cuenta.
