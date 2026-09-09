@@ -1,0 +1,480 @@
+{
+  "generado": "2026-08-05",
+  "fuente": "lista de Julian del 4-ago-2026 + pines confirmados por la profa",
+  "aeropuerto_MDE": {
+    "lat": 6.1715,
+    "lng": -75.427,
+    "nota": "rotonda terminal de pasajeros, acceso occidental"
+  },
+  "sitios": [
+    {
+      "nombre": "Olivar Apartamentos",
+      "lat": 6.163382,
+      "lng": -75.374674,
+      "pax": 14,
+      "min_a_mde_osrm": 28.1,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "David Estrada",
+        "Farid",
+        "Sara Londoño",
+        "Manuela Velásquez",
+        "Fernando Soto",
+        "Juanita Ortiz",
+        "Jolene",
+        "Angelly Turner",
+        "Sebastián González",
+        "Daniela Villa",
+        "Melisa Arcila",
+        "Francisco Sánchez",
+        "Erika Noreña",
+        "Lina María"
+      ]
+    },
+    {
+      "nombre": "Solare Apartamentos",
+      "lat": 6.15267,
+      "lng": -75.389227,
+      "pax": 6,
+      "min_a_mde_osrm": 21.6,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Jessica Duque",
+        "Lady Aguirre",
+        "Jesús Madrid",
+        "Josmar",
+        "Ana Upegui",
+        "Angely Rubiano"
+      ]
+    },
+    {
+      "nombre": "Edificio Cámbulo",
+      "lat": 6.153218,
+      "lng": -75.396239,
+      "pax": 5,
+      "min_a_mde_osrm": 19.9,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Gloria Bayona",
+        "Karol Martínez",
+        "Nicol Mancilla",
+        "Catalina Rico",
+        "Sara Villegas"
+      ]
+    },
+    {
+      "nombre": "Río Vivo",
+      "lat": 6.164181,
+      "lng": -75.379851,
+      "pax": 4,
+      "min_a_mde_osrm": 28.5,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Michel Rodríguez",
+        "Sebastián León",
+        "Margy",
+        "Andrés Sánchez"
+      ]
+    },
+    {
+      "nombre": "Edificio Los Cerezos",
+      "lat": 6.164324,
+      "lng": -75.374294,
+      "pax": 3,
+      "min_a_mde_osrm": 28.0,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Yalimar Peñaranda",
+        "Josselyn",
+        "Melina"
+      ]
+    },
+    {
+      "nombre": "Boral Apartamentos",
+      "lat": 6.154649,
+      "lng": -75.386709,
+      "pax": 3,
+      "min_a_mde_osrm": 22.7,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Shirley",
+        "Paulina Ciro",
+        "Juliana Ibarra"
+      ]
+    },
+    {
+      "nombre": "Forest Apartamentos",
+      "lat": 6.1499,
+      "lng": -75.397164,
+      "pax": 3,
+      "min_a_mde_osrm": 21.0,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Camila Cano",
+        "Alison Fernández",
+        "Esteban Echavarría"
+      ]
+    },
+    {
+      "nombre": "Guayacán",
+      "lat": 6.153389,
+      "lng": -75.397333,
+      "pax": 3,
+      "min_a_mde_osrm": 19.7,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Laura Ortiz",
+        "Isabela Polo",
+        "Yerly"
+      ]
+    },
+    {
+      "nombre": "Arándanos de Fontibón",
+      "lat": 6.167218,
+      "lng": -75.377081,
+      "pax": 2,
+      "min_a_mde_osrm": 27.8,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Alejandra Gaitán",
+        "Sofía Villegas"
+      ]
+    },
+    {
+      "nombre": "Viverdi Apartamentos",
+      "lat": 6.14792,
+      "lng": -75.397307,
+      "pax": 2,
+      "min_a_mde_osrm": 21.4,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Jenn Linares",
+        "Karol Lozano"
+      ]
+    },
+    {
+      "nombre": "Edificio Sendai",
+      "lat": 6.140138,
+      "lng": -75.377608,
+      "pax": 2,
+      "min_a_mde_osrm": 23.6,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Andrea Lesmes",
+        "Andrea Núñez"
+      ]
+    },
+    {
+      "nombre": "Ébano Apartamentos",
+      "lat": 6.129368,
+      "lng": -75.378543,
+      "pax": 2,
+      "min_a_mde_osrm": 25.9,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Leslie Acosta",
+        "Javier Gómez"
+      ]
+    },
+    {
+      "nombre": "Portón del Rosal",
+      "lat": 6.14725,
+      "lng": -75.365083,
+      "pax": 2,
+      "min_a_mde_osrm": 26.8,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Ana Vélez",
+        "Ximena Posada"
+      ]
+    },
+    {
+      "nombre": "Urb. Manzanillos",
+      "lat": 6.1662,
+      "lng": -75.376548,
+      "pax": 2,
+      "min_a_mde_osrm": 28.3,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Carlos Correa",
+        "Dayana Vargas"
+      ]
+    },
+    {
+      "nombre": "Origen del Lago",
+      "lat": 6.154129,
+      "lng": -75.389241,
+      "pax": 2,
+      "min_a_mde_osrm": 22.0,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Juan Martínez",
+        "Henry"
+      ]
+    },
+    {
+      "nombre": "Piedemonte Apartamentos",
+      "lat": 6.162841,
+      "lng": -75.373898,
+      "pax": 1,
+      "min_a_mde_osrm": 27.3,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Duvan"
+      ]
+    },
+    {
+      "nombre": "Madero del Lago",
+      "lat": 6.157451,
+      "lng": -75.388881,
+      "pax": 1,
+      "min_a_mde_osrm": 24.1,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Daniel Gallón"
+      ]
+    },
+    {
+      "nombre": "Edificio Las Margaritas",
+      "lat": 6.150573,
+      "lng": -75.39073,
+      "pax": 1,
+      "min_a_mde_osrm": 21.6,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Laura Yalanda"
+      ]
+    },
+    {
+      "nombre": "Edificio Eucalipto",
+      "lat": 6.153651,
+      "lng": -75.39632,
+      "pax": 1,
+      "min_a_mde_osrm": 19.9,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Aleja Quintero"
+      ]
+    },
+    {
+      "nombre": "Club Verde Terra",
+      "lat": 6.137082,
+      "lng": -75.371337,
+      "pax": 1,
+      "min_a_mde_osrm": 27.7,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Paula Londoño"
+      ]
+    },
+    {
+      "nombre": "Urb. Bosque Robledal",
+      "lat": 6.159095,
+      "lng": -75.359778,
+      "pax": 1,
+      "min_a_mde_osrm": 28.9,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Dahian"
+      ]
+    },
+    {
+      "nombre": "Condominio Planté",
+      "lat": 6.169238,
+      "lng": -75.349558,
+      "pax": 1,
+      "min_a_mde_osrm": 33.3,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Ana Lucía"
+      ]
+    },
+    {
+      "nombre": "Rincones de Llanogrande",
+      "lat": 6.118198,
+      "lng": -75.402665,
+      "pax": 1,
+      "min_a_mde_osrm": 24.4,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Camilo Guancha"
+      ]
+    },
+    {
+      "nombre": "Alto Vallejo / Loma Linda",
+      "lat": 6.153176,
+      "lng": -75.402009,
+      "pax": 1,
+      "min_a_mde_osrm": 18.4,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Alfonso"
+      ]
+    },
+    {
+      "nombre": "Bosques del Norte",
+      "lat": 6.161028,
+      "lng": -75.375861,
+      "pax": 1,
+      "min_a_mde_osrm": 26.9,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Luz"
+      ]
+    },
+    {
+      "nombre": "Linda Granja",
+      "lat": 6.152,
+      "lng": -75.394111,
+      "pax": 1,
+      "min_a_mde_osrm": 20.6,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Karol Puentes"
+      ]
+    },
+    {
+      "nombre": "Llanito",
+      "lat": 6.148111,
+      "lng": -75.395472,
+      "pax": 1,
+      "min_a_mde_osrm": 21.3,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Juan Bedoya"
+      ]
+    },
+    {
+      "nombre": "Casa azul Llanito",
+      "lat": 6.151111,
+      "lng": -75.395889,
+      "pax": 1,
+      "min_a_mde_osrm": 20.6,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Jesús Taborda"
+      ]
+    },
+    {
+      "nombre": "Tejo",
+      "lat": 6.149389,
+      "lng": -75.391861,
+      "pax": 1,
+      "min_a_mde_osrm": 22.0,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Daniela Hincapié"
+      ]
+    },
+    {
+      "nombre": "Séptima",
+      "lat": 6.148139,
+      "lng": -75.3855,
+      "pax": 1,
+      "min_a_mde_osrm": 23.3,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Santi Carmona"
+      ]
+    },
+    {
+      "nombre": "Quintas Blancas",
+      "lat": 6.149722,
+      "lng": -75.382417,
+      "pax": 1,
+      "min_a_mde_osrm": 23.2,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Andrés Ramírez"
+      ]
+    },
+    {
+      "nombre": "Quintas Amarillas",
+      "lat": 6.151028,
+      "lng": -75.380806,
+      "pax": 1,
+      "min_a_mde_osrm": 23.4,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Sara Jaramillo"
+      ]
+    },
+    {
+      "nombre": "Marinilla centro",
+      "lat": 6.175528,
+      "lng": -75.334667,
+      "pax": 1,
+      "min_a_mde_osrm": 37.6,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Camila Vélez"
+      ]
+    },
+    {
+      "nombre": "Marinilla vereda",
+      "lat": 6.161111,
+      "lng": -75.322722,
+      "pax": 1,
+      "min_a_mde_osrm": 42.9,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Sara Valencia"
+      ]
+    },
+    {
+      "nombre": "Llanogrande",
+      "lat": 6.128139,
+      "lng": -75.417556,
+      "pax": 1,
+      "min_a_mde_osrm": 16.8,
+      "fuente": "coordenada DMS de la lista",
+      "tripulantes": [
+        "Jairo García"
+      ]
+    },
+    {
+      "nombre": "Campo Santander",
+      "lat": 6.158218,
+      "lng": -75.372499,
+      "pax": 1,
+      "min_a_mde_osrm": 25.8,
+      "fuente": "link de Google Maps",
+      "tripulantes": [
+        "Catalina Serna"
+      ]
+    },
+    {
+      "nombre": "Campus Reservado",
+      "lat": 6.148482,
+      "lng": -75.397905,
+      "pax": 1,
+      "min_a_mde_osrm": 21.2,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Kriss"
+      ]
+    },
+    {
+      "nombre": "Torres del Campo",
+      "lat": 6.14048,
+      "lng": -75.37238,
+      "pax": 1,
+      "min_a_mde_osrm": 26.7,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Laura Blanco"
+      ]
+    },
+    {
+      "nombre": "Senderos de San Sebastián",
+      "lat": 6.161463,
+      "lng": -75.371935,
+      "pax": 1,
+      "min_a_mde_osrm": 27.2,
+      "fuente": "pin de Google Maps (Julian/profa)",
+      "tripulantes": [
+        "Wilson"
+      ]
+    }
+  ]
+}

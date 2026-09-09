@@ -88,6 +88,10 @@ rendio-backend/scripts/seed-turnos-users.json
 tmp/
 
 # --- Local del proyecto (no versionar) ---
+# Solo en la RAÍZ: rendio-backend/docs/ (el estudio de rutas, el ERD) sí se
+# versiona. Del docs/ de la raíz se rescata el catálogo de residencias porque
+# el pipeline de rutas (rendio-backend/scripts/plan-desde-formulario.mjs) lo lee.
 _archivo/
-docs/
+/docs/*
+!/docs/catalogo-residencias.json
 mockups/
