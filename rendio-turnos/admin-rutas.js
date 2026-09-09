@@ -529,7 +529,14 @@
     });
     const dur = t + rtLegMin(prev, 'airport');
     const minDl = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl)));
-    return Math.max(...ids.map(id => rtToMin(rt.aux[id].dl) - minDl + dur - (off[id] || 0))) + rt.AIRPORT_BUFFER;
+    // CONTRA LA SALIDA QUE DE VERDAD SE PROGRAMA, no contra la justa. La vuelta
+    // se coloca con rtDurProg (la tabla, más larga que el recorrido medido) y la
+    // hora se redondea hacia abajo a múltiplos de 5; si el techo se mide con la
+    // salida justa, esos minutos se cuelan. Medido el 7 y 8 de sep-2026: con el
+    // techo en 60 pasaban personas con 62, 64, 65 y 69.
+    const durP = rtDurProg(ids, minDl, dur, t);
+    const salida = Math.floor((minDl - rt.AIRPORT_BUFFER - durP) / 5) * 5;
+    return Math.max(...ids.map(id => rtToMin(rt.aux[id].dl) - salida - (off[id] || 0)));
   };
 
   // ---- LA TABLA DE JULIÁN ----------------------------------------------------
@@ -597,7 +604,16 @@
     // aeropuerto 10 → recogerla 14:04, que es exactamente lo que dijo
     // ("tenía que haber puesto 14:04 o 14:05").
     const colchon = ids.length > 1 ? rt.ZONE_CUSHION : 0;
-    const total = Math.max(0, z.min - colchon - (rt.esDiaLento ? rt.HOLIDAY_SHIFT : 0));
+    // CON UNA SOLA PARADA LA TABLA DE ZONA NO PROGRAMA. Medido el 7-sep-2026
+    // sobre 20 planes suyos (310 vueltas de salida): de la ÚLTIMA recogida al
+    // "deben estar" él pone 20 min —mediana 20 en las seis franjas, sola o con
+    // varias; máximo 30 de noche, 35 de día—. Su tabla de zona dice 40-60 para
+    // una persona y él no la cumple ni una vez: lo de Jolene (14:04 para 15:04)
+    // era la cola, no la regla, y con ella generalizada Danna León salía
+    // recogida a las 2:25 para presentarse a las 3:20, con el carro parado en
+    // el terminal media hora a las 3 de la mañana. Con una parada el viaje ES
+    // el tramo final (su segunda regla), y ese piso queda abajo.
+    const total = ids.length > 1 ? Math.max(0, z.min - colchon - (rt.esDiaLento ? rt.HOLIDAY_SHIFT : 0)) : 0;
     // Segunda regla suya: el tramo desde la ÚLTIMA persona recogida. En una
     // vuelta de varias paradas tiene que caber dentro del total, así que
     // funciona como piso propio.
@@ -812,7 +828,28 @@
           // así que el que aterrizó primero espera esa diferencia. Se acota con el
           // mismo margen que ya define "ajustado" en el resto del tablero.
           if (g.type === 'lle' && w.dlMin - g.dlMin > Math.min(W, rt.MARGIN_TIGHT)) continue;
-          if (!mismaPorteria(g.ids, w.ids) && !fusionables(g.type, g.ids, w.ids, g.dlMin)) continue;
+          if (!mismaPorteria(g.ids, w.ids) && !fusionables(g.type, g.ids, w.ids, g.dlMin)) {
+            // LA OLEADA VECINA NO SE TOMA ENTERA O NADA. Con la de las 3:55
+            // (Ana Lucía sola) y la de las 4:00 con cinco personas, 1+5 pasa del
+            // cupo y aquí se dejaba de probar; Ana Lucía salía sola, el tercer
+            // carro se gastaba en ella y las tres de las 4:30 quedaban sin carro.
+            // Julián (9-sep-2026) toma PARTE: Sara Valencia + Ana Lucía + Carlos
+            // en un carro, Sara Jaramillo + Alfonso en otro, y el tercero libre
+            // para Olivar y Llanogrande. Se prueban las porterías una a una con
+            // las mismas cuatro pruebas (cupo, barrido, techo, económica); las
+            // que no pasan siguen como oleada propia. Medido sobre 7 días con
+            // corrección suya: ninguno empeora, el 9-sep pasa de 3 sin carro a 0.
+            if (g.type !== 'sal') continue;
+            let tomados = [];
+            for (const port of rtGroupByStop(w.ids)) {
+              if (fusionables(g.type, g.ids.concat(tomados), port, g.dlMin)) tomados = tomados.concat(port);
+            }
+            if (!tomados.length) continue;
+            g.ids = g.ids.concat(tomados);
+            w.ids = w.ids.filter(id => !tomados.includes(id));
+            ultimo = w.dlMin;
+            continue;                                // el resto de la oleada sigue pendiente
+          }
           g.ids = g.ids.concat(w.ids);
           ultimo = w.dlMin;                          // el racimo sigue desde aquí
           // La llegada se rige por el ÚLTIMO que aterriza; la salida, por el
@@ -890,7 +927,14 @@
         const p = rtTripParts(tr.ids, origin);
         const dur = rtDurProg(tr.ids, tr.dlMin, p.dur, p.hastaUltima);
         const salmax = tr.dlMin - rt.AIRPORT_BUFFER - dur;
-        const depart = Math.max(s.avail, salmax - rt.CUSHION);
+        // SIN COLCHÓN ENCIMA DEL COLCHÓN. `route_depart_cushion_min` restaba 5
+        // min más a una salida que ya apunta a llegar `route_airport_buffer_min`
+        // antes de la presentación —el único margen que Julián dio ("por más
+        // tardar debe llegar 15:45")—, y luego la hora se redondea hacia abajo.
+        // Esos 5-9 min no los pagaba el carro: los pagaba montado el primero
+        // que sube (medido el 7-sep: los carros llegaban 9,5 min antes de lo
+        // que apuntaban, mediana 8). El margen es uno y ya está en el buffer.
+        const depart = Math.max(s.avail, salmax);
         const late = Math.max(0, depart - salmax);
         const key = late * 100000 + rtDesempate(s) + s.avail;  // factible → carro → quien lleve más rato libre
         if (!best || key < best.key) best = { key, s, origin, depart, late, dur };
@@ -912,7 +956,7 @@
       // libre, nunca más tarde de lo que aguanta la hora de presentación.
       const real = rtCarCompute(lane.id);
       if (real.depart != null) {
-        const tarde = rtRedondea5(Math.max(s.avail, real.depart - rt.CUSHION));
+        const tarde = rtRedondea5(Math.max(s.avail, real.depart));
         if (tarde > rtToMin(lane.start)) lane.start = rtToHM(tarde);
       }
       // tras entregar queda en MDE, disponible para la siguiente vuelta
@@ -965,7 +1009,7 @@
             const prev = anteriorDelCarro(lane);
             const libre = prev ? (rtCarCompute(prev.id).arrival ?? rtToMin(prev.start)) + rt.TURNAROUND
                                : rtToMin((rt.cars.find(c => c.id === lane.car) || {}).avail0 || '01:30');
-            arranque = rtRedondea5(Math.max(libre, r.depart - rt.CUSHION));
+            arranque = rtRedondea5(Math.max(libre, r.depart));
             lane.start = rtToHM(arranque);
             const r2 = rtCarCompute(lane.id);
             const techo = techoDe(order[lane.id]);
@@ -976,6 +1020,11 @@
             const suyo = rtToMin(rt.aux[id].dl) - rt.AIRPORT_BUFFER - r2.arrival;
             ok = r2.status !== 'late' && r2.holg >= 0
               && suyo <= rt.RESCUE_MAX_EARLY
+              // Y a los que YA IBAN en la vuelta: adelantarla los arrastra a
+              // ellos también. Se mide con las ETAs recalculadas, que es la hora
+              // a la que de verdad les timbran (7-sep-2026: David Estrada y
+              // Sebastián González quedaban en 68 con el techo en 60).
+              && (!rt.MAX_EARLY || Math.max(...r2.stops.map(s2 => rtToMin(rt.aux[s2.id].dl) - s2.eta)) <= rt.MAX_EARLY)
               && arranque >= libre
               && (!techo || rtEsperaDe('sal', order[lane.id]) <= techo)
               && (!sig || (r2.arrival + rt.TURNAROUND) <= rtToMin(sig.start));
