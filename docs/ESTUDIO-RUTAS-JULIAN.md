@@ -109,6 +109,65 @@ pasos entre casas). La perilla que sí mueve el error es la **ventana de fusión
 
 ---
 
+## 8. Una parada sola = el tramo final, sin colchón encima (8-sep-2026)
+
+> *"Danna León debe estar 3:10 y la recoges 2:25… es la madrugada, no hay
+> carros, más de 30 min."* (la profa, con razón)
+
+Medido sobre **20 planes suyos / 310 vueltas de salida** (`_solo-por-franja.mjs`):
+de la ÚLTIMA recogida al "deben estar" pone **20 min, mediana 20 en las SEIS
+franjas**, sola o con varias paradas; máximo 30 de noche, 35 de día. Su tabla de
+zona (40-60 "del primero al aeropuerto") **no la cumple ni una vez para una
+persona sola**. El código la había generalizado a las vueltas de una parada, y
+encima restaba `route_depart_cushion_min` (5) y redondeaba hacia abajo. Anatomía
+de Danna: 25 real + 15 tabla + 10 buffer + 5 colchón = 2:25 para 3:20, con el
+carro parado en el terminal media hora a las 3 a.m. De día no se veía porque los
+carros están ocupados y la disponibilidad manda; de noche nada frena.
+
+Cambios en `admin-rutas.js`: la tabla de zona solo programa vueltas de VARIAS
+paradas; sin `CUSHION` al programar la salida (el único margen es
+`route_airport_buffer_min`; **`route_depart_cushion_min` quedó sin uso**); el
+techo de madrugada se mide contra la salida que de verdad se programa (tabla +
+redondeo a 5), y el rescate lo comprueba a TODOS los de la vuelta.
+
+Contra su corrección del 7-sep: sesgo de madrugada **+4,9 → −0,6 min**,
+promedio 41,6 vs sus 42,2, **0 personas sobre 60** (antes 4), error 10,1 → 9,1,
+vueltas iguales 10/17 sin cambio, sin carro 1 sin cambio.
+
+## 9. La oleada vecina se toma por partes (9-sep-2026)
+
+> *"En el primer turno un carro podía llevar a las 3 y dividiste eso en 2
+> carros; más adelante no hay carros para responder a la demanda."* (la profa)
+
+El solver agrupa por hora exacta de presentación y luego fusiona oleadas
+vecinas, pero **absorbía la oleada vecina ENTERA o nada**. El 9-sep la de las
+3:55 era Ana Lucía sola y la de las 4:00 traía 5 personas: 1 + 5 pasa del cupo,
+no se probaba nada más, Ana Lucía salía sola, ese carro se gastaba en ella y a
+las 4:30 Juanita, Jolene y Danna quedaban sin carro. Él toma PARTE de la
+oleada: Sara Valencia + Ana Lucía + Carlos en un carro, Sara Jaramillo + Alfonso
+en otro, y el tercero libre para Olivar y Llanogrande (3:45 → 4:20).
+
+Cambio en `admin-rutas.js`: si la oleada vecina no cabe entera, se prueban sus
+porterías una a una con las mismas cuatro pruebas (cupo, barrido, techo de
+madrugada, económica) y las que no pasan siguen como oleada propia.
+
+Medido en los **7 días con corrección suya** (19-23 ago, 7 y 9 sep): ninguno
+empeora (20, 21, 23-ago y 7-sep idénticos; 19-ago 11,1 → 9,7 y tarde 1 → 0;
+22-ago 8,9 → 8,6). **9-sep: sin carro 3 → 0, error 8,5 → 7,7, y la vuelta de
+las 4:30 sale idéntica a la suya.**
+
+Lo que todavía no calca: **quién va con quién en el primer carro**. Su tríada
+Sara Valencia + Ana Lucía + Carlos la hace 3:00 → 3:40 (40 min); nuestro
+recorrido desde *Marinilla vereda* da 52 y el techo la rechaza con 70. Ponemos
+Sara Valencia + Ana Lucía y mandamos a Carlos con Sara Jaramillo y Alfonso: en
+carros da lo mismo. Ver abierto #6.
+
+Diagnósticos nuevos en `plan-desde-formulario.mjs`: `--por-que-rescate` y
+`--por-que-techo` imprimen por qué se rechaza cada rescate / cada fusión.
+El auditor (`_auditar-plan.mjs`) mide desde entonces **la hora impresa**
+(redondeada a 5 como el mensaje), no el minuto interno: Leslie 10:44 daba "61"
+con el mensaje diciendo 10:45.
+
 ## Lo que sigue abierto
 
 **0. El colchón real son 20 minutos, no 10** (dato del 23-ago, `_colchon-real.mjs`).
@@ -142,6 +201,33 @@ también `Mota` y `Cantabria`.
 **5. Gente que él programa y el formulario no trae:** Melisa Arcila, Santi Carmona,
 Carolina Londoño, Kriss, Isa Rivera, Francisco.
 
+**6. Marinilla sigue 12 min más lenta que él (9-sep).** Sara Valencia está en
+el catálogo en *Marinilla vereda* (42,9 min OSRM, coordenada DMS "de la lista");
+Camila Vélez en *Marinilla centro* (37,6). Él escribe "Marinilla" a secas para
+las dos y hace Marinilla → Planté → Manzanillos → MDE en 40. **Preguntar dónde
+vive Sara Valencia** antes de tocar tiempos.
+
+**7. Danna = "Llanogrande" según él (9-sep).** Con `--plan-jefe=todos` cayó en
+el sitio *Llanogrande* del catálogo, que es el pin de Jairo García (16,8 min);
+antes estaba en Río Vivo (20). Tres minutos, pero es el pin de otro. Preguntar.
+
+**8. El colchón de día NO es una perilla (9-sep).** Entrega 20-35 min antes de
+la presentación de día (Wilson 30, Ana Upegui 30, Lina 25, Camila 35); nosotros
+10. Probado `--buffer=15/20/25` en 9-sep y 7-sep: a 15 el 9-sep baja a 6,4 de
+error (18/31 dentro de ±5) pero el 7-sep pasa de 1 a **5 sin carro**; a 20 y 25
+peor. Él entrega antes solo cuando el carro está libre de todos modos → sería un
+colchón ELÁSTICO por holgura, no un número. Decisión de diseño.
+
+**9. Llegadas: los del MISMO VUELO van en el mismo carro (9-sep).** Dayana y
+Fernando (JA5473) juntos y Lina (23:10) aparte; nosotros llenamos por ventana y
+dejamos a Dayana sola. También unificó Gloria y Melina (9322/9332, dedazo del
+formulario). Es la agrupación de llegadas en la app; sin medir.
+
+**10. Hay DOS hoteles (7-sep): Río Verde y Movich.** El modelo tiene una
+coordenada (0059) y el solver no lo rutea. `¿ES UNA RESERVA?` = SI → hotel, 7 de
+7 el 7-sep y 2 de 2 el 9-sep ("Hotel Rioverde R", "Hotel R"); lo que el
+formulario no dice es cuál.
+
 ---
 
 ## El pipeline
@@ -172,6 +258,8 @@ Error absoluto medio de la hora de recogida, persona por persona:
 | 22-ago | su corrección de salidas | 13,8 → **9,4** (barrido + techo de madrugada) |
 | 22-ago | su **plan oficial** | 13,3 → **8,7** · 15 de 34 dentro de ±5 min · 3 con 20+ |
 | 23-ago | su corrección | **9,4** · 25 de 31 emparejadas |
+| 7-sep | su corrección | **10,1** → 9,1 (sección 8) · 10 de 17 vueltas iguales · sesgo madrugada +4,9 → −0,6 |
+| 9-sep | su corrección | **8,5** → 7,7 (sección 9) · 12 de 18 vueltas iguales · sin carro 3 → 0 |
 
 Medido el 23-ago sobre los cinco días con formulario (19 al 23), el error medio
 está clavado en **~10 min** y **ninguna perilla lo baja**:

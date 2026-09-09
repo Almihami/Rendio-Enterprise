@@ -308,12 +308,18 @@ filas.forEach((f, i) => {
 {
   // Se agrupa por los DÍGITOS: unos escriben "JA5139" y otros "5139" pelado, y
   // son el mismo avión. Si las dos traen sigla y son distintas, no se tocan.
+  // "J6" ES COMO LA TRIPULACIÓN TECLEA JETSMART (JA): plan-a-whatsapp.mjs ya lo
+  // imprime como JA desde el 21-ago, pero aquí "J65473" daba dígitos 65473 y
+  // "JA5473" 5473, y Dayana y Fernando (8-sep-2026) no se reconocían como el
+  // mismo avión. Misma regla antes de agrupar.
+  const vueloNorm = (v) => String(v).replace(/\s+/g, '').replace(/^j6(?=\d{4}$)/i, 'JA').toUpperCase();
   const porVuelo = new Map();
   for (const [id, a] of Object.entries(aux)) {
     if (a.type !== 'lle' || !a.vuelo) continue;
-    const num = a.vuelo.replace(/[^0-9]/g, '');
+    const vn = vueloNorm(a.vuelo);
+    const num = vn.replace(/[^0-9]/g, '');
     if (!num) continue;
-    const sig = a.vuelo.replace(/[^A-Z]/g, '');
+    const sig = vn.replace(/[^A-Z]/g, '');
     if (!porVuelo.has(num)) porVuelo.set(num, []);
     porVuelo.get(num).push({ id, sig });
   }
@@ -375,11 +381,35 @@ let SRC = readFileSync(RUTAS_JS, 'utf8');
 // viaje corto y se agenda con uno largo, y la diferencia se la come montado el
 // primero. Por eso hay gente esperando 85 min con el techo en 60.
 if (process.argv.includes('--techo-real')) {
-  const antes = SRC;
-  SRC = SRC.replace(
-    "    const dur = t + rtLegMin(prev, 'airport');\n    const minDl = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl)));\n    return Math.max(...ids.map(id => rtToMin(rt.aux[id].dl) - minDl + dur - (off[id] || 0))) + rt.AIRPORT_BUFFER;",
-    "    const dur = t + rtLegMin(prev, 'airport');\n    const minDl = Math.min(...ids.map(id => rtToMin(rt.aux[id].dl)));\n    const durP = rtDurProg(ids, minDl, dur, t);\n    return Math.max(...ids.map(id => rtToMin(rt.aux[id].dl) - minDl + durP - (off[id] || 0))) + rt.AIRPORT_BUFFER;");
-  if (SRC === antes) { console.error('⚠  no encontré el final de rtAnticipa en admin-rutas.js'); process.exit(3); }
+  // YA ESTÁ EN LA APP (admin-rutas.js, 7/8-sep-2026): el techo se mide contra la
+  // salida que de verdad se programa y el rescate mira a todos los de la vuelta.
+  // La bandera se acepta para no romper comandos viejos, pero no hace nada.
+  console.error('ℹ  --techo-real: ya viene de serie en admin-rutas.js; la bandera no hace nada');
+}
+// ENSAYO: EL TECHO CONTRA LA SALIDA QUE DE VERDAD SE USA. rtAnticipa evalúa la
+// madrugada contra la salida "a la justa" (llegar al aeropuerto justo con el
+// colchón), pero el solver arranca ANTES: le resta `route_depart_cushion_min`
+// y redondea la hora HACIA ABAJO a múltiplos de 5. Entre las dos cosas hay
+// hasta CUSHION+4 minutos que nadie contó y que se los come montado el primero
+// que sube. Es lo que deja pasar madrugadas de 62-65 con el techo en 60.
+if (process.argv.includes('--techo-colchon')) {
+  // YA ESTÁ EN LA APP (admin-rutas.js, 7/8-sep-2026): el techo se mide contra la
+  // salida que de verdad se programa y el rescate mira a todos los de la vuelta.
+  // La bandera se acepta para no romper comandos viejos, pero no hace nada.
+  console.error('ℹ  --techo-colchon: ya viene de serie en admin-rutas.js; la bandera no hace nada');
+}
+// ENSAYO: EL RESCATE TAMBIÉN RESPETA EL TECHO DE MADRUGADA. Al adelantar una
+// vuelta ya armada para montar a alguien que se quedaba sin carro, el paso 4
+// solo mira lo que madruga EL RESCATADO (`RESCUE_MAX_EARLY`). Los que YA iban
+// en esa vuelta se van para atrás con ella y nadie los mira: el 7-sep David
+// Estrada y sebastián González quedaban 68 min antes de su presentación con el
+// techo en 60. Acá se comprueba a TODOS con las ETAs de la vuelta recalculada,
+// que es la hora a la que de verdad les timbran.
+if (process.argv.includes('--techo-rescate')) {
+  // YA ESTÁ EN LA APP (admin-rutas.js, 7/8-sep-2026): el techo se mide contra la
+  // salida que de verdad se programa y el rescate mira a todos los de la vuelta.
+  // La bandera se acepta para no romper comandos viejos, pero no hace nada.
+  console.error('ℹ  --techo-rescate: ya viene de serie en admin-rutas.js; la bandera no hace nada');
 }
 if (process.argv.includes('--colchon-siempre')) {
   const antes = SRC;
@@ -453,6 +483,47 @@ if (process.argv.includes('--sin-colchon-sobre-tabla')) {
         const mandaTabla = rtZonaDe(tr.ids, tr.dlMin, rtPaxOf(tr.ids)) != null;
         const depart = Math.max(s.avail, salmax - (mandaTabla ? 0 : rt.CUSHION));`);
   if (SRC === antes) { console.error('⚠  no encontré salmax/CUSHION en admin-rutas.js'); process.exit(3); }
+}
+// DIAGNÓSTICO: --por-que-rescate imprime, por cada persona sin carro y cada
+// vuelta candidata, qué condición del rescate la rechaza. No cambia el plan.
+if (process.argv.includes('--por-que-rescate')) {
+  const antes = SRC;
+  SRC = SRC.replace(
+    `            // Entre varias vueltas posibles gana la que MENOS se alarga: es la`,
+    `            console.error('  rescate', rt.aux[id].n, '→', lane.id, 'arranque', rtToHM(arranque), 'libre', rtToHM(libre),
+              'estado', r2.status, 'holg', r2.holg, 'suyo', suyo, '(max', rt.RESCUE_MAX_EARLY + ')',
+              'madrugaMax', Math.max(...r2.stops.map(s2 => rtToMin(rt.aux[s2.id].dl) - s2.eta)), '(techo', rt.MAX_EARLY + ')',
+              'espera', rtEsperaDe('sal', order[lane.id]), '(techo', techo + ')',
+              'sig', sig ? sig.start : '-', 'llega', rtToHM(r2.arrival), ok ? 'OK' : 'NO');
+            // Entre varias vueltas posibles gana la que MENOS se alarga: es la`);
+  if (SRC === antes) { console.error('⚠  no encontré el rescate en admin-rutas.js'); process.exit(3); }
+}
+// DIAGNÓSTICO: --por-que-techo imprime cada vez que rtAnticipa rechaza una
+// vuelta por el techo de madrugada, con quiénes iban y los números. No cambia el plan.
+if (process.argv.includes('--por-que-techo')) {
+  const antes = SRC;
+  SRC = SRC.replace(
+    `    return Math.max(...ids.map(id => rtToMin(rt.aux[id].dl) - salida - (off[id] || 0)));
+  };`,
+    `    const _r = Math.max(...ids.map(id => rtToMin(rt.aux[id].dl) - salida - (off[id] || 0)));
+    if (rt.MAX_EARLY && _r > rt.MAX_EARLY) console.error('  techo', _r, '>', rt.MAX_EARLY, '·', ord.map(id => rt.aux[id].n + '@' + rt.aux[id].dl + '+' + (off[id] || 0)).join(' → '),
+      '· recorrido', Math.round(dur), 'tabla', Math.round(durP), 'salida', rtToHM(salida), 'deadline', rtToHM(minDl));
+    return _r;
+  };`);
+  if (SRC === antes) { console.error('⚠  no encontré rtAnticipa en admin-rutas.js'); process.exit(3); }
+}
+// ENSAYO: ABSORCIÓN PARCIAL DE OLEADAS. La fusión de oleadas toma la oleada
+// vecina ENTERA o nada: si la de las 4:00 trae 5 personas y la base es una sola
+// (Ana Lucía a las 3:55, 9-sep-2026), 1+5 pasa del cupo y no se prueba nada
+// más. Julián sí toma parte: Sara Valencia + Ana Lucía + Carlos en un carro y
+// Sara Jaramillo + Alfonso en otro, y con eso le queda el tercero libre para
+// Olivar y Llanogrande a las 4:30. Aquí, si la oleada entera no cabe, se toman
+// una a una las porterías que sí pasan todas las pruebas (cupo, barrido, techo,
+// económica) y el resto sigue pendiente como oleada propia.
+if (process.argv.includes('--absorber-parcial')) {
+  // YA ESTÁ EN LA APP (admin-rutas.js, 8-sep-2026): si la oleada vecina no cabe
+  // entera, se toman una a una las porterías que sí pasan las cuatro pruebas.
+  console.error('ℹ  --absorber-parcial: ya viene de serie en admin-rutas.js; la bandera no hace nada');
 }
 const iFin = SRC.indexOf('return { lanes, order, unassigned };');
 const solverSrc = SRC.slice(0, SRC.indexOf('\n  }', iFin) + 4);

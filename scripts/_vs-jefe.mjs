@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { norm, leerPlan } from './planes-jefe/lib-plan.mjs';
 
 const MIO = process.argv[2], SUYO = process.argv[3];
-if (!MIO || !SUYO) { console.error('uso: node _vs-jefe.mjs <plan.json> <plan-jefe.txt> [--corto]'); process.exit(1); }
+if (!MIO || !SUYO) { console.error('uso: node _vs-jefe.mjs <plan.json> <plan-jefe.txt> [--corto] [--grupos] [--madrugada]'); process.exit(1); }
 const CORTO = process.argv.includes('--corto');
 const DIR = new URL('./planes-jefe/', import.meta.url).pathname;
 const hm = (t) => `${String(Math.floor(t / 60) % 24).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
@@ -65,13 +65,18 @@ const lev = (a, b) => {
 };
 let ALIAS = {};
 try { ALIAS = JSON.parse(readFileSync(DIR + 'alias.json', 'utf8')).alias || {}; } catch {}
+// alias.json va del formulario hacia él; acá se busca al revés (de su nombre al
+// del formulario), así que hace falta el mapa en las dos direcciones. Sin la
+// inversa, "Juanita" empataba a la vez con "Juan Martínez" y "Juan Bedoya" y el
+// desempate —que existe por las cuatro Lauras— la dejaba sin emparejar.
+const ALIAS_INV = Object.fromEntries(Object.entries(ALIAS).map(([k, v]) => [norm(v), k]));
 
 // Él escribe apodos y a veces SOLO EL APELLIDO ("González", "Rubiano") o el
 // nombre con inicial ("Karol M"). Se puntúa por palabras y se exige unicidad: si
 // dos personas empatan no se elige ninguna, porque hay cuatro Lauras, tres Saras
 // y tres Karoles y adivinar es peor que no medir.
 function emparejar(nSuyo) {
-  const t = ALIAS[nSuyo] ? norm(ALIAS[nSuyo]) : nSuyo;
+  const t = ALIAS[nSuyo] ? norm(ALIAS[nSuyo]) : (ALIAS_INV[nSuyo] ? norm(ALIAS_INV[nSuyo]) : nSuyo);
   if (mias.has(t)) return { k: t, v: mias.get(t), s: 99 };
   const pal = t.split(' ');
   const largas = pal.filter((x) => x.length >= 3);
@@ -123,3 +128,78 @@ console.log(`emparejadas ${difs.length}/${filas.length}` +
   ` · dentro de ±5 ${difs.filter((d) => Math.abs(d) <= 5).length}` +
   ` · se pasan de 15 ${abs.filter((d) => d > 15).length}` +
   ` · sin carro ${sinCarro}`);
+
+// ── ¿ARMAMOS LAS MISMAS VUELTAS? ────────────────────────────────────────────
+// El error en minutos no dice si pensamos igual: se le puede acertar la hora a
+// cada persona y aun así repartirlas en otras vueltas. Esto compara los GRUPOS
+// —quiénes van juntos—, que es la decisión suya. Nació el 7-sep-2026: el error
+// era 10,0 min (lo de siempre) y sin embargo él partió en dos las vueltas donde
+// nosotros fusionábamos, y separó a los del hotel de los del aeropuerto.
+if (process.argv.includes('--grupos')) {
+  const mapa = new Map(filas.filter((f) => f.clave).map((f) => [f.n, f.clave]));
+  const misLanes = plan.vueltas.filter((v) => v.tipo === 'sal')
+    // OJO: se mide desde la PRIMERA RECOGIDA, no desde que arranca el carro —
+    // el vacío hasta la primera casa no lo ve él y falsearía la comparación
+    // (la vuelta de Wilson salía "57 min" cuando 21 son de camino vacío).
+    .map((v) => ({ hora: v.paradas[0]?.eta || v.sale, llega: v.llega, prim: v.paradas[0]?.eta, set: new Set(v.paradas.flatMap((p) => p.personas.map((q) => norm(q.n)))) }));
+  const igual = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
+  let ok = 0, tot = 0;
+  console.log('\n¿LAS MISMAS VUELTAS? (quiénes van juntos, no a qué hora)');
+  for (const v of leerPlan(DIR, SUYO)) {
+    if (v.deadline == null) continue;
+    const suyos = [];
+    for (const p of v.paradas) {
+      if (p.vuelo || p.hotel || p.aero) continue;
+      for (const q of p.quien.split(/\s*,\s*|\s+y\s+/i)) if (norm(q)) suyos.push(norm(q));
+    }
+    if (!suyos.length) continue;
+    tot++;
+    const hora = hm(v.paradas[0].t), nota = v.hotel ? ' (hotel)' : '';
+    const nombres = suyos.join(' + ');
+    const claves = suyos.map((n) => mapa.get(n)).filter(Boolean);
+    if (claves.length !== suyos.length) { console.log(`  ? ${hora} ${nombres}${nota}  — no los emparejé a todos`); continue; }
+    const suyoSet = new Set(claves);
+    const m = misLanes.find((l) => igual(suyoSet, l.set));
+    // En las que armamos igual, lo único que puede diferir es el reloj: cuánto
+    // creemos que dura ese mismo recorrido. Es donde se ve si madrugamos por
+    // fusionar de más o simplemente por contar el viaje más largo.
+    if (m) {
+      ok++;
+      const suD = v.deadline - v.paradas[0].t;
+      const miD = m.llega != null && m.prim != null ? min(m.llega) - min(m.prim) : null;
+      const cmp = miD == null ? '' : `  ·  dura él ${suD} / yo ${miD}${miD > suD ? ` (+${miD - suD})` : ''}`;
+      console.log(`  = ${hora} ${nombres}${nota}${cmp}`);
+      continue;
+    }
+    const parcial = misLanes.filter((l) => [...suyoSet].some((n) => l.set.has(n)));
+    console.log(`  \u2260 ${hora} ${nombres}${nota}  \u2192  yo: ${parcial.map((x) => `${x.hora} [${[...x.set].join(' + ')}]`).join(' \u00b7 ') || '(a nadie)'}`);
+  }
+  console.log(`\nvueltas suyas armadas igual: ${ok}/${tot}  (yo armé ${misLanes.length} de salida)`);
+}
+
+// ── ¿QUIÉN MADRUGA MÁS? ─────────────────────────────────────────────────────
+// La pregunta que ella hace una y otra vez, y la que él hizo el 23-ago. No es
+// la diferencia de horas (eso ya está arriba): es cuánto antes de SU PROPIA
+// presentación le timbran a cada quien, con él y con nosotros, sobre la misma
+// presentación del formulario. Un sesgo positivo aquí = madrugamos más.
+if (process.argv.includes('--madrugada')) {
+  const con = filas.filter((f) => f.mio && f.mio.pres);
+  const el = [], yo = [];
+  const dur = [];
+  console.log('\nMADRUGADA: minutos antes de SU PROPIA presentación');
+  console.log(`${'persona'.padEnd(22)} ${'pres.'.padStart(5)} ${'él'.padStart(4)} ${'yo'.padStart(4)} ${'dif'.padStart(5)}`);
+  console.log('─'.repeat(46));
+  for (const f of con.sort((a, b) => a.t - b.t)) {
+    const pres = min(f.mio.pres);
+    const a = ((pres - f.t) + 1440) % 1440, b = ((pres - f.mio.t) + 1440) % 1440;
+    if (a > 240 || b > 240) continue;               // cruces de medianoche raros
+    el.push(a); yo.push(b); dur.push({ n: f.crudo, a, b });
+    const d = b - a;
+    console.log(`${f.crudo.slice(0, 21).padEnd(22)} ${f.mio.pres.padStart(5)} ${String(a).padStart(4)} ${String(b).padStart(4)} ${((d > 0 ? '+' : '') + d).padStart(5)}${f.mio.sinCarro ? '  (sin carro)' : ''}${b > 60 ? '  ✗ pasa de 60' : ''}`);
+  }
+  const prom = (a) => a.reduce((s, x) => s + x, 0) / (a.length || 1);
+  const med = (a) => { const o = [...a].sort((x, y) => x - y); return o.length ? o[Math.floor(o.length / 2)] : NaN; };
+  console.log(`\nél: promedio ${prom(el).toFixed(1)} · mediana ${med(el)} · máximo ${Math.max(...el)} · pasan de 60: ${el.filter((x) => x > 60).length}`);
+  console.log(`yo: promedio ${prom(yo).toFixed(1)} · mediana ${med(yo)} · máximo ${Math.max(...yo)} · pasan de 60: ${yo.filter((x) => x > 60).length}`);
+  console.log(`sesgo (yo − él): ${(prom(yo) - prom(el) > 0 ? '+' : '')}${(prom(yo) - prom(el)).toFixed(1)} min  ·  madrugo más que él en ${dur.filter((d) => d.b > d.a).length} de ${dur.length}`);
+}

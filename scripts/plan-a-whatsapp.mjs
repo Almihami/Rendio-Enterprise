@@ -61,7 +61,10 @@ const sigla = (v) => {
   // "Reserva" no es un vuelo: es lo que escribe quien llena el formulario cuando
   // no voló. Sale por el camino de la reserva, no como sigla.
   if (/^[a-z]/i.test(s)) {
-    if (/^reserva/i.test(s)) return null;
+    // "No aplica" es lo mismo que "Reserva" con otras palabras: el formulario
+    // del 8-sep lo trajo así para María Camila (marcada RESERVA, sin vuelo de
+    // vuelta) y el mensaje le imprimía "(NOAPLICA)" como si fuera una sigla.
+    if (/^reserva/i.test(s) || /^n\s*\/?\s*a$|^no\s*aplica/i.test(s) || /^ningun/i.test(s)) return null;
     // "J6" ES COMO LA TRIPULACIÓN ESCRIBE JETSMART. El formulario del 21-ago
     // trajo "J65116" y él lo escribió **JA5116**: no es un prefijo nuevo de
     // aerolínea, es que teclean J6 en vez de JA. Con J6 adelante el modelo no
