@@ -922,6 +922,23 @@
   // la caja y .ax-daychips/.ax-daychip para el selector, que ya están resueltos
   // en claro y en nocturno. Un color escrito a mano aquí sería el octavo parche
   // luminoso sobre negro que rc-auxiliar.css lleva meses recogiendo.
+  // El color de marca del chip sale del MISMO mapa que pinta las tarjetas del
+  // registro (aux-registro.js lo publica en window.MarcasAerolinea, y carga
+  // antes que este archivo). Un solo mapa a propósito: con dos, Wingo termina
+  // siendo morado de un tono en el registro y de otro aquí, y eso se nota.
+  // Si el mapa no estuviera —otro orden de carga, un archivo que no bajó— esto
+  // devuelve null y el chip se queda como estaba. Un color es un adorno; que el
+  // tripulante no pueda pedir el carro a las 4 a.m. no lo es.
+  function auxMarcaDe(sigla) {
+    const M = window.MarcasAerolinea;
+    if (!M || !sigla) return null;
+    // Solo las conocidas se pintan. Una sigla escrita a mano ("CM") se queda
+    // neutra en vez de salir gris pizarra: el gris de repuesto tiene sentido en
+    // una tarjeta grande del registro, pero en un chip de dos letras se lee como
+    // «deshabilitado», justo lo contrario de lo que pasa.
+    return M.mapa[sigla] || null;
+  }
+
   function auxFlightField(label, key, ph) {
     const f = auxState.form;
     const sig = auxFlightIata(key);
@@ -932,17 +949,20 @@
     // ninguna opción marcada, que se lee como que el selector está roto.
     const otra = f.flOtra === key || (!!sig && !cat.some(a => a.iata === sig));
     const abierto = f.flPick === key;
+    const marca = otra ? null : auxMarcaDe(sig);
     const chips = cat.map(a => `
-        <button class="ax-daychip${(!otra && sig === a.iata) ? ' on' : ''}" data-ax="fl-set" data-k="${key}" data-iata="${a.iata}">
+        <button class="ax-daychip${(!otra && sig === a.iata) ? ' on' : ''}" data-ax="fl-set" data-k="${key}" data-iata="${a.iata}"
+          style="position:relative;overflow:hidden">
+          ${(m => m ? `<i style="position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,${m.c1},${m.c2})"></i>` : '')(auxMarcaDe(a.iata))}
           <b>${a.iata}</b><span>${escapeHtml(a.name)}</span></button>`).join('');
     return `
       <div class="ax-label">${label}</div>
       <div style="display:flex;gap:8px;align-items:stretch;margin-top:7px">
         <button type="button" class="ax-input" data-ax="fl-pick" data-k="${key}"
           aria-label="Aerolínea del vuelo"
-          style="margin-top:0;width:auto;flex:0 0 auto;display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:800;letter-spacing:.03em;${abierto ? 'border-color:var(--a-accent);' : ''}">
+          style="margin-top:0;width:auto;flex:0 0 auto;display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:800;letter-spacing:.03em;${abierto ? 'border-color:var(--a-accent);' : ''}${marca ? `background:linear-gradient(135deg,${marca.c1},${marca.c2});border-color:${marca.c2};color:${marca.tinta}` : ''}">
           <span id="ax-fl-chip-${key}" style="${sig ? '' : 'color:var(--a-t3)'}">${sig || 'Sigla'}</span>
-          <svg class="icon" style="width:13px;height:13px;color:var(--a-t2);flex:0 0 auto"><use href="#i-chev"/></svg>
+          <svg class="icon" style="width:13px;height:13px;color:${marca ? marca.tinta : 'var(--a-t2)'};opacity:${marca ? '.8' : '1'};flex:0 0 auto"><use href="#i-chev"/></svg>
         </button>
         <input class="ax-input" data-field="${key}Num" type="text" inputmode="numeric" autocomplete="off"
           value="${num}" placeholder="${ph}" aria-label="Número del vuelo, solo dígitos"

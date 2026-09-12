@@ -6,7 +6,7 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v150';
+const CACHE_VERSION = 'rendio-turnos-v151';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
@@ -37,6 +37,8 @@ const APP_SHELL = [
   '/admin-solicitudes.js',
   '/admin-disponibilidad.js',
   '/admin-personal.js',
+  '/admin-calibracion.js',
+  '/admin-flota.js',
   '/admin-balance.js',
   '/driver-home.js',
   '/admin-recompensas.js',

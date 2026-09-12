@@ -14,8 +14,8 @@
 // lo hacía toda junta: ocho párrafos de entre 115 y 326 caracteres, siempre
 // abiertos, en una pantalla que el jefe abre para mirar un semáforo. Se aplicó
 // acá el mismo trato que se le dio a Ajustes: la PRIMERA FRASE se queda a la
-// vista y el resto se va detrás de una pastilla, con rdWhy() (vive en
-// admin-turnos-activos.js, que carga antes). No se borró ni una palabra.
+// vista y el resto se va detrás de una pastilla, con rdWhy() (vive en core.js
+// desde el 2026-09-12; antes en admin-turnos-activos.js). No se borró ni una palabra.
 // Dos cosas que se decidieron y conviene no deshacer sin pensarlo:
 //   · Se corta en la primera frase que CIERRA de verdad. Por eso "Esto se
 //     llena una sola vez." queda solo: es corta, pero es la frase.
