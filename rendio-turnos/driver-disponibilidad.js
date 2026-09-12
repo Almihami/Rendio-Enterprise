@@ -152,7 +152,7 @@
 
   function avWeekSuspensionHtml() {
     if (!state.weekSuspension) return '';
-    const why = state.weekSuspension.source === 'strikes' ? ' por acumular 3 strikes' : '';
+    const why = state.weekSuspension.source === 'strikes' ? ` por acumular ${strikeLimit()} strikes` : '';
     return `<div class="rc-note warn" style="margin-top:10px">
       <span class="rc-note-ic">${avIcon('alert', 17)}</span>
       <span><b>Estás suspendido esta semana${why}.</b> No entras en la generación de turnos. Habla con tu jefe.</span>

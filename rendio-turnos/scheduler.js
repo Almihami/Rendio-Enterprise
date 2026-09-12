@@ -36,6 +36,32 @@
     return startOfWeekISO(d);
   }
 
+  // El MES al que pertenece una fecha, como el día 1 en ISO.
+  // Mismo patrón que startOfWeekISO: se hace la cuenta en hora local y solo al
+  // final se pasa a ISO. Ojo, esto NO es cosmético: `new Date().toISOString()`
+  // a secas devuelve la fecha en UTC, y Bogotá va en -5. El 30 de septiembre a
+  // las 8 p.m. eso daría "2026-10-01" y el contador de strikes se reiniciaría
+  // cinco horas antes de tiempo, todos los meses.
+  function monthStartISO(date) {
+    const d = new Date(typeof date === 'string' ? date + 'T00:00:00' : (date || new Date()));
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString().slice(0, 10);
+  }
+
+  const MONTH_LABELS_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+  // "septiembre" / "septiembre de 2025". El año solo se dice cuando NO es el
+  // año en curso: en el historial de strikes, repetir "de 2026" en cada línea
+  // es ruido, pero omitirlo en uno de hace año y medio es engañar.
+  function monthLabelES(iso, conAnio) {
+    const d = new Date(iso + 'T00:00:00');
+    const mes = MONTH_LABELS_ES[d.getMonth()];
+    const distinto = d.getFullYear() !== new Date().getFullYear();
+    return (conAnio || distinto) ? mes + ' de ' + d.getFullYear() : mes;
+  }
+
   function weekDates(weekStartISO) {
     return DAYS.map((day, i) => {
       const iso = addDays(weekStartISO, i);
@@ -408,6 +434,7 @@
   window.Scheduler = {
     DAYS, DAY_INDEX, DAY_LABELS_ES,
     weekDates, startOfWeekISO, defaultWeekISO, addDays,
+    monthStartISO, monthLabelES,
     availabilityCutoff, availabilityClosed, availabilityClosingSoon,
     generateSchedule, emptySchedule, getState, getRawState, getEffectiveState,
     ruleBlocked, setRules, applySwaps, validateSwap,

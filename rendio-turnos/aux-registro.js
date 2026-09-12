@@ -47,14 +47,17 @@
   const st = {
     view: 'datos',
     f: {
-      name: '', email: '', phone: '', pass: '',
+      name: '', email: '', phone: '', pass: '', pass2: '',
       airlineId: null,
       resId: null, unit: '',
       hasSecond: false, resId2: null, unit2: '',
       manual: false, address: '', lat: null, lng: null, locConfirmed: false,
     },
     touched: {},        // qué campos ya perdieron el foco (para no pintar rojo mientras escribe)
-    showPass: false,
+    // Cada campo de contraseña tiene su propio ojo: si fuera uno solo, destapar
+    // la de arriba destapa también la repetición, que es justo la que la persona
+    // está mirando de reojo en el bus.
+    showPass: false, showPass2: false,
     cat: null, q: '', q2: '',
     picking: 1,         // qué unidad se está eligiendo en la hoja del buscador (1 o 2)
     busy: false, err: '',
@@ -103,14 +106,191 @@
     if (d.length > 15) return 'Ese número tiene de más.';
     return null;
   }
-  function passError(v) {
-    if (!v) return 'Elige una contraseña.';
-    if (v.length < 8) return 'Mínimo 8 caracteres.';
+
+  // ---------------------------------------------------------------------------
+  // La contraseña (2026-09-11)
+  //
+  // Hasta hoy se pedía UNA sola vez y la única regla era «mínimo 8». Con eso
+  // entraba «12345678», que es literalmente la primera de cualquier lista de
+  // ataque, y no había forma de cazar un dedazo: el tripulante escribía mal la
+  // contraseña que acababa de inventar, la app lo dejaba pasar igual, y al día
+  // siguiente no podía entrar a pedir su traslado. Recuperar cuenta, además,
+  // hoy pasa por un correo que el proyecto casi no puede mandar (ver arriba).
+  //
+  // LA REGLA QUE SE ESCOGIÓ Y LA QUE NO
+  // Dura: 10 caracteres, con letra Y número. Eso es todo lo que apaga el botón.
+  // NO se exige mayúscula ni símbolo, y es a propósito: obligar a las cuatro
+  // cosas a la vez produce «Rendio2026!» —cumple el reglamento y está en
+  // cualquier diccionario de ataque— y encima, en el teclado de un teléfono a
+  // la 1 a.m., el símbolo cuesta dos capas de teclado. Mayúscula, símbolo y
+  // largo de más viven en el MEDIDOR como sugerencias: suben la barra, nunca
+  // bloquean.
+  //
+  // Lo otro que sí bloquea es lo adivinable: seguidillas, renglones del teclado,
+  // las palabras de esta misma app y los datos que la persona acaba de escribir
+  // tres campos más arriba. Diez caracteres no valen nada si son su propio
+  // nombre y el año.
+  // ---------------------------------------------------------------------------
+  const PASS_MIN = 10;
+  const PASS_HOLGADA = 14;                       // de aquí para arriba ya no se sugiere alargarla
+  const RX_LETRA   = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/;
+  const RX_MAYUS   = /[A-ZÁÉÍÓÚÜÑ]/;
+  const RX_MINUS   = /[a-záéíóúüñ]/;
+  const RX_NUM     = /[0-9]/;
+  const RX_SIMBOLO = /[^A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]/;
+  const RX_REPE    = /(.)\1{3,}/;                // el mismo caracter cuatro veces: «aaaa1234»
+
+  // Las palabras cantadas. Lista CORTA a propósito: un diccionario de verdad no
+  // cabe en un archivo que se baja por red móvil en la portería de un conjunto,
+  // y las que de verdad se van a intentar EN ESTA app son estas — el nombre del
+  // negocio y el de la aerolínea en la que la persona vuela todos los días.
+  const PASS_CANTADAS = [
+    'rendio', 'turnos', 'tripulante', 'aeropuerto', 'rionegro', 'medellin', 'colombia',
+    'avianca', 'jetsmart', 'wingo', 'latam',
+    'contrasena', 'password', 'clave', 'admin', 'iloveyou', 'futbol',
+  ];
+  // Los renglones del teclado, en los dos sentidos (hay quien los escribe al
+  // revés creyendo que eso lo salva).
+  const PASS_FILAS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm', 'poiuytrewq', 'lkjhgfdsa', 'mnbvcxz'];
+  // Doblar los números a la letra que imitan. «R3nd10» es «rendio» para
+  // cualquiera que ataque y tiene que serlo también para nosotros.
+  const PASS_LEET = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '@': 'a', '$': 's', '!': 'i' };
+  const leet = (s) => s.replace(/[0134578@$!]/g, (c) => PASS_LEET[c]);
+
+  // Cinco caracteres seguidos subiendo o bajando. Cinco y no cuatro porque
+  // «qwer» o «2345» todavía caben por casualidad dentro de algo bueno; cinco ya
+  // no es casualidad. Se exige que la corrida vaya SIEMPRE en el mismo sentido:
+  // si no, «ababab» (sube, baja, sube) contaría como seguidilla y el mensaje
+  // diría una mentira.
+  function corridaSeguida(p) {
+    let largo = 1;
+    for (let i = 1; i < p.length; i++) {
+      const d = p.charCodeAt(i) - p.charCodeAt(i - 1);
+      const dAnt = i > 1 ? p.charCodeAt(i - 1) - p.charCodeAt(i - 2) : 0;
+      if ((d === 1 || d === -1) && (largo === 1 || d === dAnt)) largo++;
+      else largo = (d === 1 || d === -1) ? 2 : 1;
+      if (largo >= 5) return true;
+    }
+    return false;
+  }
+  function filaTeclado(p) {
+    for (const fila of PASS_FILAS) {
+      for (let i = 0; i + 5 <= fila.length; i++) if (p.includes(fila.slice(i, i + 5))) return true;
+    }
+    return false;
+  }
+
+  // Lo que la persona acabó de escribir en ESTE mismo formulario. Es la lista
+  // negra que de verdad importa: el compañero que le presta el teléfono sabe su
+  // nombre y su celular de memoria.
+  function passDatosPropios() {
+    const out = [];
+    // Palabras de 4 letras para arriba. Con 3 se empieza a regañar de mentiras
+    // —si se llama Ana, «Manzana72x» traería «ana» adentro— y no hay forma de
+    // explicarle eso a alguien sin que crea que la app está dañada.
+    cleanName(st.f.name).split(' ').forEach(w => { if (w.length >= 4) out.push(norm(w)); });
+    const usuario = ((st.f.email || '').trim().toLowerCase().split('@')[0] || '');
+    usuario.split(/[^a-z]+/).forEach(w => { if (w.length >= 4) out.push(w); });
+    const tel = (st.f.phone || '').replace(/\D/g, '');
+    if (tel.length >= 5) out.push(tel);
+    if (tel.length >= 7) out.push(tel.slice(-7));   // los siete de atrás, que es lo que la gente repite
+    return out;
+  }
+
+  function passAdivinable(v) {
+    const plano = norm(v);            // minúsculas y sin tildes, con los dígitos intactos
+    if (RX_REPE.test(plano)) return 'repetida';
+    if (corridaSeguida(plano)) return 'seguidilla';
+    if (filaTeclado(plano)) return 'teclado';
+    // Los números se doblan a letras RECIÉN AQUÍ. Si se hiciera antes, «123456»
+    // se volvería «izeasg» y la seguidilla dejaría de verse.
+    const letras = leet(plano);
+    if (PASS_CANTADAS.some(w => plano.includes(w) || letras.includes(w))) return 'palabra';
+    if (passDatosPropios().some(w => w && (plano.includes(w) || letras.includes(w)))) return 'tuyo';
     return null;
   }
+
+  // Una sola pasada que dice QUÉ falla. Los textos van aparte porque la misma
+  // falla se dice dos veces y con distinto largo: tendido bajo el campo y
+  // apretado al lado de la barra.
+  function passCheck(v) {
+    const p = v || '';
+    if (!p) return { falla: 'vacia' };
+    if (p.length < PASS_MIN) return { falla: 'corta', faltan: PASS_MIN - p.length, van: p.length };
+    if (!RX_LETRA.test(p)) return { falla: 'letra' };
+    if (!RX_NUM.test(p)) return { falla: 'numero' };
+    const t = passAdivinable(p);
+    if (t) return { falla: 'adivinable', tipo: t };
+    return { falla: null };
+  }
+
+  // Ninguno de estos dice «contraseña inválida». Se dice QUÉ LE FALTA, que es lo
+  // único que la persona puede hacer con la información.
+  const PASS_LARGO = {
+    repetida:   'Repite el mismo caracter cuatro veces seguidas. Suéltale algo distinto en el medio.',
+    seguidilla: 'Trae una seguidilla (123456, abcdef). Es de lo primero que prueban: revuélvela un poco.',
+    teclado:    'Eso es un renglón del teclado (qwerty, asdfgh). Se adivina igual de rápido que 123456.',
+    palabra:    'Trae una palabra de aquí mismo (Rendio, tu aerolínea). Sería lo primero que alguien probaría en esta app.',
+    tuyo:       'Trae tu nombre, tu correo o tu celular. Quien te conoce ya los tiene: mejor algo que no salga de tus datos.',
+  };
+  const PASS_CORTO = {
+    repetida:   'Repite mucho un caracter.',
+    seguidilla: 'Trae una seguidilla.',
+    teclado:    'Es un renglón del teclado.',
+    palabra:    'Trae una palabra de la app.',
+    tuyo:       'Trae tus propios datos.',
+  };
+
+  function passError(v) {
+    const c = passCheck(v);
+    if (c.falla === 'vacia') return 'Elige una contraseña.';
+    if (c.falla === 'corta') return c.faltan === 1
+      ? `Te falta 1 caracter: son ${PASS_MIN} como mínimo.`
+      : `Te faltan ${c.faltan} caracteres: son ${PASS_MIN} como mínimo.`;
+    if (c.falla === 'letra') return 'Súmale una letra: de puros números se adivina rapidísimo.';
+    if (c.falla === 'numero') return 'Súmale un número, aunque sea uno.';
+    if (c.falla === 'adivinable') return PASS_LARGO[c.tipo];
+    return null;
+  }
+
+  // La repetición. El VERDE de «Coinciden» sale en vivo, tecla por tecla; este
+  // rojo espera a que salga del campo, como todos los demás errores de esta
+  // pantalla — decirle «no son iguales» cuando lleva tres letras de la segunda
+  // es regañarla por ir a la mitad.
+  function pass2Error(v) {
+    if (!v) return 'Escríbela otra vez para confirmar.';
+    if (v !== st.f.pass) return 'Esta y la de arriba no son la misma todavía.';
+    return null;
+  }
+
+  // El medidor: cuatro segmentos y, al lado, QUÉ LE FALTA en palabras. El color
+  // solo no dice nada — «amarillo» no le explica a nadie qué tiene que cambiar.
+  // Nivel 1 es «todavía no pasa»; de 2 para arriba ya pasa y lo que suba es
+  // sugerencia (largo, mayúscula, símbolo), nunca requisito.
+  const PASS_TITULOS = ['', 'Todavía no', 'Aceptable', 'Buena', 'Muy buena'];
+  function passMedidor(v) {
+    const p = v || '';
+    const c = passCheck(p);
+    const flojo = (dice) => ({ nivel: 1, titulo: PASS_TITULOS[1], dice });
+    if (c.falla === 'vacia') return { nivel: 0, titulo: '', dice: `Mínimo ${PASS_MIN} caracteres, con letras y números.` };
+    if (c.falla === 'corta') return flojo(`Vas en ${c.van} de ${PASS_MIN}.`);
+    if (c.falla === 'letra') return flojo('Le falta una letra.');
+    if (c.falla === 'numero') return flojo('Le falta un número.');
+    if (c.falla === 'adivinable') return flojo(PASS_CORTO[c.tipo]);
+    const falta = [];
+    if (p.length < PASS_HOLGADA) falta.push('alárgala un poco');
+    if (!(RX_MAYUS.test(p) && RX_MINUS.test(p))) falta.push('métele una mayúscula');
+    if (!RX_SIMBOLO.test(p)) falta.push('ponle un signo (. - * !)');
+    const nivel = Math.min(4, 2 + (3 - falta.length));
+    return {
+      nivel, titulo: PASS_TITULOS[nivel],
+      dice: falta.length ? `Para subirla: ${falta.join(' · ')}.` : 'No le falta nada.',
+    };
+  }
+
   const datosErrors = () => ({
     name: nameError(st.f.name), email: emailError(st.f.email),
-    phone: phoneError(st.f.phone), pass: passError(st.f.pass),
+    phone: phoneError(st.f.phone), pass: passError(st.f.pass), pass2: pass2Error(st.f.pass2),
   });
   const datosOk = () => Object.values(datosErrors()).every(e => !e);
 
@@ -153,10 +333,10 @@
   function reset() {
     destroyMap();
     st.view = 'datos';
-    st.f = { name: '', email: '', phone: '', pass: '', airlineId: null,
+    st.f = { name: '', email: '', phone: '', pass: '', pass2: '', airlineId: null,
       resId: null, unit: '', hasSecond: false, resId2: null, unit2: '',
       manual: false, address: '', lat: null, lng: null, locConfirmed: false };
-    st.touched = {}; st.showPass = false;
+    st.touched = {}; st.showPass = false; st.showPass2 = false;
     st.cat = null; st.q = ''; st.q2 = ''; st.picking = 1;
     st.busy = false; st.err = ''; st.profile = null;
   }
@@ -256,6 +436,10 @@
     return (err && st.touched[key])
       ? `<svg class="icon"><use href="#i-warn"/></svg>${esc(err)}` : '';
   }
+  function errBox(key, err) {
+    const bad = err && st.touched[key];
+    return `<div class="rg-err${bad ? '' : ' vacio'}" data-rg-err="${key}">${errHTML(key, err)}</div>`;
+  }
   function field(label, key, type, ph, err, attrs) {
     const bad = err && st.touched[key];
     return `
@@ -263,7 +447,57 @@
         <input class="ax-input${bad ? ' bad' : ''}" data-rg-field="${key}" type="${type || 'text'}"
                value="${esc(st.f[key])}" placeholder="${esc(ph || '')}" ${attrs || ''} />
       </label>
-      <div class="rg-err${bad ? '' : ' vacio'}" data-rg-err="${key}">${errHTML(key, err)}</div>`;
+      ${errBox(key, err)}`;
+  }
+
+  // Los dos campos de contraseña son el mismo molde, pero NO pasan por field():
+  // llevan el botón de ver/ocultar dentro del recuadro y entre el campo y su
+  // error se meten cosas (el medidor en uno, el «Coinciden» en el otro), así que
+  // el renglón rojo lo pone quien llama.
+  //
+  // autocomplete="new-password" en los DOS: es lo que hace que el llavero del
+  // teléfono ofrezca generar una y, sobre todo, que NO rellene la vieja del
+  // tripulante que prestó el celular. Y autocapitalize apagado porque iOS pone
+  // mayúscula a la primera letra sin avisar — y la contraseña que se guarda no
+  // es la que la persona cree que escribió.
+  //
+  // El texto de adentro NO repite «mínimo 10»: eso lo dice el medidor dos
+  // renglones más abajo, y verlo en los dos sitios se lee como si fueran dos
+  // reglas distintas. Lo que sí hay que decir ahí es que es NUEVA, porque si no
+  // media gente escribe la del correo.
+  function passField(label, key, visible, accion, ph, err) {
+    const bad = err && st.touched[key];
+    return `
+      <label class="ax-label">${label}
+        <span class="rg-pw">
+          <input class="ax-input${bad ? ' bad' : ''}" data-rg-field="${key}"
+                 type="${visible ? 'text' : 'password'}" value="${esc(st.f[key])}"
+                 placeholder="${esc(ph)}" autocomplete="new-password"
+                 autocapitalize="none" autocorrect="off" spellcheck="false" />
+          <button type="button" class="rg-pw-eye" data-rg="${accion}"
+                  aria-label="${visible ? 'Ocultar la contraseña' : 'Mostrar la contraseña'}">${visible ? 'Ocultar' : 'Ver'}</button>
+        </span>
+      </label>`;
+  }
+
+  // Los dos pedazos que se repintan solos en cada tecla (ver refreshPass): van
+  // marcados con data-* y no con id porque de este archivo ya hay JS ajeno que
+  // busca por id, y porque así se pueden reemplazar de una con outerHTML.
+  function medidorHTML() {
+    const m = passMedidor(st.f.pass);
+    let segs = '';
+    for (let i = 1; i <= 4; i++) segs += `<span class="rg-meter-seg${i <= m.nivel ? ' on' : ''}"></span>`;
+    return `<div class="rg-meter n${m.nivel}" data-rg-meter>
+        <div class="rg-meter-bar" aria-hidden="true">${segs}</div>
+        <div class="rg-meter-txt">${m.titulo ? `<b>${esc(m.titulo)}</b> ` : ''}${esc(m.dice)}</div>
+      </div>`;
+  }
+  // El verde aparece en la misma tecla en que las dos se igualan: es la única
+  // señal que llega a tiempo para evitar el dedazo.
+  function coincidenHTML() {
+    const ok = !!(st.f.pass && st.f.pass2 && st.f.pass === st.f.pass2);
+    return `<div class="rg-match${ok ? '' : ' vacio'}" data-rg-match>${
+      ok ? '<svg class="icon"><use href="#i-check"/></svg>Coinciden' : ''}</div>`;
   }
 
   function datosHTML() {
@@ -282,15 +516,12 @@
         ${field('Celular', 'phone', 'tel', '300 123 4567', e.phone,
           'autocomplete="tel" inputmode="tel"')}
         <div class="rg-tip">Para que el conductor te ubique el día del viaje.</div>
-        <label class="ax-label">Contraseña
-          <span class="rg-pw">
-            <input class="ax-input${e.pass && st.touched.pass ? ' bad' : ''}" data-rg-field="pass"
-                   type="${st.showPass ? 'text' : 'password'}" value="${esc(st.f.pass)}"
-                   placeholder="Mínimo 8 caracteres" autocomplete="new-password" />
-            <button type="button" class="rg-pw-eye" data-rg="ver-pass">${st.showPass ? 'Ocultar' : 'Ver'}</button>
-          </span>
-        </label>
-        <div class="rg-err${e.pass && st.touched.pass ? '' : ' vacio'}" data-rg-err="pass">${errHTML('pass', e.pass)}</div>
+        ${passField('Contraseña', 'pass', st.showPass, 'ver-pass', 'Inventa una nueva', e.pass)}
+        ${errBox('pass', e.pass)}
+        ${medidorHTML()}
+        ${passField('Repite la contraseña', 'pass2', st.showPass2, 'ver-pass2', 'La misma de arriba', e.pass2)}
+        ${coincidenHTML()}
+        ${errBox('pass2', e.pass2)}
         ${st.err ? `<div class="ax-hint bad"><svg class="icon"><use href="#i-warn"/></svg>${esc(st.err)}</div>` : ''}
         <div class="ax-spacer"></div>
       </div>
@@ -302,15 +533,95 @@
       </div>`;
   }
 
+  // ---------------------------------------------------------------------------
+  // EL COLOR DE CADA AEROLÍNEA (2026-09-11) — una sola constante, a propósito
+  //
+  // Las cuatro opciones eran cuatro botones blancos idénticos con el mismo
+  // avioncito. Quien se registra a las 11 p.m. tiene que LEER las cuatro para
+  // encontrar la suya; con color la encuentra antes de leer.
+  //
+  // POR QUÉ NO HAY LOGOS. Son marca registrada de terceros y Rendio es un
+  // proveedor de transporte, no un canal autorizado de ninguna de ellas: poner
+  // el logo insinúa un acuerdo que no existe. Además habría que bajar cuatro
+  // imágenes en una red móvil de portería. Degradado + la sigla IATA pesa CERO
+  // y se reconoce igual de rápido.
+  //
+  // POR QUÉ ESTOS HEXADECIMALES (aproximaciones, no los oficiales):
+  //   AV Avianca   rojo    #D91323 → #8C0A18   el rojo con el que vuelan
+  //   JA JetSMART  ámbar   #F5C038 → #C98A12   OJO: su naranja real se parece
+  //        peligrosamente al de Rendio (#F26522, matiz ~19°). Este se corrió a
+  //        matiz ~43° —francamente amarillo— para que nadie lea «la opción
+  //        naranja» como «la opción seleccionada». Y por eso mismo es la única
+  //        con tinta OSCURA: sobre amarillo, el blanco no se lee.
+  //   P5 Wingo     fucsia  #B02A9B → #6A1163   morado/fucsia de su marca
+  //   LA LATAM     índigo  #3A34A8 → #191668   su azul corporativo
+  //
+  // CONTRASTE, medido contra el peor extremo del degradado de cada una
+  // (WCAG, texto sobre fondo): AV 5.2:1 · JA 5.8:1 · P5 5.8:1 · LA 9.4:1 y el
+  // de repuesto 6.4:1. Todas por encima de 4.5:1 en modo claro. El estado sin
+  // elegir solo baja la SATURACIÓN (filter: saturate), que conserva la
+  // luminancia y por tanto el contraste; de noche se baja además el brillo y el
+  // peor par medido queda en 4.8:1. Si alguien cambia un hexadecimal, que
+  // vuelva a medir: es la única razón por la que la tinta está en el mapa.
+  //
+  // LA LLAVE ES EL iata_code, y hay caso por defecto: el día que operaciones
+  // agregue una quinta aerolínea desde el padrón, sale gris pizarra con su
+  // sigla —o con sus iniciales si ni siquiera tiene código— y no se rompe nada.
+  //
+  // Se publica en window.MarcasAerolinea porque el frente del prefijo de vuelo
+  // va a pintar los mismos colores, y dos mapas de color separados terminan
+  // siempre con un Wingo de dos morados distintos.
+  // ---------------------------------------------------------------------------
+  const MARCAS_AEROLINEA = {
+    AV: { c1: '#D91323', c2: '#8C0A18', tinta: '#FFFFFF' },
+    JA: { c1: '#F5C038', c2: '#C98A12', tinta: '#241A05' },
+    P5: { c1: '#B02A9B', c2: '#6A1163', tinta: '#FFFFFF' },
+    LA: { c1: '#3A34A8', c2: '#191668', tinta: '#FFFFFF' },
+  };
+  const MARCA_DE_REPUESTO = { c1: '#54606E', c2: '#2E3742', tinta: '#FFFFFF' };
+  // Rescate por nombre: signup_catalogs() puede no estar devolviendo iata_code
+  // (la tabla airlines sí lo tiene). Sin esto, las cuatro de siempre saldrían
+  // grises el día que alguien toque esa función.
+  const SIGLA_POR_NOMBRE = { avianca: 'AV', jetsmart: 'JA', wingo: 'P5', latam: 'LA' };
+
+  function siglaAerolinea(a) {
+    const code = String(a?.iata_code || '').trim().toUpperCase();
+    if (code) return code.slice(0, 3);
+    const n = norm(a?.name || '').replace(/[^a-z]/g, '');
+    for (const k in SIGLA_POR_NOMBRE) if (n.includes(k)) return SIGLA_POR_NOMBRE[k];
+    // Ni código ni nombre conocido: las iniciales. Fea pero nunca vacía.
+    return String(a?.name || '?').trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?';
+  }
+  function marcaAerolinea(a) {
+    return MARCAS_AEROLINEA[siglaAerolinea(a)] || MARCA_DE_REPUESTO;
+  }
+  window.MarcasAerolinea = {
+    mapa: MARCAS_AEROLINEA, repuesto: MARCA_DE_REPUESTO,
+    sigla: siglaAerolinea, color: marcaAerolinea,
+  };
+
   // ---------- paso 3 ----------
+  //
+  // Los colores viajan como variables CSS en el style= porque son dato, no
+  // diseño fijo: el CSS no puede saber cuántas aerolíneas hay. Lo que se inyecta
+  // sale SIEMPRE del mapa de arriba —nunca de la base—, así que ahí no entra
+  // texto ajeno; lo que sí viene de la base (nombre y sigla) va escapado y en
+  // nodos de texto, jamás dentro del atributo style.
+  //
+  // El subtítulo se pinta siempre, elegida o no, y cambia de palabras. Eso hace
+  // dos cosas: dice el estado con LETRAS y no solo con un borde, y evita que la
+  // tarjeta crezca al tocarla (si el texto apareciera solo al elegir, la lista
+  // daría un brinco bajo el dedo).
   function airlineHTML() {
     const list = st.cat?.airlines || [];
     if (!list.length) return `<div class="axr-load"><span class="axr-spin"></span>Cargando aerolíneas…</div>`;
     return list.map(a => {
       const sel = st.f.airlineId === a.id;
-      return `<button class="ax-opt${sel ? ' sel' : ''}" data-rg="airline" data-id="${esc(a.id)}">
-        <span class="ax-opt-ic"><svg class="icon"><use href="#i-plane"/></svg></span>
-        <div><b>${esc(a.name)}</b></div>
+      const m = marcaAerolinea(a);
+      return `<button class="ax-opt rg-air${sel ? ' sel' : ''}" data-rg="airline" data-id="${esc(a.id)}"
+          style="--air-1:${m.c1};--air-2:${m.c2};--air-ink:${m.tinta}" aria-pressed="${sel ? 'true' : 'false'}">
+        <span class="rg-air-sigla" aria-hidden="true">${esc(siglaAerolinea(a))}</span>
+        <div><b>${esc(a.name)}</b><span>${sel ? 'Tu aerolínea' : 'Toca para elegirla'}</span></div>
         <span class="ax-radio">${sel ? '<svg class="icon"><use href="#i-check"/></svg>' : ''}</span>
       </button>`;
     }).join('');
@@ -552,12 +863,37 @@
     });
 
     // El rojo aparece al SALIR del campo, no mientras se escribe.
+    //
+    // OJO: esta lista es blanca y literal. El campo que no esté aquí NUNCA se
+    // marca como tocado, y entonces su error no se pinta jamás mientras el botón
+    // se queda apagado sin decir por qué. Le pasó a 'pass2' el día que se
+    // agregó (2026-09-11): todo escrito, botón muerto y ni una letra roja.
     el.addEventListener('focusout', (ev) => {
       const k = ev.target.dataset?.rgField;
       if (!k || st.touched[k]) return;
-      if (['name', 'email', 'phone', 'pass'].indexOf(k) < 0) return;
+      if (['name', 'email', 'phone', 'pass', 'pass2'].indexOf(k) < 0) return;
+      // Tocar «Ver» no es salir del campo: es mirar lo que uno lleva escrito.
+      // Sin esto, destapar la contraseña a mitad de camino pinta el rojo de
+      // «te faltan 4 caracteres» justo cuando la persona está revisando.
+      // (En Safari de iPhone el botón no recibe foco y relatedTarget viene
+      // vacío, así que allá el rojo sigue saliendo — no hay cómo evitarlo.)
+      if (ev.relatedTarget?.classList?.contains('rg-pw-eye')) return;
       st.touched[k] = true;
-      if (st.view === 'datos') render();
+      if (st.view !== 'datos') return;
+      // Repintado QUIRÚRGICO, jamás render(). Cuando uno sale de «Contraseña»
+      // el foco YA está dentro de «Repite la contraseña», y render() rehace el
+      // HTML del paso completo: se lleva por delante el campo destino junto con
+      // lo que la persona acabara de teclear ahí, y encima le quita el foco. Es
+      // el mismo cuidado que ya tienen onField, refreshPass, onQuery y
+      // refreshPinRow — este era el único sitio que se había quedado atrás.
+      const err = datosErrors()[k];
+      const inp = el.querySelector(`[data-rg-field="${k}"]`);
+      if (inp) inp.classList.toggle('bad', !!err);
+      const box = el.querySelector(`[data-rg-err="${k}"]`);
+      if (box) { box.innerHTML = errHTML(k, err); box.classList.toggle('vacio', !err); }
+      refreshPass();
+      const cta = el.querySelector('[data-rg="crear"]');
+      if (cta) cta.disabled = !datosOk() || st.busy;
     }, true);
 
     el.addEventListener('keydown', (ev) => {
@@ -589,11 +925,40 @@
         const box = root()?.querySelector(`[data-rg-err="${key}"]`);
         if (box) { box.innerHTML = errHTML(key, err); box.classList.toggle('vacio', !err); }
       }
+      // El medidor y el «Coinciden» se repintan con CUALQUIER campo, no solo con
+      // los dos de contraseña: la lista negra mira el nombre, el correo y el
+      // celular, así que corregir un apellido puede volver adivinable una
+      // contraseña que ya estaba escrita. Es barato y no toca el input que tiene
+      // el foco, solo sus clases y los dos recuadros de al lado.
+      refreshPass();
     }
     if (st.view === 'perfil') {
       const cta = root()?.querySelector('.ax-cta-bar .ax-btn-primary');
       if (cta) cta.disabled = !perfilReady() || st.busy;
     }
+  }
+
+  // Repintado en vivo de la contraseña: la barra, el «Coinciden» y —si ya se
+  // tocaron— los dos renglones rojos. Mismo cuidado que en onField y en
+  // refreshPinRow: NO se llama a render(), porque repintar la pantalla entera
+  // remonta el input, le manda el cursor al final y en el teléfono cierra el
+  // teclado a media contraseña.
+  function refreshPass() {
+    const el = root(); if (!el || st.view !== 'datos') return;
+    const e = datosErrors();
+    ['pass', 'pass2'].forEach(k => {
+      const bad = !!(e[k] && st.touched[k]);
+      const inp = el.querySelector(`[data-rg-field="${k}"]`);
+      if (inp) inp.classList.toggle('bad', bad);
+      const box = el.querySelector(`[data-rg-err="${k}"]`);
+      if (box) { box.innerHTML = errHTML(k, e[k]); box.classList.toggle('vacio', !bad); }
+    });
+    // outerHTML y no innerHTML: el nivel vive en la CLASE del contenedor
+    // (.rg-meter.n3), que es lo que le da color a los segmentos.
+    const med = el.querySelector('[data-rg-meter]');
+    if (med) med.outerHTML = medidorHTML();
+    const mat = el.querySelector('[data-rg-match]');
+    if (mat) mat.outerHTML = coincidenHTML();
   }
 
   // El buscador repinta SOLO la lista, para no remontar el input y perder el foco.
@@ -609,7 +974,22 @@
 
   async function onAction(a, el) {
     if (a === 'salir') return leave();
-    if (a === 'ver-pass') { st.showPass = !st.showPass; return render(); }
+    // Ver / ocultar, uno por campo. Se cambia EN SITIO y no con render(): antes
+    // repintaba la pantalla entera, y en el teléfono eso remonta el input, se
+    // lleva el cursor al final y cierra el teclado — justo cuando la persona
+    // quería mirar lo que llevaba escrito.
+    if (a === 'ver-pass' || a === 'ver-pass2') {
+      const dos = a === 'ver-pass2';
+      const k = dos ? 'pass2' : 'pass';
+      const on = dos ? (st.showPass2 = !st.showPass2) : (st.showPass = !st.showPass);
+      const inp = root()?.querySelector(`[data-rg-field="${k}"]`);
+      if (inp) inp.type = on ? 'text' : 'password';
+      if (el) {
+        el.textContent = on ? 'Ocultar' : 'Ver';
+        el.setAttribute('aria-label', on ? 'Ocultar la contraseña' : 'Mostrar la contraseña');
+      }
+      return;
+    }
     if (a === 'tema') {
       if (!window.AuxPresentacion) return;
       // setThemePref ya repinta el contenedor (aplica data-ax-night); render()
@@ -711,8 +1091,11 @@
       return 'Ese correo ya tiene cuenta. Vuelve e inicia sesión.';
     if (m.includes('invalid') && m.includes('email'))
       return 'Ese correo no lo acepta el sistema. Revisa que esté bien escrito.';
+    // Este ya casi no debería salir: desde 2026-09-11 la pantalla exige 10 con
+    // letra y número antes de dejar tocar el botón. Queda por si Supabase sube
+    // su propio mínimo en el panel y nos pasa por encima.
     if (m.includes('password'))
-      return 'La contraseña no cumple: usa mínimo 8 caracteres.';
+      return `La contraseña no le sirve al sistema: usa mínimo ${PASS_MIN} caracteres, con letras y números.`;
     return e?.message || 'No pudimos crear la cuenta. Intenta de nuevo.';
   }
 

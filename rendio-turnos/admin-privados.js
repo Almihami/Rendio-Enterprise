@@ -111,6 +111,11 @@
         ${x.plate ? `<span><b>Vehículo</b>${esc(x.plate)}${x.vehicle ? ' · ' + esc(x.vehicle) : ''}</span>` : ''}
       </div>
       ${x.notes ? `<div class="pv-notes">${esc(x.notes)}</div>` : ''}
+      ${/* Este cruce NO se pliega, aunque sea largo: la segunda frase es la
+            consecuencia ("el servidor lo va a rechazar") y es justo lo que el
+            jefe tiene que leer ANTES de apretar Aprobar. Plegar una advertencia
+            detrás de un clic es volverla opcional, y el aviso existe para que
+            no se entere por un error. */''}
       ${conflicto ? `<div class="pv-warn">
         <svg class="icon"><use href="#i-warn"/></svg>
         Se cruza con el privado de <b>${esc(conflicto.who)}</b> (${esc(fecha(conflicto.whenISO))}). Hay una sola camioneta: si apruebas este, el servidor lo va a rechazar.
@@ -118,7 +123,8 @@
       ${x.status === 'rejected' && x.reason ? `<div class="pv-reason"><b>Motivo:</b> ${esc(x.reason)}</div>` : ''}
       ${st.noAviso === x.id ? `<div class="pv-warn">
         <svg class="icon"><use href="#i-warn"/></svg>
-        <span>Ya quedó decidido, pero <b>a ${esc(x.who)} no le llegó el aviso</b>: no tiene las notificaciones activadas. Lo va a ver cuando abra la app.${x.phone ? ' Si es urgente, llámalo al ' + esc(x.phone) + '.' : ' No tenemos su teléfono registrado.'}</span>
+        <span>Ya quedó decidido, pero <b>a ${esc(x.who)} no le llegó el aviso</b>: no tiene las notificaciones activadas.
+          ${rdWhy('¿Y ahora qué?', 'Lo va a ver cuando abra la app.' + (x.phone ? ' Si es urgente, llámalo al ' + esc(x.phone) + '.' : ' No tenemos su teléfono registrado.'), 'hereda')}</span>
       </div>` : ''}
       ${rechazando ? `<div class="pv-rej">
         <input class="set-input" id="pv-reason-${x.id}" type="text" maxlength="200"
@@ -171,7 +177,7 @@
       const m = (e && e.message) || '';
       if (typeof toast === 'function') {
         toast(m.includes('comprometida') ? 'La camioneta ya está apartada en esa franja.'
-          : m.includes('camioneta configurada') ? 'Falta elegir la camioneta en Ajustes.'
+          : m.includes('camioneta configurada') ? 'Falta elegir la camioneta en Rutas › Configuración › Calibración.'
           : 'No se pudo guardar la decisión.');
       }
     } finally { st.busy = null; paint(); }

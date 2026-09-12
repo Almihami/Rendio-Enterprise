@@ -95,3 +95,6 @@ _archivo/
 /docs/*
 !/docs/catalogo-residencias.json
 mockups/
+
+# Config MCP local: contiene un token de Supabase, no versionar
+.mcp.json

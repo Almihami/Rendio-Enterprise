@@ -95,12 +95,17 @@
       let h = 0; for (let i = 0; i < p.id.length; i++) h = (h * 31 + p.id.charCodeAt(i)) >>> 0; return PAL[h % PAL.length]; };
     const initials = (n) => { const a = (n || '').trim().split(/\s+/); return (((a[0] || '')[0] || '') + ((a[1] || '')[0] || '')).toUpperCase() || '·'; };
     const loadCls = (t) => t >= 5 ? 'hi' : t <= 2 ? 'lo' : '';
+    // El 3 estaba quemado a mano en esta pantalla, y eso era un bug viejo: el
+    // límite se puede cambiar en Ajustes desde hace rato y aquí se seguía
+    // pintando "3" pasara lo que pasara. Si el jefe lo pone en 5, ahora se
+    // dibujan 5 puntos y "En riesgo" empieza en el quinto. strikeLimit() vive en
+    // core.js y es FUNCIÓN porque state.settings solo se llena al iniciar sesión.
     const statusInfo = (p) => !p.active ? { cls: 'sus', dot: 'sus', label: 'Suspendido' }
       : p.suspWeek ? { cls: 'warn', dot: 'warn', label: 'Susp. esta semana' }
-      : p.strikes >= 3 ? { cls: 'risk', dot: 'risk', label: 'En riesgo' }
+      : p.strikes >= strikeLimit() ? { cls: 'risk', dot: 'risk', label: 'En riesgo' }
       : { cls: '', dot: 'ok', label: 'Activo' };
-    const strikesEl = (p) => { const risk = p.strikes >= 3 ? 'risk' : ''; let d = '';
-      for (let i = 0; i < 3; i++) d += `<i class="${i < p.strikes ? 'f' : ''}"></i>`; return `<span class="strikes ${risk}">${d}</span>`; };
+    const strikesEl = (p) => { const lim = strikeLimit(); const risk = p.strikes >= lim ? 'risk' : ''; let d = '';
+      for (let i = 0; i < lim; i++) d += `<i class="${i < p.strikes ? 'f' : ''}"></i>`; return `<span class="strikes ${risk}">${d}</span>`; };
     const SI = '<svg class="pc-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
 
     list.classList.add('pc');
@@ -129,6 +134,12 @@
       if (!p) return '';
       const si = statusInfo(p); const adm = p.role === 'admin'; const L = p.load;
       const nm = escapeAttr(p.name);
+      // El bloque de Confiabilidad dice de qué MES habla, y no es adorno: desde la
+      // migración 0077 el conteo se reinicia cada mes. Un "2 de 3" pelado se lee
+      // como el acumulado de toda la vida del conductor, y con esa lectura el jefe
+      // termina suspendiendo a quien ya pagó lo suyo en agosto.
+      const lim = strikeLimit();
+      const mesActual = Scheduler.monthLabelES(strikePeriod());
       return `<div class="detail">
         <div class="dhead">
           <span class="av" style="background:${colorOf(p)}">${initials(p.name)}</span>
@@ -157,10 +168,10 @@
             ${p.suspWeek ? '<div class="ruleitem"><span class="t">Esta semana</span><span class="v">Suspendido</span></div>' : ''}
           </div>
           <div class="dblock full">
-            <h3>Confiabilidad — strikes (${p.strikes}/3)</h3>
+            <h3>Confiabilidad — ${p.strikes} de ${lim} strikes en ${mesActual}</h3>
             ${adm ? '<p style="font-size:13px;color:var(--pc-ink2)">No aplica a administradores.</p>'
-              : (p.strikes === 0 ? '<p style="font-size:13px;color:var(--pc-ink2)">Sin strikes registrados. Historial limpio.</p>'
-                 : `<div style="display:flex;align-items:center;gap:12px">${strikesEl(p)}<span style="font-size:13px;color:var(--pc-ink2)">${p.strikes}/3 activos. Abre el historial para el detalle.</span></div>`)}
+              : (p.strikes === 0 ? `<p style="font-size:13px;color:var(--pc-ink2)">Sin strikes en ${mesActual}. Historial limpio.</p>`
+                 : `<div style="display:flex;align-items:center;gap:12px">${strikesEl(p)}<span style="font-size:13px;color:var(--pc-ink2)">${p.strikes} de ${lim} activos en ${mesActual}. Al llegar a ${lim} queda suspendido la semana siguiente. Abre el historial para el detalle.</span></div>`)}
           </div>
           ${adm ? '' : `<div class="dblock full">
             <h3>Kilometraje acumulado</h3>
@@ -216,17 +227,25 @@
       if (!reason.trim()) { toast('El strike necesita una razón.'); return; }
       btn.disabled = true;
       try {
+        const lim = strikeLimit();
+        const mes = Scheduler.monthLabelES(strikePeriod());
         const before = state._strikeCounts?.get(id) || 0;
         await Api.addStrike({ profileId: id, reason: reason.trim(), weekStart: state.currentWeek, createdBy: state.profile.id });
-        const reaching3 = before + 1 >= 3;
-        notify([id], reaching3 ? 'Suspendido la próxima semana' : 'Recibiste un strike',
-          reaching3 ? 'Acumulaste 3 strikes: quedas suspendido la próxima semana.' : `Motivo: ${reason.trim()}`, '/');
+        // OJO, son DOS relojes distintos y es fácil confundirlos al escribir estos
+        // textos: los strikes se CUENTAN por mes (al pasar a octubre el contador
+        // vuelve a cero), pero la suspensión que dispara el último sigue siendo de
+        // UNA SEMANA. "Acumulaste 3 este mes: quedas por fuera la semana siguiente"
+        // es lo correcto. Lo que decía antes —"3 strikes", a secas, sin ventana—
+        // era la versión vieja, cuando el contador no se reiniciaba nunca.
+        const llegoAlTope = before + 1 >= lim;
+        notify([id], llegoAlTope ? 'Suspendido la próxima semana' : 'Recibiste un strike',
+          llegoAlTope ? `Acumulaste ${lim} strikes en ${mes}: quedas suspendido la próxima semana.` : `Motivo: ${reason.trim()}`, '/');
         await renderWorkers();
-        // Si era el 3º, el trigger ya creó la suspensión de la próxima semana.
-        if (reaching3) {
-          alert(`⚠ ${name} llegó a 3 strikes. Quedó SUSPENDIDO automáticamente la semana siguiente. Los strikes se reinician.`);
+        // Si era el último, el trigger ya creó la suspensión de la próxima semana.
+        if (llegoAlTope) {
+          alert(`⚠ ${name} llegó a ${lim} strikes en ${mes}. Quedó SUSPENDIDO automáticamente la semana siguiente. Esos strikes quedan consumidos y el conteo del mes vuelve a empezar.`);
         } else {
-          toast(`Strike registrado (${before + 1}/3).`);
+          toast(`Strike registrado (${before + 1} de ${lim} en ${mes}).`);
         }
       } catch (e) {
         alert('Error al registrar el strike: ' + e.message);
@@ -245,7 +264,9 @@
       btn.disabled = false;
       return;
     }
-    // Levantar la suspensión semanal (la que arma el 3º strike o una manual).
+    // Levantar la suspensión SEMANAL (la que arma el último strike del mes o una
+    // manual). Aquí no se toca nada del conteo mensual: son cosas distintas.
+    // Quitar la suspensión de esta semana no le devuelve el mes limpio a nadie.
     if (act === 'lift-susp') {
       const suspId = btn.dataset.suspId;
       if (!suspId) { toast('No encuentro la suspensión de esta semana.'); return; }
@@ -295,13 +316,54 @@
   }
 
   // Modal de historial de strikes (inyectado al vuelo).
+  // El historial es de TODA la vida del conductor, pero lo que pesa hoy es lo del
+  // mes en curso. Por eso va agrupado por mes, con el mes de hoy arriba: lo de
+  // septiembre decide si se suspende, lo de agosto ya es memoria.
   function openStrikesModal(name, profileId, strikes) {
     document.getElementById('strikes-modal')?.remove();
     const fmt = iso => { try { return new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return iso; } };
+    const lim = strikeLimit();
+    const mesActual = strikePeriod();
+    // A qué mes pertenece cada strike. period_start llega con la migración 0077;
+    // mientras no esté aplicada se deduce del created_at, que es exactamente lo
+    // que la migración hace con los strikes viejos — así el historial se ve igual
+    // antes y después de aplicarla. Se pasa como Date y NO como texto: created_at
+    // es una marca de tiempo completa (con hora y zona) y monthStartISO solo le
+    // pega 'T00:00:00' a las fechas sueltas.
+    // Son DOS preguntas distintas y confundirlas descuadra la pantalla:
+    //
+    //   mesDe()       -> ¿de qué mes lo MUESTRO? Para el encabezado del grupo y
+    //                    la etiqueta. Aquí el created_at sí sirve de respaldo:
+    //                    es la misma fecha con la que 0077 etiqueta a los viejos.
+    //
+    //   mesContable() -> ¿a qué mes PERTENECE para CONTARLO? Solo period_start.
+    //                    Si no viene (la migración todavía no ha corrido) la
+    //                    respuesta honesta es "no se sabe", y entonces cuenta
+    //                    como de este mes — que es exactamente lo que hacen
+    //                    api.js y la pantalla del conductor en ese mismo caso.
+    //
+    // Mezclarlas era pintar dos números distintos de la misma persona: el badge
+    // de la ficha decía 2 (porque sin migración api.js suma todo lo vivo) y este
+    // modal, abierto desde ESA misma ficha, decía 1 y marcaba el otro "Expirado".
+    // Y el peor efecto no era el número: al anular, el aviso afirmaba "hoy no
+    // cuenta para la suspensión" sobre un strike que el trigger sí estaba sumando.
+    const mesDe = s => s.period_start
+      ? Scheduler.monthStartISO(s.period_start)
+      : Scheduler.monthStartISO(new Date(s.created_at));
+    const mesContable = s => s.period_start ? Scheduler.monthStartISO(s.period_start) : mesActual;
+    const expirado = s => !s.voided_at && !s.consumed_at && mesContable(s) < mesActual;
+    // Cuatro estados, no tres. El que faltaba es 'Expirado': un strike que nadie
+    // anuló y que no costó suspensión, pero que es de un mes ya cerrado y hoy no
+    // cuenta para nada. No es lo mismo que 'Anulado' (alguien se lo perdonó a
+    // mano) ni que 'Consumido' (ese sí costó una semana por fuera), y el conductor
+    // tiene derecho a ver la diferencia el día que venga a reclamar.
     const statusOf = s => s.voided_at ? '<span class="strike-tag strike-tag-void">Anulado</span>'
       : s.consumed_at ? '<span class="strike-tag strike-tag-consumed">Consumido</span>'
+      : expirado(s) ? '<span class="strike-tag strike-tag-expired">Expirado</span>'
       : '<span class="strike-tag strike-tag-active">Activo</span>';
-    const rows = strikes.length ? strikes.map(s => `
+    // La semana sigue en la línea: el conteo es mensual, pero la suspensión que
+    // sale de él es semanal y el jefe necesita saber de cuál semana se habla.
+    const itemHtml = s => `
       <div class="strike-item">
         <div class="strike-item-main">
           <p class="strike-item-reason">${escapeHtml(s.reason)}</p>
@@ -309,10 +371,33 @@
         </div>
         <div class="strike-item-side">
           ${statusOf(s)}
-          ${!s.voided_at ? `<button data-void-id="${s.id}" data-consumed="${s.consumed_at ? '1' : ''}" class="wk-btn wk-strike-void">Anular</button>` : ''}
+          ${!s.voided_at ? `<button data-void-id="${s.id}" data-consumed="${s.consumed_at ? '1' : ''}" data-expired="${expirado(s) ? '1' : ''}" class="wk-btn wk-strike-void">Anular</button>` : ''}
         </div>
-      </div>`).join('') : '<p class="text-sm text-slate-500">Sin strikes registrados.</p>';
-    const active = strikes.filter(s => !s.voided_at && !s.consumed_at).length;
+      </div>`;
+    // Agrupado por mes, el actual arriba. Las llaves son ISO 'AAAA-MM-01', así que
+    // ordenarlas como texto ya las ordena por fecha: no hace falta parsear nada.
+    const porMes = new Map();
+    strikes.forEach(s => {
+      const m = mesDe(s);
+      if (!porMes.has(m)) porMes.set(m, []);
+      porMes.get(m).push(s);
+    });
+    const meses = [...porMes.keys()].sort().reverse();
+    const rows = meses.length ? meses.map(m => {
+      const items = porMes.get(m);
+      const vivos = items.filter(s => !s.voided_at && !s.consumed_at).length;
+      // En el mes en curso el número que importa es cuántos van contra el tope.
+      // En los meses cerrados eso ya no significa nada: ahí se dice cuántos hubo.
+      const detalle = m === mesActual
+        ? `${vivos} de ${lim} activos`
+        : `${items.length} strike${items.length > 1 ? 's' : ''}`;
+      return `<p class="strike-month">${Scheduler.monthLabelES(m)}<span>${detalle}</span></p>` + items.map(itemHtml).join('');
+    }).join('') : '<p class="text-sm text-slate-500">Sin strikes registrados.</p>';
+    // El número de arriba cuenta SOLO el mes en curso, que es el que decide la
+    // suspensión. Antes contaba todo lo vivo desde el principio de los tiempos
+    // —el contador no se reiniciaba nunca— y ese era el bug de fondo: un conductor
+    // con un strike en marzo y otro en julio aparecía a uno de quedar suspendido.
+    const active = strikes.filter(s => !s.voided_at && !s.consumed_at && mesContable(s) === mesActual).length;
     const overlay = document.createElement('div');
     overlay.id = 'strikes-modal';
     overlay.className = 'modal-overlay';
@@ -320,7 +405,7 @@
       <div class="modal-card">
         <div class="modal-head">
           <h3 class="modal-title">Strikes — ${escapeHtml(name)}</h3>
-          <p class="modal-subtitle">Activos: <strong>${active}/3</strong></p>
+          <p class="modal-subtitle">Activos en ${Scheduler.monthLabelES(mesActual)}: <strong>${active} de ${lim}</strong></p>
         </div>
         <div class="strikes-list">${rows}</div>
         <div class="modal-actions">
@@ -333,9 +418,15 @@
     overlay.querySelectorAll('[data-void-id]').forEach(b => {
       b.addEventListener('click', async () => {
         const consumed = b.dataset.consumed === '1';
+        const isExpired = b.dataset.expired === '1';
         const msg = consumed
           ? '¿Anular este strike YA consumido? Queda marcado en el historial, pero esto NO levanta una suspensión ya aplicada. Para desbloquear al conductor usa “Levantar suspensión” en su ficha.'
-          : '¿Anular este strike? No contará para la suspensión (queda en historial).';
+          // Uno expirado ya no cuenta contra nadie: anularlo no cambia el número de
+          // este mes. Decir "no contará para la suspensión" ahí sería prometer algo
+          // que ya pasó solo, y el jefe creería que le hizo un favor al conductor.
+          : isExpired
+          ? '¿Anular este strike? Es de un mes ya cerrado: hoy no cuenta para la suspensión. Anularlo solo cambia cómo queda en el historial.'
+          : '¿Anular este strike? No contará para la suspensión de este mes (queda en historial).';
         if (!confirm(msg)) return;
         b.disabled = true;
         try {
@@ -348,30 +439,57 @@
     });
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // AJUSTES, PARTIDO EN TRES (2026-09-11)
+  //
+  // renderSettings pintaba 39 controles de dos mundos que no se hablan y, de
+  // paso, disparaba cuatro consultas: la tabla de tiempos, las zonas, la flota y
+  // el desplegable de la camioneta. El jefe entraba a subir el límite de strikes
+  // y pagaba las cuatro. Ahora cada pantalla pinta y pide LO SUYO:
+  //
+  //   renderSettings    → Turnos › Configuración › Ajustes      (13 del turno)
+  //   renderCalibracion → Rutas  › Configuración › Calibración  (26 del optimizador)
+  //   renderFlota       → Turnos › Revisión › Flota             (los carros)
+  //
+  // Los ids de los inputs NO cambiaron: el markup se mudó de sección con cortar y
+  // pegar y acá se sigue buscando por id. Si algún día esto se parte en archivos
+  // sueltos, el corte ya está hecho: son estas tres funciones con sus guardados.
+  // ════════════════════════════════════════════════════════════════════
+
+  // Turnos › Configuración › Ajustes — jornadas, cupos, strikes e inicio rápido.
+  // Cero consultas: todo sale de state.settings, que ya está en memoria.
   function renderSettings() {
-    $('#setting-morning-label').value = state.settings.morning_label;
-    $('#setting-afternoon-label').value = state.settings.afternoon_label;
-    $('#setting-morning-slots').value = state.settings.morning_slots;
-    $('#setting-afternoon-slots').value = state.settings.afternoon_slots;
-    if ($('#setting-coord-slots')) $('#setting-coord-slots').value = state.settings.coord_slots != null ? state.settings.coord_slots : 1;
-    if ($('#setting-shift-hours')) $('#setting-shift-hours').value = state.settings.shift_hours != null ? state.settings.shift_hours : 12;
-    if ($('#setting-auto-close-hours')) $('#setting-auto-close-hours').value = state.settings.auto_close_hours != null ? state.settings.auto_close_hours : 14;
-    if ($('#setting-reservation-idle')) $('#setting-reservation-idle').value = state.settings.reservation_idle_minutes != null ? state.settings.reservation_idle_minutes : 60;
-    if ($('#setting-strike-limit')) $('#setting-strike-limit').value = state.settings.strike_limit != null ? state.settings.strike_limit : 3;
-    if ($('#setting-fast-start-enabled')) $('#setting-fast-start-enabled').checked = state.settings.fast_start_enabled !== false;
-    if ($('#setting-fast-start-from')) $('#setting-fast-start-from').value = state.settings.fast_start_from_hour != null ? state.settings.fast_start_from_hour : 12;
-    if ($('#setting-fast-start-to')) $('#setting-fast-start-to').value = state.settings.fast_start_to_hour != null ? state.settings.fast_start_to_hour : 16;
-    if ($('#setting-inspection-grace')) $('#setting-inspection-grace').value = state.settings.inspection_grace_minutes != null ? state.settings.inspection_grace_minutes : 90;
-    if ($('#setting-aux-wait')) $('#setting-aux-wait').value = state.settings.aux_wait_minutes != null ? state.settings.aux_wait_minutes : 5;
-    if ($('#setting-aux-lead')) $('#setting-aux-lead').value = state.settings.aux_min_lead_hours != null ? state.settings.aux_min_lead_hours : 6;
+    const S = state.settings;
+    $('#setting-morning-label').value = S.morning_label;
+    $('#setting-afternoon-label').value = S.afternoon_label;
+    $('#setting-morning-slots').value = S.morning_slots;
+    $('#setting-afternoon-slots').value = S.afternoon_slots;
+    if ($('#setting-coord-slots')) $('#setting-coord-slots').value = S.coord_slots != null ? S.coord_slots : 1;
+    if ($('#setting-shift-hours')) $('#setting-shift-hours').value = S.shift_hours != null ? S.shift_hours : 12;
+    if ($('#setting-auto-close-hours')) $('#setting-auto-close-hours').value = S.auto_close_hours != null ? S.auto_close_hours : 14;
+    if ($('#setting-reservation-idle')) $('#setting-reservation-idle').value = S.reservation_idle_minutes != null ? S.reservation_idle_minutes : 60;
+    if ($('#setting-strike-limit')) $('#setting-strike-limit').value = S.strike_limit != null ? S.strike_limit : 3;
+    if ($('#setting-fast-start-enabled')) $('#setting-fast-start-enabled').checked = S.fast_start_enabled !== false;
+    if ($('#setting-fast-start-from')) $('#setting-fast-start-from').value = S.fast_start_from_hour != null ? S.fast_start_from_hour : 12;
+    if ($('#setting-fast-start-to')) $('#setting-fast-start-to').value = S.fast_start_to_hour != null ? S.fast_start_to_hour : 16;
+    if ($('#setting-inspection-grace')) $('#setting-inspection-grace').value = S.inspection_grace_minutes != null ? S.inspection_grace_minutes : 90;
+    renderPriorityList();
+    renderRulesEditor();
+    setPrepararBloque('turno');
+  }
+
+  // Rutas › Configuración › Calibración — los 26 del optimizador, más la tabla de
+  // tiempos y las zonas, que son la otra mitad del mismo cálculo.
+  function renderCalibracion() {
+    const S = state.settings;
+    if ($('#setting-aux-wait')) $('#setting-aux-wait').value = S.aux_wait_minutes != null ? S.aux_wait_minutes : 5;
+    if ($('#setting-aux-lead')) $('#setting-aux-lead').value = S.aux_min_lead_hours != null ? S.aux_min_lead_hours : 6;
     // 0069 · traslado privado. El desplegable de vehículos se llena aparte
     // (es una consulta), pero el valor se deja puesto para que al llegar la
     // lista quede seleccionado el que ya estaba.
-    if ($('#setting-priv-enabled')) $('#setting-priv-enabled').checked = state.settings.aux_private_enabled === true;
-    if ($('#setting-priv-price')) $('#setting-priv-price').value = state.settings.aux_private_price_cop != null ? state.settings.aux_private_price_cop : 150000;
-    if ($('#setting-priv-block')) $('#setting-priv-block').value = state.settings.aux_private_block_min != null ? state.settings.aux_private_block_min : 90;
-    fillPrivateVehicles();
-    const S = state.settings;
+    if ($('#setting-priv-enabled')) $('#setting-priv-enabled').checked = S.aux_private_enabled === true;
+    if ($('#setting-priv-price')) $('#setting-priv-price').value = S.aux_private_price_cop != null ? S.aux_private_price_cop : 150000;
+    if ($('#setting-priv-block')) $('#setting-priv-block').value = S.aux_private_block_min != null ? S.aux_private_block_min : 90;
     if ($('#setting-route-merge')) $('#setting-route-merge').value = S.route_merge_window_min != null ? S.route_merge_window_min : 30;
     if ($('#setting-route-service')) $('#setting-route-service').value = S.route_service_min != null ? S.route_service_min : 3;
     if ($('#setting-route-traffic')) $('#setting-route-traffic').value = S.route_traffic_factor != null ? S.route_traffic_factor : 1.05;
@@ -397,14 +515,143 @@
     if ($('#setting-car-priority')) $('#setting-car-priority').value = S.route_car_priority === false ? '0' : '1';
     if ($('#setting-max-early')) $('#setting-max-early').value = S.route_max_early_min != null ? S.route_max_early_min : 60;
     if ($('#setting-sweep-tol')) $('#setting-sweep-tol').value = S.route_sweep_tol_min != null ? S.route_sweep_tol_min : 2;
+    // Estas tres sí son consultas, y por eso viven acá y no en Ajustes: solo las
+    // paga quien viene a calibrar. La de la camioneta NO se aplaza hasta que el
+    // jefe despliegue "Traslados de auxiliares": el botón Guardar de esta misma
+    // pantalla manda el vehículo, y si el desplegable llegara tarde se guardaría
+    // el valor viejo. Ver privVehiculoAGuardar(), que existe por eso mismo.
+    fillPrivateVehicles();
     renderRouteTables();
     renderResidenceZones();
-    renderPriorityList();
-    renderRulesEditor();
+    setPrepararBloque('calib');
+  }
+
+  // Turnos › Revisión › Flota — los carros. Una sola consulta, la de la lista.
+  function renderFlota() {
     renderVehiclesSettings();
   }
 
-  // --- Vehículos (admin) — alta/baja/edición de la flota desde Ajustes ---
+  // ════════════════════════════════════════════════════════════════════
+  // GUARDADO HONESTO (2026-09-11)
+  //
+  // El acordeón abrió un hueco: con las secciones plegadas se puede editar un
+  // campo, cerrar la sección y salir creyendo que quedó guardado — acá nada se
+  // guarda solo. Tres piezas lo tapan, y las tres ya tenían CSS escrito:
+  //
+  //   .set-sec-dot   punto naranja en el summary, visible AUNQUE esté cerrada.
+  //   .set-sec-val   con la sección cerrada, el valor actual de sus campos, para
+  //                  barrer el acordeón leyendo números sin abrir nada.
+  //   .set-savebar   el botón pegado al pie, diciendo cuántos campos cubre.
+  //
+  // Lo sucio se escucha en la TARJETA entera (data-bloque), no en los <details>:
+  // en Ajustes hay nueve campos fuera de toda sección plegable y son la mitad de
+  // la pantalla. Escuchando solo los <details>, esa mitad no avisaría nada.
+  // ════════════════════════════════════════════════════════════════════
+  const SET_BLOQUES = {
+    turno: { tab: 'settings',    nombre: 'Ajustes del turno',          chip: '#set-saved-params', toast: 'Ajustes del turno guardados.' },
+    calib: { tab: 'calibracion', nombre: 'Calibración del optimizador', chip: '#set-saved-calib',  toast: 'Calibración guardada.' },
+  };
+  // Vive en JS y no en el DOM porque hay que poder preguntarlo desde setTab
+  // (core.js) cuando el jefe ya va saliendo del módulo.
+  const setBloquesSucios = new Set();
+
+  function setTarjetaDe(clave) { return document.querySelector(`.set-card[data-bloque="${clave}"]`); }
+  function setCamposDe(card) { return card.querySelectorAll('input, select, textarea'); }
+
+  // El valor que se muestra en la pastilla de una sección cerrada. Corto a
+  // propósito: es para barrer con la vista, no para leerlo con lupa.
+  function setValorCorto(el) {
+    if (!el) return '';
+    if (el.type === 'checkbox') return el.checked ? 'sí' : 'no';
+    if (el.tagName === 'SELECT') {
+      const o = el.options[el.selectedIndex];
+      const t = (o ? o.textContent : '').trim();
+      return !t ? '—' : (t.length > 18 ? t.slice(0, 17) + '…' : t);
+    }
+    const v = String(el.value == null ? '' : el.value).trim();
+    return v === '' ? '—' : v;
+  }
+
+  function setPintarValores(card) {
+    card.querySelectorAll('.set-sec[data-secval]').forEach(sec => {
+      const pastilla = sec.querySelector('.set-sec-val');
+      if (!pastilla) return;
+      pastilla.textContent = sec.dataset.secval.split(',')
+        .map(id => setValorCorto(document.getElementById(id.trim())))
+        .filter(Boolean).join(' · ');
+    });
+  }
+
+  // Repinta las pastillas de un bloque desde afuera. Lo usa fillPrivateVehicles,
+  // que llega tarde (es una consulta) y cambia el texto del desplegable.
+  function setRepintarValores(clave) {
+    const card = setTarjetaDe(clave);
+    if (card) setPintarValores(card);
+  }
+
+  function setPintarBarra(clave) {
+    const card = setTarjetaDe(clave);
+    if (!card) return;
+    const nota = card.querySelector('.set-savebar .set-savenote');
+    if (!nota) return;
+    const n = setCamposDe(card).length;
+    nota.innerHTML = setBloquesSucios.has(clave)
+      ? `<b>Hay cambios sin guardar.</b> Este botón manda los ${n} campos de esta pantalla, abiertos o plegados.`
+      : `Manda los ${n} campos de esta pantalla, abiertos o plegados.`;
+  }
+
+  function setBloqueLimpio(clave) {
+    setBloquesSucios.delete(clave);
+    const card = setTarjetaDe(clave);
+    if (!card) return;
+    card.querySelectorAll('.set-sec.sucio').forEach(s => s.classList.remove('sucio'));
+    setPintarValores(card);
+    setPintarBarra(clave);
+  }
+
+  // Un solo par de oyentes por tarjeta, delegados. 'input' agarra lo que se
+  // escribe; 'change' los checkbox y los desplegables, que en algunos navegadores
+  // no disparan 'input'. Pintar el valor en cada tecla es barato (son ocho
+  // pastillas) y evita depender de 'toggle', que en <details> no burbujea.
+  function setEngancharBloque(clave) {
+    const card = setTarjetaDe(clave);
+    if (!card || card.dataset.enganchado === '1') return;
+    card.dataset.enganchado = '1';
+    const oido = (e) => {
+      if (!e.target.matches('input, select, textarea')) return;
+      setBloquesSucios.add(clave);
+      const sec = e.target.closest('.set-sec');
+      if (sec) sec.classList.add('sucio');
+      setPintarValores(card);
+      setPintarBarra(clave);
+    };
+    card.addEventListener('input', oido);
+    card.addEventListener('change', oido);
+  }
+
+  // Se llama al final de cada render: los valores acaban de venir de la base, así
+  // que nada está sucio. Poner .value a mano NO dispara 'input', o sea que este
+  // repintado no se marca solo como cambio del jefe.
+  function setPrepararBloque(clave) {
+    setEngancharBloque(clave);
+    setBloqueLimpio(clave);
+  }
+
+  // La puerta de salida que consulta setTab (core.js). Devuelve false para
+  // quedarse. Si el jefe decide irse, se limpia el sucio: se va sabiendo, y al
+  // volver el render repinta desde la base de todas formas.
+  function setPuedeSalirDelModulo(destino) {
+    const clave = Object.keys(SET_BLOQUES).find(k => SET_BLOQUES[k].tab === state.activeTab);
+    if (!clave || destino === state.activeTab) return true;
+    if (!setBloquesSucios.has(clave)) return true;
+    const ok = confirm(`Quedan cambios sin guardar en ${SET_BLOQUES[clave].nombre}.\n\n`
+      + 'Acá nada se guarda solo: si sales ahora, lo que cambiaste se pierde.\n\n'
+      + '¿Salir de todas formas?');
+    if (ok) setBloqueLimpio(clave);
+    return ok;
+  }
+
+  // --- Vehículos (admin) — alta/baja/edición de la flota, en Turnos › Revisión › Flota ---
   const VEH_STATUS_ES = { available: 'Disponible', in_use: 'En uso', reserved: 'Reservado', maintenance: 'En revisión', blocked: 'Cambio de aceite' };
   let vehiclesEditId = null;       // si está editando un vehículo existente
   let vehiclesCache = [];          // para poblar el form al editar
@@ -641,7 +888,7 @@
     const label = v ? (v.internal_code || v.license_plate || 'este vehículo') : 'este vehículo';
     if (!confirm(`¿Regresar ${label} a servicio? Quedará Disponible para los conductores.`)) return;
     try {
-      await Api.returnVehicleToService(id, 'Regreso a servicio desde Ajustes');
+      await Api.returnVehicleToService(id, 'Regreso a servicio desde Flota');
       toast('Vehículo disponible.');
       renderVehiclesSettings();
     } catch (e) {
@@ -663,7 +910,7 @@
       : `¿Registrar el cambio de aceite de ${label}? Quedará Disponible y se reinicia el contador de km.`;
     if (!confirm(msg)) return;
     try {
-      await Api.registerOilChange(id, 'Cambio de aceite registrado desde Ajustes');
+      await Api.registerOilChange(id, 'Cambio de aceite registrado desde Flota');
       toast('Cambio de aceite registrado.');
       renderVehiclesSettings();
     } catch (e) {
@@ -777,7 +1024,7 @@
     }
   }
 
-  // --- Crear conductor desde Ajustes ---
+  // --- Crear conductor, ahora desde Personal (antes vivía en Ajustes) ---
   // Caracteres seguros (sin O/0, l/I/1) para que el conductor no se confunda
   // al teclear la contraseña.
   function generateReadablePassword(len = 10) {
@@ -849,8 +1096,39 @@
     }
   }
 
+  // GUARDAR LO MÍO SIN PISAR LO DEL VECINO.
+  //
+  // Api.saveSettings escribe SIEMPRE las 40 columnas: es una cascada fija que va
+  // bajando escalones si a la base le falta una migración. No sabe de guardados
+  // parciales. Si Calibración le mandara solo sus 27 columnas, las 13 del turno
+  // irían en `undefined` y quedaríamos colgados de que JSON.stringify las bote —
+  // un detalle de la librería, no una promesa que alguien nos haya hecho.
+  //
+  // Por eso cada pantalla manda el objeto COMPLETO: lo que ya está guardado, con
+  // sus campos encima. Lo de la otra pantalla viaja igualito a como estaba.
+  async function setGuardarBloque(clave, cambios, aviso) {
+    const card = setTarjetaDe(clave);
+    const btn = card && card.querySelector('.set-savebar .set-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const next = { ...state.settings, ...cambios };
+      await Api.saveSettings(next);
+      state.settings = next;
+      setBloqueLimpio(clave);
+      const chip = $(SET_BLOQUES[clave].chip);
+      if (chip) { chip.classList.add('show'); setTimeout(() => chip.classList.remove('show'), 1800); }
+      toast(SET_BLOQUES[clave].toast);
+      if (aviso) alert(aviso);
+    } catch (e) {
+      alert('Error al guardar ajustes: ' + (e.message || e));
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // Turnos › Configuración › Ajustes — los 13 del turno del conductor.
   async function onSaveSettings() {
-    const next = {
+    await setGuardarBloque('turno', {
       morning_label: $('#setting-morning-label').value,
       afternoon_label: $('#setting-afternoon-label').value,
       morning_slots: Math.max(1, parseInt($('#setting-morning-slots').value, 10) || 2),
@@ -864,6 +1142,13 @@
       fast_start_from_hour: Math.min(23, Math.max(0, parseInt($('#setting-fast-start-from') && $('#setting-fast-start-from').value, 10) || 12)),
       fast_start_to_hour: Math.min(24, Math.max(1, parseInt($('#setting-fast-start-to') && $('#setting-fast-start-to').value, 10) || 16)),
       inspection_grace_minutes: Math.min(480, Math.max(15, parseInt($('#setting-inspection-grace') && $('#setting-inspection-grace').value, 10) || 90)),
+    });
+  }
+
+  // Rutas › Configuración › Calibración — los 26 del optimizador (27 columnas:
+  // route_rescue_early sale de que la madrugada sea mayor que 0, no de un campo).
+  async function onSaveCalibracion() {
+    const next = {
       aux_wait_minutes: Math.min(60, Math.max(1, parseInt($('#setting-aux-wait') && $('#setting-aux-wait').value, 10) || 5)),
       // 0 = sin anticipación mínima. `|| 6` lo pisaría, así que se valida aparte.
       aux_min_lead_hours: (() => {
@@ -950,16 +1235,7 @@
       avisoPrivado = 'El traslado privado NO quedó encendido: falta elegir cuál carro es la camioneta. '
         + 'Lo demás sí se guardó.';
     }
-    try {
-      await Api.saveSettings(next);
-      state.settings = { ...state.settings, ...next };
-      const saved = $('#set-saved-params');
-      if (saved) { saved.classList.add('show'); setTimeout(() => saved.classList.remove('show'), 1800); }
-      toast('Ajustes guardados.');
-      if (avisoPrivado) alert(avisoPrivado);
-    } catch (e) {
-      alert('Error al guardar ajustes: ' + e.message);
-    }
+    await setGuardarBloque('calib', next, avisoPrivado);
   }
   // Llena el desplegable de "cuál carro es la camioneta" (0069). Se consulta
   // aparte porque es una lectura de la flota, no del objeto de ajustes.
@@ -977,6 +1253,7 @@
     if (!Array.isArray(lista)) {
       sel.innerHTML = '<option value="">No se pudo cargar la flota</option>';
       sel.dataset.flota = 'fallo';
+      setRepintarValores('calib');
       return;
     }
     sel.innerHTML = '<option value="">— Sin definir —</option>' + lista.map(v =>
@@ -984,6 +1261,10 @@
       + (v.plate || '?') + ' · ' + (v.label || '') + ' (' + (v.capacity || '?') + ' puestos)'
       + (v.status === 'blocked' ? ' — BLOQUEADO' : '') + '</option>').join('');
     sel.dataset.flota = 'ok';
+    // La pastilla de "Traslados de auxiliares" ya se pintó con el desplegable
+    // vacío (esto es una consulta, llega después del render). Sin este repintado,
+    // la sección cerrada mentiría: diría «— Sin definir —» con la camioneta puesta.
+    setRepintarValores('calib');
   }
 
   // QUÉ CAMIONETA SE MANDA A GUARDAR.

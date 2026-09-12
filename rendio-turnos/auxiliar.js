@@ -45,6 +45,11 @@
     // Entrega 2026-08-17 (bloque A): primer ingreso y hoja de soporte.
     // onbStep: 0..N-1 = pantallas de bienvenida · N = el permiso con motivo.
     onbStep: 0, supportOpen: false,
+    // Siglas de aerolínea para el prefijo del número de vuelo (11-sep-2026).
+    // `airlines` es el catálogo de la base (null mientras no llegue: se pinta
+    // con el respaldo de AUX_AEROLINEAS) y `myIata` la sigla de la aerolínea
+    // del tripulante, '' si no la sabemos.
+    airlines: null, airLoading: false, myIata: '',
   };
 
   // Además de init, se exponen tres ayudas para los módulos de la entrega
@@ -77,6 +82,10 @@
         state.settings = await Api.getSettings();
       }
     } catch (_) {}
+    // Las siglas de aerolínea van en segundo plano, sin await: la pantalla no
+    // puede quedarse esperando por un chip de dos letras. Si llegan tarde, el
+    // chip se actualiza solo; si no llegan, está el respaldo.
+    auxLoadAerolineas();
     // Modo nocturno antes de pintar: si se aplicara después, la primera pantalla
     // aparece en claro y da un fogonazo blanco a las 3 de la mañana.
     if (window.AuxPresentacion) {
@@ -617,7 +626,7 @@
            manda es a qué hora tiene que estar en MDE. En una llegada este mismo
            campo SÍ es el vuelo que aterriza, y ahí es obligatorio: es el que se
            rastrea cuando el avión se retrasa. */ ''}
-      ${isLle ? auxField('Número de vuelo', 'flight', f.flight || '', 'Ej: AV-9412') : ''}
+      ${isLle ? auxFlightField('Número de vuelo', 'flight', '9412') : ''}
       ${auxField('Fecha del vuelo', 'date', f.date || '', '', 'date', `min="${auxTodayISO()}"`)}
       ${auxDateChips(f)}
       ${auxField(isLle ? 'Hora de aterrizaje' : 'Hora en que quieres estar en el aeropuerto',
@@ -630,7 +639,7 @@
           'Si vuelves hoy mismo, lo dejamos pedido de una vez y no tienes que volver a entrar.')}
         ${f.sameDayBack ? `
           ${auxField('Hora a la que aterrizas de vuelta', 'backTime', f.backTime || '', '19:40', 'time')}
-          ${auxField('Número del vuelo con el que aterrizas', 'backFlight', f.backFlight || '', 'Ej: AV-9413')}
+          ${auxFlightField('Número del vuelo con el que aterrizas', 'backFlight', '9413')}
           <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Quedan dos traslados: el de ida y el de regreso. Puedes cancelar cualquiera por separado.</div>`
           : ''}`}`;
   }
@@ -763,9 +772,13 @@
     // operación a mano), así que la condición la decide el módulo.
     const paso3Listo = window.AuxResidencias
       ? AuxResidencias.ready(f) : !!(f.address && f.locConfirmed);
+    // auxIataCorta: la sigla escrita a mano que quedó en UNA letra. No se deja
+    // pasar —"A9412" no lo sabe leer ni el tablero ni nosotros— y el porqué se
+    // dice en el aviso de debajo del campo, que se repinta en el mismo teclazo.
     const disabled = (kind === 'tipo' && !f.type)
-      || (kind === 'vuelo' && ((f.type === 'lle' && !f.flight) || !f.date || !f.time || badDate
-            || (f.sameDayBack && (!f.backTime || !f.backFlight))))
+      || (kind === 'vuelo' && ((f.type === 'lle' && (!f.flight || auxIataCorta('flight')))
+            || !f.date || !f.time || badDate
+            || (f.sameDayBack && (!f.backTime || !f.backFlight || auxIataCorta('backFlight')))))
       || (kind === 'donde' && !paso3Listo)
       || (kind === 'nivel' && !f.level)
       || (kind === 'revisar' && badDate);
@@ -786,6 +799,210 @@
       <div><b>${label}</b><span>${hint}</span></div>
       <span class="ax-switch"><span class="ax-knob"></span></span>
     </button>`;
+  }
+
+  // ---------- el número de vuelo: la sigla en un chip, los dígitos aparte ----------
+  //
+  // (11-sep-2026) «Que al agendar un vuelo ya traiga las iniciales de la
+  // aerolínea». Hasta hoy esto era UN campo de texto libre con placeholder
+  // "Ej: AV-9412" y cero validación, y en `reservations.notes` quedaron las
+  // tres formas del mismo vuelo: "AV-9412", "av9412" y "9412" pelado. No es
+  // cosmético: de la sigla sale el TIEMPO DE DESEMBARQUE (admin-rutas,
+  // rtDeplaneVuelo), o sea la hora a la que el carro sale por la persona. Sin
+  // sigla el tablero la adivinaba por la forma del número —"los de 4 dígitos
+  // que empiezan por 5 son JetSmart"— y eso es exactamente lo que se acaba.
+  //
+  // Ahora son dos cosas pegadas: un chip con la sigla, que entra puesta en la
+  // aerolínea del perfil, y un campo que SOLO admite dígitos. El tripulante
+  // teclea cuatro números y ya.
+  //
+  // SE PUEDE CAMBIAR, y no es un adorno: el de Avianca vuela a veces en otra
+  // (posicionamiento, un chárter, un código compartido). El chip abre las cuatro
+  // del catálogo y una salida «Otra» para escribirla a mano — quedar trancado a
+  // las 4 a.m. sin poder pedir el carro es mucho peor que guardar una sigla rara.
+
+  // Respaldo del catálogo: son las cuatro filas activas de `airlines` con su
+  // mismo orden (sort_order 10/20/30/40), escritas aquí para el día en que la
+  // consulta no pase. La RLS de esa tabla no es cosa de este módulo, y un chip
+  // vacío dejaría al tripulante sin poder elegir. Si la consulta sí pasa, manda
+  // la base y esta lista no se usa.
+  const AUX_AEROLINEAS = [
+    { iata: 'AV', name: 'Avianca' },
+    { iata: 'JA', name: 'JetSMART' },
+    { iata: 'P5', name: 'Wingo' },
+    { iata: 'LA', name: 'LATAM' },
+  ];
+  // Siglas que el PEGADO reconoce además de las del catálogo. Son las que la
+  // operación ve en los itinerarios de JetSmart y que admin-rutas ya entendía
+  // (J65417, JEC123). Sin esto, pegar "J65417" dejaría la 'J' suelta —una letra
+  // sola no es sigla, se bota— y el vuelo quedaría "JA65417": otra aerolínea y
+  // otro tiempo de desembarque.
+  const AUX_IATA_EXTRA = ['JEC', 'J6', 'JE'];
+
+  const auxAerolineas = () => auxState.airlines || AUX_AEROLINEAS;
+  // La sigla puesta en el campo `key`. Mientras el tripulante no toque el chip
+  // es la de su perfil; desde que lo toca manda lo que él eligió. La comparación
+  // es contra null y no un `||` a propósito: '' es una elección suya («sin
+  // sigla»), no un «todavía no ha elegido».
+  function auxFlightIata(key) {
+    const v = auxState.form[key + 'Iata'];
+    return String(v != null ? v : (auxState.myIata || '')).toUpperCase();
+  }
+  const auxIataLimpia = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+  // Una letra sola no es una sigla (las IATA son dos, a veces tres).
+  const auxIataCorta = (key) => auxFlightIata(key).length === 1;
+
+  // EL VALOR QUE SE GUARDA: SIGLA+DÍGITOS en mayúscula y SIN GUION. Sin guion a
+  // propósito — los lectores de api.js limpian espacios y guiones antes de
+  // comparar, así que lo que se guarde hoy y las filas viejas ("AV-9412") se
+  // leen igual. Vacío si no hay dígitos: una sigla sola no es un vuelo, y de eso
+  // justamente se agarra el CTA para saber si el campo está lleno.
+  function auxFlightSync(key) {
+    const num = String(auxState.form[key + 'Num'] || '').replace(/\D/g, '');
+    auxState.form[key] = num ? (auxFlightIata(key) + num) : '';
+  }
+  const auxFlightSyncAll = () => { auxFlightSync('flight'); auxFlightSync('backFlight'); };
+
+  // Lo que el tripulante escribe —o PEGA— en el campo de dígitos. El pegado
+  // completo no es el caso raro: es EL caso. El que copia "AV-9412" del correo
+  // de la aerolínea y lo suelta aquí no está haciendo nada malo, así que en vez
+  // de rechazárselo se le parte: las letras se van al chip, los dígitos se
+  // quedan. Devuelve los dígitos y deja la sigla puesta como efecto.
+  //   "AV-9412" → chip AV · campo 9412   pegado completo, con guion
+  //   "av9412"  → chip AV · campo 9412   minúscula
+  //   "P57433"  → chip P5 · campo 7433   la sigla lleva un dígito adentro: por
+  //                                      eso se compara primero contra el
+  //                                      catálogo y no se parte por "la letra"
+  //   "CM123"   → chip CM · campo 123    sigla desconocida: se respeta igual
+  //   "9412"    → el chip como estaba · campo 9412
+  //   "A"       → se bota: una letra suelta no es una sigla
+  function auxFlightTyped(key, raw) {
+    const s = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const conocidas = auxAerolineas().map(a => a.iata).concat(AUX_IATA_EXTRA)
+      .sort((a, b) => b.length - a.length); // la más larga primero, como en admin-rutas
+    const sig = conocidas.find(p => s.startsWith(p) && /^\d{2,}$/.test(s.slice(p.length)));
+    if (sig) { auxState.form[key + 'Iata'] = sig; return s.slice(sig.length).slice(0, 5); }
+    const letras = s.replace(/[^A-Z]/g, '');
+    if (letras.length >= 2) auxState.form[key + 'Iata'] = letras.slice(0, 3);
+    return s.replace(/\D/g, '').slice(0, 5);
+  }
+
+  // El aviso de debajo del campo. Va en su propio contenedor con id porque se
+  // repinta en cada teclazo sin remontar el input: si se remontara, el teclado
+  // del teléfono se cierra y el cursor salta.
+  function auxFlightAviso(key) {
+    if (auxIataCorta(key)) {
+      return `<div class="ax-hint bad"><svg class="icon"><use href="#i-warn"/></svg>
+        La sigla va de dos o tres letras (AV, JA, P5, LA). Complétala o elige la aerolínea en el botón.</div>`;
+    }
+    if (!auxFlightIata(key)) {
+      return `<div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>
+        No tenemos guardada tu aerolínea: toca el botón de la izquierda y elige la sigla.
+        Si la dejas vacía mandamos solo el número, y en coordinación les toca adivinar de qué vuelo hablas.</div>`;
+    }
+    return '';
+  }
+  // Repintado mínimo del chip (la sigla puede cambiar sin que el tripulante lo
+  // toque: por un pegado, o porque la consulta de su aerolínea llegó tarde).
+  function auxFlightChipSync(key) {
+    const el = document.getElementById('ax-fl-chip-' + key);
+    if (!el) return;
+    const sig = auxFlightIata(key);
+    el.textContent = sig || 'Sigla';
+    el.style.color = sig ? '' : 'var(--a-t3)';
+    // Si el selector está abierto en «Otra», su cajita también dice la sigla: un
+    // pegado de "LA-1234" en el campo de al lado la cambia sin que él toque esta.
+    // No se pisa mientras tiene el foco, que es cuando el que escribe es él.
+    const inp = auxRoot() && auxRoot().querySelector('[data-field="' + key + 'Iata"]');
+    if (inp && document.activeElement !== inp) inp.value = sig;
+  }
+
+  // El campo completo. Los estilos van en línea y con los tokens --a-* (no con
+  // clases nuevas) porque esto se arma sobre lo que ya existe: .ax-input para
+  // la caja y .ax-daychips/.ax-daychip para el selector, que ya están resueltos
+  // en claro y en nocturno. Un color escrito a mano aquí sería el octavo parche
+  // luminoso sobre negro que rc-auxiliar.css lleva meses recogiendo.
+  function auxFlightField(label, key, ph) {
+    const f = auxState.form;
+    const sig = auxFlightIata(key);
+    const num = String(f[key + 'Num'] || '').replace(/\D/g, '');
+    const cat = auxAerolineas();
+    // «Otra» queda encendida también cuando la sigla puesta no es de las cuatro
+    // (la trajo un pegado, o la escribió él): si no, el chip mostraría "J6" con
+    // ninguna opción marcada, que se lee como que el selector está roto.
+    const otra = f.flOtra === key || (!!sig && !cat.some(a => a.iata === sig));
+    const abierto = f.flPick === key;
+    const chips = cat.map(a => `
+        <button class="ax-daychip${(!otra && sig === a.iata) ? ' on' : ''}" data-ax="fl-set" data-k="${key}" data-iata="${a.iata}">
+          <b>${a.iata}</b><span>${escapeHtml(a.name)}</span></button>`).join('');
+    return `
+      <div class="ax-label">${label}</div>
+      <div style="display:flex;gap:8px;align-items:stretch;margin-top:7px">
+        <button type="button" class="ax-input" data-ax="fl-pick" data-k="${key}"
+          aria-label="Aerolínea del vuelo"
+          style="margin-top:0;width:auto;flex:0 0 auto;display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:800;letter-spacing:.03em;${abierto ? 'border-color:var(--a-accent);' : ''}">
+          <span id="ax-fl-chip-${key}" style="${sig ? '' : 'color:var(--a-t3)'}">${sig || 'Sigla'}</span>
+          <svg class="icon" style="width:13px;height:13px;color:var(--a-t2);flex:0 0 auto"><use href="#i-chev"/></svg>
+        </button>
+        <input class="ax-input" data-field="${key}Num" type="text" inputmode="numeric" autocomplete="off"
+          value="${num}" placeholder="${ph}" aria-label="Número del vuelo, solo dígitos"
+          style="margin-top:0;flex:1 1 auto;min-width:0" />
+      </div>
+      ${abierto ? `
+        <div class="ax-daychips" style="margin:8px 0 0">${chips}
+          <button class="ax-daychip${otra ? ' on' : ''}" data-ax="fl-other" data-k="${key}"><b>Otra</b><span>La escribo</span></button>
+        </div>
+        ${otra ? `<input class="ax-input" data-field="${key}Iata" type="text" autocomplete="off"
+            value="${sig}" placeholder="Ej: CM" maxlength="3" aria-label="Sigla de la aerolínea"
+            style="margin-top:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700" />` : ''}` : ''}
+      <div id="ax-fl-aviso-${key}">${auxFlightAviso(key)}</div>`;
+  }
+
+  // Un teclazo (o un pegado) en cualquiera de los dos campos del vuelo: el de
+  // dígitos y el de la sigla escrita a mano.
+  function auxFlightInput(k, el) {
+    const esNum = k.slice(-3) === 'Num';
+    const base = esNum ? k.slice(0, -3) : k.slice(0, -4);
+    const v = esNum ? auxFlightTyped(base, el.value) : auxIataLimpia(el.value);
+    // Solo se reescribe la caja si de verdad cambió: tocar `value` manda el
+    // cursor al final, y hacerlo en cada tecla es insoportable.
+    if (v !== el.value) el.value = v;
+    auxState.form[k] = v;
+    auxFlightSync(base);
+    auxFlightChipSync(base);
+    const av = document.getElementById('ax-fl-aviso-' + base);
+    if (av) av.innerHTML = auxFlightAviso(base);
+  }
+
+  // El catálogo de siglas y la aerolínea del tripulante. Los dos van sueltos y
+  // sin bloquear nada: si `airlines` no se deja leer queda el respaldo, y si el
+  // perfil no trae aerolínea el chip sale vacío y el formulario se comporta como
+  // el de ayer (número pelado), que es lo que la base ya tiene en 102 perfiles.
+  async function auxLoadAerolineas() {
+    if (auxState.airLoading) return;
+    if (auxState.airlines && auxState.myIata) return;
+    auxState.airLoading = true;
+    try {
+      if (!auxState.airlines) {
+        let list = null;
+        try { if (window.Api?.listAirlines) list = await Api.listAirlines(); } catch (_) {}
+        const limpio = (list || [])
+          .map(a => ({ iata: auxIataLimpia(a.iata_code), name: a.name || '' }))
+          .filter(a => a.iata.length >= 2);
+        if (limpio.length) auxState.airlines = limpio;
+      }
+      if (!auxState.myIata) {
+        try { if (window.Api?.getMyAirlineIata) auxState.myIata = auxIataLimpia(await Api.getMyAirlineIata()); } catch (_) {}
+      }
+    } finally { auxState.airLoading = false; }
+    // Si esto llega cuando el tripulante ya está en el paso del vuelo, se le
+    // pone la sigla SIN repintar el paso: remontar el input mientras escribe le
+    // cierra el teclado y le tira el cursor al principio.
+    if (auxState.view !== 'form') return;
+    auxFlightSyncAll();
+    auxFlightChipSync('flight'); auxFlightChipSync('backFlight');
+    const cta = auxRoot() && auxRoot().querySelector('.ax-cta-bar');
+    if (cta) cta.innerHTML = auxFormCTA();
   }
 
   // ---------- mapa + geocodificación (pin ajustable REAL) ----------
@@ -880,6 +1097,10 @@
 
   async function auxSubmit() {
     const f = auxState.form;
+    // Último apretón de tuercas: el canónico SIGLA+DÍGITOS se rearma en cada
+    // teclazo, pero la sigla del perfil viaja en una consulta aparte y podría
+    // haber llegado después del último. Rearmarlo aquí cuesta nada.
+    auxFlightSyncAll();
     const trip = auxNuevoTrip(f);
     // Persistir en dev si hay sesión real; si falla, no se inventa nada.
     try { trip.id = await Api.createReservation(f); }
@@ -1920,7 +2141,10 @@
       if (a === 'new') {
         auxState.view = 'form'; auxState.step = 1;
         auxState.form = { isReserva: true, date: auxDefaultDate() };
-        // El catálogo se pide ya, para que el paso 3 no muestre spinner.
+        // El catálogo se pide ya, para que el paso 3 no muestre spinner. Las
+        // siglas también: si la primera vez no llegaron (app abierta sin señal,
+        // perfil recién creado), este es el momento natural de reintentarlo.
+        auxLoadAerolineas();
         if (window.AuxResidencias) { AuxResidencias.newTrip(); AuxResidencias.load(); }
         if (window.AuxPrivado) AuxPrivado.resetCupo();
         auxRender();
@@ -1936,6 +2160,7 @@
           residenceId: last.residenceId || null,
           residenceUnit: last.residenceUnit || null,
         };
+        auxLoadAerolineas();
         if (window.AuxResidencias) { AuxResidencias.newTrip(); AuxResidencias.load(); }
         // Si el traslado anterior salió de un conjunto del catálogo, se repite
         // el conjunto. Si venía del camino manual (sin residencia), el paso 3 se
@@ -2025,6 +2250,27 @@
       }
       else if (a === 'type') { auxState.form.type = el.dataset.type; auxRender(); }
       else if (a === 'date') { auxState.form.date = el.dataset.iso; auxRender(); }
+      // ---- la sigla de la aerolínea del vuelo (11-sep-2026) ----
+      else if (a === 'fl-pick') {
+        const k = el.dataset.k;
+        auxState.form.flPick = auxState.form.flPick === k ? null : k;
+        auxRender();
+      }
+      else if (a === 'fl-set') {
+        const k = el.dataset.k;
+        auxState.form[k + 'Iata'] = el.dataset.iata;
+        auxState.form.flOtra = null; auxState.form.flPick = null;
+        auxFlightSync(k); auxRender();
+      }
+      else if (a === 'fl-other') {
+        // El selector NO se cierra: la sigla hay que escribirla y el campo
+        // aparece justo debajo. Se le deja el foco con el texto seleccionado,
+        // así escribir encima reemplaza la sigla anterior de un solo gesto.
+        const k = el.dataset.k;
+        auxState.form.flOtra = k; auxRender();
+        const inp = auxRoot() && auxRoot().querySelector('[data-field="' + k + 'Iata"]');
+        if (inp) { try { inp.focus(); inp.select(); } catch (_) {} }
+      }
       else if (a === 'toggle') { const k = el.dataset.key; auxState.form[k] = !auxState.form[k]; auxRender(); }
       else if (a === 'pin-confirm') { auxState.form.locConfirmed = true; auxRefreshPinRow(); toast('Ubicación confirmada.'); }
       else if (a === 'pin-edit') { auxState.form.locConfirmed = false; auxRefreshPinRow(); }
@@ -2096,6 +2342,15 @@
       }
       const el = e.target.closest('[data-field]'); if (!el) return;
       const k = el.dataset.field;
+      // El vuelo no se guarda tal cual se teclea: el campo solo admite dígitos y
+      // la sigla vive aparte, en el chip. Se normaliza ACÁ, en el mismo evento,
+      // para que el pegado de "AV-9412" se parta delante de los ojos del
+      // tripulante y no en silencio al guardar.
+      if (k === 'flightNum' || k === 'backFlightNum' || k === 'flightIata' || k === 'backFlightIata') {
+        auxFlightInput(k, el);
+        const ctaV = auxRoot().querySelector('.ax-cta-bar'); if (ctaV) ctaV.innerHTML = auxFormCTA();
+        return;
+      }
       auxState.form[k] = el.value;
       if (k === 'address') {
         auxState.form.locConfirmed = false;

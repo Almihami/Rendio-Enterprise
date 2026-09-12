@@ -111,14 +111,30 @@
 
     if (!represado && !sinDestino && !sinCelular) { box.classList.remove('show'); return; }
 
-    box.querySelector('span').textContent = sinDestino
-      ? 'Nadie está marcado para recibir alertas y no hay administradores activos: los avisos de madrugada no le van a llegar a nadie. Revísalo en Personal.'
-      : represado
-        // Esto sí es una falla técnica del canal.
-        ? `Los avisos no están saliendo: hay ${h.pendientes} en cola, el más viejo de hace ${h.mas_viejo_min} min. Mientras esto siga así, una eventualidad de madrugada no va a sonar en ningún celular.`
-        // Y esto NO: el canal está bien, lo que falta es un paso presencial que
-        // ningún arreglo de código resuelve.
-        : 'El canal de avisos está bien, pero ninguno de los jefes tiene notificaciones activadas: hay que instalar la app en la pantalla de inicio del celular y aceptar el permiso. Hasta entonces las eventualidades solo se ven entrando aquí.';
+    // Estos tres avisos eran de 147, 159 y 231 caracteres metidos en una franja
+    // de una línea. Dos se pliegan con rdWhy (turnos-activos): queda la frase
+    // que dice QUÉ pasa y se guarda un toque más allá la que dice qué implica.
+    // El primero NO se pliega a propósito: su cola es "Revísalo en Personal",
+    // veintitantos caracteres. Esconder eso detrás de una pastilla de 44px de
+    // alto ocupa MÁS que dejarlo escrito, y encima esconde justo lo único que
+    // se puede hacer al respecto. Plegar es para ahorrar, no por costumbre.
+    // Se pasa de textContent a innerHTML porque ahora hay marcado; lo único
+    // variable son dos números que vienen del RPC y salen escapados igual.
+    // La pastilla va en variante 'hereda': dentro de una franja ámbar, una
+    // naranja de marca se pelea con el fondo en vez de leerse.
+    const aviso = box.querySelector('span');
+    if (sinDestino) {
+      aviso.textContent = 'Nadie está marcado para recibir alertas y no hay administradores activos: los avisos de madrugada no le van a llegar a nadie. Revísalo en Personal.';
+    } else if (represado) {
+      // Esto sí es una falla técnica del canal.
+      aviso.innerHTML = `Los avisos no están saliendo: hay ${escapeHtml(h.pendientes)} en cola, el más viejo de hace ${escapeHtml(h.mas_viejo_min)} min. `
+        + rdWhy('¿Qué implica?', 'Mientras esto siga así, una eventualidad de madrugada no va a sonar en ningún celular.', 'hereda');
+    } else {
+      // Y esto NO: el canal está bien, lo que falta es un paso presencial que
+      // ningún arreglo de código resuelve.
+      aviso.innerHTML = 'El canal de avisos está bien, pero ninguno de los jefes tiene notificaciones activadas: hay que instalar la app en la pantalla de inicio del celular y aceptar el permiso. '
+        + rdWhy('¿Y mientras tanto?', 'Hasta entonces las eventualidades solo se ven entrando aquí.', 'hereda');
+    }
     box.classList.add('show');
   }
 

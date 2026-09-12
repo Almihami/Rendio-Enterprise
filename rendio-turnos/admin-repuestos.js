@@ -9,6 +9,22 @@
 // semáforos se recalculan turno a turno sin que nadie vuelva a digitar nada.
 //
 // Regla de producto: NINGÚN repuesto bloquea el carro. Todo es aviso.
+//
+// TEXTO PLEGADO (septiembre 2026). Esta pantalla explicaba mucho y bien, pero
+// lo hacía toda junta: ocho párrafos de entre 115 y 326 caracteres, siempre
+// abiertos, en una pantalla que el jefe abre para mirar un semáforo. Se aplicó
+// acá el mismo trato que se le dio a Ajustes: la PRIMERA FRASE se queda a la
+// vista y el resto se va detrás de una pastilla, con rdWhy() (vive en
+// admin-turnos-activos.js, que carga antes). No se borró ni una palabra.
+// Dos cosas que se decidieron y conviene no deshacer sin pensarlo:
+//   · Se corta en la primera frase que CIERRA de verdad. Por eso "Esto se
+//     llena una sola vez." queda solo: es corta, pero es la frase.
+//   · El aviso del nivel de inspección (.who, "Estos ítems se suman solos al
+//     checklist…") NO se plegó: son 115 caracteres de UNA sola frase, y
+//     partirla a la mitad para plegar media exige inventar texto.
+// Ojo con el HTML: <details> autocierra un <p> abierto, así que la pastilla
+// va SIEMPRE como hermana del párrafo, nunca dentro. Dentro de un <span> de
+// .note o de un .rt de .rule1 sí va, que son divs o celdas flex.
 
   // ---------------- estado del módulo ----------------
   let ptStatus = [];      // v_vehicle_part_status (vehículo × repuesto)
@@ -173,7 +189,7 @@
     ptStatus.forEach((s) => { (byV[s.vehicle_id] = byV[s.vehicle_id] || []).push(s); });
     const ids = Object.keys(byV);
     if (!ids.length) {
-      $('#pt-vcards').innerHTML = `<div class="empty"><h3>Sin vehículos</h3><p>Agrega la flota en Ajustes para controlar sus repuestos.</p></div>`;
+      $('#pt-vcards').innerHTML = `<div class="empty"><h3>Sin vehículos</h3><p>Agrega la flota en Turnos › Revisión › Flota para controlar sus repuestos.</p></div>`;
       return;
     }
     $('#pt-vcards').innerHTML = ids.map((vid) => {
@@ -369,7 +385,8 @@
             </div>
           </div>
           <div class="card" style="margin-bottom:0">
-            <div class="note"><svg><use href="#i-info"/></svg><span><b>De dónde sale el kilometraje:</b> del campo “kilometraje de salida” que el conductor reporta en la inspección de inicio de turno. Si no coincide con el tablero del carro, corrígelo aquí y queda el registro.</span></div>
+            <div class="note"><svg><use href="#i-info"/></svg><span><b>De dónde sale el kilometraje:</b> del campo “kilometraje de salida” que el conductor reporta en la inspección de inicio de turno.
+              ${rdWhy('¿Y si no cuadra?', 'Si no coincide con el tablero del carro, corrígelo aquí y queda el registro.')}</span></div>
           </div>
         </div>
       </div>`;
@@ -413,7 +430,8 @@
       <div class="phead">
         <div>
           <h1>Vida real de los repuestos</h1>
-          <p>Cuánto dura cada pieza <b>en nuestra operación</b>, medido con los cambios ya registrados. Este dato vale más que el intervalo genérico del fabricante: con él se planean las compras y se negocia con el proveedor.</p>
+          <p>Cuánto dura cada pieza <b>en nuestra operación</b>, medido con los cambios ya registrados.</p>
+          ${rdWhy('¿Por qué importa?', 'Este dato vale más que el intervalo genérico del fabricante: con él se planean las compras y se negocia con el proveedor.')}
         </div>
         <div class="seg" id="pt-tabs2">
           <button data-v="estado"><svg class="icon" style="width:13px;height:13px"><use href="#i-gauge"/></svg>Estado</button>
@@ -423,12 +441,14 @@
       </div>
       <div class="rule1" style="border-left-color:var(--blue)">
         <span class="ri" style="background:var(--blue-soft);color:var(--blue)"><svg class="icon"><use href="#i-chart"/></svg></span>
-        <div class="rt"><b>Se necesitan 3 cambios de la misma pieza</b> para que el promedio cuente. Debajo de eso se muestra como dato insuficiente y el intervalo no se sugiere ajustar.</div>
+        <div class="rt"><b>Se necesitan 3 cambios de la misma pieza</b> para que el promedio cuente.
+          ${rdWhy('¿Y con menos?', 'Debajo de eso se muestra como dato insuficiente y el intervalo no se sugiere ajustar.')}</div>
       </div>
       ${fat.length ? `<div class="vgrid">${fat.map(ptVidaCard).join('')}</div>` : `
         <div class="empty">
           <h3>Todavía no hay vida real que mostrar</h3>
-          <p>Esta pantalla se llena sola con los cambios que vayas registrando. Necesita 3 cambios de una misma pieza para calcular un promedio que signifique algo — con la operación andando, eso toma unos meses.</p>
+          <p>Esta pantalla se llena sola con los cambios que vayas registrando.</p>
+          ${rdWhy('¿Cuánto falta?', 'Necesita 3 cambios de una misma pieza para calcular un promedio que signifique algo — con la operación andando, eso toma unos meses.')}
         </div>`}
       <div class="sech"><h2>Aún sin datos suficientes</h2><span class="rule"></span><span class="hint">Menos de 3 cambios registrados</span></div>
       <div class="card" style="margin-bottom:0">
@@ -511,7 +531,8 @@
       <div class="phead">
         <div>
           <h1>Intervalos y plan de inspección</h1>
-          <p>Nuestros intervalos son <b>más cortos que los de un carro particular</b>: estos carros ruedan todo el día y mueven tripulaciones con hora de presentación. Adelantar un cambio cuesta menos que una avería en ruta.</p>
+          <p>Nuestros intervalos son <b>más cortos que los de un carro particular</b>: estos carros ruedan todo el día y mueven tripulaciones con hora de presentación.</p>
+          ${rdWhy('¿Por qué tan cortos?', 'Adelantar un cambio cuesta menos que una avería en ruta.')}
         </div>
         <div class="seg" id="pt-tabs3">
           <button data-v="estado"><svg class="icon" style="width:13px;height:13px"><use href="#i-gauge"/></svg>Estado</button>
@@ -534,7 +555,8 @@
       }).join('')}</div>
       <div class="sech"><h2>Tabla de intervalos</h2><span class="rule"></span><span class="hint">Editable · aplica a toda la flota</span></div>
       <div class="card" style="margin-bottom:0">
-        <p style="font-size:12.5px;color:var(--ink2);margin:0 0 14px;line-height:1.5">La columna <b>Nuestro intervalo</b> es la que manda el semáforo. La de <b>vida real</b> viene de los cambios registrados y es la que debería ir corrigiendo la nuestra. Un carro puede tener su propia excepción desde el detalle del vehículo.</p>
+        <p style="font-size:12.5px;color:var(--ink2);margin:0 0 10px;line-height:1.5">La columna <b>Nuestro intervalo</b> es la que manda el semáforo.</p>
+        <div style="margin:0 0 14px">${rdWhy('¿Y la de vida real?', 'La de <b>vida real</b> viene de los cambios registrados y es la que debería ir corrigiendo la nuestra. Un carro puede tener su propia excepción desde el detalle del vehículo.')}</div>
         <div class="tblwrap"><table class="tbl">${tbl}</table></div>
       </div>`;
     ptShowView('plan');
@@ -553,10 +575,11 @@
       <div class="card">
         <h2><svg class="icon"><use href="#i-edit"/></svg>Cargar kilometrajes · ${ptEsc(v.internal_code)} ${ptEsc(ptVehLabel(vid))}</h2>
         <p style="font-size:12.5px;color:var(--ink2);margin:6px 0 0;line-height:1.5">
-          Esto se llena <b>una sola vez</b>. Escribe a cuántos kilómetros se cambió por última vez cada pieza; de ahí en adelante el sistema cuenta solo con el odómetro que reporta el conductor en cada turno.</p>
+          Esto se llena <b>una sola vez</b>.</p>
+        ${rdWhy('¿Qué hay que escribir?', 'Escribe a cuántos kilómetros se cambió por última vez cada pieza; de ahí en adelante el sistema cuenta solo con el odómetro que reporta el conductor en cada turno.')}
         <div class="note" style="margin-top:12px"><svg><use href="#i-info"/></svg><span>
-          <b>Lo que no sepas, déjalo vacío.</b> Queda como “sin dato”: no calcula ni alerta, y aparece en la lista pidiendo el dato. Es preferible a inventar una cifra, porque un número falso pinta la pieza en verde cuando puede estar al límite.
-          El odómetro actual del carro es <b style="font-family:var(--mono)">${ptFmt(v.current_km)} km</b>, así que ningún cambio pudo hacerse por encima de esa cifra.</span></div>
+          <b>Lo que no sepas, déjalo vacío.</b>
+          ${rdWhy('¿Por qué mejor vacío?', 'Queda como “sin dato”: no calcula ni alerta, y aparece en la lista pidiendo el dato. Es preferible a inventar una cifra, porque un número falso pinta la pieza en verde cuando puede estar al límite. El odómetro actual del carro es <b style="font-family:var(--mono)">' + ptFmt(v.current_km) + ' km</b>, así que ningún cambio pudo hacerse por encima de esa cifra.')}</span></div>
       </div>
       <div class="card">
         ${Object.keys(PT_SYS).map((k) => {

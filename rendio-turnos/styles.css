@@ -342,6 +342,11 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .strike-tag-active   { background: rgb(254 243 199); color: rgb(146 64 14); }
 .strike-tag-void     { background: rgb(241 245 249); color: rgb(100 116 139); }
 .strike-tag-consumed { background: rgb(224 231 255); color: rgb(55 48 163); }
+/* Expirado: ni anulado ni consumido, pero de un mes ya cerrado — hoy no cuenta.
+   Va con borde punteado y sin relleno justamente para NO parecerse a 'Anulado':
+   a un anulado lo perdonó alguien, un expirado se venció solo al cambiar el mes.
+   El conductor que venga a reclamar tiene derecho a ver esa diferencia. */
+.strike-tag-expired  { background: transparent; color: rgb(100 116 139); border: 1px dashed rgb(203 213 225); padding: 1px 6px; }
 
 /* ---------- Swaps / cambios de turno (Fase 3) ---------- */
 .swap-card {
@@ -673,11 +678,11 @@ details[open] .details-chevron { transform: rotate(180deg); }
 @keyframes sfLivedot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}
 
 /* =====================================================================
-   Ajustes — paleta limpia. VISUAL ONLY. Scopeado bajo #settings-ui.
+   Ajustes — paleta limpia. VISUAL ONLY. Scopeado bajo .set-ui.
    Mismos tokens que el Tablero v4. La lógica vive en admin-personal.js:
    renderSettings / renderPriorityList / renderRulesEditor.
    ===================================================================== */
-#settings-ui{
+.set-ui{
   --bg:#F8FAFC; --panel:#FFFFFF; --panel2:#F1F5F9; --ink:#211D18; --ink2:#6B6258; --ink3:#A39A8D;
   --line:#E2E8F0; --line2:#CBD5E1;
   --orange:#F26522; --orange-soft:#FCE4D6;
@@ -689,107 +694,229 @@ details[open] .details-chevron { transform: rotate(180deg); }
   --font:"Hanken Grotesk",system-ui,sans-serif; --mono:"Space Mono",ui-monospace,monospace;
   font-family:var(--font); color:var(--ink);
 }
-#settings-ui *{box-sizing:border-box}
-#settings-ui .icon{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
+.set-ui *{box-sizing:border-box}
+.set-ui .icon{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
 
-#settings-ui .set-head{margin-bottom:18px}
-#settings-ui .set-head h1{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;color:var(--ink)}
-#settings-ui .set-head p{font-size:13px;color:var(--ink2);margin-top:7px;max-width:680px;line-height:1.4}
+.set-ui .set-head{margin-bottom:18px}
+.set-ui .set-head h1{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;color:var(--ink)}
+.set-ui .set-head p{font-size:13px;color:var(--ink2);margin-top:7px;max-width:680px;line-height:1.4}
 
-#settings-ui .set-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);margin-bottom:16px}
-#settings-ui .set-ch{display:flex;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line)}
-#settings-ui .set-ci{width:36px;height:36px;border-radius:10px;background:var(--panel2);display:grid;place-items:center;color:var(--ink2);flex:0 0 auto}
-#settings-ui .set-ch h2{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
-#settings-ui .set-ch p{font-size:12px;color:var(--ink2);margin-top:2px;max-width:560px;line-height:1.35}
-#settings-ui .set-saved{margin-left:auto;font-size:11.5px;font-weight:700;color:var(--green);display:inline-flex;align-items:center;gap:6px;opacity:0;transition:opacity .2s}
-#settings-ui .set-saved.show{opacity:1}
-#settings-ui .set-cb{padding:18px}
+.set-ui .set-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);margin-bottom:16px}
+.set-ui .set-ch{display:flex;align-items:center;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line)}
+.set-ui .set-ci{width:36px;height:36px;border-radius:10px;background:var(--panel2);display:grid;place-items:center;color:var(--ink2);flex:0 0 auto}
+.set-ui .set-ch h2{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
+.set-ui .set-ch p{font-size:12px;color:var(--ink2);margin-top:2px;max-width:560px;line-height:1.35}
+.set-ui .set-saved{margin-left:auto;font-size:11.5px;font-weight:700;color:var(--green);display:inline-flex;align-items:center;gap:6px;opacity:0;transition:opacity .2s}
+.set-ui .set-saved.show{opacity:1}
+.set-ui .set-cb{padding:18px}
 
-#settings-ui .set-row2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-#settings-ui .set-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-#settings-ui .set-field > label:not(.set-checkrow){display:block;font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:7px}
-#settings-ui .set-input{height:42px;width:100%;border:1px solid var(--line2);border-radius:10px;background:var(--panel);padding:0 13px;font-family:var(--font);font-size:14px;color:var(--ink);outline:none;transition:border-color .15s,box-shadow .15s}
-#settings-ui .set-input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
-#settings-ui .set-input.mono{font-family:var(--mono);font-size:13px}
-#settings-ui .set-hint{font-size:11.5px;color:var(--ink3);margin-top:6px}
-#settings-ui .set-foot{display:flex;align-items:center;gap:12px;margin-top:18px}
+.set-ui .set-row2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.set-ui .set-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.set-ui .set-field > label:not(.set-checkrow){display:block;font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:7px}
+.set-ui .set-input{height:42px;width:100%;border:1px solid var(--line2);border-radius:10px;background:var(--panel);padding:0 13px;font-family:var(--font);font-size:14px;color:var(--ink);outline:none;transition:border-color .15s,box-shadow .15s}
+.set-ui .set-input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+.set-ui .set-input.mono{font-family:var(--mono);font-size:13px}
+.set-ui .set-hint{font-size:11.5px;color:var(--ink3);margin-top:6px}
+.set-ui .set-foot{display:flex;align-items:center;gap:12px;margin-top:18px}
 
 /* Tabla de tiempos de la operación (0062): una rejilla de zonas × franjas.
    Los inputs van chiquitos porque son minutos (2 dígitos), y la tabla scrollea
    sola en el móvil sin empujar la página — de eso se encarga el contenedor. */
-#settings-ui .set-matrix{border-collapse:collapse;width:100%;min-width:520px}
-#settings-ui .set-matrix th{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);padding:0 8px 8px;text-align:center;white-space:nowrap}
-#settings-ui .set-matrix th.franja{text-align:left;padding-left:2px}
-#settings-ui .set-matrix td{padding:3px 5px;text-align:center}
-#settings-ui .set-matrix td.franja{text-align:left;font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap;padding-left:2px}
-#settings-ui .set-matrix td.franja small{display:block;font-weight:500;color:var(--ink3);font-size:10.5px}
-#settings-ui .set-matrix input{width:52px;height:34px;border:1px solid var(--line2);border-radius:8px;background:var(--panel);text-align:center;font-family:var(--font);font-size:13px;color:var(--ink);outline:none}
-#settings-ui .set-matrix input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
-#settings-ui .set-matrix input.asumida{border-color:var(--orange);border-style:dashed}
-#settings-ui .set-matrix .sep{color:var(--ink3);font-size:11px;padding:0 1px}
+.set-ui .set-matrix{border-collapse:collapse;width:100%;min-width:520px}
+.set-ui .set-matrix th{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);padding:0 8px 8px;text-align:center;white-space:nowrap}
+.set-ui .set-matrix th.franja{text-align:left;padding-left:2px}
+.set-ui .set-matrix td{padding:3px 5px;text-align:center}
+.set-ui .set-matrix td.franja{text-align:left;font-size:12.5px;font-weight:700;color:var(--ink);white-space:nowrap;padding-left:2px}
+.set-ui .set-matrix td.franja small{display:block;font-weight:500;color:var(--ink3);font-size:10.5px}
+.set-ui .set-matrix input{width:52px;height:34px;border:1px solid var(--line2);border-radius:8px;background:var(--panel);text-align:center;font-family:var(--font);font-size:13px;color:var(--ink);outline:none}
+.set-ui .set-matrix input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+.set-ui .set-matrix input.asumida{border-color:var(--orange);border-style:dashed}
+.set-ui .set-matrix .sep{color:var(--ink3);font-size:11px;padding:0 1px}
 
 /* Zona de cada conjunto */
-#settings-ui .rz-row{display:flex;align-items:center;gap:12px;padding:8px 2px;border-bottom:1px solid var(--line2)}
-#settings-ui .rz-row:last-child{border-bottom:0}
-#settings-ui .rz-name{flex:1;font-size:13.5px;color:var(--ink)}
-#settings-ui .rz-name small{display:block;font-size:10.5px;color:var(--ink3)}
-#settings-ui .rz-row select{height:36px;min-width:180px;border:1px solid var(--line2);border-radius:9px;background:var(--panel);padding:0 10px;font-family:var(--font);font-size:13px;color:var(--ink)}
-#settings-ui .rz-row.sin select{border-color:var(--orange);border-style:dashed}
+.set-ui .rz-row{display:flex;align-items:center;gap:12px;padding:8px 2px;border-bottom:1px solid var(--line2)}
+.set-ui .rz-row:last-child{border-bottom:0}
+.set-ui .rz-name{flex:1;font-size:13.5px;color:var(--ink)}
+.set-ui .rz-name small{display:block;font-size:10.5px;color:var(--ink3)}
+.set-ui .rz-row select{height:36px;min-width:180px;border:1px solid var(--line2);border-radius:9px;background:var(--panel);padding:0 10px;font-family:var(--font);font-size:13px;color:var(--ink)}
+.set-ui .rz-row.sin select{border-color:var(--orange);border-style:dashed}
 
-#settings-ui .set-btn{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 9px 22px rgba(242,101,34,.26)}
-#settings-ui .set-btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:none;height:42px}
-#settings-ui .set-btn.dark{background:var(--ink);color:var(--panel);box-shadow:none}
-#settings-ui .set-btn:disabled{opacity:.55;cursor:not-allowed}
+.set-ui .set-btn{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 9px 22px rgba(242,101,34,.26)}
+.set-ui .set-btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:none;height:42px}
+.set-ui .set-btn.dark{background:var(--ink);color:var(--panel);box-shadow:none}
+.set-ui .set-btn:disabled{opacity:.55;cursor:not-allowed}
 
 /* antigüedad */
-#settings-ui .set-prow{display:flex;align-items:center;gap:13px;padding:11px 0;border-bottom:1px solid var(--line)}
-#settings-ui .set-prow:last-child{border-bottom:0}
-#settings-ui .set-avt{width:36px;height:36px;border-radius:999px;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;flex:0 0 auto;text-transform:uppercase}
-#settings-ui .set-pinfo{flex:1;min-width:0}
-#settings-ui .set-pinfo b{font-size:13.5px;font-weight:700;letter-spacing:-.01em;display:block;line-height:1.15;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#settings-ui .set-pinfo span{font-size:11.5px;color:var(--ink2)}
-#settings-ui .set-seg3{display:inline-flex;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:3px;gap:2px;flex:0 0 auto}
-#settings-ui .set-seg3 button{height:30px;min-width:34px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:var(--ink2);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer;transition:.14s;display:inline-flex;align-items:center;gap:6px}
-#settings-ui .set-seg3 button .num{font-family:var(--mono);font-size:11px}
-#settings-ui .set-seg3 button.on{background:var(--ink);color:#fff}
-#settings-ui .set-seg3 button.on.s4{background:var(--orange)}
-#settings-ui .set-seg3 button.on.s3{background:var(--green)}
-#settings-ui .set-seg3 button.on.s2{background:var(--amber)}
-#settings-ui .set-seg3 button.on.s1{background:var(--rest)}
-#settings-ui .set-seg3 button:disabled{opacity:.55;cursor:default}
+.set-ui .set-prow{display:flex;align-items:center;gap:13px;padding:11px 0;border-bottom:1px solid var(--line)}
+.set-ui .set-prow:last-child{border-bottom:0}
+.set-ui .set-avt{width:36px;height:36px;border-radius:999px;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;flex:0 0 auto;text-transform:uppercase}
+.set-ui .set-pinfo{flex:1;min-width:0}
+.set-ui .set-pinfo b{font-size:13.5px;font-weight:700;letter-spacing:-.01em;display:block;line-height:1.15;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.set-ui .set-pinfo span{font-size:11.5px;color:var(--ink2)}
+.set-ui .set-seg3{display:inline-flex;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:3px;gap:2px;flex:0 0 auto}
+.set-ui .set-seg3 button{height:30px;min-width:34px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:var(--ink2);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer;transition:.14s;display:inline-flex;align-items:center;gap:6px}
+.set-ui .set-seg3 button .num{font-family:var(--mono);font-size:11px}
+.set-ui .set-seg3 button.on{background:var(--ink);color:#fff}
+.set-ui .set-seg3 button.on.s4{background:var(--orange)}
+.set-ui .set-seg3 button.on.s3{background:var(--green)}
+.set-ui .set-seg3 button.on.s2{background:var(--amber)}
+.set-ui .set-seg3 button.on.s1{background:var(--rest)}
+.set-ui .set-seg3 button:disabled{opacity:.55;cursor:default}
 
 /* descansos fijos */
-#settings-ui .set-selwrap{position:relative}
-#settings-ui .set-sel{height:42px;width:100%;border:1px solid var(--line2);border-radius:10px;background:var(--panel);padding:0 38px 0 13px;font-family:var(--font);font-size:14px;font-weight:600;color:var(--ink);outline:none;appearance:none;cursor:pointer}
-#settings-ui .set-sel:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
-#settings-ui .set-chev{position:absolute;right:13px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--ink3)}
-#settings-ui .set-drow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line)}
-#settings-ui .set-drow:last-child{border-bottom:0}
-#settings-ui .set-dname{font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--ink2)}
-#settings-ui .set-drow.wknd .set-dname{color:var(--ink)}
-#settings-ui .set-twin{display:flex;gap:7px}
-#settings-ui .set-tg{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--ink2);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer;transition:.14s;min-width:58px;justify-content:center}
-#settings-ui .set-tg:hover{border-color:var(--ink3)}
-#settings-ui .set-tg.on{background:var(--rest-soft);border-color:var(--rest);color:var(--rest)}
-#settings-ui .set-tg:disabled{opacity:.5;cursor:default}
-#settings-ui .set-tg .icon{width:12px;height:12px}
-#settings-ui .set-dnote{font-size:11.5px;color:var(--ink3);margin-top:12px;display:flex;align-items:center;gap:7px}
+.set-ui .set-selwrap{position:relative}
+.set-ui .set-sel{height:42px;width:100%;border:1px solid var(--line2);border-radius:10px;background:var(--panel);padding:0 38px 0 13px;font-family:var(--font);font-size:14px;font-weight:600;color:var(--ink);outline:none;appearance:none;cursor:pointer}
+.set-ui .set-sel:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+.set-ui .set-chev{position:absolute;right:13px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--ink3)}
+.set-ui .set-drow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line)}
+.set-ui .set-drow:last-child{border-bottom:0}
+.set-ui .set-dname{font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--ink2)}
+.set-ui .set-drow.wknd .set-dname{color:var(--ink)}
+.set-ui .set-twin{display:flex;gap:7px}
+.set-ui .set-tg{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--ink2);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer;transition:.14s;min-width:58px;justify-content:center}
+.set-ui .set-tg:hover{border-color:var(--ink3)}
+.set-ui .set-tg.on{background:var(--rest-soft);border-color:var(--rest);color:var(--rest)}
+.set-ui .set-tg:disabled{opacity:.5;cursor:default}
+.set-ui .set-tg .icon{width:12px;height:12px}
+.set-ui .set-dnote{font-size:11.5px;color:var(--ink3);margin-top:12px;display:flex;align-items:center;gap:7px}
 
 /* crear conductor */
-#settings-ui .set-pwwrap{display:flex;gap:8px}
-#settings-ui .set-pwwrap .set-input{flex:1}
-#settings-ui .set-checkrow{display:flex;align-items:center;gap:11px;cursor:pointer;user-select:none;min-height:42px}
-#settings-ui .set-chk-input{position:absolute;opacity:0;width:0;height:0}
-#settings-ui .set-chk{width:22px;height:22px;border-radius:7px;border:1.6px solid var(--line2);background:var(--panel);display:grid;place-items:center;color:transparent;transition:.14s;flex:0 0 auto}
-#settings-ui .set-chk-input:checked + .set-chk{background:var(--orange);border-color:var(--orange);color:#fff}
-#settings-ui .set-checkrow > span:last-child{font-size:13px;color:var(--ink2);line-height:1.3}
-#settings-ui .set-cstate{font-size:11.5px;font-weight:600}
+.set-ui .set-pwwrap{display:flex;gap:8px}
+.set-ui .set-pwwrap .set-input{flex:1}
+.set-ui .set-checkrow{display:flex;align-items:center;gap:11px;cursor:pointer;user-select:none;min-height:42px}
+.set-ui .set-chk-input{position:absolute;opacity:0;width:0;height:0}
+.set-ui .set-chk{width:22px;height:22px;border-radius:7px;border:1.6px solid var(--line2);background:var(--panel);display:grid;place-items:center;color:transparent;transition:.14s;flex:0 0 auto}
+.set-ui .set-chk-input:checked + .set-chk{background:var(--orange);border-color:var(--orange);color:#fff}
+.set-ui .set-checkrow > span:last-child{font-size:13px;color:var(--ink2);line-height:1.3}
+.set-ui .set-cstate{font-size:11.5px;font-weight:600}
 
-@media(max-width:860px){#settings-ui .set-row2,#settings-ui .set-grid2{grid-template-columns:1fr}}
+@media(max-width:860px){.set-ui .set-row2,.set-ui .set-grid2{grid-template-columns:1fr}}
+
+/* ---------------------------------------------------------------------
+   ACORDEÓN de Ajustes (.set-sec) y texto plegado (.set-why).
+   Ajustes era un muro: 245 líneas de HTML y ~10.000 caracteres siempre a la
+   vista. Ahora cada sección se pliega, PERO con dos reglas que no se negocian:
+     1) cerrada sigue mostrando el valor (.set-sec-val) — plegar no es esconder.
+     2) el texto largo NO se borra, se guarda un toque más allá, detrás de un
+        "¿Por qué?" que se ve como pastilla tocable EN REPOSO (nada de hover:
+        en un teléfono no hay hover, y la mitad del admin se abre desde el
+        celular).
+   El chevron no necesita CSS propio: styles.css:167-174 ya trae
+   summary{list-style:none} y details[open] .details-chevron{rotate}, globales.
+   --------------------------------------------------------------------- */
+.set-ui .set-sec{border-top:1px solid var(--line);margin:0 -18px;padding:0 18px}
+.set-ui .set-sec:first-of-type{border-top:0}
+.set-ui .set-sec > summary{display:flex;align-items:center;gap:10px;min-height:52px;padding:12px 0;cursor:pointer;list-style:none;user-select:none}
+.set-ui .set-sec > summary:hover .set-sec-t{color:var(--orange)}
+.set-ui .set-sec > summary:focus-visible{outline:2px solid var(--orange);outline-offset:-2px;border-radius:8px}
+.set-ui .set-sec-t{font-size:13px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
+/* El valor que se ve con la sección CERRADA: el jefe barre el acordeón y lee
+   los números sin abrir nada. Se apaga al abrir para no repetir el dato. */
+.set-ui .set-sec-val{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--ink2);background:var(--panel2);border-radius:999px;padding:3px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+.set-ui .set-sec[open] .set-sec-val{opacity:0;pointer-events:none}
+/* Vacía no es una pastilla gris sin nada adentro: es nada. Pasa en el instante
+   entre que el panel existe y que setPintarValores() lo llena. */
+.set-ui .set-sec-val:empty{display:none}
+.set-ui .set-sec .details-chevron{color:var(--ink3);flex:0 0 auto;margin-left:6px}
+.set-ui .set-sec[open] > summary{border-bottom:1px dashed var(--line)}
+.set-ui .set-sec-body{padding:14px 0 18px}
+
+/* Punto naranja: esta sección tiene cambios sin guardar. Se ve AUNQUE esté
+   cerrada — si no, plegar convierte el botón Guardar global en una trampa. */
+.set-ui .set-sec-dot{width:7px;height:7px;border-radius:999px;background:var(--orange);flex:0 0 auto;opacity:0;transition:opacity .15s}
+.set-ui .set-sec.sucio .set-sec-dot{opacity:1}
+/* Chip verde para lo que NO espera al botón: guarda al instante. */
+.set-ui .set-sec-ya{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--green);background:var(--green-soft);border-radius:999px;padding:2px 8px;flex:0 0 auto}
+/* En la cabecera de una tarjeta el chip va al extremo derecho, donde en las
+   otras va el "Guardado". Es la misma pregunta contestada al revés: ahí el jefe
+   busca si esto necesita botón, y acá la respuesta es que no. */
+.set-ui .set-ch .set-sec-ya{margin-left:auto}
+
+/* El "¿Por qué?" — la explicación larga, plegada pero nunca borrada.
+   min-height 44 porque es blanco táctil, y borde+fondo en reposo porque tiene
+   que parecer un control antes de que nadie lo toque. */
+.set-ui .set-why{margin-top:8px}
+.set-ui .set-why > summary{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 14px;cursor:pointer;list-style:none;font-size:12px;font-weight:700;color:var(--orange);border:1px solid var(--line2);border-radius:999px;background:var(--panel);transition:background .14s,border-color .14s}
+.set-ui .set-why > summary:hover{background:var(--orange-soft);border-color:var(--orange)}
+.set-ui .set-why > summary:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.set-ui .set-why[open] > summary{background:var(--orange-soft);border-color:var(--orange)}
+.set-ui .set-why .set-why-body{font-size:11.5px;color:var(--ink2);line-height:1.5;margin-top:10px;padding:12px 14px;background:var(--panel2);border-radius:10px;border-left:3px solid var(--orange)}
+.set-ui .set-why .set-why-body b{color:var(--ink)}
+
+/* ---------------------------------------------------------------------
+   TEXTO PLEGADO SUELTO (.rd-why) — septiembre 2026.
+   El "¿Por qué este número?" de acá arriba funcionó: Ajustes dejó de ser un
+   muro y nadie perdió una palabra. Pero nació scopeado bajo .set-ui, así que
+   al resto del admin no le llegó nada y ahí seguían los párrafos de 200 y de
+   300 caracteres de Repuestos, Eventualidades, Privados, Reservas y Turnos
+   activos. Esto es la misma pieza sin dueño: sirve en cualquier panel.
+
+   POR QUÉ NO LLEVA UN SOLO HEXADECIMAL. Todos los paneles del admin cuelgan
+   de .admin-shell (línea 1976), que ya define --panel, --panel2, --line2,
+   --ink, --ink2 y --orange; el componente se pinta con esos y con nada más.
+   Así, el día que un panel declare su tema oscuro —como ya lo hacen
+   #routes-ui y #consola-ui— esto se apaga con él. Lo contrario ya nos costó
+   caro: los fondos pastel escritos a mano quedaron como parches luminosos
+   cuando llegó el modo nocturno del auxiliar (rc-auxiliar.css, bloque
+   "Fondos claros fijos"). No se repite.
+
+   Reusa lo global de las líneas 167-174 (summary{list-style:none} y
+   details[open] .details-chevron{rotate}); no vuelve a declarar nada de eso.
+   El aria-expanded y la tecla Escape los pone rdWhy(), que vive en
+   admin-turnos-activos.js.
+   --------------------------------------------------------------------- */
+.rd-why{display:block;margin-top:8px}
+/* Tiene que parecer un control ANTES de que nadie lo toque: borde, fondo y
+   color de marca EN REPOSO. En un teléfono no hay hover, y buena parte de
+   este admin se abre desde el celular, de noche, con una mano. Los 44px de
+   alto son el blanco táctil mínimo, no una decisión estética. */
+.rd-why > summary{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 14px;cursor:pointer;list-style:none;font-family:inherit;font-size:12px;font-weight:700;line-height:1.3;text-align:left;color:var(--orange);background:var(--panel);border:1px solid var(--line2);border-radius:999px;transition:background .14s,border-color .14s}
+.rd-why > summary::-webkit-details-marker{display:none}
+.rd-why > summary:hover{background:var(--orange-soft);border-color:var(--orange)}
+.rd-why > summary:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.rd-why[open] > summary{background:var(--orange-soft);border-color:var(--orange)}
+/* El chevron se dibuja acá y no se le confía al .icon de cada panel:
+   #privados-ui no declara ninguno, y sin tamaño el <svg> sale de 300px o de
+   cero según el navegador. */
+.rd-why > summary .details-chevron{width:13px;height:13px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
+/* text-align:left explícito porque varios estados vacíos centran todo, y un
+   párrafo de 130 caracteres centrado no se lee. */
+.rd-why .rd-why-body{margin-top:10px;padding:12px 14px;background:var(--panel2);border-radius:10px;border-left:3px solid var(--orange);font-size:12px;line-height:1.55;color:var(--ink2);text-align:left}
+.rd-why .rd-why-body b{color:var(--ink)}
+
+/* Variante 'hereda': para cuando el plegado cae DENTRO de un bloque que ya
+   tiene color propio (la franja ámbar de Eventualidades, la advertencia de
+   Privados). Ahí una pastilla naranja de marca se pelea con el fondo; esta
+   toma prestado el color del bloque con currentColor y se deja de pelear.
+   color-mix ya se usa en este archivo (#parts-ui .rbtn.pri), no es nuevo. */
+.rd-why.hereda > summary{color:inherit;background:transparent;border-color:currentColor;opacity:.85}
+.rd-why.hereda > summary:hover,.rd-why.hereda[open] > summary{background:color-mix(in srgb,currentColor 10%,transparent);opacity:1}
+.rd-why.hereda > summary:focus-visible{outline:2px solid currentColor}
+.rd-why.hereda .rd-why-body{color:inherit;background:color-mix(in srgb,currentColor 8%,transparent);border-left-color:currentColor}
+
+@media(prefers-reduced-motion:reduce){.rd-why > summary{transition:none}}
+
+/* Barra de guardado pegada al pie: dice CUÁNTO cubre, porque con secciones
+   cerradas "Guardar" a secas no dice qué se está guardando.
+   #app-main trae pb-24 en móvil (index.html:283) y el admin no tiene barra
+   inferior (setTab esconde #driver-nav, core.js:413), así que el sticky
+   inferior queda libre y no tapa nada. */
+.set-ui .set-savebar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px -18px -18px;padding:13px 18px;background:var(--panel);border-top:1px solid var(--line);border-radius:0 0 16px 16px;box-shadow:0 -6px 18px rgba(33,29,24,.05)}
+.set-ui .set-savebar .set-savenote{font-size:11.5px;color:var(--ink3);line-height:1.35}
+.set-ui .set-savebar .set-savenote b{color:var(--orange)}
+
+@media(max-width:640px){
+  .set-ui .set-sec{margin:0 -14px;padding:0 14px}
+  .set-ui .set-sec-val{max-width:38%;font-size:11px}
+  .set-ui .set-savebar{margin:16px -14px -14px;padding:12px 14px}
+  .set-ui .set-cb{padding:14px}
+  .set-ui .set-head h1{font-size:22px}
+}
+
 
 /* =====================================================================
    Pantallas de datos migradas (Balance / Disponibilidad / Solicitudes).
-   Tokens compartidos — mismos valores que #settings-ui + acentos (blue/rest).
+   Tokens compartidos — mismos valores que .set-ui + acentos (blue/rest).
    VISUAL ONLY. La lógica vive en admin-balance/disponibilidad/solicitudes.js (IDs intactos).
    ===================================================================== */
 #balance-ui,#avail-ui,#solic-ui{
@@ -1247,17 +1374,17 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #inspections-ui .adminphoto-prev .x{position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;border:0;background:var(--ink);color:#fff;font-size:13px;cursor:pointer;line-height:1}
 
 /* Ajustes — gestión de vehículos (flota) */
-#settings-ui .set-divider{height:1px;background:var(--line);border:0}
-#settings-ui .veh-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);margin-bottom:8px}
-#settings-ui .veh-info{flex:1;min-width:0}
-#settings-ui .veh-info b{display:block;font-size:14px;font-weight:800;color:var(--ink)}
-#settings-ui .veh-info span{display:block;font-size:12px;color:var(--ink2);margin-top:1px}
-#settings-ui .veh-stat{font-size:11px;font-weight:800;border-radius:999px;padding:3px 10px;background:var(--panel2);color:var(--ink2);white-space:nowrap}
-#settings-ui .veh-stat.st-available{background:var(--green-soft);color:var(--green)}
-#settings-ui .veh-stat.st-in_use,#settings-ui .veh-stat.st-reserved{background:var(--amber-soft);color:var(--amber)}
-#settings-ui .veh-stat.st-maintenance,#settings-ui .veh-stat.st-blocked{background:var(--red-soft);color:var(--red)}
-#settings-ui .veh-del{flex:0 0 auto;width:34px;height:34px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--red);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:.14s}
-#settings-ui .veh-del:hover{background:var(--red);color:#fff;border-color:var(--red)}
+.set-ui .set-divider{height:1px;background:var(--line);border:0}
+.set-ui .veh-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);margin-bottom:8px}
+.set-ui .veh-info{flex:1;min-width:0}
+.set-ui .veh-info b{display:block;font-size:14px;font-weight:800;color:var(--ink)}
+.set-ui .veh-info span{display:block;font-size:12px;color:var(--ink2);margin-top:1px}
+.set-ui .veh-stat{font-size:11px;font-weight:800;border-radius:999px;padding:3px 10px;background:var(--panel2);color:var(--ink2);white-space:nowrap}
+.set-ui .veh-stat.st-available{background:var(--green-soft);color:var(--green)}
+.set-ui .veh-stat.st-in_use,.set-ui .veh-stat.st-reserved{background:var(--amber-soft);color:var(--amber)}
+.set-ui .veh-stat.st-maintenance,.set-ui .veh-stat.st-blocked{background:var(--red-soft);color:var(--red)}
+.set-ui .veh-del{flex:0 0 auto;width:34px;height:34px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--red);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:.14s}
+.set-ui .veh-del:hover{background:var(--red);color:#fff;border-color:var(--red)}
 
 /* ===== Admin: Recompensas — diseño UX/UI, scopeado #rewards-ui ===== */
 #rewards-ui{
@@ -2880,7 +3007,6 @@ html,body{overflow-x:hidden}
   #jefe-chat{align-items:center}
   #jefe-chat .jc-card{border-radius:18px}
 }
-}
 
 @media (max-width:720px){
   #evt-ui .sh-phead h1{font-size:22px}
@@ -3216,3 +3342,664 @@ html,body{overflow-x:hidden}
 #parts-ui .rbtn.pri:hover{background:var(--orange);color:#fff;border-color:var(--orange)}
 #parts-ui .back{appearance:none;border:0;background:transparent;color:var(--ink2);font-family:var(--font);font-weight:700;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:6px 0;margin-bottom:10px}
 #parts-ui .back:hover{color:var(--ink)}
+
+/* ████████████████████████████████████████████████████████████████████████████
+   RESPONSIVE DEL ADMIN — el resto de los paneles  (2026-09-11)
+
+   De dónde sale esto: el jefe pidió poder usar el admin desde el celular. El
+   SHELL ya se resolvió (a ≤768px el sidebar se vuelve cajón con velo, línea
+   2101; y el Horario ya cambia a su vista de tarjetas, línea 1425). Lo que
+   nadie había tocado son los PANELES: había 37 @media repartidos en 16 anchos
+   distintos (600, 620, 640, 680, 720, 760, 767, 768, 820, 860, 880, 900, 960,
+   980, 1080, 1180) y NINGUNO baja de 600. O sea: a 430px no existía una sola
+   regla escrita pensando en ese ancho. Todo lo de abajo de 600 era casualidad.
+
+   EL CANON. No se agrega el número 17. Se declaran TRES líneas, y las tres ya
+   existían y ya significaban algo en el proyecto:
+
+     1180px — "tres columnas → dos". Ya la usan #oper-ui .op-stage (apaga el
+              feed, línea 2145) y #routes-ui .lanes (el reloj se baja, 2310).
+     900px  — "dos columnas → una". Es la línea que documentó Tripulantes en
+              rc-auxiliar.css:1024 ("cinco datos no caben en 360px sin letra de
+              9 puntos") y la que usa .pc .md (línea 486).
+     768px  — LA línea del teléfono. Es el md: de Tailwind, es donde el sidebar
+              se vuelve cajón y donde el Horario ya se cambia por tarjetas. Si
+              el shell decidió que ahí empieza el celular, los paneles no pueden
+              decidir otra cosa cada uno por su lado.
+
+   Los otros 13 números no se borran hoy (hay otra mano en este archivo), pero
+   quedan como deuda: cada uno hace "N columnas → menos columnas" a pocos px de
+   alguna de las tres. 1080→1180 · 980/960→1180 · 880/860/820→900 ·
+   760/720/680/640/620/600/767→768. Nadie va a notar la diferencia.
+
+   Y un cuarto caso que NO lleva media query: los teléfonos chiquitos (≤380px,
+   el SE y los Android baratos). Ahí no se agrega un breakpoint — se arregla con
+   minmax(0,1fr), flex-wrap y min-width:0, que funcionan en cualquier ancho.
+
+   CERO cambios de marcado. Ni una clase nueva, ni un id nuevo: todo cuelga de
+   selectores que ya existen, verificados contra el CSS y contra el JS que los
+   pinta. Y CERO colores nuevos: todo sale de los tokens del panel
+   (var(--panel), var(--line)…), que es lo único que sobrevive al modo oscuro —
+   la lección que rc-auxiliar.css dejó escrita en su línea 72.
+   ████████████████████████████████████████████████████████████████████████████ */
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+   PATRÓN C · Barra de herramientas con carril propio
+   ────────────────────────────────────────────────────────────────────────────
+   El problema: las barras de filtros tienen entre 4 y 5 botones y todas traen
+   flex-wrap:wrap. En un teléfono eso no las salva, las parte en tres renglones
+   y empuja la lista —que es lo que el jefe vino a ver— fuera de la pantalla.
+   Un carril horizontal ocupa UN renglón siempre, sin importar cuántos filtros
+   se agreguen mañana.
+
+   El truco de esconder la barra de scroll ya está en el proyecto
+   (#schedule-mobile .strip, línea 1451): se copia de ahí, no se inventa.
+   La máscara del borde derecho es lo que dice "hay más a la derecha"; es una
+   máscara, no un color, así que no hay nada que ajustar en oscuro.           */
+@media (max-width: 768px) {
+
+  /* C.1 — Carriles que sangran hasta el borde de la pantalla.
+     Son los de fichas sueltas (sin caja alrededor): se ven bien tocando el
+     borde y así el primer chip no arranca con 16px de aire perdido.
+     El -16px es exactamente el px-4 de #app-main (index.html:283). */
+  #rv-ui .rv-bar,
+  #rv-ui .rv-days,
+  #evt-ui .evt-bar,
+  #routes-ui .daystat,
+  #app-main #tripulantes-ui .tp-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+    scroll-padding-left: 16px;
+    -webkit-overflow-scrolling: touch;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
+  }
+  #rv-ui .rv-bar::-webkit-scrollbar,
+  #rv-ui .rv-days::-webkit-scrollbar,
+  #evt-ui .evt-bar::-webkit-scrollbar,
+  #routes-ui .daystat::-webkit-scrollbar,
+  #app-main #tripulantes-ui .tp-filters::-webkit-scrollbar { display: none; }
+
+  /* Los hijos no se pueden encoger: si se encogen, el texto del filtro se parte
+     en dos renglones y el botón crece hacia abajo — que es justo lo que se
+     estaba tratando de evitar. */
+  #rv-ui .rv-bar > *,
+  #rv-ui .rv-days > *,
+  #evt-ui .evt-bar > *,
+  #routes-ui .daystat > *,
+  #app-main #tripulantes-ui .tp-filters > * { flex: 0 0 auto; white-space: nowrap; }
+
+  /* C.2 — Carriles DENTRO de una caja con borde (.seg y compañía).
+     Acá no se sangra: la caja tiene borde visible y cortarlo se ve roto.
+     Se cambia inline-flex por flex para que la caja ocupe el ancho completo y
+     el scroll pase por dentro. */
+  #inspections-ui .seg,
+  #parts-ui .seg,
+  #solic-ui .sol-seg,
+  #avail-ui .av-seg {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  #inspections-ui .seg::-webkit-scrollbar,
+  #parts-ui .seg::-webkit-scrollbar,
+  #solic-ui .sol-seg::-webkit-scrollbar,
+  #avail-ui .av-seg::-webkit-scrollbar { display: none; }
+
+  #inspections-ui .seg button,
+  #parts-ui .seg button,
+  #solic-ui .sol-seg button,
+  #avail-ui .av-seg button { flex: 0 0 auto; white-space: nowrap; }
+
+  /* El .seg de Inspecciones y el de Repuestos viven dentro de un contenedor
+     flex con otros botones; sin esto se niegan a encogerse y desbordan. */
+  #inspections-ui .phead > div,
+  #parts-ui .phead > div { min-width: 0; max-width: 100%; }
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+   PATRÓN B · Rejilla fija → una columna
+   ────────────────────────────────────────────────────────────────────────────
+   Todo grid con anchos en píxeles o con 2+ fracciones se vuelve una columna en
+   el teléfono. La regla de oro: si una columna termina con menos de ~150px,
+   no es una columna, es un accidente.                                        */
+@media (max-width: 768px) {
+
+  /* Personal · el detalle venía partido en dos y a 343px cada mitad quedaba en
+     131px de contenido: el número de 28px de "carga de la semana" no cabía al
+     lado de su barra. (styles.css:472) */
+  .pc .dbody { grid-template-columns: 1fr; }
+  .pc .breakdown { gap: 14px; flex-wrap: wrap; }
+
+  /* Repuestos · la fila de comparación era 96px | barra | 78px = 174px fijos.
+     En 303px útiles a la barra le quedaban 129px, que no alcanzan para leer una
+     diferencia. Ahora el rótulo y el número comparten renglón y la barra se
+     lleva el ancho completo abajo. Los tres hijos están en
+     admin-repuestos.js:463 (span · span.track · span.num). */
+  #parts-ui .cmp .row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  #parts-ui .cmp .row .track { grid-column: 1 / -1; grid-row: 2; }
+  #parts-ui .cmp .row .num { grid-column: 2; grid-row: 1; }
+
+  #parts-ui .frow { grid-template-columns: 1fr; }
+
+  /* Repuestos · la fila de pendientes por confirmar trae el grid ESCRITO A MANO
+     en el atributo style (admin-repuestos.js:119), así que se salta el @media
+     de la línea 3122 sin despeinarse. Es el único !important del bloque y está
+     acá por eso, no por pereza. */
+  #parts-ui .qrow { grid-template-columns: 1fr !important; gap: 11px; }
+  #parts-ui .qa { justify-content: stretch; }
+  #parts-ui .qa .rbtn { flex: 1 1 0; justify-content: center; }
+
+  /* Inspecciones · tres fotos a lo ancho daban 107px cada una: no se distingue
+     un rayón de una sombra. Con dos quedan en ~160px. */
+  #inspections-ui .pgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* Recompensas · era 42px | info | controles, y los controles (etiqueta de
+     54px + switch + dos botones) se comían 160px. Al título le quedaban 113px. */
+  #rewards-ui .rwd { grid-template-columns: 42px minmax(0, 1fr); row-gap: 10px; }
+  #rewards-ui .rwd .rctl { grid-column: 1 / -1; justify-content: flex-end; }
+
+  /* Solicitudes · ya estaba resuelto a 640px (línea 1059). Se sube a la línea
+     del canon para que entre la franja de 641–768 (tablet en vertical), donde
+     hoy se ve la fila de cuatro columnas apretada. */
+  #solic-ui .sol-req { grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
+  #solic-ui .sol-senior { grid-column: 2; justify-self: start; }
+  #solic-ui .sol-ractions { grid-column: 1 / -1; justify-content: flex-end; }
+  #solic-ui .sol-ghead { gap: 9px; }
+  #solic-ui .sol-gtag { margin-left: 0; }
+
+  /* Lo mismo con Inspecciones (680) y Recompensas (760): la tarjeta de una
+     inspección y la fila de un canje ya sabían apilarse, solo que tarde. */
+  #inspections-ui .icard { grid-template-columns: 42px minmax(0, 1fr); }
+  #inspections-ui .icard .right { grid-column: 1 / -1; align-items: stretch; }
+  #inspections-ui .chips,
+  #inspections-ui .qactions { justify-content: flex-start; }
+  #inspections-ui .qactions .rbtn { flex: 1 1 0; justify-content: center; }
+
+  #rewards-ui .grid2 { grid-template-columns: 1fr; }
+  #rewards-ui .redrow { grid-template-columns: 38px minmax(0, 1fr); row-gap: 10px; }
+  #rewards-ui .redrow .kmtag { grid-column: 2; justify-self: start; }
+  #rewards-ui .redrow .ractions { grid-column: 1 / -1; justify-content: flex-end; }
+
+  /* Reservas · la fila ya envolvía a 640 (línea 1298). Le faltaba que la hora
+     dejara de reservar 64px a la izquierda cuando queda sola en su renglón. */
+  #rv-ui .rv-row { flex-wrap: wrap; gap: 12px; }
+  #rv-ui .rv-when { min-width: 0; text-align: left; display: flex; align-items: baseline; gap: 8px; }
+  #rv-ui .rv-when span { margin-top: 0; }
+  #rv-ui .rv-main { flex: 1 1 100%; }
+  #rv-ui .rv-acts { width: 100%; justify-content: flex-end; }
+
+  /* Eventualidades · el cuerpo abierto tenía 61px de sangría a la izquierda
+     para alinearse con el ícono; en el teléfono eso es el 18% del ancho. */
+  #evt-ui .evt-body { padding-left: 16px; }
+  #evt-ui .evt-actions .evt-btn { flex: 1 1 calc(50% - 5px); }
+  #evt-ui .evt-kv { gap: 10px 18px; }
+
+  /* Turnos activos · la fila es un flex sin wrap: el "Forzar cierre"
+     (admin-turnos-activos.js:101) se aplastaba contra el texto. Ahora el botón
+     baja y ocupa el ancho: es la única acción del panel, merece el renglón. */
+  #shifts-ui .shift-row { flex-wrap: wrap; gap: 10px; }
+  #shifts-ui .shift-main { flex: 1 1 100%; }
+  #shifts-ui .shift-row .set-btn { width: 100%; justify-content: center; }
+
+  /* Consola · el hub ya bajaba a una columna a 620px, pero el .mscroll seguía
+     poniendo 22px de padding propio ENCIMA de los 16px de #app-main: 76px de
+     los 375 de la pantalla eran aire. */
+  #consola-ui .mscroll { padding: 14px 0 40px; }
+  #consola-ui .cards { grid-template-columns: 1fr; }
+  #consola-ui .whead h1 { font-size: 24px; }
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+   PATRÓN A · Tabla ancha → ficha apilada
+   ────────────────────────────────────────────────────────────────────────────
+   Hay dos tablas de verdad en el admin y NO se arreglan igual, porque no se
+   leen igual:
+
+   · Balance se lee POR PERSONA (¿cuántas horas hizo Fulano?). Cada fila se
+     vuelve una ficha y el encabezado de la columna se repite adentro como
+     rótulo. Se hace con ::before + nth-child porque la tabla la escribe el JS
+     y no emite data-label; el texto de cada rótulo es palabra por palabra el
+     mismo <th> de admin-balance.js:121. Si algún día se cambia el ORDEN de esas
+     columnas hay que cambiar este bloque también — queda avisado acá y no en un
+     ticket que nadie va a leer.
+
+   · Disponibilidad se lee POR SEMANA (¿quién descansa el jueves?). Apilarla
+     sería destruirla: la gracia es ver los siete días de corrido. Ahí lo que se
+     arregla es el carril: la columna del nombre pesaba 200px de los 343
+     disponibles — el 58% de la pantalla para una cosa que ni siquiera se lee,
+     se reconoce.                                                             */
+@media (max-width: 768px) {
+
+  /* A.1 — Balance: cada persona, una ficha. */
+  #balance-ui .bal-report { border-radius: 14px; }
+  #balance-ui .bal-rhead { flex-wrap: wrap; row-gap: 4px; }
+  #balance-ui .bal-rhead .period { margin-left: 0; flex: 1 1 100%; font-size: 11px; }
+
+  #balance-ui table.bal-bt,
+  #balance-ui .bal-bt thead,
+  #balance-ui .bal-bt tbody,
+  #balance-ui .bal-bt tfoot,
+  #balance-ui .bal-bt tr,
+  #balance-ui .bal-bt td { display: block; width: auto; }
+  /* El <thead> no se borra, se esconde a la vista: el lector de pantalla lo
+     sigue leyendo. Es el mismo truco de .sr-only que ya usa el index. */
+  #balance-ui .bal-bt thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  #balance-ui .bal-bt tbody tr {
+    border-bottom: 1px solid var(--line);
+    padding: 12px 16px 14px;
+  }
+  #balance-ui .bal-bt tbody tr:last-child { border-bottom: 0; }
+  #balance-ui .bal-bt tbody td { border-bottom: 0; padding: 0; }
+
+  /* La primera celda es la persona: va sola arriba, sin rótulo. */
+  #balance-ui .bal-bt tbody td:first-child { margin-bottom: 10px; }
+  #balance-ui .bal-bt .person b,
+  #balance-ui .bal-bt .person span { white-space: normal; }
+
+  /* Las otras cinco: rótulo a la izquierda, dato a la derecha. */
+  #balance-ui .bal-bt tbody td + td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    border-top: 1px dashed var(--line);
+  }
+  #balance-ui .bal-bt tbody td + td::before {
+    content: "";
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink3);
+    flex: 0 0 auto;
+  }
+  /* Los rótulos, en el mismo orden que los <th> de admin-balance.js:121. */
+  #balance-ui .bal-bt tbody td:nth-child(2)::before { content: "Turnos"; }
+  #balance-ui .bal-bt tbody td:nth-child(3)::before { content: "Horas reales"; }
+  #balance-ui .bal-bt tbody td:nth-child(4)::before { content: "Auto-cerrados"; }
+  #balance-ui .bal-bt tbody td:nth-child(5)::before { content: "Arranques falsos"; }
+  #balance-ui .bal-bt tbody td:nth-child(6)::before { content: "En curso"; }
+
+  /* La barra de horas ya no compite con nada: se lleva el resto del renglón. */
+  #balance-ui .bal-hrs { flex: 1 1 auto; }
+  #balance-ui .bal-hrs .bar { width: auto; flex: 1 1 auto; min-width: 40px; }
+
+  /* El total deja de ser un pie de tabla y se vuelve el resumen de abajo. */
+  #balance-ui .bal-bt tfoot tr {
+    border-top: 2px solid var(--line);
+    background: var(--panel2);
+    padding: 12px 16px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 14px;
+  }
+  #balance-ui .bal-bt tfoot td { padding: 0; border: 0; font-size: 12.5px; }
+  #balance-ui .bal-bt tfoot td:first-child { grid-column: 1 / -1; }
+  #balance-ui .bal-bt tfoot td + td { display: flex; justify-content: space-between; gap: 8px; }
+  #balance-ui .bal-bt tfoot td + td::before {
+    content: "";
+    font-size: 10.5px; font-weight: 800; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--ink3);
+  }
+  #balance-ui .bal-bt tfoot td:nth-child(2)::before { content: "Turnos"; }
+  #balance-ui .bal-bt tfoot td:nth-child(3)::before { content: "Horas"; }
+  #balance-ui .bal-bt tfoot td:nth-child(4)::before { content: "Auto"; }
+  #balance-ui .bal-bt tfoot td:nth-child(5)::before { content: "Falsos"; }
+  #balance-ui .bal-bt tfoot td:nth-child(6)::before { content: "En curso"; }
+
+  /* Los controles de fecha: dos campos que se reparten el renglón y los botones
+     de ancho completo, que es lo que se toca con el pulgar. */
+  #balance-ui .bal-controls { padding: 14px; gap: 10px; }
+  #balance-ui .bal-controls .rl-field { flex: 1 1 140px; min-width: 0; }
+  #balance-ui .bal-controls .rl-input { width: 100%; }
+  #balance-ui .bal-controls .rl-spacer { display: none; }
+  #balance-ui .bal-controls .rl-btn { flex: 1 1 100%; justify-content: center; }
+  #balance-ui .bal-scard { flex: 1 1 calc(50% - 6px); min-width: 0; }
+
+  /* A.2 — Disponibilidad: la tabla se queda tabla, pero se la puede recorrer.
+     El ancho real son 200px de nombre + 7 días × 100px = 900px. Lo que estaba
+     mal no era el scroll (ya existía, .av-board tiene overflow:auto), era que
+     la columna pegajosa del nombre se quedara con 200 de los 343. */
+  #avail-ui .av-tbl thead th.namehead,
+  #avail-ui .av-tbl tbody .name { min-width: 116px; padding-left: 12px; padding-right: 10px; }
+  #avail-ui .covrow .namehead2 { padding-left: 12px; padding-right: 10px; }
+  #avail-ui .av-avt { display: none; }          /* el avatar es adorno; el nombre no */
+  #avail-ui .person b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #avail-ui .person span { display: none; }      /* el correo no se lee en un carril */
+  #avail-ui .av-board { border-radius: 14px; -webkit-overflow-scrolling: touch; }
+
+  /* La cabecera de la semana y los resúmenes, que también se apretaban. */
+  #avail-ui .av-summary { gap: 8px; }
+  #avail-ui .av-scard { flex: 1 1 calc(50% - 4px); min-width: 0; padding: 11px 12px; gap: 10px; }
+  #avail-ui .av-scard .ic { width: 32px; height: 32px; }
+  #avail-ui .av-scard .n { font-size: 20px; }
+  #avail-ui .av-phead { align-items: flex-start; }
+  #avail-ui .av-weeknav { width: 100%; justify-content: space-between; }
+  #avail-ui .av-weeknav .wk { min-width: 0; flex: 1; }
+  #avail-ui .av-toolbar { gap: 9px; }
+  #avail-ui .av-search { flex: 1 1 100%; min-width: 0; }
+  #avail-ui .av-legend { gap: 10px 14px; font-size: 11.5px; }
+  #avail-ui .av-legend .hint { margin-left: 0; flex: 1 1 100%; }
+
+  /* Repuestos ya trae su envoltorio de scroll (.tblwrap, línea 3195): lo único
+     que le faltaba era decir que se puede arrastrar con el dedo. */
+  #parts-ui .tblwrap { -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+   PATRÓN D · Modal → hoja inferior (bottom sheet)
+   ────────────────────────────────────────────────────────────────────────────
+   Un modal centrado en un teléfono deja el botón de confirmar a media pantalla,
+   justo donde el pulgar no llega, y si el contenido crece el modal se sale por
+   arriba. La hoja inferior es el gesto que el conductor ya conoce (.rc-sheet,
+   rc-conductor.css:175) y el que ya usa el wizard de reportes
+   (#driver-ruta-ui .dr-rcard). Se le da la misma forma a lo del admin en vez de
+   inventar una tercera manera de hacer lo mismo.                             */
+@media (max-width: 768px) {
+
+  /* D.1 — El modal genérico (historial de strikes, línea 320). */
+  .modal-overlay { align-items: flex-end; padding: 0; }
+  .modal-card {
+    max-width: none;
+    max-height: 88dvh;
+    border-radius: 22px 22px 0 0;
+    padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, .28);
+  }
+  .modal-actions { gap: 10px; }
+  .modal-actions .wk-btn { flex: 1 1 0; }
+  .strike-item { flex-wrap: wrap; }
+
+  /* D.2 — El cajón de "Registrar cambio" de Repuestos (línea 3236) entraba
+     desde la derecha ocupando toda la pantalla: se veía como si la app se
+     hubiera cambiado de página. Entrando desde abajo se lee como lo que es,
+     un formulario encima de lo que estaba mirando. */
+  #parts-ui .drawer {
+    top: auto; left: 0; right: 0; bottom: 0;
+    width: auto; max-height: 90dvh;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 20px 20px 0 0;
+    transform: translateY(100%);
+  }
+  #parts-ui .drawer.show { transform: translateY(0); }
+  #parts-ui .df { padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+  #parts-ui .df .btn { flex: 1 1 0; justify-content: center; }
+
+  /* D.3 — El cajón de asignar conductor de Rutas (bloque #routes-ui, .drawer). */
+  #routes-ui .drawer {
+    top: auto; left: 0; right: 0; bottom: 0;
+    width: auto; max-height: 88dvh;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 20px 20px 0 0;
+    transform: translateY(100%);
+  }
+  #routes-ui .drawer.show { transform: translateY(0); }
+  #routes-ui .dr-f { padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+
+  /* D.4 — La previsualización del trayecto (mapa OSRM). El padding de 24px del
+     velo dejaba el mapa en 295px de ancho. */
+  #routes-ui .mapovl { padding: 0; align-items: flex-end; }
+  #routes-ui .mapbox { width: 100%; max-height: 92dvh; border-radius: 18px 18px 0 0; }
+  #routes-ui #rt-mapCanvas { height: min(58dvh, 420px); }
+
+  /* D.5 — El visor de fotos de Inspecciones: 24px de padding × 2 sobre 375
+     dejaban la foto en 327px. La foto de una novedad es la prueba; que use la
+     pantalla completa. */
+  .insp-lbx { padding: 10px; }
+  .insp-lbx img { max-width: 100%; max-height: 78dvh; }
+  .insp-lbx .x { top: 12px; right: 12px; }
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+   BLANCOS DE TOQUE · 44px
+   ────────────────────────────────────────────────────────────────────────────
+   Los botones de ícono del admin se diseñaron para el mouse: 30, 32, 34, 36px.
+   En el teléfono, 44px es el mínimo que Apple y Google llevan diez años
+   pidiendo, y no es capricho: el slot de Disponibilidad mide 34px de alto y es
+   LA única cosa que se toca en ese panel. Fallar el toque ahí significa
+   cambiarle el descanso a la persona equivocada.                             */
+@media (max-width: 768px) {
+  #avail-ui .av-slot { width: 46px; height: 44px; }
+  #avail-ui .av-weeknav button,
+  #routes-ui .daypick .nav,
+  #inspections-ui .cfgbtn,
+  #rewards-ui .cfgbtn,
+  #parts-ui .mini,
+  #rv-ui .rv-ic,
+  .set-ui .veh-del { width: 44px; height: 44px; }
+  #rewards-ui .tg,
+  #inspections-ui .tg { transform: scale(1.1); transform-origin: right center; }
+
+  /* Los botones de texto suben a 44 de alto sin engordar de más el diseño. */
+  #rv-ui .rv-fbtn,
+  #evt-ui .evt-bar button,
+  #inspections-ui .seg button,
+  #parts-ui .seg button,
+  #solic-ui .sol-seg button,
+  #avail-ui .av-seg button,
+  #app-main #tripulantes-ui .tp-filters button { min-height: 40px; }
+  #inspections-ui .rbtn,
+  #parts-ui .rbtn,
+  #rewards-ui .rbtn,
+  #solic-ui .sol-rbtn { height: 42px; }
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+   OLA 1 · Los paneles que se miran a las 4 de la mañana desde la calle
+   ────────────────────────────────────────────────────────────────────────────
+   Operación en vivo y Eventualidades no son pantallas de consulta: son la
+   pantalla que alguien abre parado en un andén porque un carro no llegó. Estos
+   dos son los que de verdad tienen que funcionar en un teléfono; el resto puede
+   conformarse con no romperse.                                               */
+@media (max-width: 768px) {
+
+  /* ── Operación en vivo ──────────────────────────────────────────────────
+     Dos cosas estaban mal, y la segunda es la peor:
+
+     1) La barra de arriba es flex sin wrap y con height:46px fijo (línea 2134).
+        El título + la píldora "En vivo" + el reloj + el aviso de la API key
+        suman más de 600px: el aviso se aplastaba y quedaba cortado por la
+        altura fija.
+
+     2) El panel mide calc(100dvh - 104px), pero #app-main trae pb-24 en móvil
+        (96px, index.html:283) además de sus 20px de arriba. 104 no alcanzaba a
+        cubrir 56 del breadcrumb + 20 + 96: la página entera quedaba con scroll
+        propio PELEÁNDOSE con el gesto de arrastrar el mapa. Se mueve un dedo y
+        no se sabe si se movió el mapa o la página. 210 es la cuenta correcta. */
+  #oper-ui { height: calc(100dvh - 210px); min-height: 420px; margin: 0; }
+  #oper-ui .op-top { height: auto; flex-wrap: wrap; row-gap: 8px; gap: 10px; padding: 0 0 10px; }
+  #oper-ui .op-top h1 { font-size: 17px; }
+  #oper-ui .op-spacer { display: none; }
+  #oper-ui .op-clock { margin-left: auto; }
+  #oper-ui .op-stub { flex: 1 1 100%; font-size: 10.5px; line-height: 1.35; }
+
+  /* La lista de carros arriba, el mapa abajo. 38% de la altura es media
+     pantalla de tarjetas: suficiente para ver dos carros y decidir. */
+  #oper-ui .op-stage { border-radius: 14px; }
+  #oper-ui .op-kpis { gap: 6px; }
+  #oper-ui .op-kpi { padding: 7px 6px; }
+  #oper-ui .op-kpi b { font-size: 16px; }
+
+  /* La alerta de atraso — la regla #1 del panel. Sus tres acciones se partían
+     en 2+1 y la tercera quedaba suelta a la derecha. Una debajo de otra, de
+     ancho completo: se toca sin mirar. */
+  /* La animación de entrada se apaga a propósito: su keyframe (op-drop) lleva
+     translateX(-50%) quemado y pelearía con el transform:none de acá — la
+     alerta entraría corrida media pantalla a la izquierda. */
+  #oper-ui .op-delay { left: 8px; right: 8px; top: 8px; transform: none; width: auto; }
+  #oper-ui .op-delay.show { animation: none; }
+  #oper-ui .op-delay-acts { flex-direction: column; gap: 7px; }
+  #oper-ui .op-dact { width: 100%; min-width: 0; }
+
+  /* La leyenda flotaba sobre la esquina del mapa y en pantalla chica tapaba
+     carros. Se vuelve una tira horizontal pegada abajo. */
+  #oper-ui .op-legend {
+    right: 8px; left: 8px; bottom: 8px;
+    flex-direction: row; justify-content: space-around;
+    gap: 4px; padding: 7px 8px;
+  }
+  #oper-ui .op-li { font-size: 10px; }
+
+  /* ── Eventualidades ─────────────────────────────────────────────────────
+     El panel ya tenía reglas a 720 (línea 2952). Lo que le faltaba: el botón
+     de refrescar del encabezado, que se quedaba arrinconado a la derecha con
+     el texto partido, y la descripción larga de la novedad, que es lo que
+     realmente se viene a leer. */
+  #evt-ui .sh-phead { gap: 12px; }
+  #evt-ui .sh-phead h1 { font-size: 22px; }
+  #evt-ui .sh-phead p { font-size: 12.5px; }
+  #evt-ui .sh-phead .set-btn { width: 100%; justify-content: center; }
+  #evt-ui .evt-head { padding: 13px 14px; gap: 11px; }
+  #evt-ui .evt-desc { font-size: 14.5px; }
+  #evt-ui .evt-health,
+  #evt-ui .evt-unack { align-items: flex-start; font-size: 12.5px; line-height: 1.4; }
+
+  /* ── Reservas, Privados y Turnos activos ────────────────────────────────
+     Los tres comparten el encabezado .sh-phead y el mismo problema: el botón
+     de la derecha peleando el renglón con un párrafo de tres líneas. */
+  #rv-ui .sh-phead,
+  #shifts-ui .sh-phead,
+  #app-main #tripulantes-ui .sh-phead { gap: 12px; }
+  #rv-ui .sh-phead h1,
+  #shifts-ui .sh-phead h1,
+  #app-main #tripulantes-ui .sh-phead h1 { font-size: 22px; }
+  #rv-ui .sh-phead > .set-btn,
+  #shifts-ui .sh-phead > .set-btn { width: 100%; justify-content: center; }
+  #app-main #tripulantes-ui .tp-acts { width: 100%; }
+  #app-main #tripulantes-ui .tp-acts .set-btn { flex: 1 1 0; justify-content: center; }
+
+  /* Privados se queda a medias A PROPÓSITO: su .sh-phead y su .set-btn no
+     tienen estilos en NINGÚN css (ni styles.css ni rc-auxiliar.css), así que su
+     encabezado es un <h1> por defecto de 32px y su botón el gris del navegador.
+     Eso es un bug viejo, no un problema de responsive, y meterle el diseño acá
+     de contrabando sería arreglar otra cosa en el parche equivocado. Va en
+     'dudas'. Lo de abajo sí sirve porque .pv-card y .pv-acts sí existen. */
+  #app-main #privados-ui .pv-top { flex-wrap: wrap; }
+  #app-main #privados-ui .pv-meta { gap: 8px 16px; }
+  #app-main #privados-ui .pv-acts,
+  #app-main #privados-ui .pv-rej-acts { flex-wrap: wrap; }
+  #app-main #privados-ui .pv-acts .set-btn,
+  #app-main #privados-ui .pv-rej-acts .set-btn { flex: 1 1 calc(50% - 5px); justify-content: center; }
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+   OLA 3 · Lo que se hace sentado — que al menos no se rompa
+   ────────────────────────────────────────────────────────────────────────────
+   Balance, Disponibilidad, Personal, Horario y Rutas se hacen en un escritorio
+   con café al lado, no en la calle. Acá no se está rediseñando nada: se está
+   evitando el desborde horizontal, que es lo que hace que la app entera se vea
+   rota aunque el panel que se rompe no sea el que se está usando.            */
+@media (max-width: 768px) {
+
+  /* Rutas · ESTE era el desborde grande. .stage es 300px de pool + 1fr de
+     tablero SIEMPRE (línea 1617): no hay ni un @media que lo toque. En 343px
+     útiles, al tablero le quedaban 43px. Cuarenta y tres. Dentro de esos 43
+     vive .seq, que tiene paradas de 158px con scroll horizontal propio.
+     Ahora el pool es una franja de arriba y el tablero se lleva el resto.
+
+     OJO: acá NO se está arreglando el panel, se está arreglando que se pueda
+     LEER el plan del día desde un teléfono. Asignar sigue siendo imposible con
+     el dedo y eso no lo arregla ningún CSS — ver 'dudas'. Por eso no se toca el
+     texto "Arrastra un auxiliar a un carro": esa frase tiene que cambiar cuando
+     se decida qué se hace, y cambiarla ahora sería tapar el hueco. */
+  #routes-ui { height: calc(100dvh - 210px); min-height: 420px; }
+  #routes-ui .sub { padding: 11px 12px; gap: 10px; }
+  #routes-ui .sub h1 { font-size: 17px; flex: 1 1 100%; }
+  #routes-ui .sub .spacer { display: none; }
+  #routes-ui .daypick { flex: 1 1 100%; justify-content: space-between; }
+  #routes-ui .daypick b { flex: 1; min-width: 0; }
+  #routes-ui .sub .btn { flex: 1 1 0; justify-content: center; }
+  #routes-ui .alert { padding: 10px 12px; flex-wrap: wrap; row-gap: 8px; }
+  #routes-ui .alert .fix { margin-left: 0; }
+
+  #routes-ui .stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  #routes-ui .pool { border-right: 0; border-bottom: 1px solid var(--line); max-height: 32dvh; }
+  #routes-ui .pool-list { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 10px; }
+  #routes-ui .pool-list .aux { flex: 0 0 220px; }
+  #routes-ui .lanes { padding: 12px; gap: 12px; }
+  #routes-ui .lane-h { flex-wrap: wrap; gap: 10px; padding: 12px; }
+  #routes-ui .car { min-width: 0; flex: 1 1 100%; }
+  #routes-ui .sema { margin-left: 0; flex: 1 1 100%; justify-content: space-between; }
+  #routes-ui .assignbtn { width: 100%; justify-content: center; }
+  #routes-ui .clockpanel { padding: 12px 10px 4px; }
+  #routes-ui .clock-legend { gap: 8px; }
+  #routes-ui .clock-legend .lg { font-size: 10.5px; }
+  #routes-ui .cc-h { padding: 11px 12px; }
+  #routes-ui .triprow { padding: 10px 12px; gap: 8px; }
+  #routes-ui .triprow .tr-info { display: none; }   /* no cabe y se cortaba a mitad de palabra */
+  #routes-ui .ovl .box { width: min(340px, calc(100vw - 32px)); padding: 26px 22px; }
+
+  /* Horario · en celular ya se ve #schedule-mobile (línea 1425), así que acá
+     solo queda el resumen que cuelga debajo del tablero y que nadie escondió. */
+  #worker-summary { font-size: 12.5px; }
+
+  /* Personal · la lista maestra arriba y el detalle abajo (regla de la línea
+     486). Con 20 personas eso son 20 filas antes de llegar al detalle, así que
+     la lista se le pone techo y scroll propio. */
+  .pc .mdlist { max-height: 46dvh; overflow-y: auto; }
+  .pc .dhead { padding: 16px; gap: 12px; }
+  .pc .dhead .av { width: 48px; height: 48px; font-size: 16px; }
+  .pc .dhead h2 { font-size: 18px; }
+  .pc .dactions { padding: 12px 14px; }
+  .pc .dactions .spacer { display: none; }
+  .pc .pc-btn { flex: 1 1 calc(50% - 5px); justify-content: center; }
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────────
+   RED DE SEGURIDAD · que ningún panel empuje la página a lo ancho
+   ────────────────────────────────────────────────────────────────────────────
+   html,body ya tienen overflow-x:hidden (línea 2318), pero eso ESCONDE el
+   desborde, no lo arregla: el contenido sigue estando fuera y no se alcanza.
+   Esto es lo contrario — obliga a cada panel a caber. Va al final del archivo a
+   propósito: es la última palabra.                                           */
+@media (max-width: 768px) {
+  #app-main > section[data-panel] { min-width: 0; max-width: 100%; }
+  #app-main > section[data-panel] > div { min-width: 0; max-width: 100%; }
+
+  /* Los encabezados de panel (h1 + párrafo + botón) comparten forma en ocho
+     paneles distintos. Se les baja el tamaño una vez, acá, y no ocho veces. */
+  #inspections-ui .phead h1,
+  #parts-ui .phead h1,
+  #balance-ui .rl-phead h1,
+  #avail-ui .rl-phead h1,
+  #solic-ui .rl-phead h1 { font-size: 22px; }
+  #inspections-ui .phead p,
+  #parts-ui .phead p,
+  #balance-ui .rl-phead p,
+  #avail-ui .rl-phead p,
+  #solic-ui .rl-phead p { font-size: 12.5px; }
+  #inspections-ui .phead,
+  #parts-ui .phead { gap: 12px; }
+  #parts-ui .phead > div:last-child,
+  #inspections-ui .phead > div:last-child { width: 100%; }
+  #parts-ui .phead .btn,
+  #inspections-ui .phead .btn { flex: 1 1 0; justify-content: center; }
+  #parts-ui .rule1 { flex-wrap: wrap; padding: 12px 13px; }
+  #parts-ui .sech { margin: 20px 0 10px; flex-wrap: wrap; }
+  #parts-ui .sech .hint { flex: 1 1 100%; }
+}

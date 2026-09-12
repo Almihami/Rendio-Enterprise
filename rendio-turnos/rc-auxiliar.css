@@ -855,6 +855,112 @@
   font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; padding: 6px;
 }
 
+/* ── El medidor de fuerza de la contraseña (2026-09-11) ──────────────────────
+   Cuatro segmentos, y AL LADO lo que le falta escrito con palabras. La barra
+   sola no sirve: «amarillo» no le dice a nadie qué tiene que cambiar, y el que
+   la mira de noche con el brillo al máximo no distingue ámbar de rojo.
+
+   Todos los colores salen de los tokens --a-* (err / warn / ok), que ya tienen
+   su versión nocturna arriba en este mismo archivo. Ni un hexadecimal suelto:
+   eso es exactamente lo que hubo que salir a remapear en agosto.             */
+#auxiliar-ui .rg-meter { margin: 9px 2px 0; }
+#auxiliar-ui .rg-meter-bar { display: flex; gap: 4px; }
+#auxiliar-ui .rg-meter-seg {
+  flex: 1 1 0; height: 5px; border-radius: 999px;
+  background: var(--a-line); transition: background .18s ease;
+}
+#auxiliar-ui .rg-meter.n1 .rg-meter-seg.on { background: var(--a-err); }
+#auxiliar-ui .rg-meter.n2 .rg-meter-seg.on { background: var(--a-warn); }
+#auxiliar-ui .rg-meter.n3 .rg-meter-seg.on,
+#auxiliar-ui .rg-meter.n4 .rg-meter-seg.on { background: var(--a-ok); }
+#auxiliar-ui .rg-meter-txt { font-size: 11.5px; color: var(--a-t2); margin-top: 7px; line-height: 1.45; }
+#auxiliar-ui .rg-meter-txt b { font-weight: 800; }
+#auxiliar-ui .rg-meter.n1 .rg-meter-txt b { color: var(--a-err); }
+#auxiliar-ui .rg-meter.n2 .rg-meter-txt b { color: var(--a-warn); }
+#auxiliar-ui .rg-meter.n3 .rg-meter-txt b,
+#auxiliar-ui .rg-meter.n4 .rg-meter-txt b { color: var(--a-ok); }
+
+/* «Coinciden»: el verde de la repetición. Es el hermano bueno de .rg-err —
+   misma forma, mismo sitio, color contrario— y se esconde igual de limpio
+   cuando no hay nada que decir (vacío no puede ocupar ni un píxel, o el
+   formulario brinca en cada tecla). */
+#auxiliar-ui .rg-match {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 700; color: var(--a-ok);
+  margin: 7px 2px 0; line-height: 1.4;
+}
+#auxiliar-ui .rg-match .icon { width: 14px; height: 14px; flex: 0 0 auto; }
+#auxiliar-ui .rg-match.vacio { display: none; }
+
+/* ── El fondo de marca de cada aerolínea (2026-09-11) ────────────────────────
+   Los hexadecimales NO están aquí: viven en MARCAS_AEROLINEA (aux-registro.js),
+   que es donde se explican y se miden, y llegan como --air-1 / --air-2 /
+   --air-ink en el style= de cada botón. El CSS no puede saber cuántas
+   aerolíneas hay ni de qué color es la que agreguen mañana.
+
+   SOBRE EL MODO NOCTURNO. Este archivo tiene arriba un bloque entero dedicado a
+   apagar fondos claros que se escribieron en hexadecimal ANTES de que existiera
+   el tema oscuro. Aquí no se repite ese error, pero tampoco se puede resolver
+   con tokens: el rojo de Avianca tiene que seguir siendo el rojo de Avianca a
+   las 11 p.m. Se hace lo mismo que con los mapas de Leaflet unas líneas más
+   arriba —bajarles el brillo con filter, no cambiarles el color— y la regla
+   nocturna se deja PEGADA a la clara, tres líneas más abajo, para que quien
+   toque una vea la otra sin buscarla.
+
+   Nada de sombras ni brillos por encima: un velo blanco sobre el rojo le sube
+   la luminancia al fondo y le tumba el contraste al texto blanco justo donde
+   está la sigla. El degradado limpio es lo único que se dibuja.             */
+#auxiliar-ui .ax-opt.rg-air {
+  position: relative; overflow: hidden;
+  color: var(--air-ink);
+  border-color: rgba(0, 0, 0, .16);
+  background-color: var(--air-2);
+  background-image: linear-gradient(135deg, var(--air-1) 0%, var(--air-2) 100%);
+  /* Sin elegir, más apagada. saturate() —y no opacity ni un velo— porque
+     conserva la luminancia: el contraste medido del texto no se mueve. */
+  filter: saturate(.74);
+  transition: filter .16s ease, box-shadow .16s ease;
+}
+#auxiliar-ui .ax-opt.rg-air:hover { filter: saturate(1); }
+
+/* La sigla IATA es el elemento gráfico: ocupa el hueco donde antes iba el
+   avioncito, que era el mismo en las cuatro y por tanto no ayudaba a elegir. */
+#auxiliar-ui .ax-opt.rg-air .rg-air-sigla {
+  flex: 0 0 auto; min-width: 48px; text-align: center; white-space: nowrap;
+  font-size: 23px; font-weight: 900; letter-spacing: .01em; line-height: 1;
+}
+#auxiliar-ui .ax-opt.rg-air div span { color: currentColor; opacity: .85; }
+#auxiliar-ui .ax-opt.rg-air .ax-radio { border-color: currentColor; color: var(--air-1); }
+
+/* ELEGIDA. No es «solo un borde»: sube a color pleno, se le mete un anillo de
+   su propia tinta POR DENTRO y el círculo queda macizo con el chulo en el color
+   de la marca. Por dentro y no por fuera a la fuerza — .ax-body lleva
+   overflow-x:hidden y cualquier anillo exterior sale cortado por los lados. */
+#auxiliar-ui .ax-opt.rg-air.sel {
+  filter: none;
+  border-color: transparent;
+  box-shadow: inset 0 0 0 3px var(--air-ink);
+}
+#auxiliar-ui .ax-opt.rg-air.sel .ax-radio { background: var(--air-ink); border-color: var(--air-ink); }
+#auxiliar-ui .ax-opt.rg-air.sel div span { opacity: 1; font-weight: 700; }
+
+/* Foco de teclado: un anillo del naranja de Rendio separado del fondo de marca
+   por una franja del color de la pantalla, para que se vea sobre el ámbar de
+   JetSMART igual que sobre el índigo de LATAM. También por dentro, por lo
+   mismo del overflow. */
+#auxiliar-ui .ax-opt.rg-air:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--a-bg), inset 0 0 0 6px var(--a-accent);
+}
+
+/* De noche: mismo color, menos lámpara (ver arriba). */
+#auxiliar-ui[data-ax-night="on"] .ax-opt.rg-air {
+  border-color: rgba(255, 255, 255, .10);
+  filter: saturate(.64) brightness(.9);
+}
+#auxiliar-ui[data-ax-night="on"] .ax-opt.rg-air:hover,
+#auxiliar-ui[data-ax-night="on"] .ax-opt.rg-air.sel { filter: saturate(.92) brightness(.94); }
+
 /* Las casillas del código.
    Se reparten el ancho con flex en vez de medir 48px fijos: el código de este
    proyecto trae 8 dígitos y ocho casillas fijas no caben en un teléfono de

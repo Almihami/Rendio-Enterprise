@@ -225,13 +225,19 @@
   // aerolínea y si el vuelo es nacional o internacional (ver 0058). Se saca del
   // código de vuelo, que es lo único que tenemos.
   //
-  // OJO con los vuelos SIN SIGLA: el formulario pide "vuelo de llegada" en texto
-  // libre y dos de cada tres tripulantes escriben solo los dígitos ("5116"). Lo
-  // que sigue es INFERENCIA, no dato: los 4 dígitos que empiezan por 5 se toman
-  // como JetSmart porque el mismo vuelo llegó escrito de las dos formas el 7-ago
-  // (Fernando puso "JA5116" y Paulina "5116"). Si algún día Avianca opera un
-  // 5xxx, aquí es donde se corrige — o mejor, se arregla el formulario para que
-  // pida la sigla y esto deje de ser adivinanza.
+  // OJO con los vuelos SIN SIGLA: el formulario pedía "vuelo de llegada" en
+  // texto libre y dos de cada tres tripulantes escribían solo los dígitos
+  // ("5116"). Lo que sigue es INFERENCIA, no dato: los 4 dígitos que empiezan
+  // por 5 se toman como JetSmart porque el mismo vuelo llegó escrito de las dos
+  // formas el 7-ago (Fernando puso "JA5116" y Paulina "5116"). Si algún día
+  // Avianca opera un 5xxx, aquí es donde se corrige.
+  //
+  // DESDE EL 11-SEP-2026 EL FORMULARIO YA PIDE LA SIGLA: el pedido del
+  // tripulante entra con un chip (la aerolínea de su perfil, cambiable) y un
+  // campo de solo dígitos, y guarda SIGLA+DÍGITOS pegados ("AV9412"). La
+  // adivinanza de abajo NO se borra —las reservas de antes siguen en la tabla
+  // con sus dígitos pelados, y quien no tenga aerolínea en el perfil sigue
+  // pudiendo mandarlos— pero deja de ser el caso normal.
   function rtDeplaneVuelo(v) {
     const s = String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!s) return null;
@@ -240,10 +246,24 @@
     // 'JEC', "JEC123" quedaría partido en 'JE' + "C123" y se descartaría.
     // J6 y JE también son JetSmart (confirmado por Julián el 17-ago-2026: los
     // vuelos J65417 y J65435 del plan de ese día caían fuera de la regla).
-    const sigla = ['JEC', 'J6', 'JA', 'JE', 'AV', 'P5'].find(p => s.startsWith(p)) || '';
+    // 'LA' (LATAM) entra el 11-sep-2026, al final porque no es prefijo de
+    // ninguna de las otras ni ninguna es prefijo suyo: donde se ponga da igual,
+    // mientras las de 3 letras sigan primero. Estaba FALTANDO, y hasta hoy no
+    // dolía porque los vuelos llegaban sin sigla; con el prefijo puesto en el
+    // formulario, un "LA1234" se caía por el `if (!/^\d+$/...)` de abajo y esa
+    // parada perdía su tiempo de desembarque EN SILENCIO — el carro salía por
+    // la persona antes de que ella pudiera estar afuera.
+    const sigla = ['JEC', 'J6', 'JA', 'JE', 'AV', 'P5', 'LA'].find(p => s.startsWith(p)) || '';
     const num = s.slice(sigla.length);
     if (!/^\d+$/.test(num)) return null;
     if (sigla === 'P5') return T.wingo;
+    // LATAM NO TIENE COLUMNA PROPIA en Ajustes (la 0058 trajo av_nac, av_int,
+    // js_nac, js_int y wingo, y ahí se quedó). Se le da el respaldo general
+    // —route_deplane_min, 20 min— que es un número honesto mientras el jefe no
+    // mida el suyo: nacional o internacional, LATAM sale del mismo terminal.
+    // Si algún día alguien mide "LATAM internacional tarda 35", esto es lo
+    // primero que hay que partir en dos.
+    if (sigla === 'LA') return rt.DEPLANE;
     if (sigla === 'JEC' || sigla === 'JA' || sigla === 'J6' || sigla === 'JE')
       return num.startsWith('58') ? T.jsInt : T.jsNac;
     if (sigla === 'AV') return num.length <= 3 ? T.avInt : T.avNac;
@@ -1078,7 +1098,7 @@
       // Estado vacío honesto: se dice qué falta. Antes aquí salían 25
       // auxiliares inventados y se podía "planear" un día que no existe.
       list.innerHTML = rt.emptyReason === 'vehiculos'
-        ? `<div class="pool-empty"><div class="circle"><svg class="icon"><use href="#i-warn"/></svg></div><b>No hay vehículos</b><span>Registra la flota en Ajustes → Vehículos para poder armar rutas.</span></div>`
+        ? `<div class="pool-empty"><div class="circle"><svg class="icon"><use href="#i-warn"/></svg></div><b>No hay vehículos</b><span>Registra la flota en Turnos › Revisión › Flota para poder armar rutas.</span></div>`
         : `<div class="pool-empty"><div class="circle"><svg class="icon"><use href="#i-clock"/></svg></div><b>Sin traslados por rutear</b><span>Aquí aparecen los auxiliares cuando piden su traslado desde la app. Puedes verlos uno por uno en Reservas.</span></div>`;
     }
     else if (!rt.pool.length) list.innerHTML = `<div class="pool-empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><b>Todos ruteados</b><span>Cada auxiliar está en un carro.</span></div>`;

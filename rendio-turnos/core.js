@@ -6,6 +6,22 @@
 
   const isSuspended = () => state.profile && state.profile.is_active === false;
 
+  // Cuántos strikes hacen falta para suspender. Es FUNCIÓN, no constante, y eso
+  // importa: state.settings arranca en null y solo se llena al iniciar sesión,
+  // después de que todos los <script> ya se leyeron. Una constante de módulo se
+  // quedaría congelada en 3 para siempre, sin fallar — el jefe lo pondría en 5
+  // en Ajustes y la pantalla seguiría diciendo "de 3".
+  // Hasta hoy el 3 estaba quemado a mano en cuatro archivos.
+  const strikeLimit = () => {
+    const n = Number(state.settings && state.settings.strike_limit);
+    return Number.isFinite(n) && n >= 1 ? n : 3;
+  };
+
+  // El mes que se está contando ahora mismo, como día 1 en ISO. Es el filtro que
+  // hace que los strikes se reinicien solos: uno de agosto deja de contar el 1 de
+  // septiembre porque ya no cae en este rango. No hay proceso automático detrás.
+  const strikePeriod = () => Scheduler.monthStartISO();
+
   // El admin de escritorio y el admin de celular no son el mismo usuario: el
   // primero planea, el segundo recibe alertas de operación a las 4 de la mañana.
   // Varias decisiones de UI (instalar la PWA, activar notificaciones) dependen de
@@ -172,7 +188,13 @@
     $('#publish-btn').addEventListener('click', () => onSaveSchedule(true));
     $('#clear-schedule-btn').addEventListener('click', onClearSchedule);
 
-    $('#save-settings-btn').addEventListener('click', onSaveSettings);
+    // El `?.` no es cosmético: esto es una cadena larga de enlaces en una sola función.
+    // Si un día alguien mueve o renombra #save-settings-btn, sin el `?.` esta línea
+    // revienta bindAdminEvents entera y se caen TODOS los enlaces de abajo — el admin
+    // queda con botones muertos y sin un error que apunte a la causa. Pasó de estar a un
+    // renombrado de distancia cuando Ajustes se partió en módulos (2026-09-11).
+    $('#save-settings-btn')?.addEventListener('click', onSaveSettings);
+    $('#save-calib-btn')?.addEventListener('click', onSaveCalibracion);
     $('#save-route-tables-btn')?.addEventListener('click', saveRouteTables);
 
     $('#new-driver-gen-pw')?.addEventListener('click', onGenerateDriverPassword);
@@ -408,6 +430,12 @@
   // ====================================================================
 
   function setTab(name) {
+    // PUERTA DE SALIDA (2026-09-11). Ajustes y Calibración guardan con un botón al pie,
+    // y desde que las secciones se pliegan es facilísimo editar un campo, cerrar la
+    // sección y largarse creyendo que quedó guardado. Acá se pregunta antes de salir.
+    // El `typeof`: esto es la espina dorsal de la navegación del admin, y si el módulo
+    // que trae el aviso no cargó, lo último que puede pasar es que nadie pueda navegar.
+    if (typeof setPuedeSalirDelModulo === 'function' && !setPuedeSalirDelModulo(name)) return;
     state.activeTab = name;
     $('#driver-tabs-root')?.classList.add('hidden');
     $('#driver-nav')?.classList.remove('show');
@@ -429,6 +457,10 @@
     if (name === 'approvals') refreshApprovals();
     if (name === 'workers') renderWorkers();
     if (name === 'settings') renderSettings();
+    // Ajustes se partió en tres (2026-09-11). Cada pantalla pide SOLO sus datos: entrar a
+    // subir el límite de strikes ya no dispara la tabla de tiempos, las zonas ni la flota.
+    if (name === 'flota') renderFlota();
+    if (name === 'calibracion') renderCalibracion();
     if (name === 'balance') renderBalance();
     if (name === 'inspections') renderInspections();
     if (name === 'parts') renderParts();

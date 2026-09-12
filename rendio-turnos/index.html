@@ -540,204 +540,19 @@
       </section>
 
       <!-- =============== ADMIN: WORKERS TAB =============== -->
+      <!-- "Crear conductor" vivía en Ajustes, y ahí estaba mal puesto: dar de alta a una
+           persona no es un parámetro del generador de turnos, es personal. Se bajó acá el
+           2026-09-11, al lado de la lista donde el jefe lo va a buscar apenas lo cree. El markup
+           es el mismo de antes y los ids no se tocaron (onCreateDriver los busca por id); lo
+           único nuevo es el envoltorio .set-ui, que es de donde cuelgan sus estilos. -->
       <section data-panel="workers" class="hidden space-y-3">
         <div>
           <h2 class="text-xl md:text-2xl font-bold text-ink">Personal</h2>
           <p class="text-sm text-slate-500">Usuarios cargados en el sistema.</p>
         </div>
         <div id="workers-list" class="space-y-2"></div>
-      </section>
 
-      <!-- =============== ADMIN: SETTINGS TAB (paleta limpia) =============== -->
-      <!-- Rediseño visual al sistema "paleta limpia" (igual que Tablero v4),
-           scopeado bajo #settings-ui. La lógica NO cambia: la pintan
-           renderSettings / renderPriorityList / renderRulesEditor en admin-personal.js. -->
-      <section data-panel="settings" class="hidden">
-        <div id="settings-ui" data-theme="light">
-          <div class="set-head">
-            <h1>Ajustes</h1>
-            <p>Parámetros que alimentan al generador de turnos. La antigüedad y los descansos fijos se guardan al instante.</p>
-          </div>
-
-          <!-- 1 · Parámetros del turno -->
-          <div class="set-card">
-            <div class="set-ch">
-              <div class="set-ci"><svg class="icon"><use href="#i-clock"/></svg></div>
-              <div><h2>Parámetros del turno</h2><p>Horas de cada jornada y cuántos conductores deben quedar al volante por slot.</p></div>
-              <span class="set-saved" id="set-saved-params"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg>Guardado</span>
-            </div>
-            <div class="set-cb">
-              <div class="set-row2">
-                <div class="set-field"><label>Horario mañana</label><input id="setting-morning-label" class="set-input mono" type="text" /></div>
-                <div class="set-field"><label>Horario tarde</label><input id="setting-afternoon-label" class="set-input mono" type="text" /></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Cupos mañana</label><input id="setting-morning-slots" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Mínimo de conductores al volante en AM.</div></div>
-                <div class="set-field"><label>Cupos tarde</label><input id="setting-afternoon-slots" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Mínimo de conductores al volante en PM.</div></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Líderes de turno por jornada</label><input id="setting-coord-slots" class="set-input" type="number" min="1" max="4" /><div class="set-hint">Cuántos líderes de turno se asignan en AM y en PM.</div></div>
-                <div class="set-field"><label>Horas por turno</label><input id="setting-shift-hours" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Estimado de horas en “Mi perfil” del conductor. El Balance usa horas reales (inicio→cierre).</div></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Auto-cierre de turno (horas)</label><input id="setting-auto-close-hours" class="set-input" type="number" min="1" max="72" /><div class="set-hint">Si un turno sigue activo más de X horas, se cierra solo y libera el vehículo (red de seguridad).</div></div>
-                <div class="set-field"><label>Liberar reserva abandonada (min)</label><input id="setting-reservation-idle" class="set-input" type="number" min="5" max="240" /><div class="set-hint">Si un conductor empieza la inspección y no avanza en X minutos, su reserva del vehículo se libera.</div></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Strikes para suspender</label><input id="setting-strike-limit" class="set-input" type="number" min="1" max="10" /><div class="set-hint">Al acumular esta cantidad de strikes, el conductor queda suspendido la semana siguiente (automático).</div></div>
-                <div class="set-field"></div>
-              </div>
-              <div class="set-divider" style="margin:16px 0 4px"></div>
-              <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Inicio rápido (inspección diferida)</p>
-              <label class="set-field" style="flex-direction:row;align-items:center;gap:10px;cursor:pointer"><input id="setting-fast-start-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Permitir iniciar turno sin inspección (la hace dentro del plazo)</span></label>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Franja: desde (hora)</label><input id="setting-fast-start-from" class="set-input" type="number" min="0" max="23" /><div class="set-hint">Hora de inicio de la franja (0–23). Default 12.</div></div>
-                <div class="set-field"><label>Franja: hasta (hora)</label><input id="setting-fast-start-to" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Fin de la franja (exclusivo). Default 16 (4 p.m.).</div></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Plazo para la inspección (min)</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint">Si no la hace en este tiempo → strike automático. Default 90.</div></div>
-                <div class="set-field"></div>
-              </div>
-              <div class="set-divider" style="margin:16px 0 4px"></div>
-              <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Traslados de auxiliares</p>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Espera en el punto (min)</label><input id="setting-aux-wait" class="set-input" type="number" min="1" max="60" /><div class="set-hint">Cuánto espera el conductor al auxiliar en la recogida. El auxiliar ve la misma cuenta regresiva, y "No se presentó" solo se habilita al vencerse. Default 5.</div></div>
-                <div class="set-field"><label>Anticipación mínima (horas)</label><input id="setting-aux-lead" class="set-input" type="number" min="0" max="72" /><div class="set-hint">Por debajo de esto se le avisa al auxiliar y el traslado queda marcado como "pedido tarde" en Reservas. No se bloquea: la operación tiene urgencias. Default 6.</div></div>
-                <div class="set-field"><label>Traslado privado (la camioneta)</label>
-                  <label class="set-checkrow"><input id="setting-priv-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Ofrecerlo a los auxiliares</span></label>
-                  <div class="set-hint">Mientras esté apagado, el auxiliar ni siquiera ve el paso: pide su traslado como siempre. Enciéndelo solo cuando la camioneta y la tarifa estén definidas.</div>
-                </div>
-                <div class="set-field"><label>Vehículo del privado</label><select id="setting-priv-vehicle" class="set-input"></select><div class="set-hint">Cuál carro se aparta para los traslados privados. De aquí sale el cupo: hay uno, luego hay un privado a la vez. Si no está en la lista, regístralo primero en Vehículos.</div></div>
-                <div class="set-field"><label>Tarifa del privado (pesos)</label><input id="setting-priv-price" class="set-input" type="number" min="1" step="1000" /><div class="set-hint">Lo que se le muestra al auxiliar por trayecto. <b>No se cobra dentro de la app</b>: queda registrado en la reserva y se liquida por fuera. El precio se congela al pedir, así que subirlo no cambia lo ya pactado.</div></div>
-                <div class="set-field"><label>La camioneta queda apartada (min)</label><input id="setting-priv-block" class="set-input" type="number" min="10" max="480" /><div class="set-hint">Cuánto tiempo antes y después de un privado NO se puede aprobar otro. De aquí sale el cupo: hay una sola camioneta. Default 90.</div></div>
-              </div>
-              <div class="set-divider" style="margin:16px 0 4px"></div>
-              <p class="set-hint" style="margin:0 0 10px 2px;font-weight:700">Optimizador de rutas</p>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Juntar oleadas dentro de (min)</label><input id="setting-route-merge" class="set-input" type="number" min="0" max="120" /><div class="set-hint">Quien se presenta hasta estos minutos después puede subirse al mismo carro. Solo los junta si un carro sale más barato que dos, así que un desvío caro se rechaza solo. <b>0 = no juntar</b> (una vuelta por hora exacta). Default 30.</div></div>
-                <div class="set-field"><label>Minutos por portería</label><input id="setting-route-service" class="set-input" type="number" min="0" max="20" /><div class="set-hint">Lo que se pierde el carro en cada parada. Es por portería, no por persona: dos del mismo conjunto son un solo frenazo. Default 3.</div></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Factor de tráfico</label><input id="setting-route-traffic" class="set-input" type="number" min="1" max="2" step="0.01" /><div class="set-hint">Multiplica el manejo cuando el tiempo sale de OSRM, que calcula con la vía libre. No aplica con TomTom (ese ya trae el tráfico). Default 1.05, calibrado contra la programación manual.</div></div>
-                <div class="set-field"><label>Colchón al entregar en MDE (min)</label><input id="setting-route-buffer" class="set-input" type="number" min="0" max="45" /><div class="set-hint">Bajar maletas y entrar al terminal. Llegar justo a la hora de presentación es llegar tarde. Default 10.</div></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Factor del tramo al aeropuerto</label><input id="setting-route-aero" class="set-input" type="number" min="0.5" max="1.5" step="0.01" /><div class="set-hint">Corrige <b>solo</b> el viaje a/desde MDE, aparte del factor de tráfico. Va por debajo de 1 porque OSRM sobreestima ese corredor: la operación hace en 20 min lo que él calcula en 27. Entre casa y casa no se toca, ahí OSRM acierta. Medido contra 99 vueltas de la programación manual. Default 0.80.</div></div>
-              </div>
-              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Techo de espera: lo que va montado el primero que sube</p>
-              <p class="set-hint" style="margin:2px 0 10px 2px">Es una regla de la programación manual: en 99 vueltas revisadas nunca pasa de 50 min, ni de 60 en las horas pico. Sin techo, una oleada de 4 personas regadas por todo Rionegro cabe en el carro y deja al primero más de una hora adentro. <b>Ojo al ponerlo:</b> respetar el techo obliga a partir vueltas, y partir vueltas puede dejar gente sin carro si la flota no da. <b>0 = sin techo.</b></p>
-              <div class="set-row2" style="margin-top:0">
-                <div class="set-field"><label>Techo normal (min)</label><input id="setting-route-wait" class="set-input" type="number" min="0" max="180" /><div class="set-hint">Fuera de horas pico. La programación manual usa 50.</div></div>
-                <div class="set-field"><label>Techo en hora pico (min)</label><input id="setting-route-wait-peak" class="set-input" type="number" min="0" max="180" /><div class="set-hint">De 6 a 9 a.m. y de 12 a 6 p.m., las dos franjas que la operación considera pesadas. La programación manual usa 60.</div></div>
-              </div>
-              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Desembarque: de que aterriza a que sale del terminal</p>
-              <p class="set-hint" style="margin:2px 0 10px 2px">Con estos minutos se decide a qué hora el carro recoge en el aeropuerto. La aerolínea se saca del número de vuelo que escribe el tripulante; si no viene o no se reconoce, se usa el de respaldo. Si el carro llega antes, espera el carro; si llega después, espera la tripulante en el andén.</p>
-              <div class="set-row2" style="margin-top:0">
-                <div class="set-field"><label>Avianca nacional (min)</label><input id="setting-deplane-av-nac" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos AV de 4 dígitos. La operación reporta 15–20. Default 15.</div></div>
-                <div class="set-field"><label>Avianca internacional (min)</label><input id="setting-deplane-av-int" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos AV de 2 o 3 dígitos. Reportado 20–30. Default 20.</div></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>JetSmart nacional (min)</label><input id="setting-deplane-js-nac" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos JEC o JA de 4 dígitos. Reportado 25–30. Default 25.</div></div>
-                <div class="set-field"><label>JetSmart internacional (min)</label><input id="setting-deplane-js-int" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos JEC o JA que empiezan en 58. Reportado 30–35. Default 30.</div></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Wingo (min)</label><input id="setting-deplane-wingo" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos P5, nacionales o internacionales por igual. Reportado 20–30. Default 20.</div></div>
-                <div class="set-field"><label>Respaldo, sin vuelo (min)</label><input id="setting-deplane-fallback" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Cuando la reserva no trae número de vuelo. Hoy pasa en una de cada tres llegadas. Default 20.</div></div>
-              </div>
-              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Colchón de la tabla de zona</p>
-              <p class="set-hint" style="margin:2px 0 10px 2px">Su tabla de zona <b>no es tiempo de manejo: es manejo más un colchón.</b> Medido contra 7 planes suyos: cuando viaja una sola persona, "del primero al aeropuerto" y "desde la última persona recogida" son el mismo viaje, y su tabla de zona pide 25 minutos más en las 20 combinaciones de zona por franja. Sin descontarlo, el sistema programaba 45 de 51 vueltas con 15+ minutos de sobra y pedía carros que no existen. <b>0 = usar su tabla completa</b>, como antes de esta corrección.</p>
-              <div class="set-row2" style="margin-top:0">
-                <div class="set-field"><label>Colchón a descontar (min)</label><input id="setting-zone-cushion" class="set-input" type="number" min="0" max="60" /><div class="set-hint">Default 25 = la diferencia media medida entre sus dos reglas.</div></div>
-              </div>
-              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Cómo despacha Julián</p>
-              <p class="set-hint" style="margin:2px 0 10px 2px">Los tres parámetros que salieron de medir sus correcciones del 18 al 21 de agosto contra el plan del sistema. <b>Sus propios planes necesitan 3 carros simultáneos</b> (pico 11:35 el 20-ago y 16:00 el 21-ago): los dos de los trabajadores más el suyo o un Uber. Con dos, el tablero marca 6 a 9 traslados como "quizás no haya carro" que en la operación sí se hacen.</p>
-              <div class="set-row2" style="margin-top:0">
-                <div class="set-field"><label>Carros a planear</label><input id="setting-cars-count" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Cuántos vehículos de la flota entran al plan. Default 2 = solo los de los trabajadores.</div></div>
-                <div class="set-field"><label>Madrugar como máximo (min)</label><input id="setting-rescue-early" class="set-input" type="number" min="0" max="120" /><div class="set-hint">Antes de dejar a alguien sin carro se intenta montarlo en una vuelta anterior. Él dijo 30; su rescate de Melisa Arcila fue 40. <b>0 = no rescatar.</b></div></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Llenar antes que repartir</label><select id="setting-car-priority" class="set-input"><option value="1">Sí — el último carro es el último recurso</option><option value="0">No — repartir parejo entre los carros</option></select><div class="set-hint">Así despacha él. Medido con 3 carros: el error de la hora de recogida baja de 14,6 a 10,1 min y las vueltas tarde de 2 a 0.</div></div>
-                <div class="set-field"><label>Madrugar como máximo para llenar un carro (min)</label><input id="setting-max-early" class="set-input" type="number" min="0" max="180" /><div class="set-hint">Nadie se recoge más de este tiempo antes de <b>su propia</b> presentación por acompañar a otro. Medido en su corrección del 22-ago: la anticipación va de 20 a 60 min y nunca pasa de 60. <b>0 = sin límite.</b></div></div>
-              </div>
-              <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Tolerancia del anillo (min)</label><input id="setting-sweep-tol" class="set-input" type="number" min="0" max="15" /><div class="set-hint"><b>El barrido:</b> cada vuelta arranca en la parada más lejana al aeropuerto y de ahí solo se acerca — nunca se devuelve. Regla suya, dictada el 21-ago. Esta tolerancia es lo que puede alejarse sin contar como devolverse: él sí salta dentro de un mismo anillo (Cerezos 28 → Río Vivo 28), pero no se sale.</div></div>
-              </div>
-              <p class="set-hint" style="margin:18px 0 0 2px;font-weight:700">Domingos y festivos</p>
-              <p class="set-hint" style="margin:2px 0 10px 2px">Regla suya: "domingos y festivos no sacarlos tan temprano". Estos minutos se le <b>restan</b> a la anticipación de la tabla de abajo, o sea que la gente se recoge más tarde. Los festivos de Colombia ya están cargados con el traslado al lunes (Ley Emiliani); los domingos salen de la fecha. <b>Sigue en 0 a propósito:</b> medidos sus planes, el del viernes 7 de agosto —día normal— se aparta de la tabla lo mismo que el del festivo, así que no hay evidencia de que trate distinto esos días.</p>
-              <div class="set-row2" style="margin-top:0">
-                <div class="set-field"><label>Recoger más tarde (min)</label><input id="setting-holiday-shift" class="set-input" type="number" min="0" max="60" /><div class="set-hint">En 0: sus planes no muestran diferencia medible entre día normal y festivo.</div></div>
-              </div>
-              <div class="set-foot"><button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button></div>
-            </div>
-          </div>
-
-          <!-- LA TABLA DE TIEMPOS DE JULIÁN (0062) -->
-          <div class="set-card">
-            <div class="set-ch">
-              <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
-              <div>
-                <h2>Tabla de tiempos de la operación</h2>
-                <p>Los minutos que Julián maneja para recoger. No los calcula el sistema: los dicta él y aquí se editan.</p>
-              </div>
-            </div>
-            <div class="set-cb">
-              <p class="set-hint" style="margin:0 0 12px 2px">Estos tiempos <b>no reemplazan</b> el cálculo por carretera: mandan cuando son mayores. Así la tabla nunca promete algo que el carro no pueda hacer, y el cálculo nunca recoge más tarde de lo que él recogería. Un conjunto sin zona asignada se programa con el cálculo, como antes.</p>
-
-              <p class="set-hint" style="margin:6px 0 6px 2px;font-weight:700">De recoger al primero a llegar al aeropuerto</p>
-              <p class="set-hint" style="margin:0 0 10px 2px">Los dos números son el rango según cuánta gente va: <b>uno solo va con el mínimo</b>, tres o más con el máximo, y dos por la mitad.</p>
-              <div style="overflow-x:auto"><table class="set-matrix" id="zone-times-table"></table></div>
-
-              <p class="set-hint" style="margin:18px 0 6px 2px;font-weight:700">Solo el tramo final, desde la última persona recogida</p>
-              <p class="set-hint" style="margin:0 0 10px 2px">En una vuelta con varias paradas este tramo tiene que caber dentro del total de arriba, así que funciona como un piso aparte.</p>
-              <div style="overflow-x:auto"><table class="set-matrix" id="leg-times-table"></table></div>
-
-              <div id="zone-times-warn" class="set-hint" style="margin:14px 0 0 2px"></div>
-              <div class="set-foot"><button class="set-btn dark" id="save-route-tables-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar tabla</button></div>
-            </div>
-          </div>
-
-          <!-- ZONA DE CADA CONJUNTO -->
-          <div class="set-card">
-            <div class="set-ch">
-              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
-              <div>
-                <h2>Zona de cada conjunto</h2>
-                <p>En cuál de las cuatro zonas de Julián cae cada residencia. Se guarda al instante.</p>
-              </div>
-            </div>
-            <div class="set-cb">
-              <p class="set-hint" style="margin:0 0 12px 2px">Esto <b>no se puede deducir</b>: los conjuntos caben en dos kilómetros a la redonda, así que por mapa salen mal. Lo tiene que decir él. Mientras una residencia esté <b>Sin asignar</b>, sus traslados se programan con el cálculo por carretera y la tabla no se les aplica.</p>
-              <div id="residence-zones"></div>
-            </div>
-          </div>
-
-          <!-- 2 · antigüedad  +  3 · descansos fijos (lado a lado) -->
-          <div class="set-row2">
-            <div class="set-card" style="margin-bottom:0">
-              <div class="set-ch">
-                <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
-                <div><h2>Prioridad por antigüedad</h2><p>1–3: preferencia suave. 4 (Máxima): entra siempre primero, por encima de todos. Se guarda al instante.</p></div>
-              </div>
-              <div class="set-cb" id="priority-list"></div>
-            </div>
-
-            <div class="set-card" style="margin-bottom:0">
-              <div class="set-ch">
-                <div class="set-ci"><svg class="icon"><use href="#i-zzz"/></svg></div>
-                <div><h2>Descansos fijos</h2><p>Jornadas en que un conductor SIEMPRE descansa. Salen bloqueadas en el horario y en su vista.</p></div>
-              </div>
-              <div class="set-cb">
-                <div class="set-field" style="margin-bottom:14px">
-                  <label>Conductor</label>
-                  <div class="set-selwrap"><select class="set-sel" id="rules-driver-select"></select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div>
-                </div>
-                <div id="rules-grid"></div>
-                <div class="set-dnote"><svg class="icon" style="width:13px;height:13px"><use href="#i-lock"/></svg>Marca AM o PM para fijar el descanso.</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 4 · Crear conductor -->
+        <div class="set-ui" data-theme="light">
           <div class="set-card" style="margin-top:16px">
             <div class="set-ch">
               <div class="set-ci"><svg class="icon"><use href="#i-userplus"/></svg></div>
@@ -761,8 +576,125 @@
               <div class="set-foot"><button class="set-btn" id="new-driver-create-btn"><svg class="icon"><use href="#i-plus"/></svg>Crear conductor</button><span id="new-driver-state" class="set-cstate"></span></div>
             </div>
           </div>
+        </div>
+      </section>
 
-          <!-- 5 · Vehículos / Flota -->
+      <!-- =============== ADMIN: SETTINGS TAB (paleta limpia) =============== -->
+      <!-- Rediseño visual al sistema "paleta limpia" (igual que Tablero v4),
+           scopeado bajo .set-ui (antes era el id, ahora es clase: la comparten varios paneles). La lógica NO cambia: la pintan
+           renderSettings / renderPriorityList / renderRulesEditor en admin-personal.js.
+
+           2026-09-11 · SE PARTIÓ EN MÓDULOS. Esta pantalla tenía 39 controles de dos mundos
+           distintos amontonados en una sola tarjeta, más dos CRUDs que no son ajustes de nada.
+           El corte que se hizo no lo inventamos: ya existía en el producto. 13 controles son del
+           TURNO del conductor y se quedaron acá; los 26 del optimizador se fueron a Rutas ›
+           Configuración › Calibración; los carros a Turnos › Revisión › Flota; y "Crear
+           conductor" a Personal. Ningún id cambió — renderSettings y onSaveSettings los buscan
+           por id, así que los ids son el contrato. De regalo, cada pantalla dispara solo SUS
+           consultas: entrar a subir el límite de strikes ya no pide la tabla de tiempos, las
+           zonas y la flota dos veces. -->
+      <section data-panel="settings" class="hidden">
+        <div id="settings-ui" class="set-ui" data-theme="light">
+          <div class="set-head">
+            <h1>Ajustes del turno</h1>
+            <p>Lo que necesita el generador de turnos: jornadas, cupos, strikes y el inicio rápido. Los números del optimizador se mudaron a <b>Rutas › Configuración › Calibración</b>, y los carros a <b>Turnos › Revisión › Flota</b>. La antigüedad y los descansos fijos se guardan al instante.</p>
+          </div>
+
+          <!-- 1 · Parámetros del turno -->
+          <!-- data-bloque dice hasta dónde llega el botón del pie. El aviso de "sin guardar"
+               escucha ESTA tarjeta entera, no los <details>: si escuchara solo las secciones
+               plegables, los nueve campos de arriba —la mitad de la pantalla— se editarían sin
+               que nada avisara. Ver setEngancharBloque() en admin-personal.js. -->
+          <div class="set-card" data-bloque="turno">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-clock"/></svg></div>
+              <div><h2>Parámetros del turno</h2><p>Horas de cada jornada y cuántos conductores deben quedar al volante por slot.</p></div>
+              <span class="set-saved" id="set-saved-params"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg>Guardado</span>
+            </div>
+            <div class="set-cb">
+              <div class="set-row2">
+                <div class="set-field"><label>Horario mañana</label><input id="setting-morning-label" class="set-input mono" type="text" /></div>
+                <div class="set-field"><label>Horario tarde</label><input id="setting-afternoon-label" class="set-input mono" type="text" /></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Cupos mañana</label><input id="setting-morning-slots" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Mínimo de conductores al volante en AM.</div></div>
+                <div class="set-field"><label>Cupos tarde</label><input id="setting-afternoon-slots" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Mínimo de conductores al volante en PM.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Líderes de turno por jornada</label><input id="setting-coord-slots" class="set-input" type="number" min="1" max="4" /><div class="set-hint">Cuántos líderes de turno se asignan en AM y en PM.</div></div>
+                <div class="set-field"><label>Horas por turno</label><input id="setting-shift-hours" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Estimado de horas en “Mi perfil” del conductor. El Balance usa horas reales (inicio→cierre).</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Auto-cierre de turno (horas)</label><input id="setting-auto-close-hours" class="set-input" type="number" min="1" max="72" /><div class="set-hint">Si un turno sigue activo más de X horas, se cierra solo y libera el vehículo (red de seguridad).</div></div>
+                <div class="set-field"><label>Liberar reserva abandonada (min)</label><input id="setting-reservation-idle" class="set-input" type="number" min="5" max="240" /><div class="set-hint">Si un conductor empieza la inspección y no avanza en X minutos, su reserva del vehículo se libera.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Strikes para suspender</label><input id="setting-strike-limit" class="set-input" type="number" min="1" max="10" /><div class="set-hint">Los strikes se cuentan <b>por mes</b> y el contador vuelve a cero solo, el día 1. Al llegar a esta cantidad, el conductor queda suspendido <b>la semana siguiente</b> (automático).</div></div>
+                <div class="set-field"></div>
+              </div>
+
+              <details class="set-sec" data-guarda="btn" data-secval="setting-fast-start-enabled,setting-fast-start-from,setting-fast-start-to,setting-inspection-grace">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Inicio rápido (inspección diferida)</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+              <label class="set-field" style="flex-direction:row;align-items:center;gap:10px;cursor:pointer"><input id="setting-fast-start-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Permitir iniciar turno sin inspección (la hace dentro del plazo)</span></label>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Franja: desde (hora)</label><input id="setting-fast-start-from" class="set-input" type="number" min="0" max="23" /><div class="set-hint">Hora de inicio de la franja (0–23). Default 12.</div></div>
+                <div class="set-field"><label>Franja: hasta (hora)</label><input id="setting-fast-start-to" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Fin de la franja (exclusivo). Default 16 (4 p.m.).</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Plazo para la inspección (min)</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint">Si no la hace en este tiempo → strike automático. Default 90.</div></div>
+                <div class="set-field"></div>
+              </div>
+                </div>
+              </details>
+              <div class="set-savebar">
+                <button class="set-btn dark" id="save-settings-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button>
+                <span class="set-savenote"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="set-row2">
+            <div class="set-card" style="margin-bottom:0">
+              <div class="set-ch">
+                <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
+                <div><h2>Prioridad por antigüedad</h2><p>1–3: preferencia suave. 4 (Máxima): entra siempre primero, por encima de todos. Se guarda al instante.</p></div>
+                <span class="set-sec-ya">Se guarda solo</span>
+              </div>
+              <div class="set-cb" id="priority-list"></div>
+            </div>
+
+            <div class="set-card" style="margin-bottom:0">
+              <div class="set-ch">
+                <div class="set-ci"><svg class="icon"><use href="#i-zzz"/></svg></div>
+                <div><h2>Descansos fijos</h2><p>Jornadas en que un conductor SIEMPRE descansa. Salen bloqueadas en el horario y en su vista.</p></div>
+                <span class="set-sec-ya">Se guarda solo</span>
+              </div>
+              <div class="set-cb">
+                <div class="set-field" style="margin-bottom:14px">
+                  <label>Conductor</label>
+                  <div class="set-selwrap"><select class="set-sel" id="rules-driver-select"></select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div>
+                </div>
+                <div id="rules-grid"></div>
+                <div class="set-dnote"><svg class="icon" style="width:13px;height:13px"><use href="#i-lock"/></svg>Marca AM o PM para fijar el descanso.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============== ADMIN: FLOTA TAB =============== -->
+      <!-- Los carros salieron de Ajustes el 2026-09-11: dar de alta un vehículo, registrarle el
+           cambio de aceite o sacarlo de servicio es trabajo de revisión de todos los días, no un
+           parámetro que se toca una vez al año. Se trajo el badge de aceite con ellos
+           (SIDEBAR_BADGE_IDS en admin-consola.js): el "!" tiene que alumbrar en la pantalla donde
+           está el botón que lo apaga, no en una donde ya no hay carros. -->
+      <section data-panel="flota" class="hidden">
+        <div id="flota-ui" class="set-ui" data-theme="light">
+          <div class="set-head">
+            <h1>Flota</h1>
+            <p>Los carros con los que se opera: alta, baja, kilometraje y cambio de aceite. De esta lista eligen los conductores al iniciar turno, así que un carro mal registrado acá se siente en la calle.</p>
+          </div>
           <div class="set-card" style="margin-top:16px">
             <div class="set-ch">
               <div class="set-ci"><svg class="icon"><use href="#i-list"/></svg></div>
@@ -797,6 +729,182 @@
           </div>
         </div>
       </section>
+
+      <!-- =============== ADMIN: CALIBRACIÓN TAB =============== -->
+      <!-- Los 26 números con los que el optimizador arma las rutas de los auxiliares. Vivían en
+           Ajustes, revueltos con los cupos del turno, y no se parecen en nada: quien calibra el
+           factor de tráfico no es el que decide cuántos conductores van en la mañana. Con ellos
+           se vinieron la tabla de tiempos y las zonas, que son la otra mitad del mismo cálculo y
+           estaban a tres pantallazos de distancia de los números que las corrigen. Cortar y
+           pegar del original: ids intactos. -->
+      <section data-panel="calibracion" class="hidden">
+        <div id="calib-ui" class="set-ui" data-theme="light">
+          <div class="set-head">
+            <h1>Calibración del optimizador</h1>
+            <p>Los números con los que el sistema decide a qué hora sale cada carro y quién se sube con quién. Casi todos salieron de medir la programación manual contra el plan del sistema: cada sección dice contra qué se midió.</p>
+          </div>
+
+          <div class="set-card" data-bloque="calib">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
+              <div><h2>Parámetros del optimizador</h2><p>Tráfico, esperas, desembarque y la forma de despachar. Lo que se cambie acá manda en el próximo plan, no en el que ya está corriendo.</p></div>
+              <span class="set-saved" id="set-saved-calib"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg>Guardado</span>
+            </div>
+            <div class="set-cb">
+              <details class="set-sec" data-guarda="btn" data-secval="setting-aux-wait,setting-aux-lead,setting-priv-enabled,setting-priv-vehicle,setting-priv-price,setting-priv-block">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Traslados de auxiliares</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Espera en el punto (min)</label><input id="setting-aux-wait" class="set-input" type="number" min="1" max="60" /><div class="set-hint">Cuánto espera el conductor al auxiliar en la recogida. El auxiliar ve la misma cuenta regresiva, y "No se presentó" solo se habilita al vencerse. Default 5.</div></div>
+                <div class="set-field"><label>Anticipación mínima (horas)</label><input id="setting-aux-lead" class="set-input" type="number" min="0" max="72" /><div class="set-hint">Por debajo de esto se le avisa al auxiliar y el traslado queda marcado como "pedido tarde" en Reservas. No se bloquea: la operación tiene urgencias. Default 6.</div></div>
+                <div class="set-field"><label>Traslado privado (la camioneta)</label>
+                  <label class="set-checkrow"><input id="setting-priv-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Ofrecerlo a los auxiliares</span></label>
+                  <div class="set-hint">Mientras esté apagado, el auxiliar ni siquiera ve el paso: pide su traslado como siempre. Enciéndelo solo cuando la camioneta y la tarifa estén definidas.</div>
+                </div>
+                <div class="set-field"><label>Vehículo del privado</label><select id="setting-priv-vehicle" class="set-input"></select><div class="set-hint">Cuál carro se aparta para los traslados privados. De aquí sale el cupo: hay uno, luego hay un privado a la vez. Si no está en la lista, regístralo primero en Vehículos.</div></div>
+                <div class="set-field"><label>Tarifa del privado (pesos)</label><input id="setting-priv-price" class="set-input" type="number" min="1" step="1000" /><div class="set-hint">Lo que se le muestra al auxiliar por trayecto. <b>No se cobra dentro de la app</b>: queda registrado en la reserva y se liquida por fuera. El precio se congela al pedir, así que subirlo no cambia lo ya pactado.</div></div>
+                <div class="set-field"><label>La camioneta queda apartada (min)</label><input id="setting-priv-block" class="set-input" type="number" min="10" max="480" /><div class="set-hint">Cuánto tiempo antes y después de un privado NO se puede aprobar otro. De aquí sale el cupo: hay una sola camioneta. Default 90.</div></div>
+              </div>
+                </div>
+              </details>
+
+              <details class="set-sec" data-guarda="btn" data-secval="setting-route-merge,setting-route-service,setting-route-traffic,setting-route-buffer,setting-route-aero">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Optimizador de rutas</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Juntar oleadas dentro de (min)</label><input id="setting-route-merge" class="set-input" type="number" min="0" max="120" /><div class="set-hint">Quien se presenta hasta estos minutos después puede subirse al mismo carro. Solo los junta si un carro sale más barato que dos, así que un desvío caro se rechaza solo. <b>0 = no juntar</b> (una vuelta por hora exacta). Default 30.</div></div>
+                <div class="set-field"><label>Minutos por portería</label><input id="setting-route-service" class="set-input" type="number" min="0" max="20" /><div class="set-hint">Lo que se pierde el carro en cada parada. Es por portería, no por persona: dos del mismo conjunto son un solo frenazo. Default 3.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Factor de tráfico</label><input id="setting-route-traffic" class="set-input" type="number" min="1" max="2" step="0.01" /><div class="set-hint">Multiplica el manejo cuando el tiempo sale de OSRM, que calcula con la vía libre. No aplica con TomTom (ese ya trae el tráfico). Default 1.05, calibrado contra la programación manual.</div></div>
+                <div class="set-field"><label>Colchón al entregar en MDE (min)</label><input id="setting-route-buffer" class="set-input" type="number" min="0" max="45" /><div class="set-hint">Bajar maletas y entrar al terminal. Llegar justo a la hora de presentación es llegar tarde. Default 10.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Factor del tramo al aeropuerto</label><input id="setting-route-aero" class="set-input" type="number" min="0.5" max="1.5" step="0.01" /><div class="set-hint">Corrige <b>solo</b> el viaje a/desde MDE, aparte del factor de tráfico. Va por debajo de 1 porque OSRM sobreestima ese corredor: la operación hace en 20 min lo que él calcula en 27. Entre casa y casa no se toca, ahí OSRM acierta. Medido contra 99 vueltas de la programación manual. Default 0.80.</div></div>
+              </div>
+                </div>
+              </details>
+
+              <details class="set-sec" data-guarda="btn" data-secval="setting-route-wait,setting-route-wait-peak">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Techo de espera: lo que va montado el primero que sube</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+                <p class="set-hint" style="margin:0 0 10px 2px">Es una regla de la programación manual: en 99 vueltas revisadas nunca pasa de 50 min, ni de 60 en las horas pico.</p>
+                <details class="set-why"><summary>¿Por qué este número?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="set-why-body">Sin techo, una oleada de 4 personas regadas por todo Rionegro cabe en el carro y deja al primero más de una hora adentro. <b>Ojo al ponerlo:</b> respetar el techo obliga a partir vueltas, y partir vueltas puede dejar gente sin carro si la flota no da. <b>0 = sin techo.</b></div></details>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Techo normal (min)</label><input id="setting-route-wait" class="set-input" type="number" min="0" max="180" /><div class="set-hint">Fuera de horas pico. La programación manual usa 50.</div></div>
+                <div class="set-field"><label>Techo en hora pico (min)</label><input id="setting-route-wait-peak" class="set-input" type="number" min="0" max="180" /><div class="set-hint">De 6 a 9 a.m. y de 12 a 6 p.m., las dos franjas que la operación considera pesadas. La programación manual usa 60.</div></div>
+              </div>
+                </div>
+              </details>
+
+              <details class="set-sec" data-guarda="btn" data-secval="setting-deplane-av-nac,setting-deplane-av-int,setting-deplane-js-nac,setting-deplane-js-int,setting-deplane-wingo,setting-deplane-fallback">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Desembarque: de que aterriza a que sale del terminal</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+                <p class="set-hint" style="margin:0 0 10px 2px">Con estos minutos se decide a qué hora el carro recoge en el aeropuerto.</p>
+                <details class="set-why"><summary>¿Por qué este número?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="set-why-body">La aerolínea se saca del número de vuelo que escribe el tripulante; si no viene o no se reconoce, se usa el de respaldo. Si el carro llega antes, espera el carro; si llega después, espera la tripulante en el andén.</div></details>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Avianca nacional (min)</label><input id="setting-deplane-av-nac" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos AV de 4 dígitos. La operación reporta 15–20. Default 15.</div></div>
+                <div class="set-field"><label>Avianca internacional (min)</label><input id="setting-deplane-av-int" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos AV de 2 o 3 dígitos. Reportado 20–30. Default 20.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>JetSmart nacional (min)</label><input id="setting-deplane-js-nac" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos JEC o JA de 4 dígitos. Reportado 25–30. Default 25.</div></div>
+                <div class="set-field"><label>JetSmart internacional (min)</label><input id="setting-deplane-js-int" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos JEC o JA que empiezan en 58. Reportado 30–35. Default 30.</div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Wingo (min)</label><input id="setting-deplane-wingo" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Vuelos P5, nacionales o internacionales por igual. Reportado 20–30. Default 20.</div></div>
+                <div class="set-field"><label>Respaldo, sin vuelo (min)</label><input id="setting-deplane-fallback" class="set-input" type="number" min="0" max="90" /><div class="set-hint">Cuando la reserva no trae número de vuelo. Hoy pasa en una de cada tres llegadas. Default 20.</div></div>
+              </div>
+                </div>
+              </details>
+
+              <details class="set-sec" data-guarda="btn" data-secval="setting-zone-cushion">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Colchón de la tabla de zona</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+                <p class="set-hint" style="margin:0 0 10px 2px">Su tabla de zona <b>no es tiempo de manejo: es manejo más un colchón.</b> Medido contra 7 planes suyos: cuando viaja una sola persona, "del primero al aeropuerto" y "desde la última persona recogida" son el mismo viaje, y su tabla de zona pide 25 minutos más en las 20 combinaciones de zona por franja.</p>
+                <details class="set-why"><summary>¿Por qué este número?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="set-why-body">Sin descontarlo, el sistema programaba 45 de 51 vueltas con 15+ minutos de sobra y pedía carros que no existen. <b>0 = usar su tabla completa</b>, como antes de esta corrección.</div></details>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Colchón a descontar (min)</label><input id="setting-zone-cushion" class="set-input" type="number" min="0" max="60" /><div class="set-hint">Default 25 = la diferencia media medida entre sus dos reglas.</div></div>
+              </div>
+                </div>
+              </details>
+
+              <details class="set-sec" data-guarda="btn" data-secval="setting-cars-count,setting-rescue-early,setting-car-priority,setting-max-early,setting-sweep-tol">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Cómo despacha Julián</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+                <p class="set-hint" style="margin:0 0 10px 2px">Los tres parámetros que salieron de medir sus correcciones del 18 al 21 de agosto contra el plan del sistema.</p>
+                <details class="set-why"><summary>¿Por qué este número?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="set-why-body"><b>Sus propios planes necesitan 3 carros simultáneos</b> (pico 11:35 el 20-ago y 16:00 el 21-ago): los dos de los trabajadores más el suyo o un Uber. Con dos, el tablero marca 6 a 9 traslados como "quizás no haya carro" que en la operación sí se hacen.</div></details>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Carros a planear</label><input id="setting-cars-count" class="set-input" type="number" min="1" max="6" /><div class="set-hint">Cuántos vehículos de la flota entran al plan. Default 2 = solo los de los trabajadores.</div></div>
+                <div class="set-field"><label>Madrugar como máximo (min)</label><input id="setting-rescue-early" class="set-input" type="number" min="0" max="120" /><div class="set-hint">Antes de dejar a alguien sin carro se intenta montarlo en una vuelta anterior. Él dijo 30; su rescate de Melisa Arcila fue 40. <b>0 = no rescatar.</b></div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Llenar antes que repartir</label><select id="setting-car-priority" class="set-input"><option value="1">Sí — el último carro es el último recurso</option><option value="0">No — repartir parejo entre los carros</option></select><div class="set-hint">Así despacha él. Medido con 3 carros: el error de la hora de recogida baja de 14,6 a 10,1 min y las vueltas tarde de 2 a 0.</div></div>
+                <div class="set-field"><label>Madrugar como máximo para llenar un carro (min)</label><input id="setting-max-early" class="set-input" type="number" min="0" max="180" /><div class="set-hint">Nadie se recoge más de este tiempo antes de <b>su propia</b> presentación por acompañar a otro. Medido en su corrección del 22-ago: la anticipación va de 20 a 60 min y nunca pasa de 60. <b>0 = sin límite.</b></div></div>
+              </div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>Tolerancia del anillo (min)</label><input id="setting-sweep-tol" class="set-input" type="number" min="0" max="15" /><div class="set-hint"><b>El barrido:</b> cada vuelta arranca en la parada más lejana al aeropuerto y de ahí solo se acerca — nunca se devuelve. Regla suya, dictada el 21-ago. Esta tolerancia es lo que puede alejarse sin contar como devolverse: él sí salta dentro de un mismo anillo (Cerezos 28 → Río Vivo 28), pero no se sale.</div></div>
+              </div>
+                </div>
+              </details>
+
+              <details class="set-sec" data-guarda="btn" data-secval="setting-holiday-shift">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Domingos y festivos</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+                <p class="set-hint" style="margin:0 0 10px 2px">Regla suya: "domingos y festivos no sacarlos tan temprano".</p>
+                <details class="set-why"><summary>¿Por qué este número?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="set-why-body">Estos minutos se le <b>restan</b> a la anticipación de la tabla de abajo, o sea que la gente se recoge más tarde. Los festivos de Colombia ya están cargados con el traslado al lunes (Ley Emiliani); los domingos salen de la fecha. <b>Sigue en 0 a propósito:</b> medidos sus planes, el del viernes 7 de agosto —día normal— se aparta de la tabla lo mismo que el del festivo, así que no hay evidencia de que trate distinto esos días.</div></details>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Recoger más tarde (min)</label><input id="setting-holiday-shift" class="set-input" type="number" min="0" max="60" /><div class="set-hint">En 0: sus planes no muestran diferencia medible entre día normal y festivo.</div></div>
+              </div>
+                </div>
+              </details>
+              <div class="set-savebar">
+                <button class="set-btn dark" id="save-calib-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar</button>
+                <span class="set-savenote"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="set-card">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
+              <div>
+                <h2>Tabla de tiempos de la operación</h2>
+                <p>Los minutos que Julián maneja para recoger. No los calcula el sistema: los dicta él y aquí se editan.</p>
+              </div>
+            </div>
+            <div class="set-cb">
+              <p class="set-hint" style="margin:0 0 12px 2px">Estos tiempos <b>no reemplazan</b> el cálculo por carretera: mandan cuando son mayores. Así la tabla nunca promete algo que el carro no pueda hacer, y el cálculo nunca recoge más tarde de lo que él recogería. Un conjunto sin zona asignada se programa con el cálculo, como antes.</p>
+
+              <p class="set-hint" style="margin:6px 0 6px 2px;font-weight:700">De recoger al primero a llegar al aeropuerto</p>
+              <p class="set-hint" style="margin:0 0 10px 2px">Los dos números son el rango según cuánta gente va: <b>uno solo va con el mínimo</b>, tres o más con el máximo, y dos por la mitad.</p>
+              <div style="overflow-x:auto"><table class="set-matrix" id="zone-times-table"></table></div>
+
+              <p class="set-hint" style="margin:18px 0 6px 2px;font-weight:700">Solo el tramo final, desde la última persona recogida</p>
+              <p class="set-hint" style="margin:0 0 10px 2px">En una vuelta con varias paradas este tramo tiene que caber dentro del total de arriba, así que funciona como un piso aparte.</p>
+              <div style="overflow-x:auto"><table class="set-matrix" id="leg-times-table"></table></div>
+
+              <div id="zone-times-warn" class="set-hint" style="margin:14px 0 0 2px"></div>
+              <div class="set-foot"><button class="set-btn dark" id="save-route-tables-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar tabla</button></div>
+            </div>
+          </div>
+
+          <div class="set-card">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
+              <div>
+                <h2>Zona de cada conjunto</h2>
+                <p>En cuál de las cuatro zonas de Julián cae cada residencia. Se guarda al instante.</p>
+              </div>
+              <span class="set-sec-ya">Se guarda solo</span>
+            </div>
+            <div class="set-cb">
+              <p class="set-hint" style="margin:0 0 12px 2px">Esto <b>no se puede deducir</b>: los conjuntos caben en dos kilómetros a la redonda, así que por mapa salen mal. Lo tiene que decir él. Mientras una residencia esté <b>Sin asignar</b>, sus traslados se programan con el cálculo por carretera y la tabla no se les aplica.</p>
+              <div id="residence-zones"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
 
       <!-- =============== ADMIN: BALANCE TAB (paleta limpia) =============== -->
       <!-- Rediseño visual scopeado bajo #balance-ui. Lógica intacta:
@@ -878,7 +986,8 @@
             <div class="phead">
               <div>
                 <h1>Repuestos <span class="ct" id="pt-count">0</span></h1>
-                <p>Control de mantenimiento preventivo por kilometraje. El odómetro entra solo con la <b>inspección de inicio de turno</b>; aquí se ve qué pieza le toca a cada carro y qué tan cerca está del límite.</p>
+                <p>Control de mantenimiento preventivo por kilometraje.</p>
+                <details class="rd-why"><summary aria-expanded="false">¿De dónde sale el dato?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">El odómetro entra solo con la <b>inspección de inicio de turno</b>; aquí se ve qué pieza le toca a cada carro y qué tan cerca está del límite.</div></details>
               </div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
                 <div class="seg" id="pt-tabs">
@@ -891,7 +1000,8 @@
             </div>
             <div class="rule1">
               <span class="ri"><svg class="icon"><use href="#i-warn"/></svg></span>
-              <div class="rt"><b>El semáforo avisa, no detiene el carro.</b> Ningún repuesto vencido bloquea el vehículo: la decisión de sacarlo a ruta es del jefe. Un carro parado en el aeropuerto cuesta más que el repuesto, y una pieza al límite también.</div>
+              <div class="rt"><b>El semáforo avisa, no detiene el carro.</b>
+                <details class="rd-why"><summary aria-expanded="false">¿Por qué no bloquea?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Ningún repuesto vencido bloquea el vehículo: la decisión de sacarlo a ruta es del jefe. Un carro parado en el aeropuerto cuesta más que el repuesto, y una pieza al límite también.</div></details></div>
               <div class="legend">
                 <span><i style="background:var(--green)"></i>Al día</span>
                 <span><i style="background:var(--amber)"></i>Por vencer</span>
@@ -933,7 +1043,8 @@
           <div class="sh-phead">
             <div>
               <h1>Turnos activos <span class="sh-ct" id="shifts-count">0</span></h1>
-              <p>Turnos en curso ahora mismo. Si un conductor olvidó cerrar, puedes <b>forzar el cierre</b>: se cierra el turno y el vehículo vuelve a quedar disponible. Los que pasan del límite se cierran solos (Ajustes → Auto-cierre de turno).</p>
+              <p>Turnos en curso ahora mismo.</p>
+              <details class="rd-why"><summary aria-expanded="false">¿Y si alguien no cerró?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Si un conductor olvidó cerrar, puedes <b>forzar el cierre</b>: se cierra el turno y el vehículo vuelve a quedar disponible. Los que pasan del límite se cierran solos (Ajustes → Auto-cierre de turno).</div></details>
             </div>
             <button class="set-btn ghost" id="shifts-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
           </div>
@@ -978,7 +1089,8 @@
           <div class="sh-phead">
             <div>
               <h1>Privados <span class="sh-ct" id="pv-count">0</span></h1>
-              <p>Traslados que pidieron la camioneta. <b>Hay una sola</b>, así que aprobar uno la aparta para esa franja. Si niegas, el traslado no se pierde: sale en compartido y no se le cobra nada al tripulante.</p>
+              <p>Traslados que pidieron la camioneta.</p>
+              <details class="rd-why"><summary aria-expanded="false">¿Qué pasa al decidir?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body"><b>Hay una sola</b>, así que aprobar uno la aparta para esa franja. Si niegas, el traslado no se pierde: sale en compartido y no se le cobra nada al tripulante.</div></details>
             </div>
             <button class="set-btn ghost" data-pv="refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
           </div>
@@ -992,7 +1104,8 @@
           <div class="sh-phead">
             <div>
               <h1>Reservas <span class="sh-ct" id="rv-count">0</span></h1>
-              <p>Traslados pedidos por los auxiliares. Aquí ves el detalle uno por uno, quién confirmó su recogida, quién pidió tarde y las calificaciones. Si un vuelo se cae, <b>cancela el traslado</b>: sale de la ruta del conductor y les avisamos a los dos.</p>
+              <p>Traslados pedidos por los auxiliares.</p>
+              <details class="rd-why"><summary aria-expanded="false">¿Qué se puede hacer acá?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Aquí ves el detalle uno por uno, quién confirmó su recogida, quién pidió tarde y las calificaciones. Si un vuelo se cae, <b>cancela el traslado</b>: sale de la ruta del conductor y les avisamos a los dos.</div></details>
             </div>
             <button class="set-btn ghost" id="rv-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
           </div>
@@ -1014,7 +1127,8 @@
           <div class="sh-phead">
             <div>
               <h1>Eventualidades <span class="sh-ct" id="evt-count">0</span></h1>
-              <p>Lo que reportan conductores y tripulantes <b>mientras el traslado va corriendo</b>: fallas mecánicas, trancones, emergencias a bordo. Ábrela para ver el detalle —con eso queda marcada como vista— y ciérrala cuando quede resuelta. Las novedades del vehículo en el turno siguen en Inspecciones.</p>
+              <p>Lo que reportan conductores y tripulantes <b>mientras el traslado va corriendo</b>: fallas mecánicas, trancones, emergencias a bordo.</p>
+              <details class="rd-why"><summary aria-expanded="false">¿Cómo se atiende?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Ábrela para ver el detalle —con eso queda marcada como vista— y ciérrala cuando quede resuelta. Las novedades del vehículo en el turno siguen en Inspecciones.</div></details>
             </div>
             <button class="set-btn ghost" id="evt-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
           </div>
