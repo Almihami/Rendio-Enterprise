@@ -153,7 +153,11 @@ const idx=readFileSync(APP+'index.html','utf8'), sw=readFileSync(APP+'sw.js','ut
 t('index.html carga aux-celebracion.js antes de auxiliar.js', idx.indexOf('<script src="aux-celebracion.js">')>0 && idx.indexOf('<script src="aux-celebracion.js">')<idx.indexOf('<script src="auxiliar.js">'));
 t('y justo después de aux-privado.js', idx.indexOf('<script src="aux-privado.js">')<idx.indexOf('<script src="aux-celebracion.js">'));
 t('sw.js lo lista en APP_SHELL', /'\/aux-celebracion\.js',/.test(sw));
-t('CACHE_VERSION es rendio-turnos-v155', /CACHE_VERSION = 'rendio-turnos-v155'/.test(sw));
+// El número exacto no se clava: cada rama que se fusiona lo sube otra vez y la
+// prueba se caía por eso. Lo que importa es que subió de la v154 que había
+// cuando el módulo nació, para que el service worker sirva el archivo nuevo.
+const swv = (sw.match(/CACHE_VERSION = 'rendio-turnos-v(\d+)'/) || [])[1];
+t('el CACHE_VERSION subió (>= v155)', Number(swv) >= 155, 'es v' + swv);
 t('el CSS de la escena está bajo el ancla', css.indexOf('/* ANCLA-CELEBRACION */')>0 && css.indexOf('.axc-scene')>css.indexOf('/* ANCLA-CELEBRACION */'));
 t('el largo de la curva (201.8) está en la dasharray y en el keyframe', /stroke-dasharray: 201\.8;/.test(css) && /from \{ stroke-dashoffset: 201\.8; \}/.test(css));
 t('avión pegado a la curva con offset-path (misma curva del módulo)', /offset-path: path\("M44 104C110 100 160 80 236 46"\)/.test(css));

@@ -92,7 +92,13 @@ window.Api = {
   listVehiclesBasic: async () => FLOTA,
 };
 let FLOTA = null;   // null = la consulta de la flota falló
+// admin-personal.js conserva los once helpers set* que comparten los tres
+// módulos; el guardado del privado (fillPrivateVehicles, onSaveCalibracion) se
+// mudó a admin-calibracion.js el 12-sep. Hacen falta LOS DOS: cargar solo el
+// primero dejaba la prueba muerta en la mitad con «no es una función», y eso
+// se lee como que la prueba pasó cuando en realidad ni llegó al caso.
 window.eval(readFileSync(APP + 'admin-personal.js', 'utf8'));
+window.eval(readFileSync(APP + 'admin-calibracion.js', 'utf8'));
 
 const setUI = (s) => { window.state.settings = { ...s }; };
 const marcar = (v) => { window.$('#setting-priv-enabled').checked = v; };

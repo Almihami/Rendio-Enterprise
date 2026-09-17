@@ -506,3 +506,72 @@
     return true;
   }
 
+  // ====================================================================
+  // TEXTO PLEGADO (.rd-why) — pieza compartida de todo el admin.
+  //
+  // En agosto plegamos el muro de texto de Ajustes: primera frase a la vista
+  // y el resto detrás de un "¿Por qué este número?" (index.html, .set-why).
+  // Funcionó, pero nació scopeado bajo .set-ui, así que Repuestos, Privados y
+  // Eventualidades se quedaron con sus párrafos de 200 y 300 caracteres. Al
+  // soltar el componente (.rd-why en styles.css) aparecieron dos cosas que el
+  // CSS no puede dar: avisarle al lector de pantalla si está abierto o
+  // cerrado, y que Escape lo cierre. Son doce líneas de JS.
+  //
+  // POR QUÉ VIVE ACÁ (mudado el 2026-09-12): hasta hoy dormía en
+  // admin-turnos-activos.js, un archivo que no tiene NADA que ver con este
+  // componente. Le tocó allá por un motivo de orden y nada más: de los cuatro
+  // módulos que lo usan, ese era el que cargaba primero, y no había un "utils
+  // del admin" donde ponerlo. core.js sí es su casa: carga antes que todo el
+  // admin y ya guarda los helpers de todos ($, escapeHtml, strikeLimit). Se vino
+  // entero —función, los dos oyentes y este comentario— sin tocar el cuerpo.
+  //
+  // REGLA QUE NO SE NEGOCIA: esto NO borra texto. La primera frase se queda a
+  // la vista y rdWhy se lleva el resto un toque más allá — ni una palabra
+  // menos de las que ya estaban escritas.
+  //
+  // Uso:  rdWhy('¿Por qué?', 'el resto del párrafo, ya escapado')
+  // El tercer argumento agrega clases: 'hereda' para cuando el plegado cae
+  // dentro de un bloque que ya tiene color propio (el aviso ámbar de
+  // Eventualidades, la advertencia de Privados), donde una pastilla naranja
+  // se pelearía con el fondo.
+  //
+  // Y un detalle de HTML que cuesta una tarde si se olvida: <details> cierra
+  // un <p> abierto (está en la lista de etiquetas que lo autocierran). Dentro
+  // de un párrafo NO va; va como hermano, después del </p>. Dentro de un
+  // <div>, un <span> o una celda flex sí va sin problema.
+  // ====================================================================
+  function rdWhy(rotulo, htmlResto, extraCls) {
+    return '<details class="rd-why' + (extraCls ? ' ' + extraCls : '') + '">'
+      + '<summary aria-expanded="false">' + rotulo
+      + '<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>'
+      + '<div class="rd-why-body">' + htmlResto + '</div></details>';
+  }
+
+  // Los navegadores nuevos ya le cuentan al lector de pantalla si un <details>
+  // está abierto, pero no todos y no los lectores viejos que todavía se usan
+  // acá. El atributo explícito no estorba mientras alguien lo mantenga al día,
+  // y esto lo mantiene al día. El evento `toggle` NO burbujea: por eso el
+  // listener va en captura, que es la única forma de oírlo desde el document.
+  document.addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (!d || !d.classList || !d.classList.contains('rd-why')) return;
+    const s = d.querySelector(':scope > summary');
+    if (s) s.setAttribute('aria-expanded', d.open ? 'true' : 'false');
+  }, true);
+
+  // Escape cierra el plegado que tengas abierto bajo el dedo y devuelve el
+  // foco a la pastilla, no a la nada. Va en captura y corta la propagación
+  // SOLO si de verdad cerró algo: si cortara siempre, se llevaría por delante
+  // el Escape del cajón de "Registrar cambio" y el de los diálogos, y cerrar
+  // una explicación terminaría cerrando el formulario que el jefe estaba
+  // llenando.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const t = e.target;
+    const abierto = t && t.closest ? t.closest('details.rd-why[open]') : null;
+    if (!abierto) return;
+    abierto.open = false;
+    const s = abierto.querySelector(':scope > summary');
+    if (s) s.focus();
+    e.stopPropagation();
+  }, true);

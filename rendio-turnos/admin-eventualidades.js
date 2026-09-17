@@ -112,7 +112,7 @@
     if (!represado && !sinDestino && !sinCelular) { box.classList.remove('show'); return; }
 
     // Estos tres avisos eran de 147, 159 y 231 caracteres metidos en una franja
-    // de una línea. Dos se pliegan con rdWhy (turnos-activos): queda la frase
+    // de una línea. Dos se pliegan con rdWhy (core.js): queda la frase
     // que dice QUÉ pasa y se guarda un toque más allá la que dice qué implica.
     // El primero NO se pliega a propósito: su cola es "Revísalo en Personal",
     // veintitantos caracteres. Esconder eso detrás de una pastilla de 44px de
