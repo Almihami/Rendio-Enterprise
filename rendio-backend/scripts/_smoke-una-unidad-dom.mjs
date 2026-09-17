@@ -45,9 +45,13 @@ click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]');
 set('date','2026-12-20'); set('time','05:10');
 click('[data-ax="next"]'); await wait();
 console.log('\n── con UNA unidad no hay paso del punto ──');
-t('tras el vuelo se llega DERECHO a revisar', /Revisa y confirma/.test(txt()), txt().slice(0,160));
-t('son 3 pasos: tipo, vuelo, revisar', JSON.stringify(window.Auxiliar.kinds())==='["tipo","vuelo","revisar"]' && /3\/3/.test(txt()),
+// El paso del PUNTO es el que desaparece; el del nivel está siempre (desde el
+// 17-sep, apagado como primicia cuando el privado no se puede pedir).
+t('tras el vuelo NO se pide el punto: se cae en el nivel', window.Auxiliar.stepKind()==='nivel' && !window.Auxiliar.kinds().includes('donde'), txt().slice(0,160));
+t('son 4 pasos: tipo, vuelo, nivel, revisar', JSON.stringify(window.Auxiliar.kinds())==='["tipo","vuelo","nivel","revisar"]' && /3\/4/.test(txt()),
   JSON.stringify(window.Auxiliar.kinds()));
+click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia desde el 17-sep)
+t('y de ahí a revisar', /Revisa y confirma/.test(txt()), txt().slice(0,160));
 t('NO pregunta de cuál unidad sale', !/De cuál sales/.test(txt()));
 t('ni pide la dirección', !/Dónde te recogemos/.test(txt()));
 // 7-sep-2026: «si solo tiene una dirección asociada, que se autocomplete».
@@ -89,10 +93,14 @@ t('queda elegido Solare', A().form.residenceId==='r2' && /Solare/.test(txt()));
 t('no le pega el apartamento de su otro conjunto', !A().form.residenceUnit, 'quedó: '+A().form.residenceUnit);
 t('sigue en el paso del punto (con «Cambiar» propio)', window.Auxiliar.stepKind()==='donde' && !!ui().querySelector('[data-ax="res-change"]'));
 click('[data-ax="next"]'); await wait();
+click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia desde el 17-sep)
+
 t('Continuar lleva al resumen con el punto nuevo', /Revisa y confirma/.test(txt()) && /Te recogemos enSolare/.test(txt()), txt().slice(0,240));
-t('ahora son 4 pasos (el del punto se quedó)', /4\/4/.test(txt()) && window.Auxiliar.kinds().includes('donde'));
+t('ahora son 5 pasos (el del punto se quedó)', /5\/5/.test(txt()) && window.Auxiliar.kinds().includes('donde'), txt().slice(0,40));
 click('[data-ax="back"]'); await wait();
-t('volver atrás cae en el paso del punto, no en el vuelo', window.Auxiliar.stepKind()==='donde' && /Dónde te recogemos/.test(txt()) && A().form.residenceId==='r2');
+t('volver atrás cae en el nivel', window.Auxiliar.stepKind()==='nivel');
+click('[data-ax="back"]'); await wait();
+t('y otra vez, en el paso del punto, no en el vuelo', window.Auxiliar.stepKind()==='donde' && /Dónde te recogemos/.test(txt()) && A().form.residenceId==='r2');
 
 console.log('\n── la fecha llega puesta en mañana ──');
 // Se entra por el botón de verdad («Pedir traslado»), que es donde se arma el

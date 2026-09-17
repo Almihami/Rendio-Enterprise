@@ -109,7 +109,8 @@ await window.Auxiliar.init({id:'p1',full_name:'Ana Lucía Restrepo Vélez',role:
 await nuevo();
 click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]'); await wait();
 set('date','2026-12-20'); set('time','05:10'); click('[data-ax="next"]'); await wait();
-t('se llega a revisar (3/3, una unidad)', /Revisa y confirma/.test(txt()) && /3\/3/.test(txt()), txt().slice(0,80));
+click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia desde el 17-sep)
+t('se llega a revisar (4/4, una unidad)', /Revisa y confirma/.test(txt()) && /4\/4/.test(txt()), txt().slice(0,80));
 creadas.length=0; started.length=0;
 click('[data-ax="next"]'); await wait(120);
 t('se creó la reserva y la vista es confirm', creadas.length===1 && A().view==='confirm');
@@ -144,6 +145,8 @@ console.log('\n── llegada: la escena se voltea ──');
 await nuevo();
 click('[data-ax="type"][data-type="lle"]'); click('[data-ax="next"]'); await wait();
 set('flightNum','AV-9412'); set('date','2026-12-20'); set('time','21:10'); click('[data-ax="next"]'); await wait();
+click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia desde el 17-sep)
+
 creadas.length=0;
 click('[data-ax="next"]'); await wait(120);
 t('confirmada una llegada: avión a la izquierda, casa a la derecha', A().view==='confirm' && ui().querySelector('.axc-from')?.dataset.what==='plane' && ui().querySelector('.axc-to')?.dataset.what==='home');

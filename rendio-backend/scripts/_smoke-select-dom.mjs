@@ -154,9 +154,21 @@ await P().askCupo('2026-12-20T05:10'); await wait();
 t('el pie dice «Sin confirmar la hora» y se deja pedir', q('.axp-lvl.vip .axp-lvl-avail')?.textContent==='Sin confirmar la hora' && !q('.axp-lvl.vip').hasAttribute('disabled') && /No pudimos confirmar/.test(txt()));
 limpio('paso (sin confirmar)', html());
 
-console.log('\n── sin privado en Ajustes ──');
+console.log('\n── sin privado en Ajustes: PRIMICIA (17-sep) ──');
+// Antes el paso entero desaparecía. Ahora la tarjeta se ve apagada, se puede
+// entrar a leer de qué se trata, y no se puede pedir. Es lo que ve producción.
 window.state.settings={aux_min_lead_hours:6,aux_wait_minutes:5};
-t('el paso no existe y la franja tampoco', P().stepHTML({level:'private'})===null && P().sumHTML({level:'private'})==='');
+t('es primicia y el paso SIGUE existiendo', P().primicia()===true && typeof P().stepHTML({level:'shared'})==='string');
+const prevHTML=P().stepHTML({level:'private'});
+t('la tarjeta privada va apagada y no se puede elegir', /axp-lvl vip[^"]*primicia/.test(prevHTML) && /aria-disabled="true"/.test(prevHTML) && !/data-ax="lvl" data-v="private"/.test(prevHTML));
+t('dice «Pronto» en vez de precio y que todavía no se puede pedir', /Pronto/.test(prevHTML) && /Todavía no se puede pedir/.test(prevHTML));
+t('pero se puede entrar a ver de qué se trata', /data-ax="lvl-info"/.test(prevHTML));
+t('y aunque el form dijera privado, la tarjeta elegida es la compartida', /axp-lvl sh on/.test(prevHTML));
+const prevIntro=P().introHTML({type:'sal'});
+t('la portada se lee entera, con el botón apagado y «Muy pronto»', /Select/.test(prevIntro) && /Muy pronto/.test(prevIntro) && /data-ax="lvl-choose" disabled/.test(prevIntro));
+t('y no promete aviso ni cifra', !/te avisamos/i.test(prevIntro) && !/150/.test(prevIntro));
+t('la franja del resumen sigue sin salir', P().sumHTML({level:'private'})==='');
+limpio('primicia · paso', prevHTML); limpio('primicia · portada', prevIntro);
 
 console.log(`\n${ok}/${ok+bad} pasaron${bad?' · '+bad+' FALLARON':''}`);
 console.log('NO cubierto: colores, degradados, la serif y el layout de las tarjetas y la portada (jsdom no pinta) — se mira en el teléfono, de día y de noche.');

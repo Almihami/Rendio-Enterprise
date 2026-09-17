@@ -63,32 +63,43 @@ t('los subtítulos siguen igual', /Voy al aeropuerto a operar un vuelo/.test(txt
 t('la pista de la pernocta ya no manda al «paso de dirección»', !/paso de dirección/.test(txt()) && /pernocta/.test(txt()));
 
 console.log('\n── los pasos, por nombre: una unidad ──');
-t('sin privado y una unidad: 3 pasos', kinds()==='["tipo","vuelo","revisar"]', kinds());
+// Desde el 17-sep el paso del nivel está SIEMPRE: si el privado no se puede
+// pedir todavía, se muestra apagado como primicia (que es justo lo que ve
+// producción hoy). Lo que cambia es si la tarjeta se puede elegir o no.
+t('con una unidad: 4 pasos (el nivel siempre está)', kinds()==='["tipo","vuelo","nivel","revisar"]', kinds());
+t('y sin privado en Ajustes, es primicia', window.AuxPrivado.primicia()===true);
 window.state.settings={...CON_PRIVADO};
-t('con privado y una unidad: 4 pasos', kinds()==='["tipo","vuelo","nivel","revisar"]', kinds());
+t('con privado: los mismos 4 pasos, ya no es primicia', kinds()==='["tipo","vuelo","nivel","revisar"]' && window.AuxPrivado.primicia()===false, kinds());
 window.state.settings={...SIN_PRIVADO};
 
 console.log('\n── los pasos, por nombre: dos unidades ──');
 await recargar(DOS); await nuevo();
-t('sin privado y dos unidades: 4 pasos, con «donde»', kinds()==='["tipo","vuelo","donde","revisar"]', kinds());
+t('con dos unidades: 5 pasos, con «donde» y con el nivel', kinds()==='["tipo","vuelo","donde","nivel","revisar"]', kinds());
 window.state.settings={...CON_PRIVADO};
-t('con privado y dos unidades: 5 pasos', kinds()==='["tipo","vuelo","donde","nivel","revisar"]', kinds());
+t('con privado, los mismos 5', kinds()==='["tipo","vuelo","donde","nivel","revisar"]', kinds());
 window.state.settings={...SIN_PRIVADO};
 
 console.log('\n── con una unidad se salta el paso del punto ──');
 await recargar(UNA); await nuevo();
 click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]'); await wait();
-t('paso 2 = datos del vuelo', /Datos del vuelo/.test(txt()) && /2\/3/.test(txt()), txt().slice(0,80));
+t('paso 2 = datos del vuelo', /Datos del vuelo/.test(txt()) && /2\/4/.test(txt()), txt().slice(0,80));
 set('date','2026-12-20'); set('time','05:10');
 click('[data-ax="next"]'); await wait();
-t('del vuelo se pasa DERECHO a revisar (3/3)', /Revisa y confirma/.test(txt()) && /3\/3/.test(txt()), txt().slice(0,80));
+// Del vuelo se pasa al nivel (3/4) y de ahí a revisar: el paso del PUNTO es el
+// que desapareció, que es lo que esta prueba vigila.
+t('del vuelo se pasa al nivel, sin el paso del punto (3/4)', window.Auxiliar.stepKind()==='nivel' && /3\/4/.test(txt()) && !kinds().includes('donde'), txt().slice(0,80));
+t('y la tarjeta privada va de primicia: apagada y con «Pronto»', !!ui().querySelector('.axp-lvl.vip.primicia') && /Pronto/.test(txt()) && /Todavía no se puede pedir/.test(txt()));
+t('tocarla NO la elige: abre la portada', ui().querySelector('.axp-lvl.vip').getAttribute('data-ax')==='lvl-info');
+click('[data-ax="next"]'); await wait();
+t('y de ahí a revisar (4/4)', /Revisa y confirma/.test(txt()) && /4\/4/.test(txt()), txt().slice(0,80));
 t('con el punto del registro puesto', A().form.residenceId==='r1' && /Te recogemos enOlivar Apartamentos/.test(txt()));
+t('el nivel quedó en compartido', A().form.level==='shared');
 t('y el resumen encabeza con la ruta', !!ui().querySelector('.ax-sum-head span.ax-route'));
 
 console.log('\n── «Cambiar» desde el resumen y el paso que se queda ──');
 click('[data-ax="donde-cambiar"]'); await wait();
 t('abre el paso del punto', window.Auxiliar.stepKind()==='donde' && /Dónde te recogemos/.test(txt()));
-t('ahora son 4 pasos', kinds()==='["tipo","vuelo","donde","revisar"]' && /3\/4/.test(txt()), kinds());
+t('ahora son 5 pasos', kinds()==='["tipo","vuelo","donde","nivel","revisar"]' && /3\/5/.test(txt()), kinds());
 t('el punto se vació y no se vuelve a poner solo', !A().form.residenceId && A().form.dondeForced===true);
 t('Continuar bloqueado hasta elegir', next().hasAttribute('disabled'));
 click('[data-ax="back"]'); await wait();
@@ -98,7 +109,9 @@ t('adelante vuelve al paso del punto (persiste)', window.Auxiliar.stepKind()==='
 click('[data-ax="res-pick"][data-id="r1"]'); await wait();   // el atajo «Tu punto»
 t('elegir el atajo lo deja puesto', A().form.residenceId==='r1' && !next().hasAttribute('disabled'));
 click('[data-ax="next"]'); await wait();
-t('y se llega a revisar como 4/4', /Revisa y confirma/.test(txt()) && /4\/4/.test(txt()));
+t('pasa por el nivel (4/5)', window.Auxiliar.stepKind()==='nivel' && /4\/5/.test(txt()), txt().slice(0,60));
+click('[data-ax="next"]'); await wait();
+t('y se llega a revisar como 5/5', /Revisa y confirma/.test(txt()) && /5\/5/.test(txt()));
 
 console.log('\n── «Repetir el de siempre» con una unidad ──');
 A().trips=[{id:'h1',type:'sal',flight:'',date:'2026-09-01',time:'05:10',address:'Olivar Apartamentos, Norte',lat:6.15,lng:-75.37,
@@ -107,8 +120,9 @@ A().view='home'; window.Auxiliar.rerender(); await wait();
 t('el inicio ofrece repetir', !!ui().querySelector('[data-ax="repeat"]'));
 click('[data-ax="repeat"]'); await wait();
 t('arranca en el paso 2 con el tipo puesto', window.Auxiliar.stepKind()==='vuelo' && A().form.type==='sal');
-t('y sin el paso del punto (el conjunto ya viene)', kinds()==='["tipo","vuelo","revisar"]' && !A().form.dondeForced, kinds());
+t('y sin el paso del punto (el conjunto ya viene)', kinds()==='["tipo","vuelo","nivel","revisar"]' && !A().form.dondeForced, kinds());
 set('date','2026-12-22'); set('time','04:50'); click('[data-ax="next"]'); await wait();
+click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia)
 t('llega a revisar con el conjunto y las notas de la vez anterior', /Revisa y confirma/.test(txt()) && A().form.residenceId==='r1' && ui().querySelector('[data-field="notes"]').value==='Portería norte');
 
 console.log('\n── «Repetir el de siempre» con dos unidades ──');
@@ -117,7 +131,7 @@ A().trips=[{id:'h2',type:'sal',flight:'',date:'2026-09-01',time:'05:10',address:
   residenceId:'r2',residenceUnit:'Casa 8',level:'shared',isPernocta:false,isReserva:true,notes:'',status:'done',driver:null,rated:true}];
 A().view='home'; window.Auxiliar.rerender(); await wait();
 click('[data-ax="repeat"]'); await wait();
-t('con dos unidades el paso del punto sí está', kinds()==='["tipo","vuelo","donde","revisar"]', kinds());
+t('con dos unidades el paso del punto sí está', kinds()==='["tipo","vuelo","donde","nivel","revisar"]', kinds());
 set('date','2026-12-22'); set('time','04:50'); click('[data-ax="next"]'); await wait();
 t('pregunta de cuál sale', /De cuál sales/.test(txt()));
 t('con la unidad de la vez anterior ya marcada', !!ui().querySelector('.ax-opt.sel[data-ax="res-unit"][data-n="2"]') && A().form.residenceId==='r2');
@@ -131,12 +145,13 @@ set('flightNum','AV-9412'); set('date','2026-12-20'); set('time','22:40');
 click('[data-ax="next"]'); await wait();
 t('el paso del punto dice «Dónde te dejamos»', /Dónde te dejamos/.test(txt()));
 click('[data-ax="res-unit"][data-n="1"]'); click('[data-ax="next"]'); await wait();
+click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia)
 t('el resumen dice «Te dejamos en» y la ruta Aeropuerto → Casa', /Te dejamos enOlivar/.test(txt()) && ui().querySelector('.ax-sum-head').textContent.replace(/\s+/g,'')==='AeropuertoCasa');
 t('y «Aterriza» con la hora', /Aterriza22:40/.test(txt()));
 
 console.log('\n── camino manual cuando el catálogo no cargó ──');
 await recargar(UNA, null); await nuevo();
-t('sin catálogo, el paso del punto vuelve a existir', kinds()==='["tipo","vuelo","donde","revisar"]', kinds());
+t('sin catálogo, el paso del punto vuelve a existir', kinds()==='["tipo","vuelo","donde","nivel","revisar"]', kinds());
 click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]'); await wait();
 set('date','2026-12-20'); set('time','05:10'); click('[data-ax="next"]'); await wait();
 t('lo dice y ofrece reintentar', /No pudimos cargar tus puntos/.test(txt()) && !!ui().querySelector('[data-ax="res-retry"]'));
@@ -144,18 +159,20 @@ t('pide la dirección a mano', !!ui().querySelector('[data-field="address"]'));
 t('y aquí ya no hay toggles ni notas', !ui().querySelector('[data-ax="toggle"]') && !ui().querySelector('[data-field="notes"]'));
 t('el resumen no ofrecería «Cambiar» sin catálogo', !window.AuxResidencias.hasCatalog());
 catalogo=RES; click('[data-ax="res-retry"]'); await wait(100);
-t('al reintentar con éxito (una unidad) el paso desaparece y se cae en revisar', window.Auxiliar.stepKind()==='revisar' && /Revisa y confirma/.test(txt()) && A().form.residenceId==='r1', txt().slice(0,80));
+t('al reintentar con éxito (una unidad) el paso del punto desaparece y se cae en el nivel', window.Auxiliar.stepKind()==='nivel' && A().form.residenceId==='r1' && !kinds().includes('donde'), txt().slice(0,80));
 
 console.log('\n── «Cambiar» desde el resumen cuando el pedido venía del camino manual ──');
 await recargar(UNA, RES);
 await nuevo();
 click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]'); await wait();
 set('date','2026-12-20'); set('time','05:10'); click('[data-ax="next"]'); await wait();
+click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia) → revisar
 click('[data-ax="donde-cambiar"]'); await wait();
 click('[data-ax="res-manual"]'); await wait();
 t('el camino manual pide la dirección', !!ui().querySelector('[data-field="address"]') && A().form.manualAddr===true);
 A().form.address='Cra 51 #49-06'; A().form.lat=6.15; A().form.lng=-75.37; A().form.locConfirmed=true; window.Auxiliar.rerender(); await wait();
 click('[data-ax="next"]'); await wait();
+click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia)
 t('el resumen dice «Dirección» y ofrece «Cambiar»', /Dirección/.test(txt()) && !!ui().querySelector('[data-ax="donde-cambiar"]'));
 click('[data-ax="donde-cambiar"]'); await wait();
 t('«Cambiar» abre el CATÁLOGO, no otra vez la dirección en blanco', window.Auxiliar.stepKind()==='donde' && !!ui().querySelector('#axr-q') && !ui().querySelector('[data-field="address"]') && A().form.manualAddr===false, txt().slice(0,120));
@@ -171,6 +188,8 @@ click('[data-ax="toggle"][data-key="isPernocta"]'); await wait();
 click('[data-ax="toggle"][data-key="isReserva"]'); await wait();
 t('quedan marcados en el form', A().form.isPernocta===true && A().form.isReserva===false);
 t('y la hora no se perdió al repintar', ui().querySelector('[data-field="time"]').value==='05:10');
+click('[data-ax="next"]'); await wait();
+t('del vuelo se pasa al nivel', window.Auxiliar.stepKind()==='nivel');
 click('[data-ax="next"]'); await wait();
 t('en revisar están las notas y NO los toggles', !!ui().querySelector('[data-field="notes"]') && !ui().querySelector('[data-ax="toggle"]'));
 t('las notas van entre el resumen y «Antes de confirmar»', (()=>{ const h=ui().innerHTML; return h.indexOf('class="ax-sum"')<h.indexOf('data-field="notes"') && h.indexOf('data-field="notes"')<h.indexOf('Antes de confirmar'); })());

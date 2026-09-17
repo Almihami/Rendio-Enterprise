@@ -533,7 +533,9 @@
   function auxStepKinds() {
     const k = ['tipo', 'vuelo'];
     if (auxNeedsDonde(auxState.form)) k.push('donde');
-    if (window.AuxPrivado && AuxPrivado.enabled()) k.push('nivel');
+    // El paso del nivel existe aunque el privado todavía no se pueda pedir: en
+    // ese caso la tarjeta va apagada y sirve de primicia (ver aux-privado.js).
+    if (window.AuxPrivado && AuxPrivado.stepHTML) k.push('nivel');
     k.push('revisar');
     return k;
   }
@@ -1100,7 +1102,8 @@
     // askCupo no repite la consulta si ya la hizo para esa misma hora.
     if (kind === 'nivel' && window.AuxPrivado) {
       if (!auxState.form.level) auxState.form.level = 'shared';
-      AuxPrivado.askCupo(auxWhenISO(auxState.form));
+      // En primicia no hay nada que preguntarle al servidor: no se puede pedir.
+      if (!AuxPrivado.primicia || !AuxPrivado.primicia()) AuxPrivado.askCupo(auxWhenISO(auxState.form));
     }
     if (kind !== 'donde') return;
     const f = auxState.form;
@@ -2383,7 +2386,8 @@
           // camioneta está libre a esa hora. No se puede saber en el cliente.
           if (auxStepKind(auxState.step) === 'nivel' && window.AuxPrivado) {
             if (!auxState.form.level) auxState.form.level = 'shared';
-            AuxPrivado.askCupo(auxWhenISO(auxState.form));
+            // En primicia la camioneta no se puede pedir: no hay cupo que consultar.
+            if (!AuxPrivado.primicia || !AuxPrivado.primicia()) AuxPrivado.askCupo(auxWhenISO(auxState.form));
           }
           auxRender();
         } else {

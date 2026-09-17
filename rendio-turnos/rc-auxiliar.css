@@ -734,6 +734,14 @@
 #auxiliar-ui .axp-lvl.vip .axp-lvl-chk { background: var(--vip-brass-lt); color: var(--vip-ink); }
 /* El pie: disponibilidad a la izquierda (lo que se SABE del cupo, sin cifras),
    «Ver qué incluye» a la derecha. */
+/* PRIMICIA: la tarjeta se ve, se puede tocar para leer de qué se trata, y se
+   nota que no está activa. No lleva `.off` (que es para la camioneta ocupada y
+   apaga el cursor): aquí el toque SÍ hace algo, abre la portada. */
+#auxiliar-ui .axp-lvl.primicia { opacity: .68; }
+#auxiliar-ui .axp-lvl.primicia .axp-lvl-price {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 100px; background: rgba(199,169,113,.16);
+}
 #auxiliar-ui .axp-lvl-foot {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;
   padding: 8px 16px; border-top: 1px solid var(--vip-line-dk);

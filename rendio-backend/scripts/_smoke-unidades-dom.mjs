@@ -78,7 +78,7 @@ t('y no se pierde el regreso marcado', window.Auxiliar.state.form.sameDayBack===
 
 console.log('\n── el pedido: elegir de cuál unidad sale ──');
 click('[data-ax="next"]'); await wait();
-t('con dos unidades, SÍ existe el paso del punto', window.Auxiliar.stepKind()==='donde' && /3\/4/.test(txt()), JSON.stringify(window.Auxiliar.kinds()));
+t('con dos unidades, SÍ existe el paso del punto', window.Auxiliar.stepKind()==='donde' && /3\/5/.test(txt()), JSON.stringify(window.Auxiliar.kinds()));
 t('con dos unidades, pregunta de cuál sale', /De cuál sales/.test(txt()), txt().slice(0,180));
 t('el paso es SOLO el selector: sin toggles ni notas', !ui().querySelector('[data-ax="toggle"]') && !ui().querySelector('[data-field="notes"]'));
 t('y sin la lista del catálogo (esa sale con «otro lado»)', !ui().querySelector('#axr-q'));
@@ -94,6 +94,7 @@ t('con la confirmación compacta del punto (sin «Cambiar» propio ni «guardar�
 
 console.log('\n── el resumen y el envío ──');
 click('[data-ax="next"]'); await wait();
+click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia desde el 17-sep)
 t('el resumen dice «Estar en el aeropuerto», no «Presentación»', /Estar en el aeropuerto/.test(txt()) && !/Presentación 05:10/.test(txt()), txt().slice(0,260));
 // textContent pega <span>etiqueta</span><b>valor</b> sin espacio: se compara
 // contra la cadena tal cual sale, no como se lee en pantalla.
