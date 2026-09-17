@@ -1,0 +1,14 @@
+{
+  "_comment": "PLANTILLA. Copia este archivo a seed-turnos-users.json y pon los datos reales. El real está en .gitignore (NO se commitea: contiene PII).",
+  "organization_slug": "rendio",
+  "organization_name": "Rendio Enterprises",
+  "default_password": "CambiaEsto2026",
+  "users": [
+    { "email": "admin1@example.com", "full_name": "Admin Uno",      "role": "admin",  "phone": "3000000001", "national_id": "1000000001" },
+    { "email": "admin2@example.com", "full_name": "Admin Dos",      "role": "admin",  "phone": "3000000002", "national_id": "1000000002" },
+
+    { "email": "driver1@example.com", "full_name": "Conductor Uno",  "role": "driver", "phone": "3000000011", "national_id": "1000000011" },
+    { "email": "driver2@example.com", "full_name": "Conductor Dos",  "role": "driver", "phone": "3000000012", "national_id": "1000000012" },
+    { "email": "driver3@example.com", "full_name": "Conductor Tres", "role": "driver", "phone": "3000000013", "national_id": "1000000013" }
+  ]
+}

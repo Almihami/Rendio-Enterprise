@@ -6,6 +6,22 @@
 
   const isSuspended = () => state.profile && state.profile.is_active === false;
 
+  // Cuántos strikes hacen falta para suspender. Es FUNCIÓN, no constante, y eso
+  // importa: state.settings arranca en null y solo se llena al iniciar sesión,
+  // después de que todos los <script> ya se leyeron. Una constante de módulo se
+  // quedaría congelada en 3 para siempre, sin fallar — el jefe lo pondría en 5
+  // en Ajustes y la pantalla seguiría diciendo "de 3".
+  // Hasta hoy el 3 estaba quemado a mano en cuatro archivos.
+  const strikeLimit = () => {
+    const n = Number(state.settings && state.settings.strike_limit);
+    return Number.isFinite(n) && n >= 1 ? n : 3;
+  };
+
+  // El mes que se está contando ahora mismo, como día 1 en ISO. Es el filtro que
+  // hace que los strikes se reinicien solos: uno de agosto deja de contar el 1 de
+  // septiembre porque ya no cae en este rango. No hay proceso automático detrás.
+  const strikePeriod = () => Scheduler.monthStartISO();
+
   // El admin de escritorio y el admin de celular no son el mismo usuario: el
   // primero planea, el segundo recibe alertas de operación a las 4 de la mañana.
   // Varias decisiones de UI (instalar la PWA, activar notificaciones) dependen de
@@ -172,7 +188,13 @@
     $('#publish-btn').addEventListener('click', () => onSaveSchedule(true));
     $('#clear-schedule-btn').addEventListener('click', onClearSchedule);
 
-    $('#save-settings-btn').addEventListener('click', onSaveSettings);
+    // El `?.` no es cosmético: esto es una cadena larga de enlaces en una sola función.
+    // Si un día alguien mueve o renombra #save-settings-btn, sin el `?.` esta línea
+    // revienta bindAdminEvents entera y se caen TODOS los enlaces de abajo — el admin
+    // queda con botones muertos y sin un error que apunte a la causa. Pasó de estar a un
+    // renombrado de distancia cuando Ajustes se partió en módulos (2026-09-11).
+    $('#save-settings-btn')?.addEventListener('click', onSaveSettings);
+    $('#save-calib-btn')?.addEventListener('click', onSaveCalibracion);
     $('#save-route-tables-btn')?.addEventListener('click', saveRouteTables);
 
     $('#new-driver-gen-pw')?.addEventListener('click', onGenerateDriverPassword);
@@ -408,6 +430,12 @@
   // ====================================================================
 
   function setTab(name) {
+    // PUERTA DE SALIDA (2026-09-11). Ajustes y Calibración guardan con un botón al pie,
+    // y desde que las secciones se pliegan es facilísimo editar un campo, cerrar la
+    // sección y largarse creyendo que quedó guardado. Acá se pregunta antes de salir.
+    // El `typeof`: esto es la espina dorsal de la navegación del admin, y si el módulo
+    // que trae el aviso no cargó, lo último que puede pasar es que nadie pueda navegar.
+    if (typeof setPuedeSalirDelModulo === 'function' && !setPuedeSalirDelModulo(name)) return;
     state.activeTab = name;
     $('#driver-tabs-root')?.classList.add('hidden');
     $('#driver-nav')?.classList.remove('show');
@@ -429,6 +457,10 @@
     if (name === 'approvals') refreshApprovals();
     if (name === 'workers') renderWorkers();
     if (name === 'settings') renderSettings();
+    // Ajustes se partió en tres (2026-09-11). Cada pantalla pide SOLO sus datos: entrar a
+    // subir el límite de strikes ya no dispara la tabla de tiempos, las zonas ni la flota.
+    if (name === 'flota') renderFlota();
+    if (name === 'calibracion') renderCalibracion();
     if (name === 'balance') renderBalance();
     if (name === 'inspections') renderInspections();
     if (name === 'parts') renderParts();
@@ -474,3 +506,72 @@
     return true;
   }
 
+  // ====================================================================
+  // TEXTO PLEGADO (.rd-why) — pieza compartida de todo el admin.
+  //
+  // En agosto plegamos el muro de texto de Ajustes: primera frase a la vista
+  // y el resto detrás de un "¿Por qué este número?" (index.html, .set-why).
+  // Funcionó, pero nació scopeado bajo .set-ui, así que Repuestos, Privados y
+  // Eventualidades se quedaron con sus párrafos de 200 y 300 caracteres. Al
+  // soltar el componente (.rd-why en styles.css) aparecieron dos cosas que el
+  // CSS no puede dar: avisarle al lector de pantalla si está abierto o
+  // cerrado, y que Escape lo cierre. Son doce líneas de JS.
+  //
+  // POR QUÉ VIVE ACÁ (mudado el 2026-09-12): hasta hoy dormía en
+  // admin-turnos-activos.js, un archivo que no tiene NADA que ver con este
+  // componente. Le tocó allá por un motivo de orden y nada más: de los cuatro
+  // módulos que lo usan, ese era el que cargaba primero, y no había un "utils
+  // del admin" donde ponerlo. core.js sí es su casa: carga antes que todo el
+  // admin y ya guarda los helpers de todos ($, escapeHtml, strikeLimit). Se vino
+  // entero —función, los dos oyentes y este comentario— sin tocar el cuerpo.
+  //
+  // REGLA QUE NO SE NEGOCIA: esto NO borra texto. La primera frase se queda a
+  // la vista y rdWhy se lleva el resto un toque más allá — ni una palabra
+  // menos de las que ya estaban escritas.
+  //
+  // Uso:  rdWhy('¿Por qué?', 'el resto del párrafo, ya escapado')
+  // El tercer argumento agrega clases: 'hereda' para cuando el plegado cae
+  // dentro de un bloque que ya tiene color propio (el aviso ámbar de
+  // Eventualidades, la advertencia de Privados), donde una pastilla naranja
+  // se pelearía con el fondo.
+  //
+  // Y un detalle de HTML que cuesta una tarde si se olvida: <details> cierra
+  // un <p> abierto (está en la lista de etiquetas que lo autocierran). Dentro
+  // de un párrafo NO va; va como hermano, después del </p>. Dentro de un
+  // <div>, un <span> o una celda flex sí va sin problema.
+  // ====================================================================
+  function rdWhy(rotulo, htmlResto, extraCls) {
+    return '<details class="rd-why' + (extraCls ? ' ' + extraCls : '') + '">'
+      + '<summary aria-expanded="false">' + rotulo
+      + '<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>'
+      + '<div class="rd-why-body">' + htmlResto + '</div></details>';
+  }
+
+  // Los navegadores nuevos ya le cuentan al lector de pantalla si un <details>
+  // está abierto, pero no todos y no los lectores viejos que todavía se usan
+  // acá. El atributo explícito no estorba mientras alguien lo mantenga al día,
+  // y esto lo mantiene al día. El evento `toggle` NO burbujea: por eso el
+  // listener va en captura, que es la única forma de oírlo desde el document.
+  document.addEventListener('toggle', (e) => {
+    const d = e.target;
+    if (!d || !d.classList || !d.classList.contains('rd-why')) return;
+    const s = d.querySelector(':scope > summary');
+    if (s) s.setAttribute('aria-expanded', d.open ? 'true' : 'false');
+  }, true);
+
+  // Escape cierra el plegado que tengas abierto bajo el dedo y devuelve el
+  // foco a la pastilla, no a la nada. Va en captura y corta la propagación
+  // SOLO si de verdad cerró algo: si cortara siempre, se llevaría por delante
+  // el Escape del cajón de "Registrar cambio" y el de los diálogos, y cerrar
+  // una explicación terminaría cerrando el formulario que el jefe estaba
+  // llenando.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const t = e.target;
+    const abierto = t && t.closest ? t.closest('details.rd-why[open]') : null;
+    if (!abierto) return;
+    abierto.open = false;
+    const s = abierto.querySelector(':scope > summary');
+    if (s) s.focus();
+    e.stopPropagation();
+  }, true);

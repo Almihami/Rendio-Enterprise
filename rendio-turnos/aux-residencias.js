@@ -1,4 +1,5 @@
-// aux-residencias.js — Paso 3 del pedido, sobre el catálogo verificado (0055).
+// aux-residencias.js — El paso del punto del pedido, sobre el catálogo verificado (0055).
+// (Era «el paso 3»; desde el 15-sep-2026 solo aparece cuando hay algo que elegir.)
 //
 // POR QUÉ EXISTE ESTE ARCHIVO
 // La migración 0055 se escribió en agosto con una frase explícita: «El auxiliar
@@ -51,8 +52,8 @@
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   // ---------- carga ----------
-  // Se llama al entrar al paso 3. Si falla, no se bloquea al auxiliar: cae al
-  // camino manual, que es el que existía antes de este archivo.
+  // Se llama al entrar al rol y al arrancar un pedido. Si falla, no se bloquea
+  // al auxiliar: cae al camino manual, que es el que existía antes de este archivo.
   async function load() {
     if (st.cat || st.loading) return;
     st.loading = true; st.failed = false;
@@ -66,11 +67,19 @@
       st.failed = !st.cat;
     } catch (_) { st.failed = true; st.cat = null; }
     finally {
-      st.loading = false;
-      // Si el auxiliar ya está parado en el paso 3, se repinta: si no, se queda
-      // mirando el spinner para siempre porque nadie más lo va a despertar.
+      // Si el auxiliar ya está parado en el paso del punto, se repinta: si no,
+      // se queda mirando el spinner para siempre porque nadie más lo va a
+      // despertar. El paso se reconoce por NOMBRE (15-sep-2026: ya no es
+      // siempre el 3); el número queda como respaldo para un auxiliar.js viejo.
+      // SE PREGUNTA ANTES DE APAGAR `loading`, a propósito: con el catálogo
+      // recién puesto y una sola unidad, stepKind() ya haría el autocompletado
+      // y el paso 'donde' desaparecería de la lista — «no estaba en donde», y
+      // nadie repintaría el spinner que sigue en pantalla.
       const A = window.Auxiliar;
-      if (A && A.state && A.state.view === 'form' && A.state.step === 3) A.rerender();
+      const enDonde = A && A.state && A.state.view === 'form'
+        && (A.stepKind ? A.stepKind() === 'donde' : A.state.step === 3);
+      st.loading = false;
+      if (enDonde) A.rerender();
     }
   }
 
@@ -155,16 +164,34 @@
     return true;
   }
 
-  // ¿El paso 3 está resuelto? Con residencia elegida sí — la coordenada la pone
-  // el trigger desde el catálogo, así que no hay pin que confirmar.
+  // ¿El paso del punto está resuelto? Con residencia elegida sí — la coordenada
+  // la pone el trigger desde el catálogo, así que no hay pin que confirmar.
   function ready(f) {
     if (f.residenceId) return true;
     return !!(f.address && f.locConfirmed);
   }
 
+  // «Cambiar» desde el RESUMEN (15-sep-2026). Con una sola unidad el paso del
+  // punto ya no se ve —se pone solo—, así que el resumen es donde el tripulante
+  // dice «hoy no salgo de ahí». Se vacía el punto y se marca `picking` para que
+  // autofill no se lo vuelva a poner en el siguiente repintado; `otro` en falso
+  // para que, con dos unidades, lo que se abra sea el selector de las dos y no
+  // el catálogo entero. auxiliar.js pone `f.dondeForced` y salta al paso.
+  function forcePick(f) {
+    st.picking = true; st.otro = false; st.q = '';
+    f.residenceId = null; f.residenceUnit = null;
+    f.address = ''; f.lat = null; f.lng = null;
+    f.locConfirmed = false; f.placeAuto = false;
+    // Si el pedido venía del camino manual, «Cambiar» abre el CATÁLOGO (que es
+    // lo que el botón dice), no otra vez la dirección en blanco; el camino
+    // manual sigue a un toque en «Mi punto no está en la lista».
+    f.manualAddr = false;
+    destroyMap();
+  }
+
   // ---------- pantalla ----------
-  // Devuelve null cuando el paso 3 debe pintarlo auxiliar.js con el camino viejo
-  // (el auxiliar pidió escribir la dirección, o el catálogo no cargó).
+  // Devuelve null cuando el paso del punto debe pintarlo auxiliar.js con el
+  // camino viejo (el auxiliar pidió escribir la dirección, o el catálogo no cargó).
   function html(f) {
     if (f.manualAddr) return null;
     if (st.loading || (!st.cat && !st.failed)) {
@@ -185,9 +212,13 @@
     const isLle = f.type === 'lle';
     const saved = savedRes();
     const q = st.q;
+    // BUSCADOR PRIMERO (profa, 15-sep-2026): la lista entera no se pinta al
+    // entrar —42 filas para bajar con el dedo hasta la suya—; aparece solo
+    // cuando hay texto. Sin texto la lista queda VACÍA pero presente, para que
+    // onQuery la llene en cada tecla sin repintar el paso (y sin perder el foco).
     const list = q
       ? st.cat.filter(r => norm(r.name + ' ' + (r.sector || '')).includes(norm(q)))
-      : st.cat;
+      : [];
 
     const savedBlock = (!q && saved) ? `
       <div class="axr-lbl">Tu punto</div>
@@ -201,7 +232,9 @@
         <svg class="icon axr-chev"><use href="#i-chev"/></svg>
       </button>` : '';
 
-    const rows = list.length ? list.map((r, i) => `
+    // Sin texto: '' exacto (ni un espacio), que es lo que `.axr-list:empty`
+    // necesita para esconder el marco vacío.
+    const rows = !q ? '' : list.length ? list.map((r, i) => `
       <button class="axr-row${i === 0 ? ' first' : ''}" data-ax="res-pick" data-id="${esc(r.id)}">
         <span class="axr-row-txt">
           <b>${esc(r.name)}</b>
@@ -226,6 +259,7 @@
         ${q ? `<button class="axr-clear" data-ax="res-clear" aria-label="Limpiar">
           <svg class="icon"><use href="#i-x"/></svg></button>` : ''}
       </div>
+      <div class="axr-hint"${q ? ' hidden' : ''}>Escribe el nombre de tu conjunto o el sector.</div>
       <div class="axr-list">${rows}</div>
       <button class="axr-manual" data-ax="res-manual">
         <span class="axr-manual-ic"><svg class="icon"><use href="#i-plus"/></svg></span>
@@ -267,16 +301,11 @@
       ${yaEsSuPunto ? '' : `
         <button class="axr-save${st.saving ? ' busy' : ''}" data-ax="res-save"${st.saving ? ' disabled' : ''}>
           <svg class="icon"><use href="#i-save"/></svg>${st.saving ? 'Guardando…' : 'Guardar como mi punto'}
-        </button>`}
-      <div class="ax-toggles">
-        ${window.Auxiliar?.toggleHTML
-          ? window.Auxiliar.toggleHTML('¿Es una pernocta?', 'isPernocta', f.isPernocta, 'Pasas la noche entre vuelos (hotel).')
-            + window.Auxiliar.toggleHTML('¿Es una reserva en firme?', 'isReserva', f.isReserva !== false, 'Confírmanos que el viaje va.')
-          : ''}
-      </div>
-      ${window.Auxiliar?.fieldHTML
-        ? window.Auxiliar.fieldHTML('Notas para el conductor (opcional)', 'notes', f.notes || '', 'Ej: portería 3, timbre 302', 'textarea')
-        : ''}`;
+        </button>`}`;
+    // AQUÍ VIVÍAN la pernocta, la reserva en firme y las notas (vía
+    // Auxiliar.toggleHTML/fieldHTML). Se mudaron el 15-sep-2026: este paso ya
+    // no lo ve todo el mundo, y esos datos son del viaje, no del punto. Los
+    // toggles están en «Datos del vuelo» y las notas en «Revisa y confirma».
   }
 
   // ---------- mapa del punto verificado ----------
@@ -399,6 +428,9 @@
     tmp.innerHTML = pickHTML(f);
     const fresh = tmp.querySelector('.axr-list');
     if (fresh) cont.innerHTML = fresh.innerHTML;
+    // La ayuda «Escribe el nombre…» se va cuando ya está escribiendo.
+    const hint = document.querySelector('.axr-hint');
+    if (hint) hint.hidden = !!v;
     // El botón de limpiar aparece/desaparece según haya texto.
     const search = document.querySelector('.axr-search');
     if (search) {
@@ -414,21 +446,22 @@
     return true;
   }
 
-  // Volver a intentar la carga del catálogo. Existe porque el paso 3 ya no se
-  // cae en silencio al camino manual cuando la lista no llegó: lo dice y ofrece
-  // reintentar (la causa típica es la sesión, no la red).
+  // Volver a intentar la carga del catálogo. Existe porque el paso del punto ya
+  // no se cae en silencio al camino manual cuando la lista no llegó: lo dice y
+  // ofrece reintentar (la causa típica es la sesión, no la red).
   function retry() {
     st.cat = null; st.failed = false; st.loading = false;
     load();
   }
 
   // Un pedido nuevo arranca limpio: si el anterior terminó en «hoy salgo de otro
-  // lado», el siguiente tiene que volver a ofrecerle sus dos unidades.
+  // lado», el siguiente tiene que volver a ofrecerle sus dos unidades. (El
+  // `dondeForced` del «Cambiar» vive en el form, que auxiliar.js crea nuevo.)
   function newTrip() { st.otro = false; st.q = ''; st.picking = false; }
 
   window.AuxResidencias = {
     load, html, handle, afterRender, ready, onQuery, destroyMap, newTrip,
-    autofill, retry,
+    autofill, retry, forcePick,
     hasCatalog: () => !!(st.cat && st.cat.length),
     // El catálogo no está disponible (falló o llegó vacío). No es lo mismo que
     // «no hay conjuntos»: hoy la causa más común es entrar sin sesión, y ahí la

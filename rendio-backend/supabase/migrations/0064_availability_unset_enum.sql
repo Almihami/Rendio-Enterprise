@@ -1,0 +1,32 @@
+-- =============================================================================
+-- Migration 0064 — availability_state: valor 'unset' ("Sin marcar")
+-- Tarea: rediseño de la pantalla de Disponibilidad del conductor (2026-08-16),
+--   Modelo A ("pintar la semana"). Entrega del diseñador: rc-disponibilidad.jsx.
+--
+-- POR QUÉ ESTA MIGRACIÓN VA SOLA Y NO PEGADA A LA 0065 (misma razón que la
+-- 0062 frente a la 0063): Postgres permite `ALTER TYPE ... ADD VALUE` dentro de
+-- una transacción (PG>=12, y Supabase corre PG15), pero NO deja USAR el valor
+-- recién creado en esa misma transacción. El script con que aplicamos a dev
+-- (scripts/_apply-sql-dev.mjs) manda el archivo completo en un solo
+-- `client.query()`, que Postgres envuelve en una transacción implícita. La 0065
+-- pone 'unset' como DEFAULT de las columnas, o sea que lo USA: si viviera acá,
+-- el archivo entero reventaría.
+--
+-- QUÉ CAMBIA DE FONDO (no es cosmético):
+--   Hasta hoy, driver_availability.am_state/pm_state arrancaban en 'available'
+--   y una jornada SIN FILA se leía como disponible. Es decir: el conductor que
+--   no abría la app entraba igual a la generación de turnos.
+--   Con 'unset', "no respondí" es un estado propio y distinto de "puedo": no
+--   entra a la generación (ver eligibleFor() en scheduler.js) y se cuenta como
+--   jornada faltante en el medidor de la pantalla del conductor y en la
+--   consolidada del admin ("Sin marcar").
+--
+-- NO se toca el trigger sync_approval_requests() de la 0009: su rama final
+-- (`ELSE -- available`) ya cubre 'unset' con el comportamiento correcto —
+-- borra la solicitud de aprobación de esa jornada, que es justo lo que debe
+-- pasar cuando el conductor desmarca.
+--
+-- Idempotente.
+-- =============================================================================
+
+ALTER TYPE public.availability_state ADD VALUE IF NOT EXISTS 'unset';

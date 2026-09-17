@@ -1,0 +1,10 @@
+-- Down de 0051 — quita remaining_after y next_stops del RPC de tracking.
+-- Igual que el down de 0050: la función se restaura re-ejecutando la migración
+-- anterior (es un CREATE OR REPLACE, no hay nada que dropear).
+--
+--   psql "$SUPABASE_DB_URL" -f supabase/migrations/0050_reservation_lifecycle.sql
+--
+-- OJO: la app del auxiliar (auxiliar.js) espera remaining_after/next_stops para
+-- decir cuántas recogidas faltan estando a bordo. Al revertir vuelve a mostrar
+-- "Vas al aeropuerto" aunque el carro siga recogiendo — que es el bug que 0051
+-- corrige. Revierte el front junto con esto.

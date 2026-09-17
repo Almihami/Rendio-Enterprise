@@ -471,31 +471,93 @@
   // -------------------- Strikes & suspensiones (Fase 2) --------------------
 
   // Historial de strikes de un conductor (más reciente primero).
+  //
+  // Aquí NO se filtra por mes, a propósito: esto es el historial COMPLETO, el
+  // sitio donde el conductor ve todo lo que le han puesto desde que entró. Por
+  // eso viaja también `period_start` (0077): con él la pantalla puede decir de
+  // qué mes es cada strike y marcar como EXPIRADO el que ya no pesa —uno de un
+  // mes anterior que no está ni anulado ni consumido—, en vez de mostrarlo
+  // igualito a los de este mes y dejar al conductor creyendo que carga cuatro
+  // cuando en realidad entró al mes nuevo limpio.
   async function listDriverStrikes(profileId) {
-    const { data, error } = await sb
+    const BASE = 'id, profile_id, reason, week_start_date, created_by, voided_at, voided_by, consumed_at, created_at';
+    const q = cols => sb
       .from('driver_strikes')
-      .select('id, profile_id, reason, week_start_date, created_by, voided_at, voided_by, consumed_at, created_at')
+      .select(cols)
       .eq('profile_id', profileId)
       .order('created_at', { ascending: false });
+    // Escalón de degradación (0077), del mismo talante que los de getSettings:
+    // si esto se despliega antes de que corra la migración, la columna no
+    // existe y el select entero revienta; el conductor se quedaría sin
+    // historial por culpa de una etiqueta. Sin ella se trae lo de siempre y la
+    // pantalla simplemente no podrá hablar de meses.
+    let { data, error } = await q(BASE + ', period_start');
+    if (error) ({ data, error } = await q(BASE));
     if (error) throw error;
     return data || [];
   }
 
-  // Conteo de strikes ACTIVOS (no anulados, no consumidos) por conductor.
+  // Conteo de strikes ACTIVOS (no anulados, no consumidos) DEL MES EN CURSO.
   // Devuelve Map profile_id -> count, para pintar badges en la lista de Personal.
+  //
+  // OJO CON ESTO, que es más de lo que parece: este `.eq('period_start', ...)`
+  // ES el reinicio mensual entero. No hay cron, ni trigger, ni job nocturno que
+  // "expire" nada al cambiar el mes. Un strike de agosto se queda vivo en la
+  // tabla para siempre (voided_at y consumed_at en null) y deja de contar SOLO
+  // porque el 1º de septiembre ya no cae dentro de este filtro. Quien quite
+  // esta línea no está relajando un filtro: está apagando el reinicio y
+  // devolviendo el contador a como estaba antes de 0077, cuando esta consulta
+  // sumaba TODO lo vivo desde el principio de los tiempos y week_start_date era
+  // apenas una etiqueta que nadie filtraba. O sea: el reinicio no se está
+  // migrando de semanal a mensual, se está estrenando.
+  //
+  // El mes sale de Scheduler.monthStartISO() y no de strikePeriod() de core.js
+  // aunque hagan lo mismo: en index.html va scheduler.js, luego api.js y core.js
+  // mucho después, así que aquí strikePeriod ni existe.
   async function getActiveStrikeCounts() {
-    const { data, error } = await sb
+    const vivos = () => sb
       .from('driver_strikes')
       .select('profile_id')
       .is('voided_at', null)
       .is('consumed_at', null);
+    // Escalón de degradación (0077): sin la columna el filtro revienta, y como
+    // Personal llama esto con un `.catch(() => new Map())` encima, la lista
+    // pintaría CERO strikes a todo el mundo —un conductor con dos encima se
+    // vería limpio, que es bastante peor que no reiniciar—. Sin migración se
+    // cuenta como toda la vida: todo lo que esté vivo.
+    let { data, error } = await vivos().eq('period_start', Scheduler.monthStartISO());
+    // El reintento va CON CONDICIÓN, y esto importa: a ciegas, cualquier fallo
+    // (una RLS, un corte de red) caería al conteo HISTÓRICO y lo pintaría como
+    // si fuera el del mes. El badge diría 3 donde va 1 y nadie se enteraría,
+    // porque no hay error que mostrar. Solo se degrada cuando la queja es por
+    // ESTA columna, o sea cuando de verdad falta la migración.
+    if (error && /period_start/i.test((error.message || '') + ' ' + (error.details || ''))) {
+      ({ data, error } = await vivos());
+    }
     if (error) throw error;
     const m = new Map();
     (data || []).forEach(r => m.set(r.profile_id, (m.get(r.profile_id) || 0) + 1));
     return m;
   }
 
-  // Registra un strike. La auto-suspensión (al 3º) la dispara el trigger en BD.
+  // Registra un strike. La auto-suspensión (al llegar al límite) la dispara el
+  // trigger en BD.
+  //
+  // El MES del strike NO viaja desde aquí: lo pone el default de la columna
+  // period_start (0077), que corre con el reloj del SERVIDOR en hora de Bogotá.
+  // Mandarlo desde el navegador sería colgar la disciplina de la operación del
+  // reloj del computador del admin: basta que lo tenga corrido, o que alguien
+  // abra la consola desde otra zona horaria, para que un strike del 30 de
+  // septiembre entre contado como de octubre. El servidor es el único que sabe
+  // de verdad qué día es.
+  //
+  // De paso, no nombrar la columna hace que este insert funcione igual antes y
+  // después de la migración, así que no necesita escalón de degradación: si la
+  // columna todavía no existe el insert entra igual, y la propia 0077 les pone
+  // después el mes de su created_at.
+  //
+  // week_start_date sí se manda y sigue igual que siempre: la SUSPENSIÓN sigue
+  // siendo semanal, y esa sí es la semana que el admin tiene en pantalla.
   async function addStrike({ profileId, reason, weekStart, createdBy }) {
     const row = { profile_id: profileId, reason: (reason || '').trim(), created_by: createdBy || null };
     if (weekStart) row.week_start_date = weekStart;
@@ -1889,6 +1951,26 @@
     if (error) throw error;
   }
 
+  // EL NÚMERO DE VUELO VIVE DENTRO DE `notes`, no en la tabla flights: la
+  // reserva nace con flight_id: null y el número se pega al principio como
+  // "Vuelo AV9412. " (ver createReservation). Leerlo estaba copiado tres veces
+  // con tres criterios distintos, y dos de esas copias solo entendían Avianca
+  // (/AV-?\d+/). Mientras el formulario fue texto libre casi nadie escribía la
+  // sigla y no se notaba; desde el 11-sep-2026 el pedido del tripulante GUARDA
+  // la sigla SIEMPRE, así que un "Vuelo LA1234." se habría quedado invisible
+  // para el admin —casilla del vuelo vacía en Reservas y en «Mis viajes»— sin
+  // que nada fallara ni se quejara. Una sola función para los tres lectores.
+  //
+  // Aguanta lo nuevo y lo viejo, que van a convivir en la misma tabla por años:
+  //   "Vuelo AV9412."  → AV9412   canónico de hoy (sin guion, a propósito)
+  //   "Vuelo AV-9412." → AV9412   lo que se escribía a mano hasta ayer
+  //   "Vuelo ja 5116." → JA5116   minúscula y espacio de por medio
+  //   "Vuelo 5116."    → 5116     solo dígitos: admin-rutas todavía los deduce
+  function _flightFromNotes(notes) {
+    const m = String(notes || '').match(/vuelo\s*:?\s*([A-Za-z]{0,3})\s*-?\s*(\d{2,5})/i);
+    return m ? (m[1] + m[2]).toUpperCase() : '';
+  }
+
   async function listRoutePlanning(tripType) {
     // Día en hora de COLOMBIA (no UTC): un viaje de las 21:10 Col NO debe rodar
     // al día siguiente (21:10 Col = 02:10 UTC). Agrupamos por America/Bogota.
@@ -1954,10 +2036,10 @@
         tel: r.auxiliar_profiles?.profiles?.phone || '',
         // El número de vuelo decide cuánto tarda el desembarque (0058), así que
         // ya no vale reconocer solo los "AV1234": el formulario deja escribir
-        // JA5116, P57433 o los dígitos pelados, y todos cuentan.
-        vuelo: r.flights?.flight_number
-          || (r.notes || '').match(/vuelo\s*:?\s*([A-Za-z]{0,3}\s?-?\d{2,5})/i)?.[1]?.replace(/[\s-]/g, '').toUpperCase()
-          || '',
+        // JA5116, P57433 o los dígitos pelados, y todos cuentan. La regex que
+        // vivía aquí se mudó a _flightFromNotes, que ahora es la misma para los
+        // tres lectores del vuelo (11-sep-2026).
+        vuelo: r.flights?.flight_number || _flightFromNotes(r.notes),
         notas: r.notes || '',
         // 'hotel' es el flag que el tablero ya sabía pintar (chip "Hotel"), pero
         // nadie se lo llenaba: la pernocta se preguntaba y se perdía.
@@ -2045,7 +2127,7 @@
       privateStatus: r.private_status || null,
       price: r.price_cop != null ? r.price_cop : null,
       privateReason: r.private_reject_reason || '',
-      flight: r.flights?.flight_number || (r.notes && r.notes.match(/AV-?\d+/) ? r.notes.match(/AV-?\d+/)[0] : ''),
+      flight: r.flights?.flight_number || _flightFromNotes(r.notes),
       date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
       address: r.pickup_address, lat: r.pickup_latitude, lng: r.pickup_longitude,
       notes: r.notes || '', status: _auxTripStatus(r), driver: null,
@@ -2092,7 +2174,16 @@
     // La segunda unidad (0075) va en su propio escalón: si la columna no
     // existiera, el auxiliar sigue trabajando con una sola como siempre.
     const q = (cols) => sb.from('auxiliar_profiles').select(cols).eq('profile_id', uid).maybeSingle();
-    let { data, error } = await q(BASE + ', residence_unit, residence_unit_2, residence_id_2, residencia2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector, latitude, longitude)');
+    const TOP = BASE + ', residence_unit, residence_unit_2, residence_id_2, residencia2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector, latitude, longitude)';
+    // LA AEROLÍNEA VA EN UN ESCALÓN PROPIO, ENCIMA DE TODO (11-sep-2026). La
+    // sigla (AV, JA, P5, LA) es lo que el pedido de traslado usa para llenarle
+    // el prefijo del número de vuelo al tripulante. Se pide como escalón nuevo
+    // y no metiéndola en TOP: si el embed a `airlines` fallara —RLS de esa
+    // tabla, o una base sin airline_id— se caería TODO el escalón compartido y
+    // el tripulante perdería su conjunto y su apartamento por un chip de dos
+    // letras. Así, lo peor que pasa es que el chip salga vacío.
+    let { data, error } = await q(TOP + ', airlines(iata_code)');
+    if (error) ({ data, error } = await q(TOP));
     if (error) ({ data, error } = await q(BASE + ', residence_unit'));
     if (error) ({ data, error } = await q(BASE));
     if (error || !data) return null;
@@ -2105,7 +2196,29 @@
       unit2: data.residence_unit_2 || '',
       homeAddress: data.home_address || '',
       homeLat: data.home_latitude, homeLng: data.home_longitude,
+      // '' cuando no hay aerolínea en el perfil, cuando esa aerolínea no tiene
+      // iata_code cargado, o cuando el escalón de arriba no pasó.
+      airlineIata: (data.airlines?.iata_code || '').toUpperCase(),
     };
+  }
+
+  // La sigla de la aerolínea del tripulante, sola y cacheada. La pide el pedido
+  // de traslado para entrar con el prefijo puesto ("AV" + los dígitos que él
+  // teclea) en vez de hacerlo escribir "AV-9412" entero, que es de donde salían
+  // los "av9412", los "9412" pelados y los tres formatos distintos en la misma
+  // tabla.
+  //
+  // Se cachea porque la aerolínea de una persona no cambia mientras tiene la
+  // app abierta. Solo se guarda el acierto: si vuelve vacía (sin sesión todavía,
+  // o el perfil sin aerolínea) se vuelve a intentar en el siguiente ingreso, que
+  // es justo lo que hace el botón «Reintentar».
+  let _myIata = null;
+  async function getMyAirlineIata() {
+    if (_myIata) return _myIata;
+    let v = '';
+    try { const p = await getMyAuxiliarPlace(); v = (p && p.airlineIata) || ''; } catch (_) {}
+    _myIata = v;
+    return v;
   }
 
   // Guarda el conjunto elegido como SU punto (p_auxiliar_profiles_update_own).
@@ -2275,7 +2388,7 @@
       phone: r.auxiliar_profiles?.profiles?.phone || '',
       address: r.pickup_address || '', when: r.required_arrival_at,
       date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
-      flight: (r.notes && r.notes.match(/AV-?\d+/)) ? r.notes.match(/AV-?\d+/)[0] : '',
+      flight: _flightFromNotes(r.notes),
       notes: r.notes || '', raw: r.status_h2a || r.status_a2h || '',
       status: _auxTripStatus(r), cancelledAt: r.cancelled_at || null,
       cancelReason: r.cancellation_reason || '', createdAt: r.created_at,
@@ -2967,7 +3080,7 @@
     signUpAuxiliar, signupCatalogs, registerAuxiliar,
     listAuxiliares, setAuxiliarJoinedAt, listAirlines, createAirline, setAirlineActive,
     getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,
-    listResidences, getMyAuxiliarPlace, saveMyResidence,
+    listResidences, getMyAuxiliarPlace, getMyAirlineIata, saveMyResidence,
     privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,

@@ -10,9 +10,37 @@
     const d = new Date();
     const dow = (d.getDay() + 6) % 7;          // 0 = lunes
     d.setDate(d.getDate() - dow + 7);          // lunes de la próxima semana
+    // El setHours no es decorativo: sin él, toISOString convierte a UTC y como
+    // Bogotá va en -5, de 7 p.m. en adelante devolvía el MARTES. Y como la
+    // suspensión se busca por lunes exacto, un conductor suspendido que abriera
+    // la app de noche no veía su suspensión por ningún lado.
+    d.setHours(0, 0, 0, 0);
     return d.toISOString().slice(0, 10);
   }
   function kmDrivenOf(sh) { return Math.max(0, (sh.closing_km || 0) - (sh.opening_km || 0)); }
+
+  // ¿A qué mes PERTENECE este strike, para efectos de contarlo? Solo period_start
+  // (migración 0077) responde eso. Si no viene —api.js trae el historial sin esa
+  // columna mientras la migración no corra— devuelve null: "no se sabe".
+  //
+  // Y el "no se sabe" se cuenta como si fuera de este mes, a propósito. Es
+  // tentador deducirlo del created_at y mostrar el contador ya reiniciado, pero
+  // sería una promesa que la base no puede cumplir: mientras 0077 no corra, el
+  // trigger que suspende sigue sumando TODO lo vivo, y getActiveStrikeCounts
+  // (api.js) también, que es lo que ve el admin. Enseñarle "0 de 3" a un
+  // conductor al que la base ya tiene en 3 es prometerle una semana de trabajo
+  // que va a perder. Que el número del conductor y el del admin salgan iguales
+  // en los dos mundos vale más que estrenar el reinicio un día antes.
+  function pfStrikePeriodOf(s) {
+    return s.period_start ? Scheduler.monthStartISO(String(s.period_start).slice(0, 10)) : null;
+  }
+
+  // ¿De qué mes HABLAR en pantalla? Aquí sí vale el created_at: la fecha en que
+  // el admin puso el strike es la misma con la que la migración etiquetó los
+  // viejos, así que la etiqueta no cambia cuando 0077 corra.
+  function pfStrikeMonthOf(s) {
+    return pfStrikePeriodOf(s) || Scheduler.monthStartISO(s.created_at ? new Date(s.created_at) : new Date());
+  }
 
   async function renderDriverProfile() {
     const box = $('#driver-profile-container'); if (!box) return;
@@ -30,9 +58,23 @@
         did ? Api.getMyOpenShift(did).catch(() => null) : Promise.resolve(null),
         Api.getMyWeekSuspension(state.profile.id, nextWeekMondayISO()).catch(() => null),
       ]);
-      const activeStrikes = (strikes || []).filter(s => !s.voided_at && !s.consumed_at);
+      // El número que ve el conductor es el de ESTE MES. Antes se contaba todo lo
+      // que estuviera vivo desde que entró a la empresa: un strike de marzo seguía
+      // pesando en septiembre y el contador no bajaba nunca. No es que se hubiera
+      // dañado el reinicio — es que no existía.
+      // Los de meses pasados salen de la CUENTA pero NO de la pantalla: el detalle
+      // los sigue listando, marcados como que ya no cuentan. Desaparecerlos se
+      // leería como si la app le hubiera borrado el pasado al conductor.
+      // Van aparte en oldStrikes para que cualquiera que mire state.profileData
+      // sepa de un vistazo qué se dejó de contar en el reinicio; el detalle se
+      // saca el "ya no cuenta" strike por strike, porque ahí también aparecen los
+      // consumidos por una suspensión, que no están en ninguna de las dos listas.
+      const period = strikePeriod();
+      const vivos = (strikes || []).filter(s => !s.voided_at && !s.consumed_at);
+      const activeStrikes = vivos.filter(s => (pfStrikePeriodOf(s) || period) === period);
+      const oldStrikes = vivos.filter(s => (pfStrikePeriodOf(s) || period) !== period);
       const kmTotal = (closed || []).reduce((s, sh) => s + kmDrivenOf(sh), 0);
-      state.profileData = { prof: prof || state.profile, strikes: strikes || [], activeStrikes, closed: closed || [], rewards: rewards || [], redemptions: redemptions || [], openShift, susp, kmTotal };
+      state.profileData = { prof: prof || state.profile, strikes: strikes || [], activeStrikes, oldStrikes, period, closed: closed || [], rewards: rewards || [], redemptions: redemptions || [], openShift, susp, kmTotal };
       drawProfileView();
     } catch (e) {
       console.error(e);
@@ -83,7 +125,7 @@
         </span>
       </div>
 
-      <div style="margin-top:16px" class="rc-in d1">${profileStrikeNoteHtml(sc, d.susp)}</div>
+      <div style="margin-top:16px" class="rc-in d1">${profileStrikeNoteHtml(sc, d.susp, d.period)}</div>
 
       <div class="rc-sechd">Recompensas por kilómetro</div>
       <button id="pf-rewards-btn" class="rc-pf-km rc-in d2" type="button">
@@ -135,7 +177,7 @@
         <button class="rc-listrow" id="pf-strikes-btn" type="button">
           <span class="ic">${avIcon('alert', 18)}</span>
           <span class="lbl">Mis strikes</span>
-          <span class="val">${sc === 0 ? 'Ninguno' : `${sc} de 3`}</span>
+          <span class="val">${sc === 0 ? 'Ninguno' : `${sc} de ${strikeLimit()}`}</span>
           <span class="chev">${avIcon('chevronRight', 16)}</span>
         </button>
         <button class="rc-listrow" id="pf-logout" type="button" style="border-bottom:0">
@@ -146,21 +188,31 @@
       <div style="height:20px"></div>`;
   }
 
-  // Nota de strikes: verde sin strikes, ámbar con uno, rojo de dos en adelante.
-  function profileStrikeNoteHtml(count, susp) {
+  // Nota de strikes: verde sin strikes, ámbar con uno, rojo cuando falta uno para
+  // el límite. Ojo con ese "uno para el límite": antes decía `count >= 2` a secas,
+  // y con el límite en 5 pintar de rojo a los 2 sería asustar al conductor por
+  // nada. El umbral es strikeLimit() - 1, siempre.
+  // El texto dice de qué mes es el número. Sin el mes, ver "2 de 3" el día 1 y
+  // "0 de 3" el 2 parece un error de la app; con el mes, es la regla funcionando.
+  // Los puntos también salen del límite: tantos como strikes aguante el mes.
+  function profileStrikeNoteHtml(count, susp, period) {
+    const lim = strikeLimit();
+    const mes = Scheduler.monthLabelES(period || strikePeriod());
     if (susp) {
+      // La suspensión sigue siendo SEMANAL aunque el conteo sea mensual: se
+      // acumulan strikes en el mes, y al llegar al límite se pierde una semana.
       return `<div class="rc-note err"><span class="rc-note-ic">${avIcon('alert', 17)}</span>
-        <span><b>Suspendido la próxima semana.</b> Por acumular 3 strikes. Habla con tu jefe.</span></div>`;
+        <span><b>Suspendido la próxima semana.</b> Por acumular ${lim} strikes. Esa semana no entras en la generación de turnos. Habla con tu jefe.</span></div>`;
     }
     if (count === 0) {
       return `<div class="rc-note ok"><span class="rc-note-ic">${avIcon('shield', 17)}</span>
-        <span><b>Sin strikes.</b> Buen historial — sigue así.</span></div>`;
+        <span><b>Sin strikes en ${escapeHtml(mes)}.</b> Buen historial — sigue así.</span></div>`;
     }
-    const tone = count >= 2 ? 'err' : 'warn';
-    const dots = [1, 2, 3].map(i => `<i class="${i <= count ? (count >= 2 ? 'on' : 'warn') : ''}"></i>`).join('');
+    const tone = count >= lim - 1 ? 'err' : 'warn';
+    const dots = Array.from({ length: lim }, (_, i) => `<i class="${i < count ? (count >= lim - 1 ? 'on' : 'warn') : ''}"></i>`).join('');
     return `<div class="rc-note ${tone}" style="flex-direction:column;align-items:stretch">
       <span style="display:flex;gap:10px"><span class="rc-note-ic">${avIcon('alert', 17)}</span>
-      <span><b>${count} de 3 strikes.</b> ${count >= 2 ? 'Uno más y te suspenden una semana.' : 'Revisa el motivo y cuida tu operación.'}</span></span>
+      <span><b>${count} de ${lim} strikes en ${escapeHtml(mes)}.</b> ${count >= lim - 1 ? 'Uno más y te suspenden una semana.' : 'Revisa el motivo y cuida tu operación.'}</span></span>
       <span class="rc-strikedots">${dots}</span>
     </div>`;
   }
@@ -176,29 +228,60 @@
   function strikesViewHtml() {
     const d = state.profileData;
     const susp = d.susp;
+    const lim = strikeLimit();
+    const period = d.period || strikePeriod();
+    const mes = Scheduler.monthLabelES(period);
+    // El mes que viene, para poder decirle al conductor CUÁNDO vuelve a cero. Se
+    // arma con new Date(año, mes+1, 1) a propósito: diciembre pasa solo a enero
+    // del año siguiente sin que haya que pensarlo.
+    const pd = new Date(period + 'T00:00:00');
+    const mesSig = Scheduler.monthLabelES(Scheduler.monthStartISO(new Date(pd.getFullYear(), pd.getMonth() + 1, 1)));
     // Detalle: strikes no anulados (incluye los "consumidos" del ciclo que generó
-    // la suspensión, para que un conductor suspendido vea por qué).
+    // la suspensión, para que un conductor suspendido vea por qué, y los de meses
+    // anteriores, que ya no suman pero siguen siendo parte de su historia).
     const shown = (d.strikes || []).filter(s => !s.voided_at);
-    const count = susp ? 3 : d.activeStrikes.length;
-    const fmtD = (s) => { try { return new Date(s + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { return s; } };
-    const list = shown.slice(0, 3).map((s, i) => `<div class="rounded-2xl bg-white border border-slate-200 p-4 flex gap-3">
-        <div class="w-8 h-8 rounded-full bg-rose-100 text-rose-700 font-extrabold flex items-center justify-center shrink-0 text-sm">${Math.min(shown.length, 3) - i}</div>
-        <div class="flex-1 min-w-0"><p class="text-sm font-bold text-ink">${escapeHtml(s.reason || 'Strike')}</p><p class="text-[11px] text-slate-400 mt-1">Semana ${escapeHtml(fmtD(s.week_start_date))} · asignado por el administrador</p></div>
-      </div>`).join('') || '<p class="text-sm text-slate-500">No tienes strikes activos. 🎉</p>';
+    // El número es SIEMPRE los strikes vivos del mes, nunca el límite.
+    // Antes decía `susp ? lim : ...`, y eso mentía dos veces: un conductor
+    // suspendido el 2 de octubre por lo que hizo en septiembre veía "3 de 3"
+    // encima de un historial que ya no tenía ninguno de este mes. La alarma la
+    // da el bloque rojo de "Suspensión activa", que está arriba y es inequívoco;
+    // el medidor no tiene que ser además el mensajero.
+    const count = d.activeStrikes.length;
+    const cap = Math.min(shown.length, lim);
+    const list = shown.slice(0, lim).map((s, i) => {
+      // El mes del strike, no la semana. week_start_date sigue existiendo y sigue
+      // sirviendo para la suspensión, pero como etiqueta le decía al conductor
+      // algo que ya no es la unidad en la que se cuenta.
+      const suMes = Scheduler.monthLabelES(pfStrikeMonthOf(s));
+      // "Ya no cuenta" solo se dice cuando se SABE que no cuenta: sin
+      // period_start el strike sigue pesando, y tacharlo sería mentir al revés.
+      const viejo = !!pfStrikePeriodOf(s) && pfStrikePeriodOf(s) !== period;
+      return `<div class="rounded-2xl bg-white border border-slate-200 p-4 flex gap-3">
+        <div class="w-8 h-8 rounded-full ${viejo ? 'bg-slate-100 text-slate-400' : 'bg-rose-100 text-rose-700'} font-extrabold flex items-center justify-center shrink-0 text-sm">${cap - i}</div>
+        <div class="flex-1 min-w-0"><p class="text-sm font-bold text-ink">${escapeHtml(s.reason || 'Strike')}</p><p class="text-[11px] text-slate-400 mt-1">${escapeHtml(suMes.charAt(0).toUpperCase() + suMes.slice(1))} · asignado por el administrador${viejo ? ' · ya no cuenta' : ''}</p></div>
+      </div>`;
+    }).join('') || '<p class="text-sm text-slate-500">No tienes strikes activos. 🎉</p>';
+    // Lo que dice este bloque tiene que ser VERDAD. Decía "no podrás iniciar
+    // turnos ni marcar disponibilidad" y eso hoy no pasa: los guardias de la app
+    // miran profiles.is_active, no driver_suspensions, así que un suspendido por
+    // strikes sigue pudiendo abrir turno. Lo que sí ocurre de verdad es que el
+    // generador lo deja por fuera de esa semana. Se arregla el texto, no el
+    // guardia: cerrar ese hueco toca otros tres archivos y merece su propio
+    // cambio, con sus propias pruebas.
     const suspBlock = susp ? `<div class="rounded-3xl bg-gradient-to-br from-rose-600 to-rose-700 text-white p-6 text-center shadow-lg mb-4">
         <div class="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-3xl mx-auto mb-3">🚫</div>
         <p class="text-xl font-extrabold">Suspensión activa</p>
-        <p class="text-sm text-white/85 mt-1.5">La próxima semana no podrás iniciar turnos ni marcar disponibilidad. La levanta tu administrador.</p>
+        <p class="text-sm text-white/85 mt-1.5">La próxima semana no entras en la generación de turnos: el horario se arma sin ti. La levanta tu administrador.</p>
       </div>` : '';
     return `
       <button id="pf-back" class="flex items-center gap-1 text-sm font-bold text-slate-600 py-2 mb-1">‹ Volver al perfil</button>
       <h2 class="text-[22px] font-extrabold text-ink leading-tight mb-3">Strikes</h2>
       ${suspBlock}
-      <div class="rounded-3xl bg-white border-2 ${count >= 2 || susp ? 'border-rose-200' : count === 1 ? 'border-amber-200' : 'border-emerald-200'} p-5 text-center shadow-card mb-4">
-        <p class="text-[11px] font-bold uppercase tracking-wider ${count >= 2 || susp ? 'text-rose-600' : count === 1 ? 'text-amber-600' : 'text-emerald-600'}">Strikes acumulados</p>
-        <p class="text-5xl font-extrabold text-ink mt-1">${count}<span class="text-2xl text-slate-300"> / 3</span></p>
+      <div class="rounded-3xl bg-white border-2 ${count >= lim - 1 || susp ? 'border-rose-200' : count > 0 ? 'border-amber-200' : 'border-emerald-200'} p-5 text-center shadow-card mb-4">
+        <p class="text-[11px] font-bold uppercase tracking-wider ${count >= lim - 1 || susp ? 'text-rose-600' : count > 0 ? 'text-amber-600' : 'text-emerald-600'}">Strikes de ${escapeHtml(mes)}</p>
+        <p class="text-5xl font-extrabold text-ink mt-1">${count}<span class="text-2xl text-slate-300"> / ${lim}</span></p>
       </div>
-      <div class="rounded-2xl bg-slate-100 p-4 mb-4"><p class="text-sm font-bold text-ink">¿Qué pasa al llegar a 3 strikes?</p><p class="text-xs text-slate-500 mt-1">Tu cuenta se suspende la semana siguiente: no podrás iniciar turnos ni marcar disponibilidad hasta que el administrador lo resuelva.</p></div>
+      <div class="rounded-2xl bg-slate-100 p-4 mb-4"><p class="text-sm font-bold text-ink">¿Qué pasa al llegar a ${lim} strikes?</p><p class="text-xs text-slate-500 mt-1">Te suspenden la semana siguiente: esa semana no entras en la generación de turnos, el horario se arma sin ti. La cuenta es del mes, no de toda tu historia: el 1 de ${escapeHtml(mesSig)} arranca de cero y lo de ${escapeHtml(mes)} queda atrás.</p></div>
       <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500 mb-2">Detalle</h3>
       <div class="space-y-2.5 pb-6">${list}</div>`;
   }

@@ -1,0 +1,281 @@
+%% MER (Modelo Entidad-Relación) — Rendio MVP
+%% Renderizable en GitHub directamente. Para generar PNG/SVG: usar https://mermaid.live
+%% Fuente de verdad: migrations 0001-0016 (rendio-backend/supabase/migrations/).
+%%
+%% Notas de evolución:
+%%   - El módulo "rendio-turnos" introdujo en 0008 las tablas driver_availability,
+%%     weekly_schedules y app_settings (jornadas AM/PM por conductor).
+%%     No existe una tabla "availability" genérica para auxiliares: la disponibilidad
+%%     operativa hoy solo se modela para drivers.
+%%   - La migration 0016 introdujo las tablas operativas de E2.01:
+%%     shifts, inspections, inspection_photos, incidents, maintenance.
+%%     (Antes el ERD usaba los nombres aspiracionales driver_shifts /
+%%     vehicle_inspections / maintenance_logs — actualizados aquí a los reales.)
+
+erDiagram
+    organizations ||--o{ airports : "has"
+    organizations ||--o{ profiles : "has"
+    organizations ||--o{ vehicles : "owns"
+    organizations ||--o{ shifts : "scopes"
+    organizations ||--o{ inspections : "scopes"
+    organizations ||--o{ incidents : "scopes"
+    organizations ||--o{ maintenance : "scopes"
+
+    airports ||--o{ flights : "departs/arrives"
+
+    profiles ||--o| auxiliar_profiles : "extends_when_role=auxiliar"
+    profiles ||--o| driver_profiles : "extends_when_role=driver"
+    profiles ||--o{ incidents : "reports"
+    profiles ||--o{ audit_events : "actor"
+    profiles ||--o{ driver_availability : "submits_weekly"
+
+    auxiliar_profiles ||--o{ reservations : "books"
+
+    driver_profiles ||--o{ shifts : "works"
+    driver_profiles ||--o{ route_assignments : "drives"
+    driver_profiles ||--o{ driver_locations : "tracks"
+    driver_profiles ||--o{ inspections : "performs"
+
+    vehicles ||--o{ shifts : "used_in"
+    vehicles ||--o{ route_assignments : "assigned_to"
+    vehicles ||--o{ inspections : "inspected"
+    vehicles ||--o{ maintenance : "serviced"
+    vehicles ||--o{ incidents : "may_have"
+
+    shifts ||--o{ inspections : "initial_and_final"
+    shifts ||--o{ incidents : "may_have"
+
+    flights ||--o{ reservations : "served_by"
+    flights ||--o{ route_assignments : "destination"
+
+    reservations ||--o| route_stops : "scheduled_in"
+    reservations ||--o{ incidents : "may_have"
+
+    route_assignments ||--o{ route_stops : "ordered_stops"
+    route_assignments ||--o{ driver_locations : "tracked_in"
+
+    inspections ||--o{ inspection_photos : "documented_by"
+
+    organizations {
+        uuid id PK
+        text name
+        text slug UK
+        text timezone "default America/Bogota"
+        timestamptz created_at
+    }
+
+    airports {
+        uuid id PK
+        uuid organization_id FK
+        text iata_code "MDE"
+        text name
+        double latitude
+        double longitude
+    }
+
+    profiles {
+        uuid id PK_FK "auth.users"
+        uuid organization_id FK
+        user_role role "admin/driver/auxiliar"
+        text full_name
+        text email
+        text phone
+        text avatar_url
+        boolean is_active
+        boolean is_coordinator
+        boolean can_coordinate
+        int priority
+        timestamptz deleted_at
+    }
+
+    auxiliar_profiles {
+        uuid id PK
+        uuid profile_id FK_UK
+        text home_address
+        double home_latitude
+        double home_longitude
+        text employee_code
+    }
+
+    driver_profiles {
+        uuid id PK
+        uuid profile_id FK_UK
+        text license_number
+        date license_expires_at
+        text eps_provider
+        date eps_expires_at
+        text arl_provider
+        date arl_expires_at
+    }
+
+    vehicles {
+        uuid id PK
+        uuid organization_id FK
+        text internal_code UK "HAP 001"
+        text license_plate UK
+        text brand
+        text model
+        int year
+        int capacity "default 4, max 4"
+        int current_km
+        int last_maintenance_km
+        int maintenance_interval_km "default 7000"
+        vehicle_status status "blocked si supera intervalo al cerrar shift"
+        date soat_expires_at
+        date tecnomec_expires_at
+        date insurance_expires_at
+    }
+
+    flights {
+        uuid id PK
+        uuid airport_id FK
+        text flight_number "AV9540"
+        trip_direction direction
+        timestamptz scheduled_at
+        timestamptz actual_at
+        flight_status status
+        text terminal
+        text gate
+        int required_auxiliars
+    }
+
+    reservations {
+        uuid id PK
+        uuid auxiliar_profile_id FK
+        uuid flight_id FK
+        trip_direction direction
+        reservation_status_h2a status_h2a "nullable"
+        reservation_status_a2h status_a2h "nullable"
+        text pickup_address
+        double pickup_latitude
+        double pickup_longitude
+        timestamptz calculated_pickup_at
+        timestamptz required_arrival_at
+        timestamptz ready_confirmed_at
+        text disembark_gate "a2h only"
+    }
+
+    route_assignments {
+        uuid id PK
+        uuid driver_profile_id FK
+        uuid vehicle_id FK
+        uuid flight_id FK "nullable"
+        trip_direction direction
+        timestamptz planned_start_at
+        timestamptz actual_start_at
+        timestamptz actual_end_at
+        text status "planned/in_progress/completed/cancelled"
+        int total_distance_m
+        int total_duration_s
+        text encoded_polyline
+    }
+
+    route_stops {
+        uuid id PK
+        uuid route_assignment_id FK
+        uuid reservation_id FK
+        int stop_order
+        timestamptz estimated_arrival_at
+        timestamptz actual_arrival_at
+        timestamptz actual_pickup_at
+        text status "pending/arrived/picked_up/no_show"
+    }
+
+    driver_locations {
+        bigint id PK
+        uuid driver_profile_id FK
+        uuid route_assignment_id FK "nullable"
+        double latitude
+        double longitude
+        real heading
+        real speed_kmh
+        timestamptz recorded_at
+    }
+
+    driver_availability {
+        uuid id PK
+        uuid profile_id FK
+        date week_start_date
+        smallint day_of_week "0=lunes..6=domingo"
+        availability_state am_state
+        availability_state pm_state
+        shift_period shift_preference "am|pm"
+        text notes
+        timestamptz submitted_at
+    }
+
+    shifts {
+        uuid id PK
+        uuid organization_id FK
+        uuid driver_id FK "driver_profiles"
+        uuid vehicle_id FK
+        shift_status status "vehicle_selected→inspection_in_progress→active→closing→closed"
+        timestamptz start_at
+        timestamptz end_at
+        int opening_km
+        int closing_km
+        text notes
+    }
+
+    inspections {
+        uuid id PK
+        uuid organization_id FK
+        uuid shift_id FK
+        uuid vehicle_id FK
+        uuid driver_id FK
+        inspection_kind kind "initial|final"
+        int odometer_km
+        jsonb checklist "frenos/luces/llantas/niveles/espejos/cinturones"
+        boolean has_damage
+        text notes
+        timestamptz performed_at
+    }
+
+    inspection_photos {
+        uuid id PK
+        uuid inspection_id FK
+        uuid organization_id FK
+        inspection_photo_type photo_type "front/left/right/rear/dashboard"
+        text storage_path "bucket inspections (privado)"
+        int size_bytes
+        timestamptz taken_at
+    }
+
+    incidents {
+        uuid id PK
+        uuid organization_id FK
+        uuid reporter_id FK "profiles"
+        uuid shift_id FK "nullable"
+        uuid vehicle_id FK "nullable"
+        uuid reservation_id FK "nullable"
+        incident_category category
+        incident_severity severity
+        incident_status status "open/in_progress/resolved"
+        text description
+        jsonb photo_paths
+        uuid assigned_to FK "nullable"
+        text resolution_notes
+        timestamptz resolved_at
+    }
+
+    maintenance {
+        uuid id PK
+        uuid organization_id FK
+        uuid vehicle_id FK
+        uuid performed_by FK "profiles, nullable"
+        text maintenance_type
+        int km_at_event
+        numeric cost_cop
+        timestamptz performed_at
+        text notes
+    }
+
+    audit_events {
+        bigint id PK
+        uuid actor_profile_id FK
+        text event_type
+        text entity_type
+        uuid entity_id
+        jsonb payload
+        timestamptz created_at
+    }

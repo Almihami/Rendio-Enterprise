@@ -30,6 +30,10 @@
           { id: 'insp', name: 'Inspecciones', icon: 'm-insp', desc: 'Revisar inspecciones de inicio de turno con novedad.', tab: 'inspections' },
           { id: 'shifts', name: 'Turnos activos', icon: 'm-insp', desc: 'Turnos en curso; forzar cierre si quedó colgado.', tab: 'shifts' },
           { id: 'parts', name: 'Repuestos', icon: 'm-insp', desc: 'Mantenimiento preventivo por kilometraje: qué pieza le toca a cada carro.', star: true, tab: 'parts' },
+          // La flota estaba enterrada al final de Ajustes, debajo de 39 parámetros que nadie
+          // toca en el día a día. Registrar un carro o marcarle el cambio de aceite es
+          // revisión, igual que Repuestos, y por eso vive acá desde el 2026-09-11.
+          { id: 'flota', name: 'Flota', icon: 'm-flota', desc: 'Los carros: alta, baja, kilometraje y cambio de aceite. De acá eligen los conductores al iniciar turno.', tab: 'flota' },
         ] },
         { id: 'team', name: 'Equipo', icon: 'g-team', desc: 'Personas y motivación', items: [
           { id: 'personal', name: 'Personal', icon: 'm-personal', desc: 'Conductores y admins: estado, strikes, coordinación.', tab: 'workers' },
@@ -39,7 +43,7 @@
           { id: 'balance', name: 'Balance', icon: 'm-balance', desc: 'Horas reales por persona y descarga en Excel.', tab: 'balance' },
         ] },
         { id: 'cfg', name: 'Configuración', icon: 'g-cfg', desc: 'Parámetros', items: [
-          { id: 'ajustes', name: 'Ajustes', icon: 'm-ajustes', desc: 'Cupos, antigüedad, descansos fijos y alta de conductor.', tab: 'settings' },
+          { id: 'ajustes', name: 'Ajustes', icon: 'm-ajustes', desc: 'Jornadas, cupos, strikes, inicio rápido, antigüedad y descansos fijos.', tab: 'settings' },
         ] },
       ]
     },
@@ -56,13 +60,22 @@
         { id: 'ops', name: 'Operación', icon: 'g-ops', desc: 'Monitoreo en vivo', items: [
           { id: 'oper', name: 'Operación', icon: 'm-oper', desc: 'Carros en el mapa en tiempo real y alerta de atraso antes de que ocurra.', star: true, tab: 'oper' },
           { id: 'evt', name: 'Eventualidades', icon: 'm-insp', desc: 'Fallas mecánicas, trancones y emergencias que reportan conductores y tripulantes en plena ruta.', star: true, tab: 'eventualidades' },
-          { id: 'flota', name: 'Flota', icon: 'm-flota', desc: 'Vehículos disponibles, capacidad y mantenimiento.', soon: 'build' },
+          // Acá había una tarjeta "Flota · Pronto". Se quitó el 2026-09-11 porque la flota
+          // dejó de estar por construir: existe, salió de Ajustes y vive en Turnos ›
+          // Revisión. Dejar el "Pronto" al lado de la de verdad era prometer dos veces lo
+          // mismo y mandar al jefe a la pantalla equivocada.
         ] },
         { id: 'team', name: 'Equipo', icon: 'g-team', desc: 'Personas', items: [
           { id: 'personas', name: 'Tripulantes', icon: 'm-personas', desc: 'Los TCP que se registraron solos: aerolínea, punto de recogida, sus dos unidades y la antigüedad con Rendio.', tab: 'tripulantes' },
         ] },
         { id: 'data', name: 'Análisis', icon: 'g-data', desc: 'Reportes', items: [
           { id: 'metricas', name: 'Métricas', icon: 'm-metricas', desc: 'Rutas a tiempo, km y ocupación de carros.', soon: 'build' },
+        ] },
+        // Rutas no tenía Configuración y sí tenía 26 parámetros propios — estaban de
+        // prestado en Ajustes de Turnos, que es otro espacio de trabajo. Acá quedan al
+        // lado de las pantallas que calibran (2026-09-11).
+        { id: 'cfg', name: 'Configuración', icon: 'g-cfg', desc: 'Parámetros', items: [
+          { id: 'calib', name: 'Calibración', icon: 'i-sliders', desc: 'Tráfico, esperas, desembarque por aerolínea, la tabla de tiempos y la zona de cada conjunto.', tab: 'calibracion' },
         ] },
       ]
     }
@@ -74,7 +87,10 @@
   // Los badges del sidebar reusan los IDs que esperan las funciones de refresco
   // existentes (refreshPendingBadge/refreshInspectionsBadge/refreshShiftsBadge),
   // así no hay que duplicar lógica de conteo.
-  const SIDEBAR_BADGE_IDS = { approvals: 'pending-badge', inspections: 'inspections-badge', shifts: 'shifts-badge', settings: 'oil-badge', eventualidades: 'events-badge' };
+  // El "!" del aceite se mudó de Ajustes a Flota el 2026-09-11, junto con los carros:
+  // una alerta tiene que alumbrar donde está el botón que la apaga. El id del badge
+  // (oil-badge) NO cambia — setOilBadge lo busca por id en admin-turnos-activos.js.
+  const SIDEBAR_BADGE_IDS = { approvals: 'pending-badge', inspections: 'inspections-badge', shifts: 'shifts-badge', flota: 'oil-badge', eventualidades: 'events-badge' };
 
   // Busca el módulo (y su espacio) por su tab. Devuelve {ws, group, item} o null.
   function findModuleByTab(tab) {
@@ -104,7 +120,7 @@
             </button>`;
           }
           const bid = SIDEBAR_BADGE_IDS[it.tab];
-          // El badge de Ajustes es una alerta "!" (aceite pendiente), no un contador.
+          // El badge de Flota es una alerta "!" (aceite pendiente), no un contador.
           const badge = bid ? `<span class="badge hidden" id="${bid}">${bid === 'oil-badge' ? '!' : '0'}</span>` : '';
           return `<button class="nav-i" data-mod="${it.tab}" data-tip="${it.name}">
             <svg class="ni-ic"><use href="#${it.icon}"/></svg>
@@ -147,7 +163,19 @@
     sideBound = true;
     side.addEventListener('click', (e) => {
       const ws = e.target.closest('#adm-wstabs button');
-      if (ws) { if (ws.dataset.ws !== cnWs) { cnWs = ws.dataset.ws; renderAdminSidebar(); setTab('consola'); } return; }
+      if (ws) {
+        if (ws.dataset.ws !== cnWs) {
+          // Se pregunta ANTES de mover el switcher (2026-09-11). Ajustes y
+          // Calibración pueden frenar la salida si hay cambios sin guardar, y si
+          // el jefe decide quedarse, el sidebar no puede haberse ido sin él: se
+          // quedaría viendo la pantalla de un espacio con el menú del otro.
+          // Si dice que sí, el aviso ya dejó el bloque limpio y el setTab de
+          // abajo no vuelve a preguntar.
+          if (typeof setPuedeSalirDelModulo === 'function' && !setPuedeSalirDelModulo('consola')) return;
+          cnWs = ws.dataset.ws; renderAdminSidebar(); setTab('consola');
+        }
+        return;
+      }
       const home = e.target.closest('[data-cnmod]');
       if (home) { setTab('consola'); closeAdminDrawer(); return; }
       const ni = e.target.closest('.nav-i[data-mod]');

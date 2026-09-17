@@ -37,7 +37,7 @@
     return (state.settings && state.settings.auto_close_hours != null) ? state.settings.auto_close_hours : 14;
   }
 
-  // Badge "!" en la pestaña Ajustes: alerta (no número) cuando hay al menos un
+  // Badge "!" en la pestaña Flota: alerta (no número) cuando hay al menos un
   // vehículo con cambio de aceite pendiente (bloqueado o desbloqueado por conductor).
   function setOilBadge(vehs) {
     const b = $('#oil-badge');

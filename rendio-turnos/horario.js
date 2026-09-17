@@ -699,7 +699,8 @@
       }
     }
 
-    // Suspendidos esta semana (por 3 strikes o manual): fuera del generador.
+    // Suspendidos esta semana (por llegar al límite de strikes en el mes, o
+    // manual): fuera del generador.
     let suspendedThisWeek = [];
     try {
       const susp = await Api.getWeekSuspensions(state.currentWeek);
@@ -751,7 +752,7 @@
       ? `<p class="text-rose-700 font-semibold">⛔ ${excluded.length} conductor(es) fuera por no llenar disponibilidad antes del domingo 2:00 PM: ${excluded.map(d => escapeHtml(d.name)).join(', ')}</p>`
       : '';
     const suspMsg = suspendedThisWeek.length
-      ? `<p class="text-amber-700 font-semibold">🚫 ${suspendedThisWeek.length} conductor(es) suspendido(s) esta semana (3 strikes / manual): ${suspendedThisWeek.map(d => escapeHtml(d.name)).join(', ')}</p>`
+      ? `<p class="text-amber-700 font-semibold">🚫 ${suspendedThisWeek.length} conductor(es) suspendido(s) esta semana (${strikeLimit()} strikes en el mes / manual): ${suspendedThisWeek.map(d => escapeHtml(d.name)).join(', ')}</p>`
       : '';
     if (warnings.length || exclMsg || suspMsg) {
       box.innerHTML = exclMsg + suspMsg + (warnings.length

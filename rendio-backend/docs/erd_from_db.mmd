@@ -1,0 +1,323 @@
+%% MER (Modelo Entidad-Relación) — generado por introspección desde rendio-dev
+%% Snapshot: 2026-05-26T20:40:37
+%% Refleja el estado REAL de la BD aplicada.
+%% Para regenerar: ./scripts/generate_erd_from_db.sh
+%% Renderizable en GitHub o https://mermaid.live
+
+erDiagram
+    organizations ||--o{ airports : "organization_id__id"
+    profiles ||--o{ app_settings : "updated_by__id"
+    profiles ||--o{ approval_requests : "profile_id__id"
+    profiles ||--o{ approval_requests : "resolved_by__id"
+    profiles ||--o{ audit_events : "actor_profile_id__id"
+    profiles ||--o{ auxiliar_profiles : "profile_id__id"
+    profiles ||--o{ driver_availability : "profile_id__id"
+    driver_profiles ||--o{ driver_locations : "driver_profile_id__id"
+    route_assignments ||--o{ driver_locations : "route_assignment_id__id"
+    profiles ||--o{ driver_profiles : "profile_id__id"
+    airports ||--o{ flights : "airport_id__id"
+    organizations ||--o{ incidents : "organization_id__id"
+    profiles ||--o{ incidents : "reporter_id__id"
+    profiles ||--o{ incidents : "assigned_to__id"
+    vehicles ||--o{ incidents : "vehicle_id__id"
+    reservations ||--o{ incidents : "reservation_id__id"
+    shifts ||--o{ incidents : "shift_id__id"
+    organizations ||--o{ inspection_photos : "organization_id__id"
+    inspections ||--o{ inspection_photos : "inspection_id__id"
+    driver_profiles ||--o{ inspections : "driver_id__id"
+    organizations ||--o{ inspections : "organization_id__id"
+    shifts ||--o{ inspections : "shift_id__id"
+    vehicles ||--o{ inspections : "vehicle_id__id"
+    organizations ||--o{ maintenance : "organization_id__id"
+    profiles ||--o{ maintenance : "performed_by__id"
+    vehicles ||--o{ maintenance : "vehicle_id__id"
+    organizations ||--o{ profiles : "organization_id__id"
+    flights ||--o{ reservations : "flight_id__id"
+    auxiliar_profiles ||--o{ reservations : "auxiliar_profile_id__id"
+    vehicles ||--o{ route_assignments : "vehicle_id__id"
+    flights ||--o{ route_assignments : "flight_id__id"
+    driver_profiles ||--o{ route_assignments : "driver_profile_id__id"
+    route_assignments ||--o{ route_stops : "route_assignment_id__id"
+    reservations ||--o{ route_stops : "reservation_id__id"
+    organizations ||--o{ shifts : "organization_id__id"
+    vehicles ||--o{ shifts : "vehicle_id__id"
+    driver_profiles ||--o{ shifts : "driver_id__id"
+    organizations ||--o{ vehicles : "organization_id__id"
+    profiles ||--o{ weekly_schedules : "created_by__id"
+
+    airports {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        text iata_code "NOT NULL"
+        text name "NOT NULL"
+        double latitude "NOT NULL"
+        double longitude "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    app_settings {
+        text id PK "NOT NULL"
+        text morning_label "NOT NULL"
+        text afternoon_label "NOT NULL"
+        smallint morning_slots "NOT NULL"
+        smallint afternoon_slots "NOT NULL"
+        uuid updated_by FK
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+        date reopen_week_start
+        timestamptz reopen_until
+    }
+    approval_requests {
+        uuid id PK "NOT NULL"
+        uuid profile_id FK "NOT NULL"
+        date week_start_date "NOT NULL"
+        smallint day_of_week "NOT NULL"
+        shift_period shift "NOT NULL"
+        availability_state kind "NOT NULL"
+        text reason
+        approval_state state "NOT NULL"
+        uuid resolved_by FK
+        timestamptz resolved_at
+        text admin_note
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    audit_events {
+        bigint id PK "NOT NULL"
+        uuid actor_profile_id FK
+        text event_type "NOT NULL"
+        text entity_type "NOT NULL"
+        uuid entity_id "NOT NULL"
+        jsonb payload
+        timestamptz created_at "NOT NULL"
+    }
+    auxiliar_profiles {
+        uuid id PK "NOT NULL"
+        uuid profile_id FK "NOT NULL"
+        text home_address "NOT NULL"
+        double home_latitude "NOT NULL"
+        double home_longitude "NOT NULL"
+        text employee_code
+        text notes
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    driver_availability {
+        uuid id PK "NOT NULL"
+        uuid profile_id FK "NOT NULL"
+        date week_start_date "NOT NULL"
+        smallint day_of_week "NOT NULL"
+        availability_state am_state "NOT NULL"
+        availability_state pm_state "NOT NULL"
+        text notes
+        timestamptz submitted_at "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+        text am_reason
+        text pm_reason
+        text shift_pref "NOT NULL"
+    }
+    driver_locations {
+        bigint id PK "NOT NULL"
+        uuid driver_profile_id FK "NOT NULL"
+        uuid route_assignment_id FK
+        double latitude "NOT NULL"
+        double longitude "NOT NULL"
+        real heading
+        real speed_kmh
+        timestamptz recorded_at "NOT NULL"
+    }
+    driver_profiles {
+        uuid id PK "NOT NULL"
+        uuid profile_id FK "NOT NULL"
+        text license_number
+        date license_expires_at
+        text eps_provider
+        date eps_expires_at
+        text arl_provider
+        date arl_expires_at
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    flights {
+        uuid id PK "NOT NULL"
+        uuid airport_id FK "NOT NULL"
+        text flight_number "NOT NULL"
+        trip_direction direction "NOT NULL"
+        timestamptz scheduled_at "NOT NULL"
+        timestamptz actual_at
+        flight_status status "NOT NULL"
+        text terminal
+        text gate
+        int required_auxiliars "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    incidents {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        uuid reporter_id FK "NOT NULL"
+        uuid shift_id FK
+        uuid vehicle_id FK
+        uuid reservation_id FK
+        incident_category category "NOT NULL"
+        incident_severity severity "NOT NULL"
+        incident_status status "NOT NULL"
+        text description "NOT NULL"
+        jsonb photo_paths "NOT NULL"
+        uuid assigned_to FK
+        text resolution_notes
+        timestamptz resolved_at
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    inspection_photos {
+        uuid id PK "NOT NULL"
+        uuid inspection_id FK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        inspection_photo_type photo_type "NOT NULL"
+        text storage_path "NOT NULL"
+        int size_bytes
+        timestamptz taken_at "NOT NULL"
+        timestamptz created_at "NOT NULL"
+    }
+    inspections {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        uuid shift_id FK "NOT NULL"
+        uuid vehicle_id FK "NOT NULL"
+        uuid driver_id FK "NOT NULL"
+        inspection_kind kind "NOT NULL"
+        int odometer_km "NOT NULL"
+        jsonb checklist "NOT NULL"
+        bool has_damage "NOT NULL"
+        text notes
+        timestamptz performed_at "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    maintenance {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        uuid vehicle_id FK "NOT NULL"
+        uuid performed_by FK
+        text maintenance_type "NOT NULL"
+        int km_at_event "NOT NULL"
+        numeric cost_cop
+        timestamptz performed_at "NOT NULL"
+        text notes
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    organizations {
+        uuid id PK "NOT NULL"
+        text name "NOT NULL"
+        text slug "NOT NULL"
+        text timezone "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    profiles {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        user_role role "NOT NULL"
+        text full_name "NOT NULL"
+        text email "NOT NULL"
+        text phone
+        text avatar_url
+        bool is_active "NOT NULL"
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+        timestamptz deleted_at
+        bool is_coordinator "NOT NULL"
+        smallint priority "NOT NULL"
+        bool can_coordinate "NOT NULL"
+    }
+    reservations {
+        uuid id PK "NOT NULL"
+        uuid auxiliar_profile_id FK "NOT NULL"
+        uuid flight_id FK "NOT NULL"
+        trip_direction direction "NOT NULL"
+        reservation_status_h2a status_h2a
+        reservation_status_a2h status_a2h
+        text pickup_address "NOT NULL"
+        double pickup_latitude
+        double pickup_longitude
+        timestamptz calculated_pickup_at
+        timestamptz required_arrival_at "NOT NULL"
+        timestamptz ready_confirmed_at
+        text disembark_gate
+        text notes
+        timestamptz cancelled_at
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    route_assignments {
+        uuid id PK "NOT NULL"
+        uuid driver_profile_id FK "NOT NULL"
+        uuid vehicle_id FK "NOT NULL"
+        uuid flight_id FK
+        trip_direction direction "NOT NULL"
+        timestamptz planned_start_at
+        timestamptz actual_start_at
+        timestamptz actual_end_at
+        text status "NOT NULL"
+        int total_distance_m
+        int total_duration_s
+        text encoded_polyline
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    route_stops {
+        uuid id PK "NOT NULL"
+        uuid route_assignment_id FK "NOT NULL"
+        uuid reservation_id FK "NOT NULL"
+        int stop_order "NOT NULL"
+        timestamptz estimated_arrival_at
+        timestamptz actual_arrival_at
+        timestamptz actual_pickup_at
+        text status "NOT NULL"
+    }
+    shifts {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        uuid driver_id FK "NOT NULL"
+        uuid vehicle_id FK "NOT NULL"
+        shift_status status "NOT NULL"
+        timestamptz start_at "NOT NULL"
+        timestamptz end_at
+        int opening_km
+        int closing_km
+        text notes
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
+    vehicles {
+        uuid id PK "NOT NULL"
+        uuid organization_id FK "NOT NULL"
+        text internal_code "NOT NULL"
+        text license_plate "NOT NULL"
+        text brand
+        text model
+        int year
+        int capacity "NOT NULL"
+        int current_km "NOT NULL"
+        int last_maintenance_km "NOT NULL"
+        int maintenance_interval_km "NOT NULL"
+        vehicle_status status "NOT NULL"
+        date soat_expires_at
+        date tecnomec_expires_at
+        date insurance_expires_at
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+        timestamptz deleted_at
+    }
+    weekly_schedules {
+        uuid id PK "NOT NULL"
+        date week_start_date "NOT NULL"
+        jsonb data "NOT NULL"
+        bool published "NOT NULL"
+        uuid created_by FK
+        timestamptz created_at "NOT NULL"
+        timestamptz updated_at "NOT NULL"
+    }
