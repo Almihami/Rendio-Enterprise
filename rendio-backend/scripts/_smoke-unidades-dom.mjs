@@ -13,6 +13,9 @@ global.window=window; global.document=window.document;
 window.RENDIO_CONFIG={OTP_LENGTH:8};
 window.toast=()=>{};
 window.L = undefined;  // sin Leaflet: el mapa se salta solo
+// escapeHtml es global de admin-disponibilidad.js (no se carga aquí); el chip
+// de la sigla del vuelo (11-sep) lo usa.
+window.escapeHtml=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
 let ok=0,bad=0; const t=(n,c,d='')=>{if(c){ok++;console.log('  ✓ '+n)}else{bad++;console.log('  ✗ '+n+(d?' → '+d:''))}};
 
@@ -60,12 +63,25 @@ t('sin regreso, el botón se habilita', !ui().querySelector('[data-ax="next"]').
 click('[data-ax="toggle"][data-key="sameDayBack"]');
 t('al marcarlo, pide la hora del regreso', /Hora a la que aterrizas de vuelta/.test(txt()));
 t('y bloquea hasta que la den', ui().querySelector('[data-ax="next"]').hasAttribute('disabled'));
-set('backTime','19:40'); set('backFlight','AV-9413');
+// Desde el 11-sep el vuelo es chip de sigla + dígitos: el pegado "AV-9413" se
+// parte solo y se guarda "AV9413" (sin guion).
+set('backTime','19:40'); set('backFlightNum','AV-9413');
 t('con la hora del regreso, se desbloquea', !ui().querySelector('[data-ax="next"]').hasAttribute('disabled'));
+t('el pegado del vuelo se parte en sigla + dígitos', window.Auxiliar.state.form.backFlight==='AV9413', 'quedó: '+window.Auxiliar.state.form.backFlight);
+
+console.log('\n── el pedido: la pernocta y la reserva en firme viven con el vuelo (15-sep) ──');
+t('el paso del vuelo trae la sección «Sobre el viaje»', /Sobre el viaje/.test(txt()));
+t('con los dos toggles', !!ui().querySelector('[data-ax="toggle"][data-key="isPernocta"]') && !!ui().querySelector('[data-ax="toggle"][data-key="isReserva"]'));
+click('[data-ax="toggle"][data-key="isPernocta"]');
+t('marcar la pernocta aquí queda en el pedido', window.Auxiliar.state.form.isPernocta===true);
+t('y no se pierde el regreso marcado', window.Auxiliar.state.form.sameDayBack===true && ui().querySelector('[data-field="backTime"]').value==='19:40');
 
 console.log('\n── el pedido: elegir de cuál unidad sale ──');
 click('[data-ax="next"]'); await wait();
+t('con dos unidades, SÍ existe el paso del punto', window.Auxiliar.stepKind()==='donde' && /3\/4/.test(txt()), JSON.stringify(window.Auxiliar.kinds()));
 t('con dos unidades, pregunta de cuál sale', /De cuál sales/.test(txt()), txt().slice(0,180));
+t('el paso es SOLO el selector: sin toggles ni notas', !ui().querySelector('[data-ax="toggle"]') && !ui().querySelector('[data-field="notes"]'));
+t('y sin la lista del catálogo (esa sale con «otro lado»)', !ui().querySelector('#axr-q'));
 t('muestra las dos con su apartamento', /Torre 3 · 302/.test(txt()) && /Casa 8/.test(txt()));
 t('y deja salir de un tercer lado', /Hoy salgo de otro lado/.test(txt()));
 t('el botón está bloqueado hasta elegir', ui().querySelector('[data-ax="next"]').hasAttribute('disabled'));
@@ -74,6 +90,7 @@ t('al elegir la 2, queda marcada', !!ui().querySelector('.ax-opt.sel'));
 t('y el pedido apunta al conjunto de la unidad 2', window.Auxiliar.state.form.residenceId==='r2');
 t('con su apartamento', window.Auxiliar.state.form.residenceUnit==='Casa 8');
 t('ya se puede seguir', !ui().querySelector('[data-ax="next"]').hasAttribute('disabled'));
+t('con la confirmación compacta del punto (sin «Cambiar» propio ni «guardar»)', /Ubicación verificada/.test(txt()) && !ui().querySelector('[data-ax="res-change"]') && !ui().querySelector('[data-ax="res-save"]'));
 
 console.log('\n── el resumen y el envío ──');
 click('[data-ax="next"]'); await wait();
@@ -81,13 +98,20 @@ t('el resumen dice «Estar en el aeropuerto», no «Presentación»', /Estar en 
 // textContent pega <span>etiqueta</span><b>valor</b> sin espacio: se compara
 // contra la cadena tal cual sale, no como se lee en pantalla.
 t('el resumen muestra la unidad', /UnidadCasa 8/.test(txt()), txt().slice(0,300));
-t('el resumen muestra el regreso', /Regreso \(aterriza\)19:40 · AV-9413/.test(txt()), txt().slice(0,300));
+t('el resumen muestra el regreso', /Regreso \(aterriza\)19:40 · AV9413/.test(txt()), txt().slice(0,300));
+t('el resumen encabeza con la ruta Casa → Aeropuerto', /CasaAeropuerto/.test(ui().querySelector('.ax-sum-head').textContent.replace(/\s+/g,'')) && !!ui().querySelector('.ax-sum-head span.ax-route'));
+t('la pernocta marcada en el vuelo sale en el resumen', /PernoctaSí \(hotel\)/.test(txt()));
+t('las notas se escriben en el resumen (15-sep)', !!ui().querySelector('[data-field="notes"]'));
+set('notes','Timbre 302');
+t('escribir la nota NO repinta el paso (el campo conserva el foco/valor)', ui().querySelector('[data-field="notes"]').value==='Timbre 302' && window.Auxiliar.state.form.notes==='Timbre 302');
 click('[data-ax="next"]'); await wait(120);
 t('creó DOS reservas: ida y regreso', creadas.length===2, 'creadas='+creadas.length);
 t('la ida va al aeropuerto a las 05:10', creadas[0]?.type==='sal' && creadas[0]?.time==='05:10');
 t('el regreso es una llegada a las 19:40', creadas[1]?.type==='lle' && creadas[1]?.time==='19:40');
 t('el regreso sale del mismo conjunto y apartamento', creadas[1]?.residenceId==='r2' && creadas[1]?.residenceUnit==='Casa 8');
-t('el regreso lleva su propio número de vuelo', creadas[1]?.flight==='AV-9413');
+t('el regreso lleva su propio número de vuelo', creadas[1]?.flight==='AV9413', 'quedó: '+creadas[1]?.flight);
+t('la ida va como pernocta (se marcó en el paso del vuelo)', creadas[0]?.isPernocta===true);
+t('las notas del resumen llegan al pedido', creadas[0]?.notes==='Timbre 302', 'quedó: '+creadas[0]?.notes);
 t('el regreso NO va como pernocta', creadas[1]?.isPernocta===false);
 
 console.log('\n── la pantalla «Mis viajes» con viajes de verdad ──');

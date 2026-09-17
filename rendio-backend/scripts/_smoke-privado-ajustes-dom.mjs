@@ -96,12 +96,11 @@ window.eval(readFileSync(APP + 'admin-personal.js', 'utf8'));
 
 const setUI = (s) => { window.state.settings = { ...s }; };
 const marcar = (v) => { window.$('#setting-priv-enabled').checked = v; };
+// Desde el 11-sep («Ajustes cabe en una pantalla») el privado se guarda con el
+// bloque de CALIBRACIÓN (onSaveCalibracion), no con los ajustes del turno.
+// Un valor de ese mismo bloque sirve para comprobar que «lo demás sí se guardó».
 const pintarCampos = () => {
-  // Lo mínimo que onSaveSettings lee sin guardas.
-  window.$('#setting-morning-label').value = 'AM';
-  window.$('#setting-afternoon-label').value = 'PM';
-  window.$('#setting-morning-slots').value = '2';
-  window.$('#setting-afternoon-slots').value = '2';
+  window.$('#setting-aux-wait').value = '7';
 };
 pintarCampos();
 
@@ -113,7 +112,7 @@ t('con la flota caída el desplegable se marca como no fiable',
   window.$('#setting-priv-vehicle').dataset.flota === 'fallo');
 marcar(true);
 avisos = [];
-await window.onSaveSettings();
+await window.onSaveCalibracion();
 t('guardar NO borra la camioneta', guardado.aux_private_vehicle_id === 'uuid-de-la-camioneta',
   'quedó: ' + guardado.aux_private_vehicle_id);
 t('y el privado sigue encendido', guardado.aux_private_enabled === true);
@@ -128,7 +127,7 @@ t('y llega con la camioneta ya seleccionada', window.$('#setting-priv-vehicle').
 window.$('#setting-priv-vehicle').value = '';   // el jefe la quita a propósito
 marcar(true);
 avisos = [];
-await window.onSaveSettings();
+await window.onSaveCalibracion();
 t('quitarla a mano SÍ se guarda', guardado.aux_private_vehicle_id === null);
 
 console.log('\n── Ajustes · encender sin camioneta no es encender ──');
@@ -136,7 +135,7 @@ t('no se guarda encendido sin camioneta', guardado.aux_private_enabled === false
   'quedó: ' + guardado.aux_private_enabled);
 t('y se lo dice al jefe', avisos.some(a => /camioneta/i.test(a)), 'avisos: ' + JSON.stringify(avisos));
 t('la casilla queda como quedó la base', window.$('#setting-priv-enabled').checked === false);
-t('lo demás sí se guardó', guardado.morning_label === 'AM' && guardado.strike_limit === 3);
+t('lo demás sí se guardó', guardado.aux_wait_minutes === 7, 'quedó: ' + guardado.aux_wait_minutes);
 
 // (c) El caso bueno: flota cargada, camioneta elegida, interruptor marcado.
 setUI({ aux_private_enabled: false, aux_private_vehicle_id: null, aux_private_price_cop: 150000 });
@@ -144,7 +143,7 @@ await window.fillPrivateVehicles();
 window.$('#setting-priv-vehicle').value = 'uuid-de-la-camioneta';
 marcar(true);
 avisos = [];
-await window.onSaveSettings();
+await window.onSaveCalibracion();
 t('encender con camioneta elegida sí queda encendido', guardado.aux_private_enabled === true);
 t('con esa camioneta', guardado.aux_private_vehicle_id === 'uuid-de-la-camioneta');
 t('y sin sermones', avisos.length === 0, JSON.stringify(avisos));
