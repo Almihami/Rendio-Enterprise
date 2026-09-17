@@ -39,9 +39,16 @@
 // texto sigue siendo cierto — solo que además suena.
 //
 // LO QUE NO SE COBRA AQUÍ
-// No hay checkout, ni medio de pago, ni recibo. Se MUESTRA la tarifa y el cobro
-// se liquida por fuera. Rendio no tiene ninguna tabla de cobros y media pasarela
-// no le sirve a nadie. Decisión de la profa, 2026-08-17.
+// No hay checkout, ni medio de pago, ni recibo. El cobro se liquida por fuera:
+// Rendio no tiene ninguna tabla de cobros y media pasarela no le sirve a nadie.
+// Decisión de la profa, 2026-08-17.
+//
+// Y DESDE EL 17-sep-2026 LA CIFRA TAMPOCO SE MUESTRA (profa). El número que
+// había en Ajustes nunca fue una tarifa acordada —era un valor provisional— y
+// una cifra en la pantalla del tripulante se lee como precio pactado. Lo que sí
+// se dice, porque callarlo sería peor, es que el privado TIENE COSTO y que la
+// tarifa se la confirma coordinación antes de aprobarlo. El número sigue en
+// Ajustes y en la cola del jefe: lo que se quitó es la vitrina, no el dato.
 
 (function () {
   'use strict';
@@ -136,7 +143,6 @@
   function stepHTML(f) {
     if (!enabled()) return null;   // el paso no existe si no hay privado que dar
     const sel = f.level === 'private' ? 'private' : 'shared';
-    const p = money(price());
     const ocupada = st.cupo === 'ocupada';
     const dudoso = st.cupo === 'error';
 
@@ -173,10 +179,10 @@
           <span class="axp-lvl-ic"><svg class="icon"><use href="#i-van"/></svg></span>
           <span class="axp-lvl-t">
             ${eyebrow('Rendio Select', 'lt')}
-            <span class="axp-lvl-row"><b class="axp-lvl-name">Privado</b><span class="axp-lvl-price">${p || '—'}</span></span>
+            <span class="axp-lvl-row"><b class="axp-lvl-name">Privado</b><span class="axp-lvl-price">Con costo</span></span>
             <span class="axp-lvl-tag">La camioneta es solo tuya</span>
             ${lista(INCLUYE.map(x => x.t))}
-            <span class="axp-lvl-pnote">por trayecto</span>
+            <span class="axp-lvl-pnote">Coordinación te confirma la tarifa</span>
           </span>
           ${sel === 'private' ? `<span class="axp-lvl-chk">${chulo()}</span>` : ''}
         </span>
@@ -209,7 +215,6 @@
   // `f` es el formulario del pedido: el párrafo dice a dónde va ESTE viaje
   // (la portada se abre igual desde una salida que desde una llegada).
   function introHTML(f) {
-    const p = money(price());
     const ocupada = st.cupo === 'ocupada';
     const salida = !!(f && f.type === 'sal');
     const pilares = INCLUYE.map((x, i) => `
@@ -245,8 +250,7 @@
         <div class="ax-spacer"></div>
       </div>
       <div class="axp-foot">
-        <div class="axp-fare"><span>Tarifa</span><b>${p || '—'}</b></div>
-        <div class="axp-fare-note">por trayecto · no se cobra en la app</div>
+        <div class="axp-fare-note">Tiene costo. Coordinación te confirma la tarifa antes de aprobarlo, y no se cobra en la app.</div>
         <button class="axp-btn" data-ax="lvl-choose"${ocupada ? ' disabled' : ''}>${ocupada ? 'Comprometida a esa hora' : 'Pedir en privado'}</button>
         <button class="axp-btn ghost" data-ax="lvl-close">Volver</button>
       </div>`;
@@ -258,12 +262,11 @@
   // cuánto, quién lo confirma y que aquí no se cobra. Vacío en compartido.
   function sumHTML(f) {
     if (!f || f.level !== 'private' || !enabled()) return '';
-    const p = money(price());
     return `
       <div class="axp-sum-vip">
         ${eyebrow('Rendio Select', 'lt')}
         <b>La camioneta, solo para ti</b>
-        <span>${p ? p + ' por trayecto · ' : ''}lo confirma coordinación · no se cobra en la app</span>
+        <span>Coordinación confirma la camioneta y la tarifa · no se cobra en la app</span>
       </div>`;
   }
 
@@ -272,19 +275,18 @@
   // sin que el auxiliar tenga que preguntarle a nadie.
   function statusHTML(t) {
     if (!t || t.level !== 'private' || !t.privateStatus) return '';
-    const p = money(t.price);
     if (t.privateStatus === 'requested') {
       return `<div class="axp-st wait">
         <span class="axp-st-ic"><svg class="icon"><use href="#i-clock"/></svg></span>
         <div><b>Privado · esperando confirmación</b>
-        <span>Coordinación está revisando si la camioneta está libre a esa hora. Vuelve a esta pantalla para ver la respuesta.${p ? ' Tarifa: ' + p + '.' : ''}</span></div>
+        <span>Coordinación está revisando si la camioneta está libre a esa hora. Vuelve a esta pantalla para ver la respuesta.</span></div>
       </div>`;
     }
     if (t.privateStatus === 'approved') {
       return `<div class="axp-st ok">
         <span class="axp-st-ic"><svg class="icon"><use href="#i-check"/></svg></span>
         <div><b>Privado confirmado</b>
-        <span>La camioneta es tuya para este trayecto.${p ? ' Tarifa acordada: ' + p + '.' : ''}</span></div>
+        <span>La camioneta es tuya para este trayecto.</span></div>
       </div>`;
     }
     return `<div class="axp-st no">

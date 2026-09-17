@@ -47,7 +47,9 @@ async function hastaNivel(){ await nuevo(); click('[data-ax="type"][data-type="s
   set('date','2026-12-20'); set('time','05:10'); click('[data-ax="next"]'); await wait(60); }
 
 // Lo que NO puede aparecer en ninguna pantalla del módulo (brief + profa).
-const PROHIBIDO=[/b[áa]sico/i,/XX\.XXX/,/\bagua\b/i,/pantuflas/i,/coj[íi]n/i,/te avisamos apenas/i,/c[óo]digo/i];
+// 17-sep-2026: la CIFRA tampoco. El número de Ajustes nunca fue una tarifa
+// acordada, y en la pantalla del tripulante se lee como precio pactado.
+const PROHIBIDO=[/b[áa]sico/i,/XX\.XXX/,/\bagua\b/i,/pantuflas/i,/coj[íi]n/i,/te avisamos apenas/i,/c[óo]digo/i,/\$\s*150/,/150\.000/];
 const limpio=(nombre,h)=>{ const malo=PROHIBIDO.find(re=>re.test(h)); t(nombre+' · sin textos prohibidos', !malo, malo && ('apareció '+malo)); };
 // Lo que TODAS las conservas del módulo tienen que seguir exportando.
 t('AuxPrivado conserva su API', ['enabled','price','money','stepHTML','introHTML','statusHTML','chipHTML','askCupo','resetCupo','cupo','INCLUYE','sumHTML'].every(k=>k in P()));
@@ -66,7 +68,7 @@ t('la compartida trae su lista con chulos', sh.querySelectorAll('.axp-lvl-inc us
 t('el check redondo solo en la elegida', !!sh.querySelector('.axp-lvl-chk') && !vip.querySelector('.axp-lvl-chk'));
 t('la privada lleva el eyebrow «Rendio Select»', vip.querySelector('.axp-eyebrow')?.textContent.trim()==='Rendio Select');
 t('y se llama «Privado», con su tagline', vip.querySelector('.axp-lvl-name')?.textContent==='Privado' && /La camioneta es solo tuya/.test(vip.textContent));
-t('con el precio REAL formateado', vip.querySelector('.axp-lvl-price')?.textContent==='$ 150.000' && /por trayecto/.test(vip.textContent), vip.querySelector('.axp-lvl-price')?.textContent);
+t('dice que tiene costo, SIN cifra', vip.querySelector('.axp-lvl-price')?.textContent==='Con costo' && /Coordinación te confirma la tarifa/.test(vip.textContent), vip.querySelector('.axp-lvl-price')?.textContent);
 t('los 4 pilares de INCLUYE en la tarjeta', P().INCLUYE.every(x=>vip.textContent.includes(x.t)) && vip.querySelectorAll('.axp-lvl-inc use[href="#i-check"]').length===P().INCLUYE.length);
 t('el pie dice que la camioneta está disponible', vip.querySelector('.axp-lvl-avail')?.textContent==='Disponible a esa hora');
 t('y trae «Ver qué incluye» como span dentro del botón', vip.querySelector('span.axp-lvl-more[data-ax="lvl-info"]') && /Ver qué incluye/.test(vip.querySelector('.axp-lvl-more').textContent));
@@ -85,10 +87,10 @@ t('la tarjeta privada pasa a .on con su check', q('.axp-lvl.vip').classList.cont
 t('aparece la nota «Lo tiene que aprobar coordinación», intacta', /Lo tiene que aprobar coordinación/.test(txt()) && /La respuesta la vas a ver aquí mismo/.test(txt()));
 limpio('paso (privado elegido)', html());
 click('[data-ax="next"]'); await wait();
-t('en revisar: el resumen dice Privado con el precio', window.Auxiliar.stepKind()==='revisar' && /Privado · \$ 150\.000/.test(txt()));
+t('en revisar: el resumen dice Privado con costo, sin cifra', window.Auxiliar.stepKind()==='revisar' && /ServicioPrivado · con costo/.test(txt()) && !/150/.test(txt()), txt().slice(0,240));
 const franja=q('.ax-sum + .axp-sum-vip') || q('.axp-sum-vip');
 t('la franja Select va justo debajo de la tarjeta resumen', !!q('.ax-sum + .axp-sum-vip'));
-t('con eyebrow, línea serif y el precio real', franja && franja.querySelector('.axp-eyebrow')?.textContent.trim()==='Rendio Select' && /La camioneta, solo para ti/.test(franja.textContent) && /\$ 150\.000 por trayecto · lo confirma coordinación · no se cobra en la app/.test(franja.textContent.replace(/\s+/g,' ')), franja?.textContent);
+t('con eyebrow, línea serif y quién confirma, sin cifra', franja && franja.querySelector('.axp-eyebrow')?.textContent.trim()==='Rendio Select' && /La camioneta, solo para ti/.test(franja.textContent) && /Coordinación confirma la camioneta y la tarifa · no se cobra en la app/.test(franja.textContent.replace(/\s+/g,' ')), franja?.textContent);
 const cta=q('[data-ax="next"]');
 t('el CTA dice «Solicitar traslado privado» en latón', cta.textContent.trim()==='Solicitar traslado privado' && cta.classList.contains('ax-btn-brass') && cta.classList.contains('ax-btn-primary'));
 limpio('revisar (privado)', html());
@@ -108,7 +110,7 @@ t('los 4 pilares de INCLUYE con numeral romano', pil.length===P().INCLUYE.length
 t('separados por reglas', ui().querySelectorAll('.axp-rule-ln').length===P().INCLUYE.length-1);
 t('la disponibilidad dicha de frente: «Una sola camioneta»', /Una sola camioneta/.test(txt()) && /No siempre está disponible: depende de la hora que necesites/.test(txt()) && !!q('.axp-avail use[href="#i-clock"]'));
 t('el compartido sigue igual', /Tu viaje compartido sigue igual: mismo servicio, mismos conductores, sin costo\./.test(txt()));
-t('el pie trae la tarifa REAL en la fila «Tarifa»', q('.axp-fare span')?.textContent==='Tarifa' && q('.axp-fare b')?.textContent==='$ 150.000' && /por trayecto · no se cobra en la app/.test(txt()));
+t('el pie dice que tiene costo y quién lo confirma, sin cifra ni fila «Tarifa»', !q('.axp-fare') && /Tiene costo\. Coordinación te confirma la tarifa antes de aprobarlo, y no se cobra en la app\./.test(txt()));
 const elegir=q('[data-ax="lvl-choose"]');
 t('el botón de latón «Pedir en privado», habilitado', elegir && elegir.textContent.trim()==='Pedir en privado' && !elegir.hasAttribute('disabled'));
 t('y un «Volver» fantasma + el botón redondo de atrás, ambos lvl-close', q('.axp-btn.ghost[data-ax="lvl-close"]')?.textContent.trim()==='Volver' && !!q('.axp-back[data-ax="lvl-close"] use[href="#i-back"]'));

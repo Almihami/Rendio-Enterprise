@@ -781,7 +781,7 @@
         ${f.residenceId ? `<div class="ax-sum-row"><span>Ubicación</span><b class="axr-ok">Verificada</b></div>` : ''}
         ${window.AuxPrivado && AuxPrivado.enabled()
           ? row('Servicio', f.level === 'private'
-              ? 'Privado · ' + (AuxPrivado.money(AuxPrivado.price()) || '—')
+              ? 'Privado · con costo'
               : 'Compartido · incluido')
           : ''}
         ${f.isPernocta ? row('Pernocta', 'Sí (hotel)') : ''}
