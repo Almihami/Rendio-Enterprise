@@ -33,11 +33,32 @@
              help: 'Lo fijó tu jefe en tu contrato. No se puede cambiar desde acá.' },
   };
   const AV_API_TO_UI = { unset: 'none', available: 'puedo', prefer_rest: 'pref', unavailable: 'no' };
-  const AV_BRUSHES = ['puedo', 'pref', 'no'];
+  // 2026-09-15 — se retira la brocha. Era un MODO OCULTO: la fila de arriba cambiaba
+  // lo que hacía el dedo después, y quien no lo descubría veía una pantalla muerta
+  // (le pasó a la profa). Ahora la semana nace propuesta en "Puedo" y cada toque
+  // ROTA la jornada por este ciclo. Un solo gesto en toda la pantalla.
+  const AV_CYCLE = ['puedo', 'pref', 'no'];
+  const AV_BRUSHES = AV_CYCLE;   // se conserva el nombre: ahora alimenta la leyenda
   const AV_REASON_CHIPS = ['Cita médica', 'Viaje familiar', 'Estudio', 'Diligencia', 'Salud'];
 
   // Estado local de la pantalla (lo persistente vive en state.ownAvail).
-  const avUI = { brush: 'puedo', dirty: false, saved: false, sheet: null, pendingNo: [] };
+  const avUI = { dirty: false, saved: false, sheet: null };
+
+  const AV_HINT_IDLE = '<b>Estás en «Puedo» toda la semana.</b> Toca una jornada para cambiarla.';
+
+  function avNextState(cur) {
+    const i = AV_CYCLE.indexOf(cur);
+    return AV_CYCLE[(i + 1) % AV_CYCLE.length];
+  }
+
+  // La línea de ayuda ya no anuncia la brocha: explica lo que ACABA de pasar.
+  function avSetHint(uiState) {
+    const hint = $('#av-hint');
+    if (!hint) return;
+    hint.innerHTML = uiState && AV_ST[uiState]
+      ? `<b>${AV_ST[uiState].label}.</b> ${AV_ST[uiState].help}`
+      : AV_HINT_IDLE;
+  }
 
   // ---- Iconos (line icons del sistema del diseñador, strokeWidth 1.5) ----
   const AV_ICON_PATHS = {
@@ -76,11 +97,30 @@
 
   // El bloqueo por contrato (descanso fijo) gana sobre lo que haya guardado:
   // es parametrización del jefe, no del conductor.
-  function avCellUiState(dayKey, shift) {
+  // Lo que de verdad está guardado. 'none' = la jornada nunca se confirmó.
+  function avCellRawState(dayKey, shift) {
     if (Scheduler.ruleBlocked(state.profile, dayKey, shift)) return 'lock';
     const cell = state.ownAvail && state.ownAvail[dayKey];
     const raw = cell ? cell[shift] : 'unset';
     return AV_API_TO_UI[raw] || 'none';
+  }
+
+  // Lo que SE PINTA: lo no marcado se muestra como "Puedo", que es la propuesta que
+  // el conductor acepta al guardar. Propuesta NO es guardado: mientras no confirme,
+  // en la BD sigue 'unset' y no entra a la programación (regla de agosto intacta).
+  function avEditable() {
+    return !isSuspended() && !weekAvailClosed(state.currentWeek);
+  }
+
+  function avCellUiState(dayKey, shift) {
+    const raw = avCellRawState(dayKey, shift);
+    // En una semana ya cerrada NO se propone nada: se muestra lo que de verdad
+    // quedó guardado. Pintar de verde lo que nunca confirmó sería mentirle.
+    return raw === 'none' && avEditable() ? 'puedo' : raw;
+  }
+
+  function avCellProposed(dayKey, shift) {
+    return avCellRawState(dayKey, shift) === 'none';
   }
 
   function avCells() {
@@ -92,15 +132,18 @@
     return out;
   }
 
+  // 'faltan' conserva el nombre (lo leen driver-tabs.js y la home) pero cambió de
+  // significado: ya no es "sin marcar" sino SIN CONFIRMAR.
   function avCounts() {
-    let faltan = 0, marcables = 0;
+    let faltan = 0, marcables = 0, puedo = 0, pref = 0, no = 0;
     avCells().forEach(c => {
       const s = avCellUiState(c.day, c.shift);
       if (s === 'lock') return;
       marcables++;
-      if (s === 'none') faltan++;
+      if (avCellProposed(c.day, c.shift)) faltan++;
+      if (s === 'puedo') puedo++; else if (s === 'pref') pref++; else if (s === 'no') no++;
     });
-    return { faltan, marcables };
+    return { faltan, marcables, puedo, pref, no };
   }
 
   function avPendingCount() {
@@ -142,7 +185,7 @@
       return note('ok', 'rotate', `<b>Tu jefe reabrió la semana hasta las ${hhmmCO(reopen.until)}.</b> Corrige y guarda antes de esa hora.`);
     }
     if (weekAvailClosed(state.currentWeek)) {
-      return note('err', 'lock', '<b>Esta semana ya cerró.</b> Si necesitas un cambio, escríbele a tu jefe desde Solicitudes.');
+      return note('err', 'lock', '<b>Esta semana ya cerró.</b> Toca la flecha ▸ de arriba y marca la que viene. Si necesitas un cambio en esta, escríbele a tu jefe desde Solicitudes.');
     }
     if (Scheduler.availabilityClosingSoon(state.currentWeek)) {
       return note('warn', 'clock', '<b>Cierra hoy a las 2:00 p.m.</b> Guarda antes de esa hora.');
@@ -182,26 +225,29 @@
     const todayISO = new Date().toISOString().slice(0, 10);
     const pend = avPendingCount();
 
-    root.className = 'rc' + (readOnly ? ' rc-readonly' : '');
+    // 2026-09-15 — `rc-readonly` (pointer-events:none) se aplicaba a la RAÍZ, y la
+    // cabecera con #av-prev/#av-next vive dentro: en una semana cerrada el conductor
+    // no podía ni pasar a la semana que sí está abierta. Toca y no pasa NADA, que es
+    // exactamente lo que se sintió como app rota. Ahora la clase cubre solo lo que
+    // de verdad no se puede editar; navegar y leer siguen vivos.
+    root.className = 'rc';
     root.innerHTML = `
       ${avStickyHtml()}
 
       <div style="margin-top:14px;text-align:center">
         <h1 class="rc-h">¿Cuándo puedes trabajar?</h1>
-        <p class="rc-sub">${escapeHtml(firstNameOf(state.profile))}, marca tu semana antes del domingo. Lo que dejes sin marcar no entra a la programación.</p>
+        <p class="rc-sub">${escapeHtml(firstNameOf(state.profile))}, arrancas disponible toda la semana. Toca las jornadas que no, y confirma antes del domingo.</p>
       </div>
 
       ${avNoticeHtml()}
       ${avWeekSuspensionHtml()}
 
+      <div class="${readOnly ? 'rc-readonly' : ''}">
       <div class="rc-in" style="margin-top:16px">
-        <div class="av-brush" id="av-brush">
-          ${AV_BRUSHES.map(k => `
-            <button class="av-brush-btn ${avUI.brush === k ? 'on' : ''}" data-k="${k}" type="button">
-              <i></i><span>${AV_ST[k].label}</span>
-            </button>`).join('')}
+        <div class="av-legend" aria-hidden="true">
+          ${AV_CYCLE.map(k => `<span class="av-legend-it" data-k="${k}"><i></i>${AV_ST[k].label}</span>`).join('')}
         </div>
-        <p class="av-hint" id="av-hint"><b>${AV_ST[avUI.brush].label}.</b> ${AV_ST[avUI.brush].help}</p>
+        <p class="av-hint" id="av-hint">${avEditable() ? AV_HINT_IDLE : 'Así quedó esta semana.'}</p>
       </div>
 
       <div class="av-grid rc-in d1" id="av-grid" style="margin-top:2px">
@@ -221,15 +267,15 @@
       </div>
 
       <div style="display:flex;gap:8px;margin-top:12px" class="rc-in d2">
-        <button class="r-btn r-btn-secondary" id="av-all" type="button"
-          style="flex:1;height:42px;font-size:13.5px;border-radius:12px">Toda la semana: Puedo</button>
-        <button class="r-btn r-btn-ghost" id="av-clear" type="button"
-          style="height:42px;font-size:13.5px;padding:0 14px;border-radius:12px">Limpiar</button>
+        <button class="r-btn r-btn-ghost" id="av-all" type="button"
+          style="flex:1;height:42px;font-size:13.5px;border-radius:12px">Volver todo a «Puedo»</button>
       </div>
 
       <p style="font-size:12px;color:var(--r-text-3);line-height:1.5;margin:14px 2px 0">
-        Arrastra para pintar varias jornadas seguidas. Toca el día para pintar mañana y tarde.
+        Cada toque cambia la jornada: Puedo → Prefiero no → No puedo → Puedo. Arrastra para
+        aplicar lo mismo a varias seguidas, o toca el día para mañana y tarde a la vez.
       </p>
+      </div>
 
       ${pend > 0 ? `
         <button class="rc-link-row rc-in d3" id="av-goto-requests" type="button">
@@ -252,16 +298,14 @@
   function avCellHtml(dayKey, shift) {
     const s = avCellUiState(dayKey, shift);
     const ic = { lock: 'lock', puedo: 'check', pref: 'moon', no: 'x' }[s];
-    return `<div class="av-cell" data-cell="${dayKey}-${shift}" data-s="${s}">
+    return `<div class="av-cell" data-cell="${dayKey}-${shift}" data-s="${s}" data-p="${avCellProposed(dayKey, shift) ? '1' : ''}">
       ${ic ? `<span class="av-cell-ic">${avIcon(ic, s === 'puedo' ? 15 : 14)}</span>` : ''}
       <span>${AV_ST[s].verb}</span>
     </div>`;
   }
 
   function avStickyHtml() {
-    const { faltan } = avCounts();
     const cut = avCutoffText();
-    const listo = faltan === 0;
     return `<div class="rc-sticky">
       <div class="rc-weeknav">
         <button class="r-icon-btn" id="av-prev" type="button" aria-label="Semana anterior">${avIcon('chevronLeft', 19)}</button>
@@ -274,16 +318,30 @@
       <div class="av-meter" id="av-meter">
         ${avCells().map(c => {
           const s = avCellUiState(c.day, c.shift);
-          return `<i data-cell-meter="${c.id}" data-s="${s === 'none' ? '' : s}"></i>`;
+          return `<i data-cell-meter="${c.id}" data-s="${s}" data-p="${avCellProposed(c.day, c.shift) ? '1' : ''}"></i>`;
         }).join('')}
       </div>
       <div class="av-status">
-        <span class="av-left" id="av-left" style="color:${listo ? 'var(--st-ok-fg)' : 'var(--r-text)'}">
-          ${listo ? 'Semana completa' : `Faltan <span class="av-count">${faltan}</span> jornada${faltan > 1 ? 's' : ''}`}
+        <span class="av-left" id="av-left" style="color:${avStatusOk() ? 'var(--st-ok-fg)' : 'var(--r-warn)'}">
+          ${avStatusLeftHtml()}
         </span>
         <span class="av-cut" style="color:${cut.tone}">${avIcon('clock', 13)} ${cut.text}</span>
       </div>
     </div>`;
+  }
+
+  // Resumen de la franja fija: lo que importa ya no es cuántas faltan por marcar
+  // (ninguna: nacen en Puedo) sino si la semana está CONFIRMADA o no.
+  // Corto a propósito: comparte renglón con la cuenta regresiva y el detalle ya
+  // está en el medidor y en la grilla. Ojo con "confirmada": pintar la grilla NO
+  // es guardarla — mientras haya cambios sin mandar, esto no puede decir que sí.
+  function avStatusLeftHtml() {
+    if (avCounts().faltan > 0) return 'Sin confirmar';
+    return avUI.dirty ? 'Sin guardar' : 'Semana confirmada';
+  }
+
+  function avStatusOk() {
+    return avCounts().faltan === 0 && !avUI.dirty;
   }
 
   function avSaveBlockHtml(blockedMsg) {
@@ -291,19 +349,17 @@
       return `<div class="rc-blocked">${avIcon('lock', 17)} ${blockedMsg} — no se puede guardar.</div>`;
     }
     const { faltan } = avCounts();
-    const done = avUI.saved && !avUI.dirty;
+    const done = avUI.saved && !avUI.dirty && faltan === 0;
     const note = done
-      ? 'Tu jefe ya lo ve. Puedes seguir cambiando hasta el domingo a las 2:00 p.m.'
-      : avUI.dirty
-        ? (faltan > 0
-            ? `Te faltan ${faltan} jornada${faltan > 1 ? 's' : ''}. Puedes guardar ahora y terminar antes del domingo.`
-            : 'Se guarda y tu jefe lo ve al instante.')
-        : 'Marca tus jornadas y guarda antes del domingo a las 2:00 p.m.';
+      ? 'Tu jefe ya lo ve. Puedes seguir cambiándola hasta el domingo a las 2:00 p.m.'
+      : faltan > 0
+        ? 'Hasta que confirmes, tu jefe no cuenta contigo para esta semana.'
+        : 'Se guarda y tu jefe lo ve al instante.';
     return `<div style="margin-top:24px" id="av-save-block">
-      <button class="rc-save-btn full ${done ? 'done' : ''}" id="av-save" type="button" ${(!avUI.dirty && !avUI.saved) ? 'disabled' : ''}>
+      <button class="rc-save-btn full ${done ? 'done' : ''}" id="av-save" type="button" ${(!avUI.dirty && faltan === 0 && !done) ? 'disabled' : ''}>
         ${done
           ? `<svg class="rc-check" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Guardado`
-          : 'Guardar mi semana'}
+          : (faltan > 0 ? 'Confirmar mi semana' : 'Guardar cambios')}
       </button>
       <p class="rc-savenote ${done ? 'ok' : ''}" id="av-save-note">${note}</p>
     </div>`;
@@ -316,7 +372,7 @@
   // Escribe en state.ownAvail (formato de la API) y refresca SOLO lo que cambió:
   // durante un arrastre no se puede re-renderizar la grilla, porque elementFromPoint
   // dejaría de encontrar las celdas al reemplazarse los nodos.
-  function avPaint(ids, uiState, opts) {
+  function avPaint(ids, uiState) {
     const real = ids.filter(id => {
       const [day, shift] = id.split('-');
       return !Scheduler.ruleBlocked(state.profile, day, shift);
@@ -333,13 +389,8 @@
     });
     avUI.dirty = true;
     avUI.saved = false;
-
-    if (uiState === 'no') {
-      avUI.pendingNo = Array.from(new Set([...avUI.pendingNo, ...real]));
-      if (!(opts && opts.defer)) avFlushNo();
-    } else {
-      avUI.pendingNo = avUI.pendingNo.filter(c => !real.includes(c));
-    }
+    // El motivo del "No puedo" NO se pide acá: con el ciclo, el rojo puede ser una
+    // parada de paso camino al verde. Se pide una sola vez al confirmar (avSave).
     avRefreshStatus();
   }
 
@@ -350,13 +401,17 @@
     if (cell) {
       const ic = { lock: 'lock', puedo: 'check', pref: 'moon', no: 'x' }[s];
       cell.dataset.s = s;
+      cell.dataset.p = avCellProposed(day, shift) ? '1' : '';
       cell.innerHTML = `${ic ? `<span class="av-cell-ic">${avIcon(ic, s === 'puedo' ? 15 : 14)}</span>` : ''}<span>${AV_ST[s].verb}</span>`;
       cell.classList.remove('just-set');
       void cell.offsetWidth;   // reinicia la animación de rebote
       cell.classList.add('just-set');
     }
     const seg = document.querySelector(`[data-cell-meter="${id}"]`);
-    if (seg) seg.dataset.s = s === 'none' ? '' : s;
+    if (seg) {
+      seg.dataset.s = s;
+      seg.dataset.p = avCellProposed(day, shift) ? '1' : '';
+    }
   }
 
   // Medidor, contador y bloque de guardar, sin tocar la grilla.
@@ -364,10 +419,8 @@
     const { faltan } = avCounts();
     const left = $('#av-left');
     if (left) {
-      const listo = faltan === 0;
-      left.style.color = listo ? 'var(--st-ok-fg)' : 'var(--r-text)';
-      left.innerHTML = listo ? 'Semana completa'
-        : `Faltan <span class="av-count">${faltan}</span> jornada${faltan > 1 ? 's' : ''}`;
+      left.style.color = avStatusOk() ? 'var(--st-ok-fg)' : 'var(--r-warn)';
+      left.innerHTML = avStatusLeftHtml();
     }
     const block = $('#av-save-block');
     if (block) {
@@ -376,12 +429,6 @@
       block.replaceWith(wrap.firstElementChild);
       $('#av-save')?.addEventListener('click', avSave);
     }
-  }
-
-  function avFlushNo() {
-    if (!avUI.pendingNo.length) return;
-    avOpenSheet(avUI.pendingNo.slice());
-    avUI.pendingNo = [];
   }
 
   // ====================================================================
@@ -395,7 +442,7 @@
     return `${nice} · ${shift === 'am' ? 'Mañana' : 'Tarde'}`;
   }
 
-  function avOpenSheet(cells) {
+  function avOpenSheet(cells, thenSave) {
     // Motivo previo, si esas jornadas ya lo tenían.
     let prev = '';
     for (const id of cells) {
@@ -403,31 +450,39 @@
       const r = state.ownAvail[day] && state.ownAvail[day][`${shift}_reason`];
       if (r) { prev = r; break; }
     }
-    avUI.sheet = { cells, text: prev };
+    avUI.sheet = { cells, text: prev, thenSave: !!thenSave };
     avRenderSheet();
     $('#av-back')?.classList.add('open');
     $('#av-sheet')?.classList.add('open');
     setTimeout(() => $('#av-reason')?.focus(), 380);
   }
 
-  function avCloseSheet(keep) {
+  // Tres salidas: «Pedir permiso» (true) deja el motivo, «Mejor Prefiero no» ('pref')
+  // baja la tanda a preferencia, y tocar el velo (core.js llama con false) CANCELA:
+  // no cambia nada ni guarda. Antes del 18-sep el velo también bajaba a «Prefiero
+  // no»; desde que la hoja sale al confirmar, eso además guardaba la semana.
+  function avCloseSheet(how) {
     const sheet = avUI.sheet;
     avUI.sheet = null;
     $('#av-back')?.classList.remove('open');
     $('#av-sheet')?.classList.remove('open');
     if (!sheet) return;
-    if (keep) {
+    if (how === true) {
       // El motivo queda en todas las jornadas de la tanda.
       sheet.cells.forEach(id => {
         const [day, shift] = id.split('-');
         state.ownAvail[day] = state.ownAvail[day] || { am: 'unset', pm: 'unset' };
         state.ownAvail[day][`${shift}_reason`] = sheet.text.trim();
       });
-    } else {
+    } else if (how === 'pref') {
       // "Mejor «Prefiero no»" devuelve TODA la tanda a preferencia blanda.
       avPaint(sheet.cells, 'pref');
+    } else {
+      return;
     }
     avRefreshStatus();
+    // La hoja se abrió desde el botón de confirmar: retomar el guardado.
+    if (sheet.thenSave) avSave();
   }
 
   function avRenderSheet() {
@@ -441,7 +496,9 @@
       <div class="rc-grab"></div>
       <h3>¿Por qué no puedes?</h3>
       <p class="rc-sheet-sub">
-        ${cells.length === 1 ? escapeHtml(avCellLabel(cells[0])) : `${cells.length} jornadas seleccionadas`}.
+        ${cells.length <= 3
+          ? escapeHtml(cells.map(avCellLabel).join(' · '))
+          : `${cells.length} jornadas marcadas como «No puedo»`}.
         Esto queda como una <b>solicitud de permiso</b> — el jefe la aprueba o la niega.
       </p>
       <div class="rc-chips" id="av-chips">
@@ -450,7 +507,7 @@
       <textarea class="rc-ta" id="av-reason" rows="3" placeholder="Cuéntale al jefe en una línea…">${escapeHtml(text)}</textarea>
       <div class="rc-sheet-actions">
         <button class="r-btn r-btn-secondary" id="av-sheet-pref" type="button" style="flex:1">Mejor «Prefiero no»</button>
-        <button class="r-btn r-btn-primary" id="av-sheet-ok" type="button" style="flex:1.3;${ok ? '' : 'opacity:.45;pointer-events:none'}">Pedir permiso</button>
+        <button class="r-btn r-btn-primary" id="av-sheet-ok" type="button" style="flex:1.3;${ok ? '' : 'opacity:.45;pointer-events:none'}">${s && s.thenSave ? 'Pedir permiso y confirmar' : 'Pedir permiso'}</button>
       </div>
       <p class="rc-sheet-foot">Sigue el estado en <b>Solicitudes</b>. Te avisamos cuando responda.</p>`;
 
@@ -472,7 +529,7 @@
       $('#av-chips')?.querySelectorAll('[data-chip]').forEach(c =>
         c.classList.toggle('on', c.dataset.chip === e.target.value));
     });
-    $('#av-sheet-pref')?.addEventListener('click', () => avCloseSheet(false));
+    $('#av-sheet-pref')?.addEventListener('click', () => avCloseSheet('pref'));
     $('#av-sheet-ok')?.addEventListener('click', () => avCloseSheet(true));
   }
 
@@ -480,19 +537,44 @@
   // Guardar
   // ====================================================================
 
+  // Jornadas en "No puedo" a las que todavía no se les preguntó el motivo.
+  function avNoWithoutReason() {
+    return avCells().filter(c => {
+      if (avCellUiState(c.day, c.shift) !== 'no') return false;
+      const cell = state.ownAvail && state.ownAvail[c.day];
+      return !(cell && (cell[`${c.shift}_reason`] || '').trim());
+    }).map(c => c.id);
+  }
+
+  // Lo propuesto (verde punteado) se vuelve 'available' de verdad SOLO acá, al
+  // confirmar. Se manda una copia: si el guardado falla, la pantalla no miente.
+  function avPayloadConfirmado() {
+    const out = {};
+    Scheduler.DAYS.forEach(d => {
+      const src = (state.ownAvail && state.ownAvail[d]) || {};
+      out[d] = Object.assign({ am: 'unset', pm: 'unset' }, src);
+    });
+    avCells().forEach(c => {
+      if (avCellProposed(c.day, c.shift)) out[c.day][c.shift] = 'available';
+    });
+    return out;
+  }
+
   async function avSave() {
     if (isSuspended() || weekAvailClosed(state.currentWeek)) return;
+    const pendientes = avNoWithoutReason();
+    if (pendientes.length) { avOpenSheet(pendientes, true); return; }
     const btn = $('#av-save');
     const note = $('#av-save-note');
     if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
     try {
-      await Api.saveDriverWeekAvailability(state.profile.id, state.currentWeek, state.ownAvail);
+      await Api.saveDriverWeekAvailability(state.profile.id, state.currentWeek, avPayloadConfirmado());
       avUI.dirty = false;
       avUI.saved = true;
       await refreshDriverView();
     } catch (e) {
       console.error(e);
-      if (btn) { btn.disabled = false; btn.textContent = 'Guardar mi semana'; }
+      if (btn) { btn.disabled = false; btn.textContent = 'Confirmar mi semana'; }
       if (note) { note.textContent = 'No se pudo guardar: ' + e.message; note.style.color = 'var(--r-error)'; }
     }
   }
@@ -507,28 +589,22 @@
     $('#av-goto-requests')?.addEventListener('click', () => setDriverTab('requests'));
     $('#av-save')?.addEventListener('click', avSave);
 
-    $('#av-brush')?.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-k]');
-      if (!b) return;
-      avUI.brush = b.dataset.k;
-      $('#av-brush').querySelectorAll('.av-brush-btn').forEach(x => x.classList.toggle('on', x === b));
-      const hint = $('#av-hint');
-      if (hint) hint.innerHTML = `<b>${AV_ST[avUI.brush].label}.</b> ${AV_ST[avUI.brush].help}`;
+    $('#av-all')?.addEventListener('click', () => {
+      avPaint(avCells().map(c => c.id), 'puedo');
+      avSetHint('puedo');
     });
-
-    $('#av-all')?.addEventListener('click', () => avPaint(avCells().map(c => c.id), 'puedo'));
-    $('#av-clear')?.addEventListener('click', () => avPaint(avCells().map(c => c.id), 'none'));
 
     const grid = $('#av-grid');
     if (grid) avBindPainting(grid);
   }
 
-  // Pintar arrastrando: pointerdown fija el trazo, pointermove pinta la celda
-  // bajo el dedo vía elementFromPoint, pointerup lo cierra y abre la hoja de
-  // motivo UNA vez con todas las jornadas marcadas como "No puedo".
+  // Un toque rota la jornada por el ciclo. Si el dedo sigue arrastrando, las demás
+  // celdas del trazo reciben EL MISMO estado al que rotó la primera — así el
+  // arrastre sigue sirviendo de atajo sin volverse impredecible.
   function avBindPainting(grid) {
     let painting = false;
     let stroke = new Set();
+    let strokeState = null;
 
     const cellAt = (e) => {
       const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -540,10 +616,10 @@
       const [day, shift] = id.split('-');
       if (Scheduler.ruleBlocked(state.profile, day, shift) || stroke.has(id)) return;
       stroke.add(id);
-      // Un toque simple sobre una celda que YA tiene la brocha activa la
-      // devuelve a "Sin marcar" (no durante el arrastre).
-      const cur = avCellUiState(day, shift);
-      avPaint([id], first && cur === avUI.brush ? 'none' : avUI.brush, { defer: true });
+      if (first) strokeState = avNextState(avCellUiState(day, shift));
+      if (!strokeState) return;
+      avPaint([id], strokeState);
+      avSetHint(strokeState);
     };
 
     grid.addEventListener('pointerdown', (e) => {
@@ -554,7 +630,7 @@
       apply(cellAt(e), true);
     });
     grid.addEventListener('pointermove', (e) => { if (painting) apply(cellAt(e), false); });
-    const end = () => { if (!painting) return; painting = false; stroke = new Set(); avFlushNo(); };
+    const end = () => { if (!painting) return; painting = false; stroke = new Set(); strokeState = null; };
     grid.addEventListener('pointerup', end);
     grid.addEventListener('pointercancel', end);
 
@@ -562,7 +638,13 @@
     grid.addEventListener('click', (e) => {
       const b = e.target.closest('.av-day');
       if (!b) return;
-      avPaint([`${b.dataset.day}-am`, `${b.dataset.day}-pm`], avUI.brush);
+      const day = b.dataset.day;
+      // El día rota según su mañana; si esa está bloqueada por contrato, según la tarde.
+      const base = ['am', 'pm'].map(sh => avCellUiState(day, sh)).find(s => s !== 'lock');
+      if (!base) return;
+      const next = avNextState(base);
+      avPaint([`${day}-am`, `${day}-pm`], next);
+      avSetHint(next);
     });
   }
 
@@ -587,7 +669,9 @@
   // en Disponibilidad (el diseño los pide en las dos).
   function avUpdateNavBadge(pendientes) {
     avSetNavDot('requests', pendientes);
-    avSetNavDot('avail', avCounts().faltan);
+    // Ya no es un conteo de jornadas sin marcar (nacen todas en Puedo): es un
+    // aviso de que la semana está sin confirmar.
+    avSetNavDot('avail', avStatusOk() ? 0 : '!');
   }
 
   function avSetNavDot(tab, n) {
@@ -605,11 +689,9 @@
 
   // Subtítulo de la tarjeta de Disponibilidad en la home del conductor.
   function availabilitySummaryText() {
-    const { faltan, marcables } = avCounts();
     const range = weekLabelES(state.currentWeek);
-    if (faltan === 0) return `Semana del ${range} lista. Puedes ajustarla.`;
-    if (faltan === marcables) return `Marca tus jornadas para la semana del ${range}.`;
-    return `Te falta${faltan === 1 ? '' : 'n'} ${faltan} jornada${faltan === 1 ? '' : 's'} de la semana del ${range}.`;
+    if (avStatusOk()) return `Semana del ${range} confirmada. Puedes ajustarla.`;
+    return `Confirma tu semana del ${range}.`;
   }
 
   // La barra de pestañas se puede revestir apenas está el DOM: no depende de sesión.

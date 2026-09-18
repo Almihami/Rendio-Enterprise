@@ -58,13 +58,15 @@
     if (!box) return;
     const { faltan } = avCounts();
     if (!faltan) { box.innerHTML = ''; return; }
+    // Desde el 2026-09-15 la semana nace propuesta en "Puedo": lo que falta ya no es
+    // marcarla jornada por jornada, es confirmarla.
     box.innerHTML = `
       <div class="rc-sechd">Próxima semana</div>
       <button class="rc-card rc-nudge rc-in d3" id="dh-nudge-btn" type="button">
         <span style="display:flex;align-items:center;gap:12px">
           <span class="rc-nudge-ic">${avIcon('calendar', 18, 1.6)}</span>
           <span style="flex:1;min-width:0">
-            <span style="display:block;font-size:14.5px;font-weight:650;color:var(--r-warn)">Te falta${faltan === 1 ? '' : 'n'} ${faltan} jornada${faltan === 1 ? '' : 's'} por marcar</span>
+            <span style="display:block;font-size:14.5px;font-weight:650;color:var(--r-warn)">Tu semana todavía no está confirmada</span>
             <span style="display:block;font-size:12.5px;color:var(--r-warn);opacity:.82;margin-top:2px">Cierra el domingo a las 2:00 p.m.</span>
           </span>
           <span style="color:var(--r-warn);display:flex">${avIcon('chevronRight', 17)}</span>
