@@ -632,10 +632,15 @@
   // El buscador de conjuntos, reutilizado para la unidad 1 y la 2. `n` dice cuál.
   function pickerHTML(n) {
     const q = n === 1 ? st.q : st.q2;
+    // BUSCADOR PRIMERO (profa, 15-sep-2026): la lista no se pinta llena al
+    // entrar; aparece cuando hay texto. Sin texto queda VACÍA pero presente
+    // (''; ni un espacio, para que `.axr-list:empty` la esconda), y onQuery la
+    // llena tecla a tecla sin repintar el paso. «Mi conjunto no está en la
+    // lista» se ve desde el principio, no hace falta buscar para llegar a él.
     const list = q
       ? (st.cat?.residences || []).filter(r => norm(r.name + ' ' + (r.sector || '')).includes(norm(q)))
-      : (st.cat?.residences || []);
-    const rows = list.length
+      : [];
+    const rows = !q ? '' : list.length
       ? list.slice(0, 60).map(r => `
           <button class="axr-row" data-rg="res-pick" data-n="${n}" data-id="${esc(r.id)}">
             <span class="axr-row-txt"><b>${esc(r.name)}</b>${r.sector ? `<span>${esc(r.sector)}</span>` : ''}</span>
@@ -648,6 +653,7 @@
         <svg class="icon"><use href="#i-search"/></svg>
         <input data-rg-q="${n}" type="text" value="${esc(q)}" placeholder="Busca tu conjunto o sector" autocomplete="off" />
       </div>
+      <div class="axr-hint" data-rg-hint="${n}"${q ? ' hidden' : ''}>Escribe el nombre de tu conjunto o el sector.</div>
       <div class="axr-list" data-rg-list="${n}">${rows}</div>`;
   }
 
@@ -710,7 +716,7 @@
           ? `<div class="axr-load"><span class="axr-spin"></span>Cargando los puntos de recogida…</div>`
           : f.manual ? manualHTML()
           : f.resId ? pickedHTML(1)
-          : `<p class="rg-tip">Ya tenemos ubicadas las porterías de Rionegro. Elige la tuya.</p>
+          : `<p class="rg-tip">Ya tenemos ubicadas las porterías de Rionegro. Escribe el nombre de la tuya y elígela.</p>
              ${pickerHTML(1)}
              <button class="axr-manual" data-rg="manual">
                <span class="axr-manual-ic"><svg class="icon"><use href="#i-plus"/></svg></span>
@@ -970,6 +976,9 @@
     tmp.innerHTML = pickerHTML(n);
     const fresh = tmp.querySelector(`[data-rg-list="${n}"]`);
     if (fresh) cont.innerHTML = fresh.innerHTML;
+    // La ayuda «Escribe el nombre…» se va cuando ya está escribiendo.
+    const hint = root()?.querySelector(`[data-rg-hint="${n}"]`);
+    if (hint) hint.hidden = !!v;
   }
 
   async function onAction(a, el) {

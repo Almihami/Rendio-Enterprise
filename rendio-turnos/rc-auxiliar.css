@@ -196,6 +196,11 @@
 #auxiliar-ui .axr-row-txt { flex: 1; min-width: 0; }
 #auxiliar-ui .axr-row-txt b { display: block; font-size: 14.5px; font-weight: 650; color: var(--a-text); }
 #auxiliar-ui .axr-row-txt span { display: block; font-size: 12px; color: var(--a-t2); margin-top: 1px; }
+/* Buscador primero (15-sep-2026): sin texto la lista existe pero vacía —para
+   que onQuery la llene sin repintar— y el marco vacío no se ve. */
+#auxiliar-ui .axr-list:empty { display: none; }
+#auxiliar-ui .axr-hint { font-size: 12.5px; color: var(--a-t2); margin: 0 2px 10px; line-height: 1.45; }
+#auxiliar-ui .axr-hint[hidden] { display: none; }
 #auxiliar-ui .axr-none { padding: 20px 16px; text-align: center; }
 #auxiliar-ui .axr-none b { display: block; font-size: 14px; color: var(--a-text); }
 #auxiliar-ui .axr-none span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 4px; line-height: 1.5; }
@@ -629,110 +634,225 @@
 /* ============================================================================
    0069 · Traslado privado
    ============================================================================
-   Dos capas distintas a propósito:
-   · El PASO (elegir compartido/privado) vive dentro del formulario y sigue los
-     tokens del rol, para no ser una isla de otro color en mitad del flujo.
-   · La PORTADA del privado usa paleta FIJA — "papel y tinta", decisión del
-     diseñador. Es el único bloque del rol que no se apaga de noche: es la pieza
-     que vende el servicio y su carácter no depende de la hora.
+   Piel «Rendio Select» (15-sep-2026): sigue a LevelCard (aux-service-levels.jsx)
+   y VipIntro (aux-vip.jsx) del diseñador. Dos capas distintas a propósito:
+   · La tarjeta COMPARTIDA del paso sale de los tokens del rol y se apaga de
+     noche como todo lo demás: no es una isla de otro color en mitad del flujo.
+   · La tarjeta PRIVADA, la portada, la franja del resumen y el botón de latón
+     usan paleta FIJA — "papel y tinta" (espresso + latón + serif), decisión del
+     diseñador. Es el único bloque del rol que no cambia de noche: es la pieza
+     que vende el servicio y su carácter no depende de la hora. Por eso aquí SÍ
+     hay hexadecimales: son los --vip-* de tokens.css, no un descuido.
    ============================================================================ */
 
-/* ── El paso: compartido o privado ───────────────────────────────────────── */
+/* Los tokens --r-vip-* de la entrega, con prefijo propio. Van en #auxiliar-ui y
+   no en cada pieza para que la franja del resumen y el botón del CTA (que viven
+   fuera de .axp-lvl/.axp-intro) los vean también. Sin versión nocturna. */
+#auxiliar-ui {
+  --vip-ink: #221D18; --vip-ink-2: #2E2720;
+  --vip-paper: #F4EFE4; --vip-paper-2: #FBF8F1;
+  --vip-brass: #8A6A3A; --vip-brass-lt: #C7A971;
+  --vip-line: rgba(138,106,58,.26); --vip-line-dk: rgba(199,169,113,.26);
+  --vip-text: #F6F1E7; --vip-text-2: rgba(246,241,231,.62);
+  --vip-serif: 'Newsreader', ui-serif, Georgia, serif;
+  --vip-mono: 'Space Mono', ui-monospace, Menlo, monospace;
+}
+/* El eyebrow del módulo (VipEyebrow): 10px, mayúsculas, muy abierto. Latón
+   oscuro sobre papel; .lt (latón claro) y .t2 (texto secundario) sobre tinta. */
+#auxiliar-ui .axp-eyebrow {
+  display: block; font-size: 10px; font-weight: 600; letter-spacing: 2.4px;
+  text-transform: uppercase; color: var(--vip-brass);
+}
+#auxiliar-ui .axp-eyebrow.lt { color: var(--vip-brass-lt); }
+#auxiliar-ui .axp-eyebrow.t2 { color: var(--vip-text-2); }
+
+/* ── El paso: compartido o privado (LevelCard) ───────────────────────────── */
+/* La tarjeta es un <button> sin relleno propio: el relleno va en .axp-lvl-main
+   para que el pie de la privada pueda ir de borde a borde con su regla. */
 #auxiliar-ui .axp-lvl {
   width: 100%; text-align: left; font: inherit; cursor: pointer;
-  display: block; padding: 14px 15px; margin-bottom: 10px;
-  border-radius: 16px; border: 1.5px solid var(--a-line);
-  background: var(--a-card); transition: .14s;
+  display: block; padding: 0; margin-bottom: 10px; overflow: hidden;
+  border-radius: 16px; color: var(--a-text);
+  transition: border-color .15s, background .15s;
 }
-#auxiliar-ui .axp-lvl.on { border-color: var(--a-accent); }
-#auxiliar-ui .axp-lvl.off { opacity: .55; cursor: not-allowed; }
-#auxiliar-ui .axp-lvl-head { display: flex; align-items: center; gap: 12px; }
+#auxiliar-ui .axp-lvl.off { opacity: .5; cursor: not-allowed; }
+#auxiliar-ui .axp-lvl-main { display: flex; align-items: flex-start; gap: 12px; padding: 15px 16px; }
 #auxiliar-ui .axp-lvl-ic {
-  width: 42px; height: 42px; border-radius: 13px; flex: 0 0 auto;
+  width: 40px; height: 40px; border-radius: 12px; flex: 0 0 auto;
   display: flex; align-items: center; justify-content: center;
 }
-#auxiliar-ui .axp-lvl-ic.sh { background: var(--a-a2h-soft); color: var(--a-a2h); }
-#auxiliar-ui .axp-lvl-ic.pv { background: var(--a-h2a-soft); color: var(--a-h2a); }
-#auxiliar-ui .axp-lvl-t { flex: 1; min-width: 0; }
-#auxiliar-ui .axp-lvl-t b { display: block; font-size: 16px; font-weight: 750; letter-spacing: -.01em; }
-#auxiliar-ui .axp-lvl-t > span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 1px; }
-#auxiliar-ui .axp-lvl-p { text-align: right; flex: 0 0 auto; }
-#auxiliar-ui .axp-lvl-p b { display: block; font-size: 15px; font-weight: 750; }
-#auxiliar-ui .axp-lvl-p span { display: block; font-size: 11px; color: var(--a-t3); margin-top: 1px; }
-#auxiliar-ui .axp-lvl-li {
-  display: block; font-size: 12px; color: var(--a-t2);
-  margin: 10px 0 0 54px; line-height: 1.45;
+#auxiliar-ui .axp-lvl-ic .icon { width: 20px; height: 20px; }
+#auxiliar-ui .axp-lvl-t { display: block; flex: 1; min-width: 0; }
+#auxiliar-ui .axp-lvl-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#auxiliar-ui .axp-lvl-name { font-size: 16.5px; font-weight: 600; }
+#auxiliar-ui .axp-lvl-price { font-size: 14px; font-weight: 600; white-space: nowrap; }
+#auxiliar-ui .axp-lvl-tag { display: block; font-size: 13px; margin-top: 2px; line-height: 1.35; }
+#auxiliar-ui .axp-lvl-inc { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; }
+#auxiliar-ui .axp-lvl-inc > span { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+#auxiliar-ui .axp-lvl-inc .icon { width: 12px; height: 12px; }
+#auxiliar-ui .axp-lvl-pnote { display: block; font-size: 10.5px; margin-top: 6px; }
+#auxiliar-ui .axp-lvl-chk {
+  width: 22px; height: 22px; border-radius: 11px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
 }
-#auxiliar-ui .axp-lvl-no {
-  display: block; font-size: 12px; font-weight: 650; color: var(--a-warn);
-  background: var(--a-warn-soft); border-radius: 9px;
-  padding: 8px 10px; margin: 10px 0 0 54px;
+#auxiliar-ui .axp-lvl-chk .icon { width: 13px; height: 13px; }
+
+/* Compartido: tokens del rol, tono a2h (el verde de «llegada a casa»). */
+#auxiliar-ui .axp-lvl.sh { border: 1.5px solid var(--a-line); background: var(--a-card); }
+#auxiliar-ui .axp-lvl.sh.on { border-color: var(--a-a2h); background: var(--a-a2h-soft); }
+#auxiliar-ui .axp-lvl.sh .axp-lvl-ic { background: var(--a-a2h-soft); color: var(--a-a2h); }
+#auxiliar-ui .axp-lvl.sh.on .axp-lvl-ic { background: var(--a-a2h); color: #fff; }
+#auxiliar-ui .axp-lvl.sh.on .axp-lvl-name { color: var(--a-a2h); }
+#auxiliar-ui .axp-lvl.sh .axp-lvl-price { color: var(--a-a2h); }
+#auxiliar-ui .axp-lvl.sh .axp-lvl-tag,
+#auxiliar-ui .axp-lvl.sh .axp-lvl-inc > span { color: var(--a-t2); }
+#auxiliar-ui .axp-lvl.sh .axp-lvl-inc .icon { color: var(--a-a2h); }
+#auxiliar-ui .axp-lvl.sh .axp-lvl-pnote { color: var(--a-t3); }
+#auxiliar-ui .axp-lvl.sh .axp-lvl-chk { background: var(--a-a2h); color: #fff; }
+
+/* Privado: la piel Select. Espresso en degradado, latón, serif en el nombre. */
+#auxiliar-ui .axp-lvl.vip {
+  border: 1px solid rgba(199,169,113,.34);
+  background: linear-gradient(152deg, var(--vip-ink-2) 0%, var(--vip-ink) 62%);
+  box-shadow: 0 8px 16px rgba(34,29,24,.16); color: var(--vip-text);
 }
-#auxiliar-ui .axp-more {
-  width: 100%; margin-top: 2px; padding: 11px; border-radius: 12px;
-  border: 1px solid var(--a-line); background: transparent; font: inherit;
-  font-size: 13px; font-weight: 650; color: var(--a-accent); cursor: pointer;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
+#auxiliar-ui .axp-lvl.vip.on { border-color: var(--vip-brass-lt); }
+#auxiliar-ui .axp-lvl.vip .axp-lvl-ic { background: rgba(199,169,113,.16); color: var(--vip-brass-lt); }
+#auxiliar-ui .axp-lvl.vip.on .axp-lvl-ic { background: var(--vip-brass-lt); color: var(--vip-ink); }
+#auxiliar-ui .axp-lvl.vip .axp-eyebrow { margin-bottom: 3px; }
+#auxiliar-ui .axp-lvl.vip .axp-lvl-name {
+  font-family: var(--vip-serif); font-size: 17.5px; font-weight: 500;
+  letter-spacing: .3px; color: var(--vip-text);
 }
+/* Ya no es una cifra («Con costo»), así que va en la tipografía del módulo y no
+   en la monoespaciada de los números. */
+#auxiliar-ui .axp-lvl.vip .axp-lvl-price { color: var(--vip-brass-lt); font-size: 13px; }
+#auxiliar-ui .axp-lvl.vip .axp-lvl-tag,
+#auxiliar-ui .axp-lvl.vip .axp-lvl-inc > span,
+#auxiliar-ui .axp-lvl.vip .axp-lvl-pnote { color: var(--vip-text-2); }
+#auxiliar-ui .axp-lvl.vip .axp-lvl-inc .icon { color: var(--vip-brass-lt); }
+#auxiliar-ui .axp-lvl.vip .axp-lvl-chk { background: var(--vip-brass-lt); color: var(--vip-ink); }
+/* El pie: disponibilidad a la izquierda (lo que se SABE del cupo, sin cifras),
+   «Ver qué incluye» a la derecha. */
+/* PRIMICIA: la tarjeta se ve, se puede tocar para leer de qué se trata, y se
+   nota que no está activa. No lleva `.off` (que es para la camioneta ocupada y
+   apaga el cursor): aquí el toque SÍ hace algo, abre la portada. */
+#auxiliar-ui .axp-lvl.primicia { opacity: .68; }
+#auxiliar-ui .axp-lvl.primicia .axp-lvl-price {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 100px; background: rgba(199,169,113,.16);
+}
+#auxiliar-ui .axp-lvl-foot {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px;
+  padding: 8px 16px; border-top: 1px solid var(--vip-line-dk);
+}
+#auxiliar-ui .axp-lvl-avail {
+  font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 100px; white-space: nowrap;
+  background: rgba(199,169,113,.16); color: var(--vip-brass-lt);
+}
+#auxiliar-ui .axp-lvl-more {
+  display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;
+  font-size: 12px; font-weight: 600; color: var(--vip-brass-lt);
+}
+#auxiliar-ui .axp-lvl-more .icon { width: 13px; height: 13px; }
+
+/* La nota de la aprobación sigue en tokens del rol (es texto del flujo, no de
+   la pieza de venta); solo el icono va en latón para que se lea del módulo. */
 #auxiliar-ui .axp-note {
   display: flex; gap: 11px; align-items: flex-start; margin-top: 12px;
   padding: 12px 14px; border-radius: 12px; background: var(--a-surf2);
 }
-#auxiliar-ui .axp-note .icon { color: var(--a-t2); margin-top: 2px; flex: 0 0 auto; }
+#auxiliar-ui .axp-note .icon { color: var(--vip-brass); margin-top: 2px; flex: 0 0 auto; }
 #auxiliar-ui .axp-note b { display: block; font-size: 13.5px; font-weight: 700; }
 #auxiliar-ui .axp-note span { display: block; font-size: 12.5px; color: var(--a-t2); margin-top: 2px; line-height: 1.5; }
+/* El <b> de énfasis DENTRO del párrafo de la nota sigue en línea: el `b {
+   display:block }` de arriba es para el título y partía «…aquí mismo, en tu
+   traslado» en dos renglones. */
+#auxiliar-ui .axp-note span b { display: inline; font-size: inherit; }
+#auxiliar-ui .axp-under { font-size: 11px; color: var(--a-t3); text-align: center; line-height: 1.5; margin: 14px 0 0; }
 
-/* ── La portada · paleta fija, no hereda el nocturno ─────────────────────── */
-#auxiliar-ui .axp-intro {
-  --p-ink: #1A1714; --p-ink2: #6B625A; --p-paper: #FBF9F6;
-  --p-card: #FFFFFF; --p-line: #E6E0D8; --p-gold: #8A6B3D;
-  background: var(--p-paper); color: var(--p-ink);
+/* ── La portada (VipIntro) · paleta fija, no hereda el nocturno ──────────── */
+/* Tres hijos directos de la columna flex de #auxiliar-ui: la cabecera en tinta
+   (fija), el cuerpo en pergamino (desplaza, reutiliza .ax-body) y el pie con la
+   tarifa (fijo). El resplandor de latón de la esquina va en ::before para no
+   meter un <div> vacío en el HTML. */
+#auxiliar-ui .axp-ink {
+  flex: 0 0 auto; position: relative; overflow: hidden; padding-bottom: 30px;
+  background: linear-gradient(168deg, var(--vip-ink-2) 0%, var(--vip-ink) 68%);
+  color: var(--vip-text);
 }
-#auxiliar-ui .axp-hero { padding: 26px 4px 20px; text-align: center; }
-#auxiliar-ui .axp-hero-ic {
-  width: 62px; height: 62px; border-radius: 50%; margin: 0 auto 16px;
-  background: var(--p-ink); color: var(--p-paper);
-  display: flex; align-items: center; justify-content: center;
+#auxiliar-ui .axp-ink::before {
+  content: ''; position: absolute; top: -60px; right: -50px; width: 220px; height: 220px;
+  border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(199,169,113,.14) 0%, rgba(199,169,113,0) 70%);
 }
-#auxiliar-ui .axp-hero-ic .icon { width: 28px; height: 28px; }
+#auxiliar-ui .axp-bar {
+  position: relative; display: flex; align-items: center; justify-content: space-between;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 18px 0;
+}
+#auxiliar-ui .axp-back {
+  width: 38px; height: 38px; border-radius: 19px; padding: 0; flex: 0 0 auto;
+  border: 1px solid var(--vip-line-dk); background: transparent; color: var(--vip-text);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+#auxiliar-ui .axp-bar-gap { width: 38px; flex: 0 0 auto; }
+#auxiliar-ui .axp-hero { position: relative; padding: 26px 24px 0; }
+#auxiliar-ui .axp-wordmark {
+  font-family: var(--vip-serif); font-size: 56px; font-weight: 500;
+  letter-spacing: .5px; line-height: .98; margin-top: 4px;
+}
+#auxiliar-ui .axp-rule { width: 46px; height: 1px; background: var(--vip-brass-lt); margin: 18px 0; }
 #auxiliar-ui .axp-hero h1 {
-  font-size: 25px; font-weight: 700; letter-spacing: -.02em;
-  color: var(--p-ink); margin: 0; line-height: 1.2;
+  font-family: var(--vip-serif); font-size: 24px; font-weight: 500;
+  line-height: 1.3; letter-spacing: .2px; margin: 0; color: var(--vip-text);
 }
 #auxiliar-ui .axp-hero p {
-  font-size: 14px; color: var(--p-ink2); line-height: 1.6;
-  margin: 10px auto 0; max-width: 300px;
+  font-size: 13.5px; color: var(--vip-text-2); line-height: 1.6;
+  margin: 12px 0 0; max-width: 300px;
 }
-#auxiliar-ui .axp-hero-p {
-  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--p-line);
+#auxiliar-ui .ax-body.axp-intro { background: var(--vip-paper); color: var(--vip-ink); padding: 0 24px 22px; }
+/* Pilares: numeral romano en serif y latón, título serif, descripción en tinta
+   al 62 %. Salen de INCLUYE: si la lista crece, crecen solos. */
+#auxiliar-ui .axp-pillars { padding-top: 8px; }
+#auxiliar-ui .axp-pillar { display: flex; gap: 18px; padding: 17px 2px; align-items: flex-start; }
+#auxiliar-ui .axp-pillar-n {
+  font-family: var(--vip-serif); font-size: 15px; color: var(--vip-brass);
+  letter-spacing: 1px; width: 24px; flex: 0 0 auto; padding-top: 3px;
 }
-#auxiliar-ui .axp-hero-p b {
-  display: block; font-size: 27px; font-weight: 700;
-  letter-spacing: -.02em; color: var(--p-gold);
+#auxiliar-ui .axp-pillar b { display: block; font-family: var(--vip-serif); font-size: 19px; font-weight: 400; letter-spacing: .2px; }
+#auxiliar-ui .axp-pillar span { display: block; font-size: 13px; color: rgba(34,29,24,.62); margin-top: 3px; line-height: 1.5; }
+#auxiliar-ui .axp-rule-ln { height: 1px; background: var(--vip-line); opacity: .7; }
+#auxiliar-ui .axp-avail {
+  margin-top: 16px; padding: 14px 16px; border-radius: 14px;
+  border: 1px solid var(--vip-line); background: rgba(138,106,58,.06);
+  display: flex; gap: 12px; align-items: flex-start;
 }
-#auxiliar-ui .axp-hero-p span { display: block; font-size: 12px; color: var(--p-ink2); margin-top: 3px; }
-#auxiliar-ui .axp-inc {
-  background: var(--p-card); border: 1px solid var(--p-line);
-  border-radius: 16px; padding: 4px 16px; margin-top: 4px;
-}
-#auxiliar-ui .axp-inc-row {
-  display: flex; gap: 13px; align-items: flex-start;
-  padding: 14px 0; border-top: 1px solid var(--p-line);
-}
-#auxiliar-ui .axp-inc-row:first-child { border-top: 0; }
-#auxiliar-ui .axp-inc-ic {
-  width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto;
-  background: var(--p-paper); color: var(--p-gold);
-  display: flex; align-items: center; justify-content: center;
-}
-#auxiliar-ui .axp-inc-row b { display: block; font-size: 14.5px; font-weight: 650; color: var(--p-ink); }
-#auxiliar-ui .axp-inc-row span { display: block; font-size: 12.5px; color: var(--p-ink2); margin-top: 2px; line-height: 1.45; }
-#auxiliar-ui .axp-fine {
+#auxiliar-ui .axp-avail .icon { width: 16px; height: 16px; color: var(--vip-brass); margin-top: 1px; flex: 0 0 auto; }
+#auxiliar-ui .axp-avail b { display: block; font-size: 13.5px; font-weight: 600; }
+#auxiliar-ui .axp-avail span { display: block; font-size: 12px; color: rgba(34,29,24,.6); margin-top: 3px; line-height: 1.5; }
+#auxiliar-ui .axp-shared {
   margin-top: 14px; padding: 14px 16px; border-radius: 14px;
-  background: var(--p-card); border: 1px dashed var(--p-line);
+  background: rgba(34,29,24,.045); font-size: 12.5px; color: rgba(34,29,24,.66); line-height: 1.6;
 }
-#auxiliar-ui .axp-fine b { display: block; font-size: 13px; font-weight: 700; color: var(--p-ink); }
-#auxiliar-ui .axp-fine span { display: block; font-size: 12.5px; color: var(--p-ink2); margin-top: 4px; line-height: 1.55; }
+/* El pie fijo: tarifa real en serif y el botón de latón (VipButton). */
+#auxiliar-ui .axp-foot {
+  flex: 0 0 auto; padding: 14px 24px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--vip-line); background: var(--vip-paper); color: var(--vip-ink);
+}
+/* La fila «Tarifa» con la cifra grande se fue el 17-sep (ver aux-privado.js):
+   queda solo la nota que dice que tiene costo y quién lo confirma. */
+#auxiliar-ui .axp-fare-note { font-size: 11.5px; color: rgba(34,29,24,.55); line-height: 1.45; margin: 0 0 10px; }
+#auxiliar-ui .axp-btn {
+  width: 100%; height: 54px; border-radius: 13px; border: none; font: inherit;
+  font-size: 15.5px; font-weight: 600; letter-spacing: .2px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--vip-brass); color: var(--vip-paper-2);
+}
+#auxiliar-ui .axp-btn:disabled { background: rgba(34,29,24,.12); color: rgba(34,29,24,.4); cursor: not-allowed; }
+#auxiliar-ui .axp-btn.ghost {
+  height: 46px; margin-top: 6px; background: none;
+  color: var(--vip-brass); border: 1px solid var(--vip-brass);
+}
 
 /* ── Estado de la solicitud, dentro del viaje ────────────────────────────── */
 #auxiliar-ui .axp-st {
@@ -1159,3 +1279,150 @@
   font-size: 12.5px; line-height: 1.45; color: var(--a-t2);
 }
 #auxiliar-ui .axr-auto .icon { width: 16px; height: 16px; color: var(--a-a2h, #10B981); flex: 0 0 auto; margin-top: 1px; }
+
+/* ── La ruta con iconos: Casa → Aeropuerto / Aeropuerto → Casa (15-sep-2026) ──
+   Es el título de las tarjetas del paso 1 y la cabecera del resumen. Se scopea
+   a `span.ax-route` porque `.axo-ruta .ax-route` (más arriba) es OTRA cosa: el
+   <path> de la estela en la escena de operación. */
+/* Puede partirse: en 360 px «Aeropuerto → Casa» con tres iconos roza el ancho
+   del título, y sin esto empujaba el radio fuera de la tarjeta (que .ax-body
+   recorta). Si no cabe, «→ Casa» baja de renglón. El bloque del texto necesita
+   poder encogerse (min-width:0) para que el flex-wrap actúe. */
+#auxiliar-ui .ax-opt div { flex: 1; min-width: 0; }
+#auxiliar-ui span.ax-route { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+#auxiliar-ui span.ax-route .icon { width: 15px; height: 15px; flex: 0 0 auto; }
+/* La flecha va en el color del tono; los demás iconos heredan el del texto. */
+#auxiliar-ui .ax-opt.h2a .ax-route-arw { color: var(--a-h2a); }
+#auxiliar-ui .ax-opt.a2h .ax-route-arw { color: var(--a-ok); }
+/* «Cambiar» al lado del punto en el resumen: el valor sigue alineado a la
+   derecha y el botón no se estira ni se parte. */
+#auxiliar-ui .ax-sum-row b { flex: 1; min-width: 0; }
+#auxiliar-ui .ax-sum-row .ax-link { flex: 0 0 auto; margin-left: 8px; padding: 0; font-size: 12.5px; }
+
+/* ANCLA-SELECT */
+/* ── Select fuera del paso (15-sep-2026) ──────────────────────────────────
+   La franja debajo del resumen y el botón de latón del CTA cuando se eligió el
+   privado. Paleta fija como el resto del módulo (variables --vip-* arriba, en
+   el bloque «0069 · Traslado privado»). */
+#auxiliar-ui .axp-sum-vip {
+  margin-top: 10px; padding: 14px 16px; border-radius: 14px;
+  background: linear-gradient(152deg, var(--vip-ink-2) 0%, var(--vip-ink) 62%);
+  border: 1px solid rgba(199,169,113,.34); color: var(--vip-text);
+}
+#auxiliar-ui .axp-sum-vip b {
+  display: block; font-family: var(--vip-serif); font-size: 17px; font-weight: 500;
+  letter-spacing: .2px; margin-top: 4px;
+}
+#auxiliar-ui .axp-sum-vip > span:not(.axp-eyebrow) {
+  display: block; font-size: 12px; color: var(--vip-text-2); margin-top: 4px; line-height: 1.5;
+}
+/* El primario de siempre, en latón. Deshabilitado se ve igual que el primario
+   (styles.css) — la clase extra no puede ganarle a ese estado. */
+#auxiliar-ui .ax-btn-primary.ax-btn-brass {
+  background: var(--vip-brass); color: var(--vip-paper-2);
+  box-shadow: 0 8px 20px rgba(138,106,58,.28);
+}
+#auxiliar-ui .ax-btn-primary.ax-btn-brass:disabled { background: var(--a-line); color: var(--a-t3); box-shadow: none; }
+
+/* ANCLA-CELEBRACION */
+
+/* ── La celebración al confirmar (15-sep-2026, aux-celebracion.js) ────────
+   El avión sale de la loseta de la izquierda, recorre la curva UNA vez dejando
+   la estela, aterriza en la de la derecha y ahí cae el sello. Misma técnica que
+   .axo-ruta (más arriba): offset-path para que el avión vaya pegado a la curva y
+   stroke-dashoffset para que la línea aparezca detrás de él. Lo que cambia es
+   que aquí no hay bucle: el ESTADO BASE de cada regla es el estado FINAL (ruta
+   completa, avión ya aterrizado, sello puesto) y la animación con `both` parte
+   del principio. Así, quien pidió menos movimiento —abajo, animation:none— ve
+   directamente la escena terminada, sin reglas extra.
+
+   201.8 = el largo real de la curva M44 104C110 100 160 80 236 46, calculado
+   muestreando la cúbica de Bézier en 20 000 puntos (201,821). Si se cambia la
+   curva en aux-celebracion.js hay que volver a medirlo, o la estela termina
+   antes o después que el avión.
+
+   Los tiempos que tienen que cuadrar entre sí:
+     ruta y avión   1.35 s con .25 s de espera → aterriza a 1.6 s
+     sello          aparece a 1.55 s (justo cuando el avión se funde)
+     título y lead  entran a 1.3 s
+     sonido         a 1.5 s (aux-celebracion.js)                                */
+#auxiliar-ui .axc { width: 100%; max-width: 320px; margin: 0 auto; }
+#auxiliar-ui .axc-scene { width: 100%; height: auto; display: block; }
+#auxiliar-ui .axc-pad { fill: var(--a-card); stroke: var(--a-line); stroke-width: 2; }
+#auxiliar-ui .axc-glyph { fill: none; stroke: var(--a-text); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#auxiliar-ui .axc-glyph-fill { fill: var(--a-text); }
+#auxiliar-ui .axc-track {
+  stroke: var(--a-line); stroke-width: 3; stroke-linecap: round; stroke-dasharray: .5 9;
+}
+#auxiliar-ui .axc-route {
+  stroke: var(--a-accent); stroke-width: 3.5; stroke-linecap: round;
+  stroke-dasharray: 201.8; stroke-dashoffset: 0;
+  animation: axc-draw 1.35s .25s cubic-bezier(.4,.1,.3,1) both;
+}
+@keyframes axc-draw { from { stroke-dashoffset: 201.8; } }
+/* El avión termina fundido en la loseta de llegada: «aterrizó». Por eso su
+   opacidad final es 0 y lo que queda a la vista es el sello. */
+#auxiliar-ui .axc-plane { fill: var(--a-accent); opacity: 0; }
+@keyframes axc-planefade { 0%, 4% { opacity: 0; } 12%, 90% { opacity: 1; } 100% { opacity: 0; } }
+#auxiliar-ui .axc-ok circle { fill: var(--a-a2h, var(--a-ok)); }
+#auxiliar-ui .axc-ok .axc-tick { fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+#auxiliar-ui .axc-ok {
+  transform-box: view-box; transform-origin: 249px 33px;
+  animation: axc-pop .5s 1.55s cubic-bezier(.2,1.4,.4,1) both;
+}
+@keyframes axc-pop { from { opacity: 0; transform: scale(.4); } }
+/* El título y el lead entran cuando el avión ya casi llega: si aparecieran de
+   una, nadie miraría el viaje. */
+#auxiliar-ui .axc-in { animation: axc-in .5s 1.3s cubic-bezier(.2,.8,.3,1) both; }
+@keyframes axc-in { from { opacity: 0; transform: translateY(10px); } }
+
+/* Reserva: sin offset-path el avión hace el viaje en recta (misma duración,
+   misma espera, misma curva de tiempo que la estela, que se dibuja igual). Los
+   ángulos son la tangente de la curva en cada extremo (-3° y -24°). */
+#auxiliar-ui .axc-plane {
+  transform: translate(236px, 46px) rotate(-24deg);
+  animation: axc-fly 1.35s .25s cubic-bezier(.4,.1,.3,1) both,
+             axc-planefade 1.35s .25s linear both;
+}
+@keyframes axc-fly { from { transform: translate(44px, 104px) rotate(-3deg); } }
+
+/* Lo bueno: pegado a la curva y girando con ella. Igual que en .axo-ruta, la
+   estela y el avión SOLO van juntos porque comparten duración, espera,
+   cubic-bezier y porcentajes (aquí 0 y 100, sin fotogramas intermedios); la
+   opacidad va en una animación aparte por eso mismo. */
+@supports (offset-path: path("M0 0L1 1")) {
+  #auxiliar-ui .axc-plane {
+    offset-path: path("M44 104C110 100 160 80 236 46");
+    offset-rotate: auto; offset-distance: 100%;
+    transform: none;
+    animation: axc-travel 1.35s .25s cubic-bezier(.4,.1,.3,1) both,
+               axc-planefade 1.35s .25s linear both;
+  }
+  @keyframes axc-travel { 0% { offset-distance: 0%; } 100% { offset-distance: 100%; } }
+}
+
+/* La versión Rendio Select: panel espresso, estela y avión en latón, sello de
+   latón con el chulo en tinta. Paleta FIJA como toda la piel del privado (no
+   cambia de noche, decisión del diseñador): por eso aquí sí hay hexadecimales. */
+#auxiliar-ui .axc.vip {
+  --axc-ink: #221D18; --axc-ink2: #2E2720; --axc-brass: #C7A971; --axc-text: #F6F1E7;
+  background: linear-gradient(152deg, #2E2720 0%, #221D18 62%);
+  border: 1px solid rgba(199,169,113,.34); border-radius: 16px; padding: 8px 10px;
+  /* Sombra corta: .ax-body recorta lo que sobresalga del relleno lateral. */
+  box-shadow: 0 8px 16px rgba(34,29,24,.16);
+}
+#auxiliar-ui .axc.vip .axc-pad { fill: var(--axc-ink2); stroke: rgba(199,169,113,.34); }
+#auxiliar-ui .axc.vip .axc-glyph { stroke: var(--axc-text); }
+#auxiliar-ui .axc.vip .axc-glyph-fill { fill: var(--axc-text); }
+#auxiliar-ui .axc.vip .axc-track { stroke: rgba(199,169,113,.26); }
+#auxiliar-ui .axc.vip .axc-route { stroke: var(--axc-brass); }
+#auxiliar-ui .axc.vip .axc-plane { fill: var(--axc-brass); }
+#auxiliar-ui .axc.vip .axc-ok circle { fill: var(--axc-brass); }
+#auxiliar-ui .axc.vip .axc-ok .axc-tick { stroke: var(--axc-ink); }
+
+/* Menos movimiento: nada se mueve ni entra; como el estado base de cada regla
+   ya es el final, basta con apagar las animaciones. El sonido lo apaga el
+   módulo por su cuenta (mira la misma media query). */
+@media (prefers-reduced-motion: reduce) {
+  #auxiliar-ui .axc *, #auxiliar-ui .axc-in { animation: none !important; }
+}

@@ -65,6 +65,11 @@
     rerender: () => auxRender(),
     fieldHTML: (label, key, value, ph, type, attrs) => auxField(label, key, value, ph, type, attrs),
     toggleHTML: (label, key, on, hint) => auxToggle(label, key, on, hint),
+    // Los pasos se resuelven por NOMBRE (15-sep-2026): el del punto de recogida
+    // ya no es siempre el 3, así que los módulos preguntan «¿en qué paso está?»
+    // y no «¿está en el 3?».
+    stepKind: () => auxStepKind(auxState.step),
+    kinds: () => auxStepKinds(),
   };
 
   async function auxInit(profile) {
@@ -111,8 +116,8 @@
     }
     auxRender();
     // El catálogo de residencias se precarga en segundo plano: cuando llegue al
-    // paso 3 la lista ya está, sin spinner. Si falla, el paso 3 cae al camino
-    // manual de siempre.
+    // paso del punto la lista ya está, sin spinner (y con una sola unidad ese
+    // paso ni aparece: el punto se pone solo). Si falla, cae al camino manual.
     if (window.AuxResidencias) AuxResidencias.load();
   }
 
@@ -120,10 +125,22 @@
   const auxRoot = () => document.getElementById('auxiliar-ui');
   const auxCurTrip = () => auxState.trips.find(x => x.id === auxState.editingTrip);
   const auxFirstName = () => (auxState.profile?.full_name || 'Auxiliar').split(' ')[0];
+  // `from`/`to` y sus iconos (15-sep-2026, profa): el paso 1 y el resumen dicen
+  // «Casa → Aeropuerto» con dibujos, no solo «Salida». `label` corto se queda
+  // para los chips de las tarjetas y el «Tu salida quedó…», donde no cabe más.
   function auxTypeMeta(type) {
     return type === 'lle'
-      ? { cls: 'a2h', label: 'Llegada', ic: 'i-down', desc: 'Del aeropuerto a casa' }
-      : { cls: 'h2a', label: 'Salida', ic: 'i-up', desc: 'De casa al aeropuerto' };
+      ? { cls: 'a2h', label: 'Llegada', ic: 'i-down', desc: 'Del aeropuerto a casa',
+          from: 'Aeropuerto', to: 'Casa', icFrom: 'i-plane', icTo: 'i-home' }
+      : { cls: 'h2a', label: 'Salida', ic: 'i-up', desc: 'De casa al aeropuerto',
+          from: 'Casa', to: 'Aeropuerto', icFrom: 'i-home', icTo: 'i-plane' };
+  }
+  // La ruta con iconos: casa → avión (salida) o avión → casa (llegada). Es un
+  // <span> inline para poder vivir dentro del <b> del título de la tarjeta.
+  function auxRouteHTML(m) {
+    return `<span class="ax-route"><svg class="icon"><use href="#${m.icFrom}"/></svg>${m.from}`
+      + `<svg class="icon ax-route-arw"><use href="#i-arrow"/></svg>`
+      + `<svg class="icon"><use href="#${m.icTo}"/></svg>${m.to}</span>`;
   }
   const auxHM = (t) => t || '--:--';
   function auxDateES(iso) {
@@ -152,12 +169,18 @@
       return;
     }
     if (auxState.view === 'form') { root.innerHTML = auxFormHTML(); auxAfterFormRender(); return; }
-    if (auxState.view === 'confirm') { root.innerHTML = auxConfirmHTML(); return; }
+    if (auxState.view === 'confirm') {
+      root.innerHTML = auxConfirmHTML();
+      // El sonido del aterrizaje se programa DESPUÉS de pintar: la escena ya
+      // está en el DOM y el módulo decide (por id) si este traslado ya sonó.
+      if (window.AuxCelebracion) AuxCelebracion.afterRender(auxCurTrip());
+      return;
+    }
     if (auxState.view === 'trip') { root.innerHTML = auxTripHTML(); auxAfterTripRender(); return; }
     if (auxState.view === 'viajes') { root.innerHTML = auxViajesHTML(); return; }
     if (auxState.view === 'perfil') { root.innerHTML = auxPerfilHTML(); auxSetupPwa(); return; }
     if (auxState.view === 'privado') {
-      root.innerHTML = window.AuxPrivado ? AuxPrivado.introHTML() : '';
+      root.innerHTML = window.AuxPrivado ? AuxPrivado.introHTML(auxState.form) : '';
       return;
     }
     if (auxState.view === 'support') {
@@ -488,24 +511,44 @@
     return `<nav class="ax-tabs">${tab('inicio', 'i-home', 'Inicio')}${tab('viajes', 'i-list', 'Viajes')}${tab('perfil', 'i-user', 'Perfil')}</nav>`;
   }
 
-  // ---------- FORMULARIO (4 pasos) ----------
-  // Cuántos pasos tiene el pedido. Son 5 solo si el jefe encendió el traslado
-  // privado (0069): sin él, el paso de nivel no existe — no se le muestra a
-  // nadie una elección de un solo elemento.
-  function auxSteps() {
-    return (window.AuxPrivado && AuxPrivado.enabled()) ? 5 : 4;
+  // ---------- FORMULARIO (3 a 5 pasos) ----------
+  // ¿Hace falta preguntar dónde? (profa, 15-sep-2026: «Dónde te recogemos» SOLO
+  // si hay dos unidades). Con una sola, el punto del registro se pone solo y el
+  // paso no existe: preguntarle a 64 de los 102 tripulantes algo que ya
+  // contestaron al registrarse era el paso que más sobraba del pedido.
+  // Sigue existiendo cuando de verdad hay algo que decidir o que decir:
+  function auxNeedsDonde(f) {
+    const R = window.AuxResidencias;
+    if (!R) return true;
+    if (f.manualAddr || f.dondeForced) return true;      // camino manual o el tripulante pidió cambiar
+    if (R.loading() || !R.hasCatalog()) return true;     // sin catálogo: el paso avisa y ofrece reintentar
+    if (R.hasTwoUnits()) return true;                    // dos unidades → elige él
+    R.autofill(f);                                       // una unidad: el punto se pone solo
+    return !f.residenceId;                               // sin punto guardado no hay de dónde sacarlo → se pregunta
   }
-  // Qué pide cada paso. Se resuelve por NOMBRE y no por número, porque el número
-  // del último paso cambia según haya privado o no.
-  function auxStepKind(s) {
-    if (s === 1) return 'tipo';
-    if (s === 2) return 'vuelo';
-    if (s === 3) return 'donde';
-    if (auxSteps() === 5) return s === 4 ? 'nivel' : 'revisar';
-    return 'revisar';
+  // La lista de pasos, por NOMBRE. Se recalcula cada vez porque depende del
+  // formulario (dos unidades, camino manual) y de Ajustes (el privado, 0069):
+  // sin privado, el paso de nivel no existe — no se le muestra a nadie una
+  // elección de un solo elemento.
+  function auxStepKinds() {
+    const k = ['tipo', 'vuelo'];
+    if (auxNeedsDonde(auxState.form)) k.push('donde');
+    // El paso del nivel existe aunque el privado todavía no se pueda pedir: en
+    // ese caso la tarjeta va apagada y sirve de primicia (ver aux-privado.js).
+    if (window.AuxPrivado && AuxPrivado.stepHTML) k.push('nivel');
+    k.push('revisar');
+    return k;
   }
+  function auxSteps() { return auxStepKinds().length; }
+  // Qué pide el paso `s`. Fuera de rango cae en 'revisar': el número del último
+  // paso cambia y nunca puede quedar un paso «vacío».
+  function auxStepKind(s) { return auxStepKinds()[s - 1] || 'revisar'; }
   function auxFormHTML() {
-    const s = auxState.step, n = auxSteps(), kind = auxStepKind(s);
+    const n = auxSteps();
+    // Si un paso desapareció por debajo (el catálogo llegó y puso el punto solo
+    // mientras se miraba el spinner), el número se acomoda al último que hay.
+    if (auxState.step > n) auxState.step = n;
+    const s = auxState.step, kind = auxStepKind(s);
     const isLle = auxState.form.type === 'lle';
     const titles = {
       tipo: '¿Qué necesitas?', vuelo: 'Datos del vuelo',
@@ -537,14 +580,17 @@
     const opt = (type) => {
       const m = auxTypeMeta(type);
       const sel = auxState.form.type === type;
+      // El tile pinta A DÓNDE va (avión en la salida, casa en la llegada) y el
+      // título la ruta entera con iconos; el subtítulo sigue diciendo lo mismo
+      // de siempre, que es lo que de verdad distingue los dos.
       return `<button class="ax-opt ${m.cls} ${sel ? 'sel' : ''}" data-ax="type" data-type="${type}">
-        <span class="ax-opt-ic"><svg class="icon"><use href="#${m.ic}"/></svg></span>
-        <div><b>${m.label}</b><span>${type === 'lle' ? 'Vengo aterrizando de un vuelo' : 'Voy al aeropuerto a operar un vuelo'}</span></div>
+        <span class="ax-opt-ic"><svg class="icon"><use href="#${m.icTo}"/></svg></span>
+        <div><b>${auxRouteHTML(m)}</b><span>${type === 'lle' ? 'Vengo aterrizando de un vuelo' : 'Voy al aeropuerto a operar un vuelo'}</span></div>
         <span class="ax-radio">${sel ? '<svg class="icon"><use href="#i-check"/></svg>' : ''}</span>
       </button>`;
     };
     return `<p class="ax-lead">Elige el tipo de traslado.</p>${opt('sal')}${opt('lle')}
-      <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Si tu vuelo incluye pernocta, lo marcas en el paso de dirección.</div>`;
+      <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Si tu vuelo incluye pernocta, lo marcas en el siguiente paso, con los datos del vuelo.</div>`;
   }
 
   // Momento del vuelo en hora de Colombia (o null si aún falta un dato).
@@ -641,7 +687,15 @@
           ${auxField('Hora a la que aterrizas de vuelta', 'backTime', f.backTime || '', '19:40', 'time')}
           ${auxFlightField('Número del vuelo con el que aterrizas', 'backFlight', '9413')}
           <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Quedan dos traslados: el de ida y el de regreso. Puedes cancelar cualquiera por separado.</div>`
-          : ''}`}`;
+          : ''}`}
+      ${/* La pernocta y la reserva en firme vivían en el paso del punto de
+           recogida. Ese paso ya no lo ve todo el mundo (15-sep-2026), y son
+           datos del VIAJE, no de la dirección: van aquí, con el vuelo. */ ''}
+      <div class="ax-sec">Sobre el viaje</div>
+      <div class="ax-toggles">
+        ${auxToggle('¿Es una pernocta?', 'isPernocta', f.isPernocta, 'Pasas la noche entre vuelos (hotel).')}
+        ${auxToggle('¿Es una reserva en firme?', 'isReserva', f.isReserva !== false, 'Confírmanos que el viaje va.')}
+      </div>`;
   }
   // Va en su propio contenedor porque se repinta en cada tecla (junto con el
   // CTA) sin remontar los inputs — si no, el botón se deshabilitaba sin decir
@@ -661,11 +715,12 @@
     return `<div class="ax-hint ok"><svg class="icon"><use href="#i-clock"/></svg>${isLle ? 'Te esperamos al bajar del avión.' : 'Te dejamos en MDE a la hora que pediste. La hora de recogida te la confirmamos cuando armemos la ruta del día.'}</div>`;
   }
 
-  // Paso 3. Desde la entrega del 17-ago el camino PRINCIPAL es elegir el
-  // conjunto del catálogo verificado (0055) — lo pinta aux-residencias.js. Lo de
-  // abajo, escribir la dirección y arrastrar el pin, pasa a ser la EXCEPCIÓN:
-  // se llega ahí solo si el auxiliar lo pide ("Mi punto no está en la lista") o
-  // si el catálogo no cargó.
+  // El paso del punto ('donde'). Desde la entrega del 17-ago el camino PRINCIPAL
+  // es elegir el conjunto del catálogo verificado (0055) — lo pinta
+  // aux-residencias.js. Lo de abajo, escribir la dirección y arrastrar el pin,
+  // pasa a ser la EXCEPCIÓN: se llega ahí solo si el auxiliar lo pide ("Mi
+  // punto no está en la lista") o si el catálogo no cargó. Desde el 15-sep el
+  // paso solo aparece cuando hay algo que elegir (ver auxNeedsDonde).
   function auxStep3() {
     const f = auxState.form;
     const isLle = f.type === 'lle';
@@ -701,40 +756,48 @@
           ? `<svg class="icon"><use href="#i-check"/></svg><span>Ubicación confirmada</span><button class="ax-link" data-ax="pin-edit">Ajustar</button>`
           : `<svg class="icon"><use href="#i-pin"/></svg><span>Mueve el pin al punto exacto y confirma.</span>`}
       </div>
-      ${!f.locConfirmed && f.address ? `<button class="ax-btn ax-btn-ghost" data-ax="pin-confirm"><svg class="icon"><use href="#i-check"/></svg>Confirmar ubicación</button>` : ''}
-      <div class="ax-toggles">
-        ${auxToggle('¿Es una pernocta?', 'isPernocta', f.isPernocta, 'Pasas la noche entre vuelos (hotel).')}
-        ${auxToggle('¿Es una reserva en firme?', 'isReserva', f.isReserva !== false, 'Confírmanos que el viaje va.')}
-      </div>
-      ${auxField('Notas para el conductor (opcional)', 'notes', f.notes || '', 'Ej: portería, torre 3', 'textarea')}`;
+      ${!f.locConfirmed && f.address ? `<button class="ax-btn ax-btn-ghost" data-ax="pin-confirm"><svg class="icon"><use href="#i-check"/></svg>Confirmar ubicación</button>` : ''}`;
   }
 
   function auxStep4() {
     const f = auxState.form;
     const m = auxTypeMeta(f.type);
-    const row = (k, v) => `<div class="ax-sum-row"><span>${k}</span><b>${v}</b></div>`;
+    // `extra` es un botón al lado del valor (el «Cambiar» del punto).
+    const row = (k, v, extra) => `<div class="ax-sum-row"><span>${k}</span><b>${v}</b>${extra || ''}</div>`;
+    // Con una sola unidad el punto se puso solo y el paso 'donde' no se vio: el
+    // resumen es el único sitio donde el tripulante puede decir «hoy no salgo
+    // de ahí». Sin catálogo no hay lista que abrir, así que el botón no va.
+    const cambiar = (window.AuxResidencias && AuxResidencias.hasCatalog())
+      ? `<button class="ax-link" data-ax="donde-cambiar">Cambiar</button>` : '';
     return `
       <div class="ax-sum">
-        <div class="ax-sum-head ${m.cls}"><svg class="icon"><use href="#${m.ic}"/></svg>${m.label} · ${m.desc}</div>
+        <div class="ax-sum-head ${m.cls}">${auxRouteHTML(m)}</div>
         ${f.flight ? row('Vuelo', f.flight) : ''}
         ${row('Fecha', f.date ? auxDateES(f.date) : '—')}
         ${row(f.type === 'lle' ? 'Aterriza' : 'Estar en el aeropuerto', auxHM(f.time))}
         ${f.type !== 'lle' && f.sameDayBack && f.backTime
           ? row('Regreso (aterriza)', auxHM(f.backTime) + (f.backFlight ? ' · ' + f.backFlight : ''))
           : ''}
-        ${row(f.residenceId ? (f.type === 'lle' ? 'Te dejamos en' : 'Te recogemos en') : 'Dirección', auxShortAddr(f.address))}
+        ${row(f.residenceId ? (f.type === 'lle' ? 'Te dejamos en' : 'Te recogemos en') : 'Dirección', auxShortAddr(f.address), cambiar)}
         ${f.residenceUnit ? row('Unidad', f.residenceUnit) : ''}
         ${f.residenceId ? `<div class="ax-sum-row"><span>Ubicación</span><b class="axr-ok">Verificada</b></div>` : ''}
         ${window.AuxPrivado && AuxPrivado.enabled()
           ? row('Servicio', f.level === 'private'
-              ? 'Privado · ' + (AuxPrivado.money(AuxPrivado.price()) || '—')
+              ? 'Privado · con costo'
               : 'Compartido · incluido')
           : ''}
         ${f.isPernocta ? row('Pernocta', 'Sí (hotel)') : ''}
         ${f.isReserva === false ? row('Reserva', 'Tentativa (sin confirmar)') : ''}
-        ${f.notes ? row('Notas', f.notes) : ''}
       </div>
-      <div class="ax-hint ok"><svg class="icon"><use href="#i-info"/></svg>Al confirmar, tu traslado entra a la planeación del día. Te avisamos cuando asignen conductor.</div>
+      ${/* Con el privado elegido, la franja Select: cuánto, quién lo confirma y
+           que aquí no se cobra. aux-privado devuelve '' en compartido. */ ''}
+      ${window.AuxPrivado && AuxPrivado.sumHTML ? AuxPrivado.sumHTML(f) : ''}
+      ${/* Las notas se escriben AQUÍ (15-sep-2026), no en el paso del punto,
+           que ya no ve todo el mundo. Van debajo del resumen y no dentro: el
+           campo se teclea en vivo y el resumen no se repinta por tecla (ver el
+           listener de input), así que una fila «Notas» ahí quedaría vieja. */ ''}
+      ${auxField('Notas para el conductor (opcional)', 'notes', f.notes || '', 'Ej: portería 3, timbre 302', 'textarea')}
+      <div class="ax-hint ok"><svg class="icon"><use href="#i-info"/></svg>Al confirmar, tu traslado entra a la planeación del día. Cuando le asignen conductor, lo verás en tu traslado.</div>
       ${auxPolicyHTML()}`;
   }
 
@@ -768,8 +831,8 @@
   function auxFormCTA() {
     const s = auxState.step, f = auxState.form, kind = auxStepKind(s);
     const badDate = auxLeadCheck(f)?.level === 'bad';
-    // Paso 3: con conjunto elegido no hay pin que confirmar (la coord la puso la
-    // operación a mano), así que la condición la decide el módulo.
+    // Paso 'donde': con conjunto elegido no hay pin que confirmar (la coord la
+    // puso la operación a mano), así que la condición la decide el módulo.
     const paso3Listo = window.AuxResidencias
       ? AuxResidencias.ready(f) : !!(f.address && f.locConfirmed);
     // auxIataCorta: la sigla escrita a mano que quedó en UNA letra. No se deja
@@ -784,7 +847,10 @@
       || (kind === 'revisar' && badDate);
     const label = kind !== 'revisar' ? 'Continuar'
       : (f.level === 'private' ? 'Solicitar traslado privado' : 'Confirmar traslado');
-    return `<button class="ax-btn ax-btn-primary" data-ax="next" ${disabled ? 'disabled' : ''}>${label}${kind !== 'revisar' ? '<svg class="icon"><use href="#i-arrow"/></svg>' : ''}</button>`;
+    // El privado se pide en latón (piel Select, 15-sep-2026): el botón dice lo
+    // mismo que la franja del resumen y se ve del mismo módulo.
+    const brass = label === 'Solicitar traslado privado' ? ' ax-btn-brass' : '';
+    return `<button class="ax-btn ax-btn-primary${brass}" data-ax="next" ${disabled ? 'disabled' : ''}>${label}${kind !== 'revisar' ? '<svg class="icon"><use href="#i-arrow"/></svg>' : ''}</button>`;
   }
 
   // ---------- campos ----------
@@ -1027,7 +1093,19 @@
 
   // ---------- mapa + geocodificación (pin ajustable REAL) ----------
   function auxAfterFormRender() {
-    if (auxState.step !== 3) return;
+    const kind = auxStepKind(auxState.step);
+    // Al paso del nivel se llega casi siempre por «Continuar» (que ya pregunta
+    // el cupo). Pero desde el 15-sep también se puede CAER en él: el catálogo
+    // llega mientras se mira el spinner del punto, lo pone solo, el paso
+    // 'donde' desaparece y el número que era 'donde' pasa a ser 'nivel'. Para
+    // que la camioneta no quede «por confirmar» se pregunta acá también —
+    // askCupo no repite la consulta si ya la hizo para esa misma hora.
+    if (kind === 'nivel' && window.AuxPrivado) {
+      if (!auxState.form.level) auxState.form.level = 'shared';
+      // En primicia no hay nada que preguntarle al servidor: no se puede pedir.
+      if (!AuxPrivado.primicia || !AuxPrivado.primicia()) AuxPrivado.askCupo(auxWhenISO(auxState.form));
+    }
+    if (kind !== 'donde') return;
     const f = auxState.form;
     // Con conjunto elegido el mapa lo monta aux-residencias (pin FIJO). El de
     // abajo es el del camino manual, con pin arrastrable.
@@ -1054,7 +1132,7 @@
     setTimeout(() => map.invalidateSize(), 60);
   }
   function auxRefreshPinRow() {
-    // Re-render liviano del paso 3 sin remontar el mapa.
+    // Re-render liviano del paso del punto (camino manual) sin remontar el mapa.
     const cta = auxRoot().querySelector('.ax-cta-bar'); if (cta) cta.innerHTML = auxFormCTA();
     const row = document.getElementById('ax-pin-row'); if (!row) return;
     const f = auxState.form;
@@ -1168,14 +1246,31 @@
     const m = auxTypeMeta(t.type);
     const timeline = [
       { t: 'Ahora', label: 'Traslado solicitado', done: true },
-      { t: 'En minutos', label: 'Asignamos tu conductor', done: false },
+      // Un privado aún no está aprobado: prometerle «conductor en minutos»
+      // contradice el lead de esta misma pantalla.
+      t.level === 'private'
+        ? { t: 'Lo confirma coordinación', label: 'Camioneta por confirmar', done: false }
+        : { t: 'En minutos', label: 'Asignamos tu conductor', done: false },
       { t: t.type === 'lle' ? auxHM(t.time) : 'Te confirmamos la hora', label: t.type === 'lle' ? 'Recogida en el aeropuerto' : 'Recogida en tu dirección', done: false },
     ];
+    // La escena del avión (aux-celebracion.js) reemplaza al círculo con chulo
+    // de antes; si el módulo no cargó queda el círculo, que sigue siendo cierto.
+    const vip = t.level === 'private';
+    const scene = window.AuxCelebracion
+      ? AuxCelebracion.sceneHTML(t)
+      : '<div class="ax-success"><svg class="icon"><use href="#i-check"/></svg></div>';
+    // Ningún texto promete una notificación (3 de 102 auxiliares las tienen
+    // activas): la respuesta —conductor asignado, privado aprobado— vive en la
+    // pantalla del traslado. El privado además NO está confirmado: lo pidió.
+    const title = vip ? 'Solicitud enviada' : '¡Traslado confirmado!';
+    const lead = vip
+      ? 'Tu privado quedó pedido. Coordinación confirma si la camioneta está libre a esa hora; la respuesta la verás en tu traslado.'
+      : `Tu ${m.label.toLowerCase()} quedó en la planeación del día. Cuando le asignen conductor, lo verás en tu traslado.`;
     return `
       <div class="ax-body ax-center">
-        <div class="ax-success"><svg class="icon"><use href="#i-check"/></svg></div>
-        <h1 class="ax-big">¡Traslado confirmado!</h1>
-        <p class="ax-lead ax-tc">Tu ${m.label.toLowerCase()} quedó en la planeación del día. Te avisaremos cuando asignen conductor.</p>
+        ${scene}
+        <h1 class="ax-big axc-in">${title}</h1>
+        <p class="ax-lead ax-tc axc-in">${lead}</p>
         <div class="ax-timeline">
           ${timeline.map(x => `<div class="ax-tl-row ${x.done ? 'done' : ''}"><span class="ax-tl-dot"></span><div><b>${x.label}</b><span>${x.t}</span></div></div>`).join('')}
         </div>
@@ -2161,9 +2256,11 @@
       if (a === 'new') {
         auxState.view = 'form'; auxState.step = 1;
         auxState.form = { isReserva: true, date: auxDefaultDate() };
-        // El catálogo se pide ya, para que el paso 3 no muestre spinner. Las
-        // siglas también: si la primera vez no llegaron (app abierta sin señal,
-        // perfil recién creado), este es el momento natural de reintentarlo.
+        // El catálogo se pide ya, para que el paso del punto no muestre spinner
+        // (y para que con una unidad ni aparezca). Las siglas también: si la
+        // primera vez no llegaron (app abierta sin señal, perfil recién creado),
+        // este es el momento natural de reintentarlo. El form nace sin
+        // `dondeForced`: un pedido nuevo no arrastra el «Cambiar» del anterior.
         auxLoadAerolineas();
         if (window.AuxResidencias) { AuxResidencias.newTrip(); AuxResidencias.load(); }
         if (window.AuxPrivado) AuxPrivado.resetCupo();
@@ -2183,9 +2280,13 @@
         auxLoadAerolineas();
         if (window.AuxResidencias) { AuxResidencias.newTrip(); AuxResidencias.load(); }
         // Si el traslado anterior salió de un conjunto del catálogo, se repite
-        // el conjunto. Si venía del camino manual (sin residencia), el paso 3 se
-        // pide normal: repetir una dirección escrita a mano repetiría también su
-        // pin, y ese es justo el dato que el catálogo vino a dejar de adivinar.
+        // el conjunto (con una unidad el paso del punto se salta; con dos, se
+        // muestra con la unidad de la vez anterior ya marcada). Si venía del
+        // camino manual (sin residencia) NO se repite la dirección: repetir una
+        // dirección escrita a mano repetiría también su pin, y ese es justo el
+        // dato que el catálogo vino a dejar de adivinar. Con una unidad se pone
+        // el conjunto del registro (y «Cambiar» en el resumen abre el catálogo);
+        // sin conjunto guardado, el paso del punto se pide normal.
         if (auxState.form.residenceId) {
           auxState.form.address = last.address; auxState.form.lat = last.lat;
           auxState.form.lng = last.lng; auxState.form.locConfirmed = true;
@@ -2194,12 +2295,34 @@
       }
       // ---- 0069 · nivel de servicio (aux-privado.js) ----
       else if (a === 'lvl') {
-        if (el.hasAttribute('disabled')) return;
+        // La tarjeta privada comprometida va `.off` y NO `disabled`: con
+        // `disabled` el navegador se traga también el clic de «Ver qué
+        // incluye», que vive dentro de ella, y la portada quedaba inalcanzable
+        // justo cuando el tripulante quiere saber qué se perdió.
+        if (el.hasAttribute('disabled') || el.classList.contains('off')) return;
         auxState.form.level = el.dataset.v;
         auxRender();
       }
       else if (a === 'lvl-info') { auxState.view = 'privado'; auxRender(); }
       else if (a === 'lvl-close') { auxState.view = 'form'; auxRender(); }
+      // «Pedir en privado» desde la portada: elige el nivel y vuelve al paso.
+      // Deshabilitado cuando la camioneta está comprometida a esa hora.
+      else if (a === 'lvl-choose') {
+        if (el.hasAttribute('disabled')) return;
+        auxState.form.level = 'private'; auxState.view = 'form'; auxRender();
+      }
+      // ---- «Cambiar» el punto desde el resumen (15-sep-2026) ----
+      // Con una unidad el paso 'donde' no existió; este botón lo hace existir:
+      // `dondeForced` lo mete en la lista de pasos (y lo deja ahí aunque vuelva
+      // atrás) y forcePick vacía el punto para que el catálogo se abra en vez de
+      // volver a ponérselo solo. Con dos unidades abre el selector de las dos.
+      else if (a === 'donde-cambiar') {
+        if (!window.AuxResidencias) return;
+        auxState.form.dondeForced = true;
+        AuxResidencias.forcePick(auxState.form);
+        auxState.step = auxStepKinds().indexOf('donde') + 1;
+        auxRender();
+      }
       // ---- §7 · catálogo de residencias (aux-residencias.js) ----
       else if (a && a.indexOf('res-') === 0 && window.AuxResidencias) {
         const r = AuxResidencias.handle(a, el, auxState.form);
@@ -2263,10 +2386,16 @@
           // camioneta está libre a esa hora. No se puede saber en el cliente.
           if (auxStepKind(auxState.step) === 'nivel' && window.AuxPrivado) {
             if (!auxState.form.level) auxState.form.level = 'shared';
-            AuxPrivado.askCupo(auxWhenISO(auxState.form));
+            // En primicia la camioneta no se puede pedir: no hay cupo que consultar.
+            if (!AuxPrivado.primicia || !AuxPrivado.primicia()) AuxPrivado.askCupo(auxWhenISO(auxState.form));
           }
           auxRender();
-        } else auxSubmit();
+        } else {
+          // El audio de la celebración se desbloquea AQUÍ, dentro del clic:
+          // auxSubmit es async y en iOS el gesto ya no cuenta cuando vuelve.
+          if (window.AuxCelebracion) AuxCelebracion.prime();
+          auxSubmit();
+        }
       }
       else if (a === 'type') { auxState.form.type = el.dataset.type; auxRender(); }
       else if (a === 'date') { auxState.form.date = el.dataset.iso; auxRender(); }

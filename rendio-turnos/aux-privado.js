@@ -8,7 +8,7 @@
 //
 // EL NIVEL "DIRECTO" NO ESTÁ, y no es un olvido: la operación no lo ha definido
 // (decisión de la profa, 2026-08-17). Cuando se defina, entra como una tarjeta
-// más en LEVELS y una etiqueta más en el enum de 0069.
+// más en el paso y una etiqueta más en el enum de 0069.
 //
 // TRES REGLAS DEL BRIEF QUE ESTE ARCHIVO NO PUEDE ROMPER
 //  1. El compartido NUNCA se ve castigado. No es "el básico": es el servicio
@@ -21,6 +21,15 @@
 //  3. Paleta fija, sin modo nocturno. Es el único bloque del rol que no se
 //     apaga de noche, a propósito ("papel y tinta", decisión del diseñador).
 //
+// LA PIEL «RENDIO SELECT» (15-sep-2026)
+// La profa pidió que el privado «se sienta distinto», y el diseñador ya lo
+// había resuelto en aux-service-levels.jsx (LevelCard, rama vip) y aux-vip.jsx
+// (VipIntro): espresso + latón + serif, no un negro de modo oscuro. Aquí se
+// sigue ESA guía en lo visual y se adapta en lo que la maqueta inventaba y la
+// operación no tiene: sin kit de consumibles, sin códigos de encuentro, sin
+// cupos numéricos, con el precio real de Ajustes y con la aprobación del jefe.
+// Las variables --vip-* viven en rc-auxiliar.css; los textos, aquí.
+//
 // POR QUÉ NINGÚN TEXTO DE AQUÍ PROMETE UNA NOTIFICACIÓN
 // Se comprobó contra dev: de 102 auxiliares, **3** tienen un dispositivo con
 // notificaciones activadas. Decirle a alguien "te avisamos apenas responda" es
@@ -30,9 +39,16 @@
 // texto sigue siendo cierto — solo que además suena.
 //
 // LO QUE NO SE COBRA AQUÍ
-// No hay checkout, ni medio de pago, ni recibo. Se MUESTRA la tarifa y el cobro
-// se liquida por fuera. Rendio no tiene ninguna tabla de cobros y media pasarela
-// no le sirve a nadie. Decisión de la profa, 2026-08-17.
+// No hay checkout, ni medio de pago, ni recibo. El cobro se liquida por fuera:
+// Rendio no tiene ninguna tabla de cobros y media pasarela no le sirve a nadie.
+// Decisión de la profa, 2026-08-17.
+//
+// Y DESDE EL 17-sep-2026 LA CIFRA TAMPOCO SE MUESTRA (profa). El número que
+// había en Ajustes nunca fue una tarifa acordada —era un valor provisional— y
+// una cifra en la pantalla del tripulante se lee como precio pactado. Lo que sí
+// se dice, porque callarlo sería peor, es que el privado TIENE COSTO y que la
+// tarifa se la confirma coordinación antes de aprobarlo. El número sigue en
+// Ajustes y en la cola del jefe: lo que se quitó es la vitrina, no el dato.
 
 (function () {
   'use strict';
@@ -47,13 +63,17 @@
   // hay que reponer carro por carro y viaje por viaje, y el diseñador mismo
   // marcó el cojín como "pendiente de validación operativa (higiene)". Lo que
   // queda son hechos del vehículo, que no dependen de que alguien recargue nada.
-  // Cuando el jefe confirme el kit, se agregan aquí y aparecen solas.
+  // Cuando el jefe confirme el kit, se agregan aquí y aparecen solas: en la
+  // tarjeta del paso (lista con chulos) y en la portada (pilares numerados).
   const INCLUYE = [
     { ic: 'i-van',   t: 'El carro es solo tuyo',   d: 'No se recoge a nadie más en el camino.' },
     { ic: 'i-route', t: 'Derecho a tu destino',    d: 'Sin desvíos por otros sectores.' },
     { ic: 'i-zzz',   t: 'Silencio si quieres',     d: 'Puedes pedir que no te hablen y dormir el trayecto.' },
     { ic: 'i-bolt',  t: 'Cargador a bordo',        d: 'USB-C y Lightning.' },
   ];
+  // Numerales de la portada. Si INCLUYE crece más allá de esto, el pilar sale
+  // con su número arábigo: mejor eso que inventar romanos a mano cada vez.
+  const ROMANOS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -66,13 +86,20 @@
   }
 
   const cfg = () => (typeof state !== 'undefined' && state.settings) ? state.settings : {};
-  // El privado se ofrece solo si el jefe lo encendió Y eligió camioneta Y hay
-  // tarifa. Si falta cualquiera de las tres, el auxiliar sencillamente no ve el
-  // paso: es mejor no existir que existir roto.
+  // El privado se PUEDE PEDIR solo si el jefe lo encendió Y eligió camioneta Y
+  // hay tarifa. Las tres, o no se puede prometer un vehículo dedicado.
   function enabled() {
     const s = cfg();
     return !!(s.aux_private_enabled && s.aux_private_vehicle_id && s.aux_private_price_cop > 0);
   }
+  // PERO SE VE IGUAL (profa, 17-sep-2026). Antes, faltando una de las tres, el
+  // paso entero desaparecía y el tripulante no se enteraba de que el servicio
+  // existe. Ahora se muestra como PRIMICIA: la tarjeta está ahí, apagada y sin
+  // poder elegirse, y la portada se puede abrir y leer completa. Es la forma
+  // honesta de enseñar algo que todavía no se puede dar: se ve, se entiende y
+  // no se promete. El día que el jefe complete las tres en Ajustes, la misma
+  // tarjeta se enciende y se puede pedir, sin tocar una línea de código.
+  const primicia = () => !enabled();
   const price = () => cfg().aux_private_price_cop || null;
 
   // ── Estado del cupo ───────────────────────────────────────────────────────
@@ -100,34 +127,79 @@
     }
   }
 
+  // La píldora del pie de la tarjeta privada. Dice lo que se SABE del cupo y
+  // nada más: sin números («2 cupos») porque hay una camioneta y el dato que
+  // tenemos es si está comprometida a esa hora o no.
+  function availText() {
+    if (st.cupo === 'libre') return 'Disponible a esa hora';
+    if (st.cupo === 'ocupada') return 'Comprometida a esa hora';
+    if (st.cupo === 'error') return 'Sin confirmar la hora';
+    return 'Cupo por confirmar';
+  }
+
+  const eyebrow = (txt, cls) => `<span class="axp-eyebrow${cls ? ' ' + cls : ''}">${txt}</span>`;
+  const chulo = () => '<svg class="icon"><use href="#i-check"/></svg>';
+
   // ── El paso: Compartido o Privado ─────────────────────────────────────────
+  // Las DOS tarjetas siguen a LevelCard del diseñador: tile 40, nombre y precio
+  // en la misma línea, tagline, lista con chulos y el check redondo cuando está
+  // elegida. La compartida sale de los tokens del rol (se apaga de noche como
+  // todo lo demás); la privada lleva la piel Select, fija. Dentro de un
+  // <button> todo son <span>: un <div> ahí es HTML inválido y el navegador lo
+  // saca del botón por su cuenta.
   function stepHTML(f) {
-    if (!enabled()) return null;   // el paso no existe si no hay privado que dar
-    const sel = f.level === 'private' ? 'private' : 'shared';
-    const p = money(price());
-    const ocupada = st.cupo === 'ocupada';
-    const dudoso = st.cupo === 'error';
+    const prev = primicia();
+    // En primicia el nivel elegido es SIEMPRE el compartido: la tarjeta de al
+    // lado se mira, no se toca.
+    const sel = (!prev && f.level === 'private') ? 'private' : 'shared';
+    const ocupada = !prev && st.cupo === 'ocupada';
+    const dudoso = !prev && st.cupo === 'error';
+
+    const lista = (items) => `<span class="axp-lvl-inc">${
+      items.map(x => `<span>${chulo()}${esc(x)}</span>`).join('')}</span>`;
 
     const compartido = `
-      <button class="axp-lvl${sel === 'shared' ? ' on' : ''}" data-ax="lvl" data-v="shared">
-        <span class="axp-lvl-head">
-          <span class="axp-lvl-ic sh"><svg class="icon"><use href="#i-users"/></svg></span>
-          <span class="axp-lvl-t"><b>Compartido</b><span>Vas con tu tripulación</span></span>
-          <span class="axp-lvl-p"><b>Incluido</b><span>Sin costo para ti</span></span>
+      <button class="axp-lvl sh${sel === 'shared' ? ' on' : ''}" data-ax="lvl" data-v="shared"
+              aria-pressed="${sel === 'shared' ? 'true' : 'false'}">
+        <span class="axp-lvl-main">
+          <span class="axp-lvl-ic"><svg class="icon"><use href="#i-users"/></svg></span>
+          <span class="axp-lvl-t">
+            <span class="axp-lvl-row"><b class="axp-lvl-name">Compartido</b><span class="axp-lvl-price">Incluido</span></span>
+            <span class="axp-lvl-tag">Vas con tu tripulación</span>
+            ${lista(['Ruta agrupada por sector', 'Paradas en el camino'])}
+            <span class="axp-lvl-pnote">Sin costo para ti</span>
+          </span>
+          ${sel === 'shared' ? `<span class="axp-lvl-chk">${chulo()}</span>` : ''}
         </span>
-        <span class="axp-lvl-li">Ruta agrupada por sector · paradas en el camino</span>
       </button>`;
 
+    // El pie de la tarjeta privada lleva la disponibilidad a la izquierda y el
+    // enlace a la portada a la derecha. El enlace es un <span data-ax> y no un
+    // botón porque ya estamos dentro de uno; el despachador lo encuentra antes
+    // que a la tarjeta (closest) y abre la portada sin cambiar el nivel.
+    // Comprometida: `.off` + aria-disabled, NUNCA el atributo `disabled` — con
+    // él el navegador tampoco despacha el clic de «Ver qué incluye» y la
+    // portada queda inalcanzable; el despachador de auxiliar.js ignora el
+    // toque sobre una tarjeta `.off`.
     const privado = `
-      <button class="axp-lvl${sel === 'private' ? ' on' : ''}${ocupada ? ' off' : ''}"
-              data-ax="lvl" data-v="private"${ocupada ? ' disabled' : ''}>
-        <span class="axp-lvl-head">
-          <span class="axp-lvl-ic pv"><svg class="icon"><use href="#i-van"/></svg></span>
-          <span class="axp-lvl-t"><b>Privado</b><span>La camioneta es solo tuya</span></span>
-          <span class="axp-lvl-p"><b>${p || '—'}</b><span>por trayecto</span></span>
+      <button class="axp-lvl vip${sel === 'private' ? ' on' : ''}${ocupada ? ' off' : ''}${prev ? ' primicia' : ''}"
+              data-ax="${prev ? 'lvl-info' : 'lvl'}" data-v="private"
+              ${prev ? 'aria-disabled="true"' : `aria-pressed="${sel === 'private' ? 'true' : 'false'}"`}${ocupada ? ' aria-disabled="true"' : ''}>
+        <span class="axp-lvl-main">
+          <span class="axp-lvl-ic"><svg class="icon"><use href="#i-van"/></svg></span>
+          <span class="axp-lvl-t">
+            ${eyebrow('Rendio Select', 'lt')}
+            <span class="axp-lvl-row"><b class="axp-lvl-name">Privado</b><span class="axp-lvl-price">${prev ? 'Pronto' : 'Con costo'}</span></span>
+            <span class="axp-lvl-tag">La camioneta es solo tuya</span>
+            ${lista(INCLUYE.map(x => x.t))}
+            <span class="axp-lvl-pnote">${prev ? 'Te lo mostramos antes de tenerlo listo' : 'Coordinación te confirma la tarifa'}</span>
+          </span>
+          ${sel === 'private' ? `<span class="axp-lvl-chk">${chulo()}</span>` : ''}
         </span>
-        <span class="axp-lvl-li">Vehículo exclusivo · derecho a tu destino</span>
-        ${ocupada ? `<span class="axp-lvl-no">Ya está comprometida a esa hora. Puedes pedirla para otro horario.</span>` : ''}
+        <span class="axp-lvl-foot">
+          <span class="axp-lvl-avail">${prev ? 'Todavía no se puede pedir' : availText()}</span>
+          <span class="axp-lvl-more" data-ax="lvl-info">Ver qué incluye <svg class="icon"><use href="#i-chev"/></svg></span>
+        </span>
       </button>`;
 
     return `
@@ -135,45 +207,84 @@
       ${compartido}
       ${privado}
       ${dudoso ? `<div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>No pudimos confirmar si la camioneta está libre a esa hora. Puedes pedirla igual: si no alcanza, tu traslado sale en compartido y lo verás aquí.</div>` : ''}
-      <button class="axp-more" data-ax="lvl-info"><svg class="icon"><use href="#i-info"/></svg>Qué incluye el privado</button>
       ${sel === 'private' ? `
         <div class="axp-note">
           <svg class="icon"><use href="#i-clock"/></svg>
           <div><b>Lo tiene que aprobar coordinación</b>
           <span>Es un vehículo dedicado, así que un jefe lo confirma antes. <b>La respuesta la vas a ver aquí mismo</b>, en tu traslado; y si tienes las notificaciones activadas, además te llega un aviso. Si no se puede, tu traslado sale en compartido y no se cobra nada.</span></div>
-        </div>` : ''}`;
+        </div>` : ''}
+      <p class="axp-under">${prev
+        ? 'El privado todavía no está disponible: te lo mostramos para que sepas de qué se trata. Tu traslado sale en compartido, como siempre.'
+        : 'Coordinación confirma cada privado. Si no se puede, sales en compartido y no se cobra nada.'}</p>`;
   }
 
   // ── La portada: qué es el privado ─────────────────────────────────────────
-  function introHTML() {
-    const p = money(price());
+  // VipIntro del diseñador, con lo que existe: la parte de arriba en espresso
+  // (la única pieza aspiracional del rol), el cuerpo en pergamino con los
+  // pilares numerados que salen de INCLUYE, la disponibilidad dicha de frente y
+  // el pie con la tarifa real. Se pinta directo en la raíz (tres hijos de la
+  // columna flex: cabecera fija, cuerpo que desplaza, pie fijo).
+  // `f` es el formulario del pedido: el párrafo dice a dónde va ESTE viaje
+  // (la portada se abre igual desde una salida que desde una llegada).
+  function introHTML(f) {
+    const prev = primicia();
+    const ocupada = !prev && st.cupo === 'ocupada';
+    const salida = !!(f && f.type === 'sal');
+    const pilares = INCLUYE.map((x, i) => `
+      <div class="axp-pillar">
+        <span class="axp-pillar-n">${ROMANOS[i] || (i + 1)}</span>
+        <div><b>${esc(x.t)}</b><span>${esc(x.d)}</span></div>
+      </div>`).join('<div class="axp-rule-ln"></div>');
     return `
-      <div class="ax-form-head">
-        <button class="ax-icbtn" data-ax="lvl-close"><svg class="icon"><use href="#i-back"/></svg></button>
-        <b>Traslado privado</b><span></span>
+      <div class="axp-ink">
+        <div class="axp-bar">
+          <button class="axp-back" data-ax="lvl-close" aria-label="Volver"><svg class="icon"><use href="#i-back"/></svg></button>
+          ${eyebrow('Traslado privado', 't2')}
+          <span class="axp-bar-gap"></span>
+        </div>
+        <div class="axp-hero">
+          ${eyebrow('Rendio', 'lt')}
+          <div class="axp-wordmark">Select</div>
+          <div class="axp-rule"></div>
+          <h1>Llega antes.<br>Llega descansado.</h1>
+          <p>${salida
+            ? 'Para los turnos que empiezan de madrugada: la camioneta reservada a tu nombre, directo al aeropuerto, sin paradas en el camino.'
+            : 'Para los turnos que terminan tarde: la camioneta reservada a tu nombre, directo a tu casa, sin paradas en el camino.'}</p>
+        </div>
       </div>
       <div class="ax-body axp-intro">
-        <div class="axp-hero">
-          <span class="axp-hero-ic"><svg class="icon"><use href="#i-van"/></svg></span>
-          <h1>La camioneta, solo para ti</h1>
-          <p>El mismo servicio de siempre, en un vehículo dedicado que no recoge a nadie más.</p>
-          ${p ? `<div class="axp-hero-p"><b>${p}</b><span>por trayecto · no se cobra en la app</span></div>` : ''}
+        <div class="axp-pillars">${pilares}</div>
+        <div class="axp-avail">
+          <svg class="icon"><use href="#i-clock"/></svg>
+          <div><b>Una sola camioneta</b>
+          <span>${prev
+            ? 'Por eso no va a estar siempre: cuando abra, un jefe confirma cada solicitud y, si no se puede, tu traslado sale en compartido.'
+            : 'No siempre está disponible: depende de la hora que necesites. Un jefe confirma cada solicitud; si no se puede, tu traslado sale en compartido y no se cobra nada.'}</span></div>
         </div>
-        <div class="axp-inc">
-          ${INCLUYE.map(x => `
-            <div class="axp-inc-row">
-              <span class="axp-inc-ic"><svg class="icon"><use href="#${x.ic}"/></svg></span>
-              <div><b>${esc(x.t)}</b><span>${esc(x.d)}</span></div>
-            </div>`).join('')}
-        </div>
-        <div class="axp-fine">
-          <b>Antes de pedirlo</b>
-          <span>Hay una sola camioneta, así que no siempre está disponible: depende de la hora que necesites. Un jefe confirma cada solicitud. Si no se puede, tu traslado sale en compartido y no se cobra nada.</span>
-        </div>
+        <div class="axp-shared">Tu viaje compartido sigue igual: mismo servicio, mismos conductores, sin costo. Select es una opción para las noches en que quieres llegar directo.</div>
         <div class="ax-spacer"></div>
       </div>
-      <div class="ax-cta-bar">
-        <button class="ax-btn ax-btn-primary" data-ax="lvl-close">Entendido</button>
+      <div class="axp-foot">
+        <div class="axp-fare-note">${prev
+          ? 'Todavía no se puede pedir: estamos terminando de montarlo. Cuando esté, aparece aquí mismo.'
+          : 'Tiene costo. Coordinación te confirma la tarifa antes de aprobarlo, y no se cobra en la app.'}</div>
+        <button class="axp-btn" data-ax="lvl-choose"${(ocupada || prev) ? ' disabled' : ''}>${
+          prev ? 'Muy pronto' : ocupada ? 'Comprometida a esa hora' : 'Pedir en privado'}</button>
+        <button class="axp-btn ghost" data-ax="lvl-close">Volver</button>
+      </div>`;
+  }
+
+  // ── La franja del resumen ─────────────────────────────────────────────────
+  // Debajo de la tarjeta «Revisa y confirma» cuando se eligió el privado. Dice
+  // las tres cosas que el tripulante tiene que saber antes de tocar el botón:
+  // cuánto, quién lo confirma y que aquí no se cobra. Vacío en compartido.
+  function sumHTML(f) {
+    if (!f || f.level !== 'private' || !enabled()) return '';
+    return `
+      <div class="axp-sum-vip">
+        ${eyebrow('Rendio Select', 'lt')}
+        <b>La camioneta, solo para ti</b>
+        <span>Coordinación confirma la camioneta y la tarifa · no se cobra en la app</span>
       </div>`;
   }
 
@@ -182,19 +293,18 @@
   // sin que el auxiliar tenga que preguntarle a nadie.
   function statusHTML(t) {
     if (!t || t.level !== 'private' || !t.privateStatus) return '';
-    const p = money(t.price);
     if (t.privateStatus === 'requested') {
       return `<div class="axp-st wait">
         <span class="axp-st-ic"><svg class="icon"><use href="#i-clock"/></svg></span>
         <div><b>Privado · esperando confirmación</b>
-        <span>Coordinación está revisando si la camioneta está libre a esa hora. Vuelve a esta pantalla para ver la respuesta.${p ? ' Tarifa: ' + p + '.' : ''}</span></div>
+        <span>Coordinación está revisando si la camioneta está libre a esa hora. Vuelve a esta pantalla para ver la respuesta.</span></div>
       </div>`;
     }
     if (t.privateStatus === 'approved') {
       return `<div class="axp-st ok">
         <span class="axp-st-ic"><svg class="icon"><use href="#i-check"/></svg></span>
         <div><b>Privado confirmado</b>
-        <span>La camioneta es tuya para este trayecto.${p ? ' Tarifa acordada: ' + p + '.' : ''}</span></div>
+        <span>La camioneta es tuya para este trayecto.</span></div>
       </div>`;
     }
     return `<div class="axp-st no">
@@ -213,7 +323,7 @@
   }
 
   window.AuxPrivado = {
-    enabled, price, money, stepHTML, introHTML, statusHTML, chipHTML,
+    enabled, primicia, price, money, stepHTML, introHTML, sumHTML, statusHTML, chipHTML,
     askCupo, resetCupo, cupo: () => st.cupo, INCLUYE,
   };
 })();
