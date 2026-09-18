@@ -120,6 +120,8 @@
     photos: {},           // slotId -> { blob, url, size }
     extraPhotos: [],      // fotos adicionales libres: [{ blob, url, size }]
     km: '',
+    kmAvisado: null,      // km que ya pasó por el aviso de kilometraje: no se pregunta dos veces
+    kmAviso: null,        // constancia en texto cuando el conductor confirmó un km que no cuadra
     severity: null,       // 'leve' | 'media' | 'grave'
     note: '',
     isApt: true,          // estado oficial: APTO (true) / NO APTO (false)
@@ -150,6 +152,122 @@
     t.classList.remove('hidden');
     clearTimeout(sfToast._t);
     sfToast._t = setTimeout(() => t.classList.add('hidden'), 3000);
+  }
+
+  // ---------- hoja de confirmación (una pregunta, dos salidas) ----------
+  // Se monta ENCIMA de lo que haya (el wizard es z-30) en vez de repintar la
+  // pantalla de abajo: el conductor vuelve a su campo con lo que tecleó intacto.
+  // Devuelve una promesa: true = siguió de largo, false = se devolvió a corregir.
+  //
+  // POR QUÉ NO confirm() del navegador: no deja mostrar el número grande ni
+  // distinguir cuál de los dos botones es el prudente, y a las 2:40 de la mañana
+  // el conductor toca "Aceptar" sin leer. Acá el botón grande es el que corrige.
+  function hojaConfirmar({ eyebrow, titulo, cuerpoHtml, textoNo, textoSi, icono = '⚠' }) {
+    return new Promise((resolve) => {
+      const cap = document.createElement('div');
+      cap.className = 'fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center';
+      cap.innerHTML = `<div class="w-full max-w-lg bg-white rounded-t-3xl sm:rounded-3xl px-5 pt-6 pb-4 shadow-card" style="padding-bottom:calc(16px + env(safe-area-inset-bottom));">
+        <div class="w-14 h-14 rounded-full bg-amber-100 text-amber-600 text-2xl flex items-center justify-center mb-4">${icono}</div>
+        <p class="text-[11px] font-bold uppercase tracking-wider text-amber-600">${esc(eyebrow)}</p>
+        <h2 class="text-xl font-extrabold text-ink leading-tight mt-1">${esc(titulo)}</h2>
+        <div class="text-[14.5px] text-slate-600 leading-relaxed mt-2 space-y-1.5">${cuerpoHtml}</div>
+        <button data-hoja="no" class="mt-5 w-full bg-brand text-white text-base font-extrabold py-3.5 rounded-xl shadow-brand active:scale-[0.99] transition">${esc(textoNo)}</button>
+        <button data-hoja="si" class="mt-2 w-full bg-white border-2 border-slate-200 text-slate-600 text-[15px] font-bold py-3 rounded-xl active:scale-[0.99] transition">${esc(textoSi)}</button>
+      </div>`;
+      // El fondo NO cierra la hoja: la pregunta se contesta con uno de los dos
+      // botones, o un toque perdido decidiría por el conductor.
+      const cerrar = (v) => { cap.remove(); resolve(v); };
+      cap.querySelector('[data-hoja="no"]').addEventListener('click', () => cerrar(false));
+      cap.querySelector('[data-hoja="si"]').addEventListener('click', () => cerrar(true));
+      document.body.appendChild(cap);
+    });
+  }
+
+  // ---------- aviso de kilometraje al abrir turno ----------
+  // El 12-sep-2026 un conductor tecleó 128.450 km en un carro que iba en 9.200, y
+  // ese mismo par (128.450 → 128.730) ya lo había escrito dos días seguidos en
+  // OTRO carro: está escribiendo de memoria en vez de leer el tablero. Un km de
+  // apertura inventado descuadra los km recorridos del turno, las recompensas y
+  // el mantenimiento por kilometraje del vehículo.
+  //
+  // NO ES UN MURO, ES UNA PREGUNTA. Si no hay señal, si el vehículo no tiene
+  // ningún turno cerrado o si la consulta se demora, el turno arranca igual.
+  const KM_TOLERANCIA = 5;    // el carro se mueve un poco entre un cierre y el arranque siguiente
+  const KM_ESPERA_MS = 6000;  // en la vía nadie espera más que esto por un aviso
+
+  // ¿Hay algo que avisar? Devuelve null cuando no (sin dato, sin señal, o la
+  // diferencia cabe en la tolerancia) y { ultimo, diff } cuando sí.
+  async function revisarKmApertura(vehicleId, km) {
+    if (!vehicleId || !(km > 0) || !window.Api || !Api.lastVehicleKm) return null;
+    let ultimo = null;
+    try {
+      // La carrera con el reloj es a propósito: una consulta colgada en una celda
+      // sin señal no puede dejar al conductor mirando un botón que no responde.
+      ultimo = await Promise.race([
+        // El .catch va PEGADO a la consulta y no afuera: si el reloj gana la
+        // carrera y la consulta se cae después, ese rechazo ya no tiene quien lo
+        // atrape y el navegador lo reporta como error no manejado.
+        Promise.resolve(Api.lastVehicleKm(vehicleId)).catch(() => null),
+        new Promise((res) => setTimeout(() => res(null), KM_ESPERA_MS)),
+      ]);
+    } catch (e) { return null; }
+    const ref = ultimo && Number(ultimo.km);
+    if (!(ref >= 0)) return null;
+    const diff = km - ref;
+    if (Math.abs(diff) <= KM_TOLERANCIA) return null;
+    return { ultimo, diff };
+  }
+
+  // Pregunta (si hay que preguntar) y devuelve true si se puede seguir. Cuando el
+  // conductor confirma, deja la constancia en sf.kmAviso para que quede escrita
+  // donde el admin la ve: nadie debería enterarse de esto por el informe de nómina.
+  async function confirmarKmApertura(vehicleId, km) {
+    // ESTE NÚMERO YA PASÓ POR EL AVISO. No se vuelve a preguntar y, sobre todo,
+    // no se borra la constancia: el conductor que vuelve atrás a mirar una foto y
+    // sigue de largo otra vez no puede costarle al admin el único rastro de que
+    // confirmó un kilometraje que no cuadraba.
+    if (sf.kmAvisado != null && km === sf.kmAvisado) return true;
+    sf.kmAviso = null;
+    try {
+      return await preguntarKmApertura(vehicleId, km);
+    } catch (e) {
+      // NUNCA UN MURO. Si el aviso se rompe por lo que sea, el turno arranca
+      // igual: a las 2:40 de la mañana en la vía, un conductor trabado en un
+      // botón que dice "Verificando…" es peor que un kilometraje dudoso.
+      console.error('aviso de km', e);
+      sf.kmAvisado = km;
+      return true;
+    }
+  }
+
+  async function preguntarKmApertura(vehicleId, km) {
+    const r = await revisarKmApertura(vehicleId, km);
+    if (!r) { sf.kmAvisado = km; return true; }
+    const { ultimo, diff } = r;
+    const dif = Math.abs(diff);
+    const fecha = ultimo.endAt
+      ? new Date(ultimo.endAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' })
+      : '';
+    const quien = ultimo.driver ? `cuando lo cerró ${ultimo.driver}` : 'en su último cierre';
+    const frase = diff > 0
+      ? `son <b>${fmtKm(dif)} km</b> de diferencia`
+      : `son <b>${fmtKm(dif)} km MENOS</b> que esa lectura, y el odómetro no retrocede`;
+    const sigue = await hojaConfirmar({
+      eyebrow: 'Revisa el odómetro',
+      titulo: 'Ese número no cuadra',
+      cuerpoHtml: `<p>Este carro quedó en <b>${fmtKm(ultimo.km)} km</b> ${esc(quien)}${fecha ? ' el ' + esc(fecha) : ''}.</p>
+        <p>Estás registrando <b>${fmtKm(km)} km</b> — ${frase}.</p>
+        <p class="font-semibold text-ink">¿Seguro que ese es el número del tablero?</p>`,
+      textoNo: 'Volver a escribirlo',
+      textoSi: 'Sí, es correcto',
+    });
+    if (!sigue) { sf.kmAvisado = null; return false; }
+    sf.kmAvisado = km;
+    sf.kmAviso = `Aviso de kilometraje al abrir: el vehículo quedó en ${fmtKm(ultimo.km)} km` +
+      `${ultimo.driver ? ' (lo cerró ' + ultimo.driver + ')' : ''}${fecha ? ' el ' + fecha : ''} y el conductor ` +
+      `registró ${fmtKm(km)} km — ${diff > 0 ? '+' : '−'}${fmtKm(dif)} km de diferencia. ` +
+      `Confirmó en pantalla que esa es la lectura del tablero.`;
+    return true;
   }
 
   // ---------- cronómetro del turno activo ----------
@@ -286,6 +404,8 @@
     sf.extraPhotos.forEach(p => p && p.url && URL.revokeObjectURL(p.url));
     sf.extraPhotos = [];
     sf.km = '';
+    sf.kmAvisado = null;     // turno nuevo: el aviso de kilometraje se vuelve a evaluar
+    sf.kmAviso = null;
     sf.severity = null;
     sf.note = '';
     sf.isApt = true;
@@ -987,14 +1107,24 @@
   }
 
   // ---------- Paso 4: kilometraje ----------
-
+  //
+  // EL BOTÓN SOLO SE APAGA SI EL CAMPO ESTÁ VACÍO. Antes también se apagaba
+  // cuando el número tecleado era MENOR que vehicles.current_km, y eso era un
+  // muro sin salida: current_km solo sube (GREATEST(current_km, closing_km) en
+  // 0016), así que un kilometraje inventado la deja arriba PARA SIEMPRE y el
+  // siguiente conductor —que está leyendo el tablero de verdad— no podía pasar
+  // del paso 4 con este carro por ningún camino. Es exactamente lo que dejó el
+  // 12-sep: el vehículo que iba en 9.200 km quedó registrado en 128.730. El
+  // inicio rápido nunca tuvo ese candado y el servidor tampoco lo exige.
+  // Ahora el número raro no bloquea: lo pregunta el aviso (confirmarKmApertura)
+  // y, si el conductor lo confirma, queda la constancia para el admin.
   function renderKm(wiz) {
     const v = selectedVehicle();
     const ref = v ? (v.current_km || 0) : 0;
     const hintFor = (raw) => {
       if (raw === '') return '';
       const diff = Number(raw) - ref;
-      if (diff < 0)    return `<p class="text-sm text-rose-600 font-semibold mt-2">⚠ Menor a la última lectura registrada. Revisa el número.</p>`;
+      if (diff < 0)    return `<p class="text-sm text-rose-600 font-semibold mt-2">⚠ Menor a la última lectura registrada (${fmtKm(ref)} km). Revísalo: si es lo que dice el tablero, continúa y te lo preguntamos una vez más.</p>`;
       if (diff >= 200) return `<p class="text-sm text-amber-600 font-semibold mt-2">⚠ +${fmtKm(diff)} km desde la última lectura. ¿Estás seguro?</p>`;
       return `<p class="text-sm text-emerald-600 font-semibold mt-2">✓ +${fmtKm(diff)} km desde la última lectura — coherente.</p>`;
     };
@@ -1011,7 +1141,7 @@
           class="w-full text-center text-4xl font-bold tracking-tight text-ink bg-transparent border-b-2 border-slate-200 focus:border-brand outline-none pb-2 tabular-nums" />
         <div id="sf-km-hint">${hintFor(sf.km)}</div>
       </div>`,
-      `<button id="sf-next" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${sf.km !== '' && Number(sf.km) - ref >= 0 ? '' : 'disabled'}>
+      `<button id="sf-next" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${sf.km !== '' ? '' : 'disabled'}>
         Continuar →
       </button>`
     );
@@ -1023,10 +1153,22 @@
       sf.km = kmInput.value.replace(/\D/g, '').slice(0, 7);
       if (kmInput.value !== sf.km) kmInput.value = sf.km;
       $('#sf-km-hint').innerHTML = hintFor(sf.km);
-      $('#sf-next').disabled = !(sf.km !== '' && Number(sf.km) - ref >= 0);
+      $('#sf-next').disabled = (sf.km === '');
     });
     setTimeout(() => kmInput.focus(), 60);
-    $('#sf-next').addEventListener('click', goNext);
+    $('#sf-next').addEventListener('click', onKmNext);
+  }
+
+  // Continuar del paso 4. El aviso de kilometraje se pregunta ACÁ —con el teclado
+  // todavía abierto y el tablero a la vista— y no al final del asistente: si el
+  // número está malo, corregirlo acá cuesta un toque; descubrirlo seis minutos
+  // después, cuando ya guardó las fotos, cuesta que no lo corrija.
+  async function onKmNext() {
+    const btn = $('#sf-next');
+    if (btn) { btn.disabled = true; btn.textContent = 'Verificando…'; }
+    const sigue = await confirmarKmApertura(sf.vehicleId, Number(sf.km));
+    if (!sigue) { render(); return; }   // se devolvió a corregir: mismo paso, mismo valor
+    goNext();
   }
 
   // ---------- Paso 5: novedades ----------
@@ -1190,7 +1332,34 @@
       sf.signed = e.target.checked;
       const c = $('#sf-confirm'); if (c) c.disabled = !sf.signed;
     });
-    $('#sf-confirm').addEventListener('click', onConfirm);
+    $('#sf-confirm').addEventListener('click', onConfirmClick);
+  }
+
+  // Último filtro antes de mandar el km a la base. Normalmente no pregunta nada
+  // —ya se confirmó en el paso 4— y solo entra el que llegó hasta acá sin pasar
+  // por ese paso: un borrador restaurado que arranca en el paso donde iba. Va
+  // afuera de onConfirm para no partir en dos su candado de guardado.
+  async function onConfirmClick() {
+    if (sf.saving) return;
+    if (!sf.completing && sf.vehicleId && Number(sf.km) !== sf.kmAvisado) {
+      const btn = $('#sf-confirm');
+      if (btn) btn.disabled = true;
+      const sigue = await confirmarKmApertura(sf.vehicleId, Number(sf.km));
+      if (!sigue) { sf.step = 3; render(); return; }   // lo devolvemos al campo del km
+      const b = $('#sf-confirm');
+      if (b) b.disabled = false;
+    }
+    onConfirm();
+  }
+
+  // Las observaciones del conductor y, si la hubo, la constancia del aviso de
+  // kilometraje. Van juntas porque es el único texto libre que viaja pegado a la
+  // lectura del odómetro y a su foto del tablero.
+  function notasInspeccion() {
+    const partes = [];
+    if (sf.note && sf.note.trim()) partes.push(sf.note.trim());
+    if (sf.kmAviso) partes.push(sf.kmAviso);
+    return partes.length ? partes.join('\n') : null;
   }
 
   // Reintento con espera creciente. La subida de una foto por celular en carretera
@@ -1203,8 +1372,10 @@
       try { return await fn(); }
       catch (e) {
         ultimo = e;
-        // Un rechazo del servidor (permiso, vehículo ocupado) no mejora reintentando.
-        if (/VEHICLE_|NOT_A_DRIVER|NOT_SHIFT_OWNER|INVALID_SHIFT_STATUS|403|401/.test(e && e.message || '')) break;
+        // Un rechazo del servidor (permiso, vehículo ocupado, un dato que falta)
+        // no mejora reintentando: solo le hace perder 2,4 segundos al conductor.
+        // Los CLOSING_KM_ y NO_FUEL_ llegaron con el cierre (ver submitClose).
+        if (/VEHICLE_|NOT_A_DRIVER|NOT_SHIFT_OWNER|INVALID_SHIFT_STATUS|SHIFT_NOT_FOUND|CLOSING_KM_|NO_FUEL_REASON_REQUIRED|403|401/.test(e && e.message || '')) break;
         if (i < intentos) await new Promise(r => setTimeout(r, 800 * i));
       }
     }
@@ -1305,7 +1476,7 @@
         has_damage: issues.length > 0,
         is_apt: sf.isApt,
         signed_name: (sf.profile && sf.profile.full_name) || null,
-        notes: sf.note || null,
+        notes: notasInspeccion(),
       };
       await conReintento(() => Api.createInspection(filaInspeccion));
 
@@ -1396,6 +1567,25 @@
             description,
           }));
         } catch (e) { console.error('novedad', e); }
+      }
+
+      // La constancia del aviso de kilometraje, en la bandeja del admin. No basta
+      // con dejarla en las notas de la inspección: esto es un dato que ALGUIEN
+      // tiene que mirar el mismo día —si el km de apertura está inventado, los km
+      // recorridos del turno y el mantenimiento del carro quedan mal desde ya—.
+      // Best-effort, como todo lo que va después de asegurar el turno.
+      if (sf.kmAviso) {
+        try {
+          await conReintento(() => Api.addIncident({
+            organizationId: org,
+            reporterId: sf.profile.id,
+            shiftId,
+            vehicleId: v.id,
+            category: 'other',
+            severity: 'low',
+            description: sf.kmAviso,
+          }));
+        } catch (e) { console.error('aviso de km', e); }
       }
 
       sf.reuseShiftId = null;
@@ -1494,6 +1684,14 @@
     renderClose();
   }
 
+  // EL KILÓMETRO DE CIERRE NO ES UN CAMPO MÁS. Un turno que se cierra sin él no
+  // lo cierra el conductor: lo cierra el cron (auto_close_stale_shifts) o un
+  // admin, y así queda clasificado 'auto' en el Balance — que NO SE PAGA. En la
+  // quincena pasada se perdieron 25,6 h de dos personas exactamente así, sin que
+  // ninguna se enterara. Por eso la frase aparece en pantalla desde el primer
+  // segundo y no como regaño al final.
+  const KM_CIERRE_HINT = 'Ingresa el odómetro actual del vehículo. Sin el kilómetro de cierre este turno queda pendiente de revisión y puede no entrar en el pago de la quincena.';
+
   function closeKmNum() { const d = String(sf.close.km).replace(/\D/g, ''); return d ? parseInt(d, 10) : 0; }
   function closeOpenKm() { return Number(sf.activeShift && sf.activeShift.opening_km) || 0; }
   function closeKmValid() { const n = closeKmNum(); return n > 0 && n >= closeOpenKm(); }
@@ -1529,9 +1727,27 @@
   function closeAllValid() { return closeKmValid() && sf.close.attest && novedadValid() && fuelValid(); }
   function fuelTotal() { return sf.close.receipts.reduce((s, r) => s + (r.amount || 0), 0); }
 
+  // Qué le falta al cierre, en el orden en que aparece en pantalla.
+  function faltaEnCierre() {
+    const f = [];
+    if (!closeKmValid()) f.push(closeKmNum() > 0 ? 'un km final válido' : 'el kilómetro de cierre');
+    if (!novedadValid()) f.push('describir la novedad');
+    if (!fuelValid()) f.push(sf.close.fueled === null ? 'responder si tanqueó' : (sf.close.fueled ? 'el comprobante del tanqueo' : 'el motivo del tanqueo'));
+    if (!sf.close.attest) f.push('confirmar la casilla');
+    return f;
+  }
+
   function updateCloseConfirm() {
     const btn = $('#cl-confirm'); if (btn) btn.disabled = !closeAllValid() || sf.close.saving;
     const tot = $('#cl-fuel-total'); if (tot) tot.textContent = '$' + fuelTotal().toLocaleString('es-CO');
+    // Un botón apagado sin decir por qué es lo que hace que el conductor se salga
+    // del cierre creyendo que la app se trabó — y el turno que no cierra él es el
+    // que no se paga. Se le dice exactamente qué falta.
+    const st = $('#cl-state');
+    if (st && !sf.close.saving) {
+      const falta = faltaEnCierre();
+      st.textContent = falta.length ? 'Falta ' + falta.join(' · ') : '';
+    }
   }
 
   function onCloseKm(inp) {
@@ -1543,8 +1759,8 @@
     const delta = n - openKm;
     const dEl = $('#cl-km-delta'), hint = $('#cl-km-hint');
     if (!d) {
-      if (dEl) { dEl.textContent = '—'; dEl.className = 'text-[12px] font-bold text-slate-400'; }
-      if (hint) { hint.textContent = 'Ingresa el odómetro actual del vehículo.'; hint.className = 'text-[12px] text-slate-400 mt-2'; }
+      if (dEl) { dEl.textContent = 'Falta'; dEl.className = 'text-[12px] font-bold text-amber-600'; }
+      if (hint) { hint.textContent = KM_CIERRE_HINT; hint.className = 'text-[12px] text-amber-700 mt-2'; }
     } else if (delta < 0) {
       if (dEl) { dEl.textContent = 'Revisar'; dEl.className = 'text-[12px] font-bold text-rose-500'; }
       if (hint) { hint.textContent = `El km final no puede ser menor a ${openKm.toLocaleString('es-CO')}.`; hint.className = 'text-[12px] text-rose-500 mt-2'; }
@@ -1659,8 +1875,8 @@
 
         <section>
           <div class="flex items-center justify-between mb-2">
-            <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">Kilometraje final</h3>
-            <span id="cl-km-delta" class="text-[12px] font-bold text-slate-400">—</span>
+            <h3 class="text-[13px] font-bold uppercase tracking-wider text-slate-500">Kilometraje final <span class="text-rose-500">*</span></h3>
+            <span id="cl-km-delta" class="text-[12px] font-bold ${sf.close.km ? 'text-slate-400' : 'text-amber-600'}">${sf.close.km ? '—' : 'Falta'}</span>
           </div>
           <div class="rounded-2xl bg-white border border-slate-200 p-4">
             <div class="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-slate-400"><span>Inicio del turno</span><span>Ahora</span></div>
@@ -1673,8 +1889,9 @@
                 <span class="text-sm font-bold text-slate-400">km</span>
               </div>
             </div>
-            <p id="cl-km-hint" class="text-[12px] text-slate-400 mt-2">Ingresa el odómetro actual del vehículo.</p>
+            <p id="cl-km-hint" class="text-[12px] ${sf.close.km ? 'text-slate-400' : 'text-amber-700'} mt-2">${KM_CIERRE_HINT}</p>
           </div>
+          <button id="cl-no-km" class="mt-2 w-full text-[12.5px] font-semibold text-slate-400 underline underline-offset-2 py-1.5">No puedo ver el odómetro</button>
         </section>
 
         <section>
@@ -1741,6 +1958,7 @@
 
     $('#cl-back').addEventListener('click', () => { stopElapsedTimer(); closeWizard(); renderCard(); });
     $('#cl-km').addEventListener('input', (e) => onCloseKm(e.target));
+    $('#cl-no-km')?.addEventListener('click', onNoCloseKm);
     $('#cl-nov-no').addEventListener('click', () => setCloseNovedad(false));
     $('#cl-nov-si').addEventListener('click', () => setCloseNovedad(true));
     $('#cl-attest').addEventListener('change', (e) => { sf.close.attest = e.target.checked; updateCloseConfirm(); });
@@ -1762,7 +1980,51 @@
     wiz.querySelectorAll('[data-rm-media]').forEach(b => b.addEventListener('click', () => rmCloseMedia(Number(b.dataset.rmMedia))));
     wiz.querySelectorAll('[data-rm-receipt]').forEach(b => b.addEventListener('click', () => rmReceipt(Number(b.dataset.rmReceipt))));
     wiz.querySelectorAll('[data-receipt-amt]').forEach(inp => inp.addEventListener('input', (e) => onReceiptAmount(Number(inp.dataset.receiptAmt), e.target)));
+    // El cierre se repinta cada vez que toca un sí/no (novedad, tanqueo). El km
+    // sobrevive en el value, pero el delta y el aviso se repintaban en blanco:
+    // se recalculan desde el mismo campo para que la advertencia no desaparezca.
+    const kmEl = $('#cl-km');
+    if (kmEl && sf.close.km) onCloseKm(kmEl);
     updateCloseConfirm();
+  }
+
+  // "No puedo ver el odómetro". No existe cerrar sin kilómetro: el servidor lo
+  // exige (CLOSING_KM_REQUIRED), y el turno que termina cerrando el cron o un
+  // admin queda como 'auto' en el Balance — y eso NO SE PAGA. Entonces esta
+  // salida no cierra nada a medias: dice la verdad completa, deja constancia de
+  // que el conductor avisó (que es lo único que puede rescatar esas horas
+  // después) y le deja el turno abierto para cerrarlo bien.
+  async function onNoCloseKm() {
+    const insiste = await hojaConfirmar({
+      eyebrow: 'Kilómetro de cierre',
+      titulo: 'Sin ese número no puedo cerrar tu turno',
+      cuerpoHtml: `<p><b>Sin el kilómetro de cierre este turno queda pendiente de revisión y puede no entrar en el pago de la quincena.</b></p>
+        <p>Si sales ahora, tu turno sigue abierto y lo termina cerrando el sistema o un administrador — y así cerrado no cuenta como jornada pagable.</p>
+        <p>Si el tablero está apagado, gira la llave sin encender el carro: el odómetro se ve igual.</p>`,
+      textoNo: 'Voy a leerlo',
+      textoSi: 'No lo tengo · avisar y salir',
+      icono: '🛞',
+    });
+    if (!insiste) { setTimeout(() => $('#cl-km')?.focus(), 60); return; }
+    const sh = sf.activeShift || {};
+    // Primero se sale y se avisa en pantalla; el registro para el admin va detrás
+    // y sin esperarlo, que una señal mala no deje al conductor mirando un botón.
+    sfToast('Tu turno sigue abierto. Ciérralo apenas tengas el kilómetro y avísale a tu jefe.');
+    stopElapsedTimer();
+    closeWizard();
+    renderCard();
+    if (!sh.id) return;
+    // Que el admin lo sepa HOY, no el día del pago cuadrando la nómina.
+    conReintento(() => Api.addIncident({
+      organizationId: sf.profile.organization_id,
+      reporterId: sf.profile.id,
+      shiftId: sh.id,
+      vehicleId: sh.vehicle_id || null,
+      category: 'other',
+      severity: 'medium',
+      description: 'Cierre sin kilometraje: el conductor no pudo leer el odómetro y salió del cierre. ' +
+        'El turno sigue abierto y, si lo cierra el cron o un admin, queda pendiente de revisión para el pago.',
+    })).catch((e) => console.error('aviso sin km de cierre', e));
   }
 
   async function submitClose() {
@@ -1774,6 +2036,14 @@
     const org = sf.profile.organization_id;
     const today = new Date().toISOString().slice(0, 10);
     const closingKm = closeKmNum();
+    // EL CIERRE COMPLETO VA CON REINTENTOS (conReintento, el mismo de la apertura).
+    // El cierre se hace en el parqueadero a las 2 de la mañana o en el cambio de
+    // turno, con la misma señal intermitente que ya nos costó inicios de turno:
+    // un bache de un segundo tumbaba el cierre completo, y el turno que no cierra
+    // el conductor lo cierra el cron como 'auto' — que no se paga. Reintentar es
+    // seguro en las tres llamadas: uploadShiftFile va con upsert, addFuelReceipts
+    // deduplica por storage_path y close_shift es idempotente (si ya está cerrado
+    // devuelve noop en vez de reventar).
     try {
       const mediaPaths = [];
       if (sf.close.novedad) {
@@ -1782,7 +2052,7 @@
           setState(`Subiendo evidencia (${i + 1}/${sf.close.media.length})…`);
           const ext = m.kind === 'video' ? 'mp4' : 'jpg';
           const path = `${org}/${sh.vehicle_id}/${today}/close-${sh.id}/media-${i + 1}.${ext}`;
-          await Api.uploadShiftFile(path, m.blob, m.kind === 'video' ? (m.blob.type || 'video/mp4') : 'image/jpeg');
+          await conReintento(() => Api.uploadShiftFile(path, m.blob, m.kind === 'video' ? (m.blob.type || 'video/mp4') : 'image/jpeg'));
           mediaPaths.push(path);
         }
       }
@@ -1795,18 +2065,18 @@
           const r = sf.close.receipts[i];
           setState(`Subiendo comprobante (${i + 1}/${sf.close.receipts.length})…`);
           const path = `${org}/${sh.vehicle_id}/${today}/close-${sh.id}/receipt-${i + 1}.jpg`;
-          await Api.uploadShiftFile(path, r.blob, 'image/jpeg');
+          await conReintento(() => Api.uploadShiftFile(path, r.blob, 'image/jpeg'));
           rows.push({ organization_id: org, shift_id: sh.id, vehicle_id: sh.vehicle_id, driver_id: sf.driverId, amount_cop: r.amount, storage_path: path });
         }
-        await Api.addFuelReceipts(rows);
+        await conReintento(() => Api.addFuelReceipts(rows));
       }
       setState('Cerrando turno…');
-      const res = await Api.closeShift(sh.id, {
+      const res = await conReintento(() => Api.closeShift(sh.id, {
         closingKm, hasNovedad: sf.close.novedad, novedadText: sf.close.novedadText, severity: sf.close.severity, mediaPaths,
         fueled: sf.close.fueled,
         noFuelReasonId: sf.close.fueled === false ? sf.close.noFuelReasonId : null,
         noFuelReason: sf.close.fueled === false ? sf.close.noFuelText.trim() : null,
-      });
+      }));
       // ¿El vehículo quedó en cambio de aceite al cerrar? (para avisarle al conductor)
       let vehBlocked = false;
       try { vehBlocked = (await Api.getVehicleStatus(sh.vehicle_id)) === 'blocked'; } catch (e) { /* */ }
@@ -1834,6 +2104,10 @@
       setState('');
       const msg = (e && e.message) || 'error';
       if (/CLOSING_KM_LT_OPENING/.test(msg)) sfToast('El km final no puede ser menor al de apertura.');
+      // El servidor también exige el km (CLOSING_KM_REQUIRED). No debería llegar
+      // acá —la pantalla no deja confirmar sin él— pero si llega, se dice lo que
+      // está en juego y no un "error desconocido".
+      else if (/CLOSING_KM_REQUIRED/.test(msg)) sfToast('Falta el kilómetro de cierre: sin él el turno queda pendiente de revisión y puede no entrar en el pago.');
       else if (/Failed to fetch|NetworkError/.test(msg)) sfToast('Sin conexión. Verifica tu señal y toca de nuevo: el avance se conserva.');
       else sfToast('No se pudo cerrar el turno: ' + msg);
     }
@@ -1912,18 +2186,19 @@
       <div class="flex-1 px-5 py-3 space-y-4">
         <div class="rounded-2xl bg-white border border-slate-200 p-4">
           <label class="block text-[13px] font-bold text-slate-500 mb-2">Kilometraje de salida</label>
-          <div class="flex items-baseline gap-1"><input id="fk-km" type="tel" inputmode="numeric" placeholder="Ej: 128.450" class="w-full text-2xl font-extrabold text-ink bg-transparent focus:outline-none placeholder:text-slate-300 tabular-nums border-b-2 border-brand-200 focus:border-brand-500"><span class="text-sm font-bold text-slate-400">km</span></div>
+          <div class="flex items-baseline gap-1"><input id="fk-km" type="tel" inputmode="numeric" placeholder="Ej: 128.450" value="${sf.km ? Number(sf.km).toLocaleString('es-CO') : ''}" class="w-full text-2xl font-extrabold text-ink bg-transparent focus:outline-none placeholder:text-slate-300 tabular-nums border-b-2 border-brand-200 focus:border-brand-500"><span class="text-sm font-bold text-slate-400">km</span></div>
         </div>
         <div class="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-2.5 text-[12.5px] text-amber-800 flex gap-2"><span>⏳</span><span>Tendrás <b>${esc(grace)}</b> para hacer la inspección. Si no la haces a tiempo, será un strike.</span></div>
       </div>
       <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-5 py-3 z-10" style="padding-bottom:calc(12px + env(safe-area-inset-bottom));">
         <div class="max-w-lg mx-auto"><p id="fk-state" class="text-xs text-slate-500 text-center mb-1.5"></p>
-        <button id="fk-confirm" class="w-full bg-brand text-white text-base font-extrabold py-3.5 rounded-xl shadow-brand active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none" disabled>Iniciar turno</button></div>
+        <button id="fk-confirm" class="w-full bg-brand text-white text-base font-extrabold py-3.5 rounded-xl shadow-brand active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none" ${sf.km && Number(sf.km) > 0 ? '' : 'disabled'}>Iniciar turno</button></div>
       </div>
     </div>`;
     const kmEl = $('#fk-km'); const cf = $('#fk-confirm');
     kmEl.addEventListener('input', () => { const d = kmEl.value.replace(/\D/g, ''); kmEl.value = d ? Number(d).toLocaleString('es-CO') : ''; sf.km = d; if (cf) cf.disabled = !(d && Number(d) > 0); });
     $('#fk-back').addEventListener('click', () => { sf.step = 0; render(); });
+    setTimeout(() => kmEl.focus(), 60);   // el teclado listo: es el único campo de la pantalla
     cf.addEventListener('click', submitFastStart);
   }
 
@@ -1932,6 +2207,12 @@
     sf.saving = true;
     const cf = $('#fk-confirm'); if (cf) cf.disabled = true;
     const setState = (t) => { const e = $('#fk-state'); if (e) e.textContent = t; };
+    // El aviso de kilometraje va ANTES de mandar nada. Este camino es el que más
+    // lo necesita: sin inspección no hay foto del tablero que desmienta el número.
+    setState('Verificando el kilometraje…');
+    const sigue = await confirmarKmApertura(sf.vehicleId, km);
+    if (!sigue) { sf.saving = false; renderFastKm(); return; }   // vuelve al campo con lo tecleado
+    const shiftId = sf.reuseShiftId;   // startShiftDeferred lo borra; la constancia lo necesita
     try {
       setState('Iniciando turno…');
       const res = await Api.startShiftDeferred(sf.reuseShiftId, km);
@@ -1939,6 +2220,22 @@
       sf.fastDue = res && res.inspection_due_at;
       sf.done = 'deferred';
       render();
+      // Con el turno ya en ruta: la constancia del aviso, para que el admin la vea
+      // hoy. Nunca puede tumbar un turno que ya arrancó, por eso va después del
+      // render y con su propio try.
+      if (sf.kmAviso) {
+        try {
+          await Api.addIncident({
+            organizationId: sf.profile.organization_id,
+            reporterId: sf.profile.id,
+            shiftId,
+            vehicleId: sf.vehicleId,
+            category: 'other',
+            severity: 'low',
+            description: sf.kmAviso,
+          });
+        } catch (err) { console.error('aviso de km', err); }
+      }
     } catch (e) {
       sf.saving = false; if (cf) cf.disabled = false; setState('');
       const msg = (e && e.message) || '';
@@ -1959,6 +2256,9 @@
     sf.vehicles = [{ id: shift.vehicle_id, internal_code: vv.internal_code, license_plate: vv.license_plate, brand: vv.brand, model: vv.model }];
     sf.vehicleId = shift.vehicle_id;
     sf.checklist = {}; sf.photos = {}; sf.extraPhotos = []; sf.severity = null; sf.note = ''; sf.isApt = true; sf.signed = false; sf.saving = false; sf.done = null;
+    // El km de apertura ya pasó por el aviso cuando arrancó el turno: se da por
+    // avisado ese número. Si acá lo cambia, el aviso vuelve a preguntar.
+    sf.kmAvisado = Number(sf.km) || null; sf.kmAviso = null;
     const wiz = $('#shift-wizard'); wiz.classList.remove('hidden'); document.body.style.overflow = 'hidden';
     const nav = document.getElementById('driver-nav'); sf._navWasShown = !!(nav && nav.classList.contains('show')); if (sf._navWasShown) nav.classList.remove('show');
     document.getElementById('driver-save-bar')?.classList.add('hidden');

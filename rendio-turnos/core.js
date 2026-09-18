@@ -462,6 +462,7 @@
     if (name === 'flota') renderFlota();
     if (name === 'calibracion') renderCalibracion();
     if (name === 'balance') renderBalance();
+    if (name === 'revision') renderRevision();
     if (name === 'inspections') renderInspections();
     if (name === 'parts') renderParts();
     if (name === 'shifts') renderShifts();

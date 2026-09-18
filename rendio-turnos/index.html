@@ -919,7 +919,8 @@
           <div class="bal-controls">
             <div class="rl-field"><label>Desde</label><input class="rl-input" type="date" id="balance-from" /></div>
             <div class="rl-field"><label>Hasta</label><input class="rl-input" type="date" id="balance-to" /></div>
-            <button class="rl-btn ghost" id="balance-month">Mes actual</button>
+            <button class="rl-btn ghost" id="balance-month">Corte en curso</button>
+            <button class="rl-btn ghost" id="balance-cut-prev">Corte anterior</button>
             <button class="rl-btn" id="balance-generate"><svg class="icon"><use href="#i-play"/></svg>Generar informe</button>
             <div class="rl-spacer"></div>
             <button class="rl-btn green" id="balance-xlsx"><svg class="icon"><use href="#i-download"/></svg>Descargar Excel</button>
@@ -928,6 +929,14 @@
           <div class="bal-summary" id="balance-summary"></div>
           <div id="balance-table"></div>
         </div>
+      </section>
+
+      <!-- =============== ADMIN: REVISION DEL CORTE TAB =============== -->
+      <!-- Lo pinta renderRevision() en admin-revision.js, que escribe TODO el
+           interior de #revision-ui. Aca no va marcado de adentro a proposito:
+           el modulo es el unico dueno de esa pantalla. -->
+      <section data-panel="revision" class="hidden">
+        <div id="revision-ui"></div>
       </section>
 
       <!-- =============== ADMIN: RECOMPENSAS TAB =============== -->
@@ -1409,6 +1418,7 @@
   <script src="admin-calibracion.js"></script>
   <script src="admin-flota.js"></script>
   <script src="admin-balance.js"></script>
+  <script src="admin-revision.js"></script>
   <script src="driver-home.js"></script>
   <script src="admin-recompensas.js"></script>
   <script src="driver-perfil.js"></script>
