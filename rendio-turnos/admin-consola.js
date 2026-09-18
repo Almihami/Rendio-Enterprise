@@ -41,6 +41,7 @@
         ] },
         { id: 'data', name: 'Análisis', icon: 'g-data', desc: 'Reportes', items: [
           { id: 'balance', name: 'Balance', icon: 'm-balance', desc: 'Horas reales por persona y descarga en Excel.', tab: 'balance' },
+          { id: 'revision', name: 'Revisión del corte', icon: 'm-balance', desc: 'Lo que hay que decidir antes de que la quincena se pague: un hecho y una pregunta por punto.', tab: 'revision' },
         ] },
         { id: 'cfg', name: 'Configuración', icon: 'g-cfg', desc: 'Parámetros', items: [
           { id: 'ajustes', name: 'Ajustes', icon: 'm-ajustes', desc: 'Jornadas, cupos, strikes, inicio rápido, antigüedad y descansos fijos.', tab: 'settings' },

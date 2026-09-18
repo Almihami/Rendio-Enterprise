@@ -1946,6 +1946,67 @@
     return data || [];
   }
 
+  // ── Revisión del corte de nómina ───────────────────────────────────────────
+  // Lecturas del "vigía": van aparte de listShiftsForBalance a propósito. Ese
+  // informe es el que se paga y no se toca; esto es lo que lo vigila.
+
+  // Último kilometraje conocido de un vehículo = closing_km del turno cerrado
+  // más reciente. Para avisarle al conductor, AL ABRIR, si el número que teclea
+  // no encadena con el último cierre. Es el caso de los 167 km del 10-sep que
+  // nadie registró, y el de los 128.450 km tecleados de memoria el 12-sep.
+  async function lastVehicleKm(vehicleId) {
+    if (!vehicleId) return null;
+    const { data, error } = await sb.from('shifts')
+      .select('id, end_at, closing_km, driver_profiles(profiles(full_name))')
+      .eq('vehicle_id', vehicleId).not('closing_km', 'is', null)
+      .order('end_at', { ascending: false }).limit(1);
+    if (error) throw error;
+    const s = (data || [])[0];
+    if (!s) return null;
+    return { km: s.closing_km, endAt: s.end_at,
+             driver: (s.driver_profiles && s.driver_profiles.profiles && s.driver_profiles.profiles.full_name) || '' };
+  }
+
+  // Turnos del corte con lo que el balance descarta y el vigía necesita: placa,
+  // notas y las marcas de tiempo que delatan una edición posterior al cierre
+  // (updated_at > end_at) o un arranque que se demoró (start_at − created_at).
+  async function listShiftsForReview(fromISO, toISO) {
+    const { data, error } = await sb.from('shifts')
+      .select('id, status, start_at, end_at, opening_km, closing_km, driver_id, vehicle_id, ' +
+              'fueled, notes, created_at, updated_at, ' +
+              'vehicles(license_plate, internal_code), ' +
+              'driver_profiles(profile_id, profiles(full_name, email))')
+      .gte('start_at', fromISO).lt('start_at', toISO)
+      .order('start_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Inspecciones de esos turnos, con conteo de fotos y el odómetro declarado
+  // ahí: es la ÚNICA lectura del kilometraje capturada en otra pantalla y con
+  // foto al lado, así que sirve para desempatar cuando el km del turno es basura.
+  async function listInspectionsForShifts(shiftIds) {
+    if (!shiftIds || !shiftIds.length) return [];
+    const { data, error } = await sb.from('inspections')
+      .select('id, shift_id, vehicle_id, driver_id, kind, odometer_km, has_damage, ' +
+              'review_status, performed_at, notes, inspection_photos(id)')
+      .in('shift_id', shiftIds);
+    if (error) throw error;
+    return (data || []).map(i => Object.assign({}, i, { photoCount: (i.inspection_photos || []).length }));
+  }
+
+  // Tanqueos colgados del TURNO, no de su propia fecha: un recibo creado a las
+  // 02:00 pertenece al turno que arrancó la tarde anterior, y filtrarlo por
+  // created_at corre el gasto medio día respecto a las horas.
+  async function listFuelReceiptsForShifts(shiftIds) {
+    if (!shiftIds || !shiftIds.length) return [];
+    const { data, error } = await sb.from('fuel_receipts')
+      .select('id, shift_id, vehicle_id, driver_id, amount_cop, created_at')
+      .in('shift_id', shiftIds);
+    if (error) throw error;
+    return data || [];
+  }
+
   async function saveResidenceZone(id, zona) {
     const { error } = await sb.from('residences').update({ zona_jefe: zona || null }).eq('id', id);
     if (error) throw error;
@@ -3094,5 +3155,6 @@
     correctVehicleOdometer, setPartInterval,
     listInspectionTiers, pendingInspectionTiers, markInspectionTiersDone,
     listShiftsForBalance,
+    lastVehicleKm, listShiftsForReview, listInspectionsForShifts, listFuelReceiptsForShifts,
   };
 })();
