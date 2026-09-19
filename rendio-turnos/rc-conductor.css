@@ -107,7 +107,7 @@ svg.lucide{stroke-width:1.5}
 .av-meter i[data-s="lock"]{background:var(--st-lock-bd)}
 .av-count{font-variant-numeric:tabular-nums;font-weight:650}
 .av-status{display:flex;align-items:center;gap:8px;margin-top:8px;white-space:nowrap}
-.av-status .av-left{font-size:13.5px;font-weight:600;flex:1 1 auto;min-width:0}
+.av-status .av-left{font-size:13.5px;font-weight:600;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .av-status .av-cut{margin-left:auto;flex-shrink:0;font-size:11.5px;font-weight:650;display:flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
 .rc-weeknav{display:flex;align-items:center;gap:6px;padding-top:4px}
 .rc-weeknav .r-icon-btn{width:30px;height:30px}
@@ -139,7 +139,21 @@ svg.lucide{stroke-width:1.5}
 @keyframes avPop{0%{transform:scale(.9)}55%{transform:scale(1.045)}100%{transform:scale(1)}}
 .av-cell-ic{display:flex;opacity:.9}
 
-/* ── Selector de brocha ────────────────────────────────────────────────── */
+/* Propuesta: verde punteado hasta que el conductor confirme la semana.
+   Es la señal de "esto todavía no lo ve tu jefe" sin gritarlo. */
+.av-cell[data-p="1"]{border-style:dashed}
+.av-meter i[data-p="1"]{opacity:.45}
+
+/* ── Leyenda (antes era el selector de brocha: ver driver-disponibilidad.js) ── */
+.av-legend{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:9px 5px;background:var(--r-surface-2);border-radius:14px}
+.av-legend-it{display:flex;align-items:center;justify-content:center;gap:6px;font-size:11.5px;font-weight:650;
+  color:var(--r-text-2);letter-spacing:-.1px;white-space:nowrap}
+.av-legend-it i{width:9px;height:9px;border-radius:5px;display:block;flex-shrink:0}
+.av-legend-it[data-k="puedo"] i{background:var(--st-ok-dot)}
+.av-legend-it[data-k="pref"] i{background:var(--st-pref-dot)}
+.av-legend-it[data-k="no"] i{background:var(--st-no-dot)}
+
+/* ── Selector de brocha (RETIRADO de la UI el 2026-09-15; CSS conservado) ─── */
 .av-brush{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:5px;background:var(--r-surface-2);border-radius:14px}
 .av-brush-btn{border:1.5px solid transparent;background:transparent;border-radius:10px;padding:9px 4px 8px;cursor:pointer;font-family:inherit;
   display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;font-weight:650;color:var(--r-text-2);transition:all .2s;letter-spacing:-.1px}
