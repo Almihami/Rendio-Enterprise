@@ -74,21 +74,65 @@
     });
   }
 
-  // --- Cierre de disponibilidad: domingo 2:00 PM hora Colombia ---
-  // (aviso 1:30, corte duro 2:00). Colombia es UTC-5 fijo (sin horario de
-  // verano) → 14:00 Bogotá = 19:00 UTC. Cálculo 100% en UTC para no depender
-  // de la zona horaria de la máquina. El domingo es el de la víspera del
+  // --- Cierre de disponibilidad: sábado 4:00 PM hora Colombia ---
+  // (aviso los últimos 30 min). Colombia es UTC-5 fijo (sin horario de
+  // verano) → 16:00 Bogotá = 21:00 UTC. Cálculo 100% en UTC para no depender
+  // de la zona horaria de la máquina. El sábado es el de dos días antes del
   // lunes en que arranca la semana objetivo.
+  // Hasta el 19-sep-2026 el corte era el domingo 2:00 PM. El jefe lo movió al
+  // sábado ese mismo sábado, así que la semana del 21-sep cerró a las 7:00 PM
+  // para darles tiempo a los conductores. Las semanas anteriores conservan su
+  // regla (domingo 2:00 PM): el candado da igual, pero el admin que regenera
+  // una semana vieja lee «fuera por no llenar antes del…» con la hora real.
+  const SATURDAY_RULE_FROM = '2026-09-21';
+  const CUTOFF_EXCEPTIONS = {
+    '2026-09-21': '2026-09-20T00:00:00Z', // sábado 19-sep 7:00 PM Bogotá
+  };
   function availabilityCutoff(weekStartISO) {
+    if (CUTOFF_EXCEPTIONS[weekStartISO]) return new Date(CUTOFF_EXCEPTIONS[weekStartISO]);
     const d = new Date(weekStartISO + 'T00:00:00Z'); // lunes 00:00 UTC
-    d.setUTCDate(d.getUTCDate() - 1);                 // domingo anterior
-    d.setUTCHours(19, 0, 0, 0);                       // 14:00 Bogotá (2:00 PM)
+    if (weekStartISO < SATURDAY_RULE_FROM) {
+      d.setUTCDate(d.getUTCDate() - 1);               // domingo anterior
+      d.setUTCHours(19, 0, 0, 0);                     // 14:00 Bogotá (2:00 PM)
+      return d;
+    }
+    d.setUTCDate(d.getUTCDate() - 2);                 // sábado anterior
+    d.setUTCHours(21, 0, 0, 0);                       // 16:00 Bogotá (4:00 PM)
     return d;
+  }
+
+  // Un límite dicho en palabras, para que ningún texto repita la hora a mano:
+  // la hora del corte vive SOLO en availabilityCutoff (y la de la reapertura, en
+  // app_settings.reopen_until).
+  //   at     el instante en ms
+  //   day    'sábado'      date  26
+  //   time   '4:00 p.m.'   (ya termina en punto: no ponerle otro)
+  //   closed true si ya pasó
+  //   today  true si es hoy (fecha Bogotá) y todavía no pasó
+  //   when   'hoy' | 'el sábado 26' → «Cierra hoy a las…» / «Cierra el sábado 26 a las…»
+  //          (con fecha: el sábado en la noche, «el sábado» a secas es ambiguo)
+  const WEEKDAY_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const BOGOTA_MS = -5 * 3600000;
+  function deadlineLabel(instant, now = Date.now()) {
+    const at = +instant;
+    now = +now; // acepta Date o número, como availabilityClosed
+    const b = new Date(at + BOGOTA_MS);
+    const h = b.getUTCHours();
+    const day = WEEKDAY_ES[b.getUTCDay()];
+    const date = b.getUTCDate();
+    const time = `${h % 12 || 12}:${String(b.getUTCMinutes()).padStart(2, '0')} ${h < 12 ? 'a.m.' : 'p.m.'}`;
+    const closed = now >= at;
+    const sameDay = new Date(now + BOGOTA_MS).toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+    const today = sameDay && !closed;
+    return { at, day, date, time, closed, today, when: today ? 'hoy' : `el ${day} ${date}` };
+  }
+  function availabilityCutoffLabel(weekStartISO, now = Date.now()) {
+    return deadlineLabel(availabilityCutoff(weekStartISO), now);
   }
   function availabilityClosed(weekStartISO, now = Date.now()) {
     return now >= availabilityCutoff(weekStartISO).getTime();
   }
-  // Ventana de aviso: entre 1:30 y 2:00 PM del domingo (últimos 30 min).
+  // Ventana de aviso: los últimos 30 min antes del corte (sábado 3:30–4:00 PM).
   function availabilityClosingSoon(weekStartISO, now = Date.now()) {
     const cut = availabilityCutoff(weekStartISO).getTime();
     return now >= cut - 30 * 60 * 1000 && now < cut;
@@ -435,7 +479,7 @@
     DAYS, DAY_INDEX, DAY_LABELS_ES,
     weekDates, startOfWeekISO, defaultWeekISO, addDays,
     monthStartISO, monthLabelES,
-    availabilityCutoff, availabilityClosed, availabilityClosingSoon,
+    availabilityCutoff, availabilityCutoffLabel, deadlineLabel, availabilityClosed, availabilityClosingSoon,
     generateSchedule, emptySchedule, getState, getRawState, getEffectiveState,
     ruleBlocked, setRules, applySwaps, validateSwap,
   };
