@@ -77,8 +77,8 @@
     if (!root) return;
     try {
       const [status, catalog, life, hist, tiers, vehicles] = await Promise.all([
-        API.listPartStatus(), API.listPartCatalog(), API.listPartRealLife(),
-        API.listPartHistory(), API.listInspectionTiers(), API.listVehiclesForShift(),
+        Api.listPartStatus(), Api.listPartCatalog(), Api.listPartRealLife(),
+        Api.listPartHistory(), Api.listInspectionTiers(), Api.listVehiclesForShift(),
       ]);
       ptStatus = status; ptCatalog = catalog; ptLife = life;
       ptHist = hist; ptTiers = tiers; ptVehicles = vehicles;
@@ -100,11 +100,11 @@
 
   async function ptReload() {
     const [status, life, hist] = await Promise.all([
-      API.listPartStatus(), API.listPartRealLife(), API.listPartHistory(),
+      Api.listPartStatus(), Api.listPartRealLife(), Api.listPartHistory(),
     ]);
     ptStatus = status; ptLife = life; ptHist = hist;
-    ptCatalog = await API.listPartCatalog();
-    ptVehicles = await API.listVehiclesForShift();
+    ptCatalog = await Api.listPartCatalog();
+    ptVehicles = await Api.listVehiclesForShift();
     ptRenderAll();
     if (ptCurVeh) renderPartsVehicle(ptCurVeh);
   }
@@ -624,7 +624,7 @@
       return;
     }
     try {
-      const r = await API.setVehiclePartBaseline(vid, entries);
+      const r = await Api.setVehiclePartBaseline(vid, entries);
       const cargados = entries.filter((e) => e.last_change_km != null).length;
       await ptReload();
       renderPartsVehicle(vid);
@@ -652,6 +652,13 @@
 
   function ptOpenDrawer(vid, partCode) {
     const vehs = ptVehicles.filter((v) => ptStatus.some((s) => s.vehicle_id === v.id));
+    // El botón del encabezado está desde que se pinta la pantalla, antes de que
+    // lleguen los datos (o aunque no lleguen). Sin carros el cajón salía con
+    // Vehículo y Repuesto vacíos, que el jefe leyó como "no está habilitado".
+    if (!vehs.length || !ptCatalog.length) {
+      toast('Todavía no cargan los carros. Espera un momento o recarga la pantalla.');
+      return;
+    }
     const vehId = vid || (vehs[0] && vehs[0].id);
     ptDrawer = { vehicleId: vehId, partCode: partCode || (ptCatalog[0] && ptCatalog[0].code) };
     const v = ptVehicles.find((x) => x.id === vehId);
@@ -735,7 +742,7 @@
     const km = ptNum($('#pt-f-km').value);
     if (km == null) { toast('Falta el kilometraje del cambio.'); return; }
     try {
-      const r = await API.registerPartChange({
+      const r = await Api.registerPartChange({
         vehicleId: vid, partCode: code, km,
         date: $('#pt-f-date').value || null,
         cost: ptNum($('#pt-f-cost').value),
@@ -814,14 +821,14 @@
     // Confirmar / rechazar lo que reportó un conductor.
     const conf = e.target.closest('[data-pt-conf]');
     if (conf) {
-      try { await API.confirmPartChange(conf.dataset.ptConf, true); await ptReload(); toast('Cambio confirmado · el semáforo vuelve a cero.'); }
+      try { await Api.confirmPartChange(conf.dataset.ptConf, true); await ptReload(); toast('Cambio confirmado · el semáforo vuelve a cero.'); }
       catch (err) { toast(ptErr(err)); }
       return;
     }
     const rej = e.target.closest('[data-pt-rej]');
     if (rej) {
       if (!confirm('¿Rechazar este reporte? No moverá el semáforo.')) return;
-      try { await API.confirmPartChange(rej.dataset.ptRej, false); await ptReload(); toast('Reporte rechazado.'); }
+      try { await Api.confirmPartChange(rej.dataset.ptRej, false); await ptReload(); toast('Reporte rechazado.'); }
       catch (err) { toast(ptErr(err)); }
       return;
     }
@@ -832,7 +839,7 @@
       const [code, km] = adj.dataset.ptAdj.split('|');
       const p = ptCatalog.find((x) => x.code === code);
       if (!confirm(`Cambiar el intervalo de ${p.name} de ${ptFmt(p.interval_km)} km a ${ptFmt(+km)} km para toda la flota?`)) return;
-      try { await API.setPartInterval(code, +km, null); await ptReload(); renderPartsVida(); toast(`Intervalo de ${p.name.toLowerCase()} ajustado a ${ptFmt(+km)} km con datos propios.`); }
+      try { await Api.setPartInterval(code, +km, null); await ptReload(); renderPartsVida(); toast(`Intervalo de ${p.name.toLowerCase()} ajustado a ${ptFmt(+km)} km con datos propios.`); }
       catch (err) { toast(ptErr(err)); }
       return;
     }
@@ -843,7 +850,7 @@
       const val = prompt(`Nuevo intervalo para ${p.name} (km), aplica a toda la flota:`, p.interval_km);
       const n = ptNum(val);
       if (!n || n < 500) return;
-      try { await API.setPartInterval(p.code, n, null); await ptReload(); renderPartsPlan(); toast(`${p.name}: intervalo ${ptFmt(n)} km.`); }
+      try { await Api.setPartInterval(p.code, n, null); await ptReload(); renderPartsPlan(); toast(`${p.name}: intervalo ${ptFmt(n)} km.`); }
       catch (err) { toast(ptErr(err)); }
       return;
     }
@@ -856,7 +863,7 @@
       const n = ptNum(val);
       if (!n) return;
       const reason = prompt('¿Por qué se corrige? Queda en el registro:', 'Corrección de digitación') || null;
-      try { await API.correctVehicleOdometer(vid, n, reason); await ptReload(); renderPartsVehicle(vid); toast(`Odómetro corregido a ${ptFmt(n)} km.`); }
+      try { await Api.correctVehicleOdometer(vid, n, reason); await ptReload(); renderPartsVehicle(vid); toast(`Odómetro corregido a ${ptFmt(n)} km.`); }
       catch (err) { toast(ptErr(err)); }
     }
   });
