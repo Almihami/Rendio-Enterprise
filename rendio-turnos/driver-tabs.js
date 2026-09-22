@@ -57,7 +57,10 @@
     const box = $('#driver-home-nudge');
     if (!box) return;
     const { faltan } = avCounts();
-    if (!faltan) { box.innerHTML = ''; return; }
+    // En semana cerrada (o cuenta suspendida) ya no hay nada que confirmar:
+    // el empujón diría «Cierra el sábado…» sobre un corte que ya pasó.
+    if (!faltan || !avEditable()) { box.innerHTML = ''; return; }
+    const cut = avDeadline();
     // Desde el 2026-09-15 la semana nace propuesta en "Puedo": lo que falta ya no es
     // marcarla jornada por jornada, es confirmarla.
     box.innerHTML = `
@@ -67,7 +70,7 @@
           <span class="rc-nudge-ic">${avIcon('calendar', 18, 1.6)}</span>
           <span style="flex:1;min-width:0">
             <span style="display:block;font-size:14.5px;font-weight:650;color:var(--r-warn)">Tu semana todavía no está confirmada</span>
-            <span style="display:block;font-size:12.5px;color:var(--r-warn);opacity:.82;margin-top:2px">Cierra el domingo a las 2:00 p.m.</span>
+            <span style="display:block;font-size:12.5px;color:var(--r-warn);opacity:.82;margin-top:2px">Cierra ${cut.when} a las ${cut.time}</span>
           </span>
           <span style="color:var(--r-warn);display:flex">${avIcon('chevronRight', 17)}</span>
         </span>

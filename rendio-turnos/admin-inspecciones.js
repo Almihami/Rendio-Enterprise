@@ -4,7 +4,7 @@
   // ====================================================================
   // Inspecciones (admin) — revisión/aprobación + checklist configurable
   // ====================================================================
-  const inspState = { items: [], filter: 'pending', current: null, checklist: [], vehicles: [], autoVehicleId: null, autoItems: [], adminPhoto: null,
+  const inspState = { items: [], filter: 'pending', current: null, checklist: [], vehicles: [], autoVehicleId: null, autoItems: [], autoItemsFor: null, colaY: 0, adminPhoto: null,
     novItems: [], novFilter: 'open', novCurrent: null, openIncidents: 0 };
   const INSP_SEV = {
     leve:  { cls: 'leve',  label: 'Leve',  text: 'Leve · informativo',       color: 'var(--green)' },
@@ -17,9 +17,34 @@
   // las revisa en el orden en que el conductor las tomó.
   const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard', 'glovebox', 'property_card', 'door_left', 'door_right', 'road_kit', 'spare_tire'];
 
-  function inspShowView(v) {
+  // En el admin lo que se desplaza es #app-main (overflow-y:auto en styles.css,
+  // .admin-shell), no la página: un window.scrollTo no lo mueve. Si algún día el
+  // panel deja de tener scroll propio, se cae a la página.
+  function inspScroller() {
+    const m = document.getElementById('app-main');
+    if (m && /auto|scroll/.test(getComputedStyle(m).overflowY)) return m;
+    return document.scrollingElement || document.documentElement;
+  }
+  function inspShowView(v, y = 0) {
     $$('#inspections-ui .view').forEach(s => s.classList.toggle('on', s.id === 'insp-v-' + v));
-    window.scrollTo(0, 0);
+    inspScroller().scrollTop = y;
+  }
+  // Dónde iba el admin en la cola, para devolverlo ahí al volver de una
+  // inspección. Solo se anota si la cola es lo que está en pantalla.
+  function inspRememberCola() {
+    if ($('#insp-v-cola')?.classList.contains('on')) inspState.colaY = inspScroller().scrollTop;
+  }
+  // Volver a la cola donde estaba. La lista nunca sale del DOM (el detalle es
+  // otra vista) y lo que el admin cambió aquí —aprobar/rechazar— ya está en
+  // memoria, así que se repinta desde ahí sin volver a pedirla. Pedirla de nuevo
+  // la dejaba en «Cargando…» mientras llegaba, el panel se quedaba sin contenido
+  // y saltaba arriba: el admin que revisaba comprobantes perdía su lugar.
+  // La cola se vuelve a pedir al servidor al entrar a la pestaña.
+  function inspBackToCola() {
+    bindInspections();
+    if (!inspState.items.length) { renderInspections(); return; }
+    renderInspList(true);
+    inspShowView('cola', inspState.colaY || 0);
   }
   function inspChecklistOf(insp) {
     const c = insp && insp.checklist;
@@ -277,13 +302,13 @@
     } catch (e) { console.error(e); toast('No se pudo actualizar la novedad.'); }
   }
 
-  function renderInspList() {
+  function renderInspList(fromCache) {
     const counts = inspCounts();
     if ($('#insp-count')) $('#insp-count').textContent = counts.pending;
     $$('#insp-filter .n').forEach(n => { n.textContent = counts[n.dataset.c] != null ? counts[n.dataset.c] : 0; });
     const b = $('#inspections-badge'); if (b) { const n = counts.pending + (inspState.openIncidents || 0); b.textContent = n; b.classList.toggle('hidden', !n); }
     const autosBar = $('#insp-autos-bar');
-    if (inspState.filter === 'autos') { renderAutosView(); return; }
+    if (inspState.filter === 'autos') { renderAutosView(fromCache); return; }
     if (autosBar) autosBar.classList.add('hidden');
     const shown = inspState.items.filter(it => inspState.filter === 'all' ? true : it.review_status === inspState.filter);
     const list = $('#insp-list');
@@ -292,7 +317,7 @@
   }
 
   // --- Filtro "Autos": elige un vehículo y ve todas sus inspecciones ---
-  async function renderAutosView() {
+  async function renderAutosView(fromCache) {
     const bar = $('#insp-autos-bar');
     if (bar) bar.classList.remove('hidden');
     if (!inspState.vehicles.length) {
@@ -303,6 +328,8 @@
     ).join('');
     if (bar) bar.innerHTML = `<div class="autosel"><label>Auto</label><select id="insp-auto-sel"><option value="">Elige un auto…</option>${opts}</select></div>`;
     $('#insp-auto-sel')?.addEventListener('change', (e) => { inspState.autoVehicleId = e.target.value || null; loadAutoList(); });
+    // De vuelta de una inspección: lo de ese auto ya está en memoria.
+    if (fromCache && inspState.autoVehicleId && inspState.autoItemsFor === inspState.autoVehicleId) { paintAutoList(); return; }
     loadAutoList();
   }
 
@@ -314,8 +341,14 @@
       return;
     }
     list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
-    try { inspState.autoItems = await Api.listInspectionsByVehicle(inspState.autoVehicleId); }
+    const vid = inspState.autoVehicleId;
+    try { inspState.autoItems = await Api.listInspectionsByVehicle(vid); inspState.autoItemsFor = vid; }
     catch (e) { console.error(e); list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>'; return; }
+    paintAutoList();
+  }
+  function paintAutoList() {
+    const list = $('#insp-list');
+    if (!list) return;
     list.innerHTML = inspState.autoItems.length ? inspState.autoItems.map(inspCardHtml).join('')
       : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Sin registros</h3><p>Este auto aún no tiene inspecciones.</p></div>`;
   }
@@ -362,6 +395,7 @@
 
   async function openInspectionDetail(id) {
     bindInspections();
+    inspRememberCola();
     if (inspState.adminPhoto && inspState.adminPhoto.url) URL.revokeObjectURL(inspState.adminPhoto.url);
     inspState.adminPhoto = null;
     const view = $('#insp-v-detalle');
@@ -528,11 +562,14 @@
         const pid = inspState.current ? inspDriverProfileId(inspState.current) : null;
         if (pid) { try { await notify([pid], 'Inspección rechazada', notes || 'Tu inspección de inicio de turno fue rechazada.', '/'); } catch (e) {} }
       }
-      const it = inspState.items.find(x => x.id === id);
-      if (it) { it.review_status = status; it.review_notes = notes || null; }
+      [inspState.items.find(x => x.id === id), inspState.autoItems.find(x => x.id === id)].forEach(it => {
+        if (it) { it.review_status = status; it.review_notes = notes || null; }
+      });
       toast(status === 'approved' ? 'Inspección aprobada.' : 'Inspección rechazada.');
-      renderInspList();
-      inspShowView('cola');
+      // «Aprobar» desde la tarjeta: se queda donde está. Desde el detalle: vuelve
+      // al lugar que se anotó al abrirlo.
+      inspRememberCola();
+      inspBackToCola();
     } catch (e) {
       console.error(e);
       toast('No se pudo guardar la revisión.');
@@ -602,6 +639,7 @@
   }
 
   async function openInspChecklist() {
+    inspRememberCola();
     bindInspections();
     const view = $('#insp-v-config');
     view.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
@@ -663,7 +701,7 @@
       if (fb) { inspState.filter = fb.dataset.f; $$('#insp-filter button').forEach(b => b.classList.toggle('on', b === fb)); renderInspList(); return; }
       if (e.target.closest('#insp-to-config')) { openInspChecklist(); return; }
       if (e.target.closest('#insp-to-novedades')) { renderNovedades(); return; }
-      if (e.target.closest('[data-insp-back]')) { renderInspections(); return; }
+      if (e.target.closest('[data-insp-back]')) { inspBackToCola(); return; }
       // --- Novedades (incidents) ---
       if (e.target.closest('[data-nov-back]')) { renderInspections(); return; }
       if (e.target.closest('[data-nov-list]')) { renderNovedades(); return; }

@@ -70,7 +70,7 @@
     }
     return { active: false, until: 0 };
   }
-  // Cerrada = pasó el corte del domingo Y NO hay reapertura vigente.
+  // Cerrada = pasó el corte del sábado Y NO hay reapertura vigente.
   function weekAvailClosed(weekStartISO) {
     if (!Scheduler.availabilityClosed(weekStartISO)) return false;
     return !reopenInfo(weekStartISO).active;
@@ -683,7 +683,7 @@
   async function doGenerate() {
     state.availability = await Api.getWeeklyAvailability(state.currentWeek, state.drivers);
 
-    // Regla domingo 2:00 PM (hora Colombia): si el corte ya pasó, el conductor
+    // Regla del corte, sábado 4:00 PM (hora Colombia): si ya pasó, el conductor
     // que NO guardó disponibilidad para esta semana queda FUERA del generador
     // (no maneja, no descansa, no coordina). El admin lo puede rescatar
     // llenándole la disponibilidad consolidada (no tiene candado).
@@ -748,8 +748,9 @@
     state._excludedIds = new Set(excluded.map(d => d.id));
     state._suspendedIds = new Set(suspendedThisWeek.map(d => d.id));
     const box = $('#schedule-warnings');
+    const cutLbl = Scheduler.availabilityCutoffLabel(state.currentWeek);
     const exclMsg = excluded.length
-      ? `<p class="text-rose-700 font-semibold">⛔ ${excluded.length} conductor(es) fuera por no llenar disponibilidad antes del domingo 2:00 PM: ${excluded.map(d => escapeHtml(d.name)).join(', ')}</p>`
+      ? `<p class="text-rose-700 font-semibold">⛔ ${excluded.length} conductor(es) fuera por no llenar disponibilidad antes del ${cutLbl.day} ${cutLbl.date} a las ${cutLbl.time}: ${excluded.map(d => escapeHtml(d.name)).join(', ')}</p>`
       : '';
     const suspMsg = suspendedThisWeek.length
       ? `<p class="text-amber-700 font-semibold">🚫 ${suspendedThisWeek.length} conductor(es) suspendido(s) esta semana (${strikeLimit()} strikes en el mes / manual): ${suspendedThisWeek.map(d => escapeHtml(d.name)).join(', ')}</p>`

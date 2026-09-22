@@ -159,9 +159,30 @@
     return n;
   }
 
-  // Cuenta regresiva al corte del domingo 2:00 PM.
+  // El límite que de verdad rige para la semana en pantalla: la reapertura del
+  // jefe si está vigente (reopenInfo, horario.js); si no, el corte del sábado.
+  // Todos los textos de la pantalla y el empujón de Inicio salen de acá, para
+  // que nunca digan dos horas distintas a la vez.
+  function avDeadline() {
+    const reopen = reopenInfo(state.currentWeek);
+    return reopen.active
+      ? Scheduler.deadlineLabel(reopen.until)
+      : Scheduler.availabilityCutoffLabel(state.currentWeek);
+  }
+
+  // «confirma hoy antes de las 7:00 p.m.» el día del límite; «confirma antes del
+  // sábado 26 a las 4:00 p.m.» el resto de la semana. En semana cerrada o cuenta
+  // suspendida no se da hora: manda el aviso de arriba.
+  // La puntuación final va acá: la hora ya termina en «p.m.» y no lleva otro punto.
+  function avCutoffSub() {
+    if (!avEditable()) return 'antes del cierre.';
+    const cut = avDeadline();
+    return cut.today ? `hoy antes de las ${cut.time}` : `antes del ${cut.day} ${cut.date} a las ${cut.time}`;
+  }
+
+  // Cuenta regresiva al límite (corte del sábado o fin de la reapertura).
   function avCutoffText() {
-    const ms = Scheduler.availabilityCutoff(state.currentWeek).getTime() - Date.now();
+    const ms = avDeadline().at - Date.now();
     if (ms <= 0) return { text: 'Cerrado', tone: 'var(--r-error)' };
     const h = Math.floor(ms / 3600000);
     const d = Math.floor(h / 24);
@@ -182,13 +203,13 @@
     }
     const reopen = reopenInfo(state.currentWeek);
     if (reopen.active) {
-      return note('ok', 'rotate', `<b>Tu jefe reabrió la semana hasta las ${hhmmCO(reopen.until)}.</b> Corrige y guarda antes de esa hora.`);
+      return note('ok', 'rotate', `<b>Tu jefe reabrió la semana hasta ${avDeadline().when} a las ${avDeadline().time}</b> Corrige y guarda antes de esa hora.`);
     }
     if (weekAvailClosed(state.currentWeek)) {
       return note('err', 'lock', '<b>Esta semana ya cerró.</b> Toca la flecha ▸ de arriba y marca la que viene. Si necesitas un cambio en esta, escríbele a tu jefe desde Solicitudes.');
     }
     if (Scheduler.availabilityClosingSoon(state.currentWeek)) {
-      return note('warn', 'clock', '<b>Cierra hoy a las 2:00 p.m.</b> Guarda antes de esa hora.');
+      return note('warn', 'clock', `<b>Cierra hoy a las ${avDeadline().time}</b> Guarda antes de esa hora.`);
     }
     return '';
   }
@@ -236,7 +257,7 @@
 
       <div style="margin-top:14px;text-align:center">
         <h1 class="rc-h">¿Cuándo puedes trabajar?</h1>
-        <p class="rc-sub">${escapeHtml(firstNameOf(state.profile))}, arrancas disponible toda la semana. Toca las jornadas que no, y confirma antes del domingo.</p>
+        <p class="rc-sub">${escapeHtml(firstNameOf(state.profile))}, arrancas disponible toda la semana. Toca las jornadas que no, y confirma ${avCutoffSub()}</p>
       </div>
 
       ${avNoticeHtml()}
@@ -349,9 +370,10 @@
       return `<div class="rc-blocked">${avIcon('lock', 17)} ${blockedMsg} — no se puede guardar.</div>`;
     }
     const { faltan } = avCounts();
+    const cut = avDeadline();
     const done = avUI.saved && !avUI.dirty && faltan === 0;
     const note = done
-      ? 'Tu jefe ya lo ve. Puedes seguir cambiándola hasta el domingo a las 2:00 p.m.'
+      ? `Tu jefe ya lo ve. Puedes seguir cambiándola hasta ${cut.when} a las ${cut.time}`
       : faltan > 0
         ? 'Hasta que confirmes, tu jefe no cuenta contigo para esta semana.'
         : 'Se guarda y tu jefe lo ve al instante.';
@@ -561,7 +583,9 @@
   }
 
   async function avSave() {
-    if (isSuspended() || weekAvailClosed(state.currentWeek)) return;
+    // Si el corte pasó con la pantalla abierta, redibujar: sin esto el botón no
+    // hace nada y la pantalla sigue diciendo «Cierra hoy a las…».
+    if (isSuspended() || weekAvailClosed(state.currentWeek)) { renderDriverDays(); return; }
     const pendientes = avNoWithoutReason();
     if (pendientes.length) { avOpenSheet(pendientes, true); return; }
     const btn = $('#av-save');
