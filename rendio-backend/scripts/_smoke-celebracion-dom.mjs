@@ -167,7 +167,10 @@ t('avión pegado a la curva con offset-path (misma curva del módulo)', /offset-
 t('estela y avión con la MISMA duración/espera/curva de tiempo', (css.match(/1\.35s \.25s cubic-bezier\(\.4,\.1,\.3,1\) both/g)||[]).length>=3);
 t('prefers-reduced-motion apaga la escena', /prefers-reduced-motion: reduce\) \{\s*#auxiliar-ui \.axc \*/.test(css));
 t('la piel vip usa la paleta fija del Select', /\.axc\.vip \{[^}]*#221D18/.test(css) && /\.axc\.vip[^}]*#C7A971|--axc-brass: #C7A971/.test(css));
-t('fuera del bloque vip, la escena va en tokens --a-*', (()=>{ const blk=css.slice(css.indexOf('/* ANCLA-CELEBRACION */')); const sinVip=blk.replace(/#auxiliar-ui \.axc\.vip[^}]*\}/g,''); const hex=(sinVip.match(/#[0-9A-Fa-f]{3,6}\b/g)||[]).filter(h=>h!=='#fff'&&h!=='#auxiliar'); return hex.length===0; })());
+// Solo las reglas DE LA ESCENA (.axc). Antes se miraba desde el ancla hasta el
+// final del archivo, y cuando otro módulo agregó sus reglas debajo (Tripulantes,
+// 0081) sus colores fijos tumbaban esta prueba sin que la escena cambiara.
+t('fuera del bloque vip, la escena va en tokens --a-*', (()=>{ const blk=css.slice(css.indexOf('/* ANCLA-CELEBRACION */')); const reglas=(blk.match(/[^{}]+\{[^{}]*\}/g)||[]).filter(r=>{ const sel=r.slice(0,r.indexOf('{')); return /\.axc/.test(sel) && !/\.axc\.vip/.test(sel); }); const hex=(reglas.join('\n').match(/#[0-9A-Fa-f]{3,6}\b/g)||[]).filter(h=>h!=='#fff'&&h!=='#auxiliar'); return reglas.length>5 && hex.length===0; })());
 
 console.log(`\n${ok}/${ok+bad} pasaron${bad?' · '+bad+' FALLARON':''}`);
 console.log('NO cubierto: la animación en sí (jsdom no anima ni hace layout), el sonido real y la vibración — se mira y se oye en el teléfono, con y sin «reducir movimiento».');
