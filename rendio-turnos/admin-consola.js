@@ -61,6 +61,9 @@
         { id: 'ops', name: 'Operación', icon: 'g-ops', desc: 'Monitoreo en vivo', items: [
           { id: 'oper', name: 'Operación', icon: 'm-oper', desc: 'Carros en el mapa en tiempo real y alerta de atraso antes de que ocurra.', star: true, tab: 'oper' },
           { id: 'evt', name: 'Eventualidades', icon: 'm-insp', desc: 'Fallas mecánicas, trancones y emergencias que reportan conductores y tripulantes en plena ruta.', star: true, tab: 'eventualidades' },
+          // Rediseño del auxiliar (27-sep-2026). `need`: la entrada solo se ve
+          // cuando el módulo que la pinta ya existe (hoy es stub → no aparece).
+          { id: 'coord', name: 'Coordinación', icon: 'i-chat', desc: 'Lo que los tripulantes les escriben a los jefes: un hilo por persona, con el traslado como contexto.', tab: 'coordinacion', need: 'renderCoordinacion' },
           // Acá había una tarjeta "Flota · Pronto". Se quitó el 2026-09-11 porque la flota
           // dejó de estar por construir: existe, salió de Ajustes y vive en Turnos ›
           // Revisión. Dejar el "Pronto" al lado de la de verdad era prometer dos veces lo
@@ -68,6 +71,8 @@
         ] },
         { id: 'team', name: 'Equipo', icon: 'g-team', desc: 'Personas', items: [
           { id: 'personas', name: 'Tripulantes', icon: 'm-personas', desc: 'Los TCP que se registraron solos: aerolínea, punto de recogida, sus dos unidades y la antigüedad con Rendio.', tab: 'tripulantes' },
+          { id: 'cobro', name: 'Cuentas de cobro', icon: 'i-doc', desc: 'La mensualidad de cada tripulante: estado, comprobantes por revisar, marcar pagado y los datos de pago de la organización.', tab: 'cobro', need: 'renderCobro' },
+          { id: 'puntos', name: 'Rendio Points', icon: 'i-gift', desc: 'Encender el programa, los valores de cada acción y los canjes por cumplir.', tab: 'puntos', need: 'renderPuntos' },
         ] },
         { id: 'data', name: 'Análisis', icon: 'g-data', desc: 'Reportes', items: [
           { id: 'metricas', name: 'Métricas', icon: 'm-metricas', desc: 'Rutas a tiempo, km y ocupación de carros.', soon: 'build' },
@@ -93,6 +98,11 @@
   // (oil-badge) NO cambia — setOilBadge lo busca por id en admin-turnos-activos.js.
   const SIDEBAR_BADGE_IDS = { approvals: 'pending-badge', inspections: 'inspections-badge', shifts: 'shifts-badge', flota: 'oil-badge', eventualidades: 'events-badge' };
 
+  // ¿La entrada se muestra? Las que traen `need` dependen de un módulo que
+  // exporta esa función por window (rediseño del auxiliar): sin él, no se
+  // pinta ni cuenta, y la consola queda idéntica a como estaba.
+  const cnItemOn = (it) => !it.need || typeof window[it.need] === 'function';
+
   // Busca el módulo (y su espacio) por su tab. Devuelve {ws, group, item} o null.
   function findModuleByTab(tab) {
     for (const ws of Object.keys(CN_DATA)) {
@@ -113,7 +123,7 @@
     snav.innerHTML = d.groups.map(g => `
       <div class="grp">
         <div class="grp-h"><svg class="gi"><use href="#${g.icon}"/></svg><span class="gtext">${g.name}</span></div>
-        ${g.items.map(it => {
+        ${g.items.filter(cnItemOn).map(it => {
           if (it.soon) {
             return `<button class="nav-i dim" data-tip="${it.name}" disabled>
               <svg class="ni-ic"><use href="#${it.icon}"/></svg>
@@ -194,15 +204,15 @@
   function renderConsola() {
     const d = CN_DATA[cnWs];
     let total = 0;
-    d.groups.forEach(g => g.items.forEach(() => total++));
+    d.groups.forEach(g => g.items.filter(cnItemOn).forEach(() => total++));
     $('#cn-title').innerHTML = `${d.label} <span class="wtag ${d.tag}">${total} módulos</span>`;
     $('#cn-sub').textContent = d.sub;
     $$('#cn-wsw button').forEach(b => b.classList.toggle('on', b.dataset.ws === cnWs));
     $('#cn-groups').innerHTML = d.groups.map(g => `
       <div class="gsec">
-        <div class="gsec-h"><svg class="gi"><use href="#${g.icon}"/></svg><h2>${g.name}</h2><span class="gcount">${g.items.length}</span><span class="rule"></span><span class="gdesc">${g.desc}</span></div>
+        <div class="gsec-h"><svg class="gi"><use href="#${g.icon}"/></svg><h2>${g.name}</h2><span class="gcount">${g.items.filter(cnItemOn).length}</span><span class="rule"></span><span class="gdesc">${g.desc}</span></div>
         <div class="cards">
-          ${g.items.map(it => {
+          ${g.items.filter(cnItemOn).map(it => {
             if (it.soon) {
               return `<div class="mcard soon">
                 <div class="mc-top"><span class="mc-ic"><svg class="icon"><use href="#${it.icon}"/></svg></span><span class="mc-name">${it.name}</span></div>

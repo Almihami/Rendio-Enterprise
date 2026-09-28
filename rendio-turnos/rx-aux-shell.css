@@ -1,0 +1,31 @@
+/* rx-aux-shell.css — P2 · Shell del auxiliar (rediseño del 27-sep-2026).
+   Solo lo que el marco agrega al CSS portado (rx-auxiliar.css, de P1), que ya trae
+   .rx-base/.rx-layer/.rx-tabview/.rx-tabs/.rx-sheet*/.rx-toast/.rx-push con sus
+   animaciones del diseño. Aquí NO se declara ninguna animación ni transición:
+   todas salen idénticas del archivo generado.
+   Todo acotado a #auxiliar-ui.rx-phone: sin esa clase (bandera apagada) no aplica.
+
+   Esqueleto que arma aux-shell.js:
+     .rx-app
+       .rx-base > .rx-tabview[data-scr] > .rx-scrhost  +  nav.rx-tabs
+       .rx-layers > .rx-layer[data-scr] | .rx-full[data-scr] > .rx-scrhost
+       .rx-sheet-host · .rx-toast-host · .rx-push-host
+   En el diseño todo eso es hermano directo de .rx-phone; los contenedores del
+   shell van con display:contents para que el posicionamiento y los z-index
+   (tabs 20 · capas 30 · hoja 60 · toast 75 · banner 80) queden iguales. */
+
+/* El marco ocupa todo #auxiliar-ui (que ya es position:relative en styles.css). */
+#auxiliar-ui.rx-phone > .rx-app { position: absolute; inset: 0; overflow: hidden; }
+
+#auxiliar-ui.rx-phone .rx-layers,
+#auxiliar-ui.rx-phone .rx-sheet-host,
+#auxiliar-ui.rx-phone .rx-toast-host,
+#auxiliar-ui.rx-phone .rx-push-host,
+#auxiliar-ui.rx-phone .rx-scrhost { display: contents; }
+
+/* Pantalla completa sin deslizar (el «Traslado pedido» y la bienvenida): en el
+   diseño no son una capa de la pila, reemplazan el contenido en su lugar. */
+#auxiliar-ui.rx-phone .rx-full { position: absolute; inset: 0; z-index: 30; background: var(--r-bg); }
+
+/* La bienvenida va sin pestañas ni base debajo. */
+#auxiliar-ui.rx-phone .rx-base.rx-nobase { display: none; }

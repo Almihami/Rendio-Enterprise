@@ -1,0 +1,614 @@
+/* rx-aux-app.css — ajustes PROPIOS DE LA APP sobre rx-auxiliar.css (rediseño del
+   auxiliar, 27-sep-2026). Dueño: P1 · Sistema visual. Se carga DESPUÉS de
+   rx-auxiliar.css (el CSS del diseñador, generado) y de rc-auxiliar.css.
+
+   Reglas de este archivo:
+   · Todo selector va bajo #auxiliar-ui.rx-phone (o :where(#auxiliar-ui).rx-phone, que
+     es lo mismo pero sin peso). Sin la clase rx-phone —que pone AuxShell.skin(true)—
+     nada de esto aplica: el conductor, el admin y el auxiliar viejo no cambian.
+   · Nunca se toca el CSS portado. Lo que el diseño resolvía con el marco del teléfono
+     falso (barra de estado de 44 px, indicador de inicio) aquí se resuelve con las
+     zonas seguras REALES del teléfono.
+   · El tramo entre BEGIN/END noanim lo escribe _portar-css-rediseno-aux.mjs; no se
+     edita a mano (se corre el script). */
+
+/* ── 1. Puente a lo heredado (plan final §1.2.1) ──────────────────────────────
+   Las piezas viejas que siguen dentro del rediseño (.axr-* del catálogo de
+   residencias, .axp-* del privado, .axo-* de la bienvenida, .axc de la
+   celebración, el registro) pintan con --a-*. Aquí esas --a-* pasan a APUNTAR a
+   los --r-* del diseño: como son referencias, de noche resuelven a los --r-*
+   nocturnos (#auxiliar-ui.rx-phone[data-ax-night="on"], que tiene más peso), y las
+   piezas heredadas salen oscuras sin tocarlas. Especificidad (1,1,0), cargado
+   después de rc-auxiliar.css: gana a sus #auxiliar-ui{…} y
+   #auxiliar-ui[data-ax-night="on"]{…}.
+   El resto de la regla deshace el marco: el diseño dibuja un teléfono de 390×844
+   con esquinas y sombra; la app ES el teléfono. */
+#auxiliar-ui.rx-phone{
+  --a-bg:var(--r-bg); --a-card:var(--r-card); --a-surf2:var(--r-surface-2); --a-text:var(--r-text);
+  --a-t2:var(--r-text-2); --a-t3:var(--r-text-3); --a-line:var(--r-border); --a-line2:var(--r-surface-2);
+  --a-accent:var(--r-accent); --a-h2a:var(--r-h2a); --a-h2a-soft:var(--r-h2a-soft);
+  --a-a2h:var(--r-a2h); --a-a2h-soft:var(--r-a2h-soft); --a-hotel:var(--r-warn); --a-ok:var(--rx-ok);
+  --a-warn:var(--r-warn); --a-warn-soft:var(--r-warn-soft); --a-info:var(--r-info); --a-info-soft:var(--r-info-soft);
+  --a-err:var(--r-error); --a-err-soft:var(--r-error-soft);
+  width:100%; max-width:480px; height:100%; border-radius:0; box-shadow:none;
+  /* Zonas seguras del teléfono real (notch arriba, barra de gestos abajo). */
+  --rx-top:env(safe-area-inset-top,0px);
+  --rx-bot:env(safe-area-inset-bottom,0px);
+}
+
+/* ── 2. El documento del diseño, no el de Tailwind ────────────────────────────
+   El prototipo corre sin Tailwind: sus elementos sin regla propia usan los valores
+   del navegador. La app carga el preflight de Tailwind (vendor/tailwind-3.4.17.js),
+   que pone line-height 1.5 en <html>, títulos sin negrita, <p>/<h*> sin margen,
+   botones sin relleno y <svg> en bloque. Sin esto, «¿Cómo te fue con …?», los
+   títulos de las hojas o el hero del perfil saldrían SIN negrita (el diseño no la
+   declara: la da el navegador), y los textos más altos que en el diseño.
+   Peso (0,1,0) con :where(): le gana al preflight (0,0,1) y PIERDE contra cualquier
+   regla del diseño (≥ 1,1,1) y contra cualquier regla heredada #auxiliar-ui .ax…
+   (≥ 1,1,0). Además no toca nada dentro de piezas heredadas (clases ax*), que se
+   hicieron contando con el preflight, ni dentro de Leaflet. */
+#auxiliar-ui.rx-phone{ line-height:normal; }
+:where(#auxiliar-ui).rx-phone :where(h1):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"])){ font-size:2em; margin-block:.67em; font-weight:bold; }
+:where(#auxiliar-ui).rx-phone :where(h2):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"])){ font-size:1.5em; margin-block:.83em; font-weight:bold; }
+:where(#auxiliar-ui).rx-phone :where(h3):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"])){ font-size:1.17em; margin-block:1em; font-weight:bold; }
+:where(#auxiliar-ui).rx-phone :where(h4,h5,h6):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"])){ margin-block:1.33em; font-weight:bold; }
+:where(#auxiliar-ui).rx-phone :where(p):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"])){ margin-block:1em; }
+:where(#auxiliar-ui).rx-phone :where(b,strong):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"])){ font-weight:bold; }
+:where(#auxiliar-ui).rx-phone :where(ul,ol):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"])){ margin-block:1em; padding-inline-start:40px; }
+:where(#auxiliar-ui).rx-phone :where(ul):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"])){ list-style:disc; }
+:where(#auxiliar-ui).rx-phone :where(ol):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"])){ list-style:decimal; }
+:where(#auxiliar-ui).rx-phone :where(button,input,textarea,select):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"], .leaflet-container *)){ font-size:13.3333px; line-height:normal; }
+:where(#auxiliar-ui).rx-phone :where(button):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"], .leaflet-container *)){ padding:1px 6px; }
+:where(#auxiliar-ui).rx-phone :where(input):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"], .leaflet-container *)){ padding:1px 2px; }
+:where(#auxiliar-ui).rx-phone :where(textarea):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"])){ padding:2px; }
+:where(#auxiliar-ui).rx-phone :where(svg,img):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"], .leaflet-container *)){ display:inline; vertical-align:baseline; }
+/* La página del prototipo pinta los enlaces de naranja (su <style> de la página). */
+:where(#auxiliar-ui).rx-phone :where(a):where(:not([class^="ax"] *, [class*=" ax"] *, [class^="ax"], [class*=" ax"], .leaflet-container *)){ color:#F26522; }
+
+/* ── 3. Íconos del sprite (#rx-*, aux-rx-ui.js) ───────────────────────────────
+   El <svg class="rx-ic"> ya trae fill/stroke/linecap/linejoin como atributos, igual
+   que el diseño; su stroke-width efectivo era 1,5 porque tokens.css tenía
+   svg.lucide{stroke-width:1.5}, que no se porta. Sin peso (:where) para que
+   cualquier regla del diseño sobre un svg le gane, como allá. */
+:where(#auxiliar-ui.rx-phone svg.rx-ic){ stroke-width:1.5; }
+
+/* ── 4. Márgenes seguros (plan final §1.3.5) ──────────────────────────────────
+   El diseño reserva 44 px arriba para su barra de estado falsa y ~24-34 px abajo
+   para el indicador de inicio. Aquí esa reserva es la zona segura real.
+   Mismo peso que la regla portada, cargado después: gana. */
+#auxiliar-ui.rx-phone .rx-head{ padding-top:calc(var(--rx-top) + 8px); }
+#auxiliar-ui.rx-phone .rx-home-h,
+#auxiliar-ui.rx-phone .rx-book-h{ padding-top:calc(var(--rx-top) + 10px); }
+#auxiliar-ui.rx-phone .rx-body.me{ padding-top:calc(var(--rx-top) + 16px); }
+#auxiliar-ui.rx-phone .rx-trip-top,
+#auxiliar-ui.rx-phone .rx-sel-top,
+#auxiliar-ui.rx-phone .rx-push{ top:calc(var(--rx-top) + 8px); }
+#auxiliar-ui.rx-phone .rx-body.sel{ padding-top:calc(var(--rx-top) + 70px); }
+#auxiliar-ui.rx-phone .rx-wel{ padding-top:calc(var(--rx-top) + 12px); }
+#auxiliar-ui.rx-phone .rx-tabs{ height:calc(64px + var(--rx-bot)); padding-bottom:calc(var(--rx-bot) + 4px); }
+#auxiliar-ui.rx-phone .rx-tabview{ bottom:calc(64px + var(--rx-bot)); }
+#auxiliar-ui.rx-phone .rx-toast{ bottom:calc(84px + var(--rx-bot)); }
+#auxiliar-ui.rx-phone .rx-foot{ padding-bottom:calc(14px + var(--rx-bot)); }
+/* Extensión de la tabla (mismo criterio: valor del diseño − 44 arriba, − 16 abajo)
+   para lo que la tabla del plan no nombró y que también toca un borde del teléfono:
+   Traslado pedido, las hojas inferiores y el cobro (Pagos entró al alcance el 27-sep). */
+#auxiliar-ui.rx-phone .rx-booked{ padding-top:calc(var(--rx-top) + 46px); }
+#auxiliar-ui.rx-phone .rx-sheet{ padding-bottom:calc(16px + var(--rx-bot)); }
+#auxiliar-ui.rx-phone .cb2-hd{ padding-top:calc(var(--rx-top) + 12px); }
+#auxiliar-ui.rx-phone .cb2-sheet{ padding-bottom:calc(14px + var(--rx-bot)); }
+#auxiliar-ui.rx-phone .r-bottom{ padding-bottom:calc(12px + var(--rx-bot)); }
+
+/* ── 5. Foto del conductor dentro del avatar (AuxRxUI.av(…,{src})) ─────────── */
+/* Las iniciales quedan debajo: si la foto no carga, se ven ellas. */
+#auxiliar-ui.rx-phone .rx-av.has-img{ position:relative; overflow:hidden; }
+#auxiliar-ui.rx-phone .rx-av.has-img > img{ position:absolute; inset:0; width:100%; height:100%; border-radius:inherit; object-fit:cover; display:block; }
+
+/* ── 6. Marcadores de Leaflet del viaje en vivo (plan final §1.5) ─────────────
+   Son el pin, el aeropuerto y el carro del mapa del diseño (.rx-map .pin.a,
+   .pin.b, .car-*), con los mismos colores, trazos y halos (rxHalo 2 s / 1,6 s,
+   ease-out, infinito), puestos como L.divIcon (AuxRxUI.lfIcon). El carro solo se
+   monta cuando el servidor manda una posición real (D14). */
+#auxiliar-ui.rx-phone .rx-lf-pin,
+#auxiliar-ui.rx-phone .rx-lf-apt,
+#auxiliar-ui.rx-phone .rx-lf-car{ background:none; border:0; }
+#auxiliar-ui.rx-phone .rx-lf-pin svg,
+#auxiliar-ui.rx-phone .rx-lf-apt svg,
+#auxiliar-ui.rx-phone .rx-lf-car svg{ display:block; width:100%; height:100%; overflow:visible; }
+#auxiliar-ui.rx-phone .rx-lf-pin .pin-halo{ fill:var(--r-accent); opacity:.18; transform-box:fill-box; transform-origin:center; animation:rxHalo 2s ease-out infinite; }
+#auxiliar-ui.rx-phone .rx-lf-pin .pin{ fill:var(--r-accent); stroke:#fff; stroke-width:3; }
+#auxiliar-ui.rx-phone .rx-lf-apt .pin{ fill:var(--r-text); stroke:#fff; stroke-width:3; }
+#auxiliar-ui.rx-phone .rx-lf-car .car-halo{ fill:#18181B; opacity:.15; transform-box:fill-box; transform-origin:center; animation:rxHalo 1.6s ease-out infinite; }
+#auxiliar-ui.rx-phone .rx-lf-car .car-dot{ fill:#18181B; stroke:#fff; stroke-width:3; }
+#auxiliar-ui.rx-phone .rx-lf-car .car-in{ fill:var(--r-accent); }
+#auxiliar-ui.rx-phone[data-ax-night="on"] .rx-lf-car .car-dot{ fill:#EDE6DB; stroke:#0B0A09; }
+#auxiliar-ui.rx-phone[data-ax-night="on"] .rx-lf-pin .pin,
+#auxiliar-ui.rx-phone[data-ax-night="on"] .rx-lf-apt .pin{ stroke:#0B0A09; }
+@media (prefers-reduced-motion: reduce){
+  #auxiliar-ui.rx-phone .rx-lf-pin .pin-halo,
+  #auxiliar-ui.rx-phone .rx-lf-car .car-halo{ animation:none; }
+}
+
+/* ── 7. .rx-noanim y prefers-reduced-motion (GENERADO) ──────────────────────── */
+/* BEGIN noanim (generado) */
+/* Generado por _portar-css-rediseno-aux.mjs — no editar este tramo a mano.
+
+   CONTRATO (para AuxShell y las pantallas):
+   · .rx-noanim en un nodo (la capa, la pestaña, la hoja) = «esto es un repintado sin
+     cambio»: dentro de TODO su subárbol, y en el nodo mismo, no corren las animaciones
+     de una sola vez del diseño (62 selectores). Las infinitas siguen (punto «En vivo»,
+     typing, brillo del pase). La clase se deja puesta hasta que el nodo se reemplace:
+     quitarla haría arrancar las animaciones en ese momento.
+   · .rx-anim en un nodo = «este nodo SÍ anima aunque esté dentro de un .rx-noanim».
+     Es el re-montaje por key del diseño (hora grande del viaje, maletas, código de
+     encuentro, cifra del anillo, globo de la campana, paso del pedido…) y los
+     disparos por estado (.shake, .kick, .on de las estrellas, .ok del código).
+     AuxRxUI.remount(el) recrea el nodo y le pone .rx-anim.
+   · Las salidas (.out) corren siempre, con o sin .rx-noanim. */
+/* 1) .rx-noanim: se apagan las entradas. */
+#auxiliar-ui.rx-phone .rx-noanim .cb2-stage,
+#auxiliar-ui.rx-phone .cb2-stage.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-in,
+#auxiliar-ui.rx-phone .cb2-in.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-bell.kick svg,
+#auxiliar-ui.rx-phone .cb2-bell.kick.rx-noanim svg,
+#auxiliar-ui.rx-phone .cb2-bell.kick svg.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-bell span,
+#auxiliar-ui.rx-phone .cb2-bell.rx-noanim span,
+#auxiliar-ui.rx-phone .cb2-bell span.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-status,
+#auxiliar-ui.rx-phone .cb2-status.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-act.shake,
+#auxiliar-ui.rx-phone .cb2-act.shake.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-tabs button.on .cb2-tab-ic,
+#auxiliar-ui.rx-phone .cb2-tabs.rx-noanim button.on .cb2-tab-ic,
+#auxiliar-ui.rx-phone .cb2-tabs button.on.rx-noanim .cb2-tab-ic,
+#auxiliar-ui.rx-phone .cb2-tabs button.on .cb2-tab-ic.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-stack,
+#auxiliar-ui.rx-phone .cb2-stack.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-ring-c b,
+#auxiliar-ui.rx-phone .cb2-ring-c.rx-noanim b,
+#auxiliar-ui.rx-phone .cb2-ring-c b.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-acc,
+#auxiliar-ui.rx-phone .cb2-acc.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-toast,
+#auxiliar-ui.rx-phone .cb2-toast.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-cam-shot,
+#auxiliar-ui.rx-phone .cb2-cam-shot.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-flash,
+#auxiliar-ui.rx-phone .cb2-flash.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-done-card,
+#auxiliar-ui.rx-phone .cb2-done-card.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-check circle,
+#auxiliar-ui.rx-phone .cb2-check.rx-noanim circle,
+#auxiliar-ui.rx-phone .cb2-check circle.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-check polyline,
+#auxiliar-ui.rx-phone .cb2-check.rx-noanim polyline,
+#auxiliar-ui.rx-phone .cb2-check polyline.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-party,
+#auxiliar-ui.rx-phone .cb2-party.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-party-c,
+#auxiliar-ui.rx-phone .cb2-party-c.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-confetti i,
+#auxiliar-ui.rx-phone .cb2-confetti.rx-noanim i,
+#auxiliar-ui.rx-phone .cb2-confetti i.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-sheet-bg,
+#auxiliar-ui.rx-phone .cb2-sheet-bg.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-sheet,
+#auxiliar-ui.rx-phone .cb2-sheet.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-layer,
+#auxiliar-ui.rx-phone .rx-layer.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-layer.modal,
+#auxiliar-ui.rx-phone .rx-layer.modal.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-tabview,
+#auxiliar-ui.rx-phone .rx-tabview.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-in,
+#auxiliar-ui.rx-phone .rx-in.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-step.fwd,
+#auxiliar-ui.rx-phone .rx-step.fwd.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-step.bwd,
+#auxiliar-ui.rx-phone .rx-step.bwd.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-tabs>button.on .rx-tab-ic,
+#auxiliar-ui.rx-phone .rx-tabs.rx-noanim>button.on .rx-tab-ic,
+#auxiliar-ui.rx-phone .rx-tabs>button.on.rx-noanim .rx-tab-ic,
+#auxiliar-ui.rx-phone .rx-tabs>button.on .rx-tab-ic.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-check circle,
+#auxiliar-ui.rx-phone .rx-check.rx-noanim circle,
+#auxiliar-ui.rx-phone .rx-check circle.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-check polyline,
+#auxiliar-ui.rx-phone .rx-check.rx-noanim polyline,
+#auxiliar-ui.rx-phone .rx-check polyline.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-check,
+#auxiliar-ui.rx-phone .rx-check.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-confetti i,
+#auxiliar-ui.rx-phone .rx-confetti.rx-noanim i,
+#auxiliar-ui.rx-phone .rx-confetti i.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-sheet-bg,
+#auxiliar-ui.rx-phone .rx-sheet-bg.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-sheet,
+#auxiliar-ui.rx-phone .rx-sheet.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-toast,
+#auxiliar-ui.rx-phone .rx-toast.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-push,
+#auxiliar-ui.rx-phone .rx-push.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-ob,
+#auxiliar-ui.rx-phone .rx-ob.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-splash-logo,
+#auxiliar-ui.rx-phone .rx-splash-logo.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-splash-line i,
+#auxiliar-ui.rx-phone .rx-splash-line.rx-noanim i,
+#auxiliar-ui.rx-phone .rx-splash-line i.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-splash-t,
+#auxiliar-ui.rx-phone .rx-splash-t.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-wel-art,
+#auxiliar-ui.rx-phone .rx-wel-art.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-bub.pop,
+#auxiliar-ui.rx-phone .rx-bub.pop.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-wel-tx,
+#auxiliar-ui.rx-phone .rx-wel-tx.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-otp span.f,
+#auxiliar-ui.rx-phone .rx-otp.rx-noanim span.f,
+#auxiliar-ui.rx-phone .rx-otp span.f.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-otp.ok span,
+#auxiliar-ui.rx-phone .rx-otp.ok.rx-noanim span,
+#auxiliar-ui.rx-phone .rx-otp.ok span.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-bell-big,
+#auxiliar-ui.rx-phone .rx-bell-big.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-bell-big svg,
+#auxiliar-ui.rx-phone .rx-bell-big.rx-noanim svg,
+#auxiliar-ui.rx-phone .rx-bell-big svg.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-demo-push,
+#auxiliar-ui.rx-phone .rx-demo-push.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-bell span,
+#auxiliar-ui.rx-phone .rx-bell.rx-noanim span,
+#auxiliar-ui.rx-phone .rx-bell span.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-strip,
+#auxiliar-ui.rx-phone .rx-strip.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-bono-dots.lg i,
+#auxiliar-ui.rx-phone .rx-bono-dots.lg.rx-noanim i,
+#auxiliar-ui.rx-phone .rx-bono-dots.lg i.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-calc-t,
+#auxiliar-ui.rx-phone .rx-calc-t.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-step-ctl b,
+#auxiliar-ui.rx-phone .rx-step-ctl.rx-noanim b,
+#auxiliar-ui.rx-phone .rx-step-ctl b.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-booked-pass,
+#auxiliar-ui.rx-phone .rx-booked-pass.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-trip-sheet,
+#auxiliar-ui.rx-phone .rx-trip-sheet.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-trip-big,
+#auxiliar-ui.rx-phone .rx-trip-big.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-meet-c b,
+#auxiliar-ui.rx-phone .rx-meet-c.rx-noanim b,
+#auxiliar-ui.rx-phone .rx-meet-c b.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-stars button.on,
+#auxiliar-ui.rx-phone .rx-stars.rx-noanim button.on,
+#auxiliar-ui.rx-phone .rx-stars button.on.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-rate-l,
+#auxiliar-ui.rx-phone .rx-rate-l.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-pts-bar i,
+#auxiliar-ui.rx-phone .rx-pts-bar.rx-noanim i,
+#auxiliar-ui.rx-phone .rx-pts-bar i.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-over,
+#auxiliar-ui.rx-phone .rx-over.rx-noanim{animation:none}
+#auxiliar-ui.rx-phone .rx-noanim .rx-sel-hero,
+#auxiliar-ui.rx-phone .rx-sel-hero.rx-noanim{animation:none}
+/* 2) .rx-anim: vuelven las entradas del diseño, copiadas tal cual. Mismo peso que (1),
+      escritas después: ganan. */
+#auxiliar-ui.rx-phone .rx-anim .cb2-stage,
+#auxiliar-ui.rx-phone .cb2-stage.rx-anim{animation:cb2Fade .28s ease}
+#auxiliar-ui.rx-phone .rx-anim .cb2-in,
+#auxiliar-ui.rx-phone .cb2-in.rx-anim{animation:cb2In .42s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--d,0) * 55ms)}
+#auxiliar-ui.rx-phone .rx-anim .cb2-bell.kick svg,
+#auxiliar-ui.rx-phone .cb2-bell.kick.rx-anim svg,
+#auxiliar-ui.rx-phone .cb2-bell.kick svg.rx-anim{animation:cb2Ring .6s ease}
+#auxiliar-ui.rx-phone .rx-anim .cb2-bell span,
+#auxiliar-ui.rx-phone .cb2-bell.rx-anim span,
+#auxiliar-ui.rx-phone .cb2-bell span.rx-anim{animation:cb2Pop .35s cubic-bezier(.3,1.6,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .cb2-status,
+#auxiliar-ui.rx-phone .cb2-status.rx-anim{transition:transform .15s;animation:cb2In .4s ease both}
+#auxiliar-ui.rx-phone .rx-anim .cb2-act.shake,
+#auxiliar-ui.rx-phone .cb2-act.shake.rx-anim{animation:cb2Shake .42s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-tabs button.on .cb2-tab-ic,
+#auxiliar-ui.rx-phone .cb2-tabs.rx-anim button.on .cb2-tab-ic,
+#auxiliar-ui.rx-phone .cb2-tabs button.on.rx-anim .cb2-tab-ic,
+#auxiliar-ui.rx-phone .cb2-tabs button.on .cb2-tab-ic.rx-anim{animation:cb2Pop .3s cubic-bezier(.3,1.6,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .cb2-stack,
+#auxiliar-ui.rx-phone .cb2-stack.rx-anim{animation:cb2SlideIn .3s cubic-bezier(.2,.8,.2,1)}
+#auxiliar-ui.rx-phone .rx-anim .cb2-ring-c b,
+#auxiliar-ui.rx-phone .cb2-ring-c.rx-anim b,
+#auxiliar-ui.rx-phone .cb2-ring-c b.rx-anim{animation:cb2Pop .4s cubic-bezier(.3,1.6,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .cb2-acc,
+#auxiliar-ui.rx-phone .cb2-acc.rx-anim{animation:cb2In .3s ease}
+#auxiliar-ui.rx-phone .rx-anim .cb2-toast,
+#auxiliar-ui.rx-phone .cb2-toast.rx-anim{animation:cb2Toast 1.5s ease forwards}
+#auxiliar-ui.rx-phone .rx-anim .cb2-cam-shot,
+#auxiliar-ui.rx-phone .cb2-cam-shot.rx-anim{animation:cb2Pop .35s ease}
+#auxiliar-ui.rx-phone .rx-anim .cb2-flash,
+#auxiliar-ui.rx-phone .cb2-flash.rx-anim{animation:cb2Flash .26s ease forwards}
+#auxiliar-ui.rx-phone .rx-anim .cb2-done-card,
+#auxiliar-ui.rx-phone .cb2-done-card.rx-anim{animation:cb2In .4s .5s both}
+#auxiliar-ui.rx-phone .rx-anim .cb2-check circle,
+#auxiliar-ui.rx-phone .cb2-check.rx-anim circle,
+#auxiliar-ui.rx-phone .cb2-check circle.rx-anim{animation:cb2Draw .6s ease forwards}
+#auxiliar-ui.rx-phone .rx-anim .cb2-check polyline,
+#auxiliar-ui.rx-phone .cb2-check.rx-anim polyline,
+#auxiliar-ui.rx-phone .cb2-check polyline.rx-anim{animation:cb2Draw .35s .5s ease forwards}
+#auxiliar-ui.rx-phone .rx-anim .cb2-party,
+#auxiliar-ui.rx-phone .cb2-party.rx-anim{animation:cb2Fade .3s ease}
+#auxiliar-ui.rx-phone .rx-anim .cb2-party-c,
+#auxiliar-ui.rx-phone .cb2-party-c.rx-anim{animation:cb2In .5s ease both}
+#auxiliar-ui.rx-phone .rx-anim .cb2-confetti i,
+#auxiliar-ui.rx-phone .cb2-confetti.rx-anim i,
+#auxiliar-ui.rx-phone .cb2-confetti i.rx-anim{animation:cb2Fall 2.2s cubic-bezier(.25,.6,.4,1) forwards}
+#auxiliar-ui.rx-phone .rx-anim .cb2-sheet-bg,
+#auxiliar-ui.rx-phone .cb2-sheet-bg.rx-anim{animation:cb2Fade .2s ease}
+#auxiliar-ui.rx-phone .rx-anim .cb2-sheet,
+#auxiliar-ui.rx-phone .cb2-sheet.rx-anim{animation:cbUp .3s cubic-bezier(.2,.8,.2,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-layer,
+#auxiliar-ui.rx-phone .rx-layer.rx-anim{animation:rxIn .34s cubic-bezier(.2,.8,.2,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-layer.modal,
+#auxiliar-ui.rx-phone .rx-layer.modal.rx-anim{animation:rxUp .38s cubic-bezier(.2,.8,.2,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-tabview,
+#auxiliar-ui.rx-phone .rx-tabview.rx-anim{animation:rxFade .3s ease}
+#auxiliar-ui.rx-phone .rx-anim .rx-in,
+#auxiliar-ui.rx-phone .rx-in.rx-anim{animation:rxRise .5s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--d,0) * 60ms)}
+#auxiliar-ui.rx-phone .rx-anim .rx-step.fwd,
+#auxiliar-ui.rx-phone .rx-step.fwd.rx-anim{animation:rxStepF .36s cubic-bezier(.2,.8,.2,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-step.bwd,
+#auxiliar-ui.rx-phone .rx-step.bwd.rx-anim{animation:rxStepB .36s cubic-bezier(.2,.8,.2,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-tabs>button.on .rx-tab-ic,
+#auxiliar-ui.rx-phone .rx-tabs.rx-anim>button.on .rx-tab-ic,
+#auxiliar-ui.rx-phone .rx-tabs>button.on.rx-anim .rx-tab-ic,
+#auxiliar-ui.rx-phone .rx-tabs>button.on .rx-tab-ic.rx-anim{animation:rxPop .35s cubic-bezier(.3,1.6,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-check circle,
+#auxiliar-ui.rx-phone .rx-check.rx-anim circle,
+#auxiliar-ui.rx-phone .rx-check circle.rx-anim{animation:rxDraw .6s ease forwards}
+#auxiliar-ui.rx-phone .rx-anim .rx-check polyline,
+#auxiliar-ui.rx-phone .rx-check.rx-anim polyline,
+#auxiliar-ui.rx-phone .rx-check polyline.rx-anim{animation:rxDraw .35s .5s ease forwards}
+#auxiliar-ui.rx-phone .rx-anim .rx-check,
+#auxiliar-ui.rx-phone .rx-check.rx-anim{animation:rxPop .5s cubic-bezier(.3,1.5,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-confetti i,
+#auxiliar-ui.rx-phone .rx-confetti.rx-anim i,
+#auxiliar-ui.rx-phone .rx-confetti i.rx-anim{animation:rxFall 2.4s cubic-bezier(.25,.6,.4,1) forwards}
+#auxiliar-ui.rx-phone .rx-anim .rx-sheet-bg,
+#auxiliar-ui.rx-phone .rx-sheet-bg.rx-anim{animation:rxFadeO .22s ease}
+#auxiliar-ui.rx-phone .rx-anim .rx-sheet,
+#auxiliar-ui.rx-phone .rx-sheet.rx-anim{animation:rxUp .34s cubic-bezier(.2,.8,.2,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-toast,
+#auxiliar-ui.rx-phone .rx-toast.rx-anim{animation:rxToast 1.8s ease forwards}
+#auxiliar-ui.rx-phone .rx-anim .rx-push,
+#auxiliar-ui.rx-phone .rx-push.rx-anim{animation:rxDrop .45s cubic-bezier(.2,1.2,.3,1),rxLift .35s 3.6s ease forwards}
+#auxiliar-ui.rx-phone .rx-anim .rx-ob,
+#auxiliar-ui.rx-phone .rx-ob.rx-anim{animation:rxFade .35s ease}
+#auxiliar-ui.rx-phone .rx-anim .rx-splash-logo,
+#auxiliar-ui.rx-phone .rx-splash-logo.rx-anim{animation:rxRise .7s .1s cubic-bezier(.2,.8,.2,1) both}
+#auxiliar-ui.rx-phone .rx-anim .rx-splash-line i,
+#auxiliar-ui.rx-phone .rx-splash-line.rx-anim i,
+#auxiliar-ui.rx-phone .rx-splash-line i.rx-anim{animation:rxLoad 1.7s .3s cubic-bezier(.6,0,.3,1) forwards}
+#auxiliar-ui.rx-phone .rx-anim .rx-splash-t,
+#auxiliar-ui.rx-phone .rx-splash-t.rx-anim{animation:rxRise .6s .6s both}
+#auxiliar-ui.rx-phone .rx-anim .rx-wel-art,
+#auxiliar-ui.rx-phone .rx-wel-art.rx-anim{animation:rxFade .5s ease}
+#auxiliar-ui.rx-phone .rx-anim .rx-bub.pop,
+#auxiliar-ui.rx-phone .rx-bub.pop.rx-anim{animation:rxBub .35s cubic-bezier(.3,1.4,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-wel-tx,
+#auxiliar-ui.rx-phone .rx-wel-tx.rx-anim{animation:rxRise .5s ease both}
+#auxiliar-ui.rx-phone .rx-anim .rx-otp span.f,
+#auxiliar-ui.rx-phone .rx-otp.rx-anim span.f,
+#auxiliar-ui.rx-phone .rx-otp span.f.rx-anim{animation:rxPop .25s cubic-bezier(.3,1.6,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-otp.ok span,
+#auxiliar-ui.rx-phone .rx-otp.ok.rx-anim span,
+#auxiliar-ui.rx-phone .rx-otp.ok span.rx-anim{animation:rxJump .4s calc(var(--k) * 50ms) ease}
+#auxiliar-ui.rx-phone .rx-anim .rx-bell-big,
+#auxiliar-ui.rx-phone .rx-bell-big.rx-anim{animation:rxPop .6s cubic-bezier(.3,1.4,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-bell-big svg,
+#auxiliar-ui.rx-phone .rx-bell-big.rx-anim svg,
+#auxiliar-ui.rx-phone .rx-bell-big svg.rx-anim{animation:cb2Ring 1.2s .5s ease}
+#auxiliar-ui.rx-phone .rx-anim .rx-demo-push,
+#auxiliar-ui.rx-phone .rx-demo-push.rx-anim{animation:rxRise .5s .6s both}
+#auxiliar-ui.rx-phone .rx-anim .rx-bell span,
+#auxiliar-ui.rx-phone .rx-bell.rx-anim span,
+#auxiliar-ui.rx-phone .rx-bell span.rx-anim{animation:rxPop .4s cubic-bezier(.3,1.6,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-strip,
+#auxiliar-ui.rx-phone .rx-strip.rx-anim{animation:rxRise .45s ease both}
+#auxiliar-ui.rx-phone .rx-anim .rx-bono-dots.lg i,
+#auxiliar-ui.rx-phone .rx-bono-dots.lg.rx-anim i,
+#auxiliar-ui.rx-phone .rx-bono-dots.lg i.rx-anim{animation:rxGrow .6s calc(var(--k) * 120ms) both cubic-bezier(.2,.8,.2,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-calc-t,
+#auxiliar-ui.rx-phone .rx-calc-t.rx-anim{animation:rxPop .45s cubic-bezier(.3,1.5,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-step-ctl b,
+#auxiliar-ui.rx-phone .rx-step-ctl.rx-anim b,
+#auxiliar-ui.rx-phone .rx-step-ctl b.rx-anim{animation:rxPop .25s ease}
+#auxiliar-ui.rx-phone .rx-anim .rx-booked-pass,
+#auxiliar-ui.rx-phone .rx-booked-pass.rx-anim{animation:rxRise .6s .5s both}
+#auxiliar-ui.rx-phone .rx-anim .rx-trip-sheet,
+#auxiliar-ui.rx-phone .rx-trip-sheet.rx-anim{animation:rxUp .5s cubic-bezier(.2,.8,.2,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-trip-big,
+#auxiliar-ui.rx-phone .rx-trip-big.rx-anim{animation:rxRise .4s ease}
+#auxiliar-ui.rx-phone .rx-anim .rx-meet-c b,
+#auxiliar-ui.rx-phone .rx-meet-c.rx-anim b,
+#auxiliar-ui.rx-phone .rx-meet-c b.rx-anim{animation:rxFlip .5s calc(var(--k) * 90ms) both cubic-bezier(.3,1.4,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-stars button.on,
+#auxiliar-ui.rx-phone .rx-stars.rx-anim button.on,
+#auxiliar-ui.rx-phone .rx-stars button.on.rx-anim{animation:rxStar .4s calc(var(--k) * 60ms) cubic-bezier(.3,1.8,.5,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-rate-l,
+#auxiliar-ui.rx-phone .rx-rate-l.rx-anim{animation:rxRise .3s ease}
+#auxiliar-ui.rx-phone .rx-anim .rx-pts-bar i,
+#auxiliar-ui.rx-phone .rx-pts-bar.rx-anim i,
+#auxiliar-ui.rx-phone .rx-pts-bar i.rx-anim{animation:rxGrow 1s .3s both cubic-bezier(.2,.8,.2,1)}
+#auxiliar-ui.rx-phone .rx-anim .rx-over,
+#auxiliar-ui.rx-phone .rx-over.rx-anim{animation:rxFadeO .3s ease}
+#auxiliar-ui.rx-phone .rx-anim .rx-sel-hero,
+#auxiliar-ui.rx-phone .rx-sel-hero.rx-anim{animation:rxRise .7s ease both}
+/* 3) Las salidas (.out) vuelven a correr aunque la capa se haya repintado con .rx-noanim.
+      Mismas declaraciones que el diseño, copiadas tal cual. */
+#auxiliar-ui.rx-phone .rx-noanim .cb2-stack.out,
+#auxiliar-ui.rx-phone .cb2-stack.out.rx-noanim{animation:cb2SlideOut .24s ease forwards}
+#auxiliar-ui.rx-phone .rx-noanim .rx-layer.out,
+#auxiliar-ui.rx-phone .rx-layer.out.rx-noanim{animation:rxOut .27s ease forwards}
+#auxiliar-ui.rx-phone .rx-noanim .rx-layer.modal.out,
+#auxiliar-ui.rx-phone .rx-layer.modal.out.rx-noanim{animation:rxDown .27s ease forwards}
+#auxiliar-ui.rx-phone .rx-noanim .rx-sheet-bg.out,
+#auxiliar-ui.rx-phone .rx-sheet-bg.out.rx-noanim{animation:rxFadeOut .22s ease forwards}
+#auxiliar-ui.rx-phone .rx-noanim .rx-sheet-bg.out .rx-sheet,
+#auxiliar-ui.rx-phone .rx-sheet-bg.out.rx-noanim .rx-sheet,
+#auxiliar-ui.rx-phone .rx-sheet-bg.out .rx-sheet.rx-noanim{animation:rxDown .22s ease forwards}
+/* 4) prefers-reduced-motion (única adición permitida por ANIMACIONES): las entradas y
+      salidas saltan a su estado final (1 ms), los toasts no se animan (terminarían
+      invisibles), las infinitas decorativas se apagan y quedan los indicadores
+      funcionales (rxSpin, cb2Spin, rxPulseR, cb2Pulse, cb2PulseB, rxBlink). Sin esa preferencia del sistema no
+      cambia nada. */
+@media (prefers-reduced-motion: reduce){
+#auxiliar-ui.rx-phone .cb2-stage{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-in{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-bell.kick svg{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-bell span{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-status{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-act.shake{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-tabs button.on .cb2-tab-ic{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-stack{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-stack.out{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-ring-c b{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-tl-now span{animation:none}
+#auxiliar-ui.rx-phone .cb2-acc{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-toast{animation:none}
+#auxiliar-ui.rx-phone .cb2-cam .c{animation:none}
+#auxiliar-ui.rx-phone .cb2-cam-shot{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-flash{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-done-card{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-check circle{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-check polyline{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-party{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-party-c{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-confetti i{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-sheet-bg{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .cb2-sheet{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-layer{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-layer.modal{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-layer.out{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-layer.modal.out{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-tabview{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-in{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-step.fwd{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-step.bwd{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-tabs>button.on .rx-tab-ic{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-check circle{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-check polyline{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-check{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-confetti i{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-map .route.flow{animation:none}
+#auxiliar-ui.rx-phone .rx-map .pin-halo{animation:none}
+#auxiliar-ui.rx-phone .rx-map .car-halo{animation:none}
+#auxiliar-ui.rx-phone .rx-sheet-bg{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-sheet-bg.out{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-sheet{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-sheet-bg.out .rx-sheet{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-toast{animation:none}
+#auxiliar-ui.rx-phone .rx-push{animation-duration:1ms}
+#auxiliar-ui.rx-phone .rx-ob{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-splash-logo{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-splash-line i{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-splash-t{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-wel-art{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .fl1{animation:none}
+#auxiliar-ui.rx-phone .fl2{animation:none}
+#auxiliar-ui.rx-phone .fl3{animation:none}
+#auxiliar-ui.rx-phone .rx-bub.pop{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-bub.typing i{animation:none}
+#auxiliar-ui.rx-phone .rx-wel-tx{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-otp span.f{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-otp.ok span{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-bell-big{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-bell-big svg{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-bell-big i{animation:none}
+#auxiliar-ui.rx-phone .rx-demo-push{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-bell span{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-strip{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-pass::after{animation:none}
+#auxiliar-ui.rx-phone .rx-pass-plane{animation:none}
+#auxiliar-ui.rx-phone .rx-empty-ic{animation:none}
+#auxiliar-ui.rx-phone .rx-pocket-ic i{animation:none}
+#auxiliar-ui.rx-phone .rx-bono-dots.lg i{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-calc-t{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-step-ctl b{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-slide-l{animation:none}
+#auxiliar-ui.rx-phone .rx-booked-pass{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-trip-sheet{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-trip-big{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-tl-s.now i::after{animation:none}
+#auxiliar-ui.rx-phone .rx-meet-c b{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-stars button.on{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-rate-l{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-pts-bar i{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-over{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-sel-hero{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-stage,#auxiliar-ui.rx-phone .cb2-stage.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-in,#auxiliar-ui.rx-phone .cb2-in.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-bell.kick svg,#auxiliar-ui.rx-phone .cb2-bell.kick.rx-anim svg,#auxiliar-ui.rx-phone .cb2-bell.kick svg.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-bell span,#auxiliar-ui.rx-phone .cb2-bell.rx-anim span,#auxiliar-ui.rx-phone .cb2-bell span.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-status,#auxiliar-ui.rx-phone .cb2-status.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-act.shake,#auxiliar-ui.rx-phone .cb2-act.shake.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-tabs button.on .cb2-tab-ic,#auxiliar-ui.rx-phone .cb2-tabs.rx-anim button.on .cb2-tab-ic,#auxiliar-ui.rx-phone .cb2-tabs button.on.rx-anim .cb2-tab-ic,#auxiliar-ui.rx-phone .cb2-tabs button.on .cb2-tab-ic.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-stack,#auxiliar-ui.rx-phone .cb2-stack.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-ring-c b,#auxiliar-ui.rx-phone .cb2-ring-c.rx-anim b,#auxiliar-ui.rx-phone .cb2-ring-c b.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-acc,#auxiliar-ui.rx-phone .cb2-acc.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-toast,#auxiliar-ui.rx-phone .cb2-toast.rx-anim{animation:none}
+#auxiliar-ui.rx-phone .rx-anim .cb2-cam-shot,#auxiliar-ui.rx-phone .cb2-cam-shot.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-flash,#auxiliar-ui.rx-phone .cb2-flash.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-done-card,#auxiliar-ui.rx-phone .cb2-done-card.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-check circle,#auxiliar-ui.rx-phone .cb2-check.rx-anim circle,#auxiliar-ui.rx-phone .cb2-check circle.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-check polyline,#auxiliar-ui.rx-phone .cb2-check.rx-anim polyline,#auxiliar-ui.rx-phone .cb2-check polyline.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-party,#auxiliar-ui.rx-phone .cb2-party.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-party-c,#auxiliar-ui.rx-phone .cb2-party-c.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-confetti i,#auxiliar-ui.rx-phone .cb2-confetti.rx-anim i,#auxiliar-ui.rx-phone .cb2-confetti i.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-sheet-bg,#auxiliar-ui.rx-phone .cb2-sheet-bg.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .cb2-sheet,#auxiliar-ui.rx-phone .cb2-sheet.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-layer,#auxiliar-ui.rx-phone .rx-layer.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-layer.modal,#auxiliar-ui.rx-phone .rx-layer.modal.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-tabview,#auxiliar-ui.rx-phone .rx-tabview.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-in,#auxiliar-ui.rx-phone .rx-in.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-step.fwd,#auxiliar-ui.rx-phone .rx-step.fwd.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-step.bwd,#auxiliar-ui.rx-phone .rx-step.bwd.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-tabs>button.on .rx-tab-ic,#auxiliar-ui.rx-phone .rx-tabs.rx-anim>button.on .rx-tab-ic,#auxiliar-ui.rx-phone .rx-tabs>button.on.rx-anim .rx-tab-ic,#auxiliar-ui.rx-phone .rx-tabs>button.on .rx-tab-ic.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-check circle,#auxiliar-ui.rx-phone .rx-check.rx-anim circle,#auxiliar-ui.rx-phone .rx-check circle.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-check polyline,#auxiliar-ui.rx-phone .rx-check.rx-anim polyline,#auxiliar-ui.rx-phone .rx-check polyline.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-check,#auxiliar-ui.rx-phone .rx-check.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-confetti i,#auxiliar-ui.rx-phone .rx-confetti.rx-anim i,#auxiliar-ui.rx-phone .rx-confetti i.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-sheet-bg,#auxiliar-ui.rx-phone .rx-sheet-bg.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-sheet,#auxiliar-ui.rx-phone .rx-sheet.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-toast,#auxiliar-ui.rx-phone .rx-toast.rx-anim{animation:none}
+#auxiliar-ui.rx-phone .rx-anim .rx-push,#auxiliar-ui.rx-phone .rx-push.rx-anim{animation-duration:1ms}
+#auxiliar-ui.rx-phone .rx-anim .rx-ob,#auxiliar-ui.rx-phone .rx-ob.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-splash-logo,#auxiliar-ui.rx-phone .rx-splash-logo.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-splash-line i,#auxiliar-ui.rx-phone .rx-splash-line.rx-anim i,#auxiliar-ui.rx-phone .rx-splash-line i.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-splash-t,#auxiliar-ui.rx-phone .rx-splash-t.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-wel-art,#auxiliar-ui.rx-phone .rx-wel-art.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-bub.pop,#auxiliar-ui.rx-phone .rx-bub.pop.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-wel-tx,#auxiliar-ui.rx-phone .rx-wel-tx.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-otp span.f,#auxiliar-ui.rx-phone .rx-otp.rx-anim span.f,#auxiliar-ui.rx-phone .rx-otp span.f.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-otp.ok span,#auxiliar-ui.rx-phone .rx-otp.ok.rx-anim span,#auxiliar-ui.rx-phone .rx-otp.ok span.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-bell-big,#auxiliar-ui.rx-phone .rx-bell-big.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-bell-big svg,#auxiliar-ui.rx-phone .rx-bell-big.rx-anim svg,#auxiliar-ui.rx-phone .rx-bell-big svg.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-demo-push,#auxiliar-ui.rx-phone .rx-demo-push.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-bell span,#auxiliar-ui.rx-phone .rx-bell.rx-anim span,#auxiliar-ui.rx-phone .rx-bell span.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-strip,#auxiliar-ui.rx-phone .rx-strip.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-bono-dots.lg i,#auxiliar-ui.rx-phone .rx-bono-dots.lg.rx-anim i,#auxiliar-ui.rx-phone .rx-bono-dots.lg i.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-calc-t,#auxiliar-ui.rx-phone .rx-calc-t.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-step-ctl b,#auxiliar-ui.rx-phone .rx-step-ctl.rx-anim b,#auxiliar-ui.rx-phone .rx-step-ctl b.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-booked-pass,#auxiliar-ui.rx-phone .rx-booked-pass.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-trip-sheet,#auxiliar-ui.rx-phone .rx-trip-sheet.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-trip-big,#auxiliar-ui.rx-phone .rx-trip-big.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-meet-c b,#auxiliar-ui.rx-phone .rx-meet-c.rx-anim b,#auxiliar-ui.rx-phone .rx-meet-c b.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-stars button.on,#auxiliar-ui.rx-phone .rx-stars.rx-anim button.on,#auxiliar-ui.rx-phone .rx-stars button.on.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-rate-l,#auxiliar-ui.rx-phone .rx-rate-l.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-pts-bar i,#auxiliar-ui.rx-phone .rx-pts-bar.rx-anim i,#auxiliar-ui.rx-phone .rx-pts-bar i.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-over,#auxiliar-ui.rx-phone .rx-over.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-anim .rx-sel-hero,#auxiliar-ui.rx-phone .rx-sel-hero.rx-anim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-noanim .cb2-stack.out,#auxiliar-ui.rx-phone .cb2-stack.out.rx-noanim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-noanim .rx-layer.out,#auxiliar-ui.rx-phone .rx-layer.out.rx-noanim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-noanim .rx-layer.modal.out,#auxiliar-ui.rx-phone .rx-layer.modal.out.rx-noanim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-noanim .rx-sheet-bg.out,#auxiliar-ui.rx-phone .rx-sheet-bg.out.rx-noanim{animation-duration:1ms;animation-delay:0s}
+#auxiliar-ui.rx-phone .rx-noanim .rx-sheet-bg.out .rx-sheet,#auxiliar-ui.rx-phone .rx-sheet-bg.out.rx-noanim .rx-sheet,#auxiliar-ui.rx-phone .rx-sheet-bg.out .rx-sheet.rx-noanim{animation-duration:1ms;animation-delay:0s}
+}
+/* END noanim (generado) */

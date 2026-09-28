@@ -76,6 +76,27 @@
   <link rel="stylesheet" href="rc-conductor.css" />
   <!-- Rol auxiliar: capa visual de la entrega 2026-08-17 (incluye el modo nocturno) -->
   <link rel="stylesheet" href="rc-auxiliar.css" />
+  <!-- Rediseño del auxiliar (entrega del 27-sep-2026). TODO acotado a
+       #auxiliar-ui.rx-phone (la clase la pone AuxShell solo con la bandera
+       encendida): cargado y apagado no cambia nada. Orden del plan final §5.
+       rx-auxiliar.css es GENERADO por rendio-backend/scripts/_portar-css-rediseno-aux.mjs. -->
+  <link rel="stylesheet" href="rx-auxiliar.css" />
+  <link rel="stylesheet" href="rx-aux-app.css" />
+  <link rel="stylesheet" href="rx-aux-shell.css" />
+  <link rel="stylesheet" href="rx-aux-inicio.css" />
+  <link rel="stylesheet" href="rx-aux-viaje.css" />
+  <link rel="stylesheet" href="rx-aux-pedir.css" />
+  <link rel="stylesheet" href="rx-aux-select.css" />
+  <link rel="stylesheet" href="rx-aux-perfil.css" />
+  <link rel="stylesheet" href="rx-aux-pagos.css" />
+  <link rel="stylesheet" href="rx-aux-puntos.css" />
+  <link rel="stylesheet" href="rx-aux-coord.css" />
+  <link rel="stylesheet" href="rx-aux-onboard.css" />
+  <link rel="stylesheet" href="login-rx.css" />
+  <!-- Admin del rediseño: Coordinación, Cuentas de cobro y Rendio Points -->
+  <link rel="stylesheet" href="admin-coordinacion.css" />
+  <link rel="stylesheet" href="admin-cobro.css" />
+  <link rel="stylesheet" href="admin-puntos.css" />
 </head>
 <body class="bg-[#F8FAFC] text-slate-900 min-h-screen font-sans antialiased">
 
@@ -1159,6 +1180,14 @@
         </div>
       </section>
 
+      <!-- ADMIN (rediseño del auxiliar, 27-sep-2026): Coordinación, Cuentas de cobro
+           y Rendio Points. Los pintan admin-coordinacion.js, admin-cobro.js y
+           admin-puntos.js (core.setTab → renderCoordinacion/renderCobro/renderPuntos).
+           Mientras esos módulos sean stub, la consola no muestra sus entradas. -->
+      <section data-panel="coordinacion" class="hidden"><div id="coordinacion-ui" data-theme="light"></div></section>
+      <section data-panel="cobro" class="hidden"><div id="cobro-ui" data-theme="light"></div></section>
+      <section data-panel="puntos" class="hidden"><div id="puntos-ui" data-theme="light"></div></section>
+
       <!-- ===================== RUTAS: CONSOLA (hub por capas) ===================== -->
       <section data-panel="consola" class="hidden">
         <div id="consola-ui" data-theme="light">
@@ -1409,6 +1438,10 @@
   <script src="supabase-client.js"></script>
   <script src="scheduler.js"></script>
   <script src="api.js"></script>
+  <!-- APIs del rediseño del auxiliar: después de api.js (usan window.sb) -->
+  <script src="api-aux.js"></script>
+  <script src="api-cobro.js"></script>
+  <script src="api-puntos.js"></script>
   <script src="shift-flow.js"></script>
   <!-- app.js fue dividido en módulos por feature (split mecánico 2026-07-10).
        Comparten scope global; el ORDEN de carga importa: core.js primero
@@ -1440,13 +1473,32 @@
   <script src="admin-operacion.js"></script>
   <script src="admin-eventualidades.js"></script>
   <script src="admin-chat.js"></script>
+  <script src="admin-coordinacion.js"></script>
+  <script src="admin-cobro.js"></script>
+  <script src="admin-puntos.js"></script>
   <script src="admin-acomodar.js"></script>
   <!-- Rol auxiliar (pasajero) -->
+  <!-- Rediseño (27-sep-2026): el sistema visual y el shell ANTES de aux-registro:
+       aux-privado y aux-registro registran pantallas al evaluarse y AuxShell ya
+       tiene que existir (plan final §5, orden de carga). -->
+  <script src="aux-rx-ui.js"></script>
+  <script src="aux-shell.js"></script>
   <script src="aux-registro.js"></script>
   <script src="aux-residencias.js"></script>
   <script src="aux-privado.js"></script>
   <script src="aux-celebracion.js"></script>
   <script src="aux-presentacion.js"></script>
+  <!-- Pantallas del rediseño: después de aux-presentacion y antes de auxiliar.js -->
+  <script src="aux-rx-inicio.js"></script>
+  <script src="aux-rx-viajes.js"></script>
+  <script src="aux-rx-avisos.js"></script>
+  <script src="aux-rx-viaje.js"></script>
+  <script src="aux-rx-pedir.js"></script>
+  <script src="aux-rx-perfil.js"></script>
+  <script src="aux-rx-pagos.js"></script>
+  <script src="aux-rx-puntos.js"></script>
+  <script src="aux-rx-coord.js"></script>
+  <script src="aux-rx-vuelo.js"></script>
   <script src="auxiliar.js"></script>
   <!-- Conductor: rutas de auxiliares -->
   <script src="driver-rutas.js"></script>

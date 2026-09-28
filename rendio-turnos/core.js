@@ -489,6 +489,15 @@
     else stopEvtTimer(); // al salir de la bandeja, frena su polling
     if (name === 'oper') renderOperacion();
     else stopOperTimers(); // al salir de Operación, frena el reloj/simulación
+    // Rediseño del auxiliar (27-sep-2026): Coordinación, Cuentas de cobro y
+    // Rendio Points. Viven en módulos IIFE que exportan por window, y mientras
+    // sean stub no existen: el typeof evita que la navegación del admin se caiga.
+    if (name === 'coordinacion') { if (typeof window.renderCoordinacion === 'function') window.renderCoordinacion(); }
+    else if (typeof window.stopCoordTimer === 'function') window.stopCoordTimer(); // frena su consulta cada 5 s
+    if (name === 'cobro') { if (typeof window.renderCobro === 'function') window.renderCobro(); }
+    else if (typeof window.stopCobroTimer === 'function') window.stopCobroTimer();
+    if (name === 'puntos') { if (typeof window.renderPuntos === 'function') window.renderPuntos(); }
+    else if (typeof window.stopPuntosTimer === 'function') window.stopPuntosTimer();
   }
 
   // Enlace profundo desde una notificación push: `#/eventualidades?ev=<id>` abre

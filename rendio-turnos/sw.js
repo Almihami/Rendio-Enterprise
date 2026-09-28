@@ -6,7 +6,7 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v164';
+const CACHE_VERSION = 'rendio-turnos-v165';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
@@ -28,6 +28,12 @@ const APP_SHELL = [
   '/supabase-client.js',
   '/scheduler.js',
   '/api.js',
+  // Rediseño del auxiliar (27-sep-2026, P0): APIs nuevas. Si un archivo de esta
+  // lista falta en el servidor, cache.addAll falla y el SW no se instala: por
+  // eso P0 dejó todos los archivos creados (vacíos) antes de registrarlos.
+  '/api-aux.js',
+  '/api-cobro.js',
+  '/api-puntos.js',
   '/shift-flow.js',
   '/core.js',
   '/usuarios.js',
@@ -54,12 +60,27 @@ const APP_SHELL = [
   '/admin-privados.js',
   '/admin-operacion.js',
   '/admin-eventualidades.js',
+  '/aux-rx-ui.js',
+  '/aux-shell.js',
   '/aux-registro.js',
   '/aux-residencias.js',
   '/aux-privado.js',
   '/aux-celebracion.js',
   '/aux-presentacion.js',
+  '/aux-rx-inicio.js',
+  '/aux-rx-viajes.js',
+  '/aux-rx-avisos.js',
+  '/aux-rx-viaje.js',
+  '/aux-rx-pedir.js',
+  '/aux-rx-perfil.js',
+  '/aux-rx-pagos.js',
+  '/aux-rx-puntos.js',
+  '/aux-rx-coord.js',
+  '/aux-rx-vuelo.js',
   '/admin-chat.js',
+  '/admin-coordinacion.js',
+  '/admin-cobro.js',
+  '/admin-puntos.js',
   '/admin-acomodar.js',
   '/auxiliar.js',
   '/driver-rutas.js',
@@ -67,6 +88,22 @@ const APP_SHELL = [
   '/styles.css',
   '/rc-conductor.css',
   '/rc-auxiliar.css',
+  '/rx-auxiliar.css',
+  '/rx-aux-app.css',
+  '/rx-aux-shell.css',
+  '/rx-aux-inicio.css',
+  '/rx-aux-viaje.css',
+  '/rx-aux-pedir.css',
+  '/rx-aux-select.css',
+  '/rx-aux-perfil.css',
+  '/rx-aux-pagos.css',
+  '/rx-aux-puntos.css',
+  '/rx-aux-coord.css',
+  '/rx-aux-onboard.css',
+  '/login-rx.css',
+  '/admin-coordinacion.css',
+  '/admin-cobro.css',
+  '/admin-puntos.css',
   '/manifest.json',
   '/assets/logo.png',
   '/assets/logo-icon.png',

@@ -2127,6 +2127,20 @@
     return m ? (m[1] + m[2]).toUpperCase() : '';
   }
 
+  // Lo que ESCRIBIÓ el tripulante en las notas, sin lo que les pega la app
+  // (rediseño 27-sep-2026, fase 0.10). createReservation antepone «Vuelo AV9412. »
+  // y el regreso del mismo día agrega « · Regreso del mismo día»: eso no es suyo,
+  // y repetirlo metía un vuelo viejo en el pedido nuevo.
+  // UN SOLO helper para todo el front («Repetir», la forma del viaje). Su gemelo
+  // en SQL es public.notes_without_flight(text) (0086): misma expresión, así el
+  // servidor y el teléfono quitan exactamente lo mismo.
+  function notesUser(n) {
+    return String(n || '')
+      .replace(/^\s*vuelo\s*:?\s*[A-Za-z]{0,3}\s*-?\s*\d{2,5}\.\s*/i, '')
+      .replace(/\s*·\s*Regreso del mismo día\s*$/i, '')
+      .trim();
+  }
+
   async function listRoutePlanning(tripType) {
     // Día en hora de COLOMBIA (no UTC): un viaje de las 21:10 Col NO debe rodar
     // al día siguiente (21:10 Col = 02:10 UTC). Agrupamos por America/Bogota.
@@ -2269,7 +2283,12 @@
     // 0069: el nivel de servicio y el estado de la solicitud de privado.
     // 0075: residence_unit, para que «Repetir el de siempre» vuelva al mismo
     // apartamento y no solo al mismo conjunto.
-    let { data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, residence_unit, service_level, private_status, price_cop, private_reject_reason');
+    // 0085: calculated_pickup_at es la hora de recogida PUBLICADA (la escribe la
+    // base desde el plan con conductor). Va en el escalón de arriba: sin 0085 la
+    // columna existe pero siempre está NULL, así que el respaldo es el mismo.
+    const TOP = COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, residence_unit, service_level, private_status, price_cop, private_reject_reason';
+    let { data, error } = await q(TOP + ', calculated_pickup_at');
+    if (error) ({ data, error } = await q(TOP));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, service_level, private_status, price_cop, private_reject_reason'));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id'));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason'));
@@ -2284,9 +2303,15 @@
       price: r.price_cop != null ? r.price_cop : null,
       privateReason: r.private_reject_reason || '',
       flight: r.flights?.flight_number || _flightFromNotes(r.notes),
-      date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
+      // EN HORA DE BOGOTÁ (fase 0.8). Antes date era el día UTC (slice) y time
+      // la hora del reloj del teléfono: un traslado entre las 19:00 y las 23:59
+      // caía en el día siguiente («Mañana» en vez de «Hoy»).
+      date: _bogDay(r.required_arrival_at), time: _bogHM(r.required_arrival_at),
       address: r.pickup_address, lat: r.pickup_latitude, lng: r.pickup_longitude,
-      notes: r.notes || '', status: _auxTripStatus(r), driver: null,
+      notes: r.notes || '', notesUser: notesUser(r.notes),
+      // Hora de recogida publicada (0085) o null: nunca se inventa.
+      pickupAt: r.calculated_pickup_at || null,
+      status: _auxTripStatus(r), driver: null,
       cancelledAt: r.cancelled_at || null, cancelReason: r.cancellation_reason || '',
       isPernocta: !!r.is_overnight, isReserva: r.is_firm !== false,
       readyAt: r.ready_confirmed_at || null,
@@ -2358,6 +2383,46 @@
     };
   }
 
+  // La cabecera del tripulante para el rediseño (27-sep-2026): lo que pintan el
+  // Perfil («Auxiliar · Avianca · desde mar 2026», Mi residencia) y el pedido
+  // (nivel preferido, punto de encuentro). Es `Auxiliar.header` (H en el plan).
+  //
+  // El teléfono NO viene aquí: ya llega en getCurrentProfile.
+  // Degrada por escalones: las columnas de 0086 (preferred_service_level,
+  // meeting_point) van arriba y, si no existen, se piden sin ellas; la
+  // aerolínea en su escalón, igual que en getMyAuxiliarPlace.
+  // Devuelve null sin sesión de auxiliar o si todo falla: nunca datos inventados.
+  async function getMyAuxHeader() {
+    const { data: u } = await sb.auth.getUser();
+    const uid = u?.user?.id; if (!uid) return null;
+    const q = (cols) => sb.from('auxiliar_profiles').select(cols).eq('profile_id', uid).maybeSingle();
+    const RES = 'residences!auxiliar_profiles_residence_id_fkey(id, name, sector)';
+    const RES2 = 'residencia2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector)';
+    const BASE = `id, joined_at, residence_id, residence_unit, residence_id_2, residence_unit_2, ${RES}, ${RES2}`;
+    const NUEVAS = ', preferred_service_level, meeting_point';
+    const AIR = ', airlines(name, iata_code)';
+    let { data, error } = await q(BASE + NUEVAS + AIR);
+    if (error) ({ data, error } = await q(BASE + AIR));
+    if (error) ({ data, error } = await q(BASE));
+    if (error) ({ data, error } = await q(`id, residence_id, residence_unit, ${RES}`));
+    if (error || !data) return null;
+    const lvl = data.preferred_service_level;
+    return {
+      auxProfileId: data.id,
+      joinedAt: data.joined_at || null,
+      airlineName: data.airlines?.name || '',
+      airlineIata: (data.airlines?.iata_code || '').toUpperCase(),
+      preferredLevel: lvl === 'private' || lvl === 'shared' ? lvl : null,
+      meetingPoint: data.meeting_point || '',
+      residenceId: data.residence_id || null,
+      residence: data.residences || null,
+      unit: data.residence_unit || '',
+      residenceId2: data.residence_id_2 || null,
+      residence2: data.residencia2 || null,
+      unit2: data.residence_unit_2 || '',
+    };
+  }
+
   // La sigla de la aerolínea del tripulante, sola y cacheada. La pide el pedido
   // de traslado para entrar con el prefijo puesto ("AV" + los dígitos que él
   // teclea) en vez de hacerlo escribir "AV-9412" entero, que es de donde salían
@@ -2422,12 +2487,45 @@
     // 0069. Solo se manda el NIVEL: el estado 'requested' y el precio los pone el
     // servidor en guard_private_insert(), para que no se pueda pactar una tarifa
     // ni auto-aprobarse desde el teléfono.
-    const withLvl = f.level === 'private' ? { service_level: 'private' } : {};
-    let { data, error } = await sb.from('reservations').insert({ ...payload, ...extra, ...withRes, ...withLvl }).select('id').single();
-    if (error && f.level === 'private') ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra, ...withRes }).select('id').single());
-    if (error && f.residenceId && f.residenceUnit) ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra, residence_id: f.residenceId }).select('id').single());
-    if (error && f.residenceId) ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra }).select('id').single());
-    if (error) ({ data, error } = await sb.from('reservations').insert(payload).select('id').single());
+    //
+    // «Prefiero silencio» (quiet_ride, 0086) va DENTRO del nivel: solo existe en
+    // privado (CHECK reservations_quiet_only_private). Las maletas (bags, 0086)
+    // van en su propio escalón.
+    const isPriv = f.level === 'private';
+    const lvlMin = isPriv ? { service_level: 'private' } : {};
+    const withLvl = isPriv ? { ...lvlMin, ...(f.quietRide ? { quiet_ride: true } : {}) } : {};
+    const bagsN = Number(f.bags);
+    const withBags = (f.bags != null && f.bags !== '' && Number.isFinite(bagsN)) ? { bags: Math.max(0, Math.min(3, Math.round(bagsN))) } : {};
+    const withResId = f.residenceId ? { residence_id: f.residenceId } : {};
+
+    // LA ESCALERA DE DEGRADACIÓN SOLO BAJA POR COLUMNAS QUE FALTAN (fase 0.9).
+    // Antes cada escalón reintentaba ante CUALQUIER error, y un privado que el
+    // servidor rechazaba (guard_private_insert, la camioneta ocupada, lo que
+    // fuera) se creaba EN SILENCIO como compartido. Ahora:
+    //   · solo se reintenta si el error es «esa columna no existe»
+    //     (PGRST204 de PostgREST, 42703 de Postgres);
+    //   · el privado NUNCA pierde su service_level: si falla, se lanza;
+    //   · la suspensión (42501, guard_suspended_reservation) y cualquier otro
+    //     error salen tal cual, sin reintento.
+    const faltaCol = e => !!e && (e.code === 'PGRST204' || e.code === '42703');
+    const escalones = [
+      { ...payload, ...extra, ...withRes, ...withLvl, ...withBags },
+      { ...payload, ...extra, ...withRes, ...withLvl },               // sin maletas
+      { ...payload, ...extra, ...withRes, ...lvlMin },                // sin silencio
+      { ...payload, ...extra, ...withResId, ...lvlMin },              // sin apartamento
+      { ...payload, ...extra, ...lvlMin },                            // sin residencia
+      { ...payload, ...lvlMin },                                      // sin pernocta/firme
+    ];
+    const vistos = new Set();
+    let data = null, error = null;
+    for (const row of escalones) {
+      const k = JSON.stringify(Object.keys(row).sort());
+      if (vistos.has(k)) continue;          // escalón idéntico al anterior: no se repite
+      vistos.add(k);
+      ({ data, error } = await sb.from('reservations').insert(row).select('id').single());
+      if (!error) break;
+      if (!faltaCol(error)) throw error;
+    }
     if (error) throw error;
     return data.id;
   }
@@ -2780,6 +2878,17 @@
 
   // ---- Persistir el plan del día (admin) y leerlo (conductor) ----
   const _bogDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+  // HH:MM en hora de Bogotá, sea cual sea la zona del teléfono (un tripulante que
+  // aterriza de un internacional trae el aparato en otra). hourCycle h23: nunca
+  // «24:05» a la medianoche.
+  const _bogHM = (iso) => {
+    try {
+      const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+        .formatToParts(new Date(iso));
+      const h = (p.find(x => x.type === 'hour') || {}).value, m = (p.find(x => x.type === 'minute') || {}).value;
+      return h && m ? h + ':' + m : '--:--';
+    } catch (_) { return '--:--'; }
+  };
 
   // Guarda TODAS las vueltas del día como route_assignments + route_stops.
   // lanes: [{ vehicleId, driverProfileId(=profile id|null), type('sal'|'lle'), startAt(ISO), stops:[reservationId] }]
@@ -2904,10 +3013,16 @@
   // El conductor lee SU ruta del día (route_assignments asignadas a él) → vueltas.
   async function listMyVueltasForDriver(profileId) {
     const dpid = await getMyDriverProfileId(profileId); if (!dpid) return null;
-    let { data, error } = await sb.from('route_assignments')
-      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, residence_unit, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
+    // Lo que el conductor ve del traslado (rediseño 27-sep-2026): maletas,
+    // «prefiere silencio», código y punto de encuentro (0086) y el nivel (0069).
+    // Cada grupo en su escalón: sin 0086 la ruta se pinta igual, sin esos datos.
+    const rv = (extra) => sb.from('route_assignments')
+      .select(`id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, residence_unit${extra}, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))`)
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true });
+    let { data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status');
+    if (error) ({ data, error } = await rv(', service_level, private_status'));
+    if (error) ({ data, error } = await rv(''));
     // 0075 puede no estar aplicada: sin el apartamento la ruta se pinta igual.
     if (error) ({ data, error } = await sb.from('route_assignments')
       .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
@@ -2930,6 +3045,11 @@
           lat: r.pickup_latitude, lng: r.pickup_longitude, flight: r.flights?.flight_number || '',
           dl: rtHHMM(r.required_arrival_at), kind: type === 'lle' ? 'dropoff' : 'pickup',
           phone: r.auxiliar_profiles?.profiles?.phone || '', notes: r.notes || '',
+          // null/'' cuando la columna no existe o no hay dato: el conductor no
+          // ve nada en vez de un valor inventado.
+          bags: r.bags != null ? r.bags : null, quiet: r.quiet_ride === true,
+          meetCode: r.meet_code || '', meetingPoint: r.meeting_point || '',
+          level: r.service_level || 'shared', privateStatus: r.private_status || null,
           reservationId: s.reservation_id, auxProfileId: r.auxiliar_profiles?.profiles?.id || null };
       });
       const air = { name: MDE.name, addr: MDE.addr, lat: MDE.lat, lng: MDE.lng, kind: 'airport' };
@@ -3238,6 +3358,7 @@
     listAuxiliares, setAuxiliarJoinedAt, listAirlines, createAirline, setAirlineActive,
     getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,
     listResidences, getMyAuxiliarPlace, getMyAirlineIata, saveMyResidence,
+    getMyAuxHeader, notesUser,
     privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,

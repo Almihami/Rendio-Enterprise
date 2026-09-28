@@ -50,6 +50,19 @@
     // con el respaldo de AUX_AEROLINEAS) y `myIata` la sigla de la aerolínea
     // del tripulante, '' si no la sabemos.
     airlines: null, airLoading: false, myIata: '',
+    // ── Lógica del rediseño (PL, 27-sep-2026) ──
+    // Dirección del último cambio de paso del pedido ('fwd' | 'bwd'): el diseño
+    // anima distinto avanzar (rxStepF) que retroceder (rxStepB), así que la
+    // pantalla necesita saber hacia dónde se movió, no solo el número.
+    stepDir: 'fwd', typeTimer: null,
+    // Refresco de viajes (§2.7): uno a la vez, y los avisos ya mostrados.
+    reloading: null, bannerSeen: {}, lastChanges: [],
+    // Viaje cuyo ETA de OSRM está en etaSecs: compartir solo usa un ETA que
+    // sea de ESE viaje (#19). Fase que pintó el HUD por última vez.
+    etaTrip: null, hudPhase: null,
+    // Viaje para el que el tripulante pidió calificar a propósito (desde el
+    // historial), aunque antes hubiera dicho «Ahora no».
+    rateOpen: null,
   };
 
   // Además de init, se exponen tres ayudas para los módulos de la entrega
@@ -63,6 +76,8 @@
     // mirarlo) y para que el arnés de pruebas pueda montar escenarios.
     state: auxState,
     rerender: () => auxRender(),
+    // Con el shell encendido, el marcado del campo y del interruptor es el del
+    // rediseño (AuxRxPedir, mismo contrato); apagado, el de siempre.
     fieldHTML: (label, key, value, ph, type, attrs) => auxField(label, key, value, ph, type, attrs),
     toggleHTML: (label, key, on, hint) => auxToggle(label, key, on, hint),
     // Los pasos se resuelven por NOMBRE (15-sep-2026): el del punto de recogida
@@ -70,6 +85,110 @@
     // y no «¿está en el 3?».
     stepKind: () => auxStepKind(auxState.step),
     kinds: () => auxStepKinds(),
+
+    // ── Contrato del rediseño (plan final §2.9, 27-sep-2026) ──────────────────
+    // P0 dejó los nombres; PL (Ola 1a) llenó los cuerpos. Las pantallas nuevas
+    // (aux-rx-*.js) solo usan esto, nunca las funciones aux* sueltas.
+    //
+    // Pedir. El audio de la celebración solo se desbloquea DENTRO del gesto
+    // (iOS): el deslizador llama a AuxCelebracion.prime() en el mismo
+    // pointerup/click y pasa {primed:true}; cualquier otro camino lo hace aquí,
+    // todavía sincrónico, antes del primer await.
+    submit: (opts) => {
+      if (!(opts && opts.primed) && window.AuxCelebracion) AuxCelebracion.prime();
+      return auxSubmit();
+    },
+    // Ir a un paso por NOMBRE («Cambiar» del resumen). Pasa por la MISMA
+    // entrada al paso que «Continuar» y que «atrás» (#18): al caer en 'nivel'
+    // queda un nivel elegido y se pregunta el cupo de la camioneta.
+    goStep: (kind) => {
+      const i = auxStepKinds().indexOf(kind);
+      if (i < 0) return false;
+      auxEnterStep(i + 1);
+      auxRender();
+      return true;
+    },
+    // El pie del pedido sin rehacer los campos (#17). Con el shell: el de
+    // AuxRxPedir (solo disabled/aria). Sin él: el pie de siempre.
+    syncCta: (el) => auxSyncCta(el),
+    // Estado del pie del pedido, para que la pantalla lo pinte sin repetir la
+    // regla: { kind, disabled, label, private, bad }.
+    ctaState: () => auxCtaState(),
+    // Los avisos del paso del vuelo como DATO (la pantalla elige el marcado):
+    //   timeHint()      → {level:'bad'|'warn'|'ok', text} | null
+    //   flightAviso(k)  → {level:'bad'|'info', text} | null   (k = 'flight' | 'backFlight')
+    timeHint: () => auxTimeHint(),
+    flightAviso: (key) => auxFlightAvisoData(key || 'flight'),
+    // Abrir un viaje. {rate:true} = el tripulante quiere calificarlo ahora
+    // (p. ej. «Calificar» del historial), aunque antes dijera «Ahora no».
+    openTrip: (id, opts) => {
+      if (!id) return;
+      auxState.editingTrip = id; auxState.view = 'trip';
+      auxState.ratingSel = 0; auxState.ratingTags = []; auxState.confirmingCancel = false;
+      auxState.alarm = null;
+      auxState.rateOpen = (opts && opts.rate) ? id : null;
+      if (opts && opts.rate) auxRateUnskip(id);
+      auxRender();
+    },
+    // Lo mismo que el botón «Pedir traslado» (data-ax="new"), candados incluidos
+    // (suspensión del jefe y pausa por no pago). Devuelve si abrió el pedido.
+    newTrip: () => {
+      if (auxLockCheck()) return false;
+      auxStartNew();
+      return true;
+    },
+    goTab: (tab) => auxGoTab(tab),
+    // Atrás de a UNA cosa (plan §2.5). Devuelve true si cerró algo.
+    back: () => auxBack(),
+    // Pide los viajes otra vez y los FUNDE sobre los mismos objetos (§2.7).
+    // opts.silent: sin avisos (lo usa el shell cuando el aviso ya lo dio el push).
+    // Devuelve siempre el arreglo de viajes (el mismo de Auxiliar.state.trips).
+    reloadTrips: (opts) => auxReloadTrips(opts),
+    stopTrack: () => auxStopTrack(),
+    afterForm: () => auxAfterFormRender(),
+    afterTrip: () => auxAfterTripRender(),
+    setupPwa: () => auxSetupPwa(),
+    upcoming: () => auxUpcoming(),
+    past: () => auxPast(),
+    // El criterio ÚNICO de «próximo» (#20): Inicio, Viajes y el soporte usan este.
+    isUpcoming: (t) => auxIsUpcoming(t),
+    // Pendiente o asignado cuya hora pasó hace más de 6 h sin moverse: va al
+    // historial con el chip «Sin realizar».
+    expired: (t) => auxExpired(t),
+    lastTrip: () => auxLastTrip(),
+    typeMeta: (t) => auxTypeMeta(t && typeof t === 'object' ? t.type : t),
+    statusMeta: (s) => auxStatusMeta(s),
+    lateHTML: (t) => auxLateHTML(t, t && t._info),
+    // La demora como dato ({level, text, sub} | null) para pintarla con el aspecto nuevo.
+    lateness: (t) => auxLateness(t, t && t._info),
+    leadCheck: (f) => auxLeadCheck(f || auxState.form),
+    whenISO: (f) => auxWhenISO(f || auxState.form),
+    settingsWarnHTML: () => auxSettingsWarnHTML(),
+    freshLabel: (pos) => auxFreshLabel(pos),
+    // Compartir con el viaje EXPLÍCITO y un texto por fase (#19, §3.7).
+    // shareText(t) → el texto o null si en esa fase no hay nada que compartir
+    // (la pantalla lo usa para decidir si pinta el botón).
+    share: (t) => auxShareEta(t || auxCurTrip()),
+    shareText: (t) => auxShareText(t),
+    // Regla por defecto de §3.7: sin código no hay nada que mostrar.
+    //   salida  → desde «en camino» hasta subir (y «llegó», que es el caso);
+    //   llegada → con conductor, el día del viaje (Bogotá), hasta subir.
+    meetVisible: (t, info) => auxMeetVisible(t, info),
+    // Fases del viaje para #ax-phase (§3.7): {steps:[{key,label}], current, index}.
+    // Salida (6): booked · assigned · enroute · arrived · onboard · done.
+    // Llegada (5): booked · assigned · onboard · homebound · done.
+    phases: (t, info) => auxPhases(t, info || (t && t._info)),
+    // ¿Toca la pantalla de calificar para este viaje? (entregado, con
+    // conductor, sin calificar y sin «Ahora no», salvo que lo pidiera).
+    showRate: (t) => auxShowRate(t),
+    // «Ahora no» guardado en el teléfono (localStorage['rendio.aux.rateSkip']).
+    rateSkipped: (id) => auxRateSkipped(id),
+    suspended: () => typeof auxSuspendido === 'function' && auxSuspendido(),
+    // Pausa por no pago (Facturario): solo si AuxPagos existe y lo dice.
+    paused: () => auxPagosPausado(),
+    // Api.getMyAuxHeader(): aerolínea, desde cuándo, residencias, nivel
+    // preferido y punto de encuentro. Lo llena auxInit; null sin dato.
+    header: null,
   };
 
   async function auxInit(profile) {
@@ -98,12 +217,23 @@
       AuxPresentacion.watchTheme();
     }
     // Datos REALES desde dev (reservas del auxiliar); si no hay sesión/BD → demo.
-    let trips = null;
-    try { if (window.Api?.listMyReservations) trips = await Api.listMyReservations(); } catch (e) {}
+    // La cabecera del rediseño (Auxiliar.header) va en paralelo con los viajes:
+    // no agrega espera. Si falla o no existe, queda null y las pantallas lo dicen.
+    const pHeader = (window.Api && typeof Api.getMyAuxHeader === 'function')
+      ? Promise.resolve().then(() => Api.getMyAuxHeader()).catch(() => null)
+      : Promise.resolve(null);
+    // Los viajes pasan por la MISMA fusión que el refresco (§2.7): «Reintentar»
+    // con la pantalla de un viaje abierta ya no bota el conductor que el
+    // rastreo había traído.
+    const trips = await auxFetchTrips();
+    window.Auxiliar.header = await pHeader;
     // trips === null → no hay sesión de auxiliar o falló la consulta. No se
     // rellena con nada: la pantalla lo dice y ofrece reintentar.
-    auxState.trips = Array.isArray(trips) ? trips : [];
-    auxState.source = Array.isArray(trips) ? 'live' : 'error';
+    if (Array.isArray(trips)) { auxMergeTrips(trips); auxState.source = 'live'; }
+    else { auxState.trips.length = 0; auxState.source = 'error'; }
+    // El refresco cada minuto, al volver a la app y al llegar un push lo lleva
+    // el shell (AuxShell.refreshTrips → Auxiliar.reloadTrips). Sin el rediseño
+    // no hay refresco solo, como siempre.
     // Primer ingreso: solo si los datos cargaron. Si la app está sin señal, lo
     // primero que tiene que ver es que no hay señal, no un tour de bienvenida.
     // La EXCEPCIÓN es la vista previa local (#preview-auxiliar en localhost, la
@@ -125,6 +255,89 @@
   const auxRoot = () => document.getElementById('auxiliar-ui');
   const auxCurTrip = () => auxState.trips.find(x => x.id === auxState.editingTrip);
   const auxFirstName = () => (auxState.profile?.full_name || 'Auxiliar').split(' ')[0];
+
+  // ¿Pinta el rediseño? (bandera de aux-shell.js). Mientras aux-shell.js sea el
+  // stub vacío, o la bandera esté en '0', todo va por el camino de siempre.
+  function auxShellOn() {
+    try { return !!(window.AuxShell && typeof AuxShell.on === 'function' && AuxShell.on()); }
+    catch (_) { return false; }
+  }
+  // Un mensaje corto. Con el rediseño, el toast del shell (1800 ms, rxToast);
+  // sin él, el toast de core.js de siempre.
+  function auxToast(msg, icon) {
+    if (auxShellOn() && typeof AuxShell.toast === 'function') {
+      try { AuxShell.toast(msg, icon || 'Check'); return; } catch (_) {}
+    }
+    if (typeof toast === 'function') toast(msg);
+  }
+
+  // ---------- candados para pedir: suspensión (0081) y pausa por no pago ----------
+  // La pausa la decide el Facturario (AuxPagos, P12). Sin ese módulo no hay pausa.
+  function auxPagosPausado() {
+    try { return !!(window.AuxPagos && typeof AuxPagos.paused === 'function' && AuxPagos.paused()); }
+    catch (_) { return false; }
+  }
+  const AUX_SUSP_TXT = 'Tu cuenta está suspendida: no puedes pedir traslados nuevos. Habla con tu jefe.';
+  const AUX_PAUSA_TXT = 'Tus reservas están pausadas por un pago pendiente. Revisa Pagos.';
+  // La hoja del candado. Con el shell es una hoja (RxSheet del diseño: .rx-sh
+  // con su ícono, título, texto y botones) y no un toast que se va en dos
+  // segundos: el tripulante tiene que entender por qué no puede pedir. Sin el
+  // shell, el toast de siempre. AuxShell.sheet recibe el HTML y {after(el)}.
+  function auxLockNotice(kind) {
+    const esc = (v) => auxEsc(v);
+    const icono = (n) => { try { return window.AuxShell && typeof AuxShell.ic === 'function' ? AuxShell.ic(n, 26) : ''; } catch (_) { return ''; } };
+    let html, pagos = false;
+    if (kind === 'paused') {
+      const s = (() => { try { return window.AuxPagos && AuxPagos.summary ? AuxPagos.summary() : null; } catch (_) { return null; } })();
+      // Solo lo que diga el Facturario: sin monto o sin fecha, no se nombran.
+      const monto = s && s.amountCOP > 0 ? ` (${auxMoney(s.amountCOP)})` : '';
+      const vence = s && s.dueISO ? ` venció el ${auxDateES(String(s.dueISO).slice(0, 10)).replace(',', '')}` : ' está vencido';
+      pagos = true;
+      html = `<div class="rx-sh">
+        <div class="rx-sh-ic blk">${icono('Lock')}</div>
+        <h3>Tus reservas están pausadas</h3>
+        <p>Tu cobro${esc(monto)}${esc(vence)}. Apenas aprobemos tu comprobante vuelves a reservar. Lo que ya pediste sigue en pie.</p>
+        <button class="rx-btn pri" data-pl-lock="pay">Ir a pagos</button>
+        <button class="rx-btn ghost" data-pl-lock="close">Ahora no</button>
+      </div>`;
+    } else {
+      const m = auxState.profile && auxState.profile.suspended_reason;
+      html = `<div class="rx-sh">
+        <div class="rx-sh-ic blk">${icono('Lock')}</div>
+        <h3>Tu cuenta está suspendida</h3>
+        <p>Los que ya pediste siguen en pie.${m ? ' Motivo: <b>' + esc(m) + '</b>.' : ''} Habla con tu jefe para reactivarla.</p>
+        <button class="rx-btn ghost" data-pl-lock="close">Entendido</button>
+      </div>`;
+    }
+    if (auxShellOn() && typeof AuxShell.sheet === 'function') {
+      try {
+        const el = AuxShell.sheet(html, {
+          after: (sh) => sh.addEventListener('click', (e) => {
+            const b = e.target && e.target.closest ? e.target.closest('[data-pl-lock]') : null;
+            if (!b) return;
+            auxCloseSheet();
+            // Mismo encadenado del diseño (rx-app.jsx): cierra y a los 230 ms cambia de pestaña.
+            if (b.getAttribute('data-pl-lock') === 'pay' && pagos) setTimeout(() => auxGoTab('pagos'), 230);
+          }),
+        });
+        if (el) return;
+      } catch (_) {}
+    }
+    auxToast(kind === 'paused' ? AUX_PAUSA_TXT : AUX_SUSP_TXT, 'Lock');
+  }
+  function auxCloseSheet() {
+    try { if (window.AuxShell && typeof AuxShell.closeSheet === 'function') AuxShell.closeSheet(); } catch (_) {}
+  }
+  // true = había candado (y ya se avisó): quien llama no abre el pedido.
+  function auxLockCheck() {
+    if (auxSuspendido()) { auxLockNotice('suspended'); return true; }
+    if (auxPagosPausado()) { auxLockNotice('paused'); return true; }
+    return false;
+  }
+  function auxMoney(v) {
+    try { return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v); }
+    catch (_) { return '$ ' + v; }
+  }
   // `from`/`to` y sus iconos (15-sep-2026, profa): el paso 1 y el resumen dicen
   // «Casa → Aeropuerto» con dibujos, no solo «Salida». `label` corto se queda
   // para los chips de las tarjetas y el «Tu salida quedó…», donde no cabe más.
@@ -154,6 +367,13 @@
 
   // ---------- render raíz ----------
   function auxRender() {
+    // Un nivel que se puso SOLO (preferencia del perfil) no puede quedar en
+    // privado si la camioneta resultó comprometida a esa hora.
+    auxNivelFix();
+    // REDISEÑO 27-sep-2026 (estrangulador con bandera): con el shell nuevo
+    // encendido, pinta él y decide si desmonta el rastreo (por eso va ANTES de
+    // auxStopTrack). Apagado —o sin aux-shell.js— todo sigue exactamente igual.
+    if (auxShellOn()) { AuxShell.render(); return; }
     const root = auxRoot(); if (!root) return;
     auxStopTrack(); // limpia animaciones de mapa al cambiar de vista
     // Primer ingreso: ocupa la pantalla entera, sin nav ni encabezado.
@@ -216,8 +436,34 @@
   // Un viaje está CERRADO si terminó, lo cancelaron o no se presentó: esos van
   // al historial, no a "próximos" (antes un cancelado seguía saliendo arriba).
   const AUX_CLOSED = ['done', 'cancelled', 'noshow'];
-  const auxUpcoming = () => auxState.trips.filter(t => !AUX_CLOSED.includes(t.status));
-  const auxPast = () => auxState.trips.filter(t => AUX_CLOSED.includes(t.status));
+  // UN SOLO criterio de «próximo» (#20, 27-sep-2026). Antes era «no cerrado»,
+  // así que un pedido de hace tres días que nadie ruteó seguía saliendo como
+  // «Próximo viaje» en Inicio para siempre. Ahora es próximo si no está
+  // cerrado Y (va en curso, o su hora no pasó hace más de 6 h). Las 6 h dan
+  // aire a un vuelo que se atrasó o a un conductor que marca tarde.
+  const AUX_UPCOMING_GRACE_MS = 6 * 3600000;
+  function auxIsUpcoming(t) {
+    if (!t || AUX_CLOSED.includes(t.status)) return false;
+    if (t.status === 'onway' || t.status === 'onboard') return true;
+    const ts = auxWhenTs(t);
+    // Sin fecha/hora no se puede decir que venció: se deja como próximo.
+    return ts == null || ts >= Date.now() - AUX_UPCOMING_GRACE_MS;
+  }
+  // Ni cerrado ni próximo: se quedó sin realizar (va al historial).
+  const auxExpired = (t) => !!t && !AUX_CLOSED.includes(t.status) && !auxIsUpcoming(t);
+  // Orden estable por hora. Los que no tienen hora van al final en los dos casos.
+  function auxSortByTime(list, desc) {
+    const key = (t) => { const v = auxWhenTs(t); return v == null ? null : v; };
+    return list.map((t, i) => [t, key(t), i]).sort((a, b) => {
+      if (a[1] == null || b[1] == null) return (a[1] == null) - (b[1] == null) || a[2] - b[2];
+      return (desc ? b[1] - a[1] : a[1] - b[1]) || a[2] - b[2];
+    }).map(x => x[0]);
+  }
+  // Próximos del más cercano al más lejano (un pedido recién hecho entra
+  // adelante en el arreglo aunque sea para la otra semana: se ordena por hora).
+  const auxUpcoming = () => auxSortByTime(auxState.trips.filter(auxIsUpcoming), false);
+  // Historial del más reciente al más viejo.
+  const auxPast = () => auxSortByTime(auxState.trips.filter(t => !auxIsUpcoming(t)), true);
 
   // La app no pudo leer la configuración de la operación (app_settings). Pasa
   // sin sesión: la consulta responde cero filas por RLS y api.js cae a los
@@ -293,11 +539,21 @@
   // que esto no crea la reserva de un toque: salta al paso 2 con lo estable ya
   // puesto. Ahorra dos pasos de cinco, sin inventar ninguno.
   function auxLastTrip() {
-    const hechos = auxState.trips.filter(t => t.status === 'done');
-    return hechos.length ? hechos[hechos.length - 1] : null;
+    // El ÚLTIMO por hora, no por posición en el arreglo (el orden del arreglo
+    // cambia cuando se pide uno nuevo o llega un refresco).
+    let last = null, lastTs = -Infinity;
+    auxState.trips.forEach(t => {
+      if (t.status !== 'done') return;
+      const ts = auxWhenTs(t); const v = ts == null ? -Infinity : ts;
+      if (!last || v >= lastTs) { last = t; lastTs = v; }
+    });
+    return last;
   }
   // Lo que se copia al repetir: solo lo que escribió el tripulante.
+  // Un solo helper en todo el front (fase 0.10): Api.notesUser. El cuerpo de
+  // abajo queda solo de respaldo si api.js no cargó (misma expresión).
   function auxRepeatNotes(n) {
+    if (window.Api && typeof Api.notesUser === 'function') return Api.notesUser(n);
     return String(n || '')
       .replace(/^\s*vuelo\s*:?\s*[A-Za-z]{0,3}\s*-?\s*\d{2,5}\.\s*/i, '')
       .replace(/\s*·\s*Regreso del mismo día\s*$/i, '')
@@ -388,7 +644,8 @@
 
   function auxTripCard(t, hero) {
     const m = auxTypeMeta(t.type);
-    const st = auxStatusMeta(t.status);
+    // Un pendiente que ya pasó no está «Sin rutear»: se quedó sin realizar.
+    const st = auxExpired(t) ? { cls: 'muted', label: 'Sin realizar' } : auxStatusMeta(t.status);
     return `<button class="ax-trip ${hero ? 'hero' : ''}" data-ax="trip" data-id="${t.id}">
       <div class="ax-trip-top">
         <span class="ax-chip ${m.cls}"><svg class="icon"><use href="#${m.ic}"/></svg>${m.label}</span>
@@ -403,7 +660,7 @@
         </div>
       </div>
       <div class="ax-trip-bot">
-        <span><svg class="icon"><use href="#i-clock"/></svg>${auxDateES(t.date)} · ${t.type === 'lle' ? 'llega' : 'pres.'} ${auxHM(t.time)}</span>
+        <span><svg class="icon"><use href="#i-clock"/></svg>${auxDateES(t.date)} · ${t.type === 'lle' ? 'llega' : 'en MDE'} ${auxHM(t.time)}</span>
         <span class="ax-flight">${t.flight || ''}</span>
       </div>
     </button>`;
@@ -482,10 +739,10 @@
       const margen = Math.round((t0 - (now + restan * 1000)) / MIN);
       const level = auxMarginLevel(margen);
       if (level === 'miss') {
-        return { level, text: 'No alcanzas la presentación.',
+        return { level, text: 'No alcanzas tu hora en el aeropuerto.',
           sub: 'Coordinación ya está en esto y va a contactarte.' };
       }
-      const cuanto = `${margen} min antes de tu presentación`;
+      const cuanto = `${margen} min antes de tu hora en el aeropuerto`;
       if (level === 'tight') return { level, text: 'Vas muy justo, pero llegas', sub: cuanto + '.' };
       if (level === 'margin') return { level, text: 'Vas justo, pero llegas', sub: cuanto + '.' };
       return { level: 'ok', text: 'Vas a tiempo', sub: 'Llegas ' + cuanto + '.' };
@@ -508,8 +765,11 @@
 
     // ── 3. Solo el reloj ──
     if (t.type === 'sal') {
-      const pickupBy = t0 - 60 * MIN;                 // recogida ~1h antes de presentación
-      if (now > t0)       return { level: 'miss',   text: 'Pasó tu hora de presentación.', sub: 'Si sigues sin salir, avisa a coordinación.' };
+      // Con la hora de recogida PUBLICADA (0085) se mide contra ella; sin plan,
+      // la regla operativa de siempre (~1 h antes de la hora en MDE).
+      const pub = t.pickupAt ? Date.parse(t.pickupAt) : NaN;
+      const pickupBy = !isNaN(pub) ? pub : t0 - 60 * MIN;
+      if (now > t0)       return { level: 'miss',   text: 'Pasó la hora a la que querías estar en el aeropuerto.', sub: 'Si sigues sin salir, avisa a coordinación.' };
       if (now > pickupBy) return { level: 'tight',  text: 'Vas sobre el tiempo.', sub: 'Deberías estar saliendo ya hacia el aeropuerto.' };
       if (now > pickupBy - 15 * MIN) return { level: 'margin', text: 'Se acerca tu recogida.', sub: 'Mantente atento: falta poco.' };
       return { level: 'ok', text: 'Vas a tiempo.' };
@@ -725,6 +985,21 @@
   // Va en su propio contenedor porque se repinta en cada tecla (junto con el
   // CTA) sin remontar los inputs — si no, el botón se deshabilitaba sin decir
   // por qué y el auxiliar se quedaba trancado sin entender.
+  // El mismo aviso como DATO, para que el rediseño lo pinte con su aspecto.
+  function auxTimeHint() {
+    const f = auxState.form, isLle = f.type === 'lle';
+    const lead = auxLeadCheck(f);
+    if (lead) return { level: lead.level, text: lead.text };
+    if (!f.time) return null;
+    return { level: 'ok', text: isLle ? 'Te esperamos al bajar del avión.' : 'Te dejamos en MDE a la hora que pediste. La hora de recogida te la confirmamos cuando armemos la ruta del día.' };
+  }
+  // Repinta #ax-time-hints sin remontar los campos. Con el rediseño lo pinta
+  // AuxRxPedir.timeHintsHTML(dato) si existe.
+  function auxPaintTimeHints() {
+    const hints = document.getElementById('ax-time-hints'); if (!hints) return;
+    hints.innerHTML = (auxShellOn() && window.AuxRxPedir && typeof AuxRxPedir.timeHintsHTML === 'function')
+      ? AuxRxPedir.timeHintsHTML(auxTimeHint()) : auxTimeHints();
+  }
   function auxTimeHints() {
     const f = auxState.form, isLle = f.type === 'lle';
     const lead = auxLeadCheck(f);
@@ -853,7 +1128,10 @@
       </div>`;
   }
 
-  function auxFormCTA() {
+  // La regla del pie del pedido, como DATO (#17). La usan el pie de siempre
+  // (auxFormCTA) y el del rediseño (AuxRxPedir.syncCta/el deslizador), así que
+  // «¿se puede continuar?» se decide en un solo lugar.
+  function auxCtaState() {
     const s = auxState.step, f = auxState.form, kind = auxStepKind(s);
     const badDate = auxLeadCheck(f)?.level === 'bad';
     // Paso 'donde': con conjunto elegido no hay pin que confirmar (la coord la
@@ -870,22 +1148,55 @@
       || (kind === 'donde' && !paso3Listo)
       || (kind === 'nivel' && !f.level)
       || (kind === 'revisar' && badDate);
+    const priv = kind === 'revisar' && f.level === 'private';
     const label = kind !== 'revisar' ? 'Continuar'
-      : (f.level === 'private' ? 'Solicitar traslado privado' : 'Confirmar traslado');
+      : (priv ? 'Solicitar traslado privado' : 'Confirmar traslado');
+    return { kind, disabled: !!disabled, label, private: priv, bad: !!badDate };
+  }
+  function auxFormCTA() {
+    const c = auxCtaState();
     // El privado se pide en latón (piel Select, 15-sep-2026): el botón dice lo
     // mismo que la franja del resumen y se ve del mismo módulo.
-    const brass = label === 'Solicitar traslado privado' ? ' ax-btn-brass' : '';
-    return `<button class="ax-btn ax-btn-primary${brass}" data-ax="next" ${disabled ? 'disabled' : ''}>${label}${kind !== 'revisar' ? '<svg class="icon"><use href="#i-arrow"/></svg>' : ''}</button>`;
+    const brass = c.private ? ' ax-btn-brass' : '';
+    return `<button class="ax-btn ax-btn-primary${brass}" data-ax="next" ${c.disabled ? 'disabled' : ''}>${c.label}${c.kind !== 'revisar' ? '<svg class="icon"><use href="#i-arrow"/></svg>' : ''}</button>`;
+  }
+  // Actualiza el pie del pedido sin tocar los campos (#17). Con el rediseño lo
+  // hace AuxRxPedir.syncCta(el) (solo disabled/aria: el deslizador no se
+  // remonta a media tecla). Si esa función aún no existe, se ajusta el
+  // `disabled` de lo que haya en el pie. Sin el rediseño, el pie de siempre.
+  function auxSyncCta(el) {
+    if (auxState.view !== 'form') return;
+    const bar = auxRoot() && auxRoot().querySelector('.ax-cta-bar');
+    if (auxShellOn()) {
+      if (window.AuxRxPedir && typeof AuxRxPedir.syncCta === 'function') { AuxRxPedir.syncCta(el); return; }
+      if (!bar) return;
+      const c = auxCtaState();
+      bar.querySelectorAll('[data-ax="next"], .rx-slide').forEach(b => {
+        if ('disabled' in b) b.disabled = c.disabled;
+        b.classList.toggle('off', c.disabled);
+        b.setAttribute('aria-disabled', c.disabled ? 'true' : 'false');
+      });
+      return;
+    }
+    if (bar) bar.innerHTML = auxFormCTA();
   }
 
   // ---------- campos ----------
+  // Con el rediseño encendido y AuxRxPedir cargado, el marcado es el suyo
+  // (mismo contrato: data-field / data-ax="toggle" data-key). Si no, el de siempre.
   function auxField(label, key, value, ph, type, attrs) {
+    if (auxShellOn() && window.AuxRxPedir && typeof AuxRxPedir.fieldHTML === 'function') {
+      return AuxRxPedir.fieldHTML(label, key, value, ph, type, attrs);
+    }
     const input = type === 'textarea'
       ? `<textarea class="ax-input" data-field="${key}" rows="2" placeholder="${ph || ''}">${value}</textarea>`
       : `<input class="ax-input" data-field="${key}" type="${type || 'text'}" value="${value}" placeholder="${ph || ''}" ${attrs || ''} />`;
     return `<label class="ax-label">${label}${input}</label>`;
   }
   function auxToggle(label, key, on, hint) {
+    if (auxShellOn() && window.AuxRxPedir && typeof AuxRxPedir.toggleHTML === 'function') {
+      return AuxRxPedir.toggleHTML(label, key, on, hint);
+    }
     return `<button class="ax-toggle ${on ? 'on' : ''}" data-ax="toggle" data-key="${key}">
       <div><b>${label}</b><span>${hint}</span></div>
       <span class="ax-switch"><span class="ax-knob"></span></span>
@@ -981,17 +1292,27 @@
   // El aviso de debajo del campo. Va en su propio contenedor con id porque se
   // repinta en cada teclazo sin remontar el input: si se remontara, el teclado
   // del teléfono se cierra y el cursor salta.
-  function auxFlightAviso(key) {
+  // El aviso como DATO (el rediseño lo pinta con su aspecto).
+  function auxFlightAvisoData(key) {
     if (auxIataCorta(key)) {
-      return `<div class="ax-hint bad"><svg class="icon"><use href="#i-warn"/></svg>
-        La sigla va de dos o tres letras (AV, JA, P5, LA). Complétala o elige la aerolínea en el botón.</div>`;
+      return { level: 'bad', text: 'La sigla va de dos o tres letras (AV, JA, P5, LA). Complétala o elige la aerolínea en el botón.' };
     }
     if (!auxFlightIata(key)) {
-      return `<div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>
-        No tenemos guardada tu aerolínea: toca el botón de la izquierda y elige la sigla.
-        Si la dejas vacía mandamos solo el número, y en coordinación les toca adivinar de qué vuelo hablas.</div>`;
+      return { level: 'info', text: 'No tenemos guardada tu aerolínea: toca el botón de la izquierda y elige la sigla. Si la dejas vacía mandamos solo el número, y en coordinación les toca adivinar de qué vuelo hablas.' };
     }
-    return '';
+    return null;
+  }
+  function auxFlightAviso(key) {
+    const a = auxFlightAvisoData(key);
+    if (auxShellOn() && window.AuxRxPedir && typeof AuxRxPedir.flightAvisoHTML === 'function') {
+      return AuxRxPedir.flightAvisoHTML(a, key);
+    }
+    if (!a) return '';
+    return a.level === 'bad'
+      ? `<div class="ax-hint bad"><svg class="icon"><use href="#i-warn"/></svg>
+        ${a.text}</div>`
+      : `<div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>
+        ${a.text}</div>`;
   }
   // Repintado mínimo del chip (la sigla puede cambiar sin que el tripulante lo
   // toque: por un pegado, o porque la consulta de su aerolínea llegó tarde).
@@ -1112,8 +1433,7 @@
     if (auxState.view !== 'form') return;
     auxFlightSyncAll();
     auxFlightChipSync('flight'); auxFlightChipSync('backFlight');
-    const cta = auxRoot() && auxRoot().querySelector('.ax-cta-bar');
-    if (cta) cta.innerHTML = auxFormCTA();
+    auxSyncCta();
   }
 
   // ---------- mapa + geocodificación (pin ajustable REAL) ----------
@@ -1125,11 +1445,7 @@
     // 'donde' desaparece y el número que era 'donde' pasa a ser 'nivel'. Para
     // que la camioneta no quede «por confirmar» se pregunta acá también —
     // askCupo no repite la consulta si ya la hizo para esa misma hora.
-    if (kind === 'nivel' && window.AuxPrivado) {
-      if (!auxState.form.level) auxState.form.level = 'shared';
-      // En primicia no hay nada que preguntarle al servidor: no se puede pedir.
-      if (!AuxPrivado.primicia || !AuxPrivado.primicia()) AuxPrivado.askCupo(auxWhenISO(auxState.form));
-    }
+    if (kind === 'nivel') auxNivelEnter();
     if (kind !== 'donde') return;
     const f = auxState.form;
     // Con conjunto elegido el mapa lo monta aux-residencias (pin FIJO). El de
@@ -1158,7 +1474,11 @@
   }
   function auxRefreshPinRow() {
     // Re-render liviano del paso del punto (camino manual) sin remontar el mapa.
-    const cta = auxRoot().querySelector('.ax-cta-bar'); if (cta) cta.innerHTML = auxFormCTA();
+    auxSyncCta();
+    // Con el rediseño, la fila del pin la repinta su pantalla (si sabe).
+    if (auxShellOn() && window.AuxRxPedir && typeof AuxRxPedir.refreshPinRow === 'function') {
+      AuxRxPedir.refreshPinRow(auxState.form); return;
+    }
     const row = document.getElementById('ax-pin-row'); if (!row) return;
     const f = auxState.form;
     row.className = 'ax-pin-row ' + (f.locConfirmed ? 'ok' : '');
@@ -1185,7 +1505,7 @@
       } else {
         // sin resultado: cae al centro de Rionegro para que igual pueda mover el pin
         auxState.form.lat = 6.1537; auxState.form.lng = -75.3738;
-        toast('No ubicamos la dirección exacta — mueve el pin al punto correcto.');
+        auxToast('No ubicamos la dirección exacta — mueve el pin al punto correcto.');
       }
       auxState.form.locConfirmed = false;
       auxMountMap(auxState.form.lat, auxState.form.lng);
@@ -1202,6 +1522,7 @@
   // tarjeta. Llamar a esta igual la pisaba (gana la última declaración) y toda
   // la pantalla de viajes salía «[object Object]».
   function auxNuevoTrip(f) {
+    const priv = f.level === 'private';
     return {
       id: 't' + Date.now() + Math.random().toString(36).slice(2, 6),
       type: f.type, flight: f.flight, date: f.date, time: f.time,
@@ -1210,12 +1531,66 @@
       residenceUnit: f.residenceUnit || null,
       // 0069. El estado y el precio los pone el SERVIDOR; acá se guardan solo
       // para pintar la pantalla mientras llega el siguiente refresco.
-      level: f.level === 'private' ? 'private' : 'shared',
-      privateStatus: f.level === 'private' ? 'requested' : null,
-      price: f.level === 'private' && window.AuxPrivado ? AuxPrivado.price() : null,
+      level: priv ? 'private' : 'shared',
+      privateStatus: priv ? 'requested' : null,
+      price: priv && window.AuxPrivado ? AuxPrivado.price() : null,
       isPernocta: !!f.isPernocta, isReserva: f.isReserva !== false, notes: f.notes || '',
+      notesUser: f.notes || '',
+      // La misma forma T que trae el servidor (§3.1). Lo que decide la
+      // operación (hora de recogida, código, carro) nace en null: nunca se
+      // adelanta en el teléfono.
+      bags: f.bags != null && f.bags !== '' ? Math.max(0, Math.min(3, Number(f.bags) || 0)) : null,
+      quiet: priv && !!f.quietRide,
+      pickupAt: null, meetCode: null, vehicle: null, published: false,
+      createdAt: new Date().toISOString(),
       status: 'pending', driver: null, rated: false,
     };
+  }
+
+  // ---------- entrar a un paso del pedido (#18) ----------
+  // Un solo camino para «Continuar», «atrás», «Cambiar» (goStep), «Repetir» y
+  // el avance solo del paso 1. Antes goStep ponía el número y listo, así que
+  // caer en 'nivel' desde el resumen dejaba el nivel sin elegir y la
+  // camioneta sin consultar.
+  function auxEnterStep(n, dir) {
+    const total = auxSteps();
+    n = Math.max(1, Math.min(total, n | 0 || 1));
+    auxState.stepDir = dir || (n >= auxState.step ? 'fwd' : 'bwd');
+    auxState.step = n;
+    if (auxStepKind(n) === 'nivel') auxNivelEnter();
+    return n;
+  }
+  // Entrar al paso del nivel: siempre sale con un nivel elegido y, si el
+  // privado se puede pedir, con la pregunta del cupo en camino (askCupo no
+  // repite la consulta para la misma hora).
+  // D19: si el tripulante guardó «privado» como preferido y el privado está
+  // encendido, entra preseleccionado. Queda marcado como automático para
+  // soltarlo si la camioneta resulta comprometida (auxNivelFix).
+  function auxNivelEnter() {
+    if (!window.AuxPrivado) return;
+    const f = auxState.form;
+    if (!f.level) {
+      const H = window.Auxiliar && window.Auxiliar.header;
+      const quiere = !!(H && H.preferredLevel === 'private' && AuxPrivado.enabled && AuxPrivado.enabled());
+      f.level = quiere ? 'private' : 'shared';
+      f.levelAuto = true;
+    }
+    // En primicia no hay nada que preguntarle al servidor: no se puede pedir.
+    if (!AuxPrivado.primicia || !AuxPrivado.primicia()) AuxPrivado.askCupo(auxWhenISO(f));
+  }
+  function auxNivelFix() {
+    const f = auxState.form;
+    if (!f || !f.levelAuto || f.level !== 'private' || !window.AuxPrivado || typeof AuxPrivado.cupo !== 'function') return;
+    if (AuxPrivado.cupo() === 'ocupada' || (AuxPrivado.enabled && !AuxPrivado.enabled())) {
+      f.level = 'shared'; f.quietRide = false;
+    }
+  }
+  // «Continuar» del pedido (o enviar en el último paso).
+  function auxGoNext(el) {
+    if (auxState.step < auxSteps()) { auxEnterStep(auxState.step + 1, 'fwd'); auxRender(); return; }
+    // El audio de la celebración se desbloquea AQUÍ, dentro del clic:
+    // auxSubmit es async y en iOS el gesto ya no cuenta cuando vuelve.
+    window.Auxiliar.submit({ primed: false });
   }
 
   async function auxSubmit() {
@@ -1232,9 +1607,18 @@
       // (el jefe la suspendió con la app abierta): se dice eso, no «revisa la conexión».
       if (/suspendida/i.test(e.message || '')) {
         if (auxState.profile) auxState.profile.is_active = false;
-        toast(e.message); auxState.view = 'home'; auxRender(); return;
+        auxState.view = 'home'; auxState.tab = 'inicio'; auxRender();
+        if (auxShellOn()) auxLockNotice('suspended'); else auxToast(e.message);
+        return;
       }
-      toast('No se pudo guardar tu traslado. Revisa la conexión e intenta otra vez.'); return;
+      // La pausa por no pago (Facturario) también la frena la base, con su
+      // propio texto. Se muestra la hoja de la pausa, no un error de red.
+      if (/pausad/i.test(e.message || '')) {
+        auxState.view = 'home'; auxState.tab = 'inicio'; auxRender();
+        if (auxShellOn()) auxLockNotice('paused'); else auxToast(e.message);
+        return;
+      }
+      auxToast('No se pudo guardar tu traslado. Revisa la conexión e intenta otra vez.', 'Alert'); return;
     }
     auxState.trips.unshift(trip);
 
@@ -1264,11 +1648,11 @@
         bt.id = await Api.createReservation(back);
         auxState.trips.unshift(bt);
       } catch (e) {
-        toast('Guardamos tu ida, pero el regreso no quedó. Pídelo aparte desde «Pedir traslado».');
+        auxToast('Guardamos tu ida, pero el regreso no quedó. Pídelo aparte desde «Pedir traslado».');
       }
     }
 
-    auxState.step = 1; auxState.form = {};
+    auxState.step = 1; auxState.stepDir = 'fwd'; auxState.form = {};
     if (window.AuxResidencias) AuxResidencias.newTrip();
     auxState.editingTrip = trip.id; auxState.view = 'confirm';
     auxRender();
@@ -1316,8 +1700,34 @@
     const t = auxState.trips.find(x => x.id === auxState.editingTrip); if (!t) { auxState.view = 'home'; return auxHomeHTML(); }
     if (t.status === 'onway') return auxTrackOnWay(t);   // P3
     if (t.status === 'onboard') return auxTrackOnBoard(t); // P4
-    if (t.status === 'done' && !t.rated && t.driver) return auxRating(t); // P5
+    if (auxShowRate(t)) return auxRating(t); // P5
     return auxTripDetail(t); // pending / assigned (P2) / cancelado / no-show / done
+  }
+
+  // ---------- «Ahora no» al calificar (§2.7) ----------
+  // Antes «Ahora no» marcaba el viaje como calificado SOLO en memoria: al
+  // recargar la app volvía a salir la pantalla de calificar. Ahora se guarda
+  // en el teléfono (es una comodidad suya, no un dato de la operación) y el
+  // viaje sigue sin calificación en el servidor, que es la verdad.
+  const AUX_RATE_SKIP_KEY = 'rendio.aux.rateSkip';
+  function auxRateSkipList() {
+    try { const v = JSON.parse(localStorage.getItem(AUX_RATE_SKIP_KEY) || '[]'); return Array.isArray(v) ? v : []; }
+    catch (_) { return []; }
+  }
+  function auxRateSkipped(id) { return !!id && auxRateSkipList().includes(id); }
+  function auxRateSkip(id) {
+    if (!id) return;
+    try {
+      const l = auxRateSkipList().filter(x => x !== id); l.push(id);
+      localStorage.setItem(AUX_RATE_SKIP_KEY, JSON.stringify(l.slice(-50)));
+    } catch (_) {}
+  }
+  function auxRateUnskip(id) {
+    try { localStorage.setItem(AUX_RATE_SKIP_KEY, JSON.stringify(auxRateSkipList().filter(x => x !== id))); } catch (_) {}
+  }
+  function auxShowRate(t) {
+    if (!t || t.status !== 'done' || t.rated || !t.driver) return false;
+    return auxState.rateOpen === t.id || !auxRateSkipped(t.id);
   }
 
   function auxTripHead(title) {
@@ -1343,6 +1753,7 @@
   // fuera una vista, entrar al chat mataría el rastreo del mapa y al salir habría
   // que remontarlo entero.
   function auxChatHTML(t) {
+    if (auxShellOn() && window.AuxRxViaje && typeof AuxRxViaje.chatHTML === 'function') return AuxRxViaje.chatHTML(t);
     const d = t.driver || {};
     return `<div class="ax-chat hidden" id="ax-chat">
       <div class="ax-chat-head">
@@ -1360,6 +1771,12 @@
   function auxChatBubbles() {
     const el = document.getElementById('ax-chat-body'); if (!el) return;
     const msgs = auxState.chatMsgs || [];
+    // Con el rediseño, las burbujas rx-bub las arma su pantalla (mismos datos).
+    if (auxShellOn() && window.AuxRxViaje && typeof AuxRxViaje.bubblesHTML === 'function') {
+      el.innerHTML = AuxRxViaje.bubblesHTML(msgs, auxState.profile?.id || null);
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
     if (!msgs.length) {
       el.innerHTML = `<div class="ax-chat-empty">
         <svg class="icon"><use href="#i-chat"/></svg>
@@ -1374,8 +1791,9 @@
     };
     // Desde 0067 el hilo tiene tres puntas. Un mensaje de Rendio no se puede ver
     // igual que uno del conductor: quien lo lee tiene que saber quién le habla.
+    // Sale como «Coordinación» (D11, 27-sep-2026): así se llama en toda la app.
     el.innerHTML = msgs.map(m => `<div class="ax-msg ${m.sender_role === 'auxiliar' ? 'mine' : 'their'}${m.sender_role === 'admin' ? ' rendio' : ''}">
-      ${m.sender_role === 'admin' ? '<em>Rendio</em>' : ''}
+      ${m.sender_role === 'admin' ? '<em>Coordinación</em>' : ''}
       <p>${auxEsc(m.body)}</p><span>${hora(m.created_at)}</span>
     </div>`).join('');
     el.scrollTop = el.scrollHeight;
@@ -1399,6 +1817,9 @@
     if (abierto) {
       auxChatBubbles();
       if (markRead && Api.markReservationMessagesRead) { try { await Api.markReservationMessagesRead(t.id); } catch (_) {} }
+    } else if (auxShellOn() && window.AuxRxViaje && typeof AuxRxViaje.setUnread === 'function') {
+      // El globo del botón «Mensaje» del rediseño lo pinta su pantalla.
+      AuxRxViaje.setUnread(auxState.chatUnread);
     } else {
       // Repinta solo el badge del botón, sin tocar el resto de la pantalla.
       const btn = document.querySelector('#auxiliar-ui .ax-chat-btn');
@@ -1443,14 +1864,14 @@
       // esperando una respuesta que no va a llegar hasta que él abra la app.
       if (r && r.notified === false && !auxState.chatWarned) {
         auxState.chatWarned = true;
-        toast('Enviado. Tu conductor no tiene notificaciones activadas: lo verá al abrir la app.');
+        auxToast('Enviado. Tu conductor no tiene notificaciones activadas: lo verá al abrir la app.');
       }
       await auxChatSync(true);
     } catch (e) {
       auxState.chatMsgs = auxState.chatMsgs.filter(m => m.id !== temp.id);
       auxChatBubbles();
       i.value = body;
-      toast((e && e.message) ? e.message : 'No se pudo enviar el mensaje.');
+      auxToast((e && e.message) ? e.message : 'No se pudo enviar el mensaje.');
     } finally { auxState.chatSending = false; }
   }
 
@@ -1475,7 +1896,7 @@
           <div class="ax-sum-row"><span>Te recogen en</span><b>${t.type === 'lle' ? 'MDE' : auxShortAddr(t.address)}</b></div>
           <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Te dejan en' : 'Destino'}</span><b>${t.type === 'lle' ? auxShortAddr(t.address) : 'MDE'}</b></div>
           <div class="ax-sum-row"><span>Vuelo</span><b>${t.flight || '—'}</b></div>
-          <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Aterriza' : 'Presentación'}</span><b>${auxDateES(t.date)} · ${auxHM(t.time)}</b></div>
+          <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Aterriza' : 'Estar en MDE'}</span><b>${auxDateES(t.date)} · ${auxHM(t.time)}</b></div>
           ${t.isPernocta ? `<div class="ax-sum-row"><span>Pernocta</span><b>Sí (hotel)</b></div>` : ''}
           ${t.isReserva === false ? `<div class="ax-sum-row"><span>Reserva</span><b>Tentativa</b></div>` : ''}
           ${t.notes ? `<div class="ax-sum-row"><span>Notas</span><b>${t.notes}</b></div>` : ''}
@@ -1528,6 +1949,7 @@
     { id: 'otra',        label: 'Otra cosa que me va a retrasar', sev: 'medium' },
   ];
   function auxAlarmHTML(t) {
+    if (auxShellOn() && window.AuxRxViaje && typeof AuxRxViaje.alarmHTML === 'function') return AuxRxViaje.alarmHTML(t);
     const a = auxState.alarm || {};
     return `<div class="ax-alarm" id="ax-alarm">
       <div class="ax-alarm-card">
@@ -1665,7 +2087,8 @@
     auxState.waitFrom = null;
     // Estado de la vía real: al cambiar de vista se recalcula desde cero.
     auxState.routePath = null; auxState.routeFrom = null; auxState.routeDestKey = null; auxState.routeAt = 0;
-    auxState.etaSecs = null; auxState.etaAt = 0; auxState.etaKind = null;
+    auxState.etaSecs = null; auxState.etaAt = 0; auxState.etaKind = null; auxState.etaTrip = null;
+    auxState.hudPhase = null;
   }
 
   // ---------- espera en el punto de recogida ----------
@@ -1775,11 +2198,11 @@
     // ¿Recién llega el dato del conductor? Al recargar la app ya "en camino", la
     // tarjeta se pintó genérica ("Tu conductor / Carro —") antes de este primer
     // dato; hay que re-hidratarla aunque el estado no cambie.
-    let driverJustArrived = false;
-    if (info.driver && info.driver.name) {
-      driverJustArrived = !(t.driver && t.driver.name);
-      t.driver = { name: info.driver.name, plate: info.plate || '—', phone: info.driver.phone || '', rating: null };
-    }
+    const driverJustArrived = !!(info.driver && info.driver.name) && !(t.driver && t.driver.name);
+    // FUSIONA, no reemplaza (#6, 27-sep-2026). Antes cada tic de 6 s dejaba
+    // t.driver = {name, plate, phone, rating:null}: borraba la foto, la
+    // calificación y el teléfono que hubiera traído la lista de viajes.
+    const nuevos = auxMergeTrack(t, info);
     // Avance real → estado UI. 'assigned' lo marca info.assigned (la reserva quedó
     // en una ruta con conductor), aunque el estado crudo siga en 'scheduled'/
     // 'requested'. El estado crudo solo AGREGA progresión (en camino/a bordo/entregado).
@@ -1790,8 +2213,9 @@
     } else {
       ui = auxUiStatus(info.raw_status);
     }
-    // Solo AVANZA (nunca retrocede), para no dar tumbos de pantalla.
-    if (AUX_ORDER[ui] > (AUX_ORDER[t.status] || 0)) {
+    // Solo AVANZA (nunca retrocede), para no dar tumbos de pantalla. Un viaje
+    // cancelado o «no se presentó» es final: el rastreo no lo revive.
+    if (t.status !== 'cancelled' && t.status !== 'noshow' && AUX_ORDER[ui] > (AUX_ORDER[t.status] || 0)) {
       t.status = ui;
       auxRender();          // cambia de pantalla; el nuevo render re-arranca el rastreo
       return;
@@ -1802,10 +2226,16 @@
     // Hidrata la tarjeta del conductor la 1ª vez que llega su dato, en CUALQUIER
     // pantalla que la muestre (asignado/en camino/a bordo), no solo al cambiar de
     // estado — arregla el caso de recargar la app con el viaje ya en curso.
-    if (driverJustArrived && ['assigned', 'onway', 'onboard'].includes(t.status)) {
+    // Con el rediseño, lo mismo cuando aparece por primera vez algo que la
+    // pantalla pinta (hora publicada, código, carro, foto): el shell lo
+    // resuelve por patch sin tumbar el mapa.
+    if ((driverJustArrived || (nuevos && auxShellOn())) && ['assigned', 'onway', 'onboard'].includes(t.status)) {
       auxRender();
       return;
     }
+    // Fase «llegó» y código de encuentro, sin repintar (§3.7, #5).
+    auxPaintPhase(t, info);
+    auxPaintMeet(t, info);
     if (t.status === 'onway' || t.status === 'onboard') {
       auxPlotDriver(t, info);
     }
@@ -1824,6 +2254,121 @@
     }
   }
 
+  // ---------- fusión del rastreo sobre el viaje (#6) ----------
+  // Lo que trae auxiliar_track_reservation (v4 hoy; v5 con 0087) se SUMA a lo
+  // que el viaje ya sabía. Nunca borra con un vacío. Si cambió el conductor (lo
+  // reasignaron), su ficha se arma de cero: la foto o el teléfono del anterior
+  // no pueden quedar pegados al nuevo.
+  // Devuelve true si apareció algo que antes no estaba (para repintar una vez).
+  function auxMergeTrack(t, info) {
+    let nuevo = false;
+    const d = info.driver;
+    if (d && d.name) {
+      const mismo = !!(t.driver && t.driver.name === d.name);
+      const base = mismo ? t.driver : {};
+      const drv = Object.assign({}, base, {
+        name: d.name,
+        first: String(d.name).trim().split(/\s+/)[0] || '',
+        initials: auxInitials(d.name),
+        phone: d.phone || base.phone || '',
+        // La placa sigue en driver.plate para lo heredado ('—' = sin dato).
+        plate: info.plate || base.plate || '—',
+      });
+      if (!('rating' in drv)) drv.rating = null;
+      if (d.avatar_url && d.avatar_url !== base.avatarUrl) { drv.avatarUrl = d.avatar_url; nuevo = true; }
+      if (d.rating != null) drv.rating = d.rating;
+      if (d.rating_n != null) drv.ratingN = d.rating_n;
+      if (!mismo && t.driver && t.driver.name) nuevo = true;   // lo reasignaron
+      t.driver = drv;
+    }
+    const v = info.vehicle || null;
+    if (info.plate || (v && (v.brand || v.model || v.color))) {
+      const veh = Object.assign({}, t.vehicle || {});
+      if (info.plate) { if (veh.plate && veh.plate !== info.plate) nuevo = true; veh.plate = info.plate; }
+      ['brand', 'model', 'color'].forEach(k => {
+        if (v && v[k] && v[k] !== veh[k]) { veh[k] = v[k]; nuevo = true; }
+      });
+      t.vehicle = veh;
+    }
+    if (info.pickup_at && info.pickup_at !== t.pickupAt) { t.pickupAt = info.pickup_at; nuevo = true; }
+    if (info.meet_code && info.meet_code !== t.meetCode) { t.meetCode = String(info.meet_code); nuevo = true; }
+    if (info.stop_status) t.stopStatus = info.stop_status;
+    if (info.arrived_at) t.arrivedAt = info.arrived_at;
+    return nuevo;
+  }
+  function auxInitials(name) {
+    const p = String(name || '').trim().split(/\s+/).filter(Boolean);
+    return ((p[0] || '')[0] || '').toUpperCase() + ((p.length > 1 ? p[p.length - 1][0] : '') || '').toUpperCase();
+  }
+
+  // ---------- fases del viaje (#ax-phase, §3.7) ----------
+  // Las del diseño (RX_TRIP_STEPS) con sus mismas claves. «Llegó por ti» NO
+  // es un estado de AUX_ORDER (cambiaría el avance y _auxTripStatus): sale del
+  // estado de la parada que reporta el rastreo (stop_status === 'arrived').
+  const AUX_PH_SAL = [['booked', 'Pedido'], ['assigned', 'Conductor asignado'], ['enroute', 'En camino'],
+    ['arrived', 'Llegó por ti'], ['onboard', 'A bordo'], ['done', 'En el aeropuerto']];
+  const AUX_PH_LLE = [['booked', 'Pedido'], ['assigned', 'Conductor asignado'], ['onboard', 'A bordo'],
+    ['homebound', 'Rumbo a casa'], ['done', 'En casa']];
+  function auxPhaseKey(t, info) {
+    if (!t) return null;
+    const s = t.status;
+    if (s === 'cancelled' || s === 'noshow') return null;
+    const llego = !!((info && info.stop_status === 'arrived') || t.stopStatus === 'arrived');
+    if (t.type === 'lle') {
+      if (s === 'done') return 'done';
+      // A bordo mientras dejan a otros antes que a mí; «rumbo a casa» cuando
+      // la siguiente parada es la mía.
+      if (s === 'onboard') return auxPendingAhead(t, info) > 0 ? 'onboard' : 'homebound';
+      if (s === 'assigned' || s === 'onway') return 'assigned';
+      return 'booked';
+    }
+    if (s === 'done') return 'done';
+    if (s === 'onboard') return 'onboard';
+    if (s === 'onway') return llego ? 'arrived' : 'enroute';
+    if (s === 'assigned') return llego ? 'arrived' : 'assigned';
+    return 'booked';
+  }
+  function auxPhases(t, info) {
+    const list = (t && t.type === 'lle') ? AUX_PH_LLE : AUX_PH_SAL;
+    const current = auxPhaseKey(t, info);
+    return { steps: list.map(([key, label]) => ({ key, label })), current, index: list.findIndex(x => x[0] === current) };
+  }
+  // Marca la fase actual en #ax-phase sin repintar: cada paso lleva
+  // data-ph="<clave>" y la clase rx-tl-s; queda .done antes y .now en la actual
+  // (las mismas clases del diseño).
+  function auxPaintPhase(t, info) {
+    const box = document.getElementById('ax-phase'); if (!box) return;
+    const ph = auxPhases(t, info);
+    const keys = ph.steps.map(s => s.key);
+    box.querySelectorAll('[data-ph]').forEach(el => {
+      const i = keys.indexOf(el.getAttribute('data-ph'));
+      el.classList.toggle('done', ph.index >= 0 && i >= 0 && i < ph.index);
+      el.classList.toggle('now', ph.index >= 0 && i === ph.index);
+    });
+    box.setAttribute('data-now', ph.current || '');
+  }
+
+  // ---------- código de encuentro (§3.7) ----------
+  function auxMeetVisible(t, info) {
+    if (!t || !t.meetCode || AUX_CLOSED.includes(t.status) || t.status === 'onboard') return false;
+    if (t.type === 'lle') return !!t.driver && ['assigned', 'onway'].includes(t.status) && t.date === auxTodayISO();
+    return t.status === 'onway' || !!((info && info.stop_status === 'arrived') || t.stopStatus === 'arrived');
+  }
+  // Resalta #ax-meet cuando el conductor llegó (la pantalla ya lo pintó si
+  // meetVisible). Al pasar a «llegó» se RECREAN los dígitos (.rx-meet-c) para
+  // que la animación rxFlip corra otra vez, como el re-montaje del diseño.
+  function auxPaintMeet(t, info) {
+    const el = document.getElementById('ax-meet'); if (!el) return;
+    const llego = !!(info && info.stop_status === 'arrived');
+    const antes = el.classList.contains('is-arrived');
+    el.classList.toggle('is-arrived', llego);
+    el.setAttribute('data-arrived', llego ? '1' : '0');
+    if (llego && !antes) {
+      const c = el.querySelector('.rx-meet-c');
+      if (c) c.replaceWith(c.cloneNode(true));
+    }
+  }
+
   // Pinta el mapa: destino fijo + carro que se desliza ENTRE dos reportes reales.
   // No extrapola: al llegar al último punto conocido, se queda quieto.
   function auxPlotDriver(t, info) {
@@ -1839,11 +2384,18 @@
       const map = auxState.trackMap = L.map(el, { zoomControl: false, attributionControl: false });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
       auxState.trackDestPt = destPt;
-      auxState.trackDestMk = L.circleMarker(destPt, { radius: 8, color: '#F26522', fillColor: '#F26522', fillOpacity: 1, weight: 3 }).addTo(map);
+      auxState.trackDestMk = auxShellOn()
+        // Rediseño: el destino es un pin del sistema rx (§1.5). Aeropuerto o casa
+        // según a dónde va el carro AHORA (la siguiente parada es otra cosa).
+        ? L.marker(destPt, { icon: auxLfIcon(auxDestIsApt(t, info) ? 'apt' : 'pin'), interactive: false }).addTo(map)
+        : L.circleMarker(destPt, { radius: 8, color: '#F26522', fillColor: '#F26522', fillOpacity: 1, weight: 3 }).addTo(map);
       auxPlotStops(t, info);
       if (driverPt) { auxMountCar(t, info, driverPt, destPt); map.fitBounds([driverPt, destPt], { padding: [55, 55] }); }
       else { map.setView(destPt, 14); }
       setTimeout(() => map.invalidateSize(), 60);
+      // La capa del viaje entra deslizando (rxIn .34s): Leaflet midió el
+      // contenedor a medio camino, así que se vuelve a medir al terminar.
+      if (auxShellOn()) setTimeout(() => { if (auxState.trackMap === map) map.invalidateSize(); }, 360);
       return;
     }
     // El carro terminó una parada y arrancó para la siguiente: el destino cambia
@@ -1885,14 +2437,17 @@
     auxState.stopSig = sig;
     if (auxState.stopLayer) { map.removeLayer(auxState.stopLayer); auxState.stopLayer = null; }
     // Sin paradas pendientes, el punto naranja de destino vuelve a ser el protagonista.
-    if (auxState.trackDestMk) {
-      auxState.trackDestMk.setStyle(pend.length ? { opacity: 0, fillOpacity: 0 } : { opacity: 1, fillOpacity: 1 });
+    const dmk = auxState.trackDestMk;
+    if (dmk) {
+      if (typeof dmk.setStyle === 'function') dmk.setStyle(pend.length ? { opacity: 0, fillOpacity: 0 } : { opacity: 1, fillOpacity: 1 });
+      else if (typeof dmk.setOpacity === 'function') dmk.setOpacity(pend.length ? 0 : 1);
     }
     if (!pend.length) return;
     const layer = auxState.stopLayer = L.layerGroup().addTo(map);
+    const rx = auxShellOn();
     pend.forEach((s, i) => {
       const mine = !!s.mine;
-      const cls = `ax-stop${i === 0 ? ' next' : ''}${mine ? ' mine' : ''}`;
+      const cls = `${rx ? 'rx-lf-stop' : 'ax-stop'}${i === 0 ? ' next' : ''}${mine ? ' mine' : ''}`;
       const icon = L.divIcon({ className: '', html: `<div class="${cls}">${mine ? '★' : i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
       // De los compañeros solo se nombra el sector: nunca quién es ni dónde vive.
       const label = mine ? 'Tu parada' : (s.sector ? `Recogida · ${s.sector}` : 'Otra recogida');
@@ -1903,15 +2458,44 @@
     const isApt = t.type === 'sal';
     const finalPt = isApt ? [AUX_MDE.lat, AUX_MDE.lng] : [t.lat, t.lng];
     if (finalPt[0] == null) return;
-    const fIcon = L.divIcon({ className: '', html: `<div class="ax-stop end">${isApt ? '✈' : '🏠'}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
+    const fIcon = rx ? auxLfIcon(isApt ? 'apt' : 'pin')
+      : L.divIcon({ className: '', html: `<div class="ax-stop end">${isApt ? '✈' : '🏠'}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
     L.marker(finalPt, { icon: fIcon }).addTo(layer).bindTooltip(isApt ? 'Aeropuerto MDE' : 'Tu casa', { direction: 'top', offset: [0, -14] });
   }
 
+  // Marcadores Leaflet del rediseño (§1.5): L.divIcon con las clases rx-lf-*
+  // que estiliza rx-aux-app.css (P1). El dibujo va con el sprite rx (#rx-*) si
+  // AuxRxUI está; si no, el contenedor vacío (lo pinta el CSS).
+  //   car → <div class="rx-lf-car">…</div>   apt → rx-lf-apt   pin → rx-lf-pin
+  function auxLfIcon(kind) {
+    const ICN = { car: 'Car', apt: 'Plane', pin: 'Home' };
+    let inner = '';
+    try { if (window.AuxRxUI && typeof AuxRxUI.ic === 'function') inner = AuxRxUI.ic(ICN[kind] || 'MapPin', kind === 'car' ? 16 : 14); } catch (_) {}
+    const size = kind === 'car' ? 34 : 30;
+    return L.divIcon({ className: '', html: `<div class="rx-lf-${kind}">${inner}</div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+  }
+  // ¿El destino inmediato del carro es el aeropuerto? (salida a bordo sin más
+  // paradas, o llegada con el carro yendo a MDE por mí).
+  function auxDestIsApt(t, info) {
+    const pend = auxPendingStops(t, info);
+    if (t.status === 'onboard' && pend.length) return false;
+    return t.type === 'lle' ? t.status !== 'onboard' : t.status === 'onboard';
+  }
+  // El color de la vía: el acento del sistema rx si está definido.
+  function auxRouteColor() {
+    if (!auxShellOn()) return '#F4791F';
+    try {
+      const v = getComputedStyle(auxRoot()).getPropertyValue('--r-accent').trim();
+      return v || '#F26522';
+    } catch (_) { return '#F26522'; }
+  }
+
   function auxMountCar(t, info, driverPt, destPt) {
-    const carIcon = L.divIcon({ className: '', html: '<div class="ax-car">🚗</div>', iconSize: [30, 30], iconAnchor: [15, 15] });
+    const carIcon = auxShellOn() ? auxLfIcon('car')
+      : L.divIcon({ className: '', html: '<div class="ax-car">🚗</div>', iconSize: [30, 30], iconAnchor: [15, 15] });
     // Arranca como línea recta punteada (es lo único cierto mientras OSRM
     // responde) y auxSyncRoute la reemplaza por la vía real en cuanto llega.
-    auxState.trackLine = L.polyline([driverPt, destPt], { color: '#F4791F', weight: 4, opacity: .45, dashArray: '6 8' }).addTo(auxState.trackMap);
+    auxState.trackLine = L.polyline([driverPt, destPt], { color: auxRouteColor(), weight: 4, opacity: .45, dashArray: '6 8' }).addTo(auxState.trackMap);
     auxState.trackCar = L.marker(driverPt, { icon: carIcon }).addTo(auxState.trackMap);
     auxState.trackLast = driverPt;
     auxSyncRoute(t, info, driverPt, destPt);
@@ -1995,8 +2579,9 @@
       auxState.etaSecs = secs;
       auxState.etaAt = Date.now();
       auxState.etaKind = (t.status === 'onboard') ? 'dest' : 'pickup';
+      auxState.etaTrip = t.id;
     } else {
-      auxState.etaSecs = null; auxState.etaAt = 0;
+      auxState.etaSecs = null; auxState.etaAt = 0; auxState.etaTrip = null;
     }
     auxRenderEta(t, info);
   }
@@ -2053,28 +2638,74 @@
   // "Compartir mi ETA" anunciaba "enlace de seguimiento copiado" y no copiaba
   // nada — ese enlace no existe. Ahora comparte el texto con la hora real, y si
   // todavía no hay hora calculada lo dice en vez de inventarla.
-  async function auxShareEta() {
-    const t = auxCurTrip(); if (!t) return;
-    const destino = t.type === 'lle' ? 'a casa' : 'al aeropuerto MDE';
-    let txt = `Voy en camino ${destino}.`;
-    if (auxState.etaSecs && auxState.etaAt) {
+  //
+  // 27-sep-2026 (#19): con el viaje EXPLÍCITO y un texto por FASE. Antes
+  // compartía siempre «Voy en camino…», también cuando el conductor apenas
+  // salía a buscarlo o el viaje era de mañana, y tomaba el ETA de lo que
+  // hubiera en memoria aunque fuera de otro viaje.
+  //   asignado sin hora → «Tengo traslado a MDE el {día}; debo estar allá a las {hora}.»
+  //   asignado con hora → «Me recogen el {día} a las {HH:MM}{, carro {placa}}.»
+  //   en camino         → «Mi conductor va por mí{, llega sobre las HH:MM (estimado)}.»
+  //   a bordo           → «Voy en camino {destino}{, llego sobre las HH:MM (estimado)}{. Carro {placa}}.»
+  // Pendiente, cerrado o sin viaje → null (no hay nada cierto que contar).
+  function auxShareText(t) {
+    if (!t) return null;
+    const lle = t.type === 'lle';
+    const placa = auxPlate(t);
+    const eta = (kind) => {
+      if (auxState.etaTrip !== t.id || auxState.etaKind !== kind || !auxState.etaSecs || !auxState.etaAt) return '';
       const secs = auxState.etaSecs - (Date.now() - auxState.etaAt) / 1000;
-      if (secs > 0) {
-        try {
-          const hora = new Date(Date.now() + secs * 1000)
-            .toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' });
-          txt = auxState.etaKind === 'dest'
-            ? `Voy en camino ${destino}, llego sobre las ${hora} (estimado).`
-            : `Me recogen sobre las ${hora} (estimado) y voy ${destino}.`;
-        } catch (_) {}
+      return secs > 0 ? auxHMBog(new Date(Date.now() + secs * 1000)) : '';
+    };
+    if (t.status === 'assigned') {
+      const pub = t.pickupAt ? new Date(t.pickupAt) : null;
+      if (pub && !isNaN(pub.getTime())) {
+        const dia = auxDiaTexto(pub.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }));
+        return `Me recogen${lle ? ' en MDE' : ''} ${dia} a las ${auxHMBog(pub)}${placa ? `, carro ${placa}` : ''}.`;
       }
+      if (!t.date || !t.time) return null;
+      const dia = auxDiaTexto(t.date);
+      return lle
+        ? `Tengo traslado del aeropuerto a casa ${dia}; aterrizo a las ${t.time}.`
+        : `Tengo traslado a MDE ${dia}; debo estar allá a las ${t.time}.`;
     }
-    if (t.driver && t.driver.plate && t.driver.plate !== '—') txt += ` Carro ${t.driver.plate}.`;
+    if (t.status === 'onway') {
+      const h = eta('pickup');
+      return `Mi conductor va por mí${h ? `, llega sobre las ${h} (estimado)` : ''}.`;
+    }
+    if (t.status === 'onboard') {
+      const h = eta('dest');
+      return `Voy en camino ${lle ? 'a casa' : 'al aeropuerto MDE'}${h ? `, llego sobre las ${h} (estimado)` : ''}${placa ? `. Carro ${placa}` : ''}.`;
+    }
+    return null;
+  }
+  async function auxShareEta(t) {
+    const txt = auxShareText(t);
+    if (!txt) return false;
     try {
-      if (navigator.share) { await navigator.share({ text: txt }); return; }
+      if (navigator.share) { await navigator.share({ text: txt }); return true; }
       await navigator.clipboard.writeText(txt);
-      toast('Texto copiado para compartir.');
-    } catch (_) { /* el usuario canceló el compartir: no es un error */ }
+      auxToast('Texto copiado para compartir.', 'Copy');
+      return true;
+    } catch (_) { return false; /* el usuario canceló el compartir: no es un error */ }
+  }
+  // La placa real del viaje ('—' es el «sin dato» de lo heredado).
+  function auxPlate(t) {
+    const p = (t && t.vehicle && t.vehicle.plate) || (t && t.driver && t.driver.plate) || '';
+    return p && p !== '—' ? p : '';
+  }
+  // HH:MM en hora de Bogotá, 24 h.
+  function auxHMBog(d) {
+    try {
+      return new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
+    } catch (_) { return ''; }
+  }
+  // «hoy», «mañana» o «el vie 16 de oct» (día en hora de Bogotá).
+  function auxDiaTexto(iso) {
+    if (!iso) return '';
+    if (iso === auxTodayISO()) return 'hoy';
+    if (iso === auxDayISO(1)) return 'mañana';
+    return 'el ' + auxDateES(iso).replace(',', '');
   }
   function auxTweenCar(from, to) {
     if (auxState.trackTween) { clearInterval(auxState.trackTween); auxState.trackTween = null; }
@@ -2099,6 +2730,55 @@
     valEl.textContent = val;
     valEl.classList.toggle('sm', val.length > 11);
   }
+  // La hora grande del rediseño (.rx-trip-big: <b id="ax-eta-min"> + <span
+  // id="ax-eta-label">). Mismos datos que lo heredado, con los textos del
+  // diseño y sin emojis. Nada inventado: los minutos solo si OSRM respondió y
+  // el punto del conductor está fresco; si no, lo que se sabe (cuántos faltan).
+  // Cuando cambia la fase, el bloque se RECREA para que rxRise corra otra vez
+  // (en el diseño es key={st}).
+  function auxHeroRx(t, info, labelEl, valEl, s) {
+    const first = (t.driver && (t.driver.first || String(t.driver.name || '').split(' ')[0])) || '';
+    const quien = first || 'Tu conductor';
+    let etaMin = null, etaHM = '';
+    if (auxState.etaTrip === t.id && auxState.etaSecs && auxState.etaAt && !(info && auxFreshLabel(info.pos).stale)) {
+      const secs = auxState.etaSecs - (Date.now() - auxState.etaAt) / 1000;
+      if (secs > 0) { etaMin = Math.max(1, Math.round(secs / 60)); etaHM = auxHMBog(new Date(Date.now() + secs * 1000)); }
+    }
+    let big, label;
+    if (t.status === 'onway') {
+      if (s.arrived)                   { big = 'Llegó'; label = `${quien} te espera afuera`; }
+      else if (s.near)                 { big = 'Ya casi'; label = `${quien} está por llegar`; }
+      else if (etaMin != null && auxState.etaKind === 'pickup') { big = `${etaMin} min`; label = `${quien} va por ti`; }
+      else if (s.before > 0)           { big = `${s.before} antes`; label = s.before === 1 ? 'Recoge a 1 compañero antes de ti' : `Recoge a ${s.before} compañeros antes de ti`; }
+      else if (s.before === 0)         { big = 'Eres el siguiente'; label = `${quien} va por ti`; }
+      else                             { big = 'En camino'; label = `${quien} va por ti`; }
+    } else {
+      const falta = auxPendingAhead(t, info);
+      const lle = t.type === 'lle';
+      if (falta > 0) {
+        big = lle ? `Dejan a ${falta}` : `Recoge a ${falta}`;
+        label = lle ? 'Antes de llegar a tu casa' : 'Antes de ir al aeropuerto';
+      } else if (etaHM && auxState.etaKind === 'dest') {
+        big = etaHM; label = lle ? 'Llegada estimada a tu casa' : 'Llegada estimada a MDE';
+      } else {
+        big = 'En ruta'; label = lle ? 'Vas a casa' : 'Vas al aeropuerto';
+      }
+    }
+    const fase = auxPhaseKey(t, info);
+    const box = valEl.closest('.rx-trip-big');
+    if (box && auxState.hudPhase && auxState.hudPhase !== fase) {
+      // Re-montaje: nodo nuevo con los textos nuevos → la entrada vuelve a correr.
+      const nuevo = box.cloneNode(true);
+      const v2 = nuevo.querySelector('#ax-eta-min'), l2 = nuevo.querySelector('#ax-eta-label');
+      if (v2) { v2.textContent = big; v2.classList.toggle('sm', big.length > 11); }
+      if (l2) l2.textContent = label;
+      box.replaceWith(nuevo);
+    } else {
+      auxHero(labelEl, valEl, label, big);
+    }
+    auxState.hudPhase = fase;
+  }
+
   // Textos honestos (sin ETA inventado): estado + frescura del punto.
   function auxUpdateTrackHUD(t, info) {
     const arrived = info.stop_status === 'arrived';
@@ -2115,7 +2795,9 @@
     // Cuenta regresiva de espera: solo cuando ya llegó y sabemos desde cuándo.
     if (arrived && info.arrived_at) auxStartWait(info.arrived_at, info.wait_minutes);
     else auxStopWait();
-    if (labelEl && valEl) {
+    if (labelEl && valEl && auxShellOn()) {
+      auxHeroRx(t, info, labelEl, valEl, { arrived, near, before });
+    } else if (labelEl && valEl) {
       if (t.status === 'onway') {
         // Protagonista: "Faltan X antes de ti" → "Eres el siguiente" → "Está por llegar" → "Llegó".
         if (arrived)           auxHero(labelEl, valEl, 'Tu conductor', '¡Llegó! 📍');
@@ -2173,11 +2855,54 @@
     }
   }
   // ---------- navegación, salida y cancelación ----------
+  // Pestañas: inicio · viajes · pagos · perfil. auxState.view es 'viajes' o
+  // 'perfil' para esas dos y 'home' para inicio Y para pagos (la pestaña la
+  // dice auxState.tab; así lo lee aux-shell.js). Sin el rediseño no hay
+  // pestaña de pagos: 'home' pinta Inicio.
+  const AUX_TABS = ['inicio', 'viajes', 'pagos', 'perfil'];
+  const auxTabView = (tab) => (tab === 'viajes' || tab === 'perfil') ? tab : 'home';
+  const auxIsTabView = (v) => v === 'home' || v === 'viajes' || v === 'perfil';
   function auxGoTab(tab) {
-    auxState.tab = tab || 'inicio';
-    auxState.view = (tab === 'viajes' || tab === 'perfil') ? tab : 'home';
+    auxState.tab = AUX_TABS.includes(tab) ? tab : 'inicio';
+    auxState.view = auxTabView(auxState.tab);
     auxState.confirmingCancel = false;
+    auxState.alarm = null;
     auxRender();
+  }
+
+  // ATRÁS de a UNA cosa (plan §2.5), en este orden. Devuelve true si cerró
+  // algo; false en Inicio sin nada abierto.
+  // La hoja del shell y su pila propia NO se tocan aquí: el popstate del shell
+  // (backOne) las cierra antes de llamar a esto, y AuxShell.pop() llama a esta
+  // función cuando su pila está vacía — llamarla desde aquí sería un bucle.
+  function auxBack() {
+    const shell = auxShellOn();
+    // 2-4. alarma, confirmación de cancelar, chat (sin rehacer la capa: patch)
+    if (auxState.alarm) { auxState.alarm = null; auxRender(); return true; }
+    if (auxState.confirmingCancel) { auxState.confirmingCancel = false; auxRender(); return true; }
+    if (auxState.chatOpen) { auxChatClose(); if (shell) auxRender(); return true; }
+    // 5. un paso atrás en el pedido, por la misma entrada al paso (#18)
+    if (auxState.view === 'form' && auxState.step > 1) { auxEnterStep(auxState.step - 1, 'bwd'); auxRender(); return true; }
+    // 6. la portada del privado que se abrió desde el pedido
+    if (auxState.view === 'privado') { auxState.view = 'form'; auxRender(); return true; }
+    // (7. la pila propia del shell: la saca el shell antes de llegar aquí)
+    // 8. soporte vuelve a Perfil
+    if (auxState.view === 'support') { auxGoTab('perfil'); return true; }
+    // 9. bienvenida: la diapositiva anterior
+    if (auxState.view === 'onboarding') {
+      if (auxState.onbStep > 0) { auxState.onbStep--; auxRender(); return true; }
+      return false;
+    }
+    // 10. el pedido en su paso 1 se cierra (como la X)
+    if (auxState.view === 'form') { auxState.view = auxTabView(auxState.tab); auxState.step = 1; auxState.form = {}; auxRender(); return true; }
+    // el viaje vuelve a la pestaña desde la que se abrió
+    if (auxState.view === 'trip') {
+      auxState.confirmingCancel = false;
+      auxState.view = auxTabView(auxState.tab); auxRender(); return true;
+    }
+    // una pestaña que no es Inicio (o cualquier otra vista) → Inicio
+    if (auxState.view !== 'home' || (auxState.tab && auxState.tab !== 'inicio')) { auxGoTab('inicio'); return true; }
+    return false;
   }
   async function auxLogout() {
     try { if (window.Api?.signOut) await Api.signOut(); } catch (e) {}
@@ -2202,8 +2927,8 @@
     const t = auxCurTrip(); if (!t) return;
     const ta = document.getElementById('ax-alarm-text');
     if (ta) a.text = ta.value;
-    if (!a.motivo) { toast('Dinos qué está pasando.'); return; }
-    if (!window.Api?.reportIncident) { toast('No se pudo enviar. Intenta de nuevo.'); return; }
+    if (!a.motivo) { auxToast('Dinos qué está pasando.'); return; }
+    if (!window.Api?.reportIncident) { auxToast('No se pudo enviar. Intenta de nuevo.'); return; }
 
     const opt = AUX_ALARM.find(o => o.id === a.motivo) || AUX_ALARM[2];
     const desc = `${opt.label}${a.text && a.text.trim() ? ' — ' + a.text.trim() : ''}`;
@@ -2227,11 +2952,11 @@
       }
       auxState.alarm = null;
       auxRender();
-      toast('Listo, ya avisamos a coordinación.');
+      auxToast('Listo, ya avisamos a coordinación.');
     } catch (e) {
       console.error(e);
       a.sending = false; auxRender();
-      toast('No se pudo enviar: ' + (e.message || 'revisa la señal'));
+      auxToast('No se pudo enviar: ' + (e.message || 'revisa la señal'));
     }
   }
 
@@ -2243,7 +2968,7 @@
     // si la reserva sigue viva en la BD y el conductor sigue yendo por él.
     if (!window.Api?.cancelMyReservation) {
       btn.disabled = false; btn.textContent = 'Sí, cancelar';
-      toast('No se pudo cancelar. Intenta de nuevo.');
+      auxToast('No se pudo cancelar. Intenta de nuevo.');
       return;
     }
     try {
@@ -2254,7 +2979,7 @@
       }
     } catch (e) {
       btn.disabled = false; btn.textContent = 'Sí, cancelar';
-      toast(e.message && e.message.includes('en curso')
+      auxToast(e.message && e.message.includes('en curso')
         ? 'El viaje ya está en curso: no se puede cancelar.'
         : 'No se pudo cancelar. Intenta de nuevo.');
       return;
@@ -2262,12 +2987,245 @@
     t.status = 'cancelled'; t.cancelledAt = new Date().toISOString(); t.cancelReason = reason;
     auxState.confirmingCancel = false;
     auxStopTrack();
-    toast('Traslado cancelado.');
+    auxToast('Traslado cancelado.');
     auxState.view = 'home'; auxState.tab = 'inicio';
     auxRender();
   }
 
+  // Arranca un pedido nuevo. Lo usan el botón «Pedir traslado» (data-ax="new")
+  // y Auxiliar.newTrip(); el candado de suspensión va ANTES, en quien lo llama.
+  function auxStartNew() {
+    if (auxState.typeTimer) { clearTimeout(auxState.typeTimer); auxState.typeTimer = null; }
+    auxState.view = 'form'; auxState.step = 1; auxState.stepDir = 'fwd';
+    auxState.form = { isReserva: true, date: auxDefaultDate() };
+    // El catálogo se pide ya, para que el paso del punto no muestre spinner
+    // (y para que con una unidad ni aparezca). Las siglas también: si la
+    // primera vez no llegaron (app abierta sin señal, perfil recién creado),
+    // este es el momento natural de reintentarlo. El form nace sin
+    // `dondeForced`: un pedido nuevo no arrastra el «Cambiar» del anterior.
+    auxLoadAerolineas();
+    if (window.AuxResidencias) { AuxResidencias.newTrip(); AuxResidencias.load(); }
+    if (window.AuxPrivado) AuxPrivado.resetCupo();
+    auxRender();
+  }
+
+  // ---------- refresco de los viajes (§2.7, #4) ----------
+  // Los viajes del servidor: primero la RPC nueva (0087, P9) y, si no está o
+  // no hay sesión, la consulta de siempre. null = no se pudo (nunca inventa).
+  async function auxFetchTrips() {
+    let list = null;
+    try {
+      if (window.ApiAux && typeof ApiAux.listMyTrips === 'function') list = await ApiAux.listMyTrips();
+    } catch (_) { list = null; }
+    if (!Array.isArray(list)) {
+      try { if (window.Api?.listMyReservations) list = await Api.listMyReservations(); } catch (_) { list = null; }
+    }
+    return Array.isArray(list) ? list : null;
+  }
+
+  // Lo que el rastreo o el teléfono saben y la lista del servidor puede traer
+  // vacío (la consulta vieja no trae conductor): un null del servidor no lo borra.
+  const AUX_KEEP_IF_NULL = ['driver', 'vehicle', '_info', '_risk', 'readyAt'];
+  const AUX_FINAL = ['cancelled', 'noshow'];
+
+  // FUNDE la lista del servidor sobre los MISMOS objetos (§2.7). Antes, cada
+  // recarga reemplazaba el arreglo entero: el rastreo seguía con el objeto
+  // viejo (el que su intervalo tiene agarrado) y la pantalla con el nuevo, sin
+  // conductor. Reglas:
+  //   · por id, Object.assign sobre el viejo; los de AUX_KEEP_IF_NULL no se
+  //     borran con null; conductor y carro se funden campo a campo (salvo que
+  //     el conductor cambie: entonces manda el nuevo entero);
+  //   · `rated` ya en true no vuelve a false;
+  //   · el estado NUNCA retrocede por AUX_ORDER, salvo a cancelado o no se
+  //     presentó, que son finales (y un final no se deshace);
+  //   · los nuevos se agregan; los que el servidor ya no trae se quitan, salvo
+  //     el viaje abierto en pantalla.
+  // El arreglo queda en el orden del servidor (por hora) y es el MISMO arreglo.
+  // Devuelve la lista de cambios [{t, kind}] para los avisos.
+  function auxMergeTrips(list, opts) {
+    const byId = new Map(auxState.trips.map(t => [t.id, t]));
+    const out = [], cambios = [];
+    list.forEach(n => {
+      if (!n || n.id == null) return;
+      const o = byId.get(n.id);
+      if (!o) { out.push(n); byId.delete(n.id); return; }
+      byId.delete(n.id);
+      const antes = { status: o.status, privateStatus: o.privateStatus, pickupAt: o.pickupAt,
+        stopStatus: o.stopStatus, driverName: o.driver && o.driver.name };
+      Object.keys(n).forEach(k => {
+        const v = n[k];
+        if (v == null && AUX_KEEP_IF_NULL.includes(k)) return;
+        if (k === 'status') return;              // se decide abajo
+        if (k === 'rated') { if (o.rated) return; }
+        if (k === 'rating' && o.rated && !n.rated) return;   // la que se acaba de mandar
+        if ((k === 'driver' || k === 'vehicle') && v && o[k] && typeof v === 'object') {
+          const mismo = k !== 'driver' || !o.driver.name || !v.name || o.driver.name === v.name;
+          if (mismo) {
+            const m = Object.assign({}, o[k]);
+            Object.keys(v).forEach(kk => { if (v[kk] != null && v[kk] !== '') m[kk] = v[kk]; });
+            o[k] = m; return;
+          }
+        }
+        o[k] = v;
+      });
+      // El estado: solo avanza; lo final gana y no se deshace.
+      const ns = n.status;
+      if (ns && ns !== o.status) {
+        if (AUX_FINAL.includes(o.status)) { /* final: se queda */ }
+        else if (AUX_FINAL.includes(ns)) o.status = ns;
+        else if ((AUX_ORDER[ns] ?? -1) > (AUX_ORDER[o.status] ?? -1)) o.status = ns;
+      }
+      if (o.status !== antes.status) cambios.push({ t: o, kind: 'status', from: antes.status });
+      if (o.privateStatus !== antes.privateStatus && o.privateStatus) cambios.push({ t: o, kind: 'private', from: antes.privateStatus });
+      if (o.pickupAt && o.pickupAt !== antes.pickupAt) cambios.push({ t: o, kind: 'pickup', from: antes.pickupAt });
+      if (o.stopStatus === 'arrived' && antes.stopStatus !== 'arrived') cambios.push({ t: o, kind: 'arrived' });
+      out.push(o);
+    });
+    // El que está abierto en pantalla no desaparece de golpe aunque el
+    // servidor ya no lo traiga (se va al cerrar el viaje).
+    const abierto = auxState.editingTrip != null ? byId.get(auxState.editingTrip) : null;
+    if (abierto) out.push(abierto);
+    auxState.trips.length = 0;
+    out.forEach(t => auxState.trips.push(t));
+    return cambios;
+  }
+
+  // Un solo refresco a la vez: si ya va uno, se espera ese.
+  // NO repinta por su cuenta: quien lo llama decide. El shell
+  // (AuxShell.refreshTrips) aplica las reglas de §2.7 y los avisos de cambio
+  // de estado. opts.repaint = true aplica aquí esas mismas reglas (para quien
+  // llame sin shell). opts.silent = sin avisos.
+  function auxReloadTrips(opts) {
+    if (auxState.reloading) return auxState.reloading;
+    auxState.reloading = (async () => {
+      try {
+        const list = await auxFetchTrips();
+        // Falla un refresco de fondo: se queda lo que había (era real) y nada
+        // cambia en pantalla. El aviso de «no pudimos cargar» es del arranque.
+        if (!list) return auxState.trips;
+        const abiertoAntes = auxCurTrip();
+        const estadoAntes = abiertoAntes ? abiertoAntes.status : null;
+        const cambios = auxMergeTrips(list);
+        auxState.source = 'live';
+        auxState.lastChanges = cambios.map(c => ({ id: c.t.id, kind: c.kind, from: c.from == null ? null : c.from }));
+        if (!(opts && opts.silent)) auxBannersFor(cambios);
+        if (opts && opts.repaint) auxAfterReload(abiertoAntes, estadoAntes);
+        return auxState.trips;
+      } finally { auxState.reloading = null; }
+    })();
+    return auxState.reloading;
+  }
+
+  // ¿Se repinta después de un refresco? Solo:
+  //   · en una pestaña (inicio, viajes, pagos, perfil) y sin un campo con foco
+  //     (repintar le cerraría el teclado a media palabra);
+  //   · en el viaje abierto, si cambió SU estado (el shell lo resuelve por patch).
+  // Nunca en el pedido, la confirmación ni la bienvenida.
+  function auxAfterReload(abiertoAntes, estadoAntes) {
+    const v = auxState.view;
+    if (v === 'form' || v === 'confirm' || v === 'onboarding') return;
+    if (auxIsTabView(v)) {
+      const ae = document.activeElement;
+      const escribiendo = ae && auxRoot() && auxRoot().contains(ae)
+        && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable);
+      if (!escribiendo) auxRender();
+      return;
+    }
+    if (v === 'trip') {
+      const t = auxCurTrip();
+      if (t && abiertoAntes === t && t.status !== estadoAntes) auxRender();
+    }
+  }
+
+  // ---------- avisos en la app por cambios del refresco (§2.6, fuente 2) ----------
+  // El shell ya avisa los cambios de ESTADO (asignado, en camino, llegaste,
+  // cancelado). Aquí van solo los que él no ve porque no son un estado:
+  //   · el privado aprobado o rechazado;
+  //   · la hora de recogida publicada o cambiada (con el viaje ya asignado);
+  //   · «llegó por ti» (estado de la parada, con el código si toca);
+  //   · no se presentó.
+  // Solo con el rediseño, la app a la vista y SIN otro aviso en pantalla (no
+  // se pisa el de un push que acaba de llegar). Cada cambio se avisa UNA vez
+  // (id:tipo:valor). Textos con datos reales: sin nombre si no lo hay, sin
+  // hora si no está publicada.
+  const AUX_BANNER_KINDS = ['private', 'pickup', 'arrived'];
+  function auxBannersFor(cambios) {
+    if (!cambios || !cambios.length || !auxShellOn() || typeof AuxShell.banner !== 'function') return;
+    if (document.visibilityState === 'hidden') return;
+    if (auxRoot() && auxRoot().querySelector('.rx-push-host .rx-push')) return;
+    let dado = false;
+    cambios.forEach(c => {
+      if (dado) return;                        // uno a la vez: el banner es uno solo
+      const propio = AUX_BANNER_KINDS.includes(c.kind) || (c.kind === 'status' && c.t.status === 'noshow');
+      if (!propio) return;
+      const b = auxBannerFor(c, cambios);
+      if (!b) return;
+      const key = `${c.t.id}:${c.kind}:${c.kind === 'status' ? c.t.status : c.kind === 'private' ? c.t.privateStatus : c.kind === 'pickup' ? c.t.pickupAt : 'arrived'}`;
+      if (auxState.bannerSeen[key]) return;
+      auxState.bannerSeen[key] = 1;
+      try { AuxShell.banner(b); dado = true; } catch (_) {}
+    });
+  }
+  function auxBannerFor(c, lote) {
+    const t = c.t;
+    const first = (t.driver && (t.driver.first || String(t.driver.name || '').split(' ')[0])) || '';
+    const placa = auxPlate(t);
+    const abrir = (rate) => () => window.Auxiliar.openTrip(t.id, rate ? { rate: true } : undefined);
+    if (c.kind === 'status') {
+      if (t.status === 'assigned') {
+        const pub = t.pickupAt ? new Date(t.pickupAt) : null;
+        const cuando = pub && !isNaN(pub.getTime())
+          ? `Te recogemos ${auxDiaTexto(pub.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }))} a las ${auxHMBog(pub)}.`
+          : 'Te avisamos la hora de recogida cuando armemos tu ruta.';
+        return { icon: 'Car', title: 'Ya tienes conductor', body: [first && placa ? `${first} · ${placa}.` : '', cuando].filter(Boolean).join(' '), go: abrir() };
+      }
+      if (t.status === 'onway') return { icon: 'Nav', title: first ? `${first} va en camino` : 'Tu conductor va en camino', body: placa ? `Carro ${placa}.` : '', go: abrir() };
+      if (t.status === 'onboard') return null;   // el tripulante acaba de subirse: ya lo sabe
+      if (t.status === 'done') {
+        return { icon: 'Star', title: t.type === 'lle' ? 'Llegaste a casa' : 'Llegaste a MDE',
+          body: first ? `¿Cómo te fue con ${first}?` : '', go: abrir(!!t.driver) };
+      }
+      if (t.status === 'cancelled') return { icon: 'X', title: 'Tu traslado fue cancelado', body: t.cancelReason || '', go: abrir() };
+      if (t.status === 'noshow') return { icon: 'Alert', title: 'El conductor no pudo recogerte', body: 'Si fue un error, escríbele a Coordinación.', go: abrir() };
+      return null;
+    }
+    if (c.kind === 'private') {
+      if (t.privateStatus === 'approved') return { icon: 'Check', title: 'Tu privado quedó confirmado', body: '', go: abrir() };
+      if (t.privateStatus === 'rejected') return { icon: 'Info', title: 'Tu privado no se pudo confirmar', body: 'Viajas en compartido.', go: abrir() };
+      return null;
+    }
+    if (c.kind === 'pickup') {
+      // Si en el MISMO refresco quedó asignado, la hora ya va en ese aviso.
+      if (c.from == null && (lote || []).some(x => x.t === t && x.kind === 'status' && t.status === 'assigned')) return null;
+      const pub = new Date(t.pickupAt);
+      if (isNaN(pub.getTime())) return null;
+      return { icon: 'Clock', title: c.from ? 'Cambió tu hora de recogida' : 'Ya tienes hora de recogida',
+        body: `Te recogemos ${auxDiaTexto(pub.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }))} a las ${auxHMBog(pub)}.`, go: abrir() };
+    }
+    if (c.kind === 'arrived') {
+      const code = auxMeetVisible(t, { stop_status: 'arrived' }) ? t.meetCode : '';
+      return { icon: 'MapPin', title: first ? `${first} llegó por ti` : 'Tu conductor llegó por ti',
+        body: code ? `Tu código de encuentro es ${code}.` : '', go: abrir() };
+    }
+    return null;
+  }
+
   // ---------- eventos ----------
+  // Lo que escribe en el pedido (auxState.form) SOLO vale dentro del pedido
+  // (#9). Con el rediseño, la pantalla del pedido va marcada data-scr="book";
+  // Coordinación, «Cambió mi vuelo», el punto de encuentro o la residencia
+  // del perfil tienen sus propios campos (data-rx-field) y estado.
+  function auxEnPedido(el) {
+    if (!auxShellOn()) return true;
+    if (!el || !el.closest) return false;
+    if (el.closest('[data-scr="book"]')) return true;
+    // Si la pantalla no está marcada con data-scr, se acepta mientras el
+    // pedido esté abierto (no hay otra pantalla con la que confundirse).
+    return auxState.view === 'form' && !el.closest('[data-scr]');
+  }
+  const AUX_FORM_ACTS = ['type', 'date', 'fl-pick', 'fl-set', 'fl-other', 'toggle', 'next', 'back',
+    'donde-cambiar', 'pin-confirm', 'pin-edit'];
+
   function auxBindOnce() {
     if (auxState.bound) return;
     const root = auxRoot(); if (!root) return;
@@ -2284,30 +3242,23 @@
     root.addEventListener('click', (e) => {
       const el = e.target.closest('[data-ax]'); if (!el) return;
       const a = el.dataset.ax;
+      // Con el rediseño, lo que escribe en el pedido solo cuenta dentro de él (#9).
+      if (AUX_FORM_ACTS.includes(a) && !auxEnPedido(el)) return;
+      if ((a === 'lvl' || a === 'lvl-choose') && auxShellOn() && auxState.view !== 'form' && auxState.view !== 'privado') return;
       if (a === 'install') { if (window.rendioInstall) window.rendioInstall.prompt(); return; }
       if (a === 'enable-push') { if (typeof enablePush === 'function') Promise.resolve(enablePush()).then(() => auxSetupPwa()); return; }
-      if ((a === 'new' || a === 'repeat') && auxSuspendido()) {
-        toast('Tu cuenta está suspendida: no puedes pedir traslados nuevos. Habla con tu jefe.');
-        return;
-      }
-      if (a === 'change-pw') { openCambiarMiClave(); return; }
+      // Candados para pedir: suspensión del jefe (0081) y pausa por no pago.
+      // Con el rediseño es una hoja que explica; sin él, el toast de siempre.
+      if ((a === 'new' || a === 'repeat') && auxLockCheck()) return;
+      if (a === 'change-pw') { if (typeof openCambiarMiClave === 'function') openCambiarMiClave(); return; }
       if (a === 'new') {
-        auxState.view = 'form'; auxState.step = 1;
-        auxState.form = { isReserva: true, date: auxDefaultDate() };
-        // El catálogo se pide ya, para que el paso del punto no muestre spinner
-        // (y para que con una unidad ni aparezca). Las siglas también: si la
-        // primera vez no llegaron (app abierta sin señal, perfil recién creado),
-        // este es el momento natural de reintentarlo. El form nace sin
-        // `dondeForced`: un pedido nuevo no arrastra el «Cambiar» del anterior.
-        auxLoadAerolineas();
-        if (window.AuxResidencias) { AuxResidencias.newTrip(); AuxResidencias.load(); }
-        if (window.AuxPrivado) AuxPrivado.resetCupo();
-        auxRender();
+        auxStartNew();
       }
       // ---- «Repetir el de siempre»: arranca en el paso 2, no en el 1 ----
       else if (a === 'repeat') {
         const last = auxLastTrip(); if (!last) return;
-        auxState.view = 'form'; auxState.step = 2;
+        if (auxState.typeTimer) { clearTimeout(auxState.typeTimer); auxState.typeTimer = null; }
+        auxState.view = 'form'; auxState.step = 1;
         auxState.form = {
           isReserva: true, type: last.type,
           date: auxDefaultDate(),
@@ -2332,6 +3283,7 @@
           auxState.form.address = last.address; auxState.form.lat = last.lat;
           auxState.form.lng = last.lng; auxState.form.locConfirmed = true;
         }
+        auxEnterStep(2, 'fwd');
         auxRender();
       }
       // ---- 0069 · nivel de servicio (aux-privado.js) ----
@@ -2342,6 +3294,8 @@
         // justo cuando el tripulante quiere saber qué se perdió.
         if (el.hasAttribute('disabled') || el.classList.contains('off')) return;
         auxState.form.level = el.dataset.v;
+        auxState.form.levelAuto = false;   // lo eligió él: ya no se suelta solo
+        if (auxState.form.level !== 'private') auxState.form.quietRide = false;
         auxRender();
       }
       else if (a === 'lvl-info') { auxState.view = 'privado'; auxRender(); }
@@ -2350,7 +3304,7 @@
       // Deshabilitado cuando la camioneta está comprometida a esa hora.
       else if (a === 'lvl-choose') {
         if (el.hasAttribute('disabled')) return;
-        auxState.form.level = 'private'; auxState.view = 'form'; auxRender();
+        auxState.form.level = 'private'; auxState.form.levelAuto = false; auxState.view = 'form'; auxRender();
       }
       // ---- «Cambiar» el punto desde el resumen (15-sep-2026) ----
       // Con una unidad el paso 'donde' no existió; este botón lo hace existir:
@@ -2361,11 +3315,14 @@
         if (!window.AuxResidencias) return;
         auxState.form.dondeForced = true;
         AuxResidencias.forcePick(auxState.form);
-        auxState.step = auxStepKinds().indexOf('donde') + 1;
+        auxEnterStep(auxStepKinds().indexOf('donde') + 1, 'bwd');
         auxRender();
       }
       // ---- §7 · catálogo de residencias (aux-residencias.js) ----
       else if (a && a.indexOf('res-') === 0 && window.AuxResidencias) {
+        // El selector de la residencia del PERFIL tiene su propio estado: sus
+        // res-* no pueden escribir en el pedido (#9).
+        if (!auxEnPedido(el)) return;
         const r = AuxResidencias.handle(a, el, auxState.form);
         if (r === true) auxRender();
         return;
@@ -2417,28 +3374,33 @@
         if (t) { auxState.editingTrip = t.id; auxState.view = 'trip'; auxState.confirmingCancel = false; auxRender(); }
       }
       else if (a === 'sup-push') { auxGoTab('perfil'); }
-      else if (a === 'cancel' || a === 'home') { auxState.view = 'home'; auxState.step = 1; auxState.form = {}; auxRender(); }
-      else if (a === 'back') { auxState.step = Math.max(1, auxState.step - 1); auxRender(); }
+      else if (a === 'cancel' || a === 'home') {
+        if (auxState.typeTimer) { clearTimeout(auxState.typeTimer); auxState.typeTimer = null; }
+        auxState.view = 'home'; auxState.tab = 'inicio'; auxState.step = 1; auxState.form = {}; auxRender();
+      }
+      else if (a === 'back') { auxEnterStep(auxState.step - 1, 'bwd'); auxRender(); }
       else if (a === 'next') {
-        if (el.hasAttribute('disabled')) return;
-        if (auxState.step < auxSteps()) {
-          auxState.step++;
-          // Al entrar al paso del nivel se le pregunta al servidor si la
-          // camioneta está libre a esa hora. No se puede saber en el cliente.
-          if (auxStepKind(auxState.step) === 'nivel' && window.AuxPrivado) {
-            if (!auxState.form.level) auxState.form.level = 'shared';
-            // En primicia la camioneta no se puede pedir: no hay cupo que consultar.
-            if (!AuxPrivado.primicia || !AuxPrivado.primicia()) AuxPrivado.askCupo(auxWhenISO(auxState.form));
-          }
-          auxRender();
-        } else {
-          // El audio de la celebración se desbloquea AQUÍ, dentro del clic:
-          // auxSubmit es async y en iOS el gesto ya no cuenta cuando vuelve.
-          if (window.AuxCelebracion) AuxCelebracion.prime();
-          auxSubmit();
+        if (el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true') return;
+        // Al entrar al paso del nivel se le pregunta al servidor si la
+        // camioneta está libre a esa hora (auxEnterStep). En el último paso
+        // envía, y el audio se desbloquea dentro de este mismo clic.
+        auxGoNext(el);
+      }
+      else if (a === 'type') {
+        const tipo = el.dataset.type;
+        auxState.form.type = tipo; auxRender();
+        // Rediseño: el paso 1 avanza solo a los 260 ms (como rx-book.jsx). Sin
+        // él, el «Continuar» de siempre.
+        if (auxShellOn()) {
+          if (auxState.typeTimer) clearTimeout(auxState.typeTimer);
+          auxState.typeTimer = setTimeout(() => {
+            auxState.typeTimer = null;
+            if (auxState.view === 'form' && auxStepKind(auxState.step) === 'tipo' && auxState.form.type === tipo) {
+              auxEnterStep(auxState.step + 1, 'fwd'); auxRender();
+            }
+          }, 260);
         }
       }
-      else if (a === 'type') { auxState.form.type = el.dataset.type; auxRender(); }
       else if (a === 'date') { auxState.form.date = el.dataset.iso; auxRender(); }
       // ---- la sigla de la aerolínea del vuelo (11-sep-2026) ----
       else if (a === 'fl-pick') {
@@ -2462,9 +3424,9 @@
         if (inp) { try { inp.focus(); inp.select(); } catch (_) {} }
       }
       else if (a === 'toggle') { const k = el.dataset.key; auxState.form[k] = !auxState.form[k]; auxRender(); }
-      else if (a === 'pin-confirm') { auxState.form.locConfirmed = true; auxRefreshPinRow(); toast('Ubicación confirmada.'); }
+      else if (a === 'pin-confirm') { auxState.form.locConfirmed = true; auxRefreshPinRow(); auxToast('Ubicación confirmada.'); }
       else if (a === 'pin-edit') { auxState.form.locConfirmed = false; auxRefreshPinRow(); }
-      else if (a === 'trip') { auxState.editingTrip = el.dataset.id; auxState.view = 'trip'; auxState.ratingSel = 0; auxState.ratingTags = []; auxState.confirmingCancel = false; auxRender(); }
+      else if (a === 'trip') { window.Auxiliar.openTrip(el.dataset.id); }
       else if (a === 'tab') { auxGoTab(el.dataset.tab); }
       else if (a === 'profile') { auxGoTab('perfil'); }
       else if (a === 'logout') { auxLogout(); }
@@ -2478,10 +3440,10 @@
         el.disabled = true;
         // Sin la API no se "confirma" nada en local: sería el mismo engaño que
         // se acaba de arreglar, solo que en otra rama.
-        if (!window.Api?.confirmReservationReady) { el.disabled = false; toast('No se pudo confirmar. Intenta de nuevo.'); return; }
+        if (!window.Api?.confirmReservationReady) { el.disabled = false; auxToast('No se pudo confirmar. Intenta de nuevo.'); return; }
         Api.confirmReservationReady(t.id)
-          .then(() => { t.readyAt = new Date().toISOString(); toast('Listo — le avisamos a tu conductor.'); auxRender(); })
-          .catch(() => { el.disabled = false; toast('No se pudo confirmar. Intenta de nuevo.'); });
+          .then(() => { t.readyAt = new Date().toISOString(); auxToast('Listo — le avisamos a tu conductor.'); auxRender(); })
+          .catch(() => { el.disabled = false; auxToast('No se pudo confirmar. Intenta de nuevo.'); });
       }
       // --- botón rojo: algo se salió del plan (eventualidad #4) ---
       else if (a === 'alarm') { auxState.alarm = { motivo: null, text: '', sending: false }; auxRender(); }
@@ -2499,12 +3461,14 @@
       else if (a === 'call') {
         const ph = auxCurTrip()?.driver?.phone;
         if (ph) { try { window.location.href = 'tel:' + ph.replace(/[^\d+]/g, ''); } catch (_) {} }
-        else toast('Aún no hay teléfono del conductor.');
+        else auxToast('Aún no hay teléfono del conductor.');
       }
-      else if (a === 'share-eta') { auxShareEta(); }
+      else if (a === 'share-eta') { auxShareEta(auxCurTrip()); }
       // --- chat con el conductor ---
-      else if (a === 'chat') { auxChatOpen(); }
-      else if (a === 'chat-close') { auxChatClose(); }
+      // Con el rediseño se avisa al shell (render → patch): el chat abierto
+      // cuenta para el botón atrás. Sin él, el panel se abre como siempre.
+      else if (a === 'chat') { auxChatOpen(); if (auxShellOn()) auxRender(); }
+      else if (a === 'chat-close') { auxChatClose(); if (auxShellOn()) auxRender(); }
       else if (a === 'chat-send') { auxChatSend(); }
       // --- calificación ---
       else if (a === 'star') { auxState.ratingSel = Number(el.dataset.n); auxState.ratingTags = []; auxRender(); }
@@ -2516,14 +3480,26 @@
         // Persiste en dev (optimista); en demo se queda local.
         if (auxState.source === 'live' && t && window.Api?.rateReservation) {
           Api.rateReservation(t.id, auxState.ratingSel, auxState.ratingTags)
-            .catch(() => toast('No se pudo guardar la calificación en el servidor.'));
+            .catch(() => auxToast('No se pudo guardar la calificación en el servidor.'));
         }
-        toast('¡Gracias por tu calificación!'); auxState.view = 'home'; auxRender();
+        auxState.rateOpen = null;
+        auxToast('¡Gracias por tu calificación!', 'Star'); auxState.view = 'home'; auxState.tab = 'inicio'; auxRender();
       }
-      else if (a === 'rate-skip') { const t = auxCurTrip(); if (t) t.rated = true; auxState.view = 'home'; auxRender(); }
+      // «Ahora no»: queda guardado en el teléfono y el viaje sigue SIN
+      // calificar en el servidor (antes se marcaba calificado en memoria y al
+      // recargar la app volvía a salir).
+      else if (a === 'rate-skip') {
+        const t = auxCurTrip();
+        if (t) auxRateSkip(t.id);
+        auxState.rateOpen = null;
+        auxState.view = 'home'; auxState.tab = 'inicio'; auxRender();
+      }
     });
 
     root.addEventListener('input', (e) => {
+      // Guarda del rediseño (#9): solo los campos DEL PEDIDO escriben en
+      // auxState.form. Los demás formularios (data-rx-field) los maneja su módulo.
+      if (!auxEnPedido(e.target)) return;
       // Buscador del catálogo: repinta SOLO la lista. Si repintáramos el paso
       // entero se remonta el input y el cursor salta al final en cada tecla.
       if (e.target && e.target.id === 'axr-q') {
@@ -2538,7 +3514,7 @@
       // tripulante y no en silencio al guardar.
       if (k === 'flightNum' || k === 'backFlightNum' || k === 'flightIata' || k === 'backFlightIata') {
         auxFlightInput(k, el);
-        const ctaV = auxRoot().querySelector('.ax-cta-bar'); if (ctaV) ctaV.innerHTML = auxFormCTA();
+        auxSyncCta(el);
         return;
       }
       auxState.form[k] = el.value;
@@ -2548,12 +3524,10 @@
         const q = el.value.trim();
         if (q.length >= 6) auxState.geoTimer = setTimeout(() => auxGeocode(q), 700);
       }
-      // habilita/inhabilita el CTA sin remontar (no perder foco del input)
-      const cta = auxRoot().querySelector('.ax-cta-bar'); if (cta) cta.innerHTML = auxFormCTA();
+      // habilita/inhabilita el CTA sin remontar (no perder foco del input);
+      // con el rediseño sin innerHTML: el deslizador no se rehace a media tecla.
+      auxSyncCta(el);
       // …y con él, el aviso de fecha/antelación: si no, el botón se apagaba mudo.
-      if (k === 'date' || k === 'time') {
-        const hints = document.getElementById('ax-time-hints');
-        if (hints) hints.innerHTML = auxTimeHints();
-      }
+      if (k === 'date' || k === 'time') auxPaintTimeHints();
     });
   }
