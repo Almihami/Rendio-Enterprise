@@ -94,10 +94,17 @@
             await Api.signOut();
             nextAction = () => showLogin('Tu cuenta no tiene perfil asociado.');
           }
+        } else if (profile.deleted_at) {
+          // Eliminado (0081): no entra. La cuenta ya está bloqueada en Supabase;
+          // esto cubre la sesión que tuviera guardada de antes.
+          await Api.signOut();
+          nextAction = () => showLogin('Tu cuenta fue dada de baja. Si crees que es un error, habla con tu jefe.');
         } else {
           // Suspendido: lo dejamos entrar a ver el banner; el módulo se bloquea.
           state.profile = profile;
-          nextAction = () => enterApp();
+          nextAction = profile.must_change_password
+            ? async () => { showLogin(); await openCambiarMiClave({ forced: true }); return enterApp(); }
+            : () => enterApp();
         }
       }
     } catch (e) {
@@ -320,7 +327,13 @@
       await Api.signIn(email, password);
       const profile = await Api.getCurrentProfile();
       if (!profile) throw new Error('Tu cuenta no tiene perfil asociado.');
+      if (profile.deleted_at) {
+        await Api.signOut();
+        throw new Error('Tu cuenta fue dada de baja. Si crees que es un error, habla con tu jefe.');
+      }
       state.profile = profile;
+      // Contraseña temporal puesta por el jefe: primero se cambia (U2).
+      if (profile.must_change_password) await openCambiarMiClave({ forced: true });
       await enterApp();
     } catch (err) {
       showLogin(err.message || 'Error iniciando sesión');

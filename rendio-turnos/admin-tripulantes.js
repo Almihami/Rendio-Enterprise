@@ -15,6 +15,10 @@
 //      unidad y teléfono, que hasta ahora vivían repartidos entre un WhatsApp y
 //      la cabeza del coordinador.
 //
+// 27-sep-2026 (0081, U4): el jefe también edita nombre, teléfono, correo y
+// aerolínea, restablece la contraseña y suspende o reactiva. Suspendido = entra
+// a la app pero no pide traslados nuevos.
+//
 // LO QUE NO HACE
 // No crea ni borra tripulantes: ese es justo el trabajo que el registro vino a
 // quitar. Tampoco edita la dirección de nadie — el punto de recogida es del
@@ -26,7 +30,7 @@
 
   const st = {
     items: null, airlines: null, loading: false,
-    q: '', filtro: 'todos',        // todos | sin-fecha | dos-unidades
+    q: '', filtro: 'todos',        // todos | sin-fecha | dos-unidades | suspendidos
     editing: null,                  // id del tripulante con la fecha abierta
     busy: null,
     airOpen: false, airName: '', airCode: '', airBusy: false,
@@ -95,6 +99,7 @@
     }
     if (st.filtro === 'sin-fecha') l = l.filter(a => !a.joinedAt);
     if (st.filtro === 'dos-unidades') l = l.filter(a => !!a.res2);
+    if (st.filtro === 'suspendidos') l = l.filter(a => !a.active);
     return l;
   }
 
@@ -141,10 +146,10 @@
       ? esc(a.res2.name) + (a.unit2 ? ' · <b>' + esc(a.unit2) + '</b>' : '')
       : null;
     return `
-      <div class="tp-row${editando ? ' open' : ''}">
+      <div class="tp-row${editando ? ' open' : ''}${a.active ? '' : ' sus'}">
         <div class="tp-main">
           <div class="tp-who">
-            <b>${esc(a.name)}</b>
+            <b>${esc(a.name)}${a.active ? '' : ' <span class="tp-tag tp-sus">Suspendida</span>'}</b>
             <span>${esc(a.email)}${a.phone ? ' · ' + esc(a.phone) : ' · <i>sin teléfono</i>'}</span>
           </div>
           <div class="tp-air">${a.airline ? esc(a.airline) : '<i>sin aerolínea</i>'}</div>
@@ -158,7 +163,7 @@
               : `<b class="falta">Sin fecha</b><span>se registró ${fechaES((a.createdAt || '').slice(0, 10))}</span>`}
           </div>
           <button class="set-btn ghost tp-edit" data-tp="edit" data-id="${esc(a.id)}">
-            ${editando ? 'Cerrar' : (a.joinedAt ? 'Cambiar fecha' : 'Poner fecha')}
+            ${editando ? 'Cerrar' : 'Gestionar'}
           </button>
         </div>
         ${editando ? `
@@ -171,6 +176,14 @@
             </button>
             <p>La estampa el registro con el día en que se creó la cuenta. Corrígela para quien
                ya llevaba tiempo con nosotros: de esta fecha salen los beneficios por antigüedad.</p>
+          </div>
+          <div class="tp-editor tp-cuenta">
+            ${!a.active && a.suspendedReason ? `<p class="tp-motivo"><b>Motivo de la suspensión:</b> ${esc(a.suspendedReason)}</p>` : ''}
+            <button class="set-btn ghost" data-tp="datos" data-pid="${esc(a.profileId)}">Editar datos</button>
+            <button class="set-btn ghost" data-tp="clave" data-pid="${esc(a.profileId)}" data-name="${esc(a.name)}">Restablecer contraseña</button>
+            <button class="set-btn ${a.active ? 'ghost' : 'primary'}" data-tp="${a.active ? 'suspender' : 'reactivar'}" data-pid="${esc(a.profileId)}" data-name="${esc(a.name)}" ${st.busy === a.profileId ? 'disabled' : ''}>
+              ${a.active ? 'Suspender' : 'Reactivar'}
+            </button>
           </div>` : ''}
       </div>`;
   }
@@ -226,6 +239,9 @@
         return paint();
       }
       if (a === 'save') return guardarFecha(b.dataset.id);
+      if (a === 'datos') return openEditarDatos(b.dataset.pid, recargar);
+      if (a === 'clave') return openRestablecerClave(b.dataset.pid, b.dataset.name);
+      if (a === 'suspender' || a === 'reactivar') return cambiarEstado(b.dataset.pid, b.dataset.name, a === 'suspender');
       if (a === 'air') { st.airOpen = !st.airOpen; return paintAirlines(); }
       if (a === 'air-add') return agregarAerolinea();
       if (a === 'air-toggle') {
@@ -259,6 +275,28 @@
       toast('Antigüedad actualizada.');
     } catch (e) {
       toast(e?.message || 'No se pudo guardar la fecha.');
+    } finally { st.busy = null; paint(); }
+  }
+
+  async function recargar() {
+    try { st.items = await Api.listAuxiliares(); } catch (_) {}
+    paint();
+  }
+
+  // Suspender pide motivo: lo ve la tripulante en su app.
+  async function cambiarEstado(pid, name, suspender) {
+    let reason = null;
+    if (suspender) {
+      reason = prompt(`¿Suspender a ${name}? Sigue entrando a la app y ve sus viajes, pero no puede pedir traslados nuevos. Los que ya pidió se respetan.\n\nMotivo (lo verá ella):`, '');
+      if (reason === null) return;
+    } else if (!confirm(`¿Reactivar a ${name}? Vuelve a poder pedir traslados.`)) return;
+    st.busy = pid; paint();
+    try {
+      await usrSetStatus(pid, suspender ? 'suspended' : 'active', reason);
+      toast(suspender ? `${name} quedó suspendida.` : `${name} quedó activa.`);
+      st.items = await Api.listAuxiliares();
+    } catch (e) {
+      toast(e?.message || 'No se pudo cambiar el estado.');
     } finally { st.busy = null; paint(); }
   }
 

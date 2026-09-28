@@ -32,15 +32,16 @@
   async function renderWorkers() {
     const list = $('#workers-list');
     list.innerHTML = '<p class="text-sm text-slate-500">Cargando…</p>';
-    let admins, drivers, strikeCounts, weekSusp, rulesRows, sched, closedShifts;
+    let admins, drivers, strikeCounts, weekSusp, rulesRows, sched, closedShifts, deleted;
     try {
-      [admins, drivers, strikeCounts, weekSusp, rulesRows, sched, closedShifts] = await Promise.all([
-        Api.listAdmins(), Api.listAllDriversForAdmin(),
+      [admins, drivers, strikeCounts, weekSusp, rulesRows, sched, closedShifts, deleted] = await Promise.all([
+        Api.listAdmins({ includeInactive: true }), Api.listAllDriversForAdmin(),
         Api.getActiveStrikeCounts().catch(() => new Map()),
         Api.getWeekSuspensions(state.currentWeek).catch(() => new Map()),
         Api.listDriverRules().catch(() => []),
         Api.getSchedule(state.currentWeek).catch(() => null),
         Api.listClosedShiftsAdmin().catch(() => []),
+        Api.listDeletedProfiles().catch(() => []),
       ]);
     } catch (e) {
       list.innerHTML = `<p class="text-sm text-rose-600">Error cargando personal: ${escapeHtml(e.message)}</p>`;
@@ -84,14 +85,18 @@
 
     const people = [
       ...admins.map(a => ({ id: a.id, name: a.full_name, email: a.email, role: 'admin',
-        coord: a.is_coordinator !== false, active: true, strikes: 0, suspWeek: false, rest: '',
+        coord: a.is_coordinator !== false, active: a.is_active !== false, strikes: 0, suspWeek: false, rest: '',
         alerts: a.receives_ops_alerts === true,
         load: { am: 0, pm: 0, co: 0, total: 0 } })),
       ...drivers.map(d => ({ id: d.id, name: d.name, email: d.email, role: 'driver',
-        coord: d.can_coordinate === true, active: d.active !== false,
+        coord: d.can_coordinate === true, active: d.active !== false, reason: d.suspendedReason || '',
         strikes: strikeCounts.get(d.id) || 0, suspWeek: weekSusp.has(d.id), suspRow: weekSusp.get(d.id) || null,
         km: (kmByProfile.get(d.id) || {}).km || 0, turns: (kmByProfile.get(d.id) || {}).turns || 0,
         rest: restText(d.id), load: loadOf[d.id] || { am: 0, pm: 0, co: 0, total: 0 } })),
+      // Eliminados (0081): no entran a la app, pero se pueden restaurar.
+      ...(deleted || []).map(x => ({ id: x.id, name: x.full_name, email: x.email, role: x.role,
+        deleted: true, active: false, coord: false, strikes: 0, suspWeek: false, rest: '',
+        load: { am: 0, pm: 0, co: 0, total: 0 } })),
     ];
     if (!state._pcSel || !people.find(p => p.id === state._pcSel)) state._pcSel = people[0] ? people[0].id : null;
 
@@ -105,7 +110,8 @@
     // pintando "3" pasara lo que pasara. Si el jefe lo pone en 5, ahora se
     // dibujan 5 puntos y "En riesgo" empieza en el quinto. strikeLimit() vive en
     // core.js y es FUNCIÓN porque state.settings solo se llena al iniciar sesión.
-    const statusInfo = (p) => !p.active ? { cls: 'sus', dot: 'sus', label: 'Suspendido' }
+    const statusInfo = (p) => p.deleted ? { cls: 'sus', dot: 'sus', label: 'Eliminado' }
+      : !p.active ? { cls: 'sus', dot: 'sus', label: p.role === 'admin' ? 'Sin acceso' : 'Suspendido' }
       : p.suspWeek ? { cls: 'warn', dot: 'warn', label: 'Susp. esta semana' }
       : p.strikes >= strikeLimit() ? { cls: 'risk', dot: 'risk', label: 'En riesgo' }
       : { cls: '', dot: 'ok', label: 'Activo' };
@@ -128,8 +134,8 @@
       const si = statusInfo(p);
       return `<div class="mrow ${p.id === state._pcSel ? 'on' : ''} ${!p.active ? 'sus' : ''}" data-sel="${p.id}">
         <span class="av" style="background:${colorOf(p)}">${initials(p.name)}</span>
-        <div class="nm"><b>${escapeHtml(p.name)}</b><span>${p.role === 'admin' ? 'Administrador' : (p.rest ? 'Descanso: ' + escapeHtml(p.rest) : 'Conductor')}</span></div>
-        ${p.role === 'admin'
+        <div class="nm"><b>${escapeHtml(p.name)}</b><span>${p.deleted ? (p.role === 'admin' ? 'Administrador' : 'Conductor') + ' · eliminado' : p.role === 'admin' ? 'Administrador' : (p.rest ? 'Descanso: ' + escapeHtml(p.rest) : 'Conductor')}</span></div>
+        ${p.role === 'admin' || p.deleted
           ? `<span class="sdot ${si.dot}"></span>`
           : `<span class="mini ${loadCls(p.load.total)}"><i style="width:${Math.min(p.load.total / 5 * 100, 100)}%"></i></span>`}
       </div>`;
@@ -139,6 +145,26 @@
       if (!p) return '';
       const si = statusInfo(p); const adm = p.role === 'admin'; const L = p.load;
       const nm = escapeAttr(p.name);
+      const yo = state.profile && p.id === state.profile.id;
+      if (p.deleted) return `<div class="detail">
+        <div class="dhead">
+          <span class="av" style="background:${colorOf(p)}">${initials(p.name)}</span>
+          <div style="flex:1;min-width:0">
+            <h2>${escapeHtml(p.name)}</h2><div class="mail">${escapeHtml(p.email || '')}</div>
+            <div class="chips"><span class="statechip ${si.cls}"><span class="sdot ${si.dot}"></span>${si.label}</span>
+              <span class="statechip role">${adm ? 'Administrador' : 'Conductor'}</span></div>
+          </div>
+        </div>
+        <div class="dbody"><div class="dblock full">
+          <h3>Eliminado</h3>
+          <p style="font-size:13px;color:var(--pc-ink2)">No puede entrar a la app y no sale en la generación de horarios. Al restaurarlo vuelve activo, con su mismo correo y contraseña.</p>
+        </div></div>
+        <div class="dactions">
+          <button class="pc-btn" data-act="edit" data-id="${p.id}" data-name="${nm}">Editar datos</button>
+          <div class="spacer"></div>
+          <button class="pc-btn on" data-act="restore" data-id="${p.id}" data-name="${nm}">Restaurar</button>
+        </div>
+      </div>`;
       // El bloque de Confiabilidad dice de qué MES habla, y no es adorno: desde la
       // migración 0077 el conteo se reinicia cada mes. Un "2 de 3" pelado se lee
       // como el acumulado de toda la vida del conductor, y con esa lectura el jefe
@@ -171,6 +197,7 @@
             <div class="ruleitem"><span class="t">Puede liderar</span><span class="v">${p.coord ? 'Sí' : 'No'}</span></div>
             <div class="ruleitem"><span class="t">Descanso fijo</span><span class="v ${p.rest ? 'lock' : ''}">${p.rest ? '🔒 ' + escapeHtml(p.rest) : '—'}</span></div>
             ${p.suspWeek ? '<div class="ruleitem"><span class="t">Esta semana</span><span class="v">Suspendido</span></div>' : ''}
+            ${!p.active && p.reason ? `<div class="usr-reason"><b>Motivo de la suspensión:</b> ${escapeHtml(p.reason)}</div>` : ''}
           </div>
           <div class="dblock full">
             <h3>Confiabilidad — ${p.strikes} de ${lim} strikes en ${mesActual}</h3>
@@ -187,14 +214,21 @@
           </div>`}
         </div>
         <div class="dactions">
+          <button class="pc-btn" data-act="edit" data-id="${p.id}" data-name="${nm}">Editar datos</button>
+          ${yo ? `<button class="pc-btn" data-act="my-pw" data-id="${p.id}" data-name="${nm}">Cambiar mi contraseña</button>`
+               : `<button class="pc-btn" data-act="reset-pw" data-id="${p.id}" data-name="${nm}">Restablecer contraseña</button>`}
           <button class="pc-btn ${p.coord ? 'on' : ''}" data-act="${adm ? (p.coord ? 'coord-off' : 'coord-on') : (p.coord ? 'dcoord-off' : 'dcoord-on')}" data-id="${p.id}" data-name="${nm}">${p.coord ? '✓ Lidera' : '✕ No lidera'}</button>
           ${adm ? `<button class="pc-btn ${p.alerts ? 'on' : ''}" data-act="${p.alerts ? 'alerts-off' : 'alerts-on'}" data-id="${p.id}" data-name="${nm}" title="Recibe en su celular las eventualidades de la operación (falla mecánica, botón rojo, carro atrasado)">${p.alerts ? '🔔 Recibe alertas' : '🔕 Sin alertas'}</button>` : ''}
           ${adm ? '' : `<button class="pc-btn" data-act="strike" data-id="${p.id}" data-name="${nm}">⚠ Strike</button>
           <button class="pc-btn" data-act="strikes-history" data-id="${p.id}" data-name="${nm}">Historial</button>
           ${p.suspWeek ? `<button class="pc-btn" data-act="lift-susp" data-id="${p.id}" data-name="${nm}" data-susp-id="${p.suspRow ? p.suspRow.id : ''}">✓ Levantar suspensión</button>` : ''}
           <div class="spacer"></div>
+          <button class="pc-btn" data-act="promote" data-id="${p.id}" data-name="${nm}" title="Pasa a ser administrador: deja de ser conductor">Hacer administrador</button>
           <button class="pc-btn" data-act="${p.active ? 'suspend' : 'reactivate'}" data-id="${p.id}" data-name="${nm}">${p.active ? 'Suspender' : 'Reactivar'}</button>
           <button class="pc-btn danger" data-act="delete" data-id="${p.id}" data-name="${nm}">Eliminar</button>`}
+          ${adm && !yo ? `<div class="spacer"></div>${p.active
+            ? `<button class="pc-btn danger" data-act="delete" data-id="${p.id}" data-name="${nm}" title="No podrá entrar a la app. Se puede restaurar.">Eliminar</button>`
+            : `<button class="pc-btn on" data-act="reactivate" data-id="${p.id}" data-name="${nm}">Reactivar</button>`}` : ''}
         </div>
       </div>`;
     };
@@ -202,11 +236,13 @@
     const paint = () => {
       const q = (list.querySelector('#pc-q')?.value || '').toLowerCase().trim();
       const match = (p) => !q || p.name.toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q);
-      const adminRows = people.filter(p => p.role === 'admin' && match(p)).map(rowHtml).join('');
-      const drvRows = people.filter(p => p.role === 'driver' && match(p)).map(rowHtml).join('');
+      const adminRows = people.filter(p => p.role === 'admin' && !p.deleted && match(p)).map(rowHtml).join('');
+      const drvRows = people.filter(p => p.role === 'driver' && !p.deleted && match(p)).map(rowHtml).join('');
+      const delRows = people.filter(p => p.deleted && match(p)).map(rowHtml).join('');
       rowsEl.innerHTML =
         ((adminRows ? `<div class="pc-secth">Administradores</div>${adminRows}` : '') +
-         (drvRows ? `<div class="pc-secth">Conductores</div>${drvRows}` : '')) ||
+         (drvRows ? `<div class="pc-secth">Conductores</div>${drvRows}` : '') +
+         (delRows ? `<div class="pc-secth">Eliminados</div>${delRows}` : '')) ||
         '<div style="padding:16px;color:var(--pc-ink3);font-size:13px">Sin coincidencias.</div>';
       detEl.innerHTML = detailHtml(people.find(p => p.id === state._pcSel));
       detEl.querySelectorAll('button[data-act]').forEach(btn => btn.addEventListener('click', () => onWorkerAction(btn)));
@@ -289,30 +325,48 @@
       return;
     }
 
-    if (act === 'delete' && !confirm(`¿Eliminar a ${name}? Desaparece del sistema y de la generación. Los horarios pasados donde aparece NO se borran.`)) return;
-    if (act === 'suspend' && !confirm(`¿Suspender a ${name}? Saldrá de la generación de horarios hasta que lo reactives.`)) return;
+    // --- Usuarios (0081) ---
+    if (act === 'edit') { openEditarDatos(id, refreshPeople); return; }
+    if (act === 'reset-pw') { openRestablecerClave(id, name); return; }
+    if (act === 'my-pw') { openCambiarMiClave(); return; }
+
+    // Suspender y eliminar piden motivo: lo ve la persona al entrar (o en la
+    // bitácora, si ya no puede entrar). Cancelar el prompt cancela la acción.
+    let reason = null;
+    if (act === 'delete') {
+      if (!confirm(`¿Eliminar a ${name}? No podrá entrar a la app y sale de la generación de horarios. Los horarios pasados NO se borran. Se puede restaurar.`)) return;
+      reason = prompt('Motivo (opcional, queda en la bitácora):', '');
+      if (reason === null) return;
+    }
+    if (act === 'suspend') {
+      reason = prompt(`¿Suspender a ${name}? Puede entrar a la app y ve este motivo, pero no inicia turno ni entra a la generación de horarios.\n\nMotivo:`, '');
+      if (reason === null) return;
+    }
+    if (act === 'promote' && !confirm(`¿Hacer administrador a ${name}? Deja de ser conductor: sale de la generación de horarios y al volver a entrar verá la consola del jefe.`)) return;
+    if (act === 'restore' && !confirm(`¿Restaurar a ${name}? Vuelve activo, con su mismo correo y contraseña.`)) return;
     btn.disabled = true;
     const msg = {
-      suspend: 'Conductor suspendido.', reactivate: 'Conductor reactivado.',
-      delete: 'Conductor eliminado.',
+      suspend: `${name} quedó suspendido.`, reactivate: `${name} quedó activo.`,
+      delete: `${name} quedó eliminado.`, restore: `${name} fue restaurado.`,
+      promote: `${name} ahora es administrador.`,
       'coord-off': `${name} ya no entra como Líder de turno.`, 'coord-on': `${name} ahora entra como Líder de turno.`,
       'dcoord-off': `${name} ya no entra como Líder de turno.`, 'dcoord-on': `${name} ahora puede liderar.`,
       'alerts-on': `${name} recibirá las eventualidades en su celular.`,
       'alerts-off': `${name} ya no recibirá eventualidades.`,
     };
     try {
-      if (act === 'suspend') await Api.setProfileActive(id, false);
-      else if (act === 'reactivate') await Api.setProfileActive(id, true);
-      else if (act === 'delete') await Api.softDeleteProfile(id);
+      if (act === 'suspend') await usrSetStatus(id, 'suspended', reason);
+      else if (act === 'reactivate') await usrSetStatus(id, 'active');
+      else if (act === 'restore') await usrSetStatus(id, 'active', null, { wasDeleted: true });
+      else if (act === 'delete') await usrSetStatus(id, 'deleted', reason);
+      else if (act === 'promote') await Api.adminSetRole(id, 'admin');
       else if (act === 'coord-off') await Api.setAdminCoordinator(id, false);
       else if (act === 'coord-on') await Api.setAdminCoordinator(id, true);
       else if (act === 'dcoord-off') await Api.setDriverCanCoordinate(id, false);
       else if (act === 'dcoord-on') await Api.setDriverCanCoordinate(id, true);
       else if (act === 'alerts-off') await Api.setOpsAlerts(id, false);
       else if (act === 'alerts-on') await Api.setOpsAlerts(id, true);
-      state.drivers = await Api.listDrivers();
-      state.admins = (await Api.listAdmins()).map(a => ({ id: a.id, name: a.full_name, email: a.email, is_coordinator: a.is_coordinator !== false, receives_ops_alerts: a.receives_ops_alerts === true }));
-      await renderWorkers();
+      await refreshPeople();
       toast(msg[act] || 'Hecho.');
     } catch (e) {
       alert('Error: ' + e.message);
@@ -324,6 +378,13 @@
   // El historial es de TODA la vida del conductor, pero lo que pesa hoy es lo del
   // mes en curso. Por eso va agrupado por mes, con el mes de hoy arriba: lo de
   // septiembre decide si se suspende, lo de agosto ya es memoria.
+  // Recarga lo que el resto de la app tiene en memoria y repinta Personal.
+  async function refreshPeople() {
+    state.drivers = await Api.listDrivers();
+    state.admins = (await Api.listAdmins()).map(a => ({ id: a.id, name: a.full_name, email: a.email, is_coordinator: a.is_coordinator !== false, receives_ops_alerts: a.receives_ops_alerts === true }));
+    await renderWorkers();
+  }
+
   function openStrikesModal(name, profileId, strikes) {
     document.getElementById('strikes-modal')?.remove();
     const fmt = iso => { try { return new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }); } catch { return iso; } };
@@ -712,19 +773,8 @@
   }
 
   // --- Crear conductor, ahora desde Personal (antes vivía en Ajustes) ---
-  // Caracteres seguros (sin O/0, l/I/1) para que el conductor no se confunda
-  // al teclear la contraseña.
-  function generateReadablePassword(len = 10) {
-    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-    let out = '';
-    const arr = new Uint32Array(len);
-    crypto.getRandomValues(arr);
-    for (let i = 0; i < len; i++) out += chars[arr[i] % chars.length];
-    return out;
-  }
-
   function onGenerateDriverPassword() {
-    $('#new-driver-password').value = generateReadablePassword(10);
+    $('#new-driver-password').value = usrTempPassword();
   }
 
   async function onCreateDriver() {
@@ -735,6 +785,7 @@
     const password = $('#new-driver-password').value;
     const priority = parseInt($('#new-driver-priority').value, 10) || 1;
     const canCoord = $('#new-driver-can-coord').checked;
+    const asAdmin = ($('#new-driver-role')?.value || 'driver') === 'admin';
     // Opcional, pero sin él el botón de llamar de la app queda muerto.
     const phone = ($('#new-driver-phone')?.value || '').trim().replace(/[^\d+]/g, '');
 
@@ -749,7 +800,7 @@
 
     if (!name) { setState('Falta el nombre completo.', 'err'); return; }
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setState('Email inválido.', 'err'); return; }
-    if (!password || password.length < 8) { setState('Contraseña mínimo 8 caracteres.', 'err'); return; }
+    if (!usrPasswordOk(password)) { setState('Contraseña: ' + USR_PW_RULE.toLowerCase(), 'err'); return; }
 
     btn.disabled = true;
     btn.textContent = 'Creando…';
@@ -759,6 +810,12 @@
         email, password, full_name: name, phone,
         priority, can_coordinate: canCoord,
       });
+      // Jefe: la cuenta nace como conductor (create-driver solo sabe eso) y se
+      // promueve enseguida. Si la promoción falla, queda de conductor y se dice.
+      if (asAdmin && created && created.id) {
+        try { await Api.adminSetRole(created.id, 'admin'); }
+        catch (eR) { toast(`Se creó como conductor, pero no se pudo hacer administrador: ${eR.message}`); }
+      }
       // Refresca la lista de conductores en memoria para que aparezca al instante.
       state.drivers = await Api.listDrivers();
       // Mensaje copiable con las credenciales.
@@ -772,11 +829,27 @@
       $('#new-driver-password').value = '';
       $('#new-driver-priority').value = '1';
       $('#new-driver-can-coord').checked = false;
+      if ($('#new-driver-role')) $('#new-driver-role').value = 'driver';
       // Si está la vista Personal abierta, también refrescarla.
       if (state.activeTab === 'workers') await renderWorkers();
       renderPriorityList();
     } catch (e) {
-      setState(`✗ ${e.message || 'Error creando conductor'}`, 'err');
+      // U10: el correo de un eliminado no se puede volver a crear (la cuenta
+      // sigue existiendo). Se ofrece restaurarla, que es casi siempre lo que se
+      // quiere: la misma persona que volvió.
+      const del = /ya existe/i.test(e.message || '')
+        ? (await Api.listDeletedProfiles().catch(() => [])).find(x => (x.email || '').toLowerCase() === email)
+        : null;
+      if (del && confirm(`Ese correo es de ${del.full_name}, que está eliminado. ¿Restaurarlo? Vuelve activo con su contraseña de antes (si no la recuerda, restablécela desde Personal).`)) {
+        try {
+          await usrSetStatus(del.id, 'active', null, { wasDeleted: true });
+          state.drivers = await Api.listDrivers();
+          setState(`✓ ${del.full_name} restaurado.`, 'ok');
+          if (state.activeTab === 'workers') await renderWorkers();
+        } catch (e2) { setState(`✗ ${e2.message}`, 'err'); }
+      } else {
+        setState(`✗ ${e.message || 'Error creando conductor'}`, 'err');
+      }
     } finally {
       btn.disabled = false;
       btn.textContent = 'Crear conductor';

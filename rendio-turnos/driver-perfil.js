@@ -180,6 +180,11 @@
           <span class="val">${sc === 0 ? 'Ninguno' : `${sc} de ${strikeLimit()}`}</span>
           <span class="chev">${avIcon('chevronRight', 16)}</span>
         </button>
+        <button class="rc-listrow" id="pf-mypw" type="button">
+          <span class="ic">${avIcon('lock', 18)}</span>
+          <span class="lbl">Cambiar mi contraseña</span>
+          <span class="chev">${avIcon('chevronRight', 16)}</span>
+        </button>
         <button class="rc-listrow" id="pf-logout" type="button" style="border-bottom:0">
           <span class="ic" style="color:var(--r-error)">${avIcon('x', 18)}</span>
           <span class="lbl" style="color:var(--r-error)">Cerrar sesión</span>
@@ -350,6 +355,7 @@
     $('#pf-strikes-btn')?.addEventListener('click', () => { state.profileView = 'strikes'; drawProfileView(); });
     $('#pf-back')?.addEventListener('click', () => { state.profileView = 'main'; drawProfileView(); });
     $('#pf-logout')?.addEventListener('click', onLogout);
+    $('#pf-mypw')?.addEventListener('click', () => openCambiarMiClave());
     $('#pf-avatar-btn')?.addEventListener('click', () => $('#pf-avatar-input')?.click());
     $('#pf-avatar-input')?.addEventListener('change', onPickAvatar);
     // Tema claro/oscuro de las pestañas del conductor (rediseño 2026-08-16).
@@ -513,8 +519,10 @@
       const day = sch.data[d.key] || {};
       const meId = state.profile.id;
       // El líder conduce su jornada: un solo turno (no se duplica ni las horas).
-      if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', lead: (day.coord_am || []).includes(meId) });
-      if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', lead: (day.coord_pm || []).includes(meId) });
+      // Doble (27-sep-2026): la jornada que es parte de una doble autorizada lo dice.
+      const dblAt = (sh) => Scheduler.doubleAt(sch.data, meId, d.key, sh);
+      if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', lead: (day.coord_am || []).includes(meId), dbl: dblAt('am') });
+      if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', lead: (day.coord_pm || []).includes(meId), dbl: dblAt('pm') });
     });
     renderDriverHorarioHead(myShifts.length);
     if (summaryBox) summaryBox.innerHTML = driverWeekListHtml(week, myShifts);
@@ -588,6 +596,7 @@
         <span class="k">${sh.toUpperCase()}</span>
         <span class="t">${escapeHtml(hora)}</span>
         ${s.lead ? '<span class="lead">★ Líder</span>' : ''}
+        ${s.dbl ? `<span class="lead dbl" title="${escapeAttr(s.dbl.nota || '')}">⇆ Doble</span>` : ''}
         ${placa ? `<span class="v">${escapeHtml(placa)}</span>` : ''}
       </div>`;
     };
@@ -715,7 +724,7 @@
           [sw.requester_id]: { id: sw.requester_id, name: (state.pubNames || {})[sw.requester_id] },
           [state.profile.id]: { id: state.profile.id, name: state.profile.full_name, email: state.profile.email },
         };
-        const v = Scheduler.validateSwap(fresh?.data || {}, sw, dById);
+        const v = Scheduler.validateSwap(fresh?.data || {}, sw, dById, Scheduler.restSlotsFor(state.settings));
         if (!v.ok) { alert('No se puede aceptar: ' + v.reason); btn.disabled = false; return; }
       }
       await Api.decideSwap(id, decision);
@@ -788,7 +797,7 @@
         [meId]: { id: meId, name: state.profile.full_name, email: state.profile.email },
         [theirs.id]: { id: theirs.id, name: names[theirs.id] },
       };
-      const v = Scheduler.validateSwap(data, swap, dById);
+      const v = Scheduler.validateSwap(data, swap, dById, Scheduler.restSlotsFor(state.settings));
       if (!v.ok) { alert('Ese cambio no es válido: ' + v.reason); return; }
       const btn = overlay.querySelector('#swap-send-btn');
       btn.disabled = true;

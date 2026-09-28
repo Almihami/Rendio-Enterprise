@@ -117,7 +117,7 @@
   const laneShift = (kind) => (kind === 'morning' || kind === 'coord_am') ? 'am' : 'pm';
   const laneLabel = (lane) => ({ morning: 'Mañana', afternoon: 'Tarde', coord_am: 'Líder AM', coord_pm: 'Líder PM' }[lane.kind] || lane.kind);
   const laneShortLabel = (lane) => lane.group === 'am' ? 'AM' : lane.group === 'pm' ? 'PM' : (lane.kind === 'coord_am' ? 'Líder AM' : 'Líder PM');
-  const hardLabel = (k) => ({ unavailable: 'no disp.', rule: 'descanso fijo', double: 'doble turno' }[k] || 'conflicto');
+  const hardLabel = (k) => ({ unavailable: 'no disp.', rule: 'descanso fijo', double: 'doble sin autorizar', pmam: 'tarde→madrugada', triple: 'más de 24 h', rest: 'descanso tras doble' }[k] || 'conflicto');
 
   const isExcluded = (id) => !!(state._excludedIds && state._excludedIds.has(id));
   const isSuspendedId = (id) => !!(state._suspendedIds && state._suspendedIds.has(id));
@@ -156,10 +156,12 @@
     try { if (Scheduler.getState(state.availability, id, day, shift) === 'unavailable') return 'unavailable'; } catch (e) { /* */ }
     const who = state.drivers.find(d => d.id === id) || state.admins.find(a => a.id === id);
     try { if (who && Scheduler.ruleBlocked(who, day, shift)) return 'rule'; } catch (e) { /* */ }
-    const d = state.schedule?.[day] || {};
-    if (kind === 'morning' && (d.afternoon || []).includes(id)) return 'double';
-    if (kind === 'afternoon' && (d.morning || []).includes(id)) return 'double';
-    return null;
+    // Doble turno (27-sep-2026): una doble AUTORIZADA no es conflicto. Sí lo son
+    // la no autorizada (mañana+tarde o tarde→madrugada), más de 24 h seguidas y
+    // trabajar en el descanso obligatorio que va después de una doble.
+    if (!state.schedule || isCoordKind(kind)) return null;
+    const code = Scheduler.doubleIssues(state.schedule, id, Scheduler.restSlotsFor(state.settings)).get(Scheduler.slotOf(day, shift));
+    return code || null;
   }
   // Conflicto SUAVE: pidió descanso esa jornada (ámbar, no bloquea).
   function daySoft(day, id, kind) {
@@ -169,7 +171,9 @@
   function conflictMsg(key, id, day) {
     const nm = (nameOf(id) || '').split(' ')[0];
     const dl = (Scheduler.DAY_LABELS_ES[day] || day).toLowerCase();
-    const why = { unavailable: 'no está disponible', rule: 'tiene descanso fijo', double: 'quedaría con doble turno' }[key] || 'tiene un conflicto';
+    const why = { unavailable: 'no está disponible', rule: 'tiene descanso fijo', double: 'quedaría con mañana y tarde sin una doble autorizada',
+      pmam: 'quedaría de tarde a madrugada sin una doble autorizada', triple: 'quedaría con más de 24 h seguidas',
+      rest: 'estaría en su descanso después de una doble' }[key] || 'tiene un conflicto';
     return `${nm} ${why} el ${dl}. Queda marcado en rojo.`;
   }
 
@@ -216,6 +220,7 @@
   // ---- Render principal (reemplaza la tabla anterior) ----
   function renderSchedule() {
     cleanAllLeaders();
+    if (state.schedule) Scheduler.cleanDoubles(state.schedule);
     renderBoardChrome();
     renderKPIs();
     renderPool();
@@ -263,10 +268,12 @@
   function smArow(dayKey, id, kind, bandLabel) {
     if (!id) return `<div class="empty"><span class="ei"><svg class="icon" style="width:14px;height:14px"><use href="#i-plus"/></svg></span><div><b>Sin cubrir</b><span>${escapeHtml(bandLabel)} · cupo libre</span></div></div>`;
     const conf = dayConflict(dayKey, id, kind); const soft = daySoft(dayKey, id, kind); const isLeader = isLeaderCard(dayKey, kind, id);
+    const dbl = !conf && state.schedule && Scheduler.doubleAt(state.schedule, id, dayKey, laneShift(kind));
     const tag = conf ? `<span class="tag conf"><svg class="icon" style="width:11px;height:11px"><use href="#i-alert"/></svg>Conflicto</span>`
+      : dbl ? `<span class="tag" style="background:var(--amber-soft);color:var(--amber)">⇆ Doble</span>`
       : isLeader ? `<span class="tag coord">★ Líder de turno</span>`
         : (soft ? `<span class="tag" style="background:var(--amber-soft);color:var(--amber)">Pidió descanso</span>` : '');
-    const sub = conf ? (conf === 'rule' ? 'Descanso fijo este día' : conf === 'unavailable' ? 'No disponible este día' : 'Doble turno este día') : (isLeader ? bandLabel + ' · Líder' : bandLabel);
+    const sub = conf ? (conf === 'rule' ? 'Descanso fijo este día' : conf === 'unavailable' ? 'No disponible este día' : hardLabel(conf)) : (isLeader ? bandLabel + ' · Líder' : dbl && dbl.nota ? bandLabel + ' · ' + dbl.nota : bandLabel);
     return `<div class="arow ${conf ? 'conf' : ''}"><span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nameOf(id)))}</span><div class="nm"><b>${escapeHtml(nameOf(id))}</b><span>${escapeHtml(sub)}</span></div>${tag}</div>`;
   }
   function smBandBlock(di, b) {
@@ -477,17 +484,20 @@
               </div>`;
           } else {
             const isLeader = isLeaderCard(d.key, lane.kind, id);
+            const dbl = !hard && Scheduler.doubleAt(sched, id, d.key, laneShift(lane.kind));
             const cardCls = [
               isLeader ? 'coord lead-on' : '',
               hard ? 'conf' : '',
               soft ? 'soft' : '',
+              dbl ? 'dbl' : '',
               justCls,
             ].filter(Boolean).join(' ');
             // El líder se marca con fondo naranja + "★ Lidera" en el subtítulo (sin
             // elemento suelto que desalinee las tarjetas). Se cambia desde las filas
             // Líder AM/PM. Mismo layout que las demás → avatares alineados.
-            const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isLeader ? '★ Lidera' : BOARD_GROUP_LABEL[lane.group]);
-            inner = `<div class="asg ${cardCls}" draggable="true" data-driver="${id}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}">
+            const subtxt = hard ? '⚠ ' + hardLabel(hard) : (isLeader ? '★ Lidera' + (dbl ? ' · doble' : '') : dbl ? '⇆ Doble' : BOARD_GROUP_LABEL[lane.group]);
+            const tip = dbl ? ` title="${escapeAttr('Doble autorizada' + (dbl.nota ? ': ' + dbl.nota : ''))}"` : '';
+            inner = `<div class="asg ${cardCls}" draggable="true" data-driver="${id}" data-day="${d.key}" data-kind="${lane.kind}" data-index="${lane.index}"${tip}>
                 <span class="av" style="background:${colorOfId(id)}">${escapeHtml(initialsOf(nm))}</span>
                 <div class="nm"><b>${escapeHtml(firstTwo(nm))}</b><span>${escapeHtml(subtxt)}</span></div>
                 <span class="x" data-remove="${d.key}-${lane.kind}-${lane.index}" title="Quitar"><svg class="icon" style="width:13px;height:13px"><use href="#i-x"/></svg></span>
@@ -535,16 +545,106 @@
       renderSchedule();
       return;
     }
-    const scope = ['morning', 'afternoon', 'rest'];
-    scope.forEach(k => { state.schedule[day][k] = (state.schedule[day][k] || []).filter(x => x !== id); });
-    if (src && src !== 'pool') boardRemoveFrom(src);
-    while (state.schedule[day][kind].length <= index) state.schedule[day][kind].push(null);
-    state.schedule[day][kind][index] = id;
-    rebuildRestRow(day);
+    // ¿Queda pegado a otra jornada suya? Mañana+tarde del mismo día, o tarde→
+    // madrugada del día siguiente. Eso es una doble: la decide el jefe (D1).
+    const [srcDay, srcKind] = (src && src !== 'pool') ? src.split('-') : [null, null];
+    const tiene = (d, k) => (state.schedule[d]?.[k] || []).includes(id) && !(srcDay === d && srcKind === k);
+    const di = Scheduler.DAYS.indexOf(day);
+    const other = kind === 'morning' ? 'afternoon' : 'morning';
+    if (tiene(day, other)) return preguntarDoble({ day, kind, index, id, src, tipo: 'dia', startDay: day });
+    if (kind === 'morning' && di > 0 && tiene(Scheduler.DAYS[di - 1], 'afternoon'))
+      return preguntarDoble({ day, kind, index, id, src, tipo: 'noche', startDay: Scheduler.DAYS[di - 1] });
+    if (kind === 'afternoon' && di < 6 && tiene(Scheduler.DAYS[di + 1], 'morning'))
+      return preguntarDoble({ day, kind, index, id, src, tipo: 'noche', startDay: day });
+    colocar(state.schedule, day, kind, index, id, src, true);
+    despuesDeColocar(day, kind, index, id);
+  }
+
+  // Pone a `id` en la celda, sobre el horario `sch`. mover:true lo saca de la otra
+  // jornada de ese día (lo de siempre); false lo deja en las dos (doble).
+  // Se vacía EN SU LUGAR (null), nunca filtrando: filtrar corría a los demás de
+  // puesto, y al vaciar la celda de origen se borraba a OTRO conductor (con
+  // morning=[A,B], mover a A dejaba [null] y B desaparecía sin aviso).
+  function colocar(sch, day, kind, index, id, src, mover) {
+    (mover ? ['morning', 'afternoon'] : [kind]).forEach(k => {
+      sch[day][k] = (sch[day][k] || []).map(x => (x === id ? null : x));
+    });
+    if (src && src !== 'pool') {
+      const [sd, sk, si] = src.split('-');
+      const arr = sch[sd]?.[sk];
+      if (arr && arr[+si] === id) arr[+si] = null;
+    }
+    while (sch[day][kind].length <= index) sch[day][kind].push(null);
+    sch[day][kind][index] = id;
+  }
+  function despuesDeColocar(day, kind, index, id) {
+    Scheduler.DAYS.forEach(d => { if (state.schedule[d]) rebuildRestRow(d); });
     boardJustPlaced = `${day}-${kind}-${index}`;
     renderSchedule();
     const c = dayConflict(day, id, kind);
     if (c) flashBoard(conflictMsg(c, id, day));
+  }
+
+  // ---- Doble turno (27-sep-2026) ----
+  // «¿Mover o doblar?». Solo el jefe crea una doble y siempre con motivo (D1).
+  // Si el conductor no marcó «Puedo doblar» ese día se avisa, pero se puede
+  // doblar igual: la marca solo dice quién está dispuesto (D7).
+  function preguntarDoble({ day, kind, index, id, src, tipo, startDay }) {
+    const fn = (nameOf(id) || 'Conductor').split(' ')[0];
+    const dia = (k) => (Scheduler.DAY_LABELS_ES[k] || k).toLowerCase();
+    const next = Scheduler.DAYS[Scheduler.DAYS.indexOf(startDay) + 1];
+    const restH = Number(state.settings && state.settings.double_rest_hours) || 24;
+    const puede = state.availability?.[id]?.[startDay]?.shift_pref === 'both';
+    const desc = tipo === 'dia'
+      ? `${escapeHtml(fn)} ya tiene la ${kind === 'morning' ? 'tarde' : 'mañana'} del ${dia(day)}. Si lo doblas, hace mañana y tarde: 24 h seguidas.`
+      : `${escapeHtml(fn)} quedaría con la tarde del ${dia(startDay)} y la madrugada del ${dia(next)}: 24 h seguidas.`;
+    const body = `
+      <p style="font-size:13.5px;color:var(--ink2);line-height:1.45">${desc}</p>
+      ${puede ? `<p class="set-hint" style="margin-top:8px">✓ Marcó «Puedo doblar» el ${dia(startDay)}.</p>`
+              : `<div class="usr-reason">⚠ ${escapeHtml(fn)} no marcó «Puedo doblar» el ${dia(startDay)}. Si lo doblas igual, queda autorizado por ti.</div>`}
+      <div class="set-field" style="margin-top:14px"><label>Motivo de la doble</label>
+        <input class="set-input" data-f="nota" type="text" maxlength="140" placeholder="Ej: Juan se incapacitó, cubre su tarde">
+      </div>
+      <p class="set-hint">Después de la doble van ${restH} h de descanso: no puede quedar en las jornadas siguientes.</p>`;
+    const ov = usrModal('dbl-modal', tipo === 'dia' ? '¿Mover o doblar?' : 'Doble noche', escapeHtml(nameOf(id) || ''), body,
+      `<button class="wk-btn wk-coord-off" data-usr="cancel">Cancelar</button>
+       ${tipo === 'dia' ? `<button class="wk-btn wk-coord-off" data-usr="move">Mover a la ${kind === 'morning' ? 'mañana' : 'tarde'}</button>` : ''}
+       <button class="wk-btn wk-coord-on" data-usr="double">${puede ? 'Doblar' : 'Doblar igual'}</button>`);
+    // Si mientras el modal estaba abierto se recargó el horario (cambio de semana),
+    // la celda ya no existe: no se toca nada.
+    const sch0 = state.schedule;
+    const vigente = () => !!(state.schedule && state.schedule === sch0 && state.schedule[day] && state.schedule[startDay]);
+    ov.querySelector('[data-usr="move"]')?.addEventListener('click', () => {
+      ov.remove();
+      if (!vigente()) return;
+      colocar(state.schedule, day, kind, index, id, src, true);
+      despuesDeColocar(day, kind, index, id);
+    });
+    ov.querySelector('[data-usr="double"]').addEventListener('click', () => {
+      if (!vigente()) { ov.remove(); return; }
+      const nota = ov.querySelector('[data-f="nota"]').value.trim();
+      if (!nota) { usrShowErr(ov, 'Escribe el motivo: queda en el horario.'); return; }
+      // Se prueba sobre una copia: si rompe las 24 h o el descanso, no se toca nada.
+      const prueba = JSON.parse(JSON.stringify(state.schedule));
+      colocar(prueba, day, kind, index, id, src, false);
+      const dbl = { day: startDay, id, tipo, nota, por: (state.profile && state.profile.full_name) || null, at: new Date().toISOString() };
+      prueba._doubles = [...Scheduler.doublesOf(prueba).filter(x => !(x.id === id && x.day === startDay && x.tipo === tipo)), dbl];
+      const iss = [...Scheduler.doubleIssues(prueba, id, Scheduler.restSlotsFor(state.settings)).entries()]
+        .filter(([, c]) => c === 'triple' || c === 'rest').sort((a, b) => a[0] - b[0]);
+      if (iss.length) {
+        const [k, c] = iss[0];
+        const donde = `${dia(Scheduler.DAYS[Math.floor(k / 2)])} ${k % 2 ? 'tarde' : 'mañana'}`;
+        usrShowErr(ov, c === 'triple'
+          ? `Serían más de 24 h seguidas: ${fn} también está el ${donde}. Quítalo de ahí primero.`
+          : `Después de la doble van ${restH} h de descanso y ${fn} está el ${donde}. Quítalo de ahí primero.`);
+        return;
+      }
+      ov.remove();
+      state.schedule._doubles = prueba._doubles;
+      colocar(state.schedule, day, kind, index, id, src, false);
+      despuesDeColocar(day, kind, index, id);
+      flashBoard(`Doble autorizada: ${fn}. Se le avisa al publicar.`);
+    });
   }
 
   function flashBoard(msg) {
@@ -731,7 +831,15 @@
       ...coordinatorAdmins(),
       ...pool.filter(d => d.can_coordinate && d.id !== flexId),
     ];
+    // Dobles ya marcadas en el tablero: el generador las respeta (y su descanso).
+    // Las de alguien que quedó fuera de la generación se pierden, y se dice.
+    const poolIds = new Set(pool.map(d => d.id));
+    const prevDoubles = Scheduler.doublesOf(state.schedule);
+    const keepDoubles = prevDoubles.filter(x => poolIds.has(x.id));
+    const lostDoubles = prevDoubles.filter(x => !poolIds.has(x.id));
     const { schedule, warnings } = Scheduler.generateSchedule({
+      doubles: keepDoubles,
+      restSlots: Scheduler.restSlotsFor(state.settings),
       drivers: pool,
       admins: coordPool,
       settings: { morningSlots: state.settings.morning_slots, afternoonSlots: state.settings.afternoon_slots, coordSlots: state.settings.coord_slots || 1 },
@@ -743,7 +851,13 @@
       nonce: Date.now() + '-' + Math.random(),
       seedPmIds,
     });
+    // Lo ya avisado sobrevive a regenerar: si no, al publicar se re-avisarían
+    // las dobles que se conservaron.
+    const avisadas = state.schedule && state.schedule._doublesAvisadas;
     state.schedule = schedule;
+    if (avisadas) state.schedule._doublesAvisadas = avisadas;
+    if (keepDoubles.length) warnings.unshift(`Se respetaron ${keepDoubles.length} doble(s) marcada(s) y su descanso.`);
+    lostDoubles.forEach(x => warnings.unshift(`Se quitó la doble de ${escapeHtml(nameOf(x.id) || 'un conductor')} (${Scheduler.DAY_LABELS_ES[x.day]}): no entra en esta generación.`));
     // El pool del board atenúa a los excluidos/suspendidos de esta generación.
     state._excludedIds = new Set(excluded.map(d => d.id));
     state._suspendedIds = new Set(suspendedThisWeek.map(d => d.id));
@@ -804,9 +918,12 @@
   async function onSaveSchedule(publish) {
     if (!state.schedule) { toast('Genera o edita el horario primero.'); return; }
     try {
+      let avisos = null;
+      const avisadasAntes = state.schedule._doublesAvisadas;
       if (publish) {
         const n = await reconcilePendingApprovals();
         if (n) toast(`${n} solicitud(es) resueltas al publicar.`);
+        avisos = dobleCambios();
       }
       await Api.saveSchedule(state.currentWeek, state.schedule, { published: publish, drivers: [...state.drivers, ...state.admins] });
       $('#published-pill').classList.toggle('hidden', !publish);
@@ -814,11 +931,36 @@
       if (publish) {
         notify(state.drivers.map(d => d.id), 'Horario publicado',
           `Ya está disponible el horario de la semana del ${weekLabelES(state.currentWeek)}.`, '/');
+        if (avisos) avisos.forEach(a => notify([a.id], a.title, a.body, '/'));
       }
       toast(publish ? 'Horario publicado.' : 'Horario guardado.');
     } catch (e) {
+      // No se guardó: lo "ya avisado" vuelve a como estaba, para avisar al reintentar.
+      if (state.schedule) state.schedule._doublesAvisadas = avisadasAntes;
       alert('Error al guardar: ' + e.message);
     }
+  }
+
+  // A quién avisar al publicar: a quien le pusieron o le quitaron una doble
+  // desde la última vez que se avisó EN ESTA SEMANA. Lo ya avisado se guarda
+  // dentro del mismo horario (data._doublesAvisadas), así no se cruza con otra
+  // semana ni se repite al recargar. Deja la marca puesta antes de guardar.
+  function dobleCambios() {
+    const ahora = Scheduler.doublesOf(state.schedule);
+    const antes = Array.isArray(state.schedule._doublesAvisadas) ? state.schedule._doublesAvisadas : [];
+    const key = x => `${x.id}|${x.day}|${x.tipo}`;
+    const kA = new Set(antes.map(key)), kN = new Set(ahora.map(key));
+    const dia = (k) => (Scheduler.DAY_LABELS_ES[k] || k).toLowerCase();
+    const next = (k) => dia(Scheduler.DAYS[Scheduler.DAYS.indexOf(k) + 1] || k);
+    const txt = x => x.tipo === 'dia' ? `mañana y tarde del ${dia(x.day)}` : `tarde del ${dia(x.day)} y madrugada del ${next(x.day)}`;
+    const out = [
+      ...ahora.filter(x => !kA.has(key(x))).map(x =>
+        ({ id: x.id, title: 'Te asignaron una doble', body: `Doblas ${txt(x)}.${x.nota ? ' Motivo: ' + x.nota : ''}` })),
+      ...antes.filter(x => !kN.has(key(x))).map(x =>
+        ({ id: x.id, title: 'Se quitó tu doble', body: `Ya no doblas ${txt(x)}. Revisa tu horario.` })),
+    ];
+    state.schedule._doublesAvisadas = ahora.map(x => ({ id: x.id, day: x.day, tipo: x.tipo }));
+    return out;
   }
 
   async function onClearSchedule() {
@@ -903,20 +1045,17 @@
       return;
     }
 
-    const scope = ['morning', 'afternoon', 'rest'];
-
-    if (id) {
-      scope.forEach(k => {
-        sched[day][k] = (sched[day][k] || []).filter(x => x !== id);
-      });
-    }
-
-    while (sched[day][kind].length <= index) sched[day][kind].push(null);
-    sched[day][kind][index] = id;
-
-    rebuildRestRow(day);
     closeCellEditor();
-    renderSchedule();
+    if (!id) {
+      while (sched[day][kind].length <= index) sched[day][kind].push(null);
+      sched[day][kind][index] = null;
+      rebuildRestRow(day);
+      renderSchedule();
+      return;
+    }
+    // Mismo camino que arrastrar: si queda pegado a otra jornada suya, se
+    // pregunta si es mover o doblar (y ya no corre a nadie de puesto).
+    boardPlaceInto(day, kind, index, id, null);
   }
 
   function rebuildRestRow(day) {

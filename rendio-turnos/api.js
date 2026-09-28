@@ -3,6 +3,11 @@
 
   async function signIn(email, password) {
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    // Un eliminado tiene la cuenta bloqueada (0081): Supabase contesta en
+    // inglés «User is banned», que no le dice nada a nadie.
+    if (error && /banned/i.test(error.message || '')) {
+      throw new Error('Tu cuenta fue dada de baja. Si crees que es un error, habla con tu jefe.');
+    }
     if (error) throw error;
     return data;
   }
@@ -19,11 +24,11 @@
   async function getCurrentProfile() {
     const session = await getSession();
     if (!session) return null;
-    const { data, error } = await sb
-      .from('profiles')
-      .select('id, full_name, email, role, organization_id, is_active')
-      .eq('id', session.user.id)
-      .maybeSingle();
+    const sel = cols => sb.from('profiles').select(cols).eq('id', session.user.id).maybeSingle();
+    // 0081 trae la contraseña temporal y el motivo de la suspensión. Si no está
+    // aplicada, se entra como antes.
+    let { data, error } = await sel('id, full_name, email, role, organization_id, is_active, deleted_at, must_change_password, suspended_reason');
+    if (error) ({ data, error } = await sel('id, full_name, email, role, organization_id, is_active, deleted_at'));
     if (error) throw error;
     return data;
   }
@@ -99,12 +104,15 @@
       + 'airlines(id, name), '
       + 'residences!auxiliar_profiles_residence_id_fkey(id, name, sector), '
       + 'res2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector), '
-      + 'profiles(id, full_name, email, phone, is_active, created_at)';
+      + 'profiles(id, full_name, email, phone, is_active, deleted_at, suspended_reason, created_at)';
     let { data, error } = await sb.from('auxiliar_profiles').select(COLS);
+    // Sin 0081 no hay motivo de suspensión: se pide lo mismo sin esa columna.
+    if (error) ({ data, error } = await sb.from('auxiliar_profiles')
+      .select(COLS.replace(', suspended_reason', '')));
     // Si 0075 no estuviera aplicada, se cae a lo que había antes: sin aerolínea
     // ni antigüedad ni segunda unidad, pero con el padrón visible.
     if (error) ({ data, error } = await sb.from('auxiliar_profiles')
-      .select('id, profile_id, residence_unit, home_address, residence_id, residences!auxiliar_profiles_residence_id_fkey(id, name, sector), profiles(id, full_name, email, phone, is_active, created_at)'));
+      .select('id, profile_id, residence_unit, home_address, residence_id, residences!auxiliar_profiles_residence_id_fkey(id, name, sector), profiles(id, full_name, email, phone, is_active, deleted_at, created_at)'));
     if (error) throw error;
     return (data || [])
       .filter(a => a.profiles && !a.profiles.deleted_at)
@@ -114,6 +122,7 @@
         email: a.profiles?.email || '',
         phone: a.profiles?.phone || '',
         active: a.profiles?.is_active !== false,
+        suspendedReason: a.profiles?.suspended_reason || '',
         createdAt: a.profiles?.created_at || null,
         joinedAt: a.joined_at || null,
         airlineId: a.airline_id || null,
@@ -231,7 +240,10 @@
     return data;
   }
 
-  async function listAdmins() {
+  // Por defecto solo los activos (así lo usan el shell y los avisos). Personal
+  // pide includeInactive: un jefe inactivo desaparecía de la lista y nadie podía
+  // reactivarlo.
+  async function listAdmins({ includeInactive = false } = {}) {
     const sel = (cols) => sb.from('profiles').select(cols)
       .eq('role', 'admin').is('deleted_at', null).order('full_name');
     // Cascada: 0063 (receives_ops_alerts) y 0011 (is_coordinator) pueden no
@@ -241,7 +253,7 @@
     if (error) ({ data, error } = await sel('id, full_name, email, role, is_active'));
     if (error) throw error;
     return (data || [])
-      .filter(p => p.is_active !== false)
+      .filter(p => includeInactive || p.is_active !== false)
       .map(p => ({ ...p, is_coordinator: p.is_coordinator !== false, receives_ops_alerts: p.receives_ops_alerts === true }));
   }
 
@@ -253,6 +265,55 @@
       .update({ receives_ops_alerts: !!on }).eq('id', profileId);
     if (error) throw error;
   }
+
+  // ==========================================================================
+  // Usuarios (0081): el jefe edita, restablece y suspende; cada quien cambia
+  // su contraseña. Todo pasa por funciones de la base porque tocan también la
+  // cuenta de acceso (auth.users) y dejan bitácora.
+  // ==========================================================================
+
+  // La ficha completa para el formulario "Editar datos".
+  async function getProfileForEdit(profileId) {
+    const { data: p, error } = await sb.from('profiles')
+      .select('id, full_name, email, phone, role, document_id, home_base, is_active, deleted_at')
+      .eq('id', profileId).single();
+    if (error) throw error;
+    let driver = null, aux = null;
+    if (p.role === 'driver') {
+      const r = await sb.from('driver_profiles')
+        .select('license_number, license_expires_at, eps_provider, eps_expires_at, arl_provider, arl_expires_at')
+        .eq('profile_id', profileId).maybeSingle();
+      driver = r.data || {};
+    } else if (p.role === 'auxiliar') {
+      const r = await sb.from('auxiliar_profiles').select('airline_id').eq('profile_id', profileId).maybeSingle();
+      aux = r.data || {};
+    }
+    return { ...p, driver, aux };
+  }
+
+  // Los eliminados, para poder restaurarlos (conductores y jefes).
+  async function listDeletedProfiles() {
+    const { data, error } = await sb.from('profiles')
+      .select('id, full_name, email, role, deleted_at')
+      .not('deleted_at', 'is', null).in('role', ['driver', 'admin'])
+      .order('deleted_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function rpcOrThrow(fn, args) {
+    const { error } = await sb.rpc(fn, args);
+    if (error) throw new Error(error.message);
+  }
+  const adminUpdateProfile = (profileId, changes) => rpcOrThrow('admin_update_profile', { p_id: profileId, p_data: changes });
+  const adminSetEmail = (profileId, email) => rpcOrThrow('admin_set_email', { p_id: profileId, p_email: email });
+  const adminSetPassword = (profileId, password, forceChange = true) =>
+    rpcOrThrow('admin_set_password', { p_id: profileId, p_password: password, p_force_change: !!forceChange });
+  // status: 'active' | 'suspended' | 'deleted'
+  const adminSetStatus = (profileId, status, reason) =>
+    rpcOrThrow('admin_set_status', { p_id: profileId, p_status: status, p_reason: reason || null });
+  const adminSetRole = (profileId, role) => rpcOrThrow('admin_set_role', { p_id: profileId, p_role: role });
+  const changeMyPassword = (current, next) => rpcOrThrow('change_my_password', { p_current: current, p_new: next });
 
   async function setAdminCoordinator(profileId, value) {
     const { error } = await sb
@@ -266,13 +327,15 @@
   async function listAllDriversForAdmin() {
     const sel = cols => sb.from('profiles').select(cols)
       .eq('role', 'driver').is('deleted_at', null).order('full_name');
-    let { data, error } = await sel('id, full_name, email, role, is_active, can_coordinate');
+    let { data, error } = await sel('id, full_name, email, role, is_active, can_coordinate, suspended_reason');
+    if (error) ({ data, error } = await sel('id, full_name, email, role, is_active, can_coordinate')); // 0081 sin aplicar
     if (error) ({ data, error } = await sel('id, full_name, email, role, is_active')); // 0013 sin aplicar
     if (error) throw error;
     return (data || []).map(p => ({
       id: p.id, name: p.full_name, email: p.email,
       active: p.is_active !== false,
       can_coordinate: p.can_coordinate === true,
+      suspendedReason: p.suspended_reason || '',
     }));
   }
 
@@ -292,6 +355,12 @@
       .from('profiles')
       .update({ is_active: active })
       .eq('id', profileId);
+    if (error) throw error;
+  }
+
+  // Restaurar sin 0081: vuelve activo Y le quita la marca de eliminado.
+  async function undeleteProfile(profileId) {
+    const { error } = await sb.from('profiles').update({ deleted_at: null, is_active: true }).eq('id', profileId);
     if (error) throw error;
   }
 
@@ -392,6 +461,9 @@
     };
     let { error } = await sb.from('driver_availability')
       .upsert(base, { onConflict: 'profile_id,week_start_date,day_of_week' });
+    // «Puedo doblar» ('both') necesita 0082. Sin ella, el reintento de abajo lo
+    // botaría callado: mejor decirlo.
+    if (error && /shift_pref_check/.test(error.message || '')) throw new Error('«Puedo doblar» todavía no está activado en la base (falta la migración 0082).');
     if (error) {
       // Fallback si 0015 no aplicada: re-intentar sin shift_pref.
       const { shift_pref: _ignore, ...withoutPref } = base;
@@ -417,6 +489,14 @@
     });
     let { error } = await sb.from('driver_availability')
       .upsert(rows, { onConflict: 'profile_id,week_start_date,day_of_week' });
+    // Sin 0082 la base no acepta «Puedo doblar» ('both'): se guarda la semana
+    // igual, sin esa marca, y se le avisa al que llama para que lo diga.
+    let dobleSinGuardar = false;
+    if (error && /shift_pref_check/.test(error.message || '')) {
+      dobleSinGuardar = true;
+      ({ error } = await sb.from('driver_availability')
+        .upsert(rows.map(r => (r.shift_pref === 'both' ? { ...r, shift_pref: 'any' } : r)), { onConflict: 'profile_id,week_start_date,day_of_week' }));
+    }
     if (error) {
       // Fallback si 0015 no aplicada: re-intentar sin shift_pref.
       const rowsNoPref = rows.map(({ shift_pref, ...rest }) => rest);
@@ -424,6 +504,7 @@
         .upsert(rowsNoPref, { onConflict: 'profile_id,week_start_date,day_of_week' }));
     }
     if (error) throw error;
+    return { dobleSinGuardar };
   }
 
   // -------------------- Approval requests --------------------
@@ -830,7 +911,9 @@
       + ', route_sweep_tol_min, route_sweep_slack_pct, route_max_early_min';
     const BASE_COLS = 'morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours';
     const CONFIRMADO = BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS;
-    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS);
+    // 0082: el descanso después de una doble. Si no está, se asume 24 h.
+    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours');
+    if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + CUSHION_COLS));
@@ -1750,7 +1833,7 @@
     let dp = null;
     try {
       const r = await sb.from('driver_profiles')
-        .select('id, license_number, license_expires_at, eps_provider, arl_provider')
+        .select('id, license_number, license_expires_at, eps_provider, eps_expires_at, arl_provider, arl_expires_at')
         .eq('profile_id', session.user.id).limit(1);
       dp = (r.data && r.data[0]) || null;
     } catch (e) { /* sin driver_profile */ }
@@ -1791,6 +1874,18 @@
       .order('end_at', { ascending: false }).limit(90);
     if (error) throw error;
     return data || [];
+  }
+
+  // El último turno cerrado del conductor, para saber si el que arranca es su
+  // propio relevo (doble turno, D6): mismo carro y cierre reciente.
+  async function getMyLastClosedShift(driverId) {
+    const { data, error } = await sb.from('shifts')
+      .select('id, end_at, closing_km, vehicle_id')
+      .eq('driver_id', driverId).eq('status', 'closed')
+      .not('end_at', 'is', null).not('closing_km', 'is', null) // un NO APTO o una reserva vencida no traen km de cierre
+      .order('end_at', { ascending: false }).limit(1);
+    if (error) throw error;
+    return (data && data[0]) || null;
   }
 
   // Redención validada en servidor (km, recompensa activa, sin duplicado).
@@ -3113,7 +3208,8 @@
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins, setOpsAlerts,
-    listAllDriversForAdmin, setProfileActive, softDeleteProfile, setAdminCoordinator, setDriverPriority, setDriverCanCoordinate,
+    getProfileForEdit, listDeletedProfiles, adminUpdateProfile, adminSetEmail, adminSetPassword, adminSetStatus, adminSetRole, changeMyPassword,
+    listAllDriversForAdmin, setProfileActive, softDeleteProfile, undeleteProfile, setAdminCoordinator, setDriverPriority, setDriverCanCoordinate,
     createDriver,
     listSubmittedDriverIds,
     getWeeklyAvailability, getMyWeeklyAvailability,
@@ -3134,7 +3230,7 @@
     listNoFuelReasons, getShiftFuelStatus,
     listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, listChecklistItemsForTiers, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
-    getMyFullProfile, uploadMyAvatar,
+    getMyFullProfile, uploadMyAvatar, getMyLastClosedShift,
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment, getRouteTables, saveRouteTables, listResidencesZones, saveResidenceZone,

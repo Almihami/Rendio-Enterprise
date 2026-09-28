@@ -384,6 +384,8 @@
     const H_AM = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEAF6' } };
     const H_PM = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBE5D6' } };
     const TOT = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+    const A_MANO = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } }; // celda para escribir
+    const PESOS = '"$" #,##0';
     const headCell = (c, v) => { c.value = v; c.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = HEAD; c.alignment = { vertical: 'middle', wrapText: true }; c.border = AB; };
     // Título + sello, idénticos en las tres hojas: quien abra una hoja suelta
     // tiene que poder saber de qué corte es, cuándo se congeló y con qué regla.
@@ -511,9 +513,9 @@
 
     // ---- Hoja 3: Resumen por persona (= tabla en pantalla) ----
     const ws3 = wb.addWorksheet('Resumen por persona', { views: [{ showGridLines: false, state: 'frozen', ySplit: 3 }] });
-    ws3.columns = [{ width: 26 }, { width: 12 }, { width: 12 }, { width: 13 }, { width: 17 }, { width: 12 }, { width: 9 }];
-    titulo(ws3, 'G', 'Resumen por persona');
-    ['Conductor', 'Turnos completos', 'Horas reales', 'Turnos auto-cerrados', 'Horas auto (NO pagables)', 'Arranques falsos', 'En curso']
+    ws3.columns = [{ width: 26 }, { width: 12 }, { width: 12 }, { width: 13 }, { width: 17 }, { width: 12 }, { width: 9 }, { width: 16 }];
+    titulo(ws3, 'H', 'Resumen por persona');
+    ['Conductor', 'Turnos completos', 'Horas reales', 'Turnos auto-cerrados', 'Horas auto (NO pagables)', 'Arranques falsos', 'En curso', 'Valor a pagar']
       .forEach((h, i) => headCell(ws3.getRow(3).getCell(i + 1), h));
     ws3.getRow(3).height = 30;
     let r3 = 4;
@@ -521,12 +523,24 @@
       const rr = ws3.getRow(r3++);
       [p.name, p.ok, horas(p.okMin), p.auto, horas(p.autoMin), p.falso, p.curso]
         .forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' }; c.border = AB; });
+      // "Valor a pagar" va VACÍA a propósito: la escribe el jefe a mano. La app
+      // no conoce tarifas (y app_settings lo lee cualquier usuario).
+      const vc = rr.getCell(8);
+      vc.numFmt = PESOS; vc.font = { name: 'Arial', size: 10 }; vc.fill = A_MANO;
+      vc.alignment = { vertical: 'middle', horizontal: 'right' }; vc.border = AB;
     });
     // Los totales salen de los MINUTOS acumulados, nunca de las celdas de arriba.
     const T = k => bd.list.reduce((a, x) => a + x[k], 0);
     const trr = ws3.getRow(r3);
     ['Total', T('ok'), horas(bd.totalMin), T('auto'), horas(bd.totalAutoMin), T('falso'), T('curso')]
       .forEach((v, i) => { const c = trr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10, bold: true }; c.fill = TOT; c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' }; c.border = AB; });
+    // El total de "Valor a pagar" SÍ suma celdas: es una fórmula de Excel, para
+    // que se recalcule sola mientras el jefe escribe. En el archivo va en inglés
+    // (SUM) y Excel la muestra como SUMA.
+    const vt = trr.getCell(8);
+    vt.value = r3 > 4 ? { formula: `SUM(H4:H${r3 - 1})`, result: 0 } : 0;
+    vt.numFmt = PESOS; vt.font = { name: 'Arial', size: 10, bold: true }; vt.fill = TOT;
+    vt.alignment = { vertical: 'middle', horizontal: 'right' }; vt.border = AB;
 
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

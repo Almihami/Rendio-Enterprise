@@ -1667,6 +1667,18 @@
         if (!car) { rtCloseDrawer(); return; }
         const bands = rtBandsOfCar(car.id);
         if (!bands.some(b => (b === 'am' ? rt.pendingAM : rt.pendingPM))) { toast('Elige al menos un conductor de una franja.'); return; }
+        // Una persona no maneja dos carros a la vez (27-sep-2026). Con las dobles
+        // la misma persona puede estar en AM y PM, pero no en dos carros de la
+        // misma franja.
+        for (const b of ['am', 'pm']) {
+          const id = b === 'am' ? rt.pendingAM : rt.pendingPM; if (!id) continue;
+          const otro = (rt.cars || []).find(c => c.id !== car.id && (b === 'am' ? c.driverAM : c.driverPM) === id);
+          if (otro) {
+            const d = rt.drivers.find(x => x.id === id);
+            toast(`${d ? d.n.split(' ')[0] : 'Ese conductor'} ya maneja ${otro.id} en la franja ${b.toUpperCase()}: no puede estar en dos carros a la vez.`);
+            return;
+          }
+        }
         car.driverAM = rt.pendingAM || null; car.driverPM = rt.pendingPM || null;
         const names = bands.map(b => { const id = b === 'am' ? car.driverAM : car.driverPM; const d = id && rt.drivers.find(x => x.id === id); return d ? `${b.toUpperCase()} ${d.n.split(' ')[0]}` : null; }).filter(Boolean).join(' · ');
         rtCloseDrawer(); rtRenderAll(); toast(`${car.id} confirmada (${names || 'sin conductor'}).`); return;

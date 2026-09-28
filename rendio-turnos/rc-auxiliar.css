@@ -1426,3 +1426,9 @@
 @media (prefers-reduced-motion: reduce) {
   #auxiliar-ui .axc *, #auxiliar-ui .axc-in { animation: none !important; }
 }
+
+/* Usuarios (0081): estado y acciones de cuenta del tripulante */
+#tripulantes-ui .tp-row.sus { background: #FFFBF3; }
+#tripulantes-ui .tp-tag.tp-sus { background: #FBEBCF; color: #7A4B06; margin-left: 6px; vertical-align: middle; }
+#tripulantes-ui .tp-cuenta { gap: 8px; }
+#tripulantes-ui .tp-cuenta .tp-motivo { flex: 1 1 100%; color: #7A4B06; }

@@ -199,7 +199,9 @@
          <span class="rc-note-ic">${avIcon(icon, 17)}</span><span>${html}</span>
        </div>`;
     if (isSuspended()) {
-      return note('err', 'alert', '<b>Tu cuenta está suspendida.</b> No entras a la programación hasta que tu jefe te reactive.');
+      const motivo = state.profile && state.profile.suspended_reason;
+      return note('err', 'alert', '<b>Tu cuenta está suspendida.</b> No entras a la programación ni inicias turno hasta que tu jefe te reactive.'
+        + (motivo ? `<br><b>Motivo:</b> ${escapeHtml(motivo)}` : ''));
     }
     const reopen = reopenInfo(state.currentWeek);
     if (reopen.active) {
@@ -292,6 +294,8 @@
           style="flex:1;height:42px;font-size:13.5px;border-radius:12px">Volver todo a «Puedo»</button>
       </div>
 
+      ${avDoblarHtml(week)}
+
       <p style="font-size:12px;color:var(--r-text-3);line-height:1.5;margin:14px 2px 0">
         Cada toque cambia la jornada: Puedo → Prefiero no → No puedo → Puedo. Arrastra para
         aplicar lo mismo a varias seguidas, o toca el día para mañana y tarde a la vez.
@@ -314,6 +318,22 @@
     avBindScreen();
     avUpdateNavBadge(pend);
     updateDriverGreeting();
+  }
+
+  // «Puedo doblar» (27-sep-2026, D7): los días en que el conductor acepta una
+  // doble si hace falta (mañana y tarde, o tarde y la madrugada siguiente). No
+  // lo pone a doblar: solo le dice al jefe quién está dispuesto. Se guarda en
+  // shift_pref = 'both' de ese día, con el resto de la semana.
+  function avDoblarHtml(week) {
+    const on = (k) => (state.ownAvail && state.ownAvail[k] && state.ownAvail[k].shift_pref) === 'both';
+    return `
+      <div class="av-dbl-box rc-in d2">
+        <b>¿Qué días puedes doblar?</b>
+        <span>Si hace falta, tu jefe te puede poner mañana y tarde, o tarde y la madrugada siguiente. Marca solo los días en que te sirve.</span>
+        <div class="av-dbl-row">
+          ${week.map(d => `<button class="av-dbl" type="button" data-dbl="${d.key}" aria-pressed="${on(d.key)}">${d.label.slice(0, 3)}</button>`).join('')}
+        </div>
+      </div>`;
   }
 
   function avCellHtml(dayKey, shift) {
@@ -592,7 +612,8 @@
     const note = $('#av-save-note');
     if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
     try {
-      await Api.saveDriverWeekAvailability(state.profile.id, state.currentWeek, avPayloadConfirmado());
+      const res = await Api.saveDriverWeekAvailability(state.profile.id, state.currentWeek, avPayloadConfirmado());
+      if (res && res.dobleSinGuardar) toast('Tu semana quedó guardada, pero «Puedo doblar» todavía no se puede guardar. Avísale a tu jefe.');
       avUI.dirty = false;
       avUI.saved = true;
       await refreshDriverView();
@@ -617,6 +638,18 @@
       avPaint(avCells().map(c => c.id), 'puedo');
       avSetHint('puedo');
     });
+
+    document.querySelectorAll('[data-dbl]').forEach(b => b.addEventListener('click', () => {
+      if (!avEditable()) return;
+      const day = b.dataset.dbl;
+      state.ownAvail[day] = state.ownAvail[day] || { am: 'unset', pm: 'unset' };
+      const on = state.ownAvail[day].shift_pref !== 'both';
+      state.ownAvail[day].shift_pref = on ? 'both' : 'any';
+      b.setAttribute('aria-pressed', String(on));
+      avUI.dirty = true;
+      avUI.saved = false;
+      avRefreshStatus();
+    }));
 
     const grid = $('#av-grid');
     if (grid) avBindPainting(grid);

@@ -107,6 +107,13 @@
 
 
   const TOTAL_STEPS = 6;
+  // Relevo propio (doble turno, D6 del 27-sep-2026): la segunda mitad de una
+  // doble lleva inspección corta, sin checklist ni fotos, SOLO si se cumple todo:
+  // el jefe publicó esa doble, el conductor cerró normal (con km) un turno con
+  // ESTE carro hace menos de RELEVO_MAX_MIN, nadie más lo manejó desde entonces
+  // (el odómetro no se movió) y al carro no le toca revisión de nivel (0073).
+  // Si algo falla o cambia de carro, inspección completa.
+  const RELEVO_MAX_MIN = 180;
 
   const sf = {
     profile: null,
@@ -414,6 +421,7 @@
     sf.done = null;
     sf.secured = false;      // ¿el turno ya quedó registrado? (ver onConfirm)
     sf.fotosFallidas = [];   // fotos que no lograron subir pese a los reintentos
+    sf.corta = null;         // relevo propio: { prevShiftId, min, km } (ver RELEVO_MAX_MIN)
     _ultimoGuardado = '';    // borrador nuevo: que la primera grabación sí ocurra
 
     const wiz = $('#shift-wizard');
@@ -473,12 +481,54 @@
   function goBack() {
     if (sf.step === 0 || (sf.completing && sf.step === 1)) { tryExit(); return; }
     sf.step -= 1;
+    if (sf.corta && (sf.step === 1 || sf.step === 2)) sf.step = 0; // la corta no tiene checklist ni fotos
     render();
   }
 
   function goNext() {
     sf.step += 1;
+    if (sf.corta && (sf.step === 1 || sf.step === 2)) sf.step = 3;
     render();
+  }
+
+  // ¿El jefe le publicó una doble cuya segunda mitad cae ahora? Doble día o
+  // doble noche que arrancó hoy, o doble noche que arrancó ayer (la madrugada
+  // de hoy es su segunda mitad). Si no se puede leer el horario, no hay corta.
+  async function tengoDobleAhora() {
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    const ayer = Scheduler.addDays(hoy, -1);
+    const dia = iso => Scheduler.DAYS[(new Date(iso + 'T12:00:00').getDay() + 6) % 7];
+    const pide = async (iso) => {
+      const sch = await Api.getSchedule(Scheduler.startOfWeekISO(iso));
+      return (sch && sch.published) ? Scheduler.doublesOf(sch.data).filter(x => x.id === sf.profile.id) : [];
+    };
+    const deHoy = await pide(hoy);
+    if (deHoy.some(x => x.day === dia(hoy))) return true;
+    const deAyer = Scheduler.startOfWeekISO(ayer) === Scheduler.startOfWeekISO(hoy) ? deHoy : await pide(ayer);
+    return deAyer.some(x => x.tipo === 'noche' && x.day === dia(ayer));
+  }
+
+  // ¿El turno que arranca es el relevo propio de una doble? Mismo carro y cierre
+  // hace menos de RELEVO_MAX_MIN. Si la consulta falla, inspección completa.
+  async function detectarRelevoPropio(vehicleId) {
+    sf.corta = null;
+    if (sf.completing || !sf.driverId) return;
+    try {
+      const last = await Api.getMyLastClosedShift(sf.driverId);
+      if (!last || last.vehicle_id !== vehicleId || !last.end_at) return;
+      // Si el odómetro del carro se movió desde su cierre, alguien más lo manejó.
+      const v = (sf.vehicles || []).find(x => x.id === vehicleId);
+      if (v && v.current_km != null && Number(v.current_km) !== Number(last.closing_km)) return;
+      // Si al carro le toca revisión de nivel (0073), va la inspección completa.
+      await applyTierChecklist(vehicleId);
+      if (sf.tierKms && sf.tierKms.length) return;
+      // Y tiene que ser una doble que el jefe publicó: sin doble, completa.
+      if (!(await tengoDobleAhora())) return;
+      const min = Math.round((Date.now() - new Date(last.end_at).getTime()) / 60000);
+      if (min < 0 || min > RELEVO_MAX_MIN) return;
+      sf.corta = { prevShiftId: last.id, min, km: last.closing_km };
+      if (!sf.km && last.closing_km) sf.km = String(last.closing_km);
+    } catch (_) { sf.corta = null; }
   }
 
   // ---------- chrome compartido ----------
@@ -897,6 +947,8 @@
       sf.reuseShiftId = (res && res.shift_id) || sf.reuseShiftId;
       const prevReserved = sf.myReservedVehicleId;
       sf.myReservedVehicleId = v.id;
+      await detectarRelevoPropio(v.id);
+      if (sf.corta) sfToast(`Relevo propio: cerraste este carro hace ${sf.corta.min} min. Inspección corta, sin checklist ni fotos.`);
       // Reflejar el cambio en la lista en caché (sin otra llamada de red).
       sf.vehicles.forEach(x => {
         if (x.id === v.id) x.status = 'reserved';
@@ -1130,9 +1182,9 @@
     };
 
     wiz.innerHTML = shellHtml(
-      `Inicio de turno · Paso 4 de ${TOTAL_STEPS}`,
+      sf.corta ? 'Inicio de turno · Relevo propio (inspección corta)' : `Inicio de turno · Paso 4 de ${TOTAL_STEPS}`,
       'Kilometraje inicial',
-      'Lee el número exacto del odómetro.',
+      sf.corta ? `Sigues con el mismo carro: arrancamos con el km con que cerraste (${fmtKm(sf.corta.km || 0)}). Corrígelo si el tablero dice otra cosa.` : 'Lee el número exacto del odómetro.',
       `<div class="bg-white border border-slate-200 rounded-2xl p-5 text-center shadow-card">
         <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Última lectura registrada</p>
         <p class="text-sm text-slate-500 mt-0.5 mb-4">${fmtKm(ref)} km · ${esc(v ? (v.internal_code || v.license_plate) : '')}</p>
@@ -1357,6 +1409,7 @@
   // lectura del odómetro y a su foto del tablero.
   function notasInspeccion() {
     const partes = [];
+    if (sf.corta) partes.push(`Relevo propio (doble turno): mismo carro, cerró hace ${sf.corta.min} min. Inspección corta, sin checklist ni fotos.`);
     if (sf.note && sf.note.trim()) partes.push(sf.note.trim());
     if (sf.kmAviso) partes.push(sf.kmAviso);
     return partes.length ? partes.join('\n') : null;
@@ -1469,10 +1522,14 @@
         kind: 'initial',
         odometer_km: openingKm,
         // Snapshot del checklist para auditoría (sobrevive a cambios futuros del admin):
-        checklist: {
-          severity: sf.severity || null,
-          items: ckItems.map(it => ({ id: it.id, label: it.label, hint: it.detail || null, category: it.category || null, result: sf.checklist[it.id] === 'issue' ? 'issue' : 'ok' })),
-        },
+        // En la corta no se revisó el checklist: se guarda vacío y marcado, no
+        // con todo en 'ok' (eso diría que alguien lo revisó).
+        checklist: sf.corta
+          ? { severity: sf.severity || null, corta: true, relevo_de: sf.corta.prevShiftId, items: [] }
+          : {
+            severity: sf.severity || null,
+            items: ckItems.map(it => ({ id: it.id, label: it.label, hint: it.detail || null, category: it.category || null, result: sf.checklist[it.id] === 'issue' ? 'issue' : 'ok' })),
+          },
         has_damage: issues.length > 0,
         is_apt: sf.isApt,
         signed_name: (sf.profile && sf.profile.full_name) || null,
@@ -1498,7 +1555,7 @@
         sf.done = 'started';
         // La revisión de nivel quedó hecha: no se vuelve a pedir hasta el
         // siguiente múltiplo de km (0073). Best-effort, nunca frena el turno.
-        if (sf.tierKms && sf.tierKms.length) {
+        if (!sf.corta && sf.tierKms && sf.tierKms.length) {
           const kmDone = parseInt(String(sf.km || '').replace(/\D/g, ''), 10) || 0;
           try { await Api.markInspectionTiersDone(sf.vehicleId, kmDone); } catch (_) { /* */ }
         }

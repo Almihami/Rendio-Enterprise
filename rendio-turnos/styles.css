@@ -4003,3 +4003,17 @@ html,body{overflow-x:hidden}
   #parts-ui .sech { margin: 20px 0 10px; flex-wrap: wrap; }
   #parts-ui .sech .hint { flex: 1 1 100%; }
 }
+
+/* ---------- Usuarios (0081): modales de editar datos y contraseñas ---------- */
+.modal-card.usr-card { max-width: 560px; max-height: 90vh; }
+.usr-body { background: transparent; }
+.usr-err { margin-top: 12px; font-size: 13px; font-weight: 600; color: rgb(190 18 60); }
+.usr-reason { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #FBEBCF; color: #7A4B06; font-size: 13px; line-height: 1.35; }
+@media (max-width: 560px) { .usr-body .set-grid2 { grid-template-columns: 1fr; } }
+
+/* Doble turno autorizada (27-sep-2026): ámbar, como "pidió descanso" pero con borde sólido */
+#schedule-board .asg.dbl{background:var(--amber-soft);border-color:var(--amber);border-style:solid}
+#schedule-board .asg.dbl .nm span{color:var(--amber);font-weight:700}
+/* «Puedo doblar» en la consolidada del jefe */
+#avail-ui .av-dblmark{display:block;margin:4px auto 0;border:0;background:transparent;font-size:11px;line-height:1;padding:2px 6px;border-radius:6px;color:var(--ink3);opacity:.35;cursor:pointer}
+#avail-ui .av-dblmark.on{opacity:1;background:#FBEBCF;color:#7A4B06;font-weight:800}

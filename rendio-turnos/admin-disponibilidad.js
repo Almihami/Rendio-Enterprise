@@ -112,12 +112,35 @@
           const tip = blocked ? ' title="Descanso fijo (parametrización)"' : (reason ? ` title="${escapeAttr(reason)}"` : '');
           return `<button class="av-slot ${v}" data-id="${d.id}" data-day="${day.key}" data-shift="${b}" data-state="${rawState}"${blocked ? ' data-blocked="1"' : ''}${tip}>${ic}<span class="lbl">${b.toUpperCase()}</span></button>`;
         };
-        html += `<td class="daycell${WKND.includes(i) ? ' wknd' : ''}"><span class="slots">${cell('am')}${cell('pm')}</span></td>`;
+        // «Puedo doblar» (D7): lo marca el conductor; el jefe también lo puede
+        // cambiar acá, como el resto de la consolidada.
+        const dbl = av.shift_pref === 'both';
+        html += `<td class="daycell${WKND.includes(i) ? ' wknd' : ''}"><span class="slots">${cell('am')}${cell('pm')}</span><button class="av-dblmark${dbl ? ' on' : ''}" data-dbl-id="${d.id}" data-day="${day.key}" title="${dbl ? 'Puede doblar este día' : 'No marcó «Puedo doblar»'}">⇆</button></td>`;
       });
       html += '</tr>';
     });
     body.innerHTML = html;
     body.querySelectorAll('.av-slot').forEach(btn => btn.addEventListener('click', () => rotateAvailPill(btn)));
+    body.querySelectorAll('[data-dbl-id]').forEach(btn => btn.addEventListener('click', () => toggleAvailDoblar(btn)));
+  }
+
+  async function toggleAvailDoblar(btn) {
+    const id = btn.dataset.dblId, day = btn.dataset.day;
+    state.availability[id] = state.availability[id] || {};
+    const av = state.availability[id][day] = state.availability[id][day] || { am: 'unset', pm: 'unset' };
+    av.shift_pref = av.shift_pref === 'both' ? 'any' : 'both';
+    btn.disabled = true;
+    try {
+      await Api.upsertAvailabilityRow({
+        profileId: id, weekStart: state.currentWeek, day,
+        am: av.am, pm: av.pm, am_reason: av.am_reason, pm_reason: av.pm_reason,
+        shift_pref: av.shift_pref,
+      });
+      await refreshAvailabilityMatrix();
+    } catch (e) {
+      alert('No se pudo guardar «Puedo doblar»: ' + e.message);
+      await refreshAvailabilityMatrix();
+    }
   }
 
   function escapeAttr(s) {

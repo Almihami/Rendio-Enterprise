@@ -565,13 +565,18 @@
                 <!-- El teléfono no se pedía nunca, así que el botón "Llamar" de la
                      app del tripulante y el del jefe no marcaban a nadie. -->
                 <div class="set-field"><label>Teléfono <span style="font-weight:400;opacity:.65">(para que puedan llamarlo)</span></label><input class="set-input" id="new-driver-phone" type="tel" autocomplete="off" placeholder="3001234567" /></div>
-                <div class="set-field"><label>Contraseña</label><div class="set-pwwrap"><input class="set-input mono" id="new-driver-password" type="text" autocomplete="new-password" placeholder="Mín. 8 caracteres" /><button class="set-btn ghost" id="new-driver-gen-pw" type="button" title="Generar contraseña aleatoria">Generar</button></div></div>
+                <div class="set-field"><label>Contraseña</label><div class="set-pwwrap"><input class="set-input mono" id="new-driver-password" type="text" autocomplete="new-password" placeholder="Mín. 10, con letras y números" /><button class="set-btn ghost" id="new-driver-gen-pw" type="button" title="Generar contraseña aleatoria">Generar</button></div></div>
               </div>
               <div class="set-grid2" style="margin-top:14px">
                 <div class="set-field"><label>Prioridad</label><div class="set-selwrap"><select class="set-sel" id="new-driver-priority"><option value="1" selected>1 · Nuevo</option><option value="2">2 · Con tiempo</option><option value="3">3 · Antiguo</option><option value="4">4 · Máxima</option></select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
                 <div class="set-field"><label>&nbsp;</label>
                   <label class="set-checkrow"><input type="checkbox" id="new-driver-can-coord" class="set-chk-input" /><span class="set-chk"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span><span>¿Puede ser líder de turno? (entra al pool de líderes)</span></label>
                 </div>
+              </div>
+              <!-- U6 (27-sep-2026): un jefe nuevo se crea igual que un conductor y
+                   se promueve en el mismo paso. -->
+              <div class="set-grid2" style="margin-top:14px">
+                <div class="set-field"><label>Crear como</label><div class="set-selwrap"><select class="set-sel" id="new-driver-role"><option value="driver" selected>Conductor</option><option value="admin">Administrador (jefe)</option></select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
               </div>
               <div class="set-foot"><button class="set-btn" id="new-driver-create-btn"><svg class="icon"><use href="#i-plus"/></svg>Crear conductor</button><span id="new-driver-state" class="set-cstate"></span></div>
             </div>
@@ -1087,6 +1092,7 @@
               <button class="on" data-tp="filtro" data-f="todos">Todos</button>
               <button data-tp="filtro" data-f="sin-fecha">Sin fecha de ingreso</button>
               <button data-tp="filtro" data-f="dos-unidades">Con dos unidades</button>
+              <button data-tp="filtro" data-f="suspendidos">Suspendidos</button>
             </div>
           </div>
           <div id="tp-body"></div>
@@ -1408,6 +1414,7 @@
        Comparten scope global; el ORDEN de carga importa: core.js primero
        (estado global + boot) y ui-push.js último (registra DOMContentLoaded). -->
   <script src="core.js"></script>
+  <script src="usuarios.js"></script>
   <script src="admin-turnos-activos.js"></script>
   <script src="admin-inspecciones.js"></script>
   <script src="admin-repuestos.js"></script>

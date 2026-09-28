@@ -233,6 +233,17 @@
       pueden faltarte opciones (por ejemplo, el traslado privado). Suele ser la sesión — vuelve a entrar.</div>`;
   }
 
+  // Suspendido por el jefe (0081): entra y ve sus viajes, pero no pide nuevos.
+  // Los que ya pidió se respetan (C8). La base también lo frena.
+  function auxSuspendido() { return !!(auxState.profile && auxState.profile.is_active === false); }
+  function auxSuspendidoHTML() {
+    if (!auxSuspendido()) return '';
+    const m = auxState.profile.suspended_reason;
+    return `<div class="ax-hint bad"><svg class="icon"><use href="#i-warn"/></svg>
+      <span>Tu cuenta está suspendida: no puedes pedir traslados nuevos. Los que ya pediste siguen en pie.
+      ${m ? `<br>Motivo: ${escapeHtml(m)}` : ''}<br>Habla con tu jefe para reactivarla.</span></div>`;
+  }
+
   function auxHomeHTML() {
     const upcoming = auxUpcoming();
     const past = auxPast();
@@ -251,6 +262,7 @@
           <button class="ax-pwa-btn hidden" data-ax="enable-push">🔔 Activar notificaciones</button>
         </div>
         ${auxSettingsWarnHTML()}
+        ${auxSuspendidoHTML()}
         ${auxState.source === 'error' ? `
           <div class="ax-empty">
             <div class="ax-empty-ic"><svg class="icon"><use href="#i-info"/></svg></div>
@@ -262,13 +274,13 @@
             <div class="ax-empty-ic"><svg class="icon"><use href="#i-plane"/></svg></div>
             <b>Pide tu primer traslado</b><span>Dinos el vuelo y de dónde sales. Nosotros armamos la ruta y te asignamos conductor.</span>
           </div>`}
-        ${auxRepeatHTML()}
+        ${auxSuspendido() ? '' : auxRepeatHTML()}
         ${upcoming.length > 1 ? `<div class="ax-sec">Más próximos</div>${upcoming.slice(1).map(t => auxTripCard(t)).join('')}` : ''}
         ${past.length ? `<div class="ax-sec">Anteriores</div>${past.slice(0, 3).map(t => auxTripCard(t)).join('')}` : ''}
         <div class="ax-spacer"></div>
       </div>
       <div class="ax-cta-bar with-tabs">
-        <button class="ax-btn ax-btn-primary" data-ax="new"><svg class="icon"><use href="#i-plus"/></svg>Pedir traslado</button>
+        <button class="ax-btn ax-btn-primary" data-ax="new" ${auxSuspendido() ? 'disabled' : ''}><svg class="icon"><use href="#i-plus"/></svg>Pedir traslado</button>
       </div>
       ${auxTabsHTML('inicio')}`;
   }
@@ -353,6 +365,12 @@
         <button class="axs-ch" data-ax="support">
           <span class="axs-ch-ic"><svg class="icon"><use href="#i-info"/></svg></span>
           <span class="axs-ch-txt"><b>Algo no va bien</b><span>Qué hacer según lo que esté pasando.</span></span>
+          <svg class="icon axr-chev"><use href="#i-chev"/></svg>
+        </button>
+        <div class="ax-sec">Cuenta</div>
+        <button class="axs-ch" data-ax="change-pw">
+          <span class="axs-ch-ic"><svg class="icon"><use href="#i-lock"/></svg></span>
+          <span class="axs-ch-txt"><b>Cambiar mi contraseña</b><span>Te pedimos la actual.</span></span>
           <svg class="icon axr-chev"><use href="#i-chev"/></svg>
         </button>
         <button class="ax-btn ax-btn-ghost ax-danger" data-ax="logout"><svg class="icon"><use href="#i-exit"/></svg>Cerrar sesión</button>
@@ -1202,7 +1220,15 @@
     const trip = auxNuevoTrip(f);
     // Persistir en dev si hay sesión real; si falla, no se inventa nada.
     try { trip.id = await Api.createReservation(f); }
-    catch (e) { toast('No se pudo guardar tu traslado. Revisa la conexión e intenta otra vez.'); return; }
+    catch (e) {
+      // La suspensión la frena la base aunque la pantalla no se haya enterado
+      // (el jefe la suspendió con la app abierta): se dice eso, no «revisa la conexión».
+      if (/suspendida/i.test(e.message || '')) {
+        if (auxState.profile) auxState.profile.is_active = false;
+        toast(e.message); auxState.view = 'home'; auxRender(); return;
+      }
+      toast('No se pudo guardar tu traslado. Revisa la conexión e intenta otra vez.'); return;
+    }
     auxState.trips.unshift(trip);
 
     // ── El regreso del mismo día ──
@@ -2253,6 +2279,11 @@
       const a = el.dataset.ax;
       if (a === 'install') { if (window.rendioInstall) window.rendioInstall.prompt(); return; }
       if (a === 'enable-push') { if (typeof enablePush === 'function') Promise.resolve(enablePush()).then(() => auxSetupPwa()); return; }
+      if ((a === 'new' || a === 'repeat') && auxSuspendido()) {
+        toast('Tu cuenta está suspendida: no puedes pedir traslados nuevos. Habla con tu jefe.');
+        return;
+      }
+      if (a === 'change-pw') { openCambiarMiClave(); return; }
       if (a === 'new') {
         auxState.view = 'form'; auxState.step = 1;
         auxState.form = { isReserva: true, date: auxDefaultDate() };
