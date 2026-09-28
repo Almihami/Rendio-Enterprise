@@ -296,6 +296,13 @@
     const hechos = auxState.trips.filter(t => t.status === 'done');
     return hechos.length ? hechos[hechos.length - 1] : null;
   }
+  // Lo que se copia al repetir: solo lo que escribió el tripulante.
+  function auxRepeatNotes(n) {
+    return String(n || '')
+      .replace(/^\s*vuelo\s*:?\s*[A-Za-z]{0,3}\s*-?\s*\d{2,5}\.\s*/i, '')
+      .replace(/\s*·\s*Regreso del mismo día\s*$/i, '')
+      .trim();
+  }
   function auxRepeatHTML() {
     const t = auxLastTrip(); if (!t) return '';
     const m = auxTypeMeta(t.type);
@@ -2304,7 +2311,10 @@
         auxState.form = {
           isReserva: true, type: last.type,
           date: auxDefaultDate(),
-          notes: last.notes || '',
+          // Las notas guardadas llevan pegados el vuelo de ESA vez («Vuelo AV9412. »,
+          // createReservation) y la marca del regreso. Repetirlos metía un vuelo viejo
+          // en el pedido nuevo: el admin lo leía como el de hoy (_flightFromNotes).
+          notes: auxRepeatNotes(last.notes),
           residenceId: last.residenceId || null,
           residenceUnit: last.residenceUnit || null,
         };

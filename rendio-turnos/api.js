@@ -27,8 +27,8 @@
     const sel = cols => sb.from('profiles').select(cols).eq('id', session.user.id).maybeSingle();
     // 0081 trae la contraseña temporal y el motivo de la suspensión. Si no está
     // aplicada, se entra como antes.
-    let { data, error } = await sel('id, full_name, email, role, organization_id, is_active, deleted_at, must_change_password, suspended_reason');
-    if (error) ({ data, error } = await sel('id, full_name, email, role, organization_id, is_active, deleted_at'));
+    let { data, error } = await sel('id, full_name, email, phone, role, organization_id, is_active, deleted_at, must_change_password, suspended_reason');
+    if (error) ({ data, error } = await sel('id, full_name, email, phone, role, organization_id, is_active, deleted_at'));
     if (error) throw error;
     return data;
   }
