@@ -157,3 +157,15 @@
 @media (prefers-reduced-motion: reduce) {
   #auxiliar-ui.rx-phone .rx-trip-chat { animation-duration: 1ms; animation-delay: 0s; }
 }
+
+/* ── Mapa real con el tono del diseño (revisión visual 29-sep) ──
+   El mapa del diseño es gris y apagado (rx-core RxMap: fondo #EEF0EC, manzanas
+   #E2E5E0, vías blancas; de noche #14110D). Los tiles reales de OSM traen color:
+   se apagan para que la ruta naranja, el carro y los pines se lean como en el
+   diseño. Aplica a todos los mapas del tripulante (viaje y «En vivo» de Inicio). */
+#auxiliar-ui.rx-phone:not([data-ax-night="on"]) .leaflet-tile-pane {
+  filter: grayscale(.92) brightness(1.06) contrast(.9);
+}
+#auxiliar-ui.rx-phone[data-ax-night="on"] .leaflet-tile-pane {
+  filter: grayscale(1) invert(.9) brightness(.82) contrast(.88) sepia(.08);
+}
