@@ -176,6 +176,9 @@ window.L = undefined;
 // P6 (27-sep-2026): con los archivos del rediseño cargados (aux-rx-ui.js y
 // aux-shell.js ANTES de aux-privado.js, como en index.html). La bandera va
 // APAGADA aquí (la de siempre); abajo se repite con la bandera ENCENDIDA.
+// Desde la integración el rediseño viene encendido por defecto: esta parte es la
+// de siempre, con el interruptor de emergencia puesto.
+window.localStorage.setItem('rendio.aux.rx', '0');
 for (const f of ['aux-rx-ui.js', 'aux-shell.js', 'aux-residencias.js', 'aux-privado.js', 'aux-presentacion.js', 'auxiliar.js'])
   window.eval(readFileSync(APP + f, 'utf8'));
 

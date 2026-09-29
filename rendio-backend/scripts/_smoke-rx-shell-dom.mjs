@@ -154,7 +154,7 @@ console.log('\n── contrato y bandera ──');
   t('window.AuxShell trae el contrato de §5 P2', faltan.length === 0, faltan.join(','));
   t('tiempos del diseño: capa 270 · hoja 220 · toast 1800 · banner 4000',
     AS.T.layerOut === 270 && AS.T.sheetOut === 220 && AS.T.toast === 1800 && AS.T.banner === 4000, JSON.stringify(AS.T));
-  t('RX_DEFAULT apagado hasta la integración', AS.RX_DEFAULT === false);
+  t('RX_DEFAULT encendido desde la integración', AS.RX_DEFAULT === true);
   t('bandera por localStorage: on() con «1»', AS.on() === true);
   t('#auxiliar-ui lleva rx-phone (skin)', b.ui().classList.contains('rx-phone'));
   t('esqueleto: .rx-app con base, capas, hoja, toast y banner',

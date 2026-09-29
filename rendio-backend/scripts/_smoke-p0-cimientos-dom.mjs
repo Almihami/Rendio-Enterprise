@@ -208,6 +208,9 @@ t('window.Auxiliar trae todo el contrato de §2.9', faltan.length === 0, faltan.
 t('header existe en el contrato (null antes de init)', 'header' in A && A.header === null);
 
 window.localStorage.setItem('rendio.aux.onboarded', '1');
+// Desde la integración el rediseño viene ENCENDIDO por defecto: esta parte
+// prueba el camino de siempre, así que usa el interruptor de emergencia.
+window.localStorage.setItem('rendio.aux.rx', '0');
 if (window.AuxPresentacion && window.AuxPresentacion.markOnboarded) window.AuxPresentacion.markOnboarded();
 await A.init({ id: 'p1', full_name: 'Laura Gómez', role: 'auxiliar' }); await wait(60);
 const ui = () => window.document.getElementById('auxiliar-ui');
@@ -286,7 +289,7 @@ console.log('\n── index.html y sw.js · registro de los archivos nuevos ─�
   const shell = [...sw.split('APP_SHELL')[1].split('];')[0].matchAll(/'(\/[^']+)'/g)].map(m => m[1]).filter(p => p !== '/');
   const sinArchivo = shell.filter(p => !existsSync(APP + p.slice(1)));
   t('todo lo de APP_SHELL existe (si no, el SW no instala)', sinArchivo.length === 0, sinArchivo.join(','));
-  t('CACHE_VERSION v165', /CACHE_VERSION = 'rendio-turnos-v165'/.test(sw));
+  t('CACHE_VERSION subió (≥ v165)', Number((sw.match(/CACHE_VERSION = 'rendio-turnos-v(\d+)'/) || [])[1]) >= 165);
   for (const [p, id] of [['coordinacion', 'coordinacion-ui'], ['cobro', 'cobro-ui'], ['puntos', 'puntos-ui']]) {
     const sec = window.document.querySelector(`section[data-panel="${p}"]`);
     t(`sección admin «${p}» con #${id}, oculta`, sec && sec.classList.contains('hidden') && sec.querySelector('#' + id));

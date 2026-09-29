@@ -515,14 +515,24 @@
     // traslado ya abierto. Es a donde apunta el aviso de "un tripulante escribió
     // y no tiene carro asignado": ese mensaje NO crea una eventualidad, así que
     // mandarlo a la bandeja sería mandarlo a una pantalla donde no está.
+    // Rediseño del tripulante (28-sep): los avisos de Coordinación, del cobro y
+    // de los canjes de puntos traen `#/coordinacion?aux=`, `#/cobro?aux=` y
+    // `#/puntos`. Los enlaces DEL TRIPULANTE (#/viaje, #/pagos…) no pasan por
+    // aquí: los resuelve aux-shell.js (este camino es solo del admin).
     const tab = m[1] === 'eventualidades' ? 'eventualidades'
-      : m[1] === 'reservas' ? 'reservas' : null;
+      : m[1] === 'reservas' ? 'reservas'
+      : m[1] === 'coordinacion' && typeof window.renderCoordinacion === 'function' ? 'coordinacion'
+      : m[1] === 'cobro' && typeof window.renderCobro === 'function' ? 'cobro'
+      : m[1] === 'puntos' && typeof window.renderPuntos === 'function' ? 'puntos' : null;
     if (!tab) return false;
     const params = new URLSearchParams(m[2] || '');
     const ev = params.get('ev');
     if (ev) evtState.focusId = ev;
     const chat = params.get('chat');
     if (chat) rvState.focusChatId = chat;
+    const aux = params.get('aux');
+    if (aux && tab === 'coordinacion' && typeof window.renderCoordinacion.focus === 'function') window.renderCoordinacion.focus(aux);
+    if (aux && tab === 'cobro' && typeof window.renderCobro.focus === 'function') window.renderCobro.focus(aux);
     // Se limpia el hash para que un refresco no vuelva a abrir lo mismo.
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* */ }
     setTab(tab);

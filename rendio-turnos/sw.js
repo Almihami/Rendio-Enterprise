@@ -6,7 +6,7 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v165';
+const CACHE_VERSION = 'rendio-turnos-v166';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
@@ -141,7 +141,15 @@ self.addEventListener('push', (event) => {
     data: { url: data.url || '/' },
     tag: data.tag || undefined,
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  // Además de la notificación del sistema, avisa a las ventanas abiertas: el
+  // rediseño del tripulante pinta el aviso dentro de la app (banner de 4 s) y
+  // recarga sus viajes. Conductor y admin ignoran el mensaje.
+  const avisarVentanas = self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    .then((wins) => wins.forEach((w) => {
+      try { w.postMessage({ type: 'rendio-push', title, body: options.body, url: options.data.url }); } catch (_) {}
+    }))
+    .catch(() => {});
+  event.waitUntil(Promise.all([self.registration.showNotification(title, options), avisarVentanas]));
 });
 
 self.addEventListener('notificationclick', (event) => {

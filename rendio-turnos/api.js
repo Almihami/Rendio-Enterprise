@@ -911,8 +911,13 @@
       + ', route_sweep_tol_min, route_sweep_slack_pct, route_max_early_min';
     const BASE_COLS = 'morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours';
     const CONFIRMADO = BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS;
+    // 0088/0091 (rediseño del tripulante): teléfono y horario de Coordinación, y
+    // el interruptor de Rendio Points. Escalón propio: sin esas migraciones se
+    // cae al de siempre y quedan undefined (Coordinación sin teléfono, Puntos apagado).
+    const AUX_RX_COLS = ', ops_contact_phone, ops_contact_hours, aux_points_enabled';
     // 0082: el descanso después de una doble. Si no está, se asume 24 h.
-    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours');
+    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS);
+    if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours'));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS));

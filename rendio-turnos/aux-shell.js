@@ -47,9 +47,9 @@
   'use strict';
 
   // ── Bandera (plan §2.1) ────────────────────────────────────────────────────
-  // false hasta la Ola 2; PI la pasa a true al integrar. localStorage manda:
-  // '1' encendido, '0' apagado (interruptor de emergencia). ?rx=1 / ?rx=0 lo fija.
-  const RX_DEFAULT = false;
+  // Encendido desde la integración (Ola 2). localStorage manda: '1' encendido,
+  // '0' apagado (interruptor de emergencia: vuelve la UI vieja). ?rx=1 / ?rx=0 lo fija.
+  const RX_DEFAULT = true;
   const LS_KEY = 'rendio.aux.rx';
 
   // Tiempos del diseño (ANIMACIONES §4/§5). No se tocan.
@@ -181,7 +181,9 @@
     if (v === 'support') return [{ id: 'support', props: {}, key: 'v:support' }];
     if (v === 'trip') {
       const t = curTrip(st);
-      const rate = !!(t && t.status === 'done' && t.driver && !t.rated && screens.rate);
+      // «Ahora no» se respeta: la regla la tiene Auxiliar.showRate (PL).
+      const rate = !!(t && screens.rate && (window.Auxiliar && typeof Auxiliar.showRate === 'function'
+        ? Auxiliar.showRate(t) : (t.status === 'done' && t.driver && !t.rated)));
       const id = rate ? 'rate' : 'trip';
       return [{ id, props: { tripId: st.editingTrip || null }, key: 'v:' + id + ':' + (st.editingTrip || '') }];
     }
@@ -819,14 +821,14 @@
     const root = rootEl();
     return !!(ae && root && root.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName));
   }
-  function refreshTrips() {
+  function refreshTrips(opts) {
     if (refreshing) return refreshing;
     const a = A();
     if (!a || typeof a.reloadTrips !== 'function') return Promise.resolve(null);
     const st = S();
     const before = snap(st.trips);
     refreshing = Promise.resolve()
-      .then(() => a.reloadTrips())
+      .then(() => a.reloadTrips(opts))
       .catch(() => null)
       .then(() => {
         refreshing = null;
@@ -915,7 +917,7 @@
           if (!d || d.type !== 'rendio-push' || !sk || !on()) return;
           if (document.visibilityState !== 'visible') return;
           banner({ icon: d.icon || 'Bell', title: d.title || 'Rendio', body: d.body || '', go: d.url || null });
-          refreshTrips();
+          refreshTrips({ silent: true });   // el banner ya avisó: la recarga no pinta otro
         });
       }
     } catch (_) { /* sin service worker */ }

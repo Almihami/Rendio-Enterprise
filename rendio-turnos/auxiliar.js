@@ -374,6 +374,8 @@
     // encendido, pinta él y decide si desmonta el rastreo (por eso va ANTES de
     // auxStopTrack). Apagado —o sin aux-shell.js— todo sigue exactamente igual.
     if (auxShellOn()) { AuxShell.render(); return; }
+    // Apagado (interruptor de emergencia): sin la piel rx sobre la UI vieja.
+    try { if (window.AuxShell && typeof AuxShell.skin === 'function') AuxShell.skin(false); } catch (_) {}
     const root = auxRoot(); if (!root) return;
     auxStopTrack(); // limpia animaciones de mapa al cambiar de vista
     // Primer ingreso: ocupa la pantalla entera, sin nav ni encabezado.
@@ -1613,7 +1615,7 @@
       }
       // La pausa por no pago (Facturario) también la frena la base, con su
       // propio texto. Se muestra la hoja de la pausa, no un error de red.
-      if (/pausad/i.test(e.message || '')) {
+      if ((window.ApiCobro && typeof ApiCobro.isPausedError === 'function' && ApiCobro.isPausedError(e)) || /pausad/i.test(e.message || '')) {
         auxState.view = 'home'; auxState.tab = 'inicio'; auxRender();
         if (auxShellOn()) auxLockNotice('paused'); else auxToast(e.message);
         return;
@@ -1727,7 +1729,9 @@
   }
   function auxShowRate(t) {
     if (!t || t.status !== 'done' || t.rated || !t.driver) return false;
-    return auxState.rateOpen === t.id || !auxRateSkipped(t.id);
+    // «Calificar» desde el historial abre la calificación aunque antes dijo «Ahora no»,
+    // pero solo mientras ESE viaje está abierto: al volver, Inicio respeta el «Ahora no».
+    return (auxState.rateOpen === t.id && auxState.view === 'trip' && auxState.editingTrip === t.id) || !auxRateSkipped(t.id);
   }
 
   function auxTripHead(title) {
@@ -2828,7 +2832,7 @@
     // El badge de la pantalla "A bordo" se pinta una vez al render, pero el
     // recorrido cambia debajo: se refresca en cada tick como el resto del HUD.
     const badgeEl = document.getElementById('ax-onboard-badge');
-    if (badgeEl) {
+    if (badgeEl && t.status === 'onboard') {   // en camino todavía no va a bordo
       badgeEl.innerHTML = auxOnBoardBadge(t, info);
       badgeEl.classList.toggle('wait', auxPendingAhead(t, info) > 0);
     }
@@ -3489,7 +3493,9 @@
             .catch(() => auxToast('No se pudo guardar la calificación en el servidor.'));
         }
         auxState.rateOpen = null;
-        auxToast('¡Gracias por tu calificación!', 'Star'); auxState.view = 'home'; auxState.tab = 'inicio'; auxRender();
+        // Con el rediseño la pantalla de gracias ya lo dice (rx-trip RxRate): sin toast encima.
+        if (!auxShellOn()) auxToast('¡Gracias por tu calificación!', 'Star');
+        auxState.view = 'home'; auxState.tab = 'inicio'; auxRender();
       }
       // «Ahora no»: queda guardado en el teléfono y el viaje sigue SIN
       // calificar en el servidor (antes se marcaba calificado en memoria y al
