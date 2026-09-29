@@ -305,12 +305,16 @@ console.log('\n── admin-consola.js · entradas nuevas solo con su módulo �
   // (cnWs es un `let` del script: desde otro eval no se alcanza.)
   window.eval('bindAdminSidebar()');
   window.document.querySelector('#adm-wstabs button[data-ws="rutas"]').click();
+  // Los tres paneles ya existen de verdad (tanda B): para probar que la entrada
+  // aparece SOLO con su módulo, se quitan un momento y se vuelven a poner.
+  const reales = { c: window.renderCoordinacion, b: window.renderCobro, p: window.renderPuntos };
+  delete window.renderCoordinacion; delete window.renderCobro; delete window.renderPuntos;
   window.eval('renderConsola()');
   const cards = () => [...window.document.querySelectorAll('#cn-groups .mcard')].map(c => c.textContent);
   const sinStub = cards();
-  t('con los módulos en stub: ni Coordinación, ni Cuentas de cobro, ni Rendio Points', !sinStub.some(x => /Coordinación|Cuentas de cobro|Rendio Points/.test(x)), sinStub.length + ' tarjetas');
+  t('sin sus módulos: ni Coordinación, ni Cuentas de cobro, ni Rendio Points', !sinStub.some(x => /Coordinación|Cuentas de cobro|Rendio Points/.test(x)), sinStub.length + ' tarjetas');
   const totalAntes = window.document.getElementById('cn-title').textContent;
-  window.renderCoordinacion = () => {}; window.renderCobro = () => {}; window.renderPuntos = () => {};
+  window.renderCoordinacion = reales.c || (() => {}); window.renderCobro = reales.b || (() => {}); window.renderPuntos = reales.p || (() => {});
   window.eval('renderConsola()');
   const con = cards();
   t('cuando existen: aparecen las tres', ['Coordinación', 'Cuentas de cobro', 'Rendio Points'].every(n => con.some(x => x.includes(n))));

@@ -1,4 +1,100 @@
-/* rx-aux-onboard.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P11. Contenido: Bienvenida y registro con aspecto rx. Selectores #auxiliar-ui.rx-phone …
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* rx-aux-onboard.css — P11 · Bienvenida, «Algo no va bien» y registro con el
+   aspecto del rediseño (27-sep-2026).
+
+   Reglas de este archivo:
+   · Todo bajo #auxiliar-ui.rx-phone: sin la clase (bandera apagada, o el
+     registro de siempre) no aplica nada.
+   · Las clases del diseño (rx-ob, rx-wel*, rx-dots, rx-field, rx-input, rx-opt,
+     rx-prog, rx-step, rx-gates, rx-center, rx-bell-big, rx-demo-push, rx-ready…)
+     ya vienen de rx-auxiliar.css con sus animaciones y transiciones EXACTAS:
+     aquí no se toca ninguna. Solo va lo que el diseño no trae: las escenas
+     .axo-* dentro de la lámina, las piezas propias del registro (errores,
+     medidor, sigla de la aerolínea, mapa del pin, código) y «Algo no va bien».
+   · Ni una animación ni una transición nueva: por eso no hace falta ninguna
+     entrada propia en .rx-noanim.
+   · Colores solo con --r-* / --rx-*, que tienen su versión nocturna
+     (#auxiliar-ui.rx-phone[data-ax-night="on"]): el registro de las 11 p.m.
+     sale oscuro sin una regla más. */
+
+/* ── Bienvenida (RxWelcome) ──────────────────────────────────────────────── */
+/* Deslizar entre láminas: el navegador se queda con el gesto vertical y deja
+   el horizontal a pointerdown/pointerup (sin esto, en el teléfono el gesto
+   termina en pointercancel y nunca llega el pointerup). */
+#auxiliar-ui.rx-phone .rx-wel{ touch-action:pan-y; }
+/* Las escenas .axo-* (formas sin datos) ocupan la lámina del diseño
+   (.rx-wel-art 360 px, .rx-art absoluta) centradas. */
+#auxiliar-ui.rx-phone .rx-wel-art .rx-art{ display:flex; align-items:center; justify-content:center; padding:0 22px; }
+#auxiliar-ui.rx-phone .rx-wel-art .axo-scene{ width:100%; max-width:340px; height:auto; }
+
+/* ── «Algo no va bien» (vista support) ───────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-sup-lead{ font-size:15px; line-height:1.5; color:var(--r-text-2); margin:0 4px; }
+#auxiliar-ui.rx-phone .rx-sup-card{ padding:14px 16px; }
+#auxiliar-ui.rx-phone .rx-sup-card p{ margin:0; font-size:14.5px; line-height:1.55; color:var(--r-text-2); }
+
+/* ── Registro (RxRegister / RxReady) ─────────────────────────────────────── */
+/* Contenedores que se repintan por partes: no deben existir para el layout
+   (el gap de .rx-body tiene que caer entre sus hijos, como en el diseño). */
+#auxiliar-ui.rx-phone .rg-sec{ display:contents; }
+#auxiliar-ui.rx-phone .rg-scr .rx-head-r{ gap:6px; align-items:center; }
+#auxiliar-ui.rx-phone .rx-list:empty{ display:none; }
+
+/* Ayudas bajo un campo: pegadas a él (el gap de .rx-body es 12 px). */
+#auxiliar-ui.rx-phone .rg-tip{ font-size:12.5px; color:var(--r-text-3); line-height:1.45; margin:-6px 4px 0; }
+#auxiliar-ui.rx-phone .rg-tip.rg-tip-top{ margin:0 4px; color:var(--r-text-2); font-size:13.5px; }
+
+/* El campo mal llenado (el jefe: «que les salga como rojo»). */
+#auxiliar-ui.rx-phone .rx-input.bad{ box-shadow:inset 0 0 0 2px var(--r-error); background:var(--r-error-soft); }
+#auxiliar-ui.rx-phone .rg-err{ margin:-6px 4px 0; font-size:13px; font-weight:600; color:var(--rx-err); gap:6px; align-items:flex-start; }
+#auxiliar-ui.rx-phone .rg-err .rx-ic{ flex:0 0 auto; margin-top:1px; }
+#auxiliar-ui.rx-phone .rg-match{ margin:-6px 4px 0; font-size:13px; color:var(--rx-ok); }
+#auxiliar-ui.rx-phone .rg-match .rx-ic{ flex:0 0 auto; }
+
+/* Contraseña: «Ver / Ocultar» dentro de la caja .rx-input (el diseño no lo
+   trae; el registro de siempre lo tenía en posición absoluta). */
+#auxiliar-ui.rx-phone .rx-input .rg-pw-eye{
+  position:static; transform:none; flex:0 0 auto; border:0; background:none; cursor:pointer;
+  padding:8px 2px; font:inherit; font-size:14.5px; font-weight:650; color:var(--rx-acc);
+}
+/* El medidor: cuatro segmentos y lo que le falta, pegado al campo. */
+#auxiliar-ui.rx-phone .rg-meter{ margin:-4px 4px 0; }
+#auxiliar-ui.rx-phone .rg-meter-seg{ height:4px; background:var(--r-surface-2); }
+#auxiliar-ui.rx-phone .rg-meter-txt{ font-size:12.5px; color:var(--r-text-2); }
+#auxiliar-ui.rx-phone .rg-meter.n1 .rg-meter-seg.on{ background:var(--r-error); }
+#auxiliar-ui.rx-phone .rg-meter.n2 .rg-meter-seg.on{ background:var(--r-warn); }
+#auxiliar-ui.rx-phone .rg-meter.n3 .rg-meter-seg.on,
+#auxiliar-ui.rx-phone .rg-meter.n4 .rg-meter-seg.on{ background:var(--r-success); }
+#auxiliar-ui.rx-phone .rg-meter.n1 .rg-meter-txt b{ color:var(--rx-err); }
+#auxiliar-ui.rx-phone .rg-meter.n2 .rg-meter-txt b{ color:var(--rx-warn); }
+#auxiliar-ui.rx-phone .rg-meter.n3 .rg-meter-txt b,
+#auxiliar-ui.rx-phone .rg-meter.n4 .rg-meter-txt b{ color:var(--rx-ok); }
+
+/* Error del servidor (y aviso en «listo»). */
+#auxiliar-ui.rx-phone .rx-note.rg-bad{ color:var(--rx-err); font-weight:600; }
+#auxiliar-ui.rx-phone .rx-note.rg-warn{ color:var(--rx-warn); }
+#auxiliar-ui.rx-phone .rx-note.rg-load{ align-items:center; }
+
+/* La aerolínea: la sigla con el color de MarcasAerolinea (dato, en el style=)
+   ocupa la caja del ícono de .rx-opt. Gana a .rx-opt.on .rx-opt-ic (1,3,0). */
+#auxiliar-ui.rx-phone .rx-opt .rx-opt-ic.rg-sigla{
+  background:linear-gradient(140deg,var(--air-1),var(--air-2)); color:var(--air-ink);
+  font-size:13px; font-weight:800; letter-spacing:.4px;
+}
+
+/* El conjunto elegido y «Cambiar». */
+#auxiliar-ui.rx-phone .rg-picked-rx{ cursor:default; }
+#auxiliar-ui.rx-phone .rg-picked-rx .rg-change{ flex:0 0 auto; padding:8px 4px; font-size:14.5px; color:var(--rx-acc); }
+#auxiliar-ui.rx-phone .rg-back-cat{ align-self:flex-start; display:flex; align-items:center; gap:4px; padding:4px 2px; font-size:14.5px; }
+/* «No encontramos…»: el .rx-empty del diseño, más bajo dentro de una lista. */
+#auxiliar-ui.rx-phone .rx-empty.rg-none{ padding:18px 14px; gap:4px; font-size:13.5px; }
+#auxiliar-ui.rx-phone .rx-empty.rg-none b{ font-size:15px; }
+
+/* Camino manual: el mapa para mover el pin y su renglón. */
+#auxiliar-ui.rx-phone .rg-map{ height:220px; border-radius:18px; overflow:hidden; border:1px solid var(--r-border); background:var(--r-surface-2); }
+#auxiliar-ui.rx-phone .rg-map.hidden,
+#auxiliar-ui.rx-phone .rg-pin.hidden{ display:none; }
+#auxiliar-ui.rx-phone .rx-note.rg-pin{ align-items:center; }
+#auxiliar-ui.rx-phone .rx-note.rg-pin.ok{ color:var(--rx-ok); font-weight:600; }
+#auxiliar-ui.rx-phone .rx-note.rg-pin .rx-link{ margin-left:auto; padding:4px 2px; font-size:14px; }
+
+/* «Listo»: el aviso queda sobre el confeti, como el título. */
+#auxiliar-ui.rx-phone .rx-ready .rx-note{ position:relative; z-index:1; text-align:left; }

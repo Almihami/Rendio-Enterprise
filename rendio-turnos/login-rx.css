@@ -1,4 +1,105 @@
-/* login-rx.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P11. Contenido: login re-estilizado, scopeado a #screen-login (lo ven todos los roles; quitar el <link> lo revierte).
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* login-rx.css — P11 · El ingreso con el aspecto del rediseño (RxLogin de
+   rx-onboard.jsx, 27-sep-2026). Lo ven TODOS los roles.
+
+   CÓMO SE REVIERTE: quitando el <link> de este archivo en index.html. Sin él,
+   aux-registro.js (loginRx) tampoco toca el DOM del login: busca este <link>
+   antes de hacer nada.
+
+   Qué hace loginRx sobre el marcado de index.html (sin recrear ningún nodo que
+   use core.js: #login-form, #login-email, #login-password, #login-submit,
+   #login-error, #login-signup):
+     · #screen-login.rx-login; la tarjeta blanca .rxl-card; el logo .rxl-brand;
+     · el título y la bajada dentro de .rx-ob-h.rx-in con .rx-ob-ic (el sobre);
+     · cada <label> como .rx-field.rx-in (--d 1 y 2) y su input dentro de .rx-input;
+     · #login-submit .rx-btn.pri, «¿Problemas para entrar?» .rx-btn.ghost y
+       #login-signup .rx-btn.sec; la hoja en .rxl-sheet-host.
+   Todo va con selectores de id para ganarle a las utilidades de Tailwind que
+   el marcado trae puestas. Tokens: los claros de tokens.css / rx.css (el login
+   no tiene modo nocturno). Keyframes: los de rx-auxiliar.css, que se carga
+   antes (rxRise, rxSpin, rxFadeO, rxFadeOut, rxUp, rxDown) — mismos nombres,
+   duraciones, curvas y retrasos que el diseño. */
+
+#screen-login.rx-login{
+  --r-bg:#F8F8F6; --r-card:#FFFFFF; --r-accent:#F26522; --r-accent-soft:#FEEEE3;
+  --r-text:#18181B; --r-text-2:#71717A; --r-text-3:#A1A1AA;
+  --r-border:#E4E4E7; --r-border-strong:#D4D4D8; --r-surface-2:#F4F4F1;
+  --rx-acc:#B4461A; --rx-err:#B42318;
+  --r-font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  background:var(--r-bg); color:var(--r-text); font-family:var(--r-font);
+  -webkit-font-smoothing:antialiased;
+  align-items:stretch;
+  padding:calc(env(safe-area-inset-top, 0px) + 28px) 20px calc(env(safe-area-inset-bottom, 0px) + 24px);
+}
+#screen-login.rx-login.hidden{ display:none; }
+#screen-login.rx-login > div:not(.rxl-sheet-host){ max-width:420px; display:flex; flex-direction:column; }
+#screen-login.rx-login .rxl-sheet-host{ display:contents; }
+#screen-login.rx-login *{ box-sizing:border-box; }
+
+/* El logo de la empresa (no es un dato inventado: es la marca de la app). */
+#screen-login.rx-login .rxl-brand{ text-align:left; margin:0 0 30px; padding:0 4px; }
+#screen-login.rx-login .rxl-brand img{ height:34px; width:auto; margin:0; }
+#screen-login.rx-login .rxl-brand p{ margin:8px 0 0; font-size:11.5px; font-weight:650; letter-spacing:.8px; color:var(--r-text-3); }
+
+/* La tarjeta blanca desaparece: la pantalla ES el contenido (RxLogin). */
+#screen-login.rx-login .rxl-card{ background:none; box-shadow:none; border-radius:0; padding:0; }
+
+/* .rx-ob-h / .rx-ob-ic (rx2.css) */
+#screen-login.rx-login .rx-ob-h{ padding:4px 4px 8px; margin-bottom:10px; text-align:left; }
+#screen-login.rx-login .rx-ob-h h1{ font-size:30px; line-height:1.12; letter-spacing:-1px; margin:0; font-weight:700; color:var(--r-text); text-align:left; text-wrap:balance; }
+#screen-login.rx-login .rx-ob-h p{ font-size:15.5px; line-height:1.5; color:var(--r-text-2); margin:10px 0 0; text-align:left; }
+#screen-login.rx-login .rx-ob-ic{ width:54px; height:54px; border-radius:17px; background:var(--r-accent-soft); color:var(--rx-acc); display:flex; align-items:center; justify-content:center; margin-bottom:18px; }
+#screen-login.rx-login .rx-ob-ic svg{ display:block; stroke-width:1.5; }
+
+/* El formulario como columna (sin el space-y de Tailwind). */
+#screen-login.rx-login #login-form{ display:flex; flex-direction:column; gap:12px; }
+#screen-login.rx-login #login-form > *{ margin-top:0; margin-bottom:0; }
+
+/* .rx-field / .rx-input (rx.css) */
+#screen-login.rx-login .rx-field{ display:flex; flex-direction:column; gap:7px; }
+#screen-login.rx-login .rx-field > span{ font-size:13px; font-weight:600; color:var(--r-text-2); padding-left:4px; text-transform:none; letter-spacing:normal; }
+#screen-login.rx-login .rx-input{ display:flex; align-items:center; gap:10px; height:56px; border-radius:16px; background:var(--r-card); box-shadow:inset 0 0 0 1.5px var(--r-border-strong); padding:0 16px; color:var(--r-text-2); transition:box-shadow .2s; }
+#screen-login.rx-login .rx-input:focus-within{ box-shadow:inset 0 0 0 2px var(--r-accent),0 0 0 4px var(--r-accent-soft); }
+#screen-login.rx-login .rx-input input{ flex:1; min-width:0; width:auto; height:100%; margin:0; padding:0; border:0; border-radius:0; outline:0; box-shadow:none; background:none; font:inherit; font-size:17px; color:var(--r-text); }
+
+/* .rx-in (rx.css): entrada escalonada, idéntica. */
+#screen-login.rx-login .rx-in{ animation:rxRise .5s cubic-bezier(.2,.8,.2,1) both; animation-delay:calc(var(--d,0) * 60ms); }
+
+/* El error de core.js (#login-error), arriba del botón. */
+#screen-login.rx-login #login-error{ font-size:14px; font-weight:600; line-height:1.45; color:var(--rx-err); text-align:left; padding:0 4px; }
+
+/* .rx-btn (rx.css) */
+#screen-login.rx-login .rx-btn{ height:54px; border-radius:16px; border:0; padding:0; font-family:inherit; font-size:16.5px; font-weight:650; letter-spacing:-.2px; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; transition:transform .12s,background .2s,opacity .2s; width:100%; flex-shrink:0; }
+#screen-login.rx-login .rx-btn:active{ transform:scale(.975); }
+#screen-login.rx-login #login-submit.rx-btn.pri{ background:var(--r-accent); color:#fff; box-shadow:0 10px 22px -10px rgba(242,101,34,.7); margin-top:6px; }
+#screen-login.rx-login #login-submit.rx-btn:disabled{ background:var(--r-border); color:var(--r-text-3); box-shadow:none; cursor:default; transform:none; }
+/* «Entrando…» de core.js con el spinner del diseño (.rx-spin, el mismo
+   que «Enviando…» en RxLogin). */
+#screen-login.rx-login #login-submit:disabled::before{ content:""; width:18px; height:18px; border-radius:50%; border:2.5px solid rgba(255,255,255,.35); border-top-color:#fff; animation:rxSpin .7s linear infinite; }
+#screen-login.rx-login .rx-btn.ghost{ background:none; color:var(--r-text-2); height:44px; font-size:15.5px; box-shadow:none; }
+#screen-login.rx-login .rx-btn.sec{ background:var(--r-card); color:var(--r-text); box-shadow:inset 0 0 0 1px var(--r-border-strong); }
+
+/* La puerta del tripulante nuevo (#login-signup). */
+#screen-login.rx-login .rxl-signup{ margin-top:22px; padding-top:20px; border-top:1px solid var(--r-border); text-align:center; }
+#screen-login.rx-login .rxl-signup p{ margin:0 0 10px; font-size:14px; color:var(--r-text-2); }
+#screen-login.rx-login #login-signup.rx-btn{ margin-top:0; }
+#screen-login.rx-login .rxl-legal{ margin-top:auto; padding-top:24px; font-size:12px; color:var(--r-text-3); text-align:center; }
+
+/* La hoja (RxSheet: .rx-sheet-bg · .rx-sheet · .rx-grab · .rx-sh), con los
+   tiempos del diseño: entra con rxFadeO .22 s + rxUp .34 s; sale con .out
+   (rxFadeOut + rxDown .22 s) y se desmonta a los 220 ms. Fija a la ventana:
+   el login no es una caja de teléfono. */
+#screen-login.rx-login .rx-sheet-bg{ position:fixed; inset:0; background:rgba(10,10,12,.4); z-index:60; display:flex; align-items:flex-end; justify-content:center; animation:rxFadeO .22s ease; }
+#screen-login.rx-login .rx-sheet-bg.out{ animation:rxFadeOut .22s ease forwards; }
+#screen-login.rx-login .rx-sheet{ width:100%; max-width:480px; max-height:88%; overflow-y:auto; background:var(--r-card); border-radius:30px 30px 0 0; padding:10px 22px calc(16px + env(safe-area-inset-bottom, 0px)); animation:rxUp .34s cubic-bezier(.2,.8,.2,1); }
+#screen-login.rx-login .rx-sheet-bg.out .rx-sheet{ animation:rxDown .22s ease forwards; }
+#screen-login.rx-login .rx-grab{ width:40px; height:5px; border-radius:3px; background:var(--r-border-strong); margin:0 auto 14px; }
+#screen-login.rx-login .rx-sh{ display:flex; flex-direction:column; gap:10px; text-align:left; }
+#screen-login.rx-login .rx-sh h3{ font-size:22px; letter-spacing:-.5px; margin:4px 0 0; font-weight:700; color:var(--r-text); }
+#screen-login.rx-login .rx-sh p{ font-size:15px; line-height:1.55; color:var(--r-text-2); margin:0 0 8px; }
+
+/* Movimiento reducido: el mismo criterio que rx-aux-app.css (todo termina ya). */
+@media (prefers-reduced-motion: reduce){
+  #screen-login.rx-login .rx-in,
+  #screen-login.rx-login .rx-sheet-bg,
+  #screen-login.rx-login .rx-sheet{ animation-duration:1ms; animation-delay:0s; }
+}

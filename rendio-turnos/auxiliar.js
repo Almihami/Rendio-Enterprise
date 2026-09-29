@@ -2482,11 +2482,17 @@
     return t.type === 'lle' ? t.status !== 'onboard' : t.status === 'onboard';
   }
   // El color de la vía: el acento del sistema rx si está definido.
+  // Se lee UNA vez por tema (claro/nocturno): getComputedStyle en cada tic del
+  // rastreo era trabajo repetido (y en jsdom, con el CSS del diseño, minutos).
+  const auxRouteColorCache = {};
   function auxRouteColor() {
     if (!auxShellOn()) return '#F4791F';
+    const root = auxRoot();
+    const k = (root && root.getAttribute('data-ax-night')) || 'off';
+    if (auxRouteColorCache[k]) return auxRouteColorCache[k];
     try {
-      const v = getComputedStyle(auxRoot()).getPropertyValue('--r-accent').trim();
-      return v || '#F26522';
+      const v = getComputedStyle(root).getPropertyValue('--r-accent').trim();
+      return (auxRouteColorCache[k] = v || '#F26522');
     } catch (_) { return '#F26522'; }
   }
 

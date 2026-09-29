@@ -1,4 +1,134 @@
-/* admin-coordinacion.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P10. Contenido: bandeja de Coordinación del jefe, scopeada a #coordinacion-ui.
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* admin-coordinacion.css — Admin › Coordinación (bandeja de los tripulantes con
+   los jefes, 0088). Rediseño del auxiliar, 27-sep-2026, paquete P10.
+   Todo scopeado a #coordinacion-ui. Sin diseño propio: reusa la paleta y las
+   piezas de las otras bandejas del admin (Eventualidades, Reservas: .sh-phead,
+   .set-btn, .set-input, burbujas del chat del jefe) declaradas aquí para este
+   panel, igual que hace cada una con las suyas. Sin animaciones nuevas. */
+
+#coordinacion-ui{
+  --bg:#F8FAFC; --panel:#FFFFFF; --panel2:#F7F8FA; --ink:#211D18; --ink2:#6B6258; --ink3:#A39A8D;
+  --line:#E2E8F0; --line2:#CBD5E1;
+  --orange:#F26522; --orange-soft:#FCE4D6;
+  --green:#0B7A5C; --green-soft:#E7F8F1;
+  --info:#2563A8; --info-soft:#E3EDF8;
+  --font:"Hanken Grotesk",system-ui,sans-serif; --mono:"Space Mono",ui-monospace,monospace;
+  font-family:var(--font); color:var(--ink);
+}
+#coordinacion-ui *{box-sizing:border-box}
+#coordinacion-ui .icon{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
+
+/* Encabezado y botones: los mismos de Eventualidades/Reservas. */
+#coordinacion-ui .sh-phead{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:16px}
+#coordinacion-ui .sh-phead h1{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;display:flex;align-items:center;gap:11px;color:var(--ink)}
+#coordinacion-ui .sh-phead h1 .sh-ct{font-size:13px;font-weight:800;font-family:var(--mono);background:var(--orange-soft);color:var(--orange);border-radius:999px;padding:3px 11px}
+#coordinacion-ui .sh-phead p{font-size:13px;color:var(--ink2);margin-top:8px;max-width:660px;line-height:1.5}
+#coordinacion-ui .sh-phead p b{color:var(--ink);font-weight:700}
+#coordinacion-ui .set-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 9px 22px rgba(242,101,34,.26)}
+#coordinacion-ui .set-btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:none}
+#coordinacion-ui .set-btn:disabled{opacity:.55;cursor:not-allowed}
+#coordinacion-ui .set-input{width:100%;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);font-family:var(--font);font-size:13.5px;outline:none}
+#coordinacion-ui .set-input:focus{border-color:var(--orange)}
+
+/* ── Lo que ve el tripulante: teléfono y horario ─────────────────────────── */
+#coordinacion-ui .co-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:14px}
+#coordinacion-ui .co-card > summary{display:flex;align-items:center;gap:12px;min-height:52px;padding:10px 16px;cursor:pointer;list-style:none}
+#coordinacion-ui .co-card > summary::-webkit-details-marker{display:none}
+#coordinacion-ui .co-card > summary .details-chevron{margin-left:auto;width:14px;height:14px;color:var(--ink3)}
+#coordinacion-ui .co-card[open] > summary .details-chevron{transform:rotate(180deg)}
+#coordinacion-ui .co-card-t{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);flex:0 0 auto}
+#coordinacion-ui .co-card-r{font-size:13px;color:var(--ink2);min-width:0}
+#coordinacion-ui .co-card-r b{color:var(--ink);font-weight:700}
+#coordinacion-ui .co-card-b{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;padding:4px 16px 16px}
+#coordinacion-ui .co-card-s{padding:14px 16px;font-size:13px;color:var(--ink2);display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+#coordinacion-ui .co-card-s b{color:var(--ink)}
+#coordinacion-ui .co-f label{display:block;font-size:11.5px;font-weight:700;color:var(--ink2);margin:0 0 6px 2px}
+#coordinacion-ui .co-f-foot{grid-column:1 / -1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#coordinacion-ui .co-f-foot .set-btn{margin-left:auto}
+#coordinacion-ui .co-hint{font-size:12px;color:var(--ink3)}
+#coordinacion-ui .co-cstate{font-size:12px;font-weight:700;color:var(--ink2)}
+
+/* ── Bandeja + hilo ───────────────────────────────────────────────────────── */
+#coordinacion-ui .co-grid{display:grid;grid-template-columns:1fr;gap:14px}
+#coordinacion-ui .co-list{display:grid;gap:8px;align-content:start}
+#coordinacion-ui .co-thread{display:none;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;height:min(72vh,680px);min-height:420px}
+#coordinacion-ui .co-grid.has-open .co-list{display:none}
+#coordinacion-ui .co-grid.has-open .co-thread{display:flex}
+
+#coordinacion-ui .co-empty{border:1px dashed var(--line2);border-radius:14px;padding:28px 20px;text-align:center;color:var(--ink2);display:flex;flex-direction:column;align-items:center;gap:6px}
+#coordinacion-ui .co-empty b{font-size:15px;color:var(--ink)}
+#coordinacion-ui .co-empty span{font-size:13px;max-width:380px;line-height:1.5}
+#coordinacion-ui .co-empty .set-btn{margin-top:8px}
+
+/* La fila entera es el botón: a una mano, de noche, no se acierta un ícono. */
+#coordinacion-ui .co-row{display:flex;align-items:flex-start;gap:12px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line2);border-radius:14px;padding:12px 14px;cursor:pointer;font-family:var(--font);color:inherit;min-height:64px}
+#coordinacion-ui .co-row.unread{border-left-color:var(--orange)}
+#coordinacion-ui .co-row.on{border-color:var(--ink);border-left-color:var(--ink);box-shadow:0 10px 26px rgba(33,29,24,.08)}
+#coordinacion-ui .co-av{flex:0 0 auto;width:38px;height:38px;border-radius:999px;display:grid;place-items:center;background:var(--line);color:var(--ink2);font-size:13px;font-weight:800;letter-spacing:.02em}
+#coordinacion-ui .co-row.unread .co-av{background:var(--orange-soft);color:var(--orange)}
+#coordinacion-ui .co-row-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+#coordinacion-ui .co-row-t{display:flex;align-items:baseline;gap:10px}
+#coordinacion-ui .co-row-t b{font-size:14.5px;font-weight:750;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#coordinacion-ui .co-row-t time{margin-left:auto;flex:0 0 auto;font-size:11.5px;color:var(--ink3);font-variant-numeric:tabular-nums}
+#coordinacion-ui .co-row-s{font-size:12px;color:var(--ink3)}
+#coordinacion-ui .co-row-p{font-size:13px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#coordinacion-ui .co-row.unread .co-row-p{color:var(--ink);font-weight:600}
+#coordinacion-ui .co-badge{flex:0 0 auto;align-self:center;min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--orange);color:#fff;font-style:normal;font-size:11.5px;font-weight:800;display:grid;place-items:center;font-family:var(--mono)}
+
+#coordinacion-ui .co-th-none{margin:auto;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;color:var(--ink2);padding:24px}
+#coordinacion-ui .co-th-none .icon{width:26px;height:26px;color:var(--ink3)}
+#coordinacion-ui .co-th-none b{font-size:15px;color:var(--ink)}
+#coordinacion-ui .co-th-none span{font-size:13px}
+
+#coordinacion-ui .co-th-head{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+#coordinacion-ui .co-who{flex:1;min-width:0}
+#coordinacion-ui .co-who b{display:block;font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#coordinacion-ui .co-who span{display:block;font-size:12px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#coordinacion-ui .co-ic{flex:0 0 auto;width:40px;height:40px;border-radius:12px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);display:grid;place-items:center;cursor:pointer;text-decoration:none}
+#coordinacion-ui .co-ic .icon{width:17px;height:17px}
+
+#coordinacion-ui .co-msgs{flex:1;min-height:0;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:9px;background:var(--bg)}
+#coordinacion-ui .co-load{font-size:13px;color:var(--ink2)}
+#coordinacion-ui .co-msgs .co-empty{margin:auto;border:0}
+#coordinacion-ui .co-day{align-self:center;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);padding:4px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line)}
+#coordinacion-ui .co-msg{max-width:80%;padding:9px 12px;border-radius:15px}
+#coordinacion-ui .co-msg em{display:block;font-style:normal;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;opacity:.7;margin-bottom:3px}
+#coordinacion-ui .co-msg p{margin:0;font-size:14px;line-height:1.4;word-break:break-word;white-space:pre-wrap}
+#coordinacion-ui .co-msg > span{display:block;margin-top:3px;font-size:10.5px;opacity:.65;text-align:right}
+#coordinacion-ui .co-msg.mine{align-self:flex-end;background:var(--ink);color:var(--panel);border-bottom-right-radius:5px}
+#coordinacion-ui .co-msg.their{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:5px}
+#coordinacion-ui .co-msg.tmp{opacity:.6}
+/* El traslado como contexto: enlace al chat de ESA reserva (#/reservas?chat=). */
+#coordinacion-ui .co-msg-ctx{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin-top:7px;padding:7px 9px;border-radius:9px;background:var(--info-soft);color:var(--info);font-size:12px;text-decoration:none}
+#coordinacion-ui .co-msg-ctx .icon{width:13px;height:13px}
+#coordinacion-ui .co-msg-ctx span{font-weight:700}
+#coordinacion-ui .co-msg-ctx u{text-underline-offset:2px}
+#coordinacion-ui .co-msg.mine .co-msg-ctx{background:rgba(255,255,255,.14);color:var(--panel)}
+
+#coordinacion-ui .co-ctx{display:none;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink2);background:var(--info-soft)}
+#coordinacion-ui .co-ctx.on{display:flex}
+#coordinacion-ui .co-ctx b{color:var(--info)}
+#coordinacion-ui .co-ctx button{margin-left:auto;background:none;border:0;font:inherit;font-size:12px;font-weight:700;color:var(--ink2);text-decoration:underline;cursor:pointer;min-height:32px}
+#coordinacion-ui .co-foot{display:flex;align-items:center;gap:9px;padding:11px 14px calc(11px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+#coordinacion-ui .co-foot input{flex:1;min-width:0;height:44px;padding:0 15px;border-radius:12px;border:1px solid var(--line2);background:var(--bg);font-family:var(--font);font-size:14px;color:var(--ink)}
+#coordinacion-ui .co-foot input:focus{outline:none;border-color:var(--orange)}
+#coordinacion-ui .co-foot .set-btn{height:44px}
+
+/* Escritorio: bandeja y hilo lado a lado; «Volver» sobra. */
+@media (min-width:1000px){
+  #coordinacion-ui .co-grid{grid-template-columns:minmax(260px,340px) 1fr;align-items:start}
+  #coordinacion-ui .co-thread{display:flex}
+  #coordinacion-ui .co-grid.has-open .co-list{display:grid}
+  #coordinacion-ui .co-list{max-height:min(72vh,680px);overflow-y:auto;padding-right:2px}
+  #coordinacion-ui .co-back{display:none}
+}
+@media (max-width:720px){
+  #coordinacion-ui .sh-phead{gap:12px}
+  #coordinacion-ui .sh-phead h1{font-size:22px}
+  #coordinacion-ui .sh-phead p{font-size:12.5px}
+  #coordinacion-ui .sh-phead > .set-btn{width:100%}
+  #coordinacion-ui .co-card > summary{flex-wrap:wrap}
+  #coordinacion-ui .co-card-b{grid-template-columns:1fr}
+  #coordinacion-ui .co-f-foot .set-btn{width:100%;margin-left:0}
+  #coordinacion-ui .co-thread{height:calc(100dvh - 190px);min-height:380px}
+  #coordinacion-ui .co-msg{max-width:88%}
+}

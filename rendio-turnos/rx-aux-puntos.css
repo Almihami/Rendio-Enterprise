@@ -1,4 +1,32 @@
-/* rx-aux-puntos.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P13b. Contenido: Puntos e Invitar. Selectores #auxiliar-ui.rx-phone …
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* rx-aux-puntos.css — P13b · Puntos e Invitar (rediseño del auxiliar, 27-sep-2026).
+   Solo lo que rx-me.jsx / rx-home.jsx no traen: todo lo demás es el CSS portado
+   del diseño (rx-auxiliar.css, generado; nunca se edita). Selectores
+   #auxiliar-ui.rx-phone … y colores por tokens (claro y nocturno).
+   SIN animaciones propias: las entradas son las .rx-in del diseño y las de
+   rx-pts-bar / rx-bono-dots.lg / rx-over / rx-confetti, con su .rx-noanim ya
+   generado en rx-aux-app.css. */
+
+/* Espera, «sin dato» y error dentro de una lista o del cuerpo (la vitrina, los
+   movimientos, el código): el diseño no los tiene porque sus datos son fijos. */
+#auxiliar-ui.rx-phone .rx-pts-wait{display:flex;gap:8px;align-items:flex-start;padding:14px;border-radius:18px;background:var(--r-surface-2);font-size:13.5px;line-height:1.45;color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-pts-wait svg{flex-shrink:0;margin-top:2px}
+#auxiliar-ui.rx-phone .rx-pts-wait span{flex:1}
+#auxiliar-ui.rx-phone .rx-pts-wait button{flex-shrink:0;height:32px;padding:0 12px;border-radius:10px;border:0;background:var(--r-card);color:var(--r-text);font-size:13px;font-weight:650;cursor:pointer}
+
+/* «Pronto» en la vitrina (Directo: el nivel no existe todavía). Usa el botón
+   .rx-shelf button del diseño, apagado; solo cambia el texto. */
+#auxiliar-ui.rx-phone .rx-shelf button.rx-pts-soon span{font-size:12px;font-weight:650;color:var(--r-text-2);white-space:nowrap}
+
+/* Error del canje dentro de la hoja (el texto lo manda la base). */
+#auxiliar-ui.rx-phone .rx-pts-err{font-size:13.5px;line-height:1.45;padding:10px 12px;border-radius:12px;background:var(--r-error-soft);color:var(--r-error)}
+#auxiliar-ui.rx-phone .rx-pts-err[hidden]{display:none}
+
+/* Invitar: la línea de «cuenta doble» bajo el título del héroe. */
+#auxiliar-ui.rx-phone .rx-inv-sub{margin:0;font-size:14px;line-height:1.45;color:var(--r-text-2)}
+
+/* Puntos del bono: una columna por colega invitado (el diseño trae 4 fijas,
+   que aquí serían una meta inventada). */
+#auxiliar-ui.rx-phone .rx-bono-dots[data-n]{grid-template-columns:repeat(var(--n),1fr)}
+
+/* «Copiar» apagado sin código (los .rx-btn apagados ya tienen su estilo). */
+#auxiliar-ui.rx-phone .rx-code button:disabled{opacity:.45;cursor:default}

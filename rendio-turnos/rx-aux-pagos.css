@@ -1,4 +1,23 @@
-/* rx-aux-pagos.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P12b. Contenido: Pagos del tripulante (cobro-aux2 portado). Selectores #auxiliar-ui.rx-phone …
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* rx-aux-pagos.css — P12b · Pagos del tripulante (rediseño del auxiliar, 27-sep-2026).
+   El marcado y las clases son las del diseño (cobro-aux2-pay.jsx, cobro-aux2.css,
+   rx.css), que ya vienen portadas IDÉNTICAS en rx-auxiliar.css (generado, no se
+   toca). Aquí solo va lo que el diseño no trae porque allá la foto era de mentira:
+   la vista previa REAL del comprobante (la foto que se tomó o se eligió) dentro
+   del recuadro de la cámara y de las miniaturas .cb-thumb.
+   Sin animaciones ni transiciones propias (así no hace falta entrada en .rx-noanim).
+   Todo acotado a #auxiliar-ui.rx-phone: con la bandera apagada no aplica. */
+
+/* La foto dentro del recuadro (.cb2-cam-shot, que ya trae su cb2Pop): encima de
+   las rayas del diseño y debajo del rótulo con el nombre del archivo. Un PDF no
+   tiene vista previa: se queda con las rayas y el nombre, como el diseño. */
+#auxiliar-ui.rx-phone .cb2-cam-shot > .rx-pg-img{
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:contain; border-radius:inherit; display:block; background:#fff;
+}
+#auxiliar-ui.rx-phone .cb2-cam-shot > .rx-pg-img ~ span{ position:relative; }
+
+/* Miniatura del comprobante (Confirma los datos y Comprobante enviado). */
+#auxiliar-ui.rx-phone .cb-thumb.rx-pg-thumb{ overflow:hidden; }
+#auxiliar-ui.rx-phone .cb-thumb.rx-pg-thumb > .rx-pg-img{
+  width:100%; height:100%; object-fit:cover; border-radius:inherit; display:block;
+}

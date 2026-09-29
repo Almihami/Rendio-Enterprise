@@ -169,6 +169,55 @@
     return null;
   }
 
+  // ---------- Lo que el tripulante dijo de su traslado (0086) ----------
+  // Rediseño del auxiliar (27-sep-2026): maletas, «Prefiero silencio», punto de
+  // encuentro y código. Llegan en cada parada desde listMyVueltasForDriver; sin
+  // 0086 vienen vacíos y no se pinta nada (nunca un valor de relleno).
+  // El silencio solo vale en un privado APROBADO: la base no lo deja marcar en
+  // compartido, y un privado pendiente o negado viaja en compartido.
+  const drQuiet = (l) => !!(l && l.quiet === true && l.level === 'private' && l.privateStatus === 'approved');
+  function drBagsTxt(n) {
+    if (n == null || n === '') return '';
+    const k = Number(n);
+    if (!Number.isFinite(k) || k < 0) return '';
+    return k === 0 ? 'Sin maletas' : `${k} maleta${k === 1 ? '' : 's'}`;
+  }
+  // El maletín es del sprite del rediseño (#rx-Briefcase): AuxRxUI lo inyecta
+  // una vez en el documento. Si ese módulo no cargó, el chip sale sin ícono.
+  function drBagIcon() {
+    try { if (window.AuxRxUI && typeof AuxRxUI.ensureSprite === 'function' && AuxRxUI.ensureSprite()) return '<svg class="icon"><use href="#rx-Briefcase"/></svg>'; }
+    catch (e) {}
+    return '';
+  }
+  // Fila de chips con la clase de la tarjeta de vuelta (.dr-vc-meta, ícono + texto).
+  // withMeet: el punto de encuentro va en la fila (lista de paradas); en la hoja
+  // de ejecución va aparte, más visible. gap: el margen de la fila en cada vista.
+  function drTripTagsHTML(l, withMeet, gap) {
+    if (!l || l.kind === 'airport') return '';
+    const out = [];
+    const bags = drBagsTxt(l.bags);
+    if (bags) out.push(`<span class="dr-tg-bags">${drBagIcon()}${bags}</span>`);
+    if (drQuiet(l)) out.push('<span class="dr-tg-quiet"><svg class="icon"><use href="#i-zzz"/></svg>Prefiere silencio</span>');
+    if (withMeet && l.meetingPoint) out.push(`<span class="dr-tg-meet"><svg class="icon"><use href="#i-pin"/></svg>${drEsc(l.meetingPoint)}</span>`);
+    return out.length ? `<div class="dr-vc-meta dr-tags" style="flex-wrap:wrap;gap:6px 14px;margin:${gap || '6px 0 0'}">${out.join('')}</div>` : '';
+  }
+  // Código de encuentro: el conductor se lo pide al tripulante en la acera y lo
+  // compara. Solo en la fase de llegada (después de «Llegué»).
+  function drMeetCodeHTML(code) {
+    const c = String(code || '').trim(); if (!c) return '';
+    return `<div class="dr-eta dr-meet" id="dr-meet"><svg class="icon" style="width:16px;height:16px"><use href="#i-lock"/></svg><span>Pídele el código: <b style="font-size:17px;letter-spacing:2px">${drEsc(c)}</b></span></div>`;
+  }
+  // Llegada (aeropuerto → casa): la recogida es en MDE y son varios a la vez.
+  // Al marcar «Llegué al aeropuerto» se listan los códigos de cada uno.
+  function drAptCodesHTML(v) {
+    const rows = drStopsOf(v).filter(l => String(l.meetCode || '').trim());
+    if (!rows.length) return '';
+    return `<div class="dr-eta dr-meet" id="dr-meet" style="flex-direction:column;align-items:stretch;gap:6px">
+      <span><svg class="icon" style="width:16px;height:16px;vertical-align:-3px;margin-right:6px"><use href="#i-lock"/></svg>Pídele el código a cada uno:</span>
+      ${rows.map(l => `<span style="display:flex;justify-content:space-between;gap:10px"><span>${drEsc(l.name || 'Tripulante')}</span><b style="letter-spacing:2px">${drEsc(String(l.meetCode).trim())}</b></span>`).join('')}
+    </div>`;
+  }
+
   // ---------- OVERVIEW: "Mi día" (maqueta route-screens.jsx) ----------
   function drOverviewHTML() {
     const vs = drState.vueltas;
@@ -261,8 +310,9 @@
       return `<div class="dr-stop">
         <div class="dr-stop-n ${cls}">${badge}</div>
         <div class="dr-stop-b">
-          <div class="r1"><span class="nm">${isApt ? 'Aeropuerto MDE' : l.name}</span>${time ? `<span class="eta">${time}</span>` : ''}</div>
-          <div class="ad">${l.addr || ''}${l.unit ? ` · <b>${l.unit}</b>` : ''}</div>
+          <div class="r1"><span class="nm">${isApt ? 'Aeropuerto MDE' : drEsc(l.name)}</span>${time ? `<span class="eta">${time}</span>` : ''}</div>
+          <div class="ad">${drEsc(l.addr)}${l.unit ? ` · <b>${drEsc(l.unit)}</b>` : ''}</div>
+          ${drTripTagsHTML(l, true)}
         </div>
       </div>`;
     }).join('');
@@ -373,7 +423,8 @@
     drState.chatMsgs = (drState.chatMsgs || []).concat([temp]);
     drChatBubbles();
     try {
-      const r = await Api.sendReservationMessage(c.rid, body, { title: 'Mensaje de tu conductor' });
+      // El aviso abre ESE viaje en la app del tripulante (#/viaje?r=).
+      const r = await Api.sendReservationMessage(c.rid, body, { title: 'Mensaje de tu conductor', url: '/#/viaje?r=' + encodeURIComponent(c.rid) });
       // Igual que del otro lado: si al auxiliar no le suena, se dice.
       if (r && r.notified === false && !drState.chatWarned) {
         drState.chatWarned = true;
@@ -431,7 +482,7 @@
       if (l.lat == null) return;
       const cls = isApt ? 'apt' : (i < idx ? 'done' : (i === idx ? 'next' : ''));
       const tip = isApt ? 'Aeropuerto MDE'
-        : `${num}. ${l.name || 'Auxiliar'}${l.addr ? ' · ' + l.addr : ''}`;
+        : `${num}. ${drEsc(l.name || 'Auxiliar')}${l.addr ? ' · ' + drEsc(l.addr) : ''}`;   // el tooltip de Leaflet es HTML
       L.marker([l.lat, l.lng], { icon: drStopIcon(isApt ? '✈' : num, cls) })
         .addTo(map).bindTooltip(tip, { direction: 'top', offset: [0, -16] });
     });
@@ -532,12 +583,23 @@
 
     let mid = '';
     if (!isApt) {
+      // Maletas y silencio en chips; el punto de encuentro, en su propia caja
+      // (es lo que se busca al llegar: «portería 2», «frente al Éxito»).
+      const meet = leg.meetingPoint
+        ? `<div class="dr-notes dr-meetpt"><svg class="icon"><use href="#i-pin"/></svg><span><b>Punto de encuentro:</b> ${drEsc(leg.meetingPoint)}</span></div>` : '';
+      const tags = drTripTagsHTML(leg, false, '0 0 12px');
       if (enCamino) {
-        mid = (leg.notes ? `<div class="dr-notes"><svg class="icon"><use href="#i-info"/></svg><span>${leg.notes}</span></div>` : '')
+        mid = tags + meet
+          + (leg.notes ? `<div class="dr-notes"><svg class="icon"><use href="#i-info"/></svg><span>${drEsc(leg.notes)}</span></div>` : '')
           + `<div class="dr-eta"><svg class="icon" style="width:16px;height:16px"><use href="#i-pin"/></svg><span>Llegada estimada · <b>${leg.dl || '—'}</b></span>${kmTxt ? `<span class="km">${kmTxt}</span>` : ''}</div>`;
       } else {
-        mid = `<div class="dr-eta"><svg class="icon" style="width:16px;height:16px"><use href="#i-pin"/></svg><span>Llega <b>${leg.dl || '—'}</b>${leg.notes ? ' · ' + leg.notes : ''}</span></div>`;
+        // Fase de llegada: en una recogida, el código que se le pide en la acera.
+        mid = tags + meet
+          + (leg.kind === 'pickup' ? drMeetCodeHTML(leg.meetCode) : '')
+          + `<div class="dr-eta"><svg class="icon" style="width:16px;height:16px"><use href="#i-pin"/></svg><span>Llega <b>${leg.dl || '—'}</b>${leg.notes ? ' · ' + drEsc(leg.notes) : ''}</span></div>`;
       }
+    } else if (!enCamino && v.type === 'lle') {
+      mid = drAptCodesHTML(v);
     }
     // Chat de la app en vez de SMS: gratis, le llega como notificación aunque
     // tenga la app cerrada, y queda registro si después hay un reclamo. El de
@@ -575,7 +637,7 @@
         <div class="dr-sheet-b">
           <div class="dr-aux">
             <div class="dr-aux-av ${tone}">${isApt ? '✈' : drIni(leg.name)}</div>
-            <div class="dr-aux-t"><div class="nm">${isApt ? 'Aeropuerto MDE' : leg.name}</div><div class="ad">${leg.addr || ''}${leg.unit ? ` · <b>${leg.unit}</b>` : ''}</div></div>
+            <div class="dr-aux-t"><div class="nm">${isApt ? 'Aeropuerto MDE' : drEsc(leg.name)}</div><div class="ad">${drEsc(leg.addr)}${leg.unit ? ` · <b>${drEsc(leg.unit)}</b>` : ''}</div></div>
             ${contacts}
           </div>
           ${mid}
@@ -584,7 +646,7 @@
             ${!isApt ? `<button class="nav" data-dr="nav" data-lat="${leg.lat}" data-lng="${leg.lng}"><svg class="icon"><use href="#i-route"/></svg>Navegar</button>` : ''}
             <button class="dr-cta ${primary.cls}" data-dr="${primary.act}"><svg class="icon" style="width:18px;height:18px"><use href="#${primary.ic}"/></svg>${primary.label}</button>
           </div>
-          ${!isApt ? `<div class="dr-foot"><span>${leg.flight ? '✈ ' + leg.flight : ''}</span>${footLinks}</div>` : ''}
+          ${!isApt ? `<div class="dr-foot"><span>${leg.flight ? '✈ ' + drEsc(leg.flight) : ''}</span>${footLinks}</div>` : ''}
         </div>
       </div>
     </div>`;
@@ -745,15 +807,21 @@
     Api.driverSetStopStatus(reservationId, status).catch(() => {});
   }
   // Push al auxiliar: su conductor va en camino / llegó al punto (best-effort, solo en vivo).
+  // Cada aviso aterriza en ESE viaje (#/viaje?r=, rediseño del auxiliar
+  // 27-sep-2026): el tripulante toca la notificación y ve el mapa y el código.
+  const drTripUrl = (leg) => (leg && leg.reservationId) ? '/#/viaje?r=' + encodeURIComponent(leg.reservationId) : '/';
   function drNotifyAux(leg, kind) {
     if (drState.source !== 'live' || !leg || !leg.auxProfileId || typeof notify !== 'function') return;
     const who = ((drState.profile && drState.profile.full_name) || 'Tu conductor').split(' ')[0];
-    if (kind === 'en_route') notify([leg.auxProfileId], 'Eres el siguiente 🔜', `${who} va hacia ti para recogerte.`, '/');
-    else if (kind === 'arrived') notify([leg.auxProfileId], '¡Tu conductor llegó! 📍', `${who} está en el punto de recogida. Te espera ${drWaitMin()} min.`, '/');
+    const url = drTripUrl(leg);
+    // El código va en el aviso de llegada: es lo que el conductor le va a pedir.
+    const code = String(leg.meetCode || '').trim();
+    if (kind === 'en_route') notify([leg.auxProfileId], 'Eres el siguiente 🔜', `${who} va hacia ti para recogerte.`, url);
+    else if (kind === 'arrived') notify([leg.auxProfileId], '¡Tu conductor llegó! 📍', `${who} está en el punto de recogida. Te espera ${drWaitMin()} min.${code ? ` Tu código es ${code}.` : ''}`, url);
     // Antes el "no se presentó" no le llegaba: el auxiliar se quedaba con la
     // pantalla en "en camino" para siempre, sin push y sin explicación.
     else if (kind === 'no_show') notify([leg.auxProfileId], 'No pudimos recogerte',
-      `${who} esperó ${drWaitMin()} min en el punto y siguió su ruta. Si fue un error, avisa al coordinador.`, '/');
+      `${who} esperó ${drWaitMin()} min en el punto y siguió su ruta. Si fue un error, avisa al coordinador.`, url);
   }
   // Push "está por llegar" cuando el conductor está a <300 m de la recogida actual
   // (distancia REAL, una sola vez por parada).
@@ -765,7 +833,7 @@
     if (drHav(here, [leg.lat, leg.lng]) < 0.3 && typeof notify === 'function') {
       leg._nearNotified = true;
       const who = ((drState.profile && drState.profile.full_name) || 'Tu conductor').split(' ')[0];
-      notify([leg.auxProfileId], 'Tu conductor está por llegar 📍', `${who} está muy cerca de tu punto de recogida.`, '/');
+      notify([leg.auxProfileId], 'Tu conductor está por llegar 📍', `${who} está muy cerca de tu punto de recogida.`, drTripUrl(leg));
     }
   }
   function drMarkEnRoute() {

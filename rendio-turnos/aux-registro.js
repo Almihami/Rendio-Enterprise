@@ -40,6 +40,28 @@
 //  · No guarda la contraseña en ningún lado nuestro. La sesión de Supabase ya
 //    queda persistida en el navegador, que es lo que el jefe pide cuando dice
 //    «que solo le hundan a la aplicación y entren».
+//
+// REDISEÑO 27-sep-2026 (P11) — con la bandera del rediseño encendida
+// (AuxShell.on()) el registro se pinta con RxRegister / RxReady de
+// rx-onboard.jsx (rx-ob, rx-scr, RxHead con «N de M», rx-prog, rx-body rx-step
+// fwd|bwd, rx-field, rx-input, rx-opt, rx-radio, rx-gates, rx-foot · rx-center
+// rx-ready con RxConfetti y RxCheck) y llama a AuxShell.skin(true) para que el
+// CSS del rediseño aplique. MISMOS datos, MISMAS validaciones y MISMOS
+// data-rg*; lo nuevo:
+//   · «Punto de encuentro (opcional)», texto libre (D10), y — solo si
+//     AuxPrivado.enabled() — el paso «¿Cómo prefieres viajar?». Las dos cosas
+//     se guardan con ApiAux.saveMyPrefs DESPUÉS de registerAuxiliar (antes no
+//     existe el perfil de tripulante al que escribirlas).
+//   · «¿Te invitó alguien? Código», solo si AuxPuntos.enabled(); se reclama
+//     después de registrarse y un error ahí no frena el registro.
+// Con la bandera apagada, todo sale exactamente como antes.
+//
+// INGRESO (login, todos los roles): loginRx() le pone al #screen-login el
+// aspecto de RxLogin (título «Entra con tu correo» y la hoja «¿Problemas para
+// entrar?») SIN cambiar ni recrear los nodos que usa core.js (#login-form,
+// #login-email, #login-password, #login-submit, #login-error, #login-signup):
+// solo los mueve y les suma clases. Solo actúa si index.html trae
+// login-rx.css: quitar ese <link> revierte el ingreso entero.
 
 (function () {
   'use strict';
@@ -52,7 +74,12 @@
       resId: null, unit: '',
       hasSecond: false, resId2: null, unit2: '',
       manual: false, address: '', lat: null, lng: null, locConfirmed: false,
+      // Rediseño: punto de encuentro, nivel preferido y código de invitación.
+      meetingPoint: '', level: 'shared', refCode: '',
     },
+    dir: 'fwd',         // hacia dónde entra el paso (rx-step fwd | bwd)
+    prefsWarn: '',      // no se pudieron guardar las preferencias (la cuenta sí quedó)
+    meetSaved: false,
     touched: {},        // qué campos ya perdieron el foco (para no pintar rojo mientras escribe)
     // Cada campo de contraseña tiene su propio ojo: si fuera uno solo, destapar
     // la de arriba destapa también la repetición, que es justo la que la persona
@@ -96,7 +123,9 @@
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(e)) return 'Ese correo no está completo.';
     // Los dominios de prueba los rechaza el propio Supabase con un mensaje en
     // inglés; se dice antes y en español.
-    if (/@(rendio\.demo|example\.com|test\.com)$/i.test(e)) return 'Usa tu correo personal de verdad: ahí te llega el código.';
+    // (Hasta el 27-sep decía «ahí te llega el código»: el código se sacó el
+    // 25-ago y la frase quedó prometiendo un correo que no llega.)
+    if (/@(rendio\.demo|example\.com|test\.com)$/i.test(e)) return 'Usa tu correo personal de verdad: es con el que vas a entrar.';
     return null;
   }
   function phoneError(v) {
@@ -325,6 +354,8 @@
     st.f.phone = user?.user_metadata?.phone || '';
     st.f.email = user?.email || '';
     st.view = 'perfil';
+    // Con el rediseño: ¿hay paso de nivel? antes de pintar «2 de N».
+    await cargarAjustes();
     show();
     render();
     loadCat();
@@ -335,10 +366,20 @@
     st.view = 'datos';
     st.f = { name: '', email: '', phone: '', pass: '', pass2: '', airlineId: null,
       resId: null, unit: '', hasSecond: false, resId2: null, unit2: '',
-      manual: false, address: '', lat: null, lng: null, locConfirmed: false };
+      manual: false, address: '', lat: null, lng: null, locConfirmed: false,
+      meetingPoint: '', level: 'shared', refCode: refDeLaUrl() };
     st.touched = {}; st.showPass = false; st.showPass2 = false;
     st.cat = null; st.q = ''; st.q2 = ''; st.picking = 1;
     st.busy = false; st.err = ''; st.profile = null;
+    st.dir = 'fwd'; st.prefsWarn = ''; st.meetSaved = false; st.ajustesOk = false;
+  }
+
+  // El enlace de invitación es https://<origen>/?ref=CODIGO (P13a): se lee al
+  // abrir el registro para dejar el código ya escrito.
+  function refDeLaUrl() {
+    try {
+      return (window.ApiPuntos && typeof ApiPuntos.refFromUrl === 'function') ? (ApiPuntos.refFromUrl() || '') : '';
+    } catch (_) { return ''; }
   }
 
   function show() {
@@ -346,6 +387,15 @@
     document.getElementById('screen-login')?.classList.add('hidden');
     document.getElementById('app-shell')?.classList.add('hidden');
     document.getElementById('auxiliar-root')?.classList.remove('hidden');
+    // La piel del rediseño: sin la clase rx-phone el CSS nuevo no aplica nada.
+    // Con la bandera apagada se quita, por si quedó de antes.
+    try {
+      const el = root();
+      if (el && window.AuxShell && typeof AuxShell.skin === 'function') {
+        if (rxOn()) AuxShell.skin(true);
+        else if (el.classList.contains('rx-phone')) AuxShell.skin(false);
+      }
+    } catch (_) { /* sin shell: el registro de siempre */ }
     // Modo nocturno desde el primer pintado, igual que el rol auxiliar: si se
     // aplicara después, la primera pantalla da un fogonazo blanco de noche.
     if (window.AuxPresentacion) { AuxPresentacion.applyTheme(); AuxPresentacion.watchTheme(); }
@@ -357,6 +407,7 @@
   // ---------------------------------------------------------------------------
   function render() {
     const el = root(); if (!el) return;
+    if (rxOn()) return rxRender();
     el.innerHTML =
       st.view === 'datos' ? datosHTML()
       : st.view === 'perfil' ? perfilHTML()
@@ -433,8 +484,9 @@
   // rellena errHTML() desde onField: repintar la pantalla entera en cada tecla
   // remontaría el input y le movería el cursor al final.
   function errHTML(key, err) {
-    return (err && st.touched[key])
-      ? `<svg class="icon"><use href="#i-warn"/></svg>${esc(err)}` : '';
+    if (!(err && st.touched[key])) return '';
+    return rxOn() ? `${ic('AlertTriangle', 14)}<span>${esc(err)}</span>`
+      : `<svg class="icon"><use href="#i-warn"/></svg>${esc(err)}`;
   }
   function errBox(key, err) {
     const bad = err && st.touched[key];
@@ -496,8 +548,9 @@
   // señal que llega a tiempo para evitar el dedazo.
   function coincidenHTML() {
     const ok = !!(st.f.pass && st.f.pass2 && st.f.pass === st.f.pass2);
+    const chk = rxOn() ? ic('Check', 14) : '<svg class="icon"><use href="#i-check"/></svg>';
     return `<div class="rg-match${ok ? '' : ' vacio'}" data-rg-match>${
-      ok ? '<svg class="icon"><use href="#i-check"/></svg>Coinciden' : ''}</div>`;
+      ok ? chk + 'Coinciden' : ''}</div>`;
   }
 
   function datosHTML() {
@@ -512,7 +565,7 @@
         <div class="rg-tip">Primer nombre y los dos apellidos.</div>
         ${field('Correo personal', 'email', 'email', 'tucorreo@gmail.com', e.email,
           'autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false"')}
-        <div class="rg-tip">Ahí te llega el código para confirmar.</div>
+        <div class="rg-tip">Con este correo y tu contraseña entras a la app.</div>
         ${field('Celular', 'phone', 'tel', '300 123 4567', e.phone,
           'autocomplete="tel" inputmode="tel"')}
         <div class="rg-tip">Para que el conductor te ubique el día del viaje.</div>
@@ -526,8 +579,8 @@
         <div class="ax-spacer"></div>
       </div>
       <div class="ax-cta-bar rg-cta">
-        <button class="ax-btn ax-btn-primary" data-rg="crear" ${(!datosOk() || st.busy) ? 'disabled' : ''}>
-          ${st.busy ? 'Enviando el código…' : 'Continuar'}
+        <button class="ax-btn ax-btn-primary" data-rg="crear" data-rg-cta ${(!datosOk() || st.busy) ? 'disabled' : ''}>
+          ${st.busy ? 'Enviando…' : 'Continuar'}
         </button>
         <button class="ax-btn ax-btn-ghost" data-rg="salir">Ya tengo cuenta</button>
       </div>`;
@@ -736,7 +789,7 @@
         <div class="ax-spacer"></div>
       </div>
       <div class="ax-cta-bar rg-cta">
-        <button class="ax-btn ax-btn-primary" data-rg="registrar" ${(!perfilReady() || st.busy) ? 'disabled' : ''}>
+        <button class="ax-btn ax-btn-primary" data-rg="registrar" data-rg-cta ${(!perfilReady() || st.busy) ? 'disabled' : ''}>
           ${st.busy ? 'Creando tu cuenta…' : 'Crear mi cuenta'}
         </button>
       </div>`;
@@ -775,7 +828,7 @@
         <div class="ax-spacer"></div>
       </div>
       <div class="ax-cta-bar rg-cta">
-        <button class="ax-btn ax-btn-primary" data-rg="entrar">Entrar a la app</button>
+        <button class="ax-btn ax-btn-primary" data-rg="entrar" data-rg-cta>Entrar a la app</button>
       </div>`;
   }
 
@@ -815,19 +868,28 @@
   // remonta el mapa y el pin salta al centro cada vez que lo mueven.
   function refreshPinRow() {
     const row = document.getElementById('rg-pin-row'); if (!row) return;
-    row.className = 'ax-pin-row ' + (st.f.locConfirmed ? 'ok' : '');
-    row.innerHTML = st.f.locConfirmed
-      ? `<svg class="icon"><use href="#i-check"/></svg><span>Ubicación confirmada</span><button class="ax-link" data-rg="pin-edit">Ajustar</button>`
-      : `<svg class="icon"><use href="#i-pin"/></svg><span>Mueve el pin al punto exacto y confirma.</span>`;
+    const rx = rxOn();
+    if (rx) {
+      row.className = 'rx-note rg-pin' + (st.f.locConfirmed ? ' ok' : '');
+      row.innerHTML = rxPinRowInner();
+    } else {
+      row.className = 'ax-pin-row ' + (st.f.locConfirmed ? 'ok' : '');
+      row.innerHTML = st.f.locConfirmed
+        ? `<svg class="icon"><use href="#i-check"/></svg><span>Ubicación confirmada</span><button class="ax-link" data-rg="pin-edit">Ajustar</button>`
+        : `<svg class="icon"><use href="#i-pin"/></svg><span>Mueve el pin al punto exacto y confirma.</span>`;
+    }
     let btn = root()?.querySelector('[data-rg="pin-confirm"]');
     if (!st.f.locConfirmed && !btn) {
-      const b = document.createElement('button');
-      b.className = 'ax-btn ax-btn-ghost'; b.setAttribute('data-rg', 'pin-confirm');
-      b.innerHTML = '<svg class="icon"><use href="#i-check"/></svg>Confirmar ubicación';
+      let b;
+      if (rx) b = rxNode(rxPinConfirmHTML());
+      else {
+        b = document.createElement('button');
+        b.className = 'ax-btn ax-btn-ghost'; b.setAttribute('data-rg', 'pin-confirm');
+        b.innerHTML = '<svg class="icon"><use href="#i-check"/></svg>Confirmar ubicación';
+      }
       row.after(b);
     } else if (st.f.locConfirmed && btn) { btn.remove(); }
-    const cta = root()?.querySelector('.ax-cta-bar .ax-btn-primary');
-    if (cta) cta.disabled = !perfilReady() || st.busy;
+    syncCta();
   }
 
   async function geocode(q) {
@@ -894,12 +956,11 @@
       // refreshPinRow — este era el único sitio que se había quedado atrás.
       const err = datosErrors()[k];
       const inp = el.querySelector(`[data-rg-field="${k}"]`);
-      if (inp) inp.classList.toggle('bad', !!err);
+      if (inp) markBad(inp, !!err);
       const box = el.querySelector(`[data-rg-err="${k}"]`);
       if (box) { box.innerHTML = errHTML(k, err); box.classList.toggle('vacio', !err); }
       refreshPass();
-      const cta = el.querySelector('[data-rg="crear"]');
-      if (cta) cta.disabled = !datosOk() || st.busy;
+      syncCta();
     }, true);
 
     el.addEventListener('keydown', (ev) => {
@@ -922,12 +983,11 @@
     // Los campos del paso 1 gobiernan el CTA; se actualiza sin repintar (repintar
     // en cada tecla pierde el foco y el cursor).
     if (st.view === 'datos') {
-      const cta = root()?.querySelector('[data-rg="crear"]');
-      if (cta) cta.disabled = !datosOk() || st.busy;
+      syncCta();
       if (st.touched[key]) {
         const err = datosErrors()[key];
         const inp = root()?.querySelector(`[data-rg-field="${key}"]`);
-        if (inp) inp.classList.toggle('bad', !!err);
+        if (inp) markBad(inp, !!err);
         const box = root()?.querySelector(`[data-rg-err="${key}"]`);
         if (box) { box.innerHTML = errHTML(key, err); box.classList.toggle('vacio', !err); }
       }
@@ -938,10 +998,7 @@
       // el foco, solo sus clases y los dos recuadros de al lado.
       refreshPass();
     }
-    if (st.view === 'perfil') {
-      const cta = root()?.querySelector('.ax-cta-bar .ax-btn-primary');
-      if (cta) cta.disabled = !perfilReady() || st.busy;
-    }
+    if (st.view === 'perfil') syncCta();
   }
 
   // Repintado en vivo de la contraseña: la barra, el «Coinciden» y —si ya se
@@ -955,7 +1012,7 @@
     ['pass', 'pass2'].forEach(k => {
       const bad = !!(e[k] && st.touched[k]);
       const inp = el.querySelector(`[data-rg-field="${k}"]`);
-      if (inp) inp.classList.toggle('bad', bad);
+      if (inp) markBad(inp, bad);
       const box = el.querySelector(`[data-rg-err="${k}"]`);
       if (box) { box.innerHTML = errHTML(k, e[k]); box.classList.toggle('vacio', !bad); }
     });
@@ -972,10 +1029,17 @@
     if (n === 1) st.q = v; else st.q2 = v;
     const cont = root()?.querySelector(`[data-rg-list="${n}"]`);
     if (!cont) return;
-    const tmp = document.createElement('div');
-    tmp.innerHTML = pickerHTML(n);
-    const fresh = tmp.querySelector(`[data-rg-list="${n}"]`);
-    if (fresh) cont.innerHTML = fresh.innerHTML;
+    if (rxOn()) {
+      // Con el rediseño, por key (como la lista de React): la fila que sigue
+      // en el resultado es el MISMO nodo y no vuelve a entrar; solo las nuevas
+      // corren su rxRise.
+      rxMorph(cont, rxRowsItems(n));
+    } else {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = pickerHTML(n);
+      const fresh = tmp.querySelector(`[data-rg-list="${n}"]`);
+      if (fresh) cont.innerHTML = fresh.innerHTML;
+    }
     // La ayuda «Escribe el nombre…» se va cuando ya está escribiendo.
     const hint = root()?.querySelector(`[data-rg-hint="${n}"]`);
     if (hint) hint.hidden = !!v;
@@ -1007,6 +1071,13 @@
       return render();
     }
     if (a === 'crear') return crear();
+    // Con el rediseño, lo que en el diseño es un cambio de clase se hace en su
+    // sitio (así corren las transiciones del radio y del interruptor) y lo que
+    // aparece o desaparece se repinta por secciones, nunca la pantalla entera.
+    if (rxOn()) {
+      const hecho = rxAction(a, el);
+      if (hecho !== undefined) return hecho;
+    }
     if (a === 'airline') { st.f.airlineId = el.dataset.id; return render(); }
     if (a === 'res-pick') {
       const n = parseInt(el.dataset.n, 10);
@@ -1050,6 +1121,8 @@
     try { if (await Api.getSession()) await Api.signOut(); } catch (_) {}
     document.getElementById('auxiliar-root')?.classList.add('hidden');
     const el = root(); if (el) el.innerHTML = '';
+    // La piel del rediseño se va con el registro: el login no la lleva.
+    try { if (el && el.classList.contains('rx-phone') && window.AuxShell) AuxShell.skin(false); } catch (_) {}
     document.getElementById('screen-login')?.classList.remove('hidden');
     reset();
   }
@@ -1078,6 +1151,11 @@
           'Tu cuenta quedó creada, pero falta un paso de confirmación que ahora '
           + 'mismo no está disponible. Avísale al coordinador para que la activen.');
       }
+      // Con el rediseño, los ajustes (¿hay paso de nivel?) se leen ANTES de
+      // pasar al perfil: así «2 de N» y la barra salen bien desde el primer
+      // cuadro, en vez de encogerse cuando llegan.
+      await cargarAjustes();
+      st.dir = 'fwd';
       st.view = 'perfil';
       loadCat();
     } catch (e) {
@@ -1110,14 +1188,36 @@
 
   async function loadCat() {
     if (st.cat) return;
+    // Los ajustes van en paralelo: con ellos se sabe si hay paso de nivel
+    // (AuxPrivado.enabled) y si se pide el código de invitación (Puntos).
+    // Si ya se leyeron (crear / resume), no se piden otra vez.
+    const pAjustes = st.ajustesOk ? Promise.resolve() : cargarAjustes();
     try {
       st.cat = await Api.signupCatalogs();
     } catch (e) {
       st.cat = { airlines: [], residences: [] };
       st.err = 'No pudimos cargar la lista de aerolíneas y conjuntos. Revisa tu señal y vuelve a entrar.';
     }
+    await pAjustes;
     if (st.view === 'perfil') render();
   }
+
+  // Solo con el rediseño (el registro de siempre no pregunta ni el nivel ni el
+  // código). app_settings solo se lee CON sesión (RLS), por eso va aquí y no
+  // en el paso 1. core.js las vuelve a cargar al entrar: esto solo adelanta.
+  async function cargarAjustes() {
+    if (!rxOn()) return;
+    try {
+      if (typeof state === 'undefined' || !state || typeof state !== 'object') return;
+      if (!window.Api || typeof Api.getSettings !== 'function') return;
+      const s = await Api.getSettings();
+      if (s && typeof s === 'object') { state.settings = Object.assign({}, state.settings || {}, s); st.ajustesOk = true; }
+    } catch (_) { /* sin ajustes: sin paso de nivel, que es lo honesto */ }
+  }
+
+  // El perfil está listo para el siguiente botón. Con el paso del nivel, el
+  // botón del perfil solo avanza (no crea nada todavía).
+  const nivelActivo = () => rxOn() && needsNivel();
 
   async function registrar() {
     if (st.busy || !perfilReady()) return;
@@ -1135,11 +1235,46 @@
         lat: st.f.manual ? st.f.lat : null,
         lng: st.f.manual ? st.f.lng : null,
       });
+      // DESPUÉS de registerAuxiliar: antes no existe la fila de
+      // auxiliar_profiles donde se escriben. Si fallan, la cuenta ya quedó:
+      // se dice en la pantalla final y se sigue.
+      await guardarPreferencias();
+      await reclamarCodigo();
       st.profile = await Api.getCurrentProfile();
+      st.dir = 'fwd';
       st.view = 'listo';
     } catch (e) {
       st.err = e?.message || 'No pudimos crear tu cuenta. Intenta de nuevo.';
     } finally { st.busy = false; render(); }
+  }
+
+  async function guardarPreferencias() {
+    st.prefsWarn = ''; st.meetSaved = false;
+    const prefs = {};
+    const mp = String(st.f.meetingPoint || '').trim().slice(0, 120);
+    if (mp) prefs.meetingPoint = mp;
+    if (nivelActivo()) prefs.preferredLevel = st.f.level === 'private' ? 'private' : 'shared';
+    if (!Object.keys(prefs).length) return;
+    const X = window.ApiAux;
+    let ok = null;
+    try { ok = (X && typeof X.saveMyPrefs === 'function') ? await X.saveMyPrefs(prefs) : null; }
+    catch (_) { ok = null; }
+    if (ok === true) { st.meetSaved = !!mp; return; }
+    // null = la base todavía no tiene la columna (o no hubo sesión); un error
+    // del servidor, igual. No se inventa que quedó guardado.
+    st.prefsWarn = mp
+      ? 'No pudimos guardar tu punto de encuentro. Lo puedes poner en Perfil.'
+      : 'No pudimos guardar cómo prefieres viajar. Lo puedes elegir en Perfil.';
+  }
+
+  // El código de quien lo invitó (Rendio Points, apagado por defecto). Solo
+  // con el programa encendido, y un error aquí jamás frena el registro.
+  async function reclamarCodigo() {
+    const code = String(st.f.refCode || '').trim();
+    if (!code || !puntosOn()) return;
+    const P = window.ApiPuntos;
+    if (!P || typeof P.claimReferral !== 'function') return;
+    try { await P.claimReferral(code); } catch (_) { /* no bloquea */ }
   }
 
   // Entra a la app sin recargar: el rol auxiliar toma el mismo contenedor.
@@ -1151,5 +1286,535 @@
     location.reload();
   }
 
-  window.AuxRegistro = { start, resume, state: st };
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REDISEÑO (P11) · el registro con RxRegister / RxReady
+  // ═══════════════════════════════════════════════════════════════════════════
+  const UI = () => window.AuxRxUI || null;
+  function rxOn() {
+    try { return !!(window.AuxRxUI && window.AuxShell && typeof AuxShell.on === 'function' && AuxShell.on()); }
+    catch (_) { return false; }
+  }
+  const ic = (n, s) => (UI() ? UI().ic(n, s) : '');
+  const rxNode = (html) => { const t = document.createElement('div'); t.innerHTML = String(html).trim(); return t.firstElementChild; };
+  function needsNivel() {
+    try {
+      const P = window.AuxPrivado;
+      return !!(P && typeof P.enabled === 'function' && typeof P.levelsHTML === 'function' && P.enabled());
+    } catch (_) { return false; }
+  }
+  function puntosOn() {
+    try { return !!(window.AuxPuntos && typeof AuxPuntos.enabled === 'function' && AuxPuntos.enabled()); }
+    catch (_) { return false; }
+  }
+
+  // El botón principal del paso (los dos aspectos lo marcan con data-rg-cta).
+  const ctaEl = () => root()?.querySelector('[data-rg-cta]') || null;
+  function syncCta() {
+    const b = ctaEl(); if (!b) return;
+    if (rxOn()) { rxSyncFoot(b); return; }
+    b.disabled = st.view === 'datos' ? (!datosOk() || st.busy)
+      : st.view === 'perfil' ? (!perfilReady() || st.busy) : false;
+  }
+  // El rojo va en el input (lo que ya miraban las pruebas y el CSS de siempre)
+  // y, con el rediseño, también en su caja .rx-input, que es la que se ve.
+  function markBad(inp, bad) {
+    inp.classList.toggle('bad', !!bad);
+    const box = inp.closest && inp.closest('.rx-input');
+    if (box) box.classList.toggle('bad', !!bad);
+  }
+
+  // ── Pasos: datos (1) · perfil (2) · nivel (3, solo si hay privado) ─────────
+  const RX_PASOS = ['datos', 'perfil', 'nivel'];
+  const rxNPasos = () => (needsNivel() ? 3 : 2);
+  const pasoNum = (v) => RX_PASOS.indexOf(v) + 1;
+  // En el paso 1 todavía no se sabe si habrá paso de nivel (app_settings se lee
+  // con sesión): la barra va con lo que se sabe y el «N de M» no se escribe,
+  // como en el registro de siempre (no anunciar «1 de 2» y saltar a «2 de 3»).
+  const rxPct = (v) => Math.round((pasoNum(v) / rxNPasos()) * 100000) / 1000;
+
+  function rxThemeBtn() {
+    if (!window.AuxPresentacion) return '';
+    const noche = esNoche();
+    return `<button type="button" class="rx-ib rg-tema" data-rg="tema" aria-label="${noche ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}" title="${noche ? 'Modo claro' : 'Modo oscuro'}">${ic(noche ? 'Sun' : 'Moon', 20)}</button>`;
+  }
+  function rxHeadHTML(view) {
+    const k = pasoNum(view);
+    const back = view === 'datos' ? { 'data-rg': 'salir' } : view === 'nivel' ? { 'data-rg': 'atras' } : false;
+    const right = rxThemeBtn() + (k > 1 ? `<span class="rx-step-n">${k} de ${rxNPasos()}</span>` : '');
+    return UI().head({ title: '', back, right });
+  }
+
+  // El pie: el botón principal, con el spinner del diseño mientras trabaja.
+  function rxCta(view) {
+    const spin = '<span class="rx-spin"></span>';
+    if (view === 'datos') {
+      return { act: 'crear', key: st.busy ? 'b' : 'c', label: st.busy ? spin + 'Enviando…' : 'Continuar', off: !datosOk() || st.busy };
+    }
+    if (view === 'perfil') {
+      const sig = needsNivel();
+      return { act: sig ? 'a-nivel' : 'registrar', key: st.busy ? 'b' : (sig ? 'n' : 'r'),
+        label: st.busy ? spin + 'Creando tu cuenta…' : (sig ? 'Continuar' : 'Crear mi cuenta'), off: !perfilReady() || st.busy };
+    }
+    if (view === 'nivel') {
+      return { act: 'registrar', key: st.busy ? 'b' : 'r', label: st.busy ? spin + 'Creando tu cuenta…' : 'Crear mi cuenta', off: st.busy };
+    }
+    return { act: 'entrar', key: 'e', label: 'Entrar a la app', off: false };
+  }
+  function rxFootHTML(view) {
+    const c = rxCta(view);
+    return `<div class="rx-foot">${UI().btn(c.label, { html: true, disabled: c.off, attrs: { 'data-rg': c.act, 'data-rg-cta': true, 'data-rg-k': c.key } })}${
+      view === 'datos' ? UI().btn('Ya tengo cuenta', { kind: 'ghost', attrs: { 'data-rg': 'salir' } }) : ''}</div>`;
+  }
+  // El MISMO botón (su transición de fondo corre al habilitarse), no uno nuevo.
+  function rxSyncFoot(b) {
+    const c = rxCta(st.view);
+    if (b.getAttribute('data-rg') !== c.act) b.setAttribute('data-rg', c.act);
+    if (b.getAttribute('data-rg-k') !== c.key) { b.setAttribute('data-rg-k', c.key); b.innerHTML = c.label; }
+    b.disabled = !!c.off;
+  }
+
+  const rxErrNote = () => (st.err
+    ? `<div class="rx-note rg-bad" role="alert">${ic('AlertTriangle', 15)}<span>${esc(st.err)}</span></div>` : '');
+
+  // ── Campos (RxRegister: .rx-field > span + .rx-input > input) ───────────────
+  function rxField(label, key, type, ph, err, attrs, pre) {
+    const bad = !!(err && st.touched[key]);
+    return `<label class="rx-field"><span>${esc(label)}</span>
+        <div class="rx-input${bad ? ' bad' : ''}">${pre || ''}<input class="${bad ? 'bad' : ''}" data-rg-field="${key}" type="${type || 'text'}"
+          value="${esc(st.f[key])}" placeholder="${esc(ph || '')}" ${attrs || ''} /></div>
+      </label>`;
+  }
+  function rxPassField(label, key, visible, accion, ph, err) {
+    const bad = !!(err && st.touched[key]);
+    return `<label class="rx-field"><span>${esc(label)}</span>
+        <div class="rx-input rg-pwbox${bad ? ' bad' : ''}"><input class="${bad ? 'bad' : ''}" data-rg-field="${key}"
+          type="${visible ? 'text' : 'password'}" value="${esc(st.f[key])}" placeholder="${esc(ph)}" autocomplete="new-password"
+          autocapitalize="none" autocorrect="off" spellcheck="false" />
+          <button type="button" class="rg-pw-eye" data-rg="${accion}" aria-label="${visible ? 'Ocultar la contraseña' : 'Mostrar la contraseña'}">${visible ? 'Ocultar' : 'Ver'}</button></div>
+      </label>`;
+  }
+
+  // Paso 1 · los datos. Mismos campos, mismas reglas y mismos textos de error
+  // que el registro de siempre.
+  function rxDatosBody() {
+    const e = datosErrors();
+    return `<div class="rx-ob-h"><h1>Crea tu cuenta</h1><p>Es una sola vez. Después entras y solo pides tu traslado.</p></div>
+      ${rxField('Nombre completo', 'name', 'text', 'Ana Lucía Restrepo Vélez', e.name, 'autocomplete="name" autocapitalize="words"')}
+      ${errBox('name', e.name)}
+      <div class="rg-tip">Primer nombre y los dos apellidos.</div>
+      ${rxField('Correo personal', 'email', 'email', 'tucorreo@gmail.com', e.email, 'autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false"')}
+      ${errBox('email', e.email)}
+      <div class="rg-tip">Con este correo y tu contraseña entras a la app.</div>
+      ${rxField('Celular', 'phone', 'tel', '300 123 4567', e.phone, 'autocomplete="tel" inputmode="tel"')}
+      ${errBox('phone', e.phone)}
+      <div class="rx-note">${ic('Info', 15)}<span>Para que el conductor te ubique el día del viaje.</span></div>
+      ${rxPassField('Contraseña', 'pass', st.showPass, 'ver-pass', 'Inventa una nueva', e.pass)}
+      ${errBox('pass', e.pass)}
+      ${medidorHTML()}
+      ${rxPassField('Repite la contraseña', 'pass2', st.showPass2, 'ver-pass2', 'La misma de arriba', e.pass2)}
+      ${coincidenHTML()}
+      ${errBox('pass2', e.pass2)}
+      <div class="rg-sec" data-rg-sec="err">${rxErrNote()}</div>`;
+  }
+
+  // Paso 2 · aerolínea, dónde te recogemos, punto de encuentro, segunda unidad.
+  function rxPerfilBody() {
+    return `<div class="rx-ob-h"><h1>Ya casi</h1><p>Esto queda guardado: no vas a tener que escribirlo otra vez.</p></div>
+      <div class="rx-lbl">Tu aerolínea</div>
+      <div class="rx-list" data-rg-sec="air">${rxAirHTML()}</div>
+      <div class="rx-lbl">Dónde te recogemos</div>
+      <div class="rg-sec" data-rg-sec="home">${rxHomeHTML()}</div>
+      <div class="rg-sec" data-rg-sec="extra">${rxExtraHTML()}</div>
+      <div class="rg-sec" data-rg-sec="err">${rxErrNote()}</div>`;
+  }
+  const rxSpin = (txt) => `<div class="rx-note rg-load"><span class="rx-spin dk"></span><span>${esc(txt)}</span></div>`;
+
+  // Las aerolíneas como rx-opt (con .on y el radio del diseño). La sigla lleva
+  // el color de MarcasAerolinea, igual que en el registro de siempre.
+  function rxAirHTML() {
+    if (!st.cat) return rxSpin('Cargando aerolíneas…');
+    const list = st.cat.airlines || [];
+    return list.map((a, i) => {
+      const on = st.f.airlineId === a.id;
+      const m = marcaAerolinea(a);
+      return `<button type="button" class="rx-opt rx-in rg-air-rx${on ? ' on' : ''}" data-rg="airline" data-id="${esc(a.id)}"
+          style="--d:${Math.min(i, 8)};--air-1:${m.c1};--air-2:${m.c2};--air-ink:${m.tinta}" aria-pressed="${on ? 'true' : 'false'}">
+        <span class="rx-opt-ic rg-sigla" aria-hidden="true">${esc(siglaAerolinea(a))}</span>
+        <span class="rx-opt-tx"><b>${esc(a.name)}</b><span>${on ? 'Tu aerolínea' : 'Toca para elegirla'}</span></span>
+        <span class="rx-radio"><i></i></span>
+      </button>`;
+    }).join('');
+  }
+  function rxAirSync() {
+    root()?.querySelectorAll('[data-rg="airline"]').forEach(b => {
+      const on = b.dataset.id === st.f.airlineId;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      const s = b.querySelector('.rx-opt-tx span');
+      if (s) s.textContent = on ? 'Tu aerolínea' : 'Toca para elegirla';
+    });
+  }
+
+  function rxHomeHTML() {
+    const f = st.f;
+    if (!st.cat) return rxSpin('Cargando los puntos de recogida…');
+    if (f.manual) return rxManualHTML();
+    if (f.resId) return rxPickedHTML(1);
+    return `<div class="rg-tip rg-tip-top">Ya tenemos ubicadas las porterías de Rionegro. Escribe el nombre de la tuya y elígela.</div>
+      ${rxPickerHTML(1)}
+      <button type="button" class="rx-opt dashed" data-rg="manual">
+        <span class="rx-opt-ic">${ic('Plus', 18)}</span>
+        <span class="rx-opt-tx"><b>Mi conjunto no está en la lista</b><span>Escribe la dirección y ubica el pin</span></span>
+      </button>`;
+  }
+
+  // Buscador primero (15-sep): sin texto la lista está VACÍA (sin un espacio).
+  function rxPickerHTML(n) {
+    const q = n === 1 ? st.q : st.q2;
+    return `<div class="rx-input search">${ic('Search', 18)}<input data-rg-q="${n}" type="text" value="${esc(q)}" placeholder="Busca tu conjunto o sector" autocomplete="off" /></div>
+      <div class="rg-tip" data-rg-hint="${n}"${q ? ' hidden' : ''}>Escribe el nombre de tu conjunto o el sector.</div>
+      <div class="rx-list" data-rg-list="${n}">${rxRowsItems(n).map(x => x.html).join('')}</div>`;
+  }
+  function rxRowsItems(n) {
+    const q = n === 1 ? st.q : st.q2;
+    if (!q) return [];
+    const list = (st.cat?.residences || []).filter(r => norm(r.name + ' ' + (r.sector || '')).includes(norm(q)));
+    if (!list.length) {
+      const sigue = n === 1 ? 'Más abajo puedes escribir la dirección.' : 'Prueba con otro nombre o con el sector.';
+      return [{ key: 'none:' + q, html: `<div class="rx-empty rg-none" data-rx-key="none:${esc(q)}"><b>No encontramos «${esc(q)}»</b><span>Puede que tu conjunto no esté todavía. ${sigue}</span></div>` }];
+    }
+    return list.slice(0, 60).map((r, i) => ({
+      key: 'r:' + r.id,
+      html: `<button type="button" class="rx-opt rx-in" data-rx-key="r:${esc(r.id)}" data-rg="res-pick" data-n="${n}" data-id="${esc(r.id)}" style="--d:${Math.min(i, 8)}">
+          <span class="rx-opt-ic">${ic('MapPin', 18)}</span>
+          <span class="rx-opt-tx"><b>${esc(r.name)}</b>${r.sector ? `<span>${esc(r.sector)}</span>` : ''}</span>
+          <span class="rx-radio"><i></i></span>
+        </button>`,
+    }));
+  }
+  // Reconciliación por key (data-rx-key): lo que sigue se queda, lo que sobra
+  // sale, lo nuevo entra. Solo se mueve un nodo si cambió el orden.
+  function rxMorph(cont, items) {
+    const old = new Map();
+    Array.from(cont.children).forEach(c => old.set(c.getAttribute('data-rx-key'), c));
+    const want = new Set(items.map(x => x.key));
+    old.forEach((c, k) => { if (!want.has(k)) c.remove(); });
+    let ref = cont.firstElementChild;
+    items.forEach(it => {
+      const el = old.get(it.key) || rxNode(it.html);
+      if (el === ref) { ref = ref.nextElementSibling; return; }
+      cont.insertBefore(el, ref);
+    });
+  }
+
+  function rxPickedHTML(n) {
+    const r = resById(n === 1 ? st.f.resId : st.f.resId2);
+    if (!r) return '';
+    const unitKey = n === 1 ? 'unit' : 'unit2';
+    return `<div class="rx-opt on rg-picked-rx">
+        <span class="rx-opt-ic">${ic('MapPin', 18)}</span>
+        <span class="rx-opt-tx"><b>${esc(r.name)}</b>${r.sector ? `<span>${esc(r.sector)}</span>` : ''}</span>
+        <button type="button" class="rx-link rg-change" data-rg="res-change" data-n="${n}">Cambiar</button>
+      </div>
+      ${rxField('Apartamento o unidad', unitKey, 'text', 'Torre 3 · Apto 302', null, 'autocapitalize="words"')}
+      <div class="rg-tip">El carro para en la portería; esto es para que el conductor sepa a quién timbra.</div>`;
+  }
+
+  const rxPinRowInner = () => (st.f.locConfirmed
+    ? `${ic('Check', 15)}<span>Ubicación confirmada</span><button type="button" class="rx-link" data-rg="pin-edit">Ajustar</button>`
+    : `${ic('MapPin', 15)}<span>Mueve el pin al punto exacto y confirma.</span>`);
+  const rxPinConfirmHTML = () => UI().btn('Confirmar ubicación', { kind: 'sec', icon: 'Check', attrs: { 'data-rg': 'pin-confirm' } });
+
+  function rxManualHTML() {
+    const f = st.f;
+    return `<button type="button" class="rx-link rg-back-cat" data-rg="volver-lista">${ic('ChevronLeft', 16)}Volver a la lista de conjuntos</button>
+      ${rxField('Dirección', 'address', 'text', 'Cra 51 #49-06, Rionegro', null, 'autocomplete="street-address"', ic('MapPin', 18))}
+      <div class="rg-tip">Escríbela y después mueve el pin al punto exacto donde para el carro.</div>
+      <div id="rg-map" class="rg-map${f.address ? '' : ' hidden'}"></div>
+      <div id="rg-pin-row" class="rx-note rg-pin${f.locConfirmed ? ' ok' : ''}${f.address ? '' : ' hidden'}">${rxPinRowInner()}</div>
+      ${(!f.locConfirmed && f.address) ? rxPinConfirmHTML() : ''}
+      ${rxField('Apartamento o unidad', 'unit', 'text', 'Torre 3 · Apto 302', null, 'autocapitalize="words"')}`;
+  }
+
+  // Lo que aparece cuando ya hay punto (en el diseño, {f.home && <rx-gates>}):
+  // el punto de encuentro opcional, la segunda unidad y —con Puntos— el código.
+  function rxExtraHTML() {
+    const f = st.f;
+    if (!st.cat || !(f.resId || (f.manual && f.locConfirmed))) return '';
+    const codigo = puntosOn() ? `
+      <label class="rx-field rx-in" style="--d:2"><span>¿Te invitó alguien? Código</span>
+        <div class="rx-input">${ic('Gift', 18)}<input data-rg-field="refCode" type="text" value="${esc(f.refCode)}" placeholder="Opcional" autocomplete="off" autocapitalize="characters" spellcheck="false" /></div>
+      </label>` : '';
+    return `<div class="rx-gates rx-in"><span>Punto de encuentro (opcional)</span>
+        <div class="rx-input">${ic('MapPin', 18)}<input data-rg-field="meetingPoint" type="text" maxlength="120" value="${esc(f.meetingPoint)}"
+          placeholder="Ej.: portería 2" autocomplete="off" enterkeyhint="done" /></div>
+      </div>
+      <div class="rg-tip">Dónde esperas al conductor. Lo puedes cambiar después en Perfil.</div>
+      <div class="rx-lbl rx-in" style="--d:1">¿Te quedas en otro sitio a veces?</div>
+      <div class="rx-card rx-in" style="--d:1"><div class="rx-set"><span><b>Tengo una segunda unidad</b><span>El otro apartamento donde a veces duermes. Cada vez que pidas un traslado eliges de cuál sales.</span></span>${
+        UI().toggle(!!f.hasSecond, { 'data-rg': 'toggle', 'data-key': 'hasSecond', 'aria-label': 'Tengo una segunda unidad' })}</div></div>
+      <div class="rg-sec" data-rg-sec="second">${rxSecondHTML()}</div>
+      ${codigo}`;
+  }
+  const rxSecondHTML = () => (st.f.hasSecond ? (st.f.resId2 ? rxPickedHTML(2) : rxPickerHTML(2)) : '');
+
+  // Paso 3 (solo si AuxPrivado.enabled()) · RxLevelCard de P6 en modo «pref»,
+  // con acciones del registro (data-rg="level"): nada se guarda hasta crear la
+  // cuenta, así que no pueden llevar el pref-level de Perfil.
+  function rxNivelBody() {
+    const P = window.AuxPrivado;
+    const cards = (P && typeof P.levelsHTML === 'function')
+      ? P.levelsHTML(null, { mode: 'pref', selected: st.f.level === 'private' ? 'private' : 'shared',
+        pickAttrs: (v) => `data-rg="level" data-v="${v}"` }) : '';
+    return `<div class="rx-ob-h"><h1>¿Cómo prefieres viajar?</h1><p>Lo dejamos elegido en cada pedido. Puedes cambiarlo cuando quieras.</p></div>
+      ${cards}
+      <div class="rg-sec" data-rg-sec="err">${rxErrNote()}</div>`;
+  }
+  function rxLevelSync() {
+    root()?.querySelectorAll('.rx-lv[data-rg="level"]').forEach(b => {
+      const on = b.dataset.v === st.f.level;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  const rxBodyHTML = (view) => (view === 'perfil' ? rxPerfilBody() : view === 'nivel' ? rxNivelBody() : rxDatosBody());
+
+  // RxRegister: .rx-ob (key=fase) > .rx-scr > RxHead · .rx-prog · .rx-body.rx-step
+  // (key=paso) · .rx-foot.
+  function rxRegisterHTML(view) {
+    return `<div class="rx-ob" data-rg-phase="register"><div class="rx-scr rg-scr">
+      ${rxHeadHTML(view)}
+      <div class="rx-prog"><i style="width:${rxPct(view)}%"></i></div>
+      <div class="rx-body rx-step ${st.dir === 'bwd' ? 'bwd' : 'fwd'}" data-rg-view="${view}" data-rg-cat="${st.cat ? 1 : 0}">${rxBodyHTML(view)}</div>
+      ${rxFootHTML(view)}
+    </div></div>`;
+  }
+
+  // RxReady: confeti, el visto, el saludo y a dónde pasa el carro — con datos
+  // reales (el conjunto elegido o la dirección escrita, y el punto de
+  // encuentro solo si de verdad quedó guardado). Saludo sin género.
+  function rxListoHTML() {
+    const U = UI();
+    const nombre = cleanName(st.profile?.full_name || st.f.name).split(' ')[0] || '';
+    const donde = st.f.manual ? String(st.f.address || '').trim() : (resById(st.f.resId)?.name || '');
+    const meet = st.meetSaved ? String(st.f.meetingPoint || '').trim() : '';
+    const p = donde
+      ? `Tu cuenta quedó lista. Te recogemos en ${esc(donde)}${meet ? ' · ' + esc(meet) : ''}.`
+      : 'Tu cuenta quedó lista.';
+    return `<div class="rx-ob" data-rg-phase="listo"><div class="rx-scr rx-center rx-ready">
+      ${U.confetti()}
+      ${U.check()}
+      <h1 class="rx-c-h">Te damos la bienvenida${nombre ? ', ' + esc(nombre) : ''}</h1>
+      <p class="rx-c-p">${p}</p>
+      ${st.prefsWarn ? `<div class="rx-note rg-warn">${ic('Info', 15)}<span>${esc(st.prefsWarn)}</span></div>` : ''}
+      <div class="rx-foot abs">${U.btn('Entrar a la app', { icon: 'ArrowRight', attrs: { 'data-rg': 'entrar', 'data-rg-cta': true, 'data-rg-k': 'e' } })}</div>
+    </div></div>`;
+  }
+
+  // Pintado. Cambio de fase (registro ↔ listo) = .rx-ob NUEVO (rxFade, como
+  // key={rx.phase}). Cambio de paso = .rx-body nuevo con rx-step fwd|bwd
+  // (key={step}) y la barra que se estira en su sitio. Mismo paso = solo lo
+  // que cambió (cabecera, pie, error, y las secciones si llegó el catálogo).
+  function rxRender() {
+    const el = root(); if (!el) return;
+    const view = st.view;
+    const fase = view === 'listo' ? 'listo' : 'register';
+    const ob = (el.children.length === 1 && el.firstElementChild.classList.contains('rx-ob')) ? el.firstElementChild : null;
+    if (!ob || ob.getAttribute('data-rg-phase') !== fase) {
+      el.innerHTML = fase === 'listo' ? rxListoHTML() : rxRegisterHTML(view);
+      afterRender();
+      return;
+    }
+    if (fase === 'listo') return;
+    const body = ob.querySelector('[data-rg-view]');
+    if (!body) { el.innerHTML = rxRegisterHTML(view); afterRender(); return; }
+    if (body.getAttribute('data-rg-view') !== view) { rxStepTo(ob, body, view); afterRender(); return; }
+    rxPatchSame(ob, body, view);
+  }
+  function rxProg(ob, view) {
+    const i = ob.querySelector('.rx-prog i');
+    const w = rxPct(view) + '%';
+    if (i && i.style.width !== w) i.style.width = w;   // transition: width .5s del diseño
+  }
+  function rxHead(ob, view) {
+    const h = ob.querySelector('.rx-head');
+    if (h) h.parentNode.replaceChild(rxNode(rxHeadHTML(view)), h);
+  }
+  function rxStepTo(ob, body, view) {
+    rxHead(ob, view);
+    rxProg(ob, view);
+    destroyMap();
+    const nu = rxNode(`<div class="rx-body rx-step ${st.dir === 'bwd' ? 'bwd' : 'fwd'}" data-rg-view="${view}" data-rg-cat="${st.cat ? 1 : 0}">${rxBodyHTML(view)}</div>`);
+    // .rx-anim: este nodo SÍ entra aunque algo arriba lleve .rx-noanim.
+    nu.classList.add('rx-anim');
+    body.parentNode.replaceChild(nu, body);
+    const foot = ob.querySelector('.rx-foot');
+    if (foot) foot.parentNode.replaceChild(rxNode(rxFootHTML(view)), foot);
+  }
+  function rxPatchSame(ob, body, view) {
+    rxHead(ob, view);
+    rxProg(ob, view);
+    const cat = st.cat ? '1' : '0';
+    if (view === 'perfil' && body.getAttribute('data-rg-cat') !== cat) {
+      body.setAttribute('data-rg-cat', cat);
+      rxSec('air'); rxSec('home'); rxSec('extra');
+    }
+    rxSec('err');
+    syncCta();
+  }
+  const RX_SECS = { air: () => rxAirHTML(), home: () => rxHomeHTML(), extra: () => rxExtraHTML(),
+    second: () => rxSecondHTML(), err: () => rxErrNote() };
+  function rxSec(name) {
+    const box = root()?.querySelector(`[data-rg-sec="${name}"]`); if (!box || !RX_SECS[name]) return;
+    // La sección de la dirección lleva el mapa: se desmonta antes de tirar su nodo.
+    if (name === 'home') destroyMap();
+    box.innerHTML = RX_SECS[name]();
+    if (name === 'home') afterRender();
+  }
+
+  // Acciones que cambian con el rediseño. undefined = la de siempre.
+  function rxAction(a, el) {
+    const f = st.f;
+    if (a === 'airline') { f.airlineId = el.dataset.id; rxAirSync(); syncCta(); return true; }
+    if (a === 'res-pick' || a === 'res-change') {
+      const n = parseInt(el.dataset.n, 10);
+      if (a === 'res-pick') { if (n === 1) { f.resId = el.dataset.id; st.q = ''; } else { f.resId2 = el.dataset.id; st.q2 = ''; } }
+      else if (n === 1) { f.resId = null; f.unit = ''; }
+      else { f.resId2 = null; f.unit2 = ''; }
+      if (n === 1) { rxSec('home'); rxSec('extra'); } else rxSec('second');
+      syncCta(); return true;
+    }
+    if (a === 'manual') {
+      f.manual = true; f.resId = null; f.address = ''; f.lat = null; f.lng = null; f.locConfirmed = false;
+      rxSec('home'); rxSec('extra'); syncCta(); return true;
+    }
+    if (a === 'volver-lista') {
+      f.manual = false; f.address = ''; f.lat = null; f.lng = null; f.locConfirmed = false;
+      rxSec('home'); rxSec('extra'); syncCta(); return true;
+    }
+    if (a === 'pin-confirm') { f.locConfirmed = true; refreshPinRow(); rxSec('extra'); syncCta(); return true; }
+    if (a === 'toggle') {
+      const k = el.dataset.key;
+      f[k] = !f[k];
+      if (k === 'hasSecond' && !f.hasSecond) { f.resId2 = null; f.unit2 = ''; st.q2 = ''; }
+      if (UI()) UI().toggleSet(el, !!f[k]);   // el mismo interruptor: su transición corre
+      if (k === 'hasSecond') rxSec('second');
+      syncCta(); return true;
+    }
+    if (a === 'level') {
+      if (el.classList.contains('off') || el.getAttribute('aria-disabled') === 'true') return true;
+      f.level = el.dataset.v === 'private' ? 'private' : 'shared';
+      rxLevelSync(); return true;
+    }
+    if (a === 'a-nivel') {
+      if (st.busy || !perfilReady()) return true;
+      st.err = ''; st.dir = 'fwd'; st.view = 'nivel'; render(); return true;
+    }
+    if (a === 'atras') {
+      if (st.busy) return true;
+      st.err = ''; st.dir = 'bwd'; st.view = 'perfil'; render(); return true;
+    }
+    return undefined;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // INGRESO · #screen-login con el aspecto de RxLogin (todos los roles)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Sin código por correo ni chips de dominio (D9): correo y contraseña,
+  // como siempre. Los nodos que usa core.js NO se recrean: se mueven y se les
+  // suman clases, así su submit, sus textos («Entrando…») y su error siguen
+  // funcionando igual.
+  const loginRxOn = () => !!document.querySelector('link[rel="stylesheet"][href$="login-rx.css"]');
+  function loginRx() {
+    const sec = document.getElementById('screen-login');
+    if (!sec || sec.classList.contains('rx-login') || !loginRxOn()) return false;
+    const form = document.getElementById('login-form');
+    const email = document.getElementById('login-email');
+    const pass = document.getElementById('login-password');
+    const submit = document.getElementById('login-submit');
+    const err = document.getElementById('login-error');
+    const h1 = sec.querySelector('h1');
+    if (!form || !email || !pass || !submit || !h1) return false;
+    sec.classList.add('rx-login');
+    const card = form.parentElement;
+    if (card) card.classList.add('rxl-card');
+    const brand = sec.querySelector('img') && sec.querySelector('img').closest('div');
+    if (brand && brand !== card) brand.classList.add('rxl-brand');
+    // Encabezado: .rx-ob-h.rx-in con el ícono del correo (RxLogin).
+    const lead = (h1.nextElementSibling && h1.nextElementSibling.tagName === 'P') ? h1.nextElementSibling : null;
+    const head = document.createElement('div');
+    head.className = 'rx-ob-h rx-in';
+    h1.parentNode.insertBefore(head, h1);
+    const badge = document.createElement('span');
+    badge.className = 'rx-ob-ic';
+    badge.innerHTML = ic('Mail', 24);
+    head.appendChild(badge); head.appendChild(h1);
+    if (lead) head.appendChild(lead);
+    h1.textContent = 'Entra con tu correo';
+    if (lead) lead.textContent = 'Con el correo y la contraseña de tu cuenta.';
+    // Campos: .rx-field.rx-in (--d 1 y 2) con su .rx-input.
+    [[email, 1], [pass, 2]].forEach(([inp, d]) => {
+      const label = inp.closest('label');
+      if (label) { label.classList.add('rx-field', 'rx-in'); label.style.setProperty('--d', String(d)); }
+      const box = document.createElement('div');
+      box.className = 'rx-input';
+      inp.parentNode.insertBefore(box, inp);
+      box.appendChild(inp);
+    });
+    // El error va arriba del botón (donde se lee antes de volver a tocarlo).
+    if (err && err.parentNode === form) form.insertBefore(err, submit);
+    submit.classList.add('rx-btn', 'pri');
+    const help = document.createElement('button');
+    help.type = 'button';
+    help.className = 'rx-btn ghost rxl-help';
+    help.textContent = '¿Problemas para entrar?';
+    submit.insertAdjacentElement('afterend', help);
+    help.addEventListener('click', () => loginHelp(sec));
+    const signup = document.getElementById('login-signup');
+    if (signup) {
+      signup.classList.add('rx-btn', 'sec');
+      if (signup.parentElement && signup.parentElement !== form) signup.parentElement.classList.add('rxl-signup');
+    }
+    const legal = sec.querySelector('.rxl-card + p');
+    if (legal) legal.classList.add('rxl-legal');
+    return true;
+  }
+  // La hoja «¿Problemas para entrar?» (RxSheet: .rx-sheet-bg > .rx-sheet >
+  // .rx-grab + .rx-sh). Se cierra con .out y se desmonta a los 220 ms; tocar el
+  // fondo también la cierra. Sin «Escribir a soporte»: antes de entrar no hay
+  // canal en la app, y un botón que no lleva a nada sería mentira.
+  function loginHelp(sec) {
+    let host = sec.querySelector('.rxl-sheet-host');
+    if (!host) { host = document.createElement('div'); host.className = 'rxl-sheet-host'; sec.appendChild(host); }
+    host.innerHTML = `<div class="rx-sheet-bg"><div class="rx-sheet" role="dialog" aria-modal="true" aria-labelledby="rxl-help-t"><div class="rx-grab"></div>
+      <div class="rx-sh">
+        <h3 id="rxl-help-t">¿Problemas para entrar?</h3>
+        <p>Escríbele a tu coordinador de tripulación.</p>
+        <p>Usa el correo con el que creaste tu cuenta. Si olvidaste la contraseña, pídele una temporal: la cambias al entrar.</p>
+        <button type="button" class="rx-btn sec" data-rxl="close">Entendido</button>
+      </div></div></div>`;
+    const bg = host.firstElementChild;
+    const close = () => {
+      if (bg.__rxlClosing) return;
+      bg.__rxlClosing = true;
+      bg.classList.add('out');
+      setTimeout(() => { if (bg.parentNode) bg.parentNode.removeChild(bg); }, 220);
+    };
+    bg.addEventListener('click', (e) => {
+      if (e.target === bg || (e.target.closest && e.target.closest('[data-rxl="close"]'))) close();
+    });
+    const b = bg.querySelector('[data-rxl="close"]');
+    if (b) { try { b.focus({ preventScroll: true }); } catch (_) { /* */ } }
+  }
+  // Ya, si el login está en el DOM (este archivo se carga después de él en
+  // index.html: así no hay un cuadro del login viejo); si no, al terminar de
+  // leer la página.
+  try {
+    if (!document.getElementById('screen-login') && document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => { try { loginRx(); } catch (_) { /* */ } });
+    } else loginRx();
+  } catch (_) { /* el login de siempre */ }
+
+  window.AuxRegistro = { start, resume, state: st, loginRx };
 })();

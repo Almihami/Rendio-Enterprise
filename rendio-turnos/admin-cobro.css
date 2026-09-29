@@ -1,4 +1,156 @@
-/* admin-cobro.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P12b. Contenido: Cuentas de cobro del jefe, scopeada a #cobro-ui.
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* admin-cobro.css — Admin › Cuentas de cobro (Facturario, 0090). Rediseño del
+   auxiliar, 27-sep-2026, paquete P12b.
+   Todo scopeado a #cobro-ui. Sin diseño propio del diseñador: usa el estilo admin
+   de la app (AJUSTES §5): la paleta y las piezas de las otras bandejas (Tripulantes,
+   Reservas, Coordinación: .sh-phead, .set-btn, .set-input, filtros en píldora,
+   fichas con borde de 12-14 px), redeclaradas aquí para este panel como hace cada
+   una con las suyas. Nace responsive: en el celular cada fila se apila como ficha.
+   Sin animaciones. */
+
+#cobro-ui{
+  --bg:#F8FAFC; --panel:#FFFFFF; --panel2:#F7F8FA; --ink:#211D18; --ink2:#6B6258; --ink3:#A39A8D;
+  --line:#E2E8F0; --line2:#CBD5E1;
+  --orange:#F26522; --orange-soft:#FCE4D6;
+  --green:#16936A; --green-soft:#E0F1E8;
+  --amber:#D98A12; --amber-soft:#FBEBCF;
+  --red:#DB4B3F; --red-soft:#FADFDC;
+  --blue:#2A6FDB; --blue-soft:#E2ECFB;
+  --block:#2A1514; --block-ink:#FBEDEC;
+  --font:"Hanken Grotesk",system-ui,sans-serif; --mono:"Space Mono",ui-monospace,monospace;
+  font-family:var(--font); color:var(--ink);
+}
+#cobro-ui *{box-sizing:border-box}
+#cobro-ui .icon{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
+
+/* Encabezado y botones: los mismos de las otras bandejas del admin. */
+#cobro-ui .sh-phead{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:16px}
+#cobro-ui .sh-phead h1{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;display:flex;align-items:center;gap:11px;color:var(--ink);margin:0}
+#cobro-ui .sh-ct{font-size:13px;font-weight:800;font-family:var(--mono);background:var(--amber-soft);color:var(--amber);border-radius:999px;padding:3px 11px}
+#cobro-ui .sh-phead p{font-size:13px;color:var(--ink2);margin:8px 0 0;max-width:680px;line-height:1.5}
+#cobro-ui .sh-phead p b{color:var(--ink);font-weight:700}
+#cobro-ui .set-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 9px 22px rgba(242,101,34,.26);white-space:nowrap}
+#cobro-ui .set-btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:none}
+#cobro-ui .set-btn.ghost.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+#cobro-ui .set-btn.danger{background:var(--red);color:#fff;box-shadow:none}
+#cobro-ui .set-btn:disabled{opacity:.55;cursor:not-allowed}
+#cobro-ui .set-input{width:100%;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);font-family:var(--font);font-size:13.5px;outline:none}
+#cobro-ui .set-input:focus{border-color:var(--orange)}
+#cobro-ui .cb-acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* Avisos del reloj y notas. */
+#cobro-ui .cb-note{display:flex;gap:10px;align-items:flex-start;border-radius:12px;padding:12px 14px;margin-bottom:14px;background:var(--panel2);border:1px solid var(--line)}
+#cobro-ui .cb-note.warn{background:var(--amber-soft);border-color:transparent}
+#cobro-ui .cb-note .icon{width:17px;height:17px;color:var(--amber);margin-top:1px}
+#cobro-ui .cb-note b{display:block;font-size:13.5px;color:var(--ink)}
+#cobro-ui .cb-note span{display:block;font-size:12.5px;color:var(--ink2);margin-top:2px;line-height:1.5}
+#cobro-ui .cb-clock{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink3);margin:-4px 0 14px}
+#cobro-ui .cb-mini{display:block;font-size:11.5px;color:var(--ink3);line-height:1.5;margin:8px 0 0}
+#cobro-ui .cb-mini.warn{color:var(--amber);font-weight:700}
+
+/* Secciones. */
+#cobro-ui .cb-sec{margin-bottom:18px}
+#cobro-ui .cb-sec h2{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin:0 0 10px}
+
+/* Comprobantes por revisar. */
+#cobro-ui .cb-proofs{display:grid;gap:10px}
+#cobro-ui .cb-proof{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:14px;padding:14px}
+#cobro-ui .cb-proof-img{min-height:150px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;color:var(--ink3);overflow:hidden;padding:6px}
+#cobro-ui .cb-proof-img a{display:flex;align-items:center;gap:6px;color:var(--blue);font-weight:700;text-decoration:none;width:100%;height:100%;justify-content:center}
+#cobro-ui .cb-proof-img img{display:block;max-width:100%;max-height:240px;object-fit:contain;border-radius:6px}
+#cobro-ui .cb-proof-b{min-width:0;display:flex;flex-direction:column;gap:10px}
+#cobro-ui .cb-proof-h b{display:block;font-size:15px;font-weight:800;color:var(--ink)}
+#cobro-ui .cb-proof-h span{display:block;font-size:12px;color:var(--ink3);margin-top:2px}
+#cobro-ui .cb-kvs{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px 14px}
+#cobro-ui .cb-kvs span{display:block;font-size:11px;color:var(--ink3);font-weight:700}
+#cobro-ui .cb-kvs b{display:block;font-size:13.5px;color:var(--ink);font-weight:700;margin-top:1px}
+#cobro-ui .cb-kvs b.bad{color:var(--red)}
+#cobro-ui .cb-reasons{display:flex;flex-direction:column;gap:6px;background:var(--red-soft);border-radius:10px;padding:12px}
+#cobro-ui .cb-reasons > b{font-size:13px;color:var(--ink)}
+#cobro-ui .cb-reasons label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);cursor:pointer}
+#cobro-ui .cb-reasons .cb-acts{margin-top:4px}
+
+/* Buscador y filtros (los de Tripulantes). */
+#cobro-ui .cb-tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+#cobro-ui .cb-search{position:relative;flex:1 1 260px;min-width:0}
+#cobro-ui .cb-search > .icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--ink3);pointer-events:none}
+#cobro-ui .cb-search input{width:100%;padding:10px 12px 10px 36px;border:1px solid var(--line);border-radius:10px;font-family:inherit;font-size:14px;color:var(--ink);background:#fff}
+#cobro-ui .cb-search input:focus{outline:none;border-color:var(--amber)}
+#cobro-ui .cb-filters{display:flex;gap:6px;flex-wrap:wrap}
+#cobro-ui .cb-filters button{border:1px solid var(--line);background:#fff;color:var(--ink2);font-family:inherit;font-size:12.5px;font-weight:700;padding:8px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
+#cobro-ui .cb-filters button i{font-style:normal;font-family:var(--mono);font-size:11px;opacity:.7}
+#cobro-ui .cb-filters button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+/* Lista de tripulantes. */
+#cobro-ui .cb-list{display:flex;flex-direction:column;gap:8px}
+#cobro-ui .cb-row{border:1px solid var(--line);border-radius:12px;background:#fff}
+#cobro-ui .cb-row.open{border-color:var(--amber)}
+#cobro-ui .cb-main{display:grid;align-items:center;gap:14px;padding:13px 15px;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) auto}
+#cobro-ui .cb-who b{display:block;font-size:14.5px;font-weight:700;color:var(--ink)}
+#cobro-ui .cb-who span{display:block;font-size:12px;color:var(--ink3);margin-top:2px;word-break:break-word;font-family:var(--mono)}
+#cobro-ui .cb-st{display:flex;gap:6px;flex-wrap:wrap}
+#cobro-ui .cb-amt b{display:block;font-size:14px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+#cobro-ui .cb-amt span{display:block;font-size:12px;color:var(--ink2);margin-top:2px}
+#cobro-ui .cb-rowacts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+#cobro-ui .cb-rowacts .set-btn{height:34px;padding:0 12px;font-size:12.5px}
+
+/* Estado (mismos tonos que el tripulante ve en su app). */
+#cobro-ui .cb-tag{display:inline-block;font-size:11.5px;font-weight:800;border-radius:999px;padding:3px 10px;background:var(--panel2);color:var(--ink2);white-space:nowrap}
+#cobro-ui .cb-tag.t-info{background:var(--blue-soft);color:var(--blue)}
+#cobro-ui .cb-tag.t-block{background:var(--block);color:var(--block-ink)}
+#cobro-ui .cb-tag.t-error{background:var(--red-soft);color:var(--red)}
+#cobro-ui .cb-tag.t-warn{background:var(--amber-soft);color:var(--amber)}
+#cobro-ui .cb-tag.t-ok{background:var(--green-soft);color:var(--green)}
+#cobro-ui .cb-tag.t-muted{background:transparent;border:1px dashed var(--line2);color:var(--ink3)}
+
+/* Editores. */
+#cobro-ui .cb-ed{border-top:1px solid var(--line);padding:14px 15px}
+#cobro-ui .cb-panel .cb-ed{border-top:1px solid var(--line);margin-top:12px;padding:14px 0 0}
+#cobro-ui .cb-ed-t{font-size:13.5px;font-weight:800;color:var(--ink);margin:0 0 10px}
+#cobro-ui .cb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px 14px}
+#cobro-ui .cb-f{display:flex;flex-direction:column;gap:5px;min-width:0}
+#cobro-ui .cb-f.wide{grid-column:1 / -1}
+#cobro-ui .cb-f > span{font-size:11.5px;font-weight:700;color:var(--ink2)}
+#cobro-ui .cb-f > em{font-style:normal;font-size:11px;color:var(--ink3)}
+#cobro-ui .cb-f.cb-chk{flex-direction:row;align-items:center;gap:8px;align-self:end;height:40px}
+#cobro-ui .cb-f.cb-chk > span{font-size:13px;color:var(--ink)}
+#cobro-ui .cb-ed-foot{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px}
+#cobro-ui .cb-hist{width:100%;border-collapse:collapse;font-size:12.5px}
+#cobro-ui .cb-hist th{text-align:left;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3);padding:6px 8px;border-bottom:1px solid var(--line)}
+#cobro-ui .cb-hist td{padding:8px;border-bottom:1px solid var(--line);color:var(--ink);vertical-align:top}
+#cobro-ui .cb-hist td em{display:block;font-style:normal;font-size:11px;color:var(--ink3)}
+
+/* Paneles de la organización (métodos y valores por defecto). */
+#cobro-ui .cb-panel{border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;background:#FBFBFC}
+#cobro-ui .cb-panel-h{margin-bottom:12px}
+#cobro-ui .cb-panel-h b{font-size:14.5px;color:var(--ink)}
+#cobro-ui .cb-panel-h span{display:block;font-size:12.5px;color:var(--ink2);margin-top:3px;line-height:1.5}
+#cobro-ui .cb-methods{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+#cobro-ui .cb-method{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 12px;flex-wrap:wrap}
+#cobro-ui .cb-method > div{flex:1 1 220px;min-width:0}
+#cobro-ui .cb-method b{display:block;font-size:13.5px;color:var(--ink)}
+#cobro-ui .cb-method span{display:block;font-size:12px;color:var(--ink2);font-family:var(--mono);word-break:break-word}
+#cobro-ui .cb-method.off{opacity:.55}
+#cobro-ui .cb-method .set-btn{height:32px;padding:0 11px;font-size:12px}
+
+/* Vacíos y cargas. */
+#cobro-ui .cb-empty{border:1px dashed var(--line2);border-radius:14px;padding:26px 20px;text-align:center;color:var(--ink2);display:flex;flex-direction:column;align-items:center;gap:6px;font-size:13px}
+#cobro-ui .cb-empty.sm{padding:14px 16px}
+#cobro-ui .cb-empty b{font-size:14.5px;color:var(--ink)}
+#cobro-ui .cb-empty span{font-size:13px;max-width:420px;line-height:1.5}
+#cobro-ui .cb-empty .set-btn{margin-top:8px}
+
+/* El celular: cada tripulante como ficha apilada. */
+@media (max-width: 900px){
+  #cobro-ui .sh-phead h1{font-size:22px}
+  #cobro-ui .sh-phead > .cb-acts{width:100%}
+  #cobro-ui .sh-phead > .cb-acts .set-btn{flex:1 1 0}
+  #cobro-ui .cb-main{grid-template-columns:1fr auto;row-gap:10px;align-items:start}
+  #cobro-ui .cb-who{grid-column:1}
+  #cobro-ui .cb-st{grid-column:2;grid-row:1;justify-content:flex-end}
+  #cobro-ui .cb-amt{grid-column:1 / -1}
+  #cobro-ui .cb-rowacts{grid-column:1 / -1;justify-content:flex-start}
+  #cobro-ui .cb-proof{grid-template-columns:1fr}
+  #cobro-ui .cb-filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;width:100%}
+  #cobro-ui .cb-filters::-webkit-scrollbar{display:none}
+  #cobro-ui .cb-hist{display:block;overflow-x:auto}
+}

@@ -50,6 +50,7 @@
       return;
     }
     rvState.items = rows;
+    await rvLoadExtras(rows);
     renderReservasList();
     // Si llegamos desde un push (`#/reservas?chat=<id>`), se abre directo el hilo
     // que motivó el aviso. Se consume una sola vez: un refresco no lo reabre.
@@ -61,6 +62,29 @@
       else toast('Ese traslado ya no está en la lista de la semana.');
     }
   }
+
+  // Maletas y «Prefiero silencio» (reservations.bags / quiet_ride, 0086, rediseño
+  // del auxiliar 27-sep-2026). listReservationsAdmin (api.js) no las trae, así
+  // que se piden aparte, solo para los ids de la lista. Sin 0086 (o si la consulta
+  // falla) quedan en null y la fila no muestra nada: no se inventa un «0 maletas».
+  async function rvLoadExtras(rows) {
+    (rows || []).forEach(r => { r.bags = null; r.quiet = null; });
+    const ids = (rows || []).map(r => r.id).filter(Boolean);
+    const cli = window.sb;
+    if (!ids.length || !cli || typeof cli.from !== 'function') return;
+    try {
+      const { data, error } = await cli.from('reservations').select('id, bags, quiet_ride').in('id', ids);
+      if (error || !Array.isArray(data)) return;
+      const by = new Map(data.map(x => [x.id, x]));
+      rows.forEach(r => {
+        const x = by.get(r.id); if (!x) return;
+        r.bags = (x.bags != null && Number.isFinite(Number(x.bags))) ? Number(x.bags) : null;
+        r.quiet = x.quiet_ride === true;
+      });
+    } catch (_) { /* sin el dato, sin la etiqueta */ }
+  }
+  // «2 maletas», «1 maleta», «Sin maletas». null = el tripulante no lo dijo.
+  const rvBagsLabel = (n) => n == null ? '' : n === 0 ? 'Sin maletas' : `${n} maleta${n === 1 ? '' : 's'}`;
 
   function rvFiltered() {
     let items = rvState.items;
@@ -111,6 +135,8 @@
     if (r.isReserva === false) chips.push('<span class="rv-tag tent">Tentativa</span>');
     if (rvIsLate(r)) chips.push('<span class="rv-tag late">⏱ Pedido tarde</span>');
     if (r.readyAt) chips.push('<span class="rv-tag ready">✓ Confirmó recogida</span>');
+    if (r.bags != null) chips.push(`<span class="rv-tag bags">🧳 ${escapeHtml(rvBagsLabel(r.bags))}</span>`);
+    if (r.quiet === true) chips.push('<span class="rv-tag quiet">Pidió silencio</span>');
     if (r.rating) chips.push(`<span class="rv-tag star">★ ${r.rating}${(r.ratingTags || []).length ? ' · ' + escapeHtml(r.ratingTags.join(', ')) : ''}</span>`);
     const cancelling = rvState.cancelId === r.id;
     return `<div class="rv-row ${r.status === 'cancelled' ? 'off' : ''}" data-rv-row="${r.id}">
@@ -178,9 +204,14 @@
     try {
       const res = await Api.adminCancelReservation(id, reason);
       const who = (r.name || 'el auxiliar').split(' ')[0];
+      // El del tripulante aterriza en ESE viaje (#/viaje?r=, rediseño del
+      // auxiliar 27-sep-2026), donde ya se ve cancelado y con el motivo. El del
+      // conductor sigue en '/': su app no tiene pantalla de viaje por id y lo que
+      // le importa es la ruta del día, que es donde abre.
+      const rvTripUrl = '/#/viaje?r=' + encodeURIComponent(id);
       if (r.profileId) {
         notify([r.profileId], 'Traslado cancelado',
-          reason ? `Tu traslado del ${rvDateES(r.when)} fue cancelado: ${reason}` : `Tu traslado del ${rvDateES(r.when)} fue cancelado por coordinación.`, '/');
+          reason ? `Tu traslado del ${rvDateES(r.when)} fue cancelado: ${reason}` : `Tu traslado del ${rvDateES(r.when)} fue cancelado por coordinación.`, rvTripUrl);
       }
       if (res && res.driver_profile_id) {
         notify([res.driver_profile_id], 'Parada cancelada',

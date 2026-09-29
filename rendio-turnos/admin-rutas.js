@@ -1333,6 +1333,9 @@
       // avisaba a todos en cada republicación, así que quien ya tenía conductor
       // recibía "Conductor asignado 🚗" otra vez — y a quien SÍ le cambiaron el
       // conductor le llegaba el mismo texto, sin decirle que había cambiado.
+      // Aterrizan en «Viajes» (#/viajes, rediseño del auxiliar 27-sep-2026): un
+      // mismo push puede hablar de varios traslados del tripulante, así que no
+      // se abre uno en particular.
       try {
         const fresh = (r.notify || []).filter(n => !n.changed).map(n => n.reservationId);
         const moved = (r.notify || []).filter(n => n.changed).map(n => n.reservationId);
@@ -1340,13 +1343,13 @@
           const ids = await Api.auxiliarUserIdsForReservations(fresh);
           if (ids.length) await Api.sendPush({ profileIds: ids,
             title: 'Conductor asignado 🚗',
-            body: 'Ya tienes conductor para tu traslado. Ábrelo para seguirlo en vivo.', url: '/' });
+            body: 'Ya tienes conductor para tu traslado. Ábrelo para seguirlo en vivo.', url: '/#/viajes' });
         }
         if (moved.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
           const ids = await Api.auxiliarUserIdsForReservations(moved);
           if (ids.length) await Api.sendPush({ profileIds: ids,
             title: 'Te cambiamos el conductor 🔄',
-            body: 'Tu traslado sigue en pie, pero lo atiende otro conductor. Ábrelo para ver quién es.', url: '/' });
+            body: 'Tu traslado sigue en pie, pero lo atiende otro conductor. Ábrelo para ver quién es.', url: '/#/viajes' });
         }
       } catch (_) {}
       // Push "ruta asignada" al CONDUCTOR de cada vuelta con conductor. Su

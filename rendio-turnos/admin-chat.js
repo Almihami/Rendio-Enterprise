@@ -100,7 +100,11 @@
     jcState.msgs = (jcState.msgs || []).concat([temp]);
     jcBubbles();
     try {
-      const r = await Api.sendReservationMessage(rid, body, { title: 'Mensaje de Rendio' });
+      // El push aterriza en ESE viaje (#/viaje?r=, rediseño del auxiliar 27-sep):
+      // el tripulante lee el mensaje con su traslado abierto, no en Inicio. El
+      // conductor recibe la misma URL y su app la ignora (el enlace es del
+      // tripulante), así que para él sigue abriendo la app como antes.
+      const r = await Api.sendReservationMessage(rid, body, { title: 'Mensaje de Rendio', url: '/#/viaje?r=' + encodeURIComponent(rid) });
       // Decir "enviado" a secas sería engañarlo: si al otro no le suena, el
       // mensaje se queda ahí hasta que abra la app, y eso hay que saberlo.
       const n = (r && r.recipients) ? r.recipients.length : 0;

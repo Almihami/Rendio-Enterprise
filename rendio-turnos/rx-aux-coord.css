@@ -1,4 +1,66 @@
-/* rx-aux-coord.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P8. Contenido: Coordinación y Cambió mi vuelo. Selectores #auxiliar-ui.rx-phone …
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* rx-aux-coord.css — P8 · Coordinación y «Cambió mi vuelo» (rediseño del auxiliar, 27-sep-2026).
+   Solo lo que el diseño NO trae. Todo lo demás es del CSS portado (rx-auxiliar.css):
+   rx-head, rx-ib, rx-planb, rx-body, rx-chat, rx-bub (in/out/pop), rx-qr, rx-input,
+   rx-field, rx-ob-h, rx-flight-new (+ .strike), rx-note, rx-center-in, rx-check,
+   rx-foot, rx-sh, rx-opt, rx-empty.
+   Sin animaciones ni transiciones propias: por eso no hay entradas .rx-noanim aquí
+   (las de rx-in, rx-bub.pop y rx-check ya están en rx-aux-app.css). */
+
+/* ── Coordinación (.rx-co) ────────────────────────────────────────────────────── */
+/* El horario de Ajustes llega hasta 60 caracteres: una línea, con puntos suspensivos. */
+#auxiliar-ui.rx-phone .rx-co .rx-head-c span {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#auxiliar-ui.rx-phone .rx-co a.rx-ib { text-decoration: none; }
+
+/* Burbujas: texto que respeta los saltos y una línea de contexto/hora debajo. */
+#auxiliar-ui.rx-phone .rx-co .rx-bub-x { white-space: pre-wrap; overflow-wrap: anywhere; }
+#auxiliar-ui.rx-phone .rx-co .rx-bub-t { display: block; font-style: normal; font-size: 11px; opacity: .7; margin-top: 3px; }
+#auxiliar-ui.rx-phone .rx-co .rx-bub.out .rx-bub-t { text-align: right; }
+#auxiliar-ui.rx-phone .rx-co .rx-bub.rx-co-sending { opacity: .6; }
+#auxiliar-ui.rx-phone .rx-co .rx-co-empty { padding: 40px 12px; }
+#auxiliar-ui.rx-phone .rx-co .rx-co-empty span { font-size: 13.5px; line-height: 1.5; }
+
+/* El diseño termina en las respuestas rápidas (con 30 px para el indicador de inicio
+   del teléfono falso). Aquí debajo va el campo: las respuestas quedan pegadas a él
+   y el margen seguro lo lleva el pie. */
+#auxiliar-ui.rx-phone .rx-co .rx-qr { padding-bottom: 8px; }
+#auxiliar-ui.rx-phone .rx-co-foot {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 0 16px calc(12px + var(--rx-bot, 0px)); background: var(--r-card);
+}
+#auxiliar-ui.rx-phone .rx-co-row { display: flex; align-items: center; gap: 8px; }
+#auxiliar-ui.rx-phone .rx-co-row .rx-input { flex: 1; min-width: 0; height: 48px; }
+#auxiliar-ui.rx-phone .rx-co-row .rx-input input { font-size: 16px; }
+#auxiliar-ui.rx-phone .rx-co-send {
+  width: 48px; height: 48px; border-radius: 16px; border: 0; flex-shrink: 0; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center; background: var(--r-accent); color: #fff;
+}
+#auxiliar-ui.rx-phone .rx-co-send:disabled { opacity: .45; cursor: default; }
+
+/* Contexto: «Sobre tu salida del jue 16 oct», con su X para quitarlo. */
+#auxiliar-ui.rx-phone .rx-co-ctx {
+  display: flex; align-items: center; gap: 8px; align-self: flex-start; max-width: 100%;
+  padding: 6px 6px 6px 12px; border-radius: 100px; background: var(--r-surface-2);
+  font-size: 13px; font-weight: 600; color: var(--r-text-2);
+}
+#auxiliar-ui.rx-phone .rx-co-ctx svg { flex-shrink: 0; }
+#auxiliar-ui.rx-phone .rx-co-ctx span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#auxiliar-ui.rx-phone .rx-co-ctx button {
+  width: 26px; height: 26px; border-radius: 13px; border: 0; padding: 0; flex-shrink: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; background: var(--r-card); color: var(--r-text-2);
+}
+
+/* ── Cambió mi vuelo (.rx-fv) ─────────────────────────────────────────────────── */
+/* Día y hora (el diseño solo trae el vuelo): dos campos lado a lado. */
+#auxiliar-ui.rx-phone .rx-fv-when { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+#auxiliar-ui.rx-phone .rx-fv-when .rx-input { padding: 0 12px; gap: 8px; }
+#auxiliar-ui.rx-phone .rx-fv-when .rx-input input {
+  min-width: 0; width: 100%; font-size: 16px; -webkit-appearance: none; appearance: none; text-align: left;
+}
+#auxiliar-ui.rx-phone .rx-fv .rx-flight-new span { text-align: center; }
+/* «Es otro traslado»: enlace bajo el texto de entrada (solo si hay varios). */
+#auxiliar-ui.rx-phone .rx-fv-other {
+  margin-top: 8px; padding: 0; border: 0; background: none; cursor: pointer;
+  font-size: 14px; font-weight: 600; color: var(--rx-acc); text-decoration: underline; text-underline-offset: 3px;
+}
