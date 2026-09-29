@@ -173,13 +173,58 @@ window.Api.listMyReservations = async () => [];
 window.Api.listResidences = async () => [];
 window.Api.getMyAuxiliarPlace = async () => null;
 window.L = undefined;
-for (const f of ['aux-residencias.js', 'aux-privado.js', 'aux-presentacion.js', 'auxiliar.js'])
+// P6 (27-sep-2026): con los archivos del rediseño cargados (aux-rx-ui.js y
+// aux-shell.js ANTES de aux-privado.js, como en index.html). La bandera va
+// APAGADA aquí (la de siempre); abajo se repite con la bandera ENCENDIDA.
+for (const f of ['aux-rx-ui.js', 'aux-shell.js', 'aux-residencias.js', 'aux-privado.js', 'aux-presentacion.js', 'auxiliar.js'])
   window.eval(readFileSync(APP + f, 'utf8'));
 
 await window.Auxiliar.init({ id: 'p1', full_name: 'Ana Lucía Restrepo Vélez', role: 'auxiliar' });
 await new Promise(r => setTimeout(r, 80));
 t('al entrar al rol se vuelven a pedir los ajustes', vecesGetSettings >= 1, 'veces: ' + vecesGetSettings);
 t('y el privado que el jefe acaba de encender YA se ve', window.AuxPrivado.enabled() === true);
+t('bandera apagada: el paso sale con el marcado de siempre (axp-lvl)',
+  window.AuxShell.on() === false && /axp-lvl vip/.test(window.AuxPrivado.stepHTML({ level: 'shared' })) && !/rx-lv/.test(window.AuxPrivado.stepHTML({ level: 'shared' })));
+
+// ───────────────────────────────────────────────────────────────────────────
+// 4 · Lo mismo con la bandera del rediseño ENCENDIDA (P6)
+// ───────────────────────────────────────────────────────────────────────────
+// El refresco de ajustes no puede depender de la piel: con el shell nuevo el
+// privado que el jefe acaba de encender también tiene que verse (y como
+// tarjeta RxLevelCard elegible, no como primicia).
+console.log('\n── bandera encendida: el privado recién encendido también se ve ──');
+{
+  const dom2 = new JSDOM(readFileSync(APP + 'index.html', 'utf8'),
+    { runScripts: 'outside-only', pretendToBeVisual: true, url: 'http://localhost/' });
+  const w = dom2.window;
+  const errs = []; w.console.error = (...a) => errs.push(a.map(String).join(' '));
+  w.RENDIO_CONFIG = {}; w.toast = () => {}; w.L = undefined;
+  w.escapeHtml = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  w.localStorage.setItem('rendio.aux.rx', '1');
+  w.localStorage.setItem('rendio.aux.onboarded.p1', '1');
+  let veces2 = 0;
+  w.state = { settings: { aux_private_enabled: false, aux_private_vehicle_id: null, aux_private_price_cop: 150000 } };
+  w.Api = {
+    getSettings: async () => { veces2++; return { aux_private_enabled: true, aux_private_vehicle_id: 'uuid-de-la-camioneta',
+      aux_private_price_cop: 150000, aux_wait_minutes: 5, aux_min_lead_hours: 6, _loaded: true }; },
+    listMyReservations: async () => [], listResidences: async () => [], getMyAuxiliarPlace: async () => null,
+    getMyAuxHeader: async () => ({ preferredLevel: null }), privateBusyAt: async () => false, notesUser: (n) => String(n || ''),
+  };
+  w.ApiAux = { listMyTrips: async () => null };
+  for (const f of ['aux-rx-ui.js', 'aux-shell.js', 'aux-residencias.js', 'aux-privado.js', 'aux-presentacion.js', 'auxiliar.js'])
+    w.eval(readFileSync(APP + f, 'utf8'));
+  await w.Auxiliar.init({ id: 'p1', full_name: 'Ana Lucía Restrepo Vélez', role: 'auxiliar', is_active: true });
+  await new Promise(r => setTimeout(r, 80));
+  const P = w.AuxPrivado;
+  t('bandera encendida: se vuelven a pedir los ajustes', w.AuxShell.on() === true && veces2 >= 1, 'veces: ' + veces2);
+  t('y el privado encendido YA se ve (no primicia)', P.enabled() === true && P.primicia() === false);
+  const html = P.stepHTML({ level: 'shared' });
+  t('el paso sale como RxLevelCard: el privado elegible (lvl) y sin .primicia',
+    /rx-lv rx-in vip/.test(html) && /data-ax="lvl" data-v="private"/.test(html) && !/primicia/.test(html));
+  t('sin cifra en pantalla', !/\$\s?\d/.test(html + P.selectHTML({ from: 'home' })) && !/150/.test(html + P.selectHTML({ from: 'home' })));
+  t('Select quedó registrado en el shell', w.AuxShell.registered('select'));
+  t('sin errores en consola', errs.length === 0, errs.join(' | '));
+}
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: que el jefe entienda el aviso, y la pantalla real de Ajustes en su');

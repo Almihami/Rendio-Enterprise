@@ -1,4 +1,31 @@
-/* rx-aux-perfil.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P7. Contenido: Perfil. Selectores #auxiliar-ui.rx-phone …
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* rx-aux-perfil.css — P7 · Perfil del tripulante (rediseño del auxiliar, 27-sep-2026).
+   Solo lo que rx-me.jsx no trae: todo lo demás es el CSS portado del diseño
+   (rx-auxiliar.css, generado; nunca se edita). Selectores #auxiliar-ui.rx-phone …
+   Sin animaciones propias: las entradas son las .rx-in del diseño. */
+
+/* Cifras: 2 columnas cuando Puntos está apagado (el diseño trae 3). */
+#auxiliar-ui.rx-phone .rx-me-stats.two{grid-template-columns:repeat(2,1fr)}
+#auxiliar-ui.rx-phone .rx-me-stats em.rx-me-nodata{font-style:normal;font-size:11px;color:var(--r-text-3);margin-top:1px}
+
+/* «Pronto» en Puntos e Invitar (apagados): etiqueta a la derecha, sin flecha. */
+#auxiliar-ui.rx-phone .rx-me-soon{font-style:normal;flex-shrink:0;font-size:11.5px;font-weight:650;letter-spacing:.2px;padding:4px 9px;border-radius:999px;background:var(--r-surface-2);color:var(--r-text-2)}
+/* «Actual» en la lista de conjuntos. */
+#auxiliar-ui.rx-phone .rx-me-cur{font-style:normal;flex-shrink:0;font-size:11.5px;font-weight:650;padding:4px 9px;border-radius:999px;background:var(--r-h2a-soft);color:var(--rx-acc)}
+
+/* #ax-pwa-bar (en la hoja «Notificaciones y app»): auxSetupPwa pone/quita
+   .hidden en la barra y en cada fila. */
+#auxiliar-ui.rx-phone .rx-me-pwa.hidden,
+#auxiliar-ui.rx-phone .rx-me-pwa>.rx-row.hidden{display:none}
+#auxiliar-ui.rx-phone .rx-me-pwa.rx-group>*+*{border-top:0}
+#auxiliar-ui.rx-phone .rx-me-pwa>.rx-row:not(.hidden)~.rx-row:not(.hidden){border-top:1px solid var(--r-border)}
+
+/* Mi residencia: selector propio (cuando no está el de P5). */
+#auxiliar-ui.rx-phone .rx-me-picker{display:flex;flex-direction:column;gap:12px}
+#auxiliar-ui.rx-phone .rx-me-res-list:empty{display:none}
+#auxiliar-ui.rx-phone .rx-me-none{display:flex;flex-direction:column;gap:4px;padding:14px 16px;border-radius:16px;background:var(--r-surface-2);font-size:13.5px;color:var(--r-text-2);line-height:1.45}
+#auxiliar-ui.rx-phone .rx-me-none b{color:var(--r-text);font-size:14.5px}
+#auxiliar-ui.rx-phone .rx-note[hidden]{display:none}
+
+/* Error dentro de una hoja (guardar falló). */
+#auxiliar-ui.rx-phone .rx-me-err{font-size:13.5px;line-height:1.45;padding:10px 12px;border-radius:12px;background:var(--r-error-soft);color:#B42318}
+#auxiliar-ui.rx-phone .rx-me-err[hidden]{display:none}

@@ -1,4 +1,77 @@
-/* rx-aux-select.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P6. Contenido: Niveles y Select. Selectores #auxiliar-ui.rx-phone …
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* rx-aux-select.css — P6 · Niveles y Select (rediseño del auxiliar, 27-sep-2026).
+   Registrado en index.html (después de rc-auxiliar.css, orden del plan final §5)
+   y en APP_SHELL (sw.js). Selectores #auxiliar-ui.rx-phone … : sin la clase
+   rx-phone (bandera apagada) no aplica nada.
+
+   El marcado y las clases del diseño (rx-lv, rx-sel, rx-cupo, rx-radio,
+   rx-select-teaser, rx-in) ya vienen en rx-auxiliar.css, portado por script y
+   con las animaciones idénticas: aquí NO se repiten ni se tocan. Este archivo
+   trae SOLO lo que el diseño no tiene porque sale de decisiones de la app:
+     · .off / .primicia en la tarjeta (Directo «Pronto», privado comprometido o
+       todavía no disponible) y la píldora gris .rx-cupo.off;
+     · .rx-lv-pn («Coordinación te confirma la tarifa», D1);
+     · .rx-sel-how, el bloque honesto que ocupa el lugar del kit (D3);
+     · la franja del resumen, el estado de la solicitud y la etiqueta de la lista;
+     · los contenedores .rx-lvls / .rx-lvls-x (display:contents: las tarjetas
+       siguen siendo hijas directas del paso para el layout, como en el diseño).
+   Ninguna animación de una sola vez propia: la entrada escalonada es la .rx-in
+   del diseño (y su .rx-noanim ya la trae rx-aux-app.css). */
+
+#auxiliar-ui.rx-phone .rx-lvls,
+#auxiliar-ui.rx-phone .rx-lvls-x{display:contents}
+
+/* ── Tarjeta apagada (Directo, privado comprometido, primicia) ───────────── */
+#auxiliar-ui.rx-phone .rx-lv.off,
+#auxiliar-ui.rx-phone .rx-lv.primicia{cursor:default}
+#auxiliar-ui.rx-phone .rx-lv.off:active,
+#auxiliar-ui.rx-phone .rx-lv.primicia:active{transform:none}
+#auxiliar-ui.rx-phone .rx-lv.off>.rx-lv-ic,
+#auxiliar-ui.rx-phone .rx-lv.off .rx-lv-h,
+#auxiliar-ui.rx-phone .rx-lv.off .rx-lv-t,
+#auxiliar-ui.rx-phone .rx-lv.off .rx-lv-inc,
+#auxiliar-ui.rx-phone .rx-lv.primicia>.rx-lv-ic,
+#auxiliar-ui.rx-phone .rx-lv.primicia .rx-lv-h em{opacity:.55}
+#auxiliar-ui.rx-phone .rx-lv.off>.rx-radio,
+#auxiliar-ui.rx-phone .rx-lv.primicia>.rx-radio{opacity:.35}
+/* «Ver qué incluye» se sigue leyendo entero en la tarjeta apagada. */
+#auxiliar-ui.rx-phone .rx-lv.off .rx-lv-more{cursor:pointer}
+
+/* «Coordinación te confirma la tarifa» (D1) / «Te lo mostramos antes…» */
+#auxiliar-ui.rx-phone .rx-lv-pn{font-size:12.5px;color:var(--r-text-2);margin-top:2px}
+#auxiliar-ui.rx-phone .rx-lv.vip .rx-lv-pn{color:#C7A971}
+
+/* Píldora gris: «Todavía no se puede pedir». */
+#auxiliar-ui.rx-phone .rx-cupo.off{background:var(--r-surface-2);color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-lv.vip .rx-cupo.off,
+#auxiliar-ui.rx-phone .rx-foot.sel .rx-cupo.off{background:rgba(246,241,231,.08);color:rgba(246,241,231,.66)}
+
+/* El texto de .rx-note va en un <span> (el ícono es hermano). */
+#auxiliar-ui.rx-phone .rx-lvls-x .rx-note>span{flex:1;min-width:0}
+
+/* ── Select: el bloque que ocupa el lugar del kit (mismo marco) ──────────── */
+#auxiliar-ui.rx-phone .rx-sel-how{display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:20px;background:rgba(246,241,231,.05);border:1px solid rgba(199,169,113,.24)}
+#auxiliar-ui.rx-phone .rx-sel-how p{margin:0;font-size:14.5px;line-height:1.5;color:rgba(246,241,231,.82)}
+#auxiliar-ui.rx-phone .rx-foot.sel .rx-btn.brass:disabled{background:rgba(246,241,231,.1);color:rgba(246,241,231,.45);box-shadow:none}
+
+/* ── Franja Select en «Revisar» (sumHTML) ─────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-sel-sum{display:flex;flex-direction:column;gap:3px;padding:16px 18px;border-radius:20px;background:linear-gradient(150deg,#2E2720,#1B1712);border:1px solid rgba(199,169,113,.3);color:#F6F1E7}
+#auxiliar-ui.rx-phone .rx-sel-sum b{font-family:var(--r-vip-serif);font-weight:500;font-size:17.5px;letter-spacing:.3px;margin-top:2px}
+#auxiliar-ui.rx-phone .rx-sel-sum>span:not(.rx-sel-e){font-size:13px;line-height:1.45;color:rgba(246,241,231,.7)}
+#auxiliar-ui.rx-phone .rx-sel-sum .rx-sel-e{font-size:11px;letter-spacing:2px}
+
+/* ── Estado de la solicitud en el viaje (statusHTML) ─────────────────────── */
+#auxiliar-ui.rx-phone .rx-sel-st{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-radius:18px;border:1px solid var(--r-border);background:var(--r-card)}
+#auxiliar-ui.rx-phone .rx-sel-st-ic{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#auxiliar-ui.rx-phone .rx-sel-st-tx{display:flex;flex-direction:column;gap:2px;min-width:0}
+#auxiliar-ui.rx-phone .rx-sel-st-tx b{font-size:15px}
+#auxiliar-ui.rx-phone .rx-sel-st-tx span{font-size:13px;line-height:1.45;color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-sel-st.wait .rx-sel-st-ic{background:var(--r-warn-soft);color:var(--rx-warn)}
+#auxiliar-ui.rx-phone .rx-sel-st.ok .rx-sel-st-ic{background:var(--r-a2h-soft);color:var(--rx-ok)}
+#auxiliar-ui.rx-phone .rx-sel-st.no .rx-sel-st-ic{background:var(--r-error-soft);color:var(--rx-err)}
+
+/* ── Etiqueta en la lista de viajes (chipHTML) ───────────────────────────── */
+#auxiliar-ui.rx-phone .rx-sel-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:650;padding:3px 9px;border-radius:100px;background:var(--r-plus-soft);color:var(--rx-plus);white-space:nowrap}
+#auxiliar-ui.rx-phone .rx-sel-chip.ok{background:rgba(199,169,113,.2)}
+#auxiliar-ui.rx-phone .rx-sel-chip.no{background:var(--r-surface-2);color:var(--r-text-2)}
+#auxiliar-ui.rx-phone[data-ax-night="on"] .rx-sel-chip{background:rgba(199,169,113,.14)}
+#auxiliar-ui.rx-phone[data-ax-night="on"] .rx-sel-chip.no{background:var(--r-surface-2)}

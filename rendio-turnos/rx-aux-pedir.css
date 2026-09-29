@@ -1,4 +1,74 @@
-/* rx-aux-pedir.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P5. Contenido: Pedir (pasos, deslizador, residencias con aspecto rx). Selectores #auxiliar-ui.rx-phone …
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* rx-aux-pedir.css — P5 · Pedir y punto (rediseño del auxiliar, 27-sep-2026).
+   Solo lo que el diseño NO trae. Todo lo demás (rx-book, rx-type, rx-chips,
+   rx-input, rx-calc, rx-set, rx-step-ctl, rx-review, rx-rv-*, rx-slide,
+   rx-booked, rx-opt, rx-fl…) viene portado tal cual en rx-auxiliar.css, con sus
+   animaciones y transiciones idénticas. Aquí no se declara ninguna animación
+   de una sola vez nueva (el giro del cargando es infinito), así que no hace
+   falta sumar entradas a .rx-noanim. */
+
+/* ── Encabezado: N rayas (el diseño fija 5; el pedido tiene 4 o 5) ─────────── */
+#auxiliar-ui.rx-phone .rx-book-steps{grid-template-columns:repeat(var(--n,5),1fr)}
+
+/* ── Avisos con nivel (rx-note trae solo el neutro) ───────────────────────── */
+#auxiliar-ui.rx-phone .rx-note.bad{color:var(--rx-err)}
+#auxiliar-ui.rx-phone .rx-note.bad b{color:var(--rx-err)}
+#auxiliar-ui.rx-phone .rx-note.warn{color:var(--rx-warn)}
+#auxiliar-ui.rx-phone .rx-note.info svg{color:var(--rx-info)}
+#auxiliar-ui.rx-phone .rx-note.ok svg{color:var(--rx-ok)}
+#auxiliar-ui.rx-phone .rx-note>span{min-width:0}
+#auxiliar-ui.rx-phone #ax-time-hints:empty,
+#auxiliar-ui.rx-phone [id^="ax-fl-aviso-"]:empty,
+#auxiliar-ui.rx-phone .rx-pd-calc-slot,
+#auxiliar-ui.rx-phone .rx-pd-sum:empty{display:none}
+
+/* ── «Otro día»: un chip más (mismo aspecto que .rx-chips button) con el
+   calendario nativo encima, transparente, para que el toque lo abra. ────── */
+#auxiliar-ui.rx-phone .rx-pd-otro{position:relative;display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 15px;border-radius:100px;border:1px solid var(--r-border-strong);background:var(--r-card);font-size:14px;font-weight:600;color:var(--r-text);cursor:pointer;transition:all .2s;overflow:hidden}
+#auxiliar-ui.rx-phone .rx-pd-otro.on{background:var(--r-text);color:var(--r-bg);border-color:var(--r-text)}
+#auxiliar-ui.rx-phone .rx-pd-otro input{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;margin:0;cursor:pointer;font-size:16px}
+
+/* ── Número de vuelo: la sigla como botón dentro de la caja ──────────────── */
+#auxiliar-ui.rx-phone .rx-pd-sig{display:inline-flex;align-items:center;gap:4px;flex-shrink:0;height:38px;padding:0 10px;border-radius:10px;border:0;background:var(--r-surface-2);color:var(--r-text);font-family:ui-monospace,Menlo,monospace;font-size:16px;font-weight:700;letter-spacing:.5px;cursor:pointer;--a-t3:var(--r-text-3)}
+#auxiliar-ui.rx-phone .rx-pd-sig.open{box-shadow:inset 0 0 0 2px var(--r-accent)}
+#auxiliar-ui.rx-phone .rx-pd-sig svg{opacity:.75}
+#auxiliar-ui.rx-phone .rx-pd-fl-list{margin-top:-2px}
+#auxiliar-ui.rx-phone .rx-pd-iata{height:50px}
+#auxiliar-ui.rx-phone .rx-pd-iata input{text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+#auxiliar-ui.rx-phone .rx-pd-fl-row{display:flex;gap:8px;align-items:center}
+#auxiliar-ui.rx-phone .rx-pd-fl-row input{flex:1;min-width:0}
+#auxiliar-ui.rx-phone .rx-pd-fl-row .rx-pd-sig{height:44px;border-radius:12px}
+#auxiliar-ui.rx-phone .rx-set.col input[type="time"]{width:100%}
+#auxiliar-ui.rx-phone .rx-pd-set-note{padding:4px 0 10px}
+#auxiliar-ui.rx-phone .rx-pd-set-note .rx-note{padding:0}
+
+/* ── Campo de texto largo (Auxiliar.fieldHTML con 'textarea') ──────────────── */
+#auxiliar-ui.rx-phone .rx-pd-area textarea{min-height:76px;border-radius:16px;border:0;background:var(--r-card);box-shadow:inset 0 0 0 1.5px var(--r-border-strong);padding:12px 16px;font:inherit;font-size:16px;color:var(--r-text);resize:vertical;outline:none;transition:box-shadow .2s}
+#auxiliar-ui.rx-phone .rx-pd-area textarea:focus{box-shadow:inset 0 0 0 2px var(--r-accent),0 0 0 4px var(--r-accent-soft)}
+
+/* ── Resumen ──────────────────────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-rv-time .rx-pd-rv-sub{margin-top:6px}
+#auxiliar-ui.rx-phone .rx-rv-row.static{cursor:default}
+#auxiliar-ui.rx-phone .rx-pd-pol{display:flex;flex-direction:column;gap:8px}
+#auxiliar-ui.rx-phone .rx-pd-pol .rx-lbl{margin-bottom:0}
+
+/* ── El deslizador sin poder pedir (fecha pasada, falta un dato) ───────────── */
+#auxiliar-ui.rx-phone .rx-slide.off{opacity:.45}
+#auxiliar-ui.rx-phone .rx-slide.off .rx-slide-k{cursor:not-allowed}
+
+/* ── El punto: mapa del catálogo y del camino manual, fila del pin ────────── */
+#auxiliar-ui.rx-phone .rx-pd-map{height:170px;border-radius:18px;overflow:hidden;background:var(--rx-map-bg,var(--r-surface-2));flex-shrink:0}
+#auxiliar-ui.rx-phone .rx-pd-map.hidden,
+#auxiliar-ui.rx-phone .rx-pd-pin.hidden{display:none}
+#auxiliar-ui.rx-phone .rx-pd-pin{align-items:center}
+#auxiliar-ui.rx-phone .rx-pd-pin.ok svg{color:var(--rx-ok)}
+#auxiliar-ui.rx-phone .rx-pd-link{margin-left:auto;border:0;background:none;padding:4px 0;font:inherit;font-size:13px;font-weight:650;color:var(--rx-acc);cursor:pointer;flex-shrink:0}
+#auxiliar-ui.rx-phone .rx-opt .rx-pd-link{padding:6px 2px}
+#auxiliar-ui.rx-phone .axr-list:empty{display:none}
+#auxiliar-ui.rx-phone .rx-pd-load{display:flex;align-items:center;gap:10px;padding:18px 4px;font-size:14px;color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-pd-search-clear{border:0;background:none;padding:6px;margin-right:-6px;color:var(--r-text-3);cursor:pointer;display:flex}
+
+/* ── Traslado pedido: la escena del avión en lugar del chulo ───────────────── */
+#auxiliar-ui.rx-phone .rx-booked .axc{position:relative;z-index:1}
+#auxiliar-ui.rx-phone .rx-note[hidden],
+#auxiliar-ui.rx-phone .rx-opt[hidden],
+#auxiliar-ui.rx-phone .rx-lbl[hidden]{display:none}

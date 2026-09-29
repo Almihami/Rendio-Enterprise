@@ -13,6 +13,13 @@
 // REQUIERE jsdom (no está en el repo, es solo para probar):
 //   cd rendio-backend && node scripts/_smoke-celebracion-dom.mjs
 //
+// REDISEÑO (P5, 27-sep-2026): mientras exista el interruptor corre en los DOS
+// modos. RX=1 confirma con el deslizador (.rx-slide, toque sin arrastre = el
+// clic de respaldo del diseño), espía que AuxCelebracion.prime() se llame
+// DENTRO del clic y mira la escena en «booked» (.rx-booked .axc).
+//   RX=0 node scripts/_smoke-celebracion-dom.mjs
+//   RX=1 node scripts/_smoke-celebracion-dom.mjs
+//
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'fs';
 const APP='../rendio-turnos/';
@@ -32,19 +39,42 @@ window.Api={ listMyReservations:async()=>[], listResidences:async()=>RES,
 const SIN_PRIVADO={aux_min_lead_hours:6,aux_wait_minutes:5};
 const CON_PRIVADO={...SIN_PRIVADO,aux_private_enabled:true,aux_private_vehicle_id:'v1',aux_private_price_cop:150000};
 window.state={settings:{...SIN_PRIVADO}}; global.state=window.state;
-for(const f of ['aux-residencias.js','aux-privado.js','aux-celebracion.js','aux-presentacion.js','auxiliar.js']) window.eval(readFileSync(APP+f,'utf8'));
+const RX=process.env.RX==='1';
+console.log('Modo: '+(RX?'RX=1 (rediseño encendido)':'RX=0 (el pedido de siempre)'));
+window.localStorage.setItem('rendio.aux.rx',RX?'1':'0');
+// Los mismos archivos en los dos modos (la app real los carga todos); solo cambia la bandera.
+const PANTALLAS=['aux-rx-inicio.js','aux-rx-viajes.js','aux-rx-avisos.js','aux-rx-viaje.js','aux-rx-pedir.js','aux-rx-perfil.js','aux-rx-pagos.js','aux-rx-puntos.js','aux-rx-coord.js','aux-rx-vuelo.js'];
+for(const f of ['aux-rx-ui.js','aux-shell.js','api-aux.js','aux-residencias.js','aux-privado.js','aux-celebracion.js','aux-presentacion.js',...PANTALLAS,'auxiliar.js']) window.eval(readFileSync(APP+f,'utf8'));
 
 const ui=()=>window.document.getElementById('auxiliar-ui');
-const txt=()=>ui().textContent.replace(/\s+/g,' ');
-const click=(s)=>{const e=ui().querySelector(s); if(!e) throw new Error('no existe: '+s); e.click();};
+// Con el rediseño el pedido y el «traslado pedido» viven en su capa; la pestaña de atrás no cuenta.
+const scope=()=>(RX&&(ui().querySelector('[data-scr="book"]:not(.out)')||ui().querySelector('[data-scr="booked"]:not(.out)')))||ui();
+const txt=()=>scope().textContent.replace(/\s+/g,' ');
+const click=(s)=>{const e=scope().querySelector(s)||ui().querySelector(s); if(!e) throw new Error('no existe: '+s); e.click();};
+const T_REVISAR=RX?/Revisa tu traslado/:/Revisa y confirma/;
+async function tipo(tp){ click(`[data-ax="type"][data-type="${tp}"]`); if(RX) await wait(320); else click('[data-ax="next"]'); }
+// Espía de prime(): ¿se llamó DENTRO del clic de confirmar (sincrónico)?
+let enGesto=false; const primes=[];
+// Confirmar: con el rediseño, el deslizador (toque sin arrastre + 380 ms); sin él, el botón.
+async function confirmar(){
+  const sel=RX?'.rx-slide-k':'[data-ax="next"]';
+  enGesto=true; try{ click(sel); } finally { enGesto=false; }
+  await wait(RX?460:120);
+}
+// La pantalla de «confirmado»: título, texto y botón según el modo.
+const H1=()=>scope().querySelector(RX?'.rx-booked h1.rx-c-h':'h1.ax-big');
+const LEAD=()=>scope().querySelector(RX?'.rx-booked .rx-c-p':'.ax-lead');
 const set=(k,v)=>{const i=ui().querySelector(`[data-field="${k}"]`); if(!i) throw new Error('no existe campo '+k); i.value=v; i.dispatchEvent(new window.Event('input',{bubbles:true}));};
 const wait=(ms=40)=>new Promise(r=>setTimeout(r,ms));
 const A=()=>window.Auxiliar.state;
-async function nuevo(){ A().view='home'; A().source='live'; window.Auxiliar.rerender(); await wait(); click('[data-ax="new"]'); await wait(60); }
+async function nuevo(){ A().view='home'; A().source='live'; window.Auxiliar.rerender(); await wait();
+  if(RX && !ui().querySelector('[data-ax="new"]')) window.Auxiliar.newTrip(); else click('[data-ax="new"]');
+  await wait(60); }
 const parse=(html)=>{const d=window.document.createElement('div'); d.innerHTML=html; return d;};
 
 console.log('\n── el módulo ──');
 const C=window.AuxCelebracion;
+{ const real=C.prime; C.prime=function(){ primes.push(enGesto); return real.apply(this,arguments); }; }
 t('window.AuxCelebracion existe con sceneHTML/afterRender/prime', !!C && typeof C.sceneHTML==='function' && typeof C.afterRender==='function' && typeof C.prime==='function');
 t('jsdom no trae AudioContext (la prueba de abajo vale)', typeof window.AudioContext==='undefined' && typeof window.matchMedia==='undefined');
 
@@ -107,49 +137,54 @@ window.setTimeout=realTimeout;
 console.log('\n── flujo completo: confirmar un traslado compartido ──');
 await window.Auxiliar.init({id:'p1',full_name:'Ana Lucía Restrepo Vélez',role:'auxiliar'}); await wait(80);
 await nuevo();
-click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]'); await wait();
+await tipo('sal'); await wait();
 set('date','2026-12-20'); set('time','05:10'); click('[data-ax="next"]'); await wait();
 click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia desde el 17-sep)
-t('se llega a revisar (4/4, una unidad)', /Revisa y confirma/.test(txt()) && /4\/4/.test(txt()), txt().slice(0,80));
-creadas.length=0; started.length=0;
-click('[data-ax="next"]'); await wait(120);
+t('se llega a revisar (4/4, una unidad)', T_REVISAR.test(txt()) && /4\/4/.test(txt()), txt().slice(0,80));
+creadas.length=0; started.length=0; primes.length=0;
+if (RX) t('el último paso confirma con el deslizador (.rx-slide) y no con un botón', !!scope().querySelector('.ax-cta-bar .rx-slide .rx-slide-k') && !scope().querySelector('[data-ax="next"]'));
+await confirmar();
+t('prime() se llamó UNA vez y DENTRO del clic (sincrónico)', primes.length===1 && primes[0]===true, JSON.stringify(primes));
 t('se creó la reserva y la vista es confirm', creadas.length===1 && A().view==='confirm');
-t('la pantalla trae la escena del avión y ya no el círculo con chulo', !!ui().querySelector('.axc-scene') && !ui().querySelector('.ax-success'));
-t('título «¡Traslado confirmado!» con entrada animada', ui().querySelector('h1.ax-big')?.textContent==='¡Traslado confirmado!' && ui().querySelector('h1.ax-big').classList.contains('axc-in'));
-t('el lead NO promete aviso ni notificación', !/avis|notific/i.test(ui().querySelector('.ax-lead').textContent));
-t('compartido: sin piel vip, casa a la izquierda', !ui().querySelector('.axc.vip') && ui().querySelector('.axc-from')?.dataset.what==='home');
-t('la línea de tiempo se conserva', !!ui().querySelector('.ax-timeline') && /Traslado solicitado/.test(txt()));
-t('el botón «Ver mis viajes» sigue', !!ui().querySelector('[data-ax="home"]'));
+t('la pantalla trae la escena del avión y ya no el círculo con chulo', !!scope().querySelector('.axc-scene') && !scope().querySelector(RX?'.rx-check':'.ax-success'));
+if (RX) t('la escena va en la pantalla completa «booked» (.rx-booked .axc)', !!ui().querySelector('.rx-full[data-scr="booked"] .rx-booked .axc'));
+t(RX?'título «¡Traslado pedido!» con entrada animada':'título «¡Traslado confirmado!» con entrada animada', H1()?.textContent===(RX?'¡Traslado pedido!':'¡Traslado confirmado!') && H1().classList.contains('axc-in'), H1()?.textContent);
+t('el lead NO promete aviso ni notificación', !/avis|notific/i.test(LEAD().textContent));
+t('compartido: sin piel vip, casa a la izquierda', !scope().querySelector('.axc.vip') && scope().querySelector('.axc-from')?.dataset.what==='home');
+if (RX) t('en lugar de la línea de tiempo, el pase del viaje (si Inicio lo da)', !(window.AuxRxInicio && typeof window.AuxRxInicio.passHTML==='function') || !!scope().querySelector('.rx-booked-pass'));
+else t('la línea de tiempo se conserva', !!ui().querySelector('.ax-timeline') && /Traslado solicitado/.test(txt()));
+t(RX?'el botón «Listo» (data-ax="home")':'el botón «Ver mis viajes» sigue', !!scope().querySelector('[data-ax="home"]'));
 t('el clic de confirmar desbloqueó el audio (prime dentro del gesto)', resumed>=1);
 
 console.log('\n── flujo completo: pedir un privado ──');
 window.state.settings={...CON_PRIVADO};
 await nuevo();
-click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]'); await wait();
+await tipo('sal'); await wait();
 set('date','2026-12-20'); set('time','05:10'); click('[data-ax="next"]'); await wait(60);
 t('se cae en el nivel', window.Auxiliar.stepKind()==='nivel');
 click('[data-ax="lvl"][data-v="private"]'); await wait();
 t('quedó el privado elegido', A().form.level==='private');
 click('[data-ax="next"]'); await wait();
 t('en revisar (4/4)', /4\/4/.test(txt()));
-creadas.length=0;
-click('[data-ax="next"]'); await wait(120);
+creadas.length=0; primes.length=0;
+await confirmar();
+t('prime() dentro del clic también en el privado', primes.length===1 && primes[0]===true);
 t('se creó la reserva privada', creadas.length===1 && creadas[0].level==='private' && A().view==='confirm');
-t('la escena va en el panel .axc.vip', !!ui().querySelector('.axc.vip .axc-scene'));
-t('título «Solicitud enviada» (no «confirmado»: lo aprueba coordinación)', ui().querySelector('h1.ax-big')?.textContent==='Solicitud enviada' && !/confirmado/i.test(ui().querySelector('h1.ax-big').textContent));
-t('el lead es honesto: la respuesta vive en el traslado y NO promete aviso', /la respuesta la verás en tu traslado/.test(ui().querySelector('.ax-lead').textContent) && !/avis|notific/i.test(ui().querySelector('.ax-lead').textContent));
-t('la línea de tiempo también se conserva en el privado', !!ui().querySelector('.ax-timeline'));
+t('la escena va en el panel .axc.vip', !!scope().querySelector('.axc.vip .axc-scene'));
+t('título «Solicitud enviada» (no «confirmado»: lo aprueba coordinación)', H1()?.textContent==='Solicitud enviada' && !/confirmado/i.test(H1().textContent));
+t('el lead es honesto: la respuesta vive en el traslado y NO promete aviso', /la respuesta la verás en tu traslado/.test(LEAD().textContent) && !/avis|notific/i.test(LEAD().textContent));
+if (!RX) t('la línea de tiempo también se conserva en el privado', !!ui().querySelector('.ax-timeline'));
 window.state.settings={...SIN_PRIVADO};
 
 console.log('\n── llegada: la escena se voltea ──');
 await nuevo();
-click('[data-ax="type"][data-type="lle"]'); click('[data-ax="next"]'); await wait();
+await tipo('lle'); await wait();
 set('flightNum','AV-9412'); set('date','2026-12-20'); set('time','21:10'); click('[data-ax="next"]'); await wait();
 click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia desde el 17-sep)
 
 creadas.length=0;
-click('[data-ax="next"]'); await wait(120);
-t('confirmada una llegada: avión a la izquierda, casa a la derecha', A().view==='confirm' && ui().querySelector('.axc-from')?.dataset.what==='plane' && ui().querySelector('.axc-to')?.dataset.what==='home');
+await confirmar();
+t('confirmada una llegada: avión a la izquierda, casa a la derecha', A().view==='confirm' && scope().querySelector('.axc-from')?.dataset.what==='plane' && scope().querySelector('.axc-to')?.dataset.what==='home');
 
 console.log('\n── registro: index.html, sw.js y el CSS ──');
 const idx=readFileSync(APP+'index.html','utf8'), sw=readFileSync(APP+'sw.js','utf8'), css=readFileSync(APP+'rc-auxiliar.css','utf8');

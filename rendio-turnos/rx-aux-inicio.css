@@ -1,4 +1,76 @@
-/* rx-aux-inicio.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P3. Contenido: Inicio, Viajes y Avisos. Selectores #auxiliar-ui.rx-phone …
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* rx-aux-inicio.css — P3 · Inicio, Viajes y Avisos (rediseño del auxiliar, 27-sep-2026).
+   Solo lo que el diseño (rx-home.jsx) NO trae y la app real necesita. Todo lo
+   demás (rx-home-h, rx-bell, rx-pass*, rx-live*, rx-qa, rx-hist, rx-nt…) sale
+   idéntico de rx-auxiliar.css (generado, nunca se edita).
+   Aquí NO se declara ninguna animación ni transición nueva: las entradas son las
+   .rx-in / .rx-strip del diseño (ya cubiertas por .rx-noanim / .rx-anim de P1).
+   Todo acotado a #auxiliar-ui.rx-phone: con la bandera apagada no aplica. */
+
+/* Accesos rápidos: el diseño trae siempre 4; la app muestra solo los que
+   aplican (Repetir, Cambió mi vuelo, Coordinación, Compartir) → --n. */
+#auxiliar-ui.rx-phone .rx-qa[style*="--n"] { grid-template-columns: repeat(var(--n), 1fr); }
+
+/* Bloque principal de Inicio: con datos reales puede haber a la vez viaje en
+   curso, calificar y el próximo; el diseño traía uno solo. */
+#auxiliar-ui.rx-phone .rx-home-main { display: flex; flex-direction: column; gap: 14px; }
+#auxiliar-ui.rx-phone .rx-home-main:empty { display: none; }
+
+/* «Ver tus N traslados» (va a Viajes). */
+#auxiliar-ui.rx-phone .rx-home-more {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  margin-top: -4px; padding: 8px 12px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 14px; font-weight: 650; color: var(--rx-acc);
+}
+
+/* Franjas que no son botón (configuración, suspensión). */
+#auxiliar-ui.rx-phone div.rx-strip { cursor: default; }
+#auxiliar-ui.rx-phone .rx-strip > svg { flex-shrink: 0; }
+#auxiliar-ui.rx-phone .rx-strip span span { line-height: 1.4; }
+/* Notificaciones del teléfono: oculta hasta saber que faltan. */
+#auxiliar-ui.rx-phone .rx-home-push.is-off { display: none; }
+
+/* RxPass: la nota honesta bajo la hora grande (D7/D21). */
+#auxiliar-ui.rx-phone .rx-pass-note {
+  display: flex; align-items: center; gap: 6px; margin-top: 8px;
+  font-size: 12.5px; line-height: 1.35; color: var(--rx-on2);
+}
+#auxiliar-ui.rx-phone .rx-pass-note svg { flex-shrink: 0; }
+/* Conductor asignado sin datos todavía: el círculo lleva el carro, no el giro. */
+#auxiliar-ui.rx-phone .rx-pass-wait svg { color: var(--rx-on2); }
+/* Código de encuentro, pequeño, en el pie del pase. */
+#auxiliar-ui.rx-phone .rx-pass-code {
+  display: inline-flex; align-items: baseline; gap: 6px; flex-shrink: 0;
+  font-size: 11.5px; font-weight: 600; color: var(--rx-on2);
+}
+#auxiliar-ui.rx-phone .rx-pass-code b {
+  font-size: 15px; letter-spacing: 2.5px; color: var(--rx-on); font-variant-numeric: tabular-nums;
+}
+/* passHTML(t, {scale}). */
+#auxiliar-ui.rx-phone .rx-pass.rx-pass-scaled { transform: scale(var(--rx-pass-scale, 1)); transform-origin: top center; }
+
+/* RxLive: mapa REAL (Leaflet) en lugar del mapa dibujado del diseño. Sin
+   Leaflet queda el fondo de mapa con un pin, sin carro. El mapa no recibe
+   toques: el toque es del botón (abre el viaje). */
+#auxiliar-ui.rx-phone .rx-live-lf {
+  position: relative; width: 100%; height: 100%; overflow: hidden;
+  background: var(--rx-map-bg); display: flex; align-items: center; justify-content: center;
+  color: var(--r-text-3); pointer-events: none;
+}
+#auxiliar-ui.rx-phone .rx-live-lf.on { display: block; }
+#auxiliar-ui.rx-phone .rx-live-lf .leaflet-control-container { display: none; }
+#auxiliar-ui.rx-phone .rx-live-wait { font-size: 13px; }
+
+/* Historial: toda la fila abre el viaje. */
+#auxiliar-ui.rx-phone .rx-hist { cursor: pointer; color: var(--r-text); }
+#auxiliar-ui.rx-phone .rx-hist-chip {
+  flex-shrink: 0; padding: 4px 10px; border-radius: 100px;
+  font-size: 12px; font-weight: 650; white-space: nowrap;
+  background: var(--r-surface-2); color: var(--r-text-2);
+}
+#auxiliar-ui.rx-phone .rx-hist-chip.t-warn { background: var(--r-warn-soft); color: var(--rx-warn); }
+#auxiliar-ui.rx-phone .rx-hist-chip.t-ok { background: var(--r-success-soft); color: var(--rx-ok); }
+#auxiliar-ui.rx-phone .rx-hist-rate {
+  flex-shrink: 0; height: 32px; padding: 0 12px; border: 0; border-radius: 100px; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 650;
+  background: var(--r-accent-soft); color: var(--rx-acc);
+}

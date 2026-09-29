@@ -1,4 +1,159 @@
-/* rx-aux-viaje.css — STUB creado por P0 · Cimientos (rediseño del auxiliar, 27-sep-2026).
-   Lo llena: P4. Contenido: Viaje en vivo y calificar. Selectores #auxiliar-ui.rx-phone …
-   Registrado en index.html (después de rc-auxiliar.css, en el orden del plan
-   final §5) y en APP_SHELL (sw.js). Vacío no aplica nada. */
+/* rx-aux-viaje.css — P4 · Viaje en vivo y calificar (rediseño del auxiliar, 27-sep-2026).
+   Solo lo que el diseño (rx-trip.jsx + rx3.css, portados idénticos en
+   rx-auxiliar.css) NO trae: el Leaflet real en el hueco del mapa, los ids del
+   HUD que llena auxiliar.js (#ax-eta, #ax-count, #ax-wait, #ax-track-fresh,
+   #ax-onboard-badge, #ax-late-wrap), el resaltado del código al «llegó», el globo
+   de no leídos, el pie con el botón rojo, el chat con el conductor y las hojas
+   de la alarma y de cancelar. Todo acotado a #auxiliar-ui.rx-phone (sin la
+   bandera no aplica nada).
+   Animaciones: NINGUNA nueva. El panel del chat usa la entrada de una capa de la
+   pila (rxIn .34s, la misma de .rx-layer); por eso lleva su entrada en
+   .rx-noanim y en reduced-motion, como pide el contrato de P1. */
+
+/* ── Estructura ─────────────────────────────────────────────────────────────── */
+/* Los bloques que patch() cambia van envueltos en .rx-blk sin caja propia: sus
+   hijos siguen siendo ítems del flex de la hoja (mismo gap del diseño). */
+#auxiliar-ui.rx-phone .rx-trip .rx-blk { display: contents; }
+#auxiliar-ui.rx-phone .rx-trip-sheet > .rx-blk > *,
+#auxiliar-ui.rx-phone .rx-trip-hud > * { flex-shrink: 0; }
+#auxiliar-ui.rx-phone .rx-trip .hidden { display: none; }
+/* La hoja del viaje sobre el mapa (el mapa de Leaflet trae sus propios z-index). */
+#auxiliar-ui.rx-phone .rx-trip .rx-trip-sheet { z-index: 1; }
+#auxiliar-ui.rx-phone .rx-trip .rx-trip-top { z-index: 3; }
+
+/* ── Mapa ───────────────────────────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-trip-map { z-index: 0; overflow: hidden; background: var(--r-surface-2); }
+#auxiliar-ui.rx-phone .rx-trip-map #ax-track-map { position: absolute; inset: 0; background: var(--r-surface-2); }
+/* «Sin ubicación todavía»: solo mientras no haya carro en el mapa (D14). Sin
+   :has() no se muestra (la frescura del HUD ya dice «Esperando señal…»). */
+#auxiliar-ui.rx-phone .rx-trip-nopos {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2;
+  display: none; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 9px 14px; border-radius: 100px; background: var(--rx-glass); backdrop-filter: blur(12px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .1); font-size: 13px; font-weight: 600; color: var(--r-text-2);
+  pointer-events: none;
+}
+@supports selector(:has(*)) {
+  #auxiliar-ui.rx-phone .rx-trip-nopos { display: flex; }
+  #auxiliar-ui.rx-phone .rx-trip-map:has(.rx-lf-car) .rx-trip-nopos { display: none; }
+}
+/* Un hueco del tamaño de un botón cuando no hay nada que compartir: la barra
+   superior queda igual de equilibrada. */
+#auxiliar-ui.rx-phone .rx-trip-top .rx-ib-ph { width: 44px; height: 44px; }
+
+/* ── Hora grande y HUD ──────────────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-trip-big b.sm { font-size: 30px; letter-spacing: -1px; }
+#auxiliar-ui.rx-phone .rx-trip-hud { display: contents; }
+#auxiliar-ui.rx-phone .rx-trip #ax-eta { font-size: 14.5px; color: var(--r-text-2); line-height: 1.4; }
+#auxiliar-ui.rx-phone .rx-trip #ax-eta b { color: var(--r-text); font-variant-numeric: tabular-nums; }
+#auxiliar-ui.rx-phone .rx-trip #ax-count {
+  align-self: flex-start; font-size: 12.5px; font-weight: 650; color: var(--r-text-2);
+  padding: 5px 10px; border-radius: 100px; background: var(--r-surface-2);
+}
+#auxiliar-ui.rx-phone .rx-trip #ax-track-fresh { font-size: 12px; color: var(--r-text-3); }
+#auxiliar-ui.rx-phone .rx-trip #ax-track-fresh.stale { color: var(--rx-warn); }
+#auxiliar-ui.rx-phone .rx-trip #ax-track-fresh:empty,
+#auxiliar-ui.rx-phone .rx-trip #ax-onboard-badge:empty,
+#auxiliar-ui.rx-phone .rx-trip #ax-late-wrap:empty { display: none; }
+/* La insignia de «a bordo» la llena el HUD en cada tic; en «en camino» no
+   aplica (diría a dónde va el carro después de recogerme). */
+#auxiliar-ui.rx-phone .rx-trip[data-st="onway"] #ax-onboard-badge { display: none; }
+#auxiliar-ui.rx-phone .rx-trip #ax-onboard-badge {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 16px;
+  background: var(--r-success-soft); color: var(--rx-ok); font-size: 14px; font-weight: 650; line-height: 1.35;
+}
+#auxiliar-ui.rx-phone .rx-trip #ax-onboard-badge.wait { background: var(--r-surface-2); color: var(--r-text); }
+#auxiliar-ui.rx-phone .rx-trip #ax-onboard-badge svg,
+#auxiliar-ui.rx-phone .rx-trip #ax-late-wrap svg {
+  width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* Espera en el punto (reloj real de auxiliar.js; reescribe la clase a
+   'ax-wait' / 'ax-wait over', por eso va por id). */
+#auxiliar-ui.rx-phone .rx-trip #ax-wait {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 16px; border-radius: 18px; background: var(--rx-pass); color: var(--rx-on);
+}
+#auxiliar-ui.rx-phone .rx-trip #ax-wait.hidden { display: none; }
+#auxiliar-ui.rx-phone .rx-trip #ax-wait span { font-size: 14px; color: var(--rx-on2); }
+#auxiliar-ui.rx-phone .rx-trip #ax-wait b { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#auxiliar-ui.rx-phone .rx-trip #ax-wait.over { background: var(--r-error-soft); color: var(--rx-err); }
+#auxiliar-ui.rx-phone .rx-trip #ax-wait.over span { color: var(--rx-err); }
+#auxiliar-ui.rx-phone .rx-trip #ax-wait.over b { font-size: 15px; }
+/* «Va tarde» / margen contra la presentación (marcado de auxiliar.js). */
+#auxiliar-ui.rx-phone .rx-trip #ax-late-wrap .ax-late {
+  display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 12px 14px; border-radius: 16px;
+  border: 0; font-size: 14px; line-height: 1.45; font-weight: 600;
+  background: var(--r-surface-2); color: var(--r-text);
+}
+#auxiliar-ui.rx-phone .rx-trip #ax-late-wrap .ax-late svg { margin-top: 2px; }
+#auxiliar-ui.rx-phone .rx-trip #ax-late-wrap .ax-late.ok { background: var(--r-success-soft); color: var(--rx-ok); }
+/* Niveles de auxLateness (auxiliar.js): ok · margin · tight · miss. */
+#auxiliar-ui.rx-phone .rx-trip #ax-late-wrap .ax-late.margin { background: var(--r-accent-soft); color: var(--rx-warn); }
+#auxiliar-ui.rx-phone .rx-trip #ax-late-wrap .ax-late.tight { background: var(--r-error-soft); color: var(--rx-warn); }
+#auxiliar-ui.rx-phone .rx-trip #ax-late-wrap .ax-late.late,
+#auxiliar-ui.rx-phone .rx-trip #ax-late-wrap .ax-late.miss { background: var(--r-error-soft); color: var(--rx-err); }
+#auxiliar-ui.rx-phone .rx-trip #ax-late-wrap .ax-late-sub { display: block; font-size: 12.5px; font-weight: 500; opacity: .85; margin-top: 2px; }
+
+/* ── Código de encuentro: resaltado cuando el conductor llegó ───────────────── */
+#auxiliar-ui.rx-phone .rx-trip #ax-meet.is-arrived { box-shadow: 0 0 0 3px var(--r-accent); }
+#auxiliar-ui.rx-phone .rx-trip #ax-meet.is-arrived em { color: var(--rx-on); font-weight: 650; }
+
+/* ── Acciones del conductor: globo de no leídos ─────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-trip .rx-drv-acts button { position: relative; }
+#auxiliar-ui.rx-phone .rx-trip .rx-trip-unread {
+  position: absolute; top: 7px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: var(--r-accent); color: #fff; font-style: normal; font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+/* rx-note con texto en un solo ítem (el <b> dentro no se parte del texto). */
+#auxiliar-ui.rx-phone .rx-trip .rx-note > span { flex: 1; min-width: 0; }
+
+/* ── Pie: confirmar + botón rojo ────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-trip-cta { display: flex; align-items: center; gap: 10px; }
+#auxiliar-ui.rx-phone .rx-trip-cta > .rx-btn,
+#auxiliar-ui.rx-phone .rx-trip-cta > .rx-note { flex: 1; min-width: 0; }
+#auxiliar-ui.rx-phone .rx-trip-alarm {
+  width: 54px; height: 54px; border-radius: 16px; border: 0; flex-shrink: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--r-error-soft); color: var(--rx-err);
+}
+#auxiliar-ui.rx-phone .rx-btn.rx-trip-alarm-w { background: var(--r-error-soft); color: var(--rx-err); }
+
+/* ── Chat con el conductor (#ax-chat) ───────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-trip-chat {
+  position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; background: var(--r-bg);
+  animation: rxIn .34s cubic-bezier(.2, .8, .2, 1);
+}
+#auxiliar-ui.rx-phone .rx-trip-chat.hidden { display: none; }
+#auxiliar-ui.rx-phone .rx-noanim .rx-trip-chat,
+#auxiliar-ui.rx-phone .rx-trip-chat.rx-noanim { animation: none; }
+#auxiliar-ui.rx-phone .rx-trip-chat .rx-body { padding-bottom: 14px; }
+#auxiliar-ui.rx-phone .rx-trip-chat .rx-bub-x { white-space: pre-wrap; overflow-wrap: anywhere; }
+#auxiliar-ui.rx-phone .rx-trip-chat .rx-bub-t { display: block; font-style: normal; font-size: 11px; opacity: .7; margin-top: 3px; }
+#auxiliar-ui.rx-phone .rx-trip-chat .rx-bub.out .rx-bub-t { text-align: right; }
+#auxiliar-ui.rx-phone .rx-trip-chat-empty { padding: 40px 12px; }
+#auxiliar-ui.rx-phone .rx-trip-chat-empty span { font-size: 13.5px; line-height: 1.5; }
+#auxiliar-ui.rx-phone .rx-trip-chat-foot {
+  display: flex; align-items: center; gap: 8px; padding: 10px 16px calc(12px + var(--rx-bot, 0px));
+  border-top: 1px solid var(--r-border); background: var(--r-card);
+}
+#auxiliar-ui.rx-phone .rx-trip-chat-foot .rx-input { flex: 1; height: 48px; }
+#auxiliar-ui.rx-phone .rx-trip-send {
+  width: 48px; height: 48px; border-radius: 16px; border: 0; flex-shrink: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; background: var(--r-accent); color: #fff;
+}
+
+/* ── Hojas: botón rojo y cancelar ───────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-trip-sh .rx-trip-opts { display: flex; flex-direction: column; gap: 8px; }
+#auxiliar-ui.rx-phone .rx-trip-sh .rx-input.rx-trip-ta { height: auto; min-height: 56px; padding: 12px 16px; align-items: flex-start; }
+#auxiliar-ui.rx-phone .rx-trip-sh .rx-trip-ta textarea {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: none; resize: none; min-height: 44px;
+  font: inherit; font-size: 15.5px; line-height: 1.45; color: var(--r-text);
+}
+#auxiliar-ui.rx-phone .rx-trip-sh .rx-input input { font-size: 15.5px; }
+#auxiliar-ui.rx-phone .rx-trip-sh .rx-btn.danger { margin-top: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  #auxiliar-ui.rx-phone .rx-trip-chat { animation-duration: 1ms; animation-delay: 0s; }
+}
