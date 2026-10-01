@@ -1,5 +1,7 @@
 // api-aux.js — la API del rediseño del auxiliar (entrega del 27-sep-2026).
-// Paquete P9 · Base de datos y API. Habla con las migraciones 0086–0089.
+// Paquete P9 · Base de datos y API. Habla con las migraciones 0086–0089 (y 0093:
+// orden de recogida y la marca de tierra en auxiliar_my_trips; vuelo vacío en
+// una llegada de tierra en auxiliar_change_flight).
 //
 //   window.ApiAux = {
 //     listMyTrips, getMyStats, saveMyPrefs, changeFlight,
@@ -79,12 +81,21 @@
     return ((w[0] || '')[0] || '').toUpperCase() + ((w[1] || '')[0] || '').toUpperCase();
   }
   const num = (v) => (v == null || v === '' || isNaN(Number(v))) ? null : Number(v);
+  // Mi lugar en el carro (0093): «2/3». Solo con la ruta publicada y con los dos
+  // números enteros y coherentes (1 ≤ pos ≤ total); si no, [null, null].
+  function pickupOrder(r) {
+    if (!r || r.published !== true) return [null, null];
+    const p = num(r.pickup_pos), n = num(r.pickup_total);
+    if (!Number.isInteger(p) || !Number.isInteger(n) || p < 1 || n < p) return [null, null];
+    return [p, n];
+  }
 
   function mapTrip(r) {
     if (!r || !r.id) return null;
     const d = r.driver || null;
     const v = r.vehicle || null;
     const plate = (v && v.plate) || '';
+    const [pickupPos, pickupTotal] = pickupOrder(r);
     return {
       id: r.id,
       type: r.direction === 'airport_to_home' ? 'lle' : 'sal',
@@ -108,6 +119,11 @@
       published: r.published === true,
       pickupAt: r.published ? (r.pickup_at || null) : null,
       meetCode: r.published ? (r.meet_code || '') : '',
+      // Orden en el carro (0093), solo publicado: pickupPos de pickupTotal.
+      pickupPos,
+      pickupTotal,
+      // «Solo por tierra» (0092/0093): operación del aeropuerto sin vuelo.
+      groundOps: r.ground_ops === true,
       status: uiStatus(r.raw_status, r.cancelled_at),
       rawStatus: r.raw_status || null,
       driver: d ? {
@@ -185,6 +201,8 @@
   }
 
   // «Cambió mi vuelo». date 'YYYY-MM-DD' y time 'HH:MM' en hora de Bogotá.
+  // flight '' = en una salida se conserva el que tenía; en una llegada de
+  // tierra (groundOps) no hay vuelo (0093; con 0089 sola la RPC lo rechaza).
   // → { mode:'updated'|'needs_ops', incidentId?, requiredAt?, unchanged? }
   async function changeFlight(reservationId, f) {
     if (!reservationId) throw new Error('Falta el traslado');

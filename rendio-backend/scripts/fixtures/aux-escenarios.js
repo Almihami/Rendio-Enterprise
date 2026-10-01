@@ -101,6 +101,8 @@
       address: 'El Olivar · Rionegro', lat: RES.olivar.latitude, lng: RES.olivar.longitude,
       notes: 'Vuelo AV9412.', notesUser: '',
       published: false, pickupAt: null, meetCode: '',
+      // 0093: el orden en el carro (solo publicado) y la marca de tierra.
+      pickupPos: null, pickupTotal: null, groundOps: false,
       status: 'pending', rawStatus: 'requested',
       driver: null, vehicle: null,
       bags: null, quiet: false, meetingPoint: '',
@@ -271,6 +273,27 @@
           { id: 'esc-m2', role: 'admin', mine: false, body: 'Listo, movemos tu recogida y te confirmamos.', at: haceMin(20), read: false, readAt: null, reservation: null },
         ],
       };
+    },
+
+    // ── Pedido del 29-sep: orden en el carro y traslados de tierra ──
+    'ruta-2-de-3': () => {
+      const t = T(pub({ date: dia(1), time: '05:10', status: 'assigned', rawStatus: 'assigned', pickupAt: iso(dia(1), '03:48'), bags: 1, pickupPos: 2, pickupTotal: 3 }));
+      return { info: 'Ruta publicada: eres la 2.ª recogida de 3 (la tarjeta dice «Recogida 2/3»)', trips: [t], principal: t.id, track: { [t.id]: I(t, 'assigned') } };
+    },
+
+    'ruta-sola': () => {
+      const t = T(pub({ date: dia(1), time: '05:10', status: 'assigned', rawStatus: 'assigned', pickupAt: iso(dia(1), '04:05'), bags: 2, pickupPos: 1, pickupTotal: 1 }));
+      return { info: 'Ruta publicada y vas sola en el carro: «Recogida 1/1»', trips: [t], principal: t.id, track: { [t.id]: I(t, 'assigned', { stop_order: 1, total_stops: 1, remaining_before: 0, remaining_after: 0, next_stops: [{ order: 1, mine: true, lat: t.lat, lng: t.lng, sector: null }] }) } };
+    },
+
+    'llegada-parada': () => {
+      const t = T(pub({ type: 'lle', flight: 'LA4021', date: dia(1), time: '21:40', status: 'assigned', rawStatus: 'driver_assigned', pickupAt: iso(dia(1), '22:05'), pickupPos: 3, pickupTotal: 3 }));
+      return { info: 'Llegada con ruta publicada: te dejan de 3.ª de 3 («Parada 3/3»)', trips: [t], principal: t.id, track: { [t.id]: I(t, 'driver_assigned', { stop_order: 3, total_stops: 3, remaining_before: 2, remaining_after: 0 }) } };
+    },
+
+    'tierra-llegada': () => {
+      const t = T({ type: 'lle', groundOps: true, flight: '', notes: '', date: dia(1), time: '14:00', bags: 1 });
+      return { info: 'Operación de tierra (sin vuelo): regreso a casa; la hora es la de salir del aeropuerto', trips: [t], principal: t.id, track: { [t.id]: SIN_RUTA(t) } };
     },
 
     'cobro-en-blanco': () => ({ info: 'Sin mensualidad registrada: «Todavía no tienes mensualidad registrada» (nunca una cifra inventada)', trips: [] }),

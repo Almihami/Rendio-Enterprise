@@ -47,6 +47,19 @@
 }
 /* passHTML(t, {scale}). */
 #auxiliar-ui.rx-phone .rx-pass.rx-pass-scaled { transform: scale(var(--rx-pass-scale, 1)); transform-origin: top center; }
+/* MDE con «JMC» y debajo «Rionegro» (pedido 29-sep). Un lado queda de dos
+   líneas y el otro de una: los dos puntos se alinean ARRIBA (CASA y MDE a la
+   misma altura; a la izquierda el de la izquierda, a la derecha el .r) y el
+   avión se queda donde lo pone el diseño, centrado contra un punto de UNA línea
+   (28 px del código + 4 px + una línea de 12 px = 32 px + 1lh). Sin la unidad
+   lh (navegadores viejos) el avión queda arriba, a la altura del código. La
+   tarjeta crece solo lo de esa segunda línea. */
+#auxiliar-ui.rx-phone .rx-pass-main { align-items: start; }
+#auxiliar-ui.rx-phone .rx-pass-mid { font-size: 12px; height: 32px; height: calc(32px + 1lh); }
+#auxiliar-ui.rx-phone .rx-pass-pt span + span { margin-top: 1px; }
+/* Orden en el carro («Recogida 2/3»): última celda de la grilla, en la fila de
+   Maletas y pegada a la derecha. */
+#auxiliar-ui.rx-phone .rx-pass-grid .rx-pass-ord { grid-column: -2 / -1; align-items: flex-end; text-align: right; }
 
 /* RxLive: mapa REAL (Leaflet) en lugar del mapa dibujado del diseño. Sin
    Leaflet queda el fondo de mapa con un pin, sin carro. El mapa no recibe

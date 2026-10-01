@@ -30,8 +30,20 @@
 // (.rx-body.rx-anim), como el cambio de rama de React; repintar la misma
 // pantalla no anima (el shell pone .rx-noanim).
 //
-// Contrato: window.AuxRxVuelo = { candidates(), open(resId), predict(t, f), html() }.
-// Registra AuxShell 'flight' y las acciones data-rx fv-pick, fv-choose, fv-send.
+// Pedido del 29-sep-2026 (hoja «Pedido» del viaje): la misma pantalla se abre
+// ya sobre UN traslado y con el título según el tipo (props.mode):
+//   · salida → «Cambio de presentación» (la hora de estar en MDE);
+//   · llegada → «Cambio de hora de llegada» (la de aterrizaje y el vuelo);
+//   · llegada de tierra (groundOps, sin vuelo) → «Cambio de hora» (la hora a la
+//     que sale del aeropuerto), sin campo de vuelo.
+// Sin modo (la entrada de Inicio) sigue siendo «Cambió mi vuelo». Con modo no
+// se ofrece «Es otro traslado»: se abrió desde ese traslado. En tierra (las dos
+// direcciones) no se pide vuelo; la RPC de 0093 acepta la llegada sin vuelo.
+//
+// Contrato: window.AuxRxVuelo = { candidates(), open(resId, {mode}), predict(t, f),
+//   html(), modeOf(t), changeOf(t) → {mode, label, icon} }.
+// Registra AuxShell 'flight' y las acciones data-rx fv-pick, fv-choose, fv-send y
+// fv-open (data-id, data-mode).
 (function () {
   'use strict';
 
@@ -126,11 +138,31 @@
     return !!(t && (t.published === true || t.pickupAt));
   }
   const isPrivate = (t) => !!t && t.level === 'private' && (t.privateStatus === 'requested' || t.privateStatus === 'approved');
+  // «Solo por tierra» (0092/0093): operación del aeropuerto sin vuelo.
+  const isGround = (t) => !!t && t.groundOps === true;
+
+  // ── Modos (la entrada desde la hoja del viaje) ───────────────────────────
+  const MODES = {
+    presentacion: { label: 'Cambio de presentación', icon: 'Clock' },
+    llegada: { label: 'Cambio de hora de llegada', icon: 'Plane' },
+    hora: { label: 'Cambio de hora', icon: 'Clock' },
+  };
+  const LEGACY_TITLE = 'Cambió mi vuelo';
+  const isMode = (m) => typeof m === 'string' && Object.prototype.hasOwnProperty.call(MODES, m);
+  function modeOf(t) {
+    if (!t) return null;
+    return isLle(t) ? (isGround(t) ? 'hora' : 'llegada') : 'presentacion';
+  }
+  function changeOf(t) {
+    const m = modeOf(t);
+    return m ? { mode: m, label: MODES[m].label, icon: MODES[m].icon } : null;
+  }
 
   // ── Estado del módulo ────────────────────────────────────────────────────
   // phase: 'form' | 'pick' (varios, falta elegir) | 'none' (ninguno) |
   //        'blocked' (el que llegó ya empezó o se canceló) | 'done'
-  const fv = { key: null, el: null, phase: 'none', tripId: null, flight: '', date: '', time: '', sending: false, result: null, bound: false };
+  // mode: null (Inicio: «Cambió mi vuelo») | 'presentacion' | 'llegada' | 'hora'
+  const fv = { key: null, el: null, phase: 'none', mode: null, tripId: null, flight: '', date: '', time: '', sending: false, result: null, bound: false };
   const curTrip = () => (fv.tripId ? trips().find(t => t && t.id === fv.tripId) || null : null);
 
   function choose(t) {
@@ -144,6 +176,7 @@
   function start(props) {
     const id = props && props.reservationId;
     fv.sending = false; fv.result = null;
+    fv.mode = id && props && isMode(props.mode) ? props.mode : null;
     if (id) {
       const t = trips().find(x => x && x.id === id);
       if (t && isCandidate(t)) { choose(t); return; }
@@ -160,8 +193,8 @@
     const nf = normFlight(fv.flight), of = normFlight(t && t.flight);
     const timeChanged = !!t && (fv.date !== (t.date || '') || fv.time !== hmOnly(t.time));
     // Salida: vacío = se conserva. Llegada: vaciarlo también es un cambio (y la
-    // validación lo frena con su texto).
-    const flightChanged = !!t && (nf ? nf !== of : (isLle(t) && !!of));
+    // validación lo frena con su texto). En tierra no hay campo de vuelo.
+    const flightChanged = !!t && !isGround(t) && (nf ? nf !== of : (isLle(t) && !!of));
     return { timeChanged, flightChanged, any: timeChanged || flightChanged };
   }
   // f = {date, time} opcional (por defecto, lo escrito). → 'updated' | 'needs_ops'
@@ -176,8 +209,8 @@
     return (isPublished(t) || isPrivate(t) || (nt != null && nt < lim) || (ot != null && ot < lim)) ? 'needs_ops' : 'updated';
   }
   function validate(t) {
-    const nf = normFlight(fv.flight);
-    if (isLle(t) && !nf) return 'Escribe el número de vuelo en el que llegas';
+    const nf = isGround(t) ? '' : normFlight(fv.flight);
+    if (isLle(t) && !isGround(t) && !nf) return 'Escribe el número de vuelo en el que llegas';
     if (nf && !FLIGHT_RE.test(nf)) return 'Ese número de vuelo no se entiende (ej.: AV9412)';
     const nt = tsOf(fv.date, fv.time);
     if (nt == null) return 'Elige el día y la hora';
@@ -187,11 +220,19 @@
   }
 
   // ── Marcado ──────────────────────────────────────────────────────────────
+  // Título: el del modo (el tipo del traslado manda si ya se sabe cuál es);
+  // sin modo, el de siempre.
+  function titleOf() {
+    if (!fv.mode) return LEGACY_TITLE;
+    const m = MODES[modeOf(curTrip()) || fv.mode];
+    return m ? m.label : LEGACY_TITLE;
+  }
   function headHTML() {
     const u = UI();
-    if (u && u.head) return u.head({ title: 'Cambió mi vuelo' });
+    const title = titleOf();
+    if (u && u.head) return u.head({ title });
     return `<div class="rx-head"><div class="rx-head-row"><button type="button" class="rx-ib" data-rx="rx-pop" aria-label="Volver">${ic('ChevronLeft', 22)}</button>`
-      + '<div class="rx-head-c"><b>Cambió mi vuelo</b></div><div class="rx-head-r"></div></div></div>';
+      + `<div class="rx-head-c"><b>${esc(title)}</b></div><div class="rx-head-r"></div></div></div>`;
   }
   function btn(label, o) {
     const u = UI();
@@ -204,9 +245,10 @@
     const newT = hmOnly(fv.time) || '--:--';
     const dayChanged = !!(fv.date && t.date && fv.date !== t.date);
     const moved = dayChanged || (!!hmOnly(fv.time) && hmOnly(fv.time) !== hmOnly(t.time));
+    const ahora = isLle(t) ? (isGround(t) ? 'Ahora sales' : 'Ahora aterrizas') : 'Ahora, en MDE';
     return `<div><span>Antes${dayChanged && shortDay(t.date) ? ' · ' + esc(shortDay(t.date)) : ''}</span><b${moved ? ' class="strike"' : ''}>${esc(oldT)}</b></div>`
       + ic('ArrowRight', 18)
-      + `<div><span>${isLle(t) ? 'Ahora aterrizas' : 'Ahora, en MDE'}${dayChanged && shortDay(fv.date) ? ' · ' + esc(shortDay(fv.date)) : ''}</span><b>${esc(newT)}</b></div>`;
+      + `<div><span>${ahora}${dayChanged && shortDay(fv.date) ? ' · ' + esc(shortDay(fv.date)) : ''}</span><b>${esc(newT)}</b></div>`;
   }
   function noteInner(t) {
     const ch = changes(t);
@@ -227,18 +269,22 @@
   }
   function formHTML(t) {
     const lle = isLle(t);
+    const ground = isGround(t);
     const today = bogDay(Date.now());
     const maxDay = bogDay(Date.now() + MAX_DAYS * 86400e3);
-    const others = candidates().some(x => x.id !== t.id);
+    // Abierta desde la hoja de UN traslado (con modo): no se ofrece otro.
+    const others = !fv.mode && candidates().some(x => x.id !== t.id);
     const which = (lle ? 'llegada' : 'salida') + (deDay(t.date) ? ' ' + deDay(t.date) : '');
-    return `<div class="rx-ob-h rx-in"><h1>¿Qué cambió?</h1><p>Tu <b>${esc(which)}</b>. Escribe el vuelo nuevo o confirma el mismo si solo cambió la hora.</p>`
+    const hint = ground ? 'Elige el día y la hora nuevos.' : 'Escribe el vuelo nuevo o confirma el mismo si solo cambió la hora.';
+    return `<div class="rx-ob-h rx-in"><h1>¿Qué cambió?</h1><p>Tu <b>${esc(which)}</b>. ${hint}</p>`
       + (others ? '<button type="button" class="rx-fv-other" data-rx="fv-pick">Es otro traslado</button>' : '')
       + '</div>'
-      + `<div class="rx-input rx-in" style="--d:1">${ic('Plane', 18)}<input type="text" data-rx-field="fv-flight" value="${esc(fv.flight)}"`
-      + ` placeholder="${lle ? 'Número de vuelo' : 'Número de vuelo (opcional)'}" aria-label="Número de vuelo" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>`
+      // En tierra no hay vuelo: sin el campo.
+      + (ground ? '' : `<div class="rx-input rx-in" style="--d:1">${ic('Plane', 18)}<input type="text" data-rx-field="fv-flight" value="${esc(fv.flight)}"`
+        + ` placeholder="${lle ? 'Número de vuelo' : 'Número de vuelo (opcional)'}" aria-label="Número de vuelo" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>`)
       + '<div class="rx-fv-when rx-in" style="--d:1">'
       + whenField('Día', 'fv-date', 'date', fv.date, ` min="${esc(today)}" max="${esc(maxDay)}"`, 'Calendar')
-      + whenField(lle ? 'Aterrizas' : 'Estar en MDE', 'fv-time', 'time', fv.time, '', 'Clock')
+      + whenField(lle ? (ground ? 'Sales del aeropuerto' : 'Aterrizas') : 'Estar en MDE', 'fv-time', 'time', fv.time, '', 'Clock')
       + '</div>'
       + `<div class="rx-flight-new rx-in" style="--d:2">${flightNewInner(t)}</div>`
       + `<div class="rx-note rx-in" style="--d:3" data-fv="note">${noteInner(t)}</div>`;
@@ -250,7 +296,8 @@
     const chk = u && u.check ? u.check(ops ? 'info' : 'ok') : '';
     const day = elDay(r.date);
     const nueva = r.timeChanged
-      ? (r.type === 'lle' ? 'Nueva hora de aterrizaje: ' : 'Nueva hora en MDE: ') + (day ? day + ' a las ' : '') + r.time
+      ? (r.type === 'lle' ? (r.ground ? 'Nueva hora de salida del aeropuerto: ' : 'Nueva hora de aterrizaje: ') : 'Nueva hora en MDE: ')
+        + (day ? day + ' a las ' : '') + r.time
         + (r.flight && r.flightChanged ? ' · vuelo ' + r.flight : '')
       : 'Vuelo nuevo: ' + (r.flight || '') + '. La hora sigue igual';
     const p = ops
@@ -326,7 +373,9 @@
   function optHTML(t, i) {
     const lle = isLle(t);
     const title = (lle ? 'Llegada' : 'Salida') + (shortDay(t.date) ? ' · ' + shortDay(t.date) : '');
-    const sub = (lle ? 'Aterrizas ' : 'Estar en MDE ') + (hmOnly(t.time) || '--:--') + (t.flight ? ' · ' + normFlight(t.flight) : '');
+    const ground = isGround(t);
+    const sub = (lle ? (ground ? 'Sales del aeropuerto ' : 'Aterrizas ') : 'Estar en MDE ') + (hmOnly(t.time) || '--:--')
+      + (t.flight && !ground ? ' · ' + normFlight(t.flight) : '');
     return `<button type="button" class="rx-opt rx-in${t.id === fv.tripId ? ' on' : ''}" style="--d:${i}" data-rx="fv-choose" data-id="${esc(t.id)}">`
       + `<span class="rx-opt-ic">${ic(lle ? 'Home' : 'Plane', 18)}</span>`
       + `<span class="rx-opt-tx"><b>${esc(cap(title))}</b><span>${esc(sub)}</span></span></button>`;
@@ -366,7 +415,8 @@
     if (bad) { toast(bad, 'AlertTriangle'); return; }
     const X = window.ApiAux;
     if (!X || typeof X.changeFlight !== 'function') { toast(NO_DISP, 'AlertTriangle'); return; }
-    const payload = { flight: normFlight(fv.flight), date: fv.date, time: hmOnly(fv.time) };
+    // En tierra no hay vuelo: va vacío (salida = se conserva; llegada = 0093).
+    const payload = { flight: isGround(t) ? '' : normFlight(fv.flight), date: fv.date, time: hmOnly(fv.time) };
     const key = fv.key;
     fv.sending = true;
     paintFoot();
@@ -387,7 +437,7 @@
           return;
         }
         fv.result = {
-          mode: ops ? 'needs_ops' : 'updated', type: t.type, date: payload.date, time: payload.time,
+          mode: ops ? 'needs_ops' : 'updated', type: t.type, ground: isGround(t), date: payload.date, time: payload.time,
           flight: payload.flight || normFlight(t.flight), timeChanged: ch.timeChanged, flightChanged: ch.flightChanged,
         };
         fv.phase = 'done';
@@ -440,11 +490,25 @@
     },
   };
 
+  // open(id) = la entrada de siempre («Cambió mi vuelo»); open(id, {mode}) = desde
+  // la hoja del viaje, ya sobre ese traslado y con el título del modo.
+  function open(reservationId, o) {
+    const s = SH();
+    if (!s || typeof s.push !== 'function') return null;
+    const mode = reservationId && o && isMode(o.mode) ? o.mode : null;
+    return s.push('flight', mode ? { reservationId, mode } : { reservationId: reservationId || null });
+  }
+  function openAct(el) {
+    open(el && el.getAttribute('data-id'), { mode: el && el.getAttribute('data-mode') });
+  }
+
   window.AuxRxVuelo = {
     candidates,
-    open: (reservationId) => { const s = SH(); return s && typeof s.push === 'function' ? s.push('flight', { reservationId: reservationId || null }) : null; },
+    open,
     predict,
     html: () => html(),
+    modeOf,
+    changeOf,
   };
 
   const sh = SH();
@@ -453,5 +517,6 @@
     sh.action('fv-pick', () => pickSheet());
     sh.action('fv-choose', chooseAct);
     sh.action('fv-send', sendAct);
+    sh.action('fv-open', openAct);
   }
 })();

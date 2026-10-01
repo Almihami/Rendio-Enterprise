@@ -34,9 +34,37 @@
 // Los cambios de datos con la pantalla arriba se aplican EN SU LUGAR (patch), así
 // corren las transiciones del anillo (.9 s) y de la barra (.7 s) como en React.
 //
+// VACACIONES (0094, pedido de la dueña del 29-sep): «debajo del aviso del pago,
+// donde dice pagar». La fila «¿Te vas de vacaciones?» (AuxRxUI.row en una
+// .rx-group) va debajo de la franja de Inicio y debajo de «Cómo pagar» en Pagos;
+// abre una hoja (rx-sh) con el cobro (este / el siguiente), desde–hasta, los
+// viajes (− N + de las maletas, AuxRxUI.stepCtl) y el cálculo en vivo
+// «N viajes × $V (sector S)» = $T antes de confirmar. Con vacaciones activas la
+// fila dice «De vacaciones · N viajes · $T» y la hoja deja cambiarlas o
+// cancelarlas mientras se pueda. Todo lo decide la base (canChange / why): si
+// la base no trae `vacations` (sin 0094), la fila no sale.
+//
+// SE COBRA LA DIFERENCIA (la dueña, 30-sep): si reserva más viajes de los que
+// declaró, se le cobran. La base recalcula su cuenta (o lo deja para el próximo
+// cobro) y aquí se pinta, sin calcular nada:
+//   · «Este mes»: las líneas «Viajes extra de vacaciones de octubre: 2 × $20.000
+//     = $40.000» que trae la cuenta (cur.extras), y en Vacaciones una tarjeta
+//     con declarados · reservados · cobrados · extra pendiente para el próximo
+//     cobro (acc.extrasPending);
+//   · la hoja de vacaciones avisa que con más reservados que los declarados se
+//     cobran los reservados;
+//   · AuxPagos.vacExtraFor(día, n) → el aviso para Pedir antes de confirmar
+//     («Este viaje no estaba en tus vacaciones: se suma $V a tu cuenta»), con el
+//     freeTrips que da la base; sin ese dato, null (no se pinta nada).
+//   · el aviso «Se sumó $V a tu cuenta…» (clave vacExtra) entra a Notificaciones.
+//   · Historial (revisión 1-oct): al abrir una cuenta, si fue de vacaciones
+//     cuántos viajes cobró y cada línea de viajes extra que trajo de un cobro
+//     anterior (s.extras): una cuenta pagada ya no queda sin explicar.
+//
 // Acciones data-rx propias (prefijo pg-): pg-view, pg-how, pg-copy, pg-hist,
 // pg-upload, pg-retry, pg-up-back, pg-up-close, pg-up-via, pg-up-cam, pg-up-gal,
-// pg-up-retake, pg-up-next, pg-up-send, pg-up-done. Sin nombres globales: IIFE.
+// pg-up-retake, pg-up-next, pg-up-send, pg-up-done, pg-vac, pg-vac-per,
+// pg-vac-dec, pg-vac-inc, pg-vac-go, pg-vac-cancel. Sin nombres globales: IIFE.
 (function () {
   'use strict';
 
@@ -115,7 +143,11 @@
   const ALERT_ICON = {
     generado: 'FileText', recordatorio: 'Clock', venceHoy: 'AlertTriangle', vencido: 'AlertTriangle',
     ultimoDia: 'AlertTriangle', bloqueado: 'Lock', recibido: 'Send', aprobado: 'Check', rechazado: 'X',
+    vacaciones: 'Sun', vacCancel: 'Sun', vacExtra: 'Sun',
   };
+  // Avisos de vacaciones (0094): pueden no tener cuenta de cobro todavía (o ser
+  // de la cuenta de un cobro anterior, como los viajes de más).
+  const VAC_KEYS = ['vacaciones', 'vacCancel', 'vacExtra'];
 
   // ── Datos ────────────────────────────────────────────────────────────────
   // acc: undefined = aún no se sabe · null = sin mensualidad · objeto = myAccount().
@@ -182,8 +214,9 @@
     if (acc === undefined) return S.err ? 'err' : 'loading';
     if (!isObj(acc)) return 'none';
     return JSON.stringify([acc.current || null, acc.paused, acc.reference, acc.amountCOP, acc.amountNextCOP, acc.nextCut, acc.holderName, acc.holderNit,
+      acc.vacations || null, acc.perTripCOP, acc.sector, acc.extrasPending || null,
       S.methods.map(m => [m.id, m.label, m.number, m.accountType, m.holderName, m.holderNit]),
-      S.alerts.map(x => x.id), (S.hist || []).map(x => [x.id, x.paid, x.comp, x.paidOn]), S.histErr]);
+      S.alerts.map(x => x.id), (S.hist || []).map(x => [x.id, x.paid, x.comp, x.paidOn, x.amountCOP, x.vacationTrips, (x.extras || []).length]), S.histErr]);
   }
   function changed() {
     const sig = sigNow();
@@ -293,17 +326,384 @@
     if (s.paid || s.comp === 'review' || (s.base === 'pendiente' && s.comp !== 'rejected')) return null;
     return cbBanner(s, m.cfg, m.dates);
   }
+  // Debajo de la franja («donde dice pagar») va la fila de vacaciones; sin franja,
+  // la fila sale sola solo si ya hay vacaciones marcadas (para que se vean).
   const stripHook = {
     id: 'cobro', priority: 20,
-    when() { kick(); return !!stripBanner(); },
+    when() { kick(); return !!stripBanner() || !!vacActive(vacInfo()); },
     render() {
-      const b = stripBanner(); if (!b) return '';
-      const m = model();
-      return '<button type="button" class="rx-strip t-' + esc(b.tone) + '" data-rx="rx-tab" data-tab="pagos">'
-        + ic(b.icon, 18) + '<span><b>' + esc(b.title) + '</b><span>' + esc(money(m.cfg.monto)) + ' · '
-        + (m.sim.blocked ? 'toca para reactivar' : 'toca para pagar') + '</span></span>' + ic('ChevronRight', 16) + '</button>';
+      const b = stripBanner();
+      const vi = vacInfo();
+      let h = '';
+      if (b) {
+        const m = model();
+        h += '<button type="button" class="rx-strip t-' + esc(b.tone) + '" data-rx="rx-tab" data-tab="pagos">'
+          + ic(b.icon, 18) + '<span><b>' + esc(b.title) + '</b><span>' + esc(money(m.cfg.monto)) + ' · '
+          + (m.sim.blocked ? 'toca para reactivar' : 'toca para pagar') + '</span></span>' + ic('ChevronRight', 16) + '</button>';
+      }
+      if (vi && (b || vacActive(vi))) {
+        const row = vacRowHTML(vi);
+        if (row) h += '<div class="rx-group rx-in" style="--d:0" data-pg="vac-home">' + row + '</div>';
+      }
+      return h;
     },
   };
+
+  // ── Vacaciones (0094) ───────────────────────────────────────────────────
+  // acc.vacations = { current, next }: cada uno {periodStart, periodEnd,
+  // statementId, canChange, why, tripsBooked, tripsTaken, vacation|null}
+  // (billing_vac_period_json). Las reglas las pone la base: con el cobro
+  // vencido o pausado no se cambia (why 'overdue'), el que quedó en $0 por unas
+  // vacaciones sin viajes solo lo reabre Coordinación (why 'zero'), y no se
+  // declaran menos viajes de los que ya hizo (tripsTaken = el mínimo).
+  const VAC_MAX = 200;
+  const VAC_WHY = {
+    paid: 'Este cobro ya está pagado: las vacaciones se marcan para el siguiente.',
+    zero: 'Este cobro quedó en $0 por tus vacaciones sin viajes. Si al final vas a viajar, escríbele a Coordinación.',
+    review: 'Tienes un comprobante en revisión: espera a que lo revisen para cambiar este cobro.',
+    overdue: 'Este cobro ya venció: primero págalo. Si estuviste de vacaciones, escríbele a Coordinación.',
+    notStarted: 'Ese cobro todavía no corre.',
+    inactive: 'Tu cuenta de cobro está apagada; escríbele a Coordinación.',
+  };
+  function vacInfo() {
+    const acc = S.acc;
+    if (!isObj(acc) || !isObj(acc.vacations)) return null;
+    const vs = acc.vacations;
+    const cur = isObj(vs.current) && parts(vs.current.periodStart) ? vs.current : null;
+    const next = isObj(vs.next) && parts(vs.next.periodStart) ? vs.next : null;
+    if (!cur && !next) return null;
+    return { cur, next, perTrip: num(acc.perTripCOP), sector: acc.sector ? String(acc.sector) : null, monthly: num(acc.amountCOP), today: acc.today || null };
+  }
+  // Lo que entra en el próximo cobro por viajes de vacaciones de más (la base:
+  // aux_billing_my_account.extrasPending). null sin dato o sin nada pendiente.
+  function pendingExtras() {
+    const acc = S.acc;
+    const x = isObj(acc) && isObj(acc.extrasPending) ? acc.extrasPending : null;
+    const amt = x ? num(x.amountCOP) : null;
+    if (!amt) return null;
+    return { amountCOP: amt, trips: num(x.trips) || 0, items: Array.isArray(x.items) ? x.items.filter(isObj) : [] };
+  }
+  const vacPer = (vi, k) => (vi ? (k === 'next' ? vi.next : vi.cur) : null);
+  const vacOf = (p) => (p && isObj(p.vacation) ? p.vacation : null);
+  // La que se muestra: la de este cobro; si no, la del siguiente.
+  function vacActive(vi) {
+    if (!vi) return null;
+    if (vacOf(vi.cur)) return { k: 'current', p: vi.cur, v: vi.cur.vacation };
+    if (vacOf(vi.next)) return { k: 'next', p: vi.next, v: vi.next.vacation };
+    return null;
+  }
+  const vacTotal = (per, n) => (per != null && n != null ? Math.round(per) * Math.round(n) : null);
+  function vacRowHTML(vi) {
+    const u = UI(); if (!u || !u.row) return '';
+    const a = vacActive(vi);
+    if (!a) {
+      return u.row({ icon: 'Sun', tone: 'n', title: '¿Te vas de vacaciones?', sub: 'Paga solo los viajes que vas a tomar',
+        attrs: { 'data-rx': 'pg-vac' } });
+    }
+    const n = num(a.v.trips) || 0;
+    const tot = num(a.v.totalCOP) != null ? num(a.v.totalCOP) : vacTotal(num(a.v.perTripCOP), n);
+    const when = (a.k === 'next' ? 'Tu cobro del ' + fmtDay(a.p.periodStart) : 'Este cobro')
+      + ' · del ' + fmtDay(a.v.startsOn) + ' al ' + fmtDay(a.v.endsOn);
+    return u.row({ icon: 'Sun', tone: 'info', title: 'De vacaciones · ' + pl(n, 'viaje', 'viajes') + ' · ' + money(tot), sub: when,
+      attrs: { 'data-rx': 'pg-vac' } });
+  }
+  // La sección de la pestaña Pagos (debajo de «Cómo pagar»). Con vacaciones en
+  // este cobro, debajo de la fila: declarados · reservados · cobrados · extra
+  // pendiente para el próximo cobro (lo que dice la base; lo que no trae, no sale).
+  function vacCountsHTML(vi) {
+    const p = vi && vi.cur;
+    const v = vacOf(p);
+    if (!v) return '';
+    const kv = (k, val, attr) => '<div class="cb2-kv"' + (attr ? ' ' + attr : '') + '><span>' + esc(k) + '</span><b>' + esc(val) + '</b></div>';
+    let h = kv('Declarados', String(num(v.trips) || 0), 'data-pg-vac-k="declarados"');
+    if (num(p.tripsBooked) != null) h += kv('Reservados', String(num(p.tripsBooked)), 'data-pg-vac-k="reservados"');
+    if (num(p.tripsBilled) != null) h += kv('Cobrados', String(num(p.tripsBilled)), 'data-pg-vac-k="cobrados"');
+    const pe = pendingExtras();
+    if (pe) h += kv('Extra pendiente para tu próximo cobro', money(pe.amountCOP), 'data-pg-vac-k="pendiente"');
+    return '<div class="cb2-card" data-pg-vac-counts>' + h + '</div>';
+  }
+  function vacSecHTML(d) {
+    const vi = vacInfo(); if (!vi) return '';
+    const row = vacRowHTML(vi); if (!row) return '';
+    return '<div class="cb2-lbl cb2-in" style="--d:' + d + '" data-pg="vac">Vacaciones</div>'
+      + '<div class="rx-group cb2-in" style="--d:' + d + '" data-pg="vac">' + row + '</div>'
+      + (vacCountsHTML(vi) ? '<div class="cb2-in" style="--d:' + d + '" data-pg="vac">' + vacCountsHTML(vi) + '</div>' : '');
+  }
+  // Las líneas «Viajes extra de vacaciones de octubre: 2 × $20.000 = $40.000»
+  // que trae la cuenta de cobro (ya van dentro del monto).
+  function extrasLinesHTML(cur, d) {
+    const xs = isObj(cur) && Array.isArray(cur.extras) ? cur.extras.filter(x => isObj(x) && x.label) : [];
+    return xs.map(x => '<div class="cb2-hint cb2-in" style="--d:' + d + '" data-pg="extras">' + ic('Sun', 15) + '<span>' + esc(x.label) + '. Va incluido en este cobro.</span></div>').join('');
+  }
+  // Sin vacaciones en este cobro pero con viajes de más pendientes (de un cobro
+  // anterior): se dice cuánto entra en el próximo.
+  function pendHintHTML(d) {
+    const vi = vacInfo();
+    if (vi && vacOf(vi.cur)) return '';               // ya va en la tarjeta de Vacaciones
+    const pe = pendingExtras(); if (!pe) return '';
+    return '<div class="cb2-hint cb2-in" style="--d:' + d + '" data-pg="xpend">' + ic('Info', 15) + '<span>Entra en tu próximo cobro: '
+      + esc(pe.items.map(x => x.label).filter(Boolean).join(' · ') || pl(pe.trips, 'viaje extra', 'viajes extra') + ' de vacaciones')
+      + ' (' + esc(money(pe.amountCOP)) + ').</span></div>';
+  }
+
+  // Estado de la hoja (lo que se ve es lo que se manda). min = los viajes que
+  // ya hizo en ese cobro (la base no acepta menos).
+  const V = { period: 'current', starts: '', ends: '', trips: 0, min: 0, busy: false, err: '' };
+  const vacMin = (p) => Math.max(0, Math.min(VAC_MAX, (p && num(p.tripsTaken)) || 0));
+  function vacPick(vi, k) {
+    const p = vacPer(vi, k); if (!p) return;
+    V.period = k; V.err = '';
+    V.min = vacMin(p);
+    const v = vacOf(p);
+    if (v) { V.starts = v.startsOn || p.periodStart; V.ends = v.endsOn || p.periodEnd; V.trips = Math.max(V.min, Math.min(VAC_MAX, num(v.trips) || 0)); return; }
+    V.starts = k === 'current' && vi.today && vi.today > p.periodStart && vi.today <= p.periodEnd ? vi.today : p.periodStart;
+    V.ends = p.periodEnd;
+    // Arranca en los viajes que ya tiene reservados en ese cobro (su dato real).
+    V.trips = Math.max(V.min, Math.min(VAC_MAX, num(p.tripsBooked) || 0));
+  }
+  function vacDefaultPeriod(vi) {
+    const a = vacActive(vi);
+    if (a) return a.k;
+    if (vi.cur && vi.cur.canChange) return 'current';
+    if (vi.next && vi.next.canChange) return 'next';
+    return vi.cur ? 'current' : 'next';
+  }
+  function vacNoRate(vi) {
+    return vi.sector ? 'Tu sector todavía no tiene valor por viaje; escríbele a Coordinación.'
+      : 'Todavía no tienes un sector asignado para calcular el valor por viaje; escríbele a Coordinación.';
+  }
+  function vacCalcHTML(vi) {
+    const per = vi.perTrip;
+    const tot = vacTotal(per, V.trips);
+    let h = '<div class="cb2-kv"><span>' + esc(pl(V.trips, 'viaje', 'viajes') + ' × ' + money(per) + (vi.sector ? ' (sector ' + vi.sector + ')' : '')) + '</span>'
+      + '<b data-pg-vac-total>' + esc(money(tot)) + '</b></div>';
+    if (vi.monthly != null) h += '<div class="cb2-kv"><span>Tu mensualidad</span><b>' + esc(money(vi.monthly)) + '</b></div>';
+    return h;
+  }
+  function vacNoteHTML(vi) {
+    const tot = vacTotal(vi.perTrip, V.trips);
+    // Se cobra la diferencia: con más viajes reservados que los que declara, se
+    // cobran los reservados (mientras sigan reservados).
+    const p = vacPer(vi, V.period);
+    const booked = p ? num(p.tripsBooked) : null;
+    if (booked != null && booked > V.trips && vi.perTrip != null) {
+      return '<div class="rx-note warn" data-pg-vac-note>' + ic('Info', 15) + '<span>Tienes ' + esc(pl(booked, 'viaje reservado', 'viajes reservados'))
+        + ' en ese cobro: se cobran los ' + esc(booked) + ' (' + esc(money(vacTotal(vi.perTrip, booked))) + ') mientras sigan reservados.</span></div>';
+    }
+    if (tot != null && vi.monthly != null && tot > vi.monthly) {
+      return '<div class="rx-note" data-pg-vac-note>' + ic('Info', 15) + '<span>Con esos viajes te sale más que tu mensualidad.</span></div>';
+    }
+    if (tot === 0) return '<div class="rx-note" data-pg-vac-note>' + ic('Info', 15) + '<span>Sin viajes, ese cobro queda en $0 y se da por pagado. Después, solo Coordinación lo puede cambiar.</span></div>';
+    return '<div class="rx-note" data-pg-vac-note hidden></div>';
+  }
+  function vacSheetHTML() {
+    const vi = vacInfo();
+    const u = UI();
+    if (!vi || !u) return '';
+    const p = vacPer(vi, V.period);
+    const act = vacOf(p);
+    let h = '<div class="rx-sh" data-pg-vac>'
+      + '<h3>' + (act ? 'Tus vacaciones' : '¿Te vas de vacaciones?') + '</h3>';
+    if (vi.perTrip == null) {
+      return h + '<p>' + esc(vacNoRate(vi)) + '</p>'
+        + u.btn('Entendido', { kind: 'ghost', attrs: { 'data-rx': 'sheet-close' } }) + '</div>';
+    }
+    h += '<p>Ese cobro no pagas la mensualidad: pagas solo los viajes que vas a tomar, a <b>' + esc(money(vi.perTrip)) + '</b> cada uno'
+      + (vi.sector ? ' (sector ' + esc(vi.sector) + ')' : '') + '.</p>';
+    const ps = [['current', vi.cur], ['next', vi.next]].filter(x => !!x[1]);
+    if (ps.length > 1) {
+      h += '<div class="cb2-seg in">' + ps.map(([k, pp]) => '<button type="button" class="' + (k === V.period ? 'on' : '') + '" data-rx="pg-vac-per" data-k="' + k + '">'
+        + esc((k === 'current' ? 'Este cobro' : 'El siguiente') + ' · ' + fmtDay(pp.periodStart)) + '</button>').join('') + '</div>';
+    }
+    h += '<div class="rx-note">' + ic('Calendar', 15) + '<span>Cobro del <b>' + esc(fmtDay(p.periodStart)) + '</b> al <b>' + esc(fmtDay(p.periodEnd)) + '</b>.</span></div>';
+    if (!p.canChange) {
+      if (act) {
+        h += '<div class="cb2-card"><div class="cb2-kv"><span>' + esc(pl(num(act.trips) || 0, 'viaje', 'viajes') + ' × ' + money(num(act.perTripCOP)) + (act.sector ? ' (sector ' + act.sector + ')' : '')) + '</span>'
+          + '<b>' + esc(money(num(act.totalCOP))) + '</b></div>'
+          + '<div class="cb2-kv"><span>Fechas</span><b>' + esc(fmtDay(act.startsOn) + ' – ' + fmtDay(act.endsOn)) + '</b></div></div>';
+      }
+      return h + '<div class="rx-note" data-pg-vac-why>' + ic('Info', 15) + '<span>' + esc(VAC_WHY[p.why] || 'Ese cobro ya no se puede cambiar.') + '</span></div>'
+        + u.btn('Entendido', { kind: 'ghost', attrs: { 'data-rx': 'sheet-close' } }) + '</div>';
+    }
+    const booked = num(p.tripsBooked) || 0;
+    const taken = V.min;
+    h += '<label class="rx-field"><span>Desde</span><div class="rx-input">' + ic('Calendar', 18)
+      + '<input type="date" data-pg-vac-f="starts" value="' + esc(V.starts) + '" aria-label="Desde" /></div></label>'
+      + '<label class="rx-field"><span>Hasta</span><div class="rx-input">' + ic('Calendar', 18)
+      + '<input type="date" data-pg-vac-f="ends" value="' + esc(V.ends) + '" aria-label="Hasta" /></div></label>'
+      + '<div class="rx-card"><div class="rx-set"><span><b>Viajes que vas a tomar</b><span>Cada ida o cada regreso cuenta como uno</span></span>'
+      + u.stepCtl(V.trips, { dec: { 'data-rx': 'pg-vac-dec' }, inc: { 'data-rx': 'pg-vac-inc' } }) + '</div></div>'
+      + (booked ? '<div class="rx-note" data-pg-vac-booked>' + ic('Plane', 15) + '<span>Ya tienes ' + esc(pl(booked, 'viaje reservado', 'viajes reservados')) + ' en ese cobro'
+        + (taken ? ' y ya hiciste ' + esc(pl(taken, 'viaje', 'viajes')) + ': esos cuentan, no puedes declarar menos' : '') + '.</span></div>' : '')
+      + '<div class="cb2-card" data-pg-vac-calc>' + vacCalcHTML(vi) + '</div>'
+      + vacNoteHTML(vi)
+      + '<div class="rx-pg-err" data-pg-vac-err' + (V.err ? '' : ' hidden') + '>' + esc(V.err) + '</div>'
+      + u.btn(V.busy ? 'Guardando…' : (act ? 'Guardar cambios' : 'Confirmar vacaciones'), { disabled: V.busy, attrs: { 'data-rx': 'pg-vac-go' } })
+      + (act ? u.btn('Cancelar mis vacaciones', { kind: 'ghost', disabled: V.busy, attrs: { 'data-rx': 'pg-vac-cancel' } })
+        : u.btn('Ahora no', { kind: 'ghost', attrs: { 'data-rx': 'sheet-close' } }));
+    return h + '</div>';
+  }
+  function vacBind(el) {
+    if (!el || el._pgVac) return;
+    el._pgVac = true;
+    const on = (e) => {
+      const t = e.target;
+      const f = t && t.getAttribute && t.getAttribute('data-pg-vac-f');
+      if (!f) return;
+      V[f] = String(t.value || '');
+      if (V.err) { V.err = ''; const er = el.querySelector('[data-pg-vac-err]'); if (er) { er.hidden = true; er.textContent = ''; } }
+    };
+    el.addEventListener('input', on);
+    el.addEventListener('change', on);
+  }
+  function vacOpen(repaint) {
+    const sh = SH(); const vi = vacInfo();
+    if (!sh || typeof sh.sheet !== 'function' || !vi) return null;
+    if (!repaint) { V.busy = false; vacPick(vi, vacDefaultPeriod(vi)); }
+    return sh.sheet(vacSheetHTML(), { after: vacBind });
+  }
+  function vacAct() { vacOpen(false); }
+  function vacPerAct(el) {
+    const k = el.getAttribute('data-k');
+    const vi = vacInfo();
+    if ((k !== 'current' && k !== 'next') || !vacPer(vi, k) || V.busy) return;
+    if (k === V.period) return;
+    vacPick(vi, k);
+    vacOpen(true);
+  }
+  function vacStep(el, d) {
+    const vi = vacInfo(); if (!vi || V.busy) return;
+    const n = Math.max(V.min, Math.min(VAC_MAX, V.trips + d));
+    if (n === V.trips) return;
+    V.trips = n;
+    const u = UI();
+    if (u && u.stepCtlSet) u.stepCtlSet(el, n);     // key={n}: el número se recrea y salta
+    const box = el.closest ? el.closest('.rx-sh') : null;
+    const calc = box && box.querySelector('[data-pg-vac-calc]');
+    if (calc) calc.innerHTML = vacCalcHTML(vi);
+    const note = box && box.querySelector('[data-pg-vac-note]');
+    if (note) { const tpl = document.createElement('template'); tpl.innerHTML = vacNoteHTML(vi); note.replaceWith(tpl.content.firstChild); }
+  }
+  function vacErr(box, msg) {
+    V.err = msg || '';
+    const er = box && box.querySelector('[data-pg-vac-err]');
+    if (er) { er.textContent = V.err; er.hidden = !V.err; }
+  }
+  async function vacSend(el, kind) {
+    const box = el.closest ? el.closest('.rx-sh') : null;
+    const C = API(); const sh = SH(); const vi = vacInfo();
+    if (V.busy || !vi || !sh) return;
+    const fn = C && (kind === 'cancel' ? C.cancelVacation : C.setVacation);
+    if (typeof fn !== 'function') { vacErr(box, 'Las vacaciones todavía no están disponibles en esta versión.'); return; }
+    if (kind !== 'cancel') {
+      if (!parts(V.starts) || !parts(V.ends)) { vacErr(box, 'Faltan las fechas de tus vacaciones.'); return; }
+      if (V.starts > V.ends) { vacErr(box, 'Revisa las fechas: el regreso no puede ser antes de la salida.'); return; }
+      if (V.trips < V.min) { vacErr(box, 'Ya hiciste ' + pl(V.min, 'viaje', 'viajes') + ' en este cobro: no puedes declarar menos.'); return; }
+    }
+    V.busy = true;
+    const label = el.textContent;
+    el.disabled = true; el.textContent = kind === 'cancel' ? 'Cancelando…' : 'Guardando…';
+    vacErr(box, '');
+    let r = null, err = null;
+    try {
+      r = kind === 'cancel' ? await fn(V.period) : await fn({ period: V.period, startsOn: V.starts, endsOn: V.ends, trips: V.trips });
+    } catch (e) { err = e; }
+    V.busy = false;
+    if (err || !isObj(r)) {
+      el.disabled = false; el.textContent = label;
+      vacErr(box, (err && err.message) || 'No pudimos guardar tus vacaciones. Intenta de nuevo.');
+      return;
+    }
+    sh.closeSheet();
+    const v = isObj(r.vacation) ? r.vacation : null;
+    if (kind === 'cancel') sh.toast('Vacaciones canceladas: vuelve tu mensualidad', 'Sun');
+    else {
+      // Se cobra la diferencia: si la base cobra más viajes (los reservados), se dice.
+      const st = isObj(r.statement) ? r.statement : null;
+      const cob = st ? num(st.vacationTrips) : null;
+      const dec = v ? num(v.trips) || 0 : V.trips;
+      sh.toast('Vacaciones marcadas · ' + pl(dec, 'viaje', 'viajes') + ' · ' + money(v ? num(v.totalCOP) : vacTotal(vi.perTrip, V.trips))
+        + (cob != null && cob > dec ? ' · se cobran tus ' + cob + ' reservados' : ''), 'Sun');
+    }
+    S.at = 0;
+    load({ force: true }).catch(() => {});
+  }
+
+  // ── El aviso de Pedir: ¿este viaje se suma a la cuenta? (30-sep) ─────────
+  // day: 'AAAA-MM-DD' del viaje (Bogotá); n: cuántos viajes se piden ese día (la
+  // ida y el regreso del mismo día son 2). Solo con vacaciones (activas o la
+  // foto de su cuenta) en ESTE cobro o el siguiente y con freeTrips de la base:
+  // los primeros freeTrips no cuestan nada; los demás, al valor por viaje.
+  // Devuelve null si no hay nada que avisar o no hay dato (nunca se inventa).
+  function vacExtraFor(day, n) {
+    kick();
+    const vi = vacInfo();
+    if (!vi || !parts(day)) return null;
+    const k = n == null ? 1 : Math.max(0, Math.round(Number(n) || 0));
+    if (!k) return null;
+    const p = [vi.cur, vi.next].find(x => x && x.periodStart <= day && day <= x.periodEnd) || null;
+    if (!p) return null;
+    const v = vacOf(p);
+    const per = v ? num(v.perTripCOP) : num(p.extraPerTripCOP);
+    const free = num(p.freeTrips);
+    if (per == null || free == null) return null;
+    const extra = Math.max(0, k - free);
+    if (!extra) return null;
+    const amt = extra * Math.round(per);
+    // Cuenta viva (o todavía sin abrir): se suma a esa cuenta; si ya se cerró, al próximo cobro.
+    const live = !p.statementId || !!p.statementLive;
+    const donde = live ? 'a tu cuenta' : 'a tu próximo cobro';
+    const text = k === 1
+      ? 'Este viaje no estaba en tus vacaciones: se suma ' + money(amt) + ' ' + donde + '.'
+      : extra === k
+        ? 'Estos ' + k + ' viajes no estaban en tus vacaciones: se suman ' + money(amt) + ' ' + donde + '.'
+        : (extra === 1 ? 'Uno de estos viajes no estaba' : extra + ' de estos viajes no estaban') + ' en tus vacaciones: se suma' + (extra === 1 ? '' : 'n') + ' ' + money(amt) + ' ' + donde + '.';
+    return { trips: extra, of: k, perTripCOP: Math.round(per), amountCOP: amt, live, periodStart: p.periodStart, text };
+  }
+
+  // ── El mismo aviso en el Pedir de siempre (auxiliar.js, sin el rediseño) ──
+  // auxiliar.js comparte el ámbito global con los demás archivos: el aviso vive
+  // aquí, dentro de AuxPagos, para no sumarle nombres globales (revisión 1-oct).
+  // f = el formulario del pedido: el día del viaje y, si es una salida con
+  // regreso el mismo día, 2 viajes. Pasa por AuxPagos.vacExtraFor (el objeto
+  // público, como el Pedir del rediseño). null = nada que decir o sin dato.
+  function vacExtraForForm(f) {
+    if (!isObj(f) || !f.date) return null;
+    const n = 1 + (f.type !== 'lle' && f.sameDayBack && f.backTime ? 1 : 0);
+    const pub = window.AuxPagos;
+    const fn = pub && typeof pub.vacExtraFor === 'function' ? pub.vacExtraFor : vacExtraFor;
+    let x = null;
+    try { x = fn(f.date, n); } catch (_) { x = null; }
+    return x && x.text ? x : null;
+  }
+  function axVacExtraInner(f) {
+    const x = vacExtraForForm(f);
+    return x ? '<div class="ax-hint" data-ax-vacextra><svg class="icon"><use href="#i-info"/></svg>' + esc(x.text) + '</div>' : '';
+  }
+  // La caja #ax-vacextra (oculta si no hay nada que decir): axVacExtraEnsure la
+  // repinta en su lugar cuando llega la cuenta.
+  function axVacExtraHTML(f) {
+    const h = axVacExtraInner(f);
+    return '<div id="ax-vacextra"' + (h ? '' : ' hidden') + '>' + h + '</div>';
+  }
+  // Sin el rediseño nadie pedía la cuenta antes del primer pedido, así que el
+  // aviso salía recién después de la primera reserva de la sesión. Aquí se pide
+  // (si ya está fresca no vuelve a la base) y, al llegar, se repinta el aviso si
+  // getForm() todavía da el formulario (sigue en «Revisa y confirma»).
+  function axVacExtraEnsure(getForm) {
+    const f0 = typeof getForm === 'function' ? getForm() : null;
+    if (!isObj(f0) || !f0.date) return;
+    let p = null;
+    try { p = load({}); } catch (_) { return; }
+    Promise.resolve(p).then(() => {
+      const f = getForm();
+      if (!isObj(f)) return;
+      const el = document.getElementById('ax-vacextra'); if (!el) return;
+      const h = axVacExtraInner(f);
+      if (el.innerHTML !== h) el.innerHTML = h;
+      el.hidden = !h;
+    }).catch(() => { /* sin la cuenta no se avisa nada (nunca se inventa) */ });
+  }
 
   // ── Avisos de cobro en Notificaciones ('avisos.source') ───────────────────
   const avisosSource = {
@@ -313,7 +713,7 @@
       const acc = S.acc; if (!isObj(acc)) return [];
       const cur = isObj(acc.current) ? acc.current : null;
       const today = (cur && cur.today) || acc.today || '';
-      return S.alerts.filter(a => !cur || a.statementId === cur.id).filter(a => a.title).map(a => ({
+      return S.alerts.filter(a => !cur || a.statementId === cur.id || VAC_KEYS.indexOf(a.key) >= 0).filter(a => a.title).map(a => ({
         id: 'cobro:' + a.id, icon: ALERT_ICON[a.key] || 'Wallet', tone: a.tone || 'neutral',
         title: a.title, body: a.body || '', when: a.day && a.day === today ? 'Hoy' : fmtDay(a.day),
       }));
@@ -460,6 +860,8 @@
     h += '<div class="cb2-card cb2-in" style="--d:1">' + tlHTML(tlOf(sim, cfg, m.dates)) + '</div>';
     if (f.next) h += '<div class="cb2-hint cb2-in" style="--d:1" data-pg="next">' + ic('Info', 15) + '<span>Desde ' + esc(monthName(m.dates.nextCut) || 'el próximo corte') + ' tu mensualidad será ' + esc(money(f.next)) + '.</span></div>';
     if (f.disc) h += '<div class="cb2-hint cb2-in" style="--d:1" data-pg="disc">' + ic('Info', 15) + '<span>Este mes tiene un descuento de ' + esc(money(f.disc.n)) + (f.disc.note ? ' · ' + esc(f.disc.note) : '') + '.</span></div>';
+    // 30-sep: los viajes extra de vacaciones de un cobro anterior que trae, y lo que entra en el próximo.
+    h += extrasLinesHTML(m.cur, 1) + pendHintHTML(1);
     if (f.tracker) {
       h += '<div class="cb2-lbl cb2-in" style="--d:2" data-pg="trk">Tu comprobante</div>'
         + '<div class="cb2-card cb2-in" style="--d:2" data-pg="trk">' + trkHTML(trkOf(m))
@@ -470,11 +872,30 @@
       h += '<div class="cb2-lbl cb2-in" style="--d:3" data-pg="how">Cómo pagar</div>'
         + '<div class="cb2-card cb2-in" style="--d:3" data-pg="how">' + howHTML(m) + '</div>';
     }
+    // 0094: debajo de «Cómo pagar» (o del cobro pagado), las vacaciones.
+    h += vacSecHTML(4);
     return h;
   }
   const heroM = (m, f) => esc(monthLabel(m.dates.start)) + ' <span class="cb-chip t-' + esc(f.chip.tone) + '">' + esc(f.chip.label) + '</span>';
   const heroD = (m) => (m.sim.paid ? 'Pagado el ' + fmtDay(m.dates.paid) : 'Fecha límite ' + fmtDay(m.dates.due));
 
+  // Lo que explica el monto de una cuenta del Historial (revisión 1-oct): si fue
+  // de vacaciones, cuántos viajes cobró; y cada línea «Viajes extra de vacaciones
+  // de octubre» que trajo de un cobro anterior (s.extras, de la base). Así una
+  // cuenta pagada de $190.000 dice de dónde salen los $20.000 de más. Sin dato,
+  // la fila no sale.
+  function histWhy(s) {
+    const rows = [];
+    const vt = num(s.vacationTrips);
+    if (s.modality === 'vacaciones' && vt != null) rows.push(['Vacaciones', pl(vt, 'viaje cobrado', 'viajes cobrados')]);
+    (Array.isArray(s.extras) ? s.extras.filter(isObj) : []).forEach(x => {
+      const tr = num(x.trips), per = num(x.perTripCOP), amt = num(x.amountCOP);
+      const mes = monthName(x.sourcePeriodStart);
+      if (mes && tr != null && per != null && amt != null) rows.push(['Viajes extra de vacaciones de ' + mes, tr + ' × ' + money(per) + ' = ' + money(amt)]);
+      else if (x.label) rows.push(['Incluye', String(x.label)]);
+    });
+    return rows;
+  }
   function histItems() {
     const acc = S.acc;
     const thisYear = (parts((isObj(acc) && acc.today) || '') || {}).y;
@@ -488,13 +909,13 @@
           ok: true, mes, sub: 'Pagado el ' + fmtDay(s.paidOn), amt,
           x: [['Medio', s.paidViaLabel || (s.paidVia === 'manual' ? 'Registrado por el admin' : '—')],
             ['Puntualidad', late ? pl(late, 'día', 'días') + ' tarde' : 'A tiempo', !!late],
-            ['Aprobó', s.approverLabel || '—']],
+            ['Aprobó', s.approverLabel || '—']].concat(histWhy(s)),
         };
       }
       const est = s.comp === 'review' ? 'En revisión' : s.comp === 'rejected' && !s.blocked ? 'Rechazado' : ((CB_STATUS[s.base] || {}).label || 'Pendiente');
       return {
         ok: false, mes, sub: (s.blocked ? 'Pausado · vencía el ' : 'Sin pagar · vence el ') + fmtDay(s.dueDate), amt,
-        x: [['Estado', est], ['Fecha límite', fmtDay(s.dueDate) || '—'], ['Pausa', fmtDay(s.blockDate) || '—']],
+        x: [['Estado', est], ['Fecha límite', fmtDay(s.dueDate) || '—'], ['Pausa', fmtDay(s.blockDate) || '—']].concat(histWhy(s)),
       };
     });
   }
@@ -530,7 +951,8 @@
       const acc = m.acc;
       const amt = num(acc.amountCOP);
       const when = acc.nextCut ? 'Tu primera cuenta de cobro llega el ' + fmtDay(acc.nextCut) + '.' : 'Todavía no se abrió tu primera cuenta de cobro.';
-      return '<div class="rx-empty">' + ic('FileText', 26) + '<b>' + esc(amt ? 'Tu mensualidad: ' + money(amt) : 'Tu mensualidad está registrada') + '</b><span>' + esc(when) + '</span></div>';
+      return '<div class="rx-empty">' + ic('FileText', 26) + '<b>' + esc(amt ? 'Tu mensualidad: ' + money(amt) : 'Tu mensualidad está registrada') + '</b><span>' + esc(when) + '</span></div>'
+        + vacSecHTML(1);
     }
     return '<div class="rx-empty">' + ic('Wallet', 26) + '<b>Todavía no tienes mensualidad registrada</b><span>Cuando Coordinación la cargue, aquí vas a ver tu cuenta del mes y cómo pagarla.</span></div>';
   }
@@ -553,7 +975,8 @@
     if (P.view === 'hist') return 'hist|' + payHTML(m);
     const f = payFlags(m);
     return JSON.stringify(['mes', !!f.next && f.next, f.disc, f.tracker, m.sim.comp === 'rejected' && !m.sim.paid, !m.sim.paid && howHTML(m),
-      f.fab, tlOf(m.sim, m.cfg, m.dates).nodes.map(n => n.l + n.date + n.left), monthLabel(m.dates.start)]);
+      f.fab, tlOf(m.sim, m.cfg, m.dates).nodes.map(n => n.l + n.date + n.left), monthLabel(m.dates.start), vacSecHTML(4),
+      extrasLinesHTML(m.cur, 1), pendHintHTML(1)]);
   }
 
   function payRoot(ctx) {
@@ -565,7 +988,8 @@
   function secsOf(m) {
     if (m.kind !== 'ok' || P.view !== 'mes') return null;
     const f = payFlags(m);
-    return [f.next && 'next', f.disc && 'disc', f.tracker && 'trk', !m.sim.paid && 'how'].filter(Boolean);
+    return [f.next && 'next', f.disc && 'disc', !!extrasLinesHTML(m.cur, 1) && 'extras', !!pendHintHTML(1) && 'xpend',
+      f.tracker && 'trk', !m.sim.paid && 'how', !!vacSecHTML(4) && 'vac'].filter(Boolean);
   }
   function remember() { const m = model(); P.kind = m.kind; P.last = payHTML(m); P.shape = shapeOf(m); P.secs = secsOf(m); return m; }
   function animateNew(root, prev) {
@@ -1083,9 +1507,13 @@
   // ── Registro ────────────────────────────────────────────────────────────
   window.AuxPagos = {
     summary, paused, cbBanner,
+    // El aviso de Pedir (30-sep): ¿cuánto se suma este viaje a la cuenta? null = nada.
+    vacExtraFor,
+    // …y el mismo aviso en el Pedir de siempre (auxiliar.js), sin globals nuevos.
+    axVacExtraHTML, axVacExtraEnsure,
     refresh: (o) => load(o || { force: true }),
     // Para pruebas.
-    _state: () => S, _model: model, _ui: () => ({ P, U }),
+    _state: () => S, _model: model, _ui: () => ({ P, U, V }),
   };
 
   const sh = SH();
@@ -1109,5 +1537,11 @@
     sh.action('pg-up-next', upNextAct);
     sh.action('pg-up-send', upSendAct);
     sh.action('pg-up-done', upDoneAct);
+    sh.action('pg-vac', vacAct);
+    sh.action('pg-vac-per', vacPerAct);
+    sh.action('pg-vac-dec', (el) => vacStep(el, -1));
+    sh.action('pg-vac-inc', (el) => vacStep(el, +1));
+    sh.action('pg-vac-go', (el) => vacSend(el, 'set'));
+    sh.action('pg-vac-cancel', (el) => vacSend(el, 'cancel'));
   }
 })();

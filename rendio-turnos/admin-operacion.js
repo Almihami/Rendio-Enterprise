@@ -426,7 +426,14 @@
     const box = document.getElementById('oper-delay');
     if (!box) return;
     if (late) {
-      const t = document.getElementById('oper-delayTitle'); if (t) t.textContent = `${late.id} va tarde para el vuelo ${late.flight}`;
+      // En tierra (0092) no hay vuelo que perder: la hora es la de llegar a su
+      // turno. Sin vuelo conocido tampoco se escribe «el vuelo —».
+      const t = document.getElementById('oper-delayTitle');
+      if (t) {
+        t.textContent = late.flight === 'Tierra' ? `${late.id} va tarde (trabajo en tierra)`
+          : (late.flight && late.flight !== '—') ? `${late.id} va tarde para el vuelo ${late.flight}`
+          : `${late.id} va tarde para la presentación`;
+      }
       const s = document.getElementById('oper-delaySub');
       // El atraso sale de la ETA real, no de un número escrito a mano.
       const mins = late.lateMin != null ? late.lateMin : 8;

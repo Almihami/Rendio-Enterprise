@@ -49,7 +49,7 @@
     try {
       if (!state.driverId) { try { state.driverId = await Api.getMyDriverProfileId(state.profile.id); } catch (e) { /* */ } }
       const did = state.driverId;
-      const [prof, strikes, closed, rewards, redemptions, openShift, susp] = await Promise.all([
+      const [prof, strikes, closed, rewards, redemptions, openShift, susp, docsCarros] = await Promise.all([
         Api.getMyFullProfile().catch(() => state.profile),
         Api.listDriverStrikes(state.profile.id).catch(() => []),
         did ? Api.listMyClosedShifts(did).catch(() => []) : Promise.resolve([]),
@@ -57,6 +57,10 @@
         did ? Api.listMyRedemptions(did).catch(() => []) : Promise.resolve([]),
         did ? Api.getMyOpenShift(did).catch(() => null) : Promise.resolve(null),
         Api.getMyWeekSuspension(state.profile.id, nextWeekMondayISO()).catch(() => null),
+        // Documentos de la vía de los carros (0095), a la par del resto: el del
+        // turno se filtra abajo. null = la RPC no está o falló (queda lo de antes).
+        (did && typeof Api.driverVehicleDocuments === 'function')
+          ? Api.driverVehicleDocuments(null).catch(() => null) : Promise.resolve(null),
       ]);
       // El número que ve el conductor es el de ESTE MES. Antes se contaba todo lo
       // que estuviera vivo desde que entró a la empresa: un strike de marzo seguía
@@ -74,7 +78,9 @@
       const activeStrikes = vivos.filter(s => (pfStrikePeriodOf(s) || period) === period);
       const oldStrikes = vivos.filter(s => (pfStrikePeriodOf(s) || period) !== period);
       const kmTotal = (closed || []).reduce((s, sh) => s + kmDrivenOf(sh), 0);
-      state.profileData = { prof: prof || state.profile, strikes: strikes || [], activeStrikes, oldStrikes, period, closed: closed || [], rewards: rewards || [], redemptions: redemptions || [], openShift, susp, kmTotal };
+      const carDocs = (Array.isArray(docsCarros) && openShift && openShift.vehicle_id)
+        ? docsCarros.filter(x => x && x.vehicle_id === openShift.vehicle_id) : null;
+      state.profileData = { prof: prof || state.profile, strikes: strikes || [], activeStrikes, oldStrikes, period, closed: closed || [], rewards: rewards || [], redemptions: redemptions || [], openShift, susp, kmTotal, carDocs };
       drawProfileView();
     } catch (e) {
       console.error(e);
@@ -94,8 +100,11 @@
   // Se conservan dos cosas que el diseño no traía pero que ya están en producción
   // y el conductor usa: la tarjeta de recompensas por km y el detalle de strikes.
   // Los vencimientos que muestra "Documentos" salen de datos reales
-  // (driver_profiles.license/eps/arl_expires_at, vehicles.soat/tecnomec_expires_at);
-  // la fila que no tenga fecha en BD no se dibuja.
+  // (driver_profiles.license/eps/arl_expires_at); los del carro del turno, de
+  // driver_vehicle_documents (0095): SOAT, tecnomecánica, seguro, pólizas RC y
+  // extintor, con el estado que calcula la base. Si esa consulta no está, queda
+  // lo de antes (vehicles.soat/tecnomec_expires_at, si vinieran).
+  // La fila que no tenga fecha en BD, o que el jefe marcó «No aplica», no se dibuja.
   function profileMainHtml() {
     const d = state.profileData; const p = d.prof; const dp = p.driver || {};
     const av = p.avatar_url;
@@ -105,12 +114,28 @@
     const ov = d.openShift && d.openShift.vehicles ? d.openShift.vehicles : null;
     const tier = currentTier(d.kmTotal, d.rewards);
 
+    // [etiqueta, fecha, ícono, estado de la base]. Sin estado (los personales y
+    // el respaldo) se calcula aquí, como siempre se hizo.
+    const delCarroMeta = {
+      soat: ['SOAT del vehículo', 'shield'],
+      tecnomecanica: ['Tecnomecánica', 'fileText'],
+      seguro: ['Seguro todo riesgo', 'shield'],
+      polizas_rc: ['Pólizas RCC/RCE', 'shield'],
+      extintor: ['Recarga del extintor', 'shield'],
+    };
+    const delCarro = (Array.isArray(d.carDocs) && d.carDocs.length)
+      ? d.carDocs
+          .filter(x => delCarroMeta[x.kind] && x.expires_on && !x.not_applicable && x.status !== 'no_aplica' && x.status !== 'sin_dato')
+          .map(x => [delCarroMeta[x.kind][0], String(x.expires_on).slice(0, 10), delCarroMeta[x.kind][1], x.status])
+      : [
+          ['SOAT del vehículo', ov && ov.soat_expires_at, 'shield'],
+          ['Tecnomecánica', ov && ov.tecnomec_expires_at, 'fileText'],
+        ];
     const docs = [
       ['Licencia de conducción', dp.license_expires_at, 'fileText'],
       ['EPS', dp.eps_expires_at, 'shield'],
       ['ARL', dp.arl_expires_at, 'shield'],
-      ['SOAT del vehículo', ov && ov.soat_expires_at, 'shield'],
-      ['Tecnomecánica', ov && ov.tecnomec_expires_at, 'fileText'],
+      ...delCarro,
     ].filter(([, fecha]) => !!fecha);
 
     return `
@@ -148,11 +173,14 @@
       ${docs.length ? `
         <div class="rc-sechd">Documentos</div>
         <div class="rc-card tight rc-in d3">
-          ${docs.map(([label, fecha, ic], i) => {
+          ${docs.map(([label, fecha, ic, estadoBd], i) => {
             const dt = new Date(fecha + 'T00:00:00');
             const dias = Math.round((dt - new Date()) / 86400000);
-            const tono = dias < 0 ? 'var(--r-error)' : (dias <= 30 ? 'var(--r-warn)' : null);
-            const txt = dias < 0 ? 'Vencido' : `Vence ${dt.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+            const est = estadoBd || (dias < 0 ? 'vencido' : dias <= 30 ? 'por_vencer' : 'al_dia');
+            const tono = est === 'vencido' ? 'var(--r-error)' : (est === 'hoy' || est === 'por_vencer') ? 'var(--r-warn)' : null;
+            const txt = est === 'vencido' ? 'Vencido'
+              : est === 'hoy' ? 'Vence hoy'
+              : `Vence ${dt.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}`;
             return `<div class="rc-listrow"${i === docs.length - 1 ? ' style="border-bottom:0"' : ''}>
               <span class="ic"${tono ? ` style="color:${tono}"` : ''}>${avIcon(ic, 18)}</span>
               <span class="lbl">${escapeHtml(label)}</span>

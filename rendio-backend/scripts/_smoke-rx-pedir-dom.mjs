@@ -18,11 +18,26 @@
 //   · la política está antes de confirmar; .axc en «booked»;
 //   · «Cambiar» lleva al paso correcto (vuelo, punto, nivel);
 //   · el número de vuelo (llegada) cumple el contrato fl-* y parte «AV-9412»;
+//   · el interruptor «Trabajo en tierra» (0092) está arriba del paso del vuelo
+//     (lo demás del trabajo en tierra: _smoke-tierra-dom.mjs);
 //   · camino manual con el aspecto rx (#ax-map, #ax-pin-row, refreshPinRow);
 //   · AuxResidencias.pickerHTML({mode:'perfil'}) NO toca auxState.form y guarda
 //     con saveMyResidence;
 //   · ningún texto prohibido (cifras, nombres de muestra, «Plan B», «24/7»…);
 //   · con la bandera apagada, el pedido de siempre (sin .rx-book).
+//   · vacaciones (30-sep, «se le cobra la diferencia»): en «Revisa tu traslado»,
+//     antes de la política, el aviso rx-note «Este viaje no estaba en tus
+//     vacaciones: se suma $V a tu cuenta» que da AuxPagos.vacExtraFor(día, n)
+//     (n = 2 con el regreso del mismo día); sin dato, no sale; no bloquea el
+//     deslizador; tras pedir, AuxPagos.refresh({force}); y lo mismo en el pedido
+//     de siempre (bandera apagada). El cálculo real de vacExtraFor lo prueba
+//     _smoke-rx-pagos-dom.mjs; la base, _verify-0094.mjs.
+//     (revisión 1-oct) Con la bandera apagada y el AuxPagos de verdad: el aviso
+//     sale desde el PRIMER pedido (antes nadie pedía la cuenta y salía recién
+//     después de la primera reserva): se pide al entrar a «Revisa y confirma» y
+//     se pinta en #ax-vacextra al llegar; sin vacaciones, la caja queda oculta.
+//     Ese aviso lo arma AuxPagos (axVacExtraHTML / axVacExtraEnsure): auxiliar.js
+//     comparte el ámbito global y no declara nombres nuevos para él.
 //
 // LO QUE NO CUBRE: jsdom no hace layout ni corre animaciones (no prueba que el
 // paso se deslice, que el deslizador se vea en su sitio o que las rayas crezcan;
@@ -194,6 +209,9 @@ t('chips: Hoy, Mañana y dos días con nombre', chips.length === 4 && chips[0].t
 t('«Otro día» con input type=date data-field="date"', !!E.$('[data-scr="book"]:not(.out) .rx-chips .rx-pd-otro input[type="date"][data-field="date"]'));
 t('la fecha arranca en Mañana (chip encendido)', chips[1].classList.contains('on'));
 t('en la salida NO se pide número de vuelo', !E.$('[data-field="flightNum"]'));
+// Trabajo en tierra (0092): el detalle está en _smoke-tierra-dom.mjs; aquí solo
+// que el interruptor está arriba del paso y arranca apagado sin viajes.
+t('interruptor «Trabajo en tierra» arriba del paso, apagado', E.$('[data-scr="book"]:not(.out) .rx-step > .rx-card[data-rx-key="ground"] [data-ax="toggle"][data-key="groundOps"]:not(.on)') != null && E.A().form.groundOps === false);
 t('Continuar deshabilitado sin hora', cont(E) && cont(E).disabled && cont(E).getAttribute('aria-disabled') === 'true');
 t('sin hora no hay tarjeta rx-calc', !E.$('[data-scr="book"]:not(.out) .rx-calc'));
 const chipsNode = E.$('[data-scr="book"]:not(.out) .rx-chips');
@@ -427,6 +445,37 @@ E2.click(cont(E2)); await wait(); E2.click(cont(E2)); await wait();
 t('revisar 5/5 con la unidad en la recogida', stepN(E2) === '5/5' && /Casa 8/.test(E2.$('.rx-review').textContent));
 t('sin errores de consola (bandera encendida)', E.errors.length === 0 && E2.errors.length === 0, E.errors.concat(E2.errors).slice(0, 3).join(' | '));
 
+console.log('\n── vacaciones: un viaje de más se avisa antes de confirmar (30-sep) ──');
+{
+  const E3 = await boot();
+  const vx = [];
+  const pg = E3.w.AuxPagos;
+  t('AuxPagos expone vacExtraFor', !!pg && typeof pg.vacExtraFor === 'function');
+  // Doble: lo que diga la base (el cálculo real se prueba en _smoke-rx-pagos-dom.mjs).
+  let resp = { trips: 1, of: 1, perTripCOP: 25000, amountCOP: 25000, live: true, text: 'Este viaje no estaba en tus vacaciones: se suma $25.000 a tu cuenta.' };
+  pg.vacExtraFor = (day, n) => { vx.push([day, n]); return resp; };
+  const refrescos = [];
+  pg.refresh = (o) => { refrescos.push(o); return Promise.resolve(); };
+  await aRevisar(E3);
+  const nota = () => E3.$('[data-scr="book"]:not(.out) [data-rx-key="vacextra"]');
+  t('revisar: el aviso rx-note (warn) con el texto que da AuxPagos', !!nota() && nota().classList.contains('rx-note') && nota().classList.contains('warn')
+    && nota().textContent.replace(/\s+/g, ' ').trim() === 'Este viaje no estaba en tus vacaciones: se suma $25.000 a tu cuenta.', nota() && nota().outerHTML);
+  t('…va justo antes de «Antes de confirmar» (la política)', !!nota() && !!nota().nextElementSibling && nota().nextElementSibling.matches('.rx-pd-pol'));
+  t('…se pidió con el día del viaje y 1 viaje', vx.some(([d, n]) => d === FUTURO && n === 1), JSON.stringify(vx));
+  t('…no bloquea: el deslizador sigue habilitado', !!slide(E3) && !slide(E3).classList.contains('off'));
+  vx.length = 0;
+  E3.A().form.sameDayBack = true; E3.A().form.backTime = '19:40'; E3.w.Auxiliar.rerender(); await wait();
+  t('con el regreso del mismo día se pide por 2 viajes', vx.some(([d, n]) => d === FUTURO && n === 2), JSON.stringify(vx));
+  resp = null; E3.w.Auxiliar.rerender(); await wait();
+  t('si AuxPagos no tiene nada que avisar (null), no sale', !nota());
+  resp = { trips: 2, of: 2, amountCOP: 50000, live: false, text: 'Estos 2 viajes no estaban en tus vacaciones: se suman $50.000 a tu próximo cobro.' };
+  E3.w.Auxiliar.rerender(); await wait();
+  t('…y si vuelve a haber, aparece en su lugar (con el texto nuevo)', !!nota() && /se suman \$50\.000 a tu próximo cobro/.test(nota().textContent));
+  E3.click(slide(E3).querySelector('.rx-slide-k')); await wait(500);
+  t('pedir con el aviso puesto sí envía (2 reservas) y luego refresca Pagos (AuxPagos.refresh({force:true}))', E3.inserts.length === 2 && refrescos.some(o => o && o.force === true), JSON.stringify([E3.inserts.length, refrescos]));
+  t('sin errores de consola (vacaciones)', E3.errors.length === 0, E3.errors.slice(0, 3).join(' | '));
+}
+
 console.log('\n── bandera APAGADA: el pedido de siempre ──');
 const E0 = await boot({ rx: false });
 E0.A().view = 'home'; E0.w.Auxiliar.rerender(); await wait();
@@ -434,7 +483,65 @@ E0.click('[data-ax="new"]'); await wait(60);
 t('sin .rx-book ni capas: el formulario heredado (.ax-form-head, .ax-opt)', !E0.$('.rx-book') && !!E0.$('.ax-form-head') && !!E0.$('.ax-opt.h2a'));
 E0.click('[data-ax="type"][data-type="sal"]'); E0.click('[data-ax="next"]'); await wait();
 t('los campos son los de siempre (.ax-input), no los rx', !!E0.$('input.ax-input[data-field="time"]') && !E0.$('.rx-input'));
+{
+  // El resumen del pedido de siempre también avisa el viaje de más (30-sep).
+  const pg0 = E0.w.AuxPagos;
+  pg0.vacExtraFor = (day, n) => (day === FUTURO && n === 1 ? { trips: 1, amountCOP: 25000, live: true, text: 'Este viaje no estaba en tus vacaciones: se suma $25.000 a tu cuenta.' } : null);
+  Object.assign(E0.A().form, { type: 'sal', date: FUTURO, time: '05:10', address: 'Cra 1 # 2-3', locConfirmed: true, sameDayBack: false });
+  E0.A().step = E0.w.Auxiliar.kinds().length; E0.w.Auxiliar.rerender(); await wait();
+  const h0 = E0.$('[data-ax-vacextra]');
+  t('bandera apagada: el resumen trae el aviso (ax-hint) antes de la política', !!h0 && h0.classList.contains('ax-hint') && /Este viaje no estaba en tus vacaciones: se suma \$25\.000 a tu cuenta\./.test(h0.textContent), h0 && h0.outerHTML);
+  pg0.vacExtraFor = () => null; E0.w.Auxiliar.rerender(); await wait();
+  t('…sin nada que avisar, no sale', !E0.$('[data-ax-vacextra]'));
+  // Revisión 1-oct: auxiliar.js comparte el ámbito global; el aviso vive en
+  // AuxPagos y auxiliar.js no declara nombres nuevos para él.
+  t('sin globals nuevos: auxVacExtraInner/HTML/Ensure no existen y AuxPagos expone axVacExtraHTML y axVacExtraEnsure',
+    ['auxVacExtraInner', 'auxVacExtraHTML', 'auxVacExtraEnsure'].every(k => typeof E0.w[k] === 'undefined')
+    && typeof pg0.axVacExtraHTML === 'function' && typeof pg0.axVacExtraEnsure === 'function',
+    ['auxVacExtraInner', 'auxVacExtraHTML', 'auxVacExtraEnsure'].map(k => k + ':' + typeof E0.w[k]).join(' '));
+}
 t('sin errores de consola (bandera apagada)', E0.errors.length === 0, E0.errors.slice(0, 3).join(' | '));
+
+console.log('\n── bandera APAGADA: el aviso de vacaciones sale desde el PRIMER pedido (revisión 1-oct) ──');
+{
+  // Antes, sin el shell nuevo nadie pedía la cuenta de cobro: el aviso salía
+  // recién después de la primera reserva de la sesión. Aquí con el AuxPagos de
+  // verdad (vacExtraFor real) y una ApiCobro falsa que tarda en contestar.
+  const E4 = await boot({ rx: false });
+  const dia = (n) => bogDay(Date.parse(FUTURO + 'T12:00:00-05:00') + n * 86400000);
+  let llamadas = 0;
+  let conVac = true;
+  const cuenta = () => ({
+    today: bogDay(Date.now()), amountCOP: 170000, perTripCOP: 20000, sector: 'Norte', current: null,
+    vacations: {
+      current: { periodStart: dia(-10), periodEnd: dia(10), statementId: 'st1', statementLive: true, canChange: true, tripsBooked: 3,
+        // Como la base: sin vacaciones (activas ni la foto) freeTrips viene NULL.
+        freeTrips: conVac ? 0 : null, extraPerTripCOP: conVac ? 20000 : null,
+        vacation: conVac ? { trips: 3, perTripCOP: 20000, totalCOP: 60000, startsOn: dia(-5), endsOn: dia(5) } : null },
+      next: null },
+    extrasPending: { trips: 0, amountCOP: 0, items: [] },
+  });
+  E4.w.ApiCobro = {
+    myAccount: () => { llamadas++; return new Promise(r => setTimeout(() => r(cuenta()), 30)); },
+    methods: async () => [], alerts: async () => [], history: async () => [],
+  };
+  E4.A().view = 'home'; E4.w.Auxiliar.rerender(); await wait();
+  E4.click('[data-ax="new"]'); await wait(60);
+  Object.assign(E4.A().form, { type: 'sal', date: FUTURO, time: '05:10', address: 'Cra 1 # 2-3', locConfirmed: true, sameDayBack: false });
+  E4.A().step = E4.w.Auxiliar.kinds().length; E4.w.Auxiliar.rerender();
+  const caja = () => E4.$('#ax-vacextra');
+  t('al entrar a «Revisa y confirma» se pide la cuenta (aún sin ella: la caja del aviso está, oculta y vacía)', llamadas === 1 && !!caja() && caja().hidden === true && !E4.$('[data-ax-vacextra]'), JSON.stringify([llamadas, caja() && caja().outerHTML]));
+  await wait(90);
+  const h4 = E4.$('[data-ax-vacextra]');
+  t('…al llegar la cuenta, el aviso aparece EN SU LUGAR sin haber pedido nada antes', !!h4 && caja().hidden === false && h4.classList.contains('ax-hint')
+    && h4.textContent.replace(/\s+/g, ' ').trim() === 'Este viaje no estaba en tus vacaciones: se suma $20.000 a tu cuenta.', caja() && caja().outerHTML);
+  t('…y va justo antes de la política («Antes de confirmar»)', !!caja() && !!caja().nextElementSibling && /Antes de confirmar/.test(caja().nextElementSibling.textContent || ''));
+  E4.w.Auxiliar.rerender(); await wait(20);
+  t('repintar el resumen: el aviso sale de una vez y la cuenta fresca no se vuelve a pedir', !!E4.$('[data-ax-vacextra]') && caja().hidden === false && llamadas === 1, llamadas);
+  conVac = false; await E4.w.AuxPagos.refresh({ force: true }); E4.w.Auxiliar.rerender(); await wait(60);
+  t('sin vacaciones en ese cobro: la caja queda oculta y sin aviso (nada inventado)', !!caja() && caja().hidden === true && !E4.$('[data-ax-vacextra]'));
+  t('sin errores de consola (aviso del primer pedido)', E4.errors.length === 0, E4.errors.slice(0, 3).join(' | '));
+}
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: layout y animación real (jsdom), gesto táctil real, audio real, Leaflet real, servidor (RLS/CHECK/triggers).');

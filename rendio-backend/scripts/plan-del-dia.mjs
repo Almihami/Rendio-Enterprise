@@ -30,10 +30,13 @@
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const RUTAS_JS = '/Users/harold/Documents/Rendio-Drivers/Proyect/rendio-turnos/admin-rutas.js';
+// Relativo a este archivo (como plan-desde-formulario.mjs): en la carpeta de
+// siempre es el mismo admin-rutas.js, y en una copia de trabajo (worktree) es el
+// de ESA copia, no el de la carpeta principal.
+const RUTAS_JS = new URL('../../rendio-turnos/admin-rutas.js', import.meta.url).pathname;
 // rtToMin/rtToHM/rtIni/rtEsc viven en admin-consola.js (scope global compartido,
 // se carga antes). Se toman de allá, no se copian: si cambian, cambian aquí.
-const CONSOLA_JS = '/Users/harold/Documents/Rendio-Drivers/Proyect/rendio-turnos/admin-consola.js';
+const CONSOLA_JS = new URL('../../rendio-turnos/admin-consola.js', import.meta.url).pathname;
 
 const envFile = process.argv[2] || '.env.dev';
 const DIA = process.argv.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a));
@@ -91,10 +94,14 @@ const fabrica = new Function('state', 'Api', 'window', 'toast', '$', 'fetch', `
 const bogDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
 const hhmm = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' });
 
-const { data: rows, error } = await admin.from('reservations')
-  .select('id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, is_overnight, is_firm, residence_id, residences(name), auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)')
+// ground_ops (0092, trabajo en tierra) en su propio escalón: sin la migración se
+// lee como antes y todos cuentan como si vinieran en vuelo.
+const COLS_RES = 'id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, is_overnight, is_firm, residence_id, residences(name), auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)';
+const leerRes = (cols) => admin.from('reservations').select(cols)
   .is('cancelled_at', null)
   .order('required_arrival_at', { ascending: true });
+let { data: rows, error } = await leerRes(COLS_RES + ', ground_ops');
+if (error) ({ data: rows, error } = await leerRes(COLS_RES));
 if (error) { console.error('reservations:', error.message); process.exit(1); }
 
 const delDia = rows.filter((r) => bogDay(r.required_arrival_at) === DIA);
@@ -133,7 +140,11 @@ delDia.forEach((r) => {
     // El número de vuelo entra por el formulario y hoy vive en las notas
     // ("Vuelo 8437."). Viene como lo escribió el tripulante: unos con sigla
     // (AV9717, JA5116) y otros solo los dígitos.
-    vuelo: r.flights?.flight_number || (r.notes || '').match(/Vuelo\s+([A-Za-z]{0,3}\s?\d+)/)?.[1]?.replace(/\s/g, '') || '',
+    // En tierra (0092) no hay vuelo aunque las notas traigan uno viejo.
+    vuelo: r.ground_ops === true ? '' : (r.flights?.flight_number || (r.notes || '').match(/Vuelo\s+([A-Za-z]{0,3}\s?\d+)/)?.[1]?.replace(/\s/g, '') || ''),
+    // Trabajo en tierra (0092): en la llegada, la hora es la de salir del
+    // terminal y el solver (rtDeplaneOf) no le suma desembarque.
+    tierra: r.ground_ops === true,
     notas: r.notes || '',
     hotel: !!r.is_overnight,
     firme: !!r.is_firm,
@@ -170,8 +181,9 @@ const vueltas = lanes.map((l) => {
     const a = aux[s.id];
     const ult = paradas[paradas.length - 1];
     const k = S.rtStopKey(s.id);
-    if (ult && ult.key === k) { ult.personas.push({ n: a.n, dl: a.dl, vuelo: a.vuelo, hotel: a.hotel, firme: a.firme }); return; }
-    paradas.push({ key: k, zona: a.zona, eta: S.rtToHM(s.eta), personas: [{ n: a.n, dl: a.dl, vuelo: a.vuelo, hotel: a.hotel, firme: a.firme }] });
+    const p = { n: a.n, dl: a.dl, vuelo: a.vuelo, hotel: a.hotel, firme: a.firme, tierra: !!a.tierra };
+    if (ult && ult.key === k) { ult.personas.push(p); return; }
+    paradas.push({ key: k, zona: a.zona, eta: S.rtToHM(s.eta), personas: [p] });
   });
   return {
     id: l.id, carro: l.car, vuelta: l.vuelta, tipo: l.type,
@@ -189,7 +201,7 @@ const vueltas = lanes.map((l) => {
   };
 }).sort((a, b) => S.rtToMin(a.sale) - S.rtToMin(b.sale));
 
-const sinRutear = unassigned.map((id) => ({ n: aux[id].n, zona: aux[id].zona, dl: aux[id].dl, tipo: aux[id].type }));
+const sinRutear = unassigned.map((id) => ({ n: aux[id].n, zona: aux[id].zona, dl: aux[id].dl, tipo: aux[id].type, tierra: !!aux[id].tierra }));
 
 const salida = {
   dia: DIA, fuenteTiempos: fuente,
@@ -248,15 +260,16 @@ if (process.argv.includes('--formato=jefe')) {
     // La pernocta va aparte aunque comparta vuelo: el destino es otro.
     const porVuelo = new Map();
     v.paradas.forEach((p) => p.personas.forEach((x) => {
-      const k = ((x.vuelo || '').toUpperCase().replace(/^[A-Z]+/, '') || 'sin') + (x.hotel ? '|hotel' : '');
-      if (!porVuelo.has(k)) porVuelo.set(k, { nombres: [], vuelos: [], hotel: x.hotel, hora: x.dl });
+      // Los de tierra (0092) no bajan de ningún avión: van en su propia línea.
+      const k = (x.tierra ? 'tierra' : ((x.vuelo || '').toUpperCase().replace(/^[A-Z]+/, '') || 'sin')) + (x.hotel ? '|hotel' : '');
+      if (!porVuelo.has(k)) porVuelo.set(k, { nombres: [], vuelos: [], hotel: x.hotel, hora: x.dl, tierra: x.tierra });
       const g = porVuelo.get(k); g.nombres.push(corto(x.n)); g.vuelos.push(x.vuelo);
       if (x.dl < g.hora) g.hora = x.dl;
     }));
     const grupos = [...porVuelo.values()].sort((a, b) => a.hora.localeCompare(b.hora));
     const lineas = grupos.map((g) => {
       const cod = codVuelo(g.vuelos);
-      return `${hm(g.hora)} ${lista(g.nombres)} (${cod[0] || 'Aero'})${g.hotel ? ' — hotel' : ''}`;
+      return `${hm(g.hora)} ${lista(g.nombres)} (${g.tierra ? 'Tierra' : (cod[0] || 'Aero')})${g.hotel ? ' — hotel' : ''}`;
     });
     return { orden: S.rtToMin(grupos[0].hora), lineas };
   }).sort((a, b) => a.orden - b.orden);
@@ -266,7 +279,7 @@ if (process.argv.includes('--formato=jefe')) {
   bloques.forEach((b) => console.log(b.lineas.join('\n') + '\n'));
   if (sinRutear.length) {
     console.log(`SIN CARRO (${sinRutear.length})\n`);
-    sinRutear.forEach((x) => console.log(`${hm(x.dl)} ${corto(x.n)} (${lugar(x.zona)}) — ${x.tipo === 'sal' ? 'debe estar' : 'aterriza'}`));
+    sinRutear.forEach((x) => console.log(`${hm(x.dl)} ${corto(x.n)} (${lugar(x.zona)}) — ${x.tipo === 'sal' ? 'debe estar' : (x.tierra ? 'sale del terminal' : 'aterriza')}`));
   }
   process.exit(0);
 }

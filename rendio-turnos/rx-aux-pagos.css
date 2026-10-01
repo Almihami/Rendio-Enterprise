@@ -21,3 +21,12 @@
 #auxiliar-ui.rx-phone .cb-thumb.rx-pg-thumb > .rx-pg-img{
   width:100%; height:100%; object-fit:cover; border-radius:inherit; display:block;
 }
+
+/* Vacaciones (0094): la hoja usa las piezas que ya hay (rx-sh, cb2-seg, rx-field,
+   rx-input, rx-card + rx-set + rx-step-ctl, cb2-card + cb2-kv, rx-note, rx-btn).
+   Solo falta la caja del error, que cada módulo declara con su prefijo (la misma
+   de rx-me-err / rx-pts-err), y que la nota vacía con [hidden] no ocupe lugar
+   (.rx-note trae display:flex y le gana al [hidden] del navegador). */
+#auxiliar-ui.rx-phone .rx-pg-err{font-size:13.5px;line-height:1.45;padding:10px 12px;border-radius:12px;background:var(--r-error-soft);color:#B42318}
+#auxiliar-ui.rx-phone .rx-pg-err[hidden],
+#auxiliar-ui.rx-phone .rx-sh .rx-note[hidden]{display:none}

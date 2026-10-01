@@ -15,7 +15,13 @@
 //   · Un solo anzuelo (home.hook), nunca con un viaje en curso (D15).
 //
 // Contrato: window.AuxRxInicio = { passHTML(t,{scale,tag}), liveHTML(t),
-//   homeHTML(), isLive(t), isPublished(t), conjunto(t) }.
+//   homeHTML(), isLive(t), isPublished(t), conjunto(t),
+//   pickupOrder(t) → {pos,total,text,label}|null, canChangeFlight(t) }.
+//
+// Pedido del 29-sep-2026: MDE lleva debajo «JMC» y «Rionegro» en dos líneas; el
+// orden en el carro («Recogida 2/3», «Parada 1/1») solo con la ruta publicada;
+// en un traslado de tierra (groundOps) no hay celda «Vuelo» y en la llegada la
+// hora grande es «Sales del aeropuerto».
 // Registra: AuxShell.register('home'), el enganche 'home.hook' de Select
 // (prioridad 10) y las acciones data-rx «rate-trip» e «inicio-share».
 //
@@ -124,36 +130,70 @@
   }
   function codeOf(t) { return String((t && t.meetCode) || (info(t) && info(t).meet_code) || ''); }
 
+  // Mi lugar en el carro (0093, «2/3»): SOLO con la ruta publicada (published
+  // === true, el k.pub de auxiliar_my_trips) y los dos números enteros y
+  // coherentes. Sin eso, null: no se pinta nada (ni un «por confirmar»).
+  // Salida: orden de recogida. Llegada: el orden en que los dejan (el carro
+  // recoge a todos juntos en MDE), por eso «Parada».
+  function pickupOrder(t) {
+    if (!t || t.published !== true || t.pickupPos == null || t.pickupTotal == null) return null;
+    const p = Number(t.pickupPos), n = Number(t.pickupTotal);
+    if (!Number.isInteger(p) || !Number.isInteger(n) || p < 1 || n < p) return null;
+    return { pos: p, total: n, text: p + '/' + n, label: t.type === 'lle' ? 'Parada' : 'Recogida' };
+  }
+  // «Solo por tierra» (0092/0093): operación del aeropuerto sin vuelo.
+  const isGround = (t) => !!t && t.groundOps === true;
+  // ¿Se le puede cambiar el vuelo / la hora? La MISMA regla con la que Inicio
+  // ofrece «Cambió mi vuelo» (y la que usa la hoja del viaje para su botón):
+  // próximo, pedido o asignado, y el conductor todavía no llegó por él.
+  function canChangeFlight(t) {
+    if (!t || (t.status !== 'pending' && t.status !== 'assigned') || arrived(t)) return false;
+    const a = AX();
+    return !(a && typeof a.isUpcoming === 'function') || !!safe(() => a.isUpcoming(t), false);
+  }
+
   // ── RxPass (§3.3) ─────────────────────────────────────────────────────────
   // passHTML(t, {scale, tag:'button'|'div'}) — scale para mostrarlo reducido
   // (p. ej. en «booked»); tag 'div' lo deja sin toque.
+  // El aeropuerto va en tres líneas: «MDE» grande y debajo «JMC» y «Rionegro».
+  const APT_SUB = ['JMC', 'Rionegro'];
+  function ptHTML(p, right) {
+    return '<div class="rx-pass-pt' + (right ? ' r' : '') + '"><b>' + esc(p[0]) + '</b>'
+      + p[1].map(s => '<span>' + esc(s) + '</span>').join('') + '</div>';
+  }
   function passHTML(t, o) {
     o = o || {};
     if (!t) return '';
     const u = UI();
     const lle = t.type === 'lle';
+    const ground = isGround(t);
     const L = levelOf(t);
     const pub = isPublished(t);
     const pk = pickupISO(t);
     const home = conjunto(t);
-    const from = lle ? ['MDE', 'JMC · Rionegro'] : ['CASA', home];
-    const to = lle ? ['CASA', home] : ['MDE', 'JMC · Rionegro'];
+    const from = lle ? ['MDE', APT_SUB] : ['CASA', [home]];
+    const to = lle ? ['CASA', [home]] : ['MDE', APT_SUB];
     let bigL, bigV;
     if (pk) { bigL = lle ? 'Te esperamos en MDE' : 'Te recogemos'; bigV = hm(pk); }
-    else { bigL = lle ? 'Aterrizas' : 'Estar en MDE'; bigV = t.time || '--:--'; }
+    else { bigL = lle ? (ground ? 'Sales del aeropuerto' : 'Aterrizas') : 'Estar en MDE'; bigV = t.time || '--:--'; }
     const note = !pub ? 'Hora de recogida: te avisamos cuando armemos tu ruta'
       : (!pk ? 'Conductor asignado · hora por confirmar' : '');
     // Grilla: nunca «Trayecto» ni «Presentación». La hora del vuelo solo si la
-    // grande es la recogida (si no, ya es la grande).
+    // grande es la recogida (si no, ya es la grande). En tierra no hay vuelo.
     const cells = [];
     if (!lle) {
       if (pk && t.time) cells.push(['En MDE', t.time]);
-      if (t.flight) cells.push(['Vuelo', t.flight]);
+      if (t.flight && !ground) cells.push(['Vuelo', t.flight]);
     } else {
-      if (t.flight) cells.push(['Vuelo', t.flight]);
-      if (pk && t.time) cells.push(['Aterriza', t.time]);
+      if (t.flight && !ground) cells.push(['Vuelo', t.flight]);
+      if (pk && t.time) cells.push([ground ? 'Sales' : 'Aterriza', t.time]);
     }
     if (t.bags != null && t.bags !== '') cells.push(['Maletas', String(t.bags)]);
+    // El orden en el carro va último, en la fila de Maletas y pegado a la
+    // derecha (rx-pass-ord). Con cuatro celdas la grilla pasa a cuatro columnas.
+    const ord = pickupOrder(t);
+    const cols = ord ? Math.max(3, cells.length + 1) : 3;
+    const cell = (c, cls) => '<div' + (cls ? ' class="' + cls + '"' : '') + '><span>' + esc(c[0]) + '</span><b>' + esc(c[1]) + '</b></div>';
     // Pie: conductor real, o lo que falta dicho de frente.
     const d = t.driver;
     let bot;
@@ -177,13 +217,14 @@
       + '<div class="rx-pass-top"><span class="rx-pass-day">' + esc(dayLabel(t.date)) + '</span>'
       + '<span class="rx-pass-lv t-' + esc(L.tone) + '">' + esc(L.name) + '</span></div>'
       + '<div class="rx-pass-main">'
-      + '<div class="rx-pass-pt"><b>' + esc(from[0]) + '</b><span>' + esc(from[1]) + '</span></div>'
+      + ptHTML(from, false)
       + '<div class="rx-pass-mid"><i></i><span class="rx-pass-plane">' + ic(lle ? 'Plane' : 'Car', 16) + '</span><i></i></div>'
-      + '<div class="rx-pass-pt r"><b>' + esc(to[0]) + '</b><span>' + esc(to[1]) + '</span></div>'
+      + ptHTML(to, true)
       + '</div>'
       + '<div class="rx-pass-time"><span>' + esc(bigL) + '</span><b>' + esc(bigV) + '</b></div>'
       + (note ? '<div class="rx-pass-note">' + ic('Clock', 14) + '<span>' + esc(note) + '</span></div>' : '')
-      + (cells.length ? '<div class="rx-pass-grid">' + cells.map(c => '<div><span>' + esc(c[0]) + '</span><b>' + esc(c[1]) + '</b></div>').join('') + '</div>' : '')
+      + (cells.length || ord ? '<div class="rx-pass-grid"' + (cols > 3 ? ' style="grid-template-columns:repeat(' + cols + ',1fr)"' : '') + '>'
+        + cells.map(c => cell(c)).join('') + (ord ? cell([ord.label, ord.text], 'rx-pass-ord') : '') + '</div>' : '')
       + '<div class="rx-pass-perf"><i></i><span></span><i></i></div>'
       + '<div class="rx-pass-bot">' + bot
       + (showCode ? '<span class="rx-pass-code">Código <b>' + esc(code) + '</b></span>' : '')
@@ -427,7 +468,7 @@
       const lbl = (safe(() => a.typeMeta(last), null) || {}).label || (last.type === 'lle' ? 'Llegada' : 'Salida');
       items.push(['Refresh', 'Repetir último', lbl + ' · ' + conjunto(last), ' data-ax="repeat"']);
     }
-    const ft = up.find(t => (t.status === 'pending' || t.status === 'assigned') && !arrived(t));
+    const ft = up.find(canChangeFlight);
     if (ft) {
       const t2 = (!isPublished(ft) && ft.level !== 'private') ? 'Actualizamos tu traslado' : 'Coordinación te confirma';
       items.push(['Plane', 'Cambió mi vuelo', t2, ' data-rx="open-flight" data-id="' + esc(ft.id) + '"']);
@@ -649,6 +690,9 @@
   window.AuxRxInicio = {
     passHTML, liveHTML, homeHTML,
     isLive, isPublished, conjunto, levelOf, arrived, whenTs, refreshBell,
+    // Pedido del 29-sep: el orden en el carro y la regla de «Cambió mi vuelo»
+    // (la hoja del viaje las reutiliza para no inventar otra).
+    pickupOrder, canChangeFlight,
     // Para pruebas: el estado del mapa en vivo.
     _live: () => live,
   };

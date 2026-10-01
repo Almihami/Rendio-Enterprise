@@ -1691,6 +1691,71 @@
   }
 
   // ====================================================================
+  // Documentos del carro (0095) — SOAT, técnico-mecánica, seguro y demás
+  // ====================================================================
+  // Viven en Repuestos. SOAT / técnico-mecánica / seguro son la misma fecha que
+  // vehicles.*_expires_at (Flota): la base las mantiene iguales en las dos
+  // direcciones. Sin fila o sin fecha = sin dato. Vencido = aviso, no bloquea.
+
+  async function listVehicleDocuments() {
+    const { data, error } = await sb
+      .from('vehicle_documents')
+      .select('id, vehicle_id, kind, expires_on, number, issuer, notes, not_applicable, updated_at');
+    if (error) throw error;
+    return data || [];
+  }
+
+  // d = { expiresOn: 'AAAA-MM-DD' | null, number, issuer, notes, notApplicable }
+  async function saveVehicleDocument(vehicleId, kind, d) {
+    const o = d || {};
+    const { data, error } = await sb.rpc('save_vehicle_document', {
+      p_vehicle_id: vehicleId, p_kind: kind,
+      p_expires_on: o.expiresOn || null,
+      p_number: o.number || null, p_issuer: o.issuer || null, p_notes: o.notes || null,
+      p_not_applicable: !!o.notApplicable,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  // Con cuántos días de anticipación se avisa (app_settings, 30 por defecto).
+  async function getVehicleDocAlertDays() {
+    const { data, error } = await sb.from('app_settings')
+      .select('vehicle_doc_alert_days').eq('id', 'singleton').maybeSingle();
+    if (error) throw error;
+    return data && data.vehicle_doc_alert_days != null ? Number(data.vehicle_doc_alert_days) : null;
+  }
+
+  async function setVehicleDocAlertDays(days) {
+    const { error } = await sb.from('app_settings')
+      .update({ vehicle_doc_alert_days: days }).eq('id', 'singleton');
+    if (error) throw error;
+  }
+
+  // Última corrida del aviso diario (null = nunca corrió; no es «todo al día»).
+  async function getVehicleDocLastRun() {
+    const { data, error } = await sb.from('vehicle_document_job_runs')
+      .select('run_on, ran_at, alerts, pushes').order('run_on', { ascending: false }).limit(1);
+    if (error) throw error;
+    return (data && data[0]) || null;
+  }
+
+  // Lo que ve el CONDUCTOR (inicio de turno y perfil): los documentos de la vía
+  // —SOAT, técnico-mecánica, seguro, pólizas RC, extintor— de los carros de su
+  // organización, con el estado ya calculado en la base (fecha de Bogotá y la
+  // misma ventana del aviso a los jefes). Sin número, entidad ni nota. La tabla
+  // no se le abre: va por la RPC (0095). vehicleIds vacío o null = todos.
+  // Filas: { vehicle_id, kind, label, expires_on, days_left, status, not_applicable }
+  // status: no_aplica | sin_dato | vencido | hoy | por_vencer | al_dia.
+  async function driverVehicleDocuments(vehicleIds) {
+    const { data, error } = await sb.rpc('driver_vehicle_documents', {
+      p_vehicle_ids: Array.isArray(vehicleIds) && vehicleIds.length ? vehicleIds : null,
+    });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // ====================================================================
   // Inspecciones — revisión/aprobación (admin) + checklist configurable
   // ====================================================================
 
@@ -1700,16 +1765,54 @@
   // aparecían en Admin→Inspecciones. Ahora trae TODAS las 'initial'; los filtros
   // de la UI (Pendientes/Aprobadas/Rechazadas/Todas) hacen el resto. Las que
   // requieren acción siguen siendo las 'pending' (solo las que tienen novedad).
-  async function listInspectionsForReview(status) {
+  //
+  // Filtros de la cola (29-sep-2026): fecha, conductor y carro van AL SERVIDOR.
+  // La consulta trae solo las `limite` más recientes (300), así que filtrar en el
+  // cliente buscaría únicamente dentro de esas: una fecha de julio saldría vacía
+  // sin estarlo. `filtros` (todo opcional):
+  //   desde / hasta  instantes ISO con huso (-05:00); `hasta` es EXCLUSIVO
+  //   vehicleId      vehicles.id
+  //   driverIds      driver_profiles.id[] — vacío = ningún conductor coincide → []
+  //   limite         tope de filas (300 si no viene)
+  async function listInspectionsForReview(status, filtros) {
+    const f = filtros || {};
+    if (Array.isArray(f.driverIds) && !f.driverIds.length) return [];
     let q = sb.from('inspections')
       .select('id,kind,has_damage,notes,odometer_km,review_status,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id,' +
               'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
               'driver_profiles(profiles(id,full_name,email))')
       .eq('kind', 'initial')
       .order('performed_at', { ascending: false })
-      .limit(300);
+      .limit(f.limite || 300);
     if (status) q = q.eq('review_status', status);
+    if (f.desde) q = q.gte('performed_at', f.desde);
+    if (f.hasta) q = q.lt('performed_at', f.hasta);
+    if (f.vehicleId) q = q.eq('vehicle_id', f.vehicleId);
+    if (Array.isArray(f.driverIds)) q = q.in('driver_id', f.driverIds);
     const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Conductores para el buscador por nombre de la cola de inspecciones:
+  // driver_profiles.id (a eso apunta inspections.driver_id, no a profiles) y su
+  // nombre. Van TODOS, también los inactivos o borrados: sus inspecciones viejas
+  // siguen en la cola y tienen que poder buscarse. El cruce por nombre —sin tildes
+  // ni mayúsculas— lo hace el admin; PostgREST no sabe ignorar tildes.
+  async function listInspectionDrivers() {
+    const { data, error } = await sb.from('driver_profiles').select('id, profiles(full_name)');
+    if (error) throw error;
+    return (data || []).map(d => ({ id: d.id, name: (d.profiles && d.profiles.full_name) || '' }));
+  }
+
+  // Carros para el filtro «Carro» de la cola de inspecciones: la flota de la org
+  // CON los dados de baja (deleted_at): sus inspecciones viejas siguen en la cola.
+  // listVehiclesForShift los esconde porque ahí se elige carro para salir. RLS:
+  // p_vehicles_select_admin (0004) deja al admin ver todos los de su org.
+  async function listInspectionVehicles() {
+    const { data, error } = await sb.from('vehicles')
+      .select('id, internal_code, license_plate, deleted_at')
+      .order('internal_code');
     if (error) throw error;
     return data || [];
   }
@@ -2170,7 +2273,10 @@
       // 0062: la zona de Julián viaja pegada a la residencia. Escalón propio de
       // la cascada: sin la migración se cae al select de al lado y el tablero
       // programa con el modelo calculado, como antes.
-      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe)');
+      // 0092: trabajo en tierra, escalón propio encima de todo. Sin la migración
+      // se cae al de siempre y el tablero trata a todos como si vinieran en vuelo.
+      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe), ground_ops');
+      if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe)');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name)');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm');
       if (res.error) res = await q(COLS);
@@ -2214,7 +2320,11 @@
         // JA5116, P57433 o los dígitos pelados, y todos cuentan. La regex que
         // vivía aquí se mudó a _flightFromNotes, que ahora es la misma para los
         // tres lectores del vuelo (11-sep-2026).
-        vuelo: r.flights?.flight_number || _flightFromNotes(r.notes),
+        // En tierra (0092) no hay vuelo aunque las notas traigan uno viejo.
+        vuelo: r.ground_ops === true ? '' : (r.flights?.flight_number || _flightFromNotes(r.notes)),
+        // Trabajo en tierra (0092): en una llegada la hora es la de salir del
+        // terminal y NO se le suma desembarque (rtDeplaneOf, admin-rutas).
+        tierra: r.ground_ops === true,
         notas: r.notes || '',
         // 'hotel' es el flag que el tablero ya sabía pintar (chip "Hotel"), pero
         // nadie se lo llenaba: la pernocta se preguntaba y se perdía.
@@ -2292,7 +2402,12 @@
     // base desde el plan con conductor). Va en el escalón de arriba: sin 0085 la
     // columna existe pero siempre está NULL, así que el respaldo es el mismo.
     const TOP = COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, residence_unit, service_level, private_status, price_cop, private_reject_reason';
-    let { data, error } = await q(TOP + ', calculated_pickup_at');
+    // 0092: trabajo en tierra, en su propio escalón encima de todo (sin la
+    // migración se cae al de 0085 y el viaje se lee como uno con vuelo). created_at
+    // existe desde 0003: con él se sabe cuál fue el ÚLTIMO pedido (el interruptor
+    // de «en tierra» arranca como ese).
+    let { data, error } = await q(TOP + ', calculated_pickup_at, created_at, ground_ops');
+    if (error) ({ data, error } = await q(TOP + ', calculated_pickup_at'));
     if (error) ({ data, error } = await q(TOP));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, service_level, private_status, price_cop, private_reject_reason'));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id'));
@@ -2321,6 +2436,9 @@
       isPernocta: !!r.is_overnight, isReserva: r.is_firm !== false,
       readyAt: r.ready_confirmed_at || null,
       rated: r.rating != null, rating: r.rating || 0,
+      // 0092. false también cuando la columna no llegó (escalón de abajo).
+      groundOps: r.ground_ops === true,
+      createdAt: r.created_at || null,
     }));
   }
   // ---- Catálogo de residencias para el auxiliar (0055) ----
@@ -2471,7 +2589,10 @@
   async function createReservation(f) {
     const apId = await getMyAuxiliarProfileId(); if (!apId) throw new Error('Sin perfil de auxiliar');
     const isLle = f.type === 'lle';
-    const notes = (f.flight ? 'Vuelo ' + f.flight + '. ' : '') + (f.notes || '');
+    // En tierra (0092) no hay vuelo: aunque el formulario haya quedado con uno
+    // escrito de antes de encender el interruptor, no se pega a las notas.
+    const vuelo = f.groundOps === true ? '' : (f.flight || '');
+    const notes = (vuelo ? 'Vuelo ' + vuelo + '. ' : '') + (f.notes || '');
     const payload = {
       auxiliar_profile_id: apId, flight_id: null,
       direction: isLle ? 'airport_to_home' : 'home_to_airport',
@@ -2521,15 +2642,28 @@
       { ...payload, ...extra, ...lvlMin },                            // sin residencia
       { ...payload, ...lvlMin },                                      // sin pernocta/firme
     ];
+    // TRABAJO EN TIERRA (0092, 29-sep-2026). Solo se manda cuando es verdad: el
+    // traslado de siempre no lleva la columna y no cambia en nada. Viaja en TODOS
+    // los escalones —no es un detalle que se suelte primero— y solo se suelta si
+    // el error dice que ES ella la que falta (0092 sin aplicar): ahí la reserva
+    // igual se crea, porque dejar a alguien sin carro por una columna es peor.
+    // Lo que se pierde en ese caso lo dice el aviso de consola: el tablero no
+    // sabrá que no hay desembarque y en una llegada le sumará el de respaldo.
+    let conTierra = f.groundOps === true;
     const vistos = new Set();
     let data = null, error = null;
-    for (const row of escalones) {
+    for (let i = 0; i < escalones.length; i++) {
+      const row = conTierra ? { ...escalones[i], ground_ops: true } : escalones[i];
       const k = JSON.stringify(Object.keys(row).sort());
       if (vistos.has(k)) continue;          // escalón idéntico al anterior: no se repite
       vistos.add(k);
       ({ data, error } = await sb.from('reservations').insert(row).select('id').single());
       if (!error) break;
       if (!faltaCol(error)) throw error;
+      if (conTierra && /ground_ops/i.test(String(error.message || '') + ' ' + String(error.details || ''))) {
+        console.warn('[createReservation] sin la columna ground_ops (0092): la reserva sale sin la marca de «en tierra»');
+        conTierra = false; i--;              // el MISMO escalón, sin la columna
+      }
     }
     if (error) throw error;
     return data.id;
@@ -2637,7 +2771,10 @@
     const q = cols => sb.from('reservations').select(cols)
       .gte('required_arrival_at', from).lte('required_arrival_at', to)
       .order('required_arrival_at', { ascending: true });
-    let { data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at');
+    // 0092 (trabajo en tierra) en su propio escalón encima: sin la migración se
+    // lee como antes.
+    let { data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at, ground_ops');
+    if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at'));
     if (error) ({ data, error } = await q(COLS));
     if (error) return null;
     return (data || []).map(r => ({
@@ -2647,7 +2784,8 @@
       phone: r.auxiliar_profiles?.profiles?.phone || '',
       address: r.pickup_address || '', when: r.required_arrival_at,
       date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
-      flight: _flightFromNotes(r.notes),
+      groundOps: r.ground_ops === true,
+      flight: r.ground_ops === true ? '' : _flightFromNotes(r.notes),
       notes: r.notes || '', raw: r.status_h2a || r.status_a2h || '',
       status: _auxTripStatus(r), cancelledAt: r.cancelled_at || null,
       cancelReason: r.cancellation_reason || '', createdAt: r.created_at,
@@ -3112,11 +3250,16 @@
   // Gana la más reciente por recorded_at; el admin muestra la frescura para no
   // creerle ciegamente a un punto viejo.
   async function listLiveOperation() {
-    const { data, error } = await sb
+    // Las notas (donde vive el vuelo, ver _flightFromNotes) y ground_ops (0092,
+    // trabajo en tierra) van en el escalón de arriba: sin 0092 se cae al select
+    // de siempre, que solo sabe el vuelo si la reserva quedó ligada a flights.
+    const sel = (extra) => sb
       .from('route_assignments')
-      .select('id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profiles(full_name, phone)), route_stops(stop_order, status, reservation_id, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, auxiliar_profiles(profiles(full_name)), flights(flight_number)))')
+      .select(`id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profiles(full_name, phone)), route_stops(stop_order, status, reservation_id, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at${extra}, auxiliar_profiles(profiles(full_name)), flights(flight_number)))`)
       .in('status', ['planned', 'in_progress'])
       .order('planned_start_at');
+    let { data, error } = await sel(', notes, ground_ops');
+    if (error) ({ data, error } = await sel(''));
     if (error) throw error;
 
     const today = _bogDay(new Date().toISOString());
@@ -3182,7 +3325,11 @@
       // Presentación = el pasajero pendiente con la hora límite más temprana.
       const pend = stops.filter(s => s.status !== 'delivered' && s.status !== 'no_show');
       const presAt = pend.map(s => s.reservations?.required_arrival_at).filter(Boolean).sort()[0] || null;
-      const flight = (nextStop || stops[0])?.reservations?.flights?.flight_number || '—';
+      // En tierra (0092) no hay vuelo: se dice «Tierra» en vez de un «—» que
+      // parece dato faltante.
+      const rsv = (nextStop || stops[0])?.reservations || {};
+      const flight = rsv.ground_ops === true ? 'Tierra'
+        : (rsv.flights?.flight_number || _flightFromNotes(rsv.notes) || '—');
 
       const loc = posOf[activa.driver_profile_id];
 
@@ -3353,7 +3500,7 @@
     reportIncident, listEventualidades, countOpenEventualidades, acknowledgeIncident, opsAlertProfileIds, opsAlertHealth,
     startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listNoFuelReasons, getShiftFuelStatus,
-    listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
+    listInspectionsForReview, listInspectionDrivers, listInspectionVehicles, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, listChecklistItemsForTiers, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
     getMyFullProfile, uploadMyAvatar, getMyLastClosedShift,
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
@@ -3376,6 +3523,8 @@
     setVehiclePartBaseline, registerPartChange, confirmPartChange,
     correctVehicleOdometer, setPartInterval,
     listInspectionTiers, pendingInspectionTiers, markInspectionTiersDone,
+    listVehicleDocuments, saveVehicleDocument, getVehicleDocAlertDays, setVehicleDocAlertDays, getVehicleDocLastRun,
+    driverVehicleDocuments,
     listShiftsForBalance,
     lastVehicleKm, listShiftsForReview, listInspectionsForShifts, listFuelReceiptsForShifts,
   };

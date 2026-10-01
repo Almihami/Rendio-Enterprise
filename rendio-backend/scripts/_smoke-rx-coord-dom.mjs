@@ -387,7 +387,7 @@ t('publicado: la nota ya dice que Coordinación la ajusta (con la recogida real)
   /Coordinación la ajusta y te confirma|Coordinación ajusta tu recogida y te confirma/.test(layer('flight').querySelector('.rx-note').textContent)
   && (!pubT.pickupAt || layer('flight').querySelector('.rx-note b')), layer('flight').querySelector('.rx-note').textContent);
 t('predict() del publicado = needs_ops (misma regla que la RPC)', w.AuxRxVuelo.predict(pubT) === 'needs_ops');
-t('predict() del sin plan a 3 días = updated', w.AuxRxVuelo.predict(sal) === 'updated');
+t('predict() del sin plan a 3 días = updated', w.AuxRxVuelo.predict(sal, { date: sal.date, time: sal.time }) === 'updated');  // f explícito: sin él lee el formulario anterior y depende del reloj
 AS.popAll(); await wait(300);
 
 d = await montar('pendiente-sin-plan');

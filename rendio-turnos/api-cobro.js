@@ -17,6 +17,32 @@
 // Sin monto cargado por el jefe, myAccount() devuelve null: la pantalla dice
 // «Todavía no tienes mensualidad registrada». Nunca un monto inventado.
 //
+// 0094 (29-sep-2026): tarifa por SECTOR (la mensualidad efectiva es la propia →
+// la del sector; la calcula la base), VACACIONES por período de cobro (valor por
+// viaje del sector × viajes) y el BALANCE del mes.
+//   · 30-sep: la mensualidad por defecto de la organización YA NO se usa («todos
+//     tienen su propio valor»): sin valor propio ni del sector no hay cobro. Los
+//     «Valores por defecto» son solo los plazos y el titular (default_amount_cop
+//     ni se lee ni se escribe: la columna queda como estaba).
+//   · 30-sep: se cobra la DIFERENCIA. Un cobro de vacaciones vale valor por viaje
+//     × max(declarados, reservados); lo reservado de más con la cuenta ya
+//     cerrada entra en el próximo cobro como línea aparte. myAccount() trae, por
+//     período (vacations.current/next), tripsBilled, extraPendingCOP, freeTrips
+//     y statementLive, y extrasPending; la cuenta de cobro trae extras[] (las
+//     líneas «Viajes extra de vacaciones de …») y extrasCOP. Lo calcula la base.
+//   · revisión 1-oct: la cuenta de cobro trae discountRequestedCOP (el descuento
+//     que puso el jefe; discountCOP es el aplicado, que no pasa del monto). La
+//     base también recalcula sola al rechazar un comprobante y baja la línea de
+//     un viaje extra cancelado si la cuenta que la trae sigue viva: aquí no
+//     cambia nada (solo se lee de nuevo).
+//   · tripulante: setVacation({period:'current'|'next', startsOn, endsOn, trips}),
+//     cancelVacation(period). myAccount() trae sector, perTripCOP y vacations.
+//   · jefe: adminSectorRates(), adminSaveSectorRate(), adminUseSectorRate(),
+//     adminSetSector(), adminSetVacation(), adminCancelVacation(), adminBalance(mes).
+//   · reglas (las valida la base): el tripulante no cambia un cobro vencido ni
+//     declara menos viajes de los que ya hizo; «nada que pagar» se salda solo en
+//     $0 (pago automático) y solo el jefe lo reabre.
+//
 // IIFE; solo exporta window.ApiCobro. `window.sb` se lee en cada llamada (no al
 // cargar), así el archivo se puede evaluar antes de que exista el cliente.
 (function () {
@@ -298,6 +324,42 @@
     catch (_) { return REASONS.slice(); }
   }
 
+  // ── Vacaciones (0094) ────────────────────────────────────────────────────
+  // En vacaciones el cobro de ese período vale  valor por viaje del sector ×
+  // viajes  en vez de la mensualidad. La base valida todo (fechas dentro del
+  // cobro, 0 a 200 viajes, cuenta sin pagar ni en revisión, sector con valor por
+  // viaje) y recalcula la cuenta de cobro si ya está abierta.
+  const PERIODS = Object.freeze(['current', 'next']);
+  const isoDay = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : null);
+  // El cálculo que se muestra antes de confirmar (el que manda es el de la base).
+  function vacationTotal(perTripCOP, trips) {
+    const v = Number(perTripCOP), n = Number(trips);
+    if (!isFinite(v) || !isFinite(n) || v <= 0 || n < 0) return null;
+    return Math.round(v) * Math.round(n);
+  }
+  function vacArgs(o) {
+    o = o || {};
+    if (PERIODS.indexOf(o.period) < 0) throw new Error('Elige el cobro: este o el siguiente');
+    const trips = Number(o.trips);
+    if (!isFinite(trips) || trips < 0 || trips > 200 || Math.round(trips) !== trips) throw new Error('Los viajes van de 0 a 200');
+    const s = isoDay(o.startsOn), e = isoDay(o.endsOn);
+    if (!s || !e) throw new Error('Faltan las fechas de las vacaciones');
+    if (s > e) throw new Error('Revisa las fechas: el regreso no puede ser antes de la salida');
+    return { p_period: o.period, p_starts: s, p_ends: e, p_trips: trips };
+  }
+  // Devuelve { vacation, period, statement }. Deja la cuenta leída al día.
+  async function setVacation(o) {
+    const r = await rpc('aux_billing_set_vacation', vacArgs(o));
+    _lastAt = 0;
+    return r;
+  }
+  async function cancelVacation(period) {
+    if (PERIODS.indexOf(period) < 0) throw new Error('Elige el cobro: este o el siguiente');
+    const r = await rpc('aux_billing_cancel_vacation', { p_period: period });
+    _lastAt = 0;
+    return r;
+  }
+
   // ==========================================================================
   // Jefe
   // ==========================================================================
@@ -366,25 +428,26 @@
     });
   }
 
-  // Configuración de la organización (plazos por defecto, titular y NIT).
+  // Configuración de la organización (plazos por defecto, titular y NIT). La
+  // mensualidad por defecto ya no se usa (30-sep): ni se lee ni se escribe.
   async function adminSettings() {
     const { data, error } = await client().from('billing_settings')
-      .select('organization_id, default_amount_cop, due_days, notice_days, grace_days, holder_name, holder_nit, updated_at')
+      .select('organization_id, due_days, notice_days, grace_days, holder_name, holder_nit, updated_at')
       .maybeSingle();
     if (error) throw error;
-    if (!data) return { exists: false, defaultAmountCOP: null, dueDays: 5, noticeDays: 2, graceDays: 3, holderName: null, holderNit: null };
+    if (!data) return { exists: false, dueDays: 5, noticeDays: 2, graceDays: 3, holderName: null, holderNit: null };
     return {
-      exists: true, defaultAmountCOP: data.default_amount_cop, dueDays: data.due_days, noticeDays: data.notice_days,
+      exists: true, dueDays: data.due_days, noticeDays: data.notice_days,
       graceDays: data.grace_days, holderName: data.holder_name, holderNit: data.holder_nit, updatedAt: data.updated_at,
     };
   }
+  // El upsert solo lleva estas columnas: default_amount_cop se queda como esté.
   async function adminSaveSettings(f) {
     f = f || {};
     const org = await myOrg();
     const n = v => (v === '' || v == null ? null : Math.round(Number(v)));
     const row = {
       organization_id: org,
-      default_amount_cop: n(f.defaultAmountCOP),
       due_days: n(f.dueDays) != null ? n(f.dueDays) : 5,
       notice_days: n(f.noticeDays) != null ? n(f.noticeDays) : 2,
       grace_days: n(f.graceDays) != null ? n(f.graceDays) : 3,
@@ -442,6 +505,49 @@
     return (data || []).map(a => ({ ...alertRow(a), auxiliarProfileId: a.auxiliar_profile_id }));
   }
 
+  // ── Tarifas por sector, sector a mano, vacaciones y balance (0094) ───────
+  // { sectors: [{sector, rateId, monthlyCOP, perTripCOP, fromResidences, residences,
+  //   crew, crewManual, crewOwn}], crewWithoutSector, crewTotal }
+  async function adminSectorRates() {
+    const d = await rpc('admin_billing_sector_rates');
+    return d && typeof d === 'object' ? d : { sectors: [], crewWithoutSector: 0, crewTotal: 0 };
+  }
+  // Los dos vacíos = se borra la tarifa del sector.
+  async function adminSaveSectorRate(sector, f) {
+    f = f || {};
+    const n = v => (v === '' || v == null ? null : Math.round(Number(v)));
+    if (!String(sector || '').trim()) throw new Error('Falta el nombre del sector');
+    return rpc('admin_billing_save_sector_rate', {
+      p_sector: String(sector).trim(), p_monthly_cop: n(f.monthlyCOP), p_per_trip_cop: n(f.perTripCOP),
+    });
+  }
+  // «Que paguen la del sector»: quita el valor propio a todos los de ese sector
+  // (solo si el sector tiene mensualidad; rige desde el próximo corte).
+  // Devuelve { sector, monthlyCOP, cleared }.
+  async function adminUseSectorRate(sector) {
+    if (!String(sector || '').trim()) throw new Error('Falta el nombre del sector');
+    return rpc('admin_billing_use_sector_rate', { p_sector: String(sector).trim() });
+  }
+  // Sector a mano en la cuenta del tripulante ('' o null = el de su residencia).
+  async function adminSetSector(auxId, sector) {
+    return rpc('admin_billing_set_sector', { p_aux: auxId, p_sector: sector == null ? null : String(sector).trim() || null });
+  }
+  async function adminSetVacation(auxId, o) {
+    return rpc('admin_billing_set_vacation', Object.assign({ p_aux: auxId }, vacArgs(o)));
+  }
+  async function adminCancelVacation(auxId, period) {
+    if (PERIODS.indexOf(period) < 0) throw new Error('Elige el cobro: este o el siguiente');
+    return rpc('admin_billing_cancel_vacation', { p_aux: auxId, p_period: period });
+  }
+  // Balance de un mes ('AAAA-MM' o 'AAAA-MM-DD'; vacío = el mes de hoy en Bogotá).
+  // Cada fila trae tripsDeclared · tripsBooked · tripsBilled, extraBilledCOP,
+  // extraPendingCOP y extrasIncludedCOP; totals los suma; withoutValue = cuentas
+  // activas sin valor (ni propio ni del sector).
+  async function adminBalance(month) {
+    const m = /^(\d{4})-(\d{2})/.exec(String(month || ''));
+    return rpc('admin_billing_balance', { p_month: m ? m[1] + '-' + m[2] + '-01' : null });
+  }
+
   // ¿Cuándo corrió el reloj diario por última vez? null = nunca (decirlo, no esconderlo).
   async function adminLastRun() {
     const { data, error } = await client().from('billing_job_runs')
@@ -461,10 +567,14 @@
     // tripulante
     myAccount, last, lastAt, hasAccount, history, methods, alerts, markAlertsSeen, setPrefs,
     uploadProof, proofUrl, reasons,
+    // vacaciones (0094)
+    PERIODS, vacationTotal, setVacation, cancelVacation,
     // jefe
     adminList, adminDetail, adminSaveAccount, adminOpenStatement, adminAdjust,
     adminProofs, adminApprove, adminReject, adminMarkPaid,
     adminSettings, adminSaveSettings, adminMethods, adminSaveMethod, adminSetMethodActive, adminDeleteMethod,
     adminAlerts, adminLastRun,
+    // jefe (0094)
+    adminSectorRates, adminSaveSectorRate, adminUseSectorRate, adminSetSector, adminSetVacation, adminCancelVacation, adminBalance,
   };
 })();

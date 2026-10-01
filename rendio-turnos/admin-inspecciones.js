@@ -1,10 +1,13 @@
-// admin-inspecciones.js — Admin: inspecciones (cola, detalle, checklist configurable, novedades).
+// admin-inspecciones.js — Admin: inspecciones (cola con filtros de fecha/conductor/carro, detalle, checklist configurable, novedades).
 // Extraído de app.js (split mecánico 2026-07-10, sin cambios de lógica).
 // Comparte scope global con los demás módulos; el orden de carga está en index.html.
   // ====================================================================
   // Inspecciones (admin) — revisión/aprobación + checklist configurable
   // ====================================================================
-  const inspState = { items: [], filter: 'pending', current: null, checklist: [], vehicles: [], autoVehicleId: null, autoItems: [], autoItemsFor: null, colaY: 0, adminPhoto: null,
+  // items = la cola SIN filtros (las 300 más recientes): de ahí salen el conteo
+  // del encabezado y el badge de la pestaña. fItems = lo que trajo el servidor con
+  // los filtros de fecha/conductor/carro (null = sin filtros o sin respuesta aún).
+  const inspState = { items: [], fItems: null, filter: 'pending', current: null, checklist: [], vehicles: [], autoVehicleId: null, autoItems: [], autoItemsFor: null, autoLoadingFor: null, colaY: 0, adminPhoto: null,
     novItems: [], novFilter: 'open', novCurrent: null, openIncidents: 0 };
   const INSP_SEV = {
     leve:  { cls: 'leve',  label: 'Leve',  text: 'Leve · informativo',       color: 'var(--green)' },
@@ -16,6 +19,279 @@
   // Mismo orden que el wizard del conductor (shift-flow.js PHOTO_SLOTS): el admin
   // las revisa en el orden en que el conductor las tomó.
   const PHOTO_ORDER = ['front', 'rear', 'left', 'right', 'dashboard', 'glovebox', 'property_card', 'door_left', 'door_right', 'road_kit', 'spare_tire'];
+
+  // ---------- Filtros de la cola: fecha (un día o rango), conductor y carro ----------
+  // Pedido del jefe (29-sep-2026): «filtrar por días, por nombre y por carro», y
+  // la fecha también por rango. Se combinan con las pestañas de estado.
+  //
+  // VAN AL SERVIDOR, no al cliente: la cola trae solo las 300 inspecciones más
+  // recientes (con 2 carros y dos turnos al día son unos dos meses y medio), así
+  // que filtrar lo ya cargado dejaría vacía cualquier fecha más vieja sin que lo
+  // estuviera. Mientras llega la respuesta se muestra, de forma provisional, lo que
+  // ya hay en memoria y cumple; el contador dice «Buscando…» hasta que llega.
+  //
+  // El buscador de conductor no distingue tildes ni mayúsculas: el nombre se cruza
+  // aquí contra la lista de conductores y al servidor van sus ids.
+  //
+  // Todo vive dentro de este IIFE y se cuelga de inspState: este archivo comparte
+  // el ámbito global con otros treinta y no se le suman nombres.
+  inspState.filtros = (() => {
+    const TOPE = 300;                 // filas por consulta de la cola (con y sin filtros)
+    const st = { modo: 'dia', dia: '', desde: '', hasta: '', q: '', vehicleId: '' };
+    const F = { TOPE, st, cargando: false, error: false, sinConductor: false, flotaError: false };
+    const FMT_DIA = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' });
+    // Solo cuenta una fecha con año de verdad (19xx o 20xx). Chrome de escritorio
+    // dispara `change` en CADA tecla del año: al teclear 2026 el campo pasa por
+    // 0002-…, 0020-… y 0202-… antes de llegar. Esos intermedios no son una fecha
+    // que el admin quiso: se ignoran (ni consulta ni se toca lo que va escribiendo).
+    const esFecha = (s) => /^(19|20)\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s || '');
+    // Día de Bogotá de un instante: una inspección de las 11 p. m. es de ese día,
+    // aunque en UTC ya sea el siguiente.
+    const diaBog = (iso) => { try { return FMT_DIA.format(new Date(iso)); } catch (e) { return ''; } };
+    const diaSig = (d) => { const [y, m, dd] = d.split('-').map(Number); return new Date(Date.UTC(y, m - 1, dd + 1)).toISOString().slice(0, 10); };
+    const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const tokens = () => norm(st.q).split(' ').filter(Boolean);
+    // Cada palabra escrita tiene que estar en el nombre: «juan echa» → Juan Echavarría.
+    const nombreCoincide = (nombre, tk) => { const n = norm(nombre); return tk.every(t => n.includes(t)); };
+
+    // [desde, hasta] en días de Bogotá, ambos incluidos; null = sin fecha.
+    // Rango al revés (desde después de hasta): se ordena AQUÍ, no se castiga. Los
+    // campos se quedan como el admin los escribió: voltearlos en cada `change` le
+    // pisaba el campo mientras tecleaba (ver esFecha).
+    function rango() {
+      let a = st.modo === 'dia' ? st.dia : st.desde;
+      let b = st.modo === 'dia' ? st.dia : st.hasta;
+      if (a && b && a > b) { const t = a; a = b; b = t; }
+      return (a || b) ? { desde: a || null, hasta: b || null } : null;
+    }
+    const activo = () => !!(rango() || tokens().length || st.vehicleId);
+    F.activo = activo;
+    // La misma regla que aplica el servidor, del lado del cliente: para lo
+    // provisional, para «Autos» (que ya trae todo el carro) y como red.
+    F.coincide = (it) => {
+      const r = rango();
+      if (r) {
+        const d = diaBog(it.performed_at);
+        if (!d || (r.desde && d < r.desde) || (r.hasta && d > r.hasta)) return false;
+      }
+      if (st.vehicleId && it.vehicle_id !== st.vehicleId) return false;
+      const tk = tokens();
+      return !tk.length || nombreCoincide(inspDriverName(it), tk);
+    };
+    // Sobre qué se cuenta y se lista: la cola entera o lo filtrado.
+    F.base = () => {
+      if (!activo()) return inspState.items;
+      if (inspState.fItems && !F.cargando) return inspState.fItems.filter(F.coincide);
+      return inspState.items.filter(F.coincide);
+    };
+    // ¿La base llegó al tope? Entonces puede haber más viejas que no se ven.
+    F.topado = () => (activo() ? (inspState.fItems || []) : inspState.items).length >= TOPE;
+
+    // ---- servidor ----
+    let conductores = null;           // [{ id: driver_profiles.id, n: nombre normalizado }]
+    let seq = 0, claveCargada = null, tq = null;
+    const clave = () => JSON.stringify([rango(), tokens(), st.vehicleId]);
+    async function idsConductor(tk) {
+      if (!conductores) conductores = (await Api.listInspectionDrivers()).map(d => ({ id: d.id, n: norm(d.name) }));
+      return conductores.filter(d => tk.every(t => d.n.includes(t))).map(d => d.id);
+    }
+    // Trae del servidor lo que cumple los filtros. `forzar` = volver a pedirlo
+    // aunque los filtros no hayan cambiado (al entrar a la pestaña).
+    F.cargar = async (forzar) => {
+      const mio = ++seq;
+      if (!activo()) { inspState.fItems = null; claveCargada = null; F.cargando = F.error = F.sinConductor = false; return; }
+      const k = clave();
+      // Lo que hay ya es de estos mismos filtros (p. ej. se volvió al rango de
+      // antes mientras otra búsqueda iba en camino: esa ya no se pinta).
+      if (!forzar && k === claveCargada && inspState.fItems && !F.error) { F.cargando = false; return; }
+      // Al entrar a la pestaña también se refresca la lista de conductores (pudo
+      // llegar uno nuevo desde la última vez).
+      if (forzar) conductores = null;
+      F.cargando = true; F.error = false;
+      try {
+        const r = rango(), tk = tokens();
+        const p = { limite: TOPE };
+        if (r && r.desde) p.desde = r.desde + 'T00:00:00-05:00';
+        if (r && r.hasta) p.hasta = diaSig(r.hasta) + 'T00:00:00-05:00';   // exclusivo: el día siguiente
+        if (st.vehicleId) p.vehicleId = st.vehicleId;
+        let sinConductor = false;
+        if (tk.length) { p.driverIds = await idsConductor(tk); sinConductor = !p.driverIds.length; }
+        const rows = await Api.listInspectionsForReview(null, p);
+        if (mio !== seq) return;      // llegó tarde: ya hay otra búsqueda en curso
+        inspState.fItems = rows; claveCargada = k; F.sinConductor = sinConductor;
+      } catch (e) {
+        if (mio !== seq) return;
+        console.error(e);
+        inspState.fItems = null; claveCargada = null; F.error = true;
+      }
+      F.cargando = false;
+    };
+    // Tras un cambio de filtro: pinta ya lo provisional y, al llegar la respuesta,
+    // lo definitivo. En «Autos» la lista es del carro entero (ya en memoria o la
+    // pide renderAutosView), así que basta con repintarla una vez.
+    async function aplicar() {
+      F.pintarBarra();
+      const p = F.cargar(false);
+      renderInspList(true);
+      await p;
+      if (inspState.filter !== 'autos') renderInspList(true);
+      else F.pintarConteos();
+    }
+    // Los números de las pestañas de estado: de lo filtrado si hay filtros.
+    F.pintarConteos = () => {
+      const c = inspCounts(F.base());
+      $$('#insp-filter .n').forEach(n => { n.textContent = c[n.dataset.c] != null ? c[n.dataset.c] : 0; });
+    };
+
+    // ---- barra ----
+    // Los dados de baja van aparte, al final: sus inspecciones viejas siguen en
+    // la cola y también tienen que poder filtrarse por carro.
+    const opcionesCarro = () => {
+      const vs = inspState.vehicles || [];
+      const op = (v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.internal_code || v.license_plate || 'Carro')}${v.license_plate && v.internal_code ? ' · ' + escapeHtml(v.license_plate) : ''}</option>`;
+      const baja = vs.filter(v => v.deleted_at);
+      return `<option value="">Todos los carros</option>${vs.filter(v => !v.deleted_at).map(op).join('')}`
+        + (baja.length ? `<optgroup label="Dados de baja">${baja.map(op).join('')}</optgroup>` : '')
+        + (F.flotaError ? '<option value="" disabled>No se pudo cargar la flota</option>' : '');
+    };
+    // La barra se arma UNA vez debajo de las pestañas y no se vuelve a escribir:
+    // así no pierde el foco ni lo tecleado, y sobrevive a ir y volver del detalle.
+    F.montar = () => {
+      if ($('#insp-flt')) return;
+      const seg = $('#insp-filter');
+      if (!seg) return;
+      const bar = document.createElement('div');
+      bar.className = 'iflt'; bar.id = 'insp-flt';
+      bar.innerHTML = `
+        <div class="f ffecha">
+          <label>Fecha</label>
+          <div class="fdate">
+            <div class="seg" id="insp-fmodo" role="group" aria-label="Filtrar por"><button type="button" data-fm="dia" class="on">Un día</button><button type="button" data-fm="rango">Rango</button></div>
+            <input class="inp" type="date" data-if="dia" aria-label="Día">
+            <input class="inp hidden" type="date" data-if="desde" aria-label="Desde">
+            <span class="fa hidden">a</span>
+            <input class="inp hidden" type="date" data-if="hasta" aria-label="Hasta">
+          </div>
+        </div>
+        <div class="f"><label for="insp-fq">Conductor</label><div class="isearch"><svg class="icon"><use href="#i-search"/></svg><input id="insp-fq" data-if="q" type="search" placeholder="Buscar conductor…" autocomplete="off"></div></div>
+        <div class="f"><label for="insp-fcarro">Carro</label><select class="inp" id="insp-fcarro" data-if="carro">${opcionesCarro()}</select></div>
+        <div class="sp"></div>
+        <div class="ict" id="insp-fct" aria-live="polite"></div>
+        <button type="button" class="btn ghost sm" id="insp-flimpiar"><svg class="icon"><use href="#i-x"/></svg>Limpiar</button>`;
+      seg.insertAdjacentElement('afterend', bar);
+      F.pintarBarra();
+      F.cargarFlota();
+    };
+    // Las placas del select salen de la flota de la organización, con los carros
+    // dados de baja aparte. Si falla, el select lo dice y se reintenta al volver a entrar.
+    F.cargarFlota = () => {
+      if ((inspState.vehicles || []).length) return Promise.resolve();
+      return Api.listInspectionVehicles()
+        .then(vs => { inspState.vehicles = vs || []; F.flotaError = false; })
+        .catch(e => { console.error(e); F.flotaError = true; })
+        .then(() => { const sel = $('#insp-fcarro'); if (sel) { sel.innerHTML = opcionesCarro(); sel.value = st.vehicleId; } });
+    };
+    // Lleva el estado a la barra sin reescribirla. El campo que tiene el foco no
+    // se toca: el admin lo está escribiendo (una respuesta que llega tarde o la
+    // pausa del buscador no le pueden borrar el año a medio teclear). Al salir
+    // del campo, onFocusOut lo pone al día.
+    // `todo` = también el campo con foco (Limpiar: el admin pidió borrarlo todo).
+    F.pintarBarra = (todo) => {
+      const bar = $('#insp-flt'); if (!bar) return;
+      bar.querySelectorAll('#insp-fmodo [data-fm]').forEach(b => b.classList.toggle('on', b.dataset.fm === st.modo));
+      const rg = st.modo === 'rango';
+      bar.querySelector('[data-if="dia"]').classList.toggle('hidden', rg);
+      bar.querySelectorAll('[data-if="desde"], [data-if="hasta"], .fa').forEach(el => el.classList.toggle('hidden', !rg));
+      const libre = (el) => todo || el !== document.activeElement;
+      ['dia', 'desde', 'hasta'].forEach(k => { const el = bar.querySelector(`[data-if="${k}"]`); if (libre(el) && el.value !== st[k]) el.value = st[k]; });
+      // min/max solo guían el calendario (no le cambian el valor al campo); st
+      // solo guarda fechas de verdad, así que nunca quedan en el año 2. Se ponen
+      // solo si cambian y nunca en el campo con foco: en Chrome tocar min/max
+      // redibuja el campo y se lleva lo que iba a medio escribir.
+      const hasta = bar.querySelector('[data-if="hasta"]'), desde = bar.querySelector('[data-if="desde"]');
+      if (libre(hasta) && hasta.min !== st.desde) hasta.min = st.desde;
+      if (libre(desde) && desde.max !== st.hasta) desde.max = st.hasta;
+      const q = bar.querySelector('#insp-fq'); if (libre(q) && q.value !== st.q) q.value = st.q;
+      const sel = bar.querySelector('#insp-fcarro'); if (sel.value !== st.vehicleId) sel.value = st.vehicleId;
+      bar.querySelector('#insp-flimpiar').disabled = !activo();
+    };
+    // «N inspecciones»; n = null → buscando; n = '' → nada que contar.
+    F.contador = (n, topado) => {
+      const el = $('#insp-fct'); if (!el) return;
+      if (n === null) { el.textContent = 'Buscando…'; return; }
+      if (n === '') { el.textContent = ''; return; }
+      el.innerHTML = `<b>${n}</b> ${n === 1 ? 'inspección' : 'inspecciones'}${topado ? `<span class="tope"> · entre las ${TOPE} más recientes</span>` : ''}`;
+    };
+    // Vacío con filtros: dice por qué y, si lo hay, dónde está lo que busca.
+    F.vacioHtml = (enOtras) => {
+      const p = F.sinConductor
+        ? `Ningún conductor coincide con «${escapeHtml(st.q.trim())}».`
+        : enOtras
+          ? `Hay ${enOtras} en otras pestañas: mira en «Todas».`
+          : 'Prueba con otras fechas, otro conductor u otro carro, o dale a «Limpiar».';
+      return `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-search"/></svg></div><h3>Nada con estos filtros</h3><p>${p}</p></div>`;
+    };
+    F.limpiar = () => {
+      clearTimeout(tq);
+      Object.assign(st, { dia: '', desde: '', hasta: '', q: '', vehicleId: '' });   // el modo se queda
+      F.pintarBarra(true);
+      aplicar();
+    };
+
+    // ---- eventos (los despacha bindInspections) ----
+    F.onClick = (e) => {
+      const m = e.target.closest('#insp-fmodo [data-fm]');
+      if (m) {
+        const modo = m.dataset.fm;
+        if (modo === st.modo) return true;
+        // Lo que ya eligió pasa de un modo al otro: el día se vuelve «del día al
+        // día» y el rango, su primer día (ya ordenado, por si quedó al revés).
+        const r = rango();
+        if (modo === 'rango' && st.dia && !st.desde && !st.hasta) { st.desde = st.dia; st.hasta = st.dia; }
+        if (modo === 'dia' && !st.dia && r) st.dia = r.desde || r.hasta;
+        st.modo = modo;
+        aplicar();
+        return true;
+      }
+      if (e.target.closest('#insp-flimpiar')) { F.limpiar(); return true; }
+      return false;
+    };
+    F.onChange = (e) => {
+      const el = e.target, k = el && el.dataset && el.dataset.if;
+      if (!k || !el.closest('#insp-flt')) return false;
+      if (k === 'carro') st.vehicleId = el.value || '';
+      else if (k === 'dia' || k === 'desde' || k === 'hasta') {
+        // Se guarda TAL CUAL lo escribió: ni se voltea el par (eso lo hace rango())
+        // ni se reescribe el otro campo. Vacío = quitó la fecha. Un año a medio
+        // teclear (0002-…, 0020-…, 0202-…) no es fecha: no cambia nada y el campo
+        // se queda como lo tiene el admin.
+        const v = el.value || '';
+        if (v && !esFecha(v)) return true;
+        if (st[k] === v) return true;
+        st[k] = v;
+      } else return false;
+      aplicar();
+      return true;
+    };
+    // Al salir de un campo de fecha, lo que se ve tiene que ser lo que se aplica:
+    // si quedó un año a medio teclear (0202-09-15), vuelve a la última fecha buena
+    // (o a vacío). Mientras tenía el foco no se le tocaba (pintarBarra).
+    F.onFocusOut = (e) => {
+      const el = e.target, k = el && el.dataset && el.dataset.if;
+      if (!(k === 'dia' || k === 'desde' || k === 'hasta') || !el.closest('#insp-flt')) return false;
+      if (el.value !== st[k]) el.value = st[k];
+      return true;
+    };
+    F.onInput = (e) => {
+      const el = e.target;
+      if (!el || el.id !== 'insp-fq') return false;
+      st.q = el.value;
+      clearTimeout(tq);
+      tq = setTimeout(aplicar, 300);   // no una consulta por letra
+      return true;
+    };
+    return F;
+  })();
 
   // En el admin lo que se desplaza es #app-main (overflow-y:auto en styles.css,
   // .admin-shell), no la página: un window.scrollTo no lo mueve. Si algún día el
@@ -66,9 +342,12 @@
       return new Date(insp.performed_at).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
     } catch (e) { return ''; }
   }
-  function inspCounts() {
-    const c = { pending: 0, approved: 0, rejected: 0, all: inspState.items.length };
-    inspState.items.forEach(i => { if (c[i.review_status] != null) c[i.review_status]++; });
+  // Sin argumento cuenta la cola entera (encabezado y badge); con una lista,
+  // esa lista (las pestañas cuando hay filtros).
+  function inspCounts(list) {
+    const arr = list || inspState.items;
+    const c = { pending: 0, approved: 0, rejected: 0, all: arr.length };
+    arr.forEach(i => { if (c[i.review_status] != null) c[i.review_status]++; });
     return c;
   }
 
@@ -90,10 +369,16 @@
   async function renderInspections() {
     bindInspections();
     inspShowView('cola');
+    const F = inspState.filtros;
+    F.montar();
+    if (F.flotaError) F.cargarFlota();
     const list = $('#insp-list');
     if (list) list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
     try {
-      inspState.items = await Api.listInspectionsForReview(); // todas las iniciales (limpias + con novedad)
+      // Todas las iniciales (limpias + con novedad) y, si el admin dejó filtros
+      // puestos, también lo filtrado: se vuelve a pedir, pudo llegar algo nuevo.
+      const [items] = await Promise.all([Api.listInspectionsForReview(null, { limite: F.TOPE }), F.cargar(true)]);
+      inspState.items = items;
     } catch (e) {
       console.error(e);
       if (list) list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>';
@@ -303,33 +588,49 @@
   }
 
   function renderInspList(fromCache) {
+    const F = inspState.filtros;
+    F.montar();
+    // El encabezado y el badge son de la cola entera, haya o no filtros: lo
+    // pendiente de verdad no cambia porque el admin mire un solo día.
     const counts = inspCounts();
     if ($('#insp-count')) $('#insp-count').textContent = counts.pending;
-    $$('#insp-filter .n').forEach(n => { n.textContent = counts[n.dataset.c] != null ? counts[n.dataset.c] : 0; });
     const b = $('#inspections-badge'); if (b) { const n = counts.pending + (inspState.openIncidents || 0); b.textContent = n; b.classList.toggle('hidden', !n); }
+    F.pintarConteos();
+    F.pintarBarra();
     const autosBar = $('#insp-autos-bar');
     if (inspState.filter === 'autos') { renderAutosView(fromCache); return; }
     if (autosBar) autosBar.classList.add('hidden');
-    const shown = inspState.items.filter(it => inspState.filter === 'all' ? true : it.review_status === inspState.filter);
+    const base = F.base();
+    const shown = base.filter(it => inspState.filter === 'all' ? true : it.review_status === inspState.filter);
     const list = $('#insp-list');
+    if (F.error) {
+      list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones con estos filtros.</p>';
+      F.contador('');
+      return;
+    }
+    if (!shown.length && F.cargando) {
+      list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Buscando…</p>';
+      F.contador(null);
+      return;
+    }
     list.innerHTML = shown.length ? shown.map(inspCardHtml).join('')
-      : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Nada por aquí</h3><p>No hay inspecciones en este filtro.</p></div>`;
+      : F.activo() ? F.vacioHtml(base.length)
+        : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Nada por aquí</h3><p>No hay inspecciones en este filtro.</p></div>`;
+    F.contador(F.cargando ? null : shown.length, F.topado());
   }
 
-  // --- Filtro "Autos": elige un vehículo y ve todas sus inspecciones ---
-  async function renderAutosView(fromCache) {
+  // --- Filtro "Autos": todas las inspecciones de UN carro (también las de cierre
+  // de turno, y sin el tope de 300). El carro se elige en «Carro» de la barra de
+  // filtros —antes tenía un select propio aquí, que habría quedado repetido— y la
+  // fecha y el conductor también se le aplican.
+  function renderAutosView(fromCache) {
     const bar = $('#insp-autos-bar');
-    if (bar) bar.classList.remove('hidden');
-    if (!inspState.vehicles.length) {
-      try { inspState.vehicles = await Api.listVehiclesForShift(); } catch (e) { console.error(e); }
-    }
-    const opts = inspState.vehicles.map(v =>
-      `<option value="${v.id}"${v.id === inspState.autoVehicleId ? ' selected' : ''}>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}${v.license_plate ? ' · ' + escapeHtml(v.license_plate) : ''}</option>`
-    ).join('');
-    if (bar) bar.innerHTML = `<div class="autosel"><label>Auto</label><select id="insp-auto-sel"><option value="">Elige un auto…</option>${opts}</select></div>`;
-    $('#insp-auto-sel')?.addEventListener('change', (e) => { inspState.autoVehicleId = e.target.value || null; loadAutoList(); });
-    // De vuelta de una inspección: lo de ese auto ya está en memoria.
+    if (bar) bar.classList.add('hidden');
+    inspState.autoVehicleId = inspState.filtros.st.vehicleId || null;
+    // De vuelta de una inspección (o si solo cambió la fecha o el nombre): lo de
+    // ese carro ya está en memoria. Si ya se está pidiendo, no se pide dos veces.
     if (fromCache && inspState.autoVehicleId && inspState.autoItemsFor === inspState.autoVehicleId) { paintAutoList(); return; }
+    if (fromCache && inspState.autoVehicleId && inspState.autoLoadingFor === inspState.autoVehicleId) return;
     loadAutoList();
   }
 
@@ -337,24 +638,42 @@
     const list = $('#insp-list');
     if (!list) return;
     if (!inspState.autoVehicleId) {
-      list.innerHTML = `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-list"/></svg></div><h3>Elige un auto</h3><p>Selecciona un vehículo arriba para ver sus inspecciones.</p></div>`;
+      list.innerHTML = `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-list"/></svg></div><h3>Elige un carro</h3><p>Escoge uno en «Carro», arriba, para ver todas sus inspecciones.</p></div>`;
+      inspState.filtros.contador('');
       return;
     }
     list.innerHTML = '<p style="color:var(--ink2);font-size:13px;padding:8px">Cargando…</p>';
+    inspState.filtros.contador(null);
     const vid = inspState.autoVehicleId;
-    try { inspState.autoItems = await Api.listInspectionsByVehicle(vid); inspState.autoItemsFor = vid; }
-    catch (e) { console.error(e); list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>'; return; }
-    paintAutoList();
+    inspState.autoLoadingFor = vid;
+    let rows;
+    try { rows = await Api.listInspectionsByVehicle(vid); }
+    catch (e) {
+      console.error(e);
+      if (inspState.autoLoadingFor === vid) inspState.autoLoadingFor = null;
+      if (inspState.filter === 'autos' && inspState.autoVehicleId === vid) { list.innerHTML = '<p style="color:var(--red);font-size:13px;padding:8px">No se pudieron cargar las inspecciones.</p>'; inspState.filtros.contador(''); }
+      return;
+    }
+    if (inspState.autoLoadingFor === vid) inspState.autoLoadingFor = null;
+    // Si mientras llegaba el admin eligió otro carro o se fue de «Autos», esto ya no se pinta.
+    if (inspState.autoVehicleId !== vid) return;
+    inspState.autoItems = rows; inspState.autoItemsFor = vid;
+    if (inspState.filter === 'autos') paintAutoList();
   }
   function paintAutoList() {
     const list = $('#insp-list');
     if (!list) return;
-    list.innerHTML = inspState.autoItems.length ? inspState.autoItems.map(inspCardHtml).join('')
-      : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Sin registros</h3><p>Este auto aún no tiene inspecciones.</p></div>`;
+    const F = inspState.filtros;
+    const shown = inspState.autoItems.filter(F.coincide);
+    list.innerHTML = shown.length ? shown.map(inspCardHtml).join('')
+      : inspState.autoItems.length ? F.vacioHtml(0)
+        : `<div class="empty"><div class="circle"><svg class="icon"><use href="#i-check"/></svg></div><h3>Sin registros</h3><p>Este carro aún no tiene inspecciones.</p></div>`;
+    F.contador(shown.length, false);
   }
 
   function inspFindItem(id) {
-    return inspState.items.find(x => x.id === id) || inspState.autoItems.find(x => x.id === id) || (inspState.current && inspState.current.id === id ? inspState.current : null);
+    return inspState.items.find(x => x.id === id) || inspState.autoItems.find(x => x.id === id) || (inspState.fItems || []).find(x => x.id === id)
+      || (inspState.current && inspState.current.id === id ? inspState.current : null);
   }
 
   // La tira de miniaturas de la tarjeta es DECORACIÓN: iconos grises fijos, no las
@@ -562,7 +881,9 @@
         const pid = inspState.current ? inspDriverProfileId(inspState.current) : null;
         if (pid) { try { await notify([pid], 'Inspección rechazada', notes || 'Tu inspección de inicio de turno fue rechazada.', '/'); } catch (e) {} }
       }
-      [inspState.items.find(x => x.id === id), inspState.autoItems.find(x => x.id === id)].forEach(it => {
+      // Las tres copias en memoria (cola, lo filtrado y «Autos») son objetos
+      // distintos: se actualizan todas para que ninguna pestaña quede atrasada.
+      [inspState.items, inspState.autoItems, inspState.fItems || []].map(arr => arr.find(x => x.id === id)).forEach(it => {
         if (it) { it.review_status = status; it.review_notes = notes || null; }
       });
       toast(status === 'approved' ? 'Inspección aprobada.' : 'Inspección rechazada.');
@@ -697,6 +1018,7 @@
     if (!root || root._inspBound) return;
     root._inspBound = true;
     root.addEventListener('click', async (e) => {
+      if (inspState.filtros.onClick(e)) return;   // barra de filtros (modo de fecha, Limpiar)
       const fb = e.target.closest('#insp-filter button');
       if (fb) { inspState.filter = fb.dataset.f; $$('#insp-filter button').forEach(b => b.classList.toggle('on', b === fb)); renderInspList(); return; }
       if (e.target.closest('#insp-to-config')) { openInspChecklist(); return; }
@@ -747,8 +1069,13 @@
     });
     // Foto que adjunta el admin al resolver (input file → cambia, no click).
     root.addEventListener('change', (e) => {
+      if (inspState.filtros.onChange(e)) return;  // fechas y carro de la barra de filtros
       if (e.target && e.target.id === 'insp-admin-photo-input') onAdminPhotoPicked(e.target);
     });
+    // El buscador de conductor filtra mientras se escribe (con una pausa corta).
+    root.addEventListener('input', (e) => { inspState.filtros.onInput(e); });
+    // Al salir de una fecha a medio teclear, el campo vuelve a lo que se aplica.
+    root.addEventListener('focusout', (e) => { inspState.filtros.onFocusOut(e); });
     const lbx = $('#insp-lbx');
     if (lbx) lbx.addEventListener('click', (e) => { if (e.target.id === 'insp-lbx' || e.target.id === 'insp-lbx-close') lbx.classList.remove('show'); });
   }

@@ -131,6 +131,9 @@
     const st = RV_ST[r.status] || { cls: 'muted', label: r.status };
     const dir = r.type === 'lle' ? 'MDE → casa' : 'casa → MDE';
     const chips = [];
+    // Trabajo en tierra (0092): operaciones del aeropuerto, sin vuelo. Se dice,
+    // para que el hueco del vuelo no parezca un dato que falta.
+    if (r.groundOps) chips.push('<span class="rv-tag" title="Operaciones del aeropuerto: sin vuelo">Tierra</span>');
     if (r.isPernocta) chips.push('<span class="rv-tag pern">🌙 Pernocta</span>');
     if (r.isReserva === false) chips.push('<span class="rv-tag tent">Tentativa</span>');
     if (rvIsLate(r)) chips.push('<span class="rv-tag late">⏱ Pedido tarde</span>');
@@ -149,7 +152,7 @@
           <b>${escapeHtml(r.name)}</b>
           <span class="rv-st ${st.cls}">${st.label}</span>
         </div>
-        <div class="rv-sub">${escapeHtml(dir)} · ${escapeHtml(r.address || 'sin dirección')}${r.flight ? ' · ✈ ' + escapeHtml(r.flight) : ''}</div>
+        <div class="rv-sub">${escapeHtml(dir)} · ${escapeHtml(r.address || 'sin dirección')}${!r.groundOps && r.flight ? ' · ✈ ' + escapeHtml(r.flight) : ''}</div>
         ${chips.length ? `<div class="rv-tags">${chips.join('')}</div>` : ''}
         ${r.cancelledAt ? `<div class="rv-note">Cancelado${r.cancelReason ? ': ' + escapeHtml(r.cancelReason) : ''}</div>` : ''}
         ${cancelling ? `<div class="rv-cancel">

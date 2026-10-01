@@ -31,6 +31,11 @@
 //   }
 // Pantallas registradas: 'trip', 'rate' y 'rate-sent' (gracias, capa completa).
 // Acción data-rx registrada: 'rate-open' (data-id) → calificar ese viaje.
+//
+// Pedido del 29-sep-2026: en la grilla del viaje, el orden en el carro
+// («Recogida 2/3», solo publicado) y, en tierra (groundOps), sin «Vuelo» y la
+// llegada dice «Sales»; encima de «Cancelar traslado», el botón de cambio
+// (fv-open, lo atiende aux-rx-vuelo.js) con el texto según el tipo.
 (function () {
   'use strict';
 
@@ -120,6 +125,17 @@
     return { steps: [], current: null, index: -1 };
   }
   function shortPlace(addr) { return String(addr || '').split(/\s*[·,]\s*/)[0] || 'Casa'; }
+  // «Solo por tierra» (0092/0093): operación del aeropuerto sin vuelo.
+  const isGround = (t) => !!t && t.groundOps === true;
+  // Mi lugar en el carro (0093, «2/3»): la misma regla de AuxRxInicio.pickupOrder
+  // (solo publicado, enteros y 1 ≤ pos ≤ total). Salida: «Recogida»; llegada:
+  // «Parada» (el orden en que los dejan).
+  function pickupOrder(t) {
+    if (!t || t.published !== true || t.pickupPos == null || t.pickupTotal == null) return null;
+    const p = Number(t.pickupPos), n = Number(t.pickupTotal);
+    if (!Number.isInteger(p) || !Number.isInteger(n) || p < 1 || n < p) return null;
+    return { text: p + '/' + n, label: t.type === 'lle' ? 'Parada' : 'Recogida' };
+  }
 
   // ── Viaje en vivo: bloques ──────────────────────────────────────────────────
   // La hora grande (valor inicial por estado; en camino/a bordo la actualiza el
@@ -127,7 +143,8 @@
   function heroOf(t) {
     const lle = t.type === 'lle', s = t.status, first = drvFirst(t) || 'Tu conductor';
     if (s === 'pending') {
-      return ['Pedido', joinDot(dayLabel(t.date), t.time ? (lle ? 'aterrizas a las ' : 'en MDE a las ') + hm(t.time) : '')];
+      const cuando = lle ? (isGround(t) ? 'sales del aeropuerto a las ' : 'aterrizas a las ') : 'en MDE a las ';
+      return ['Pedido', joinDot(dayLabel(t.date), t.time ? cuando + hm(t.time) : '')];
     }
     if (s === 'assigned') {
       if (t.pickupAt && hm(t.pickupAt)) return [hm(t.pickupAt), `${dayWord(t.pickupAt)} te recogemos${lle ? ' en MDE' : ''}`];
@@ -233,17 +250,23 @@
       + `<button type="button" data-rx="open-coord" data-id="${esc(t.id)}">${ic('Headset', 19)}Coordinación</button>`
       + '</div>';
   }
-  // VUELO · EN MDE / ATERRIZA · NIVEL · MALETAS, sin celdas vacías.
+  // VUELO · EN MDE / ATERRIZA · NIVEL · MALETAS, sin celdas vacías; en tierra
+  // sin VUELO y la llegada dice SALES. El orden en el carro (solo publicado) va
+  // último y pegado a la derecha: con cinco celdas no caben en una fila, así
+  // que la grilla pasa a tres columnas y el orden queda en la fila de Maletas.
   function infoHTML(t) {
-    const lle = t.type === 'lle', cells = [];
-    if (t.flight) cells.push(['Vuelo', t.flight]);
-    if (t.time && hm(t.time)) cells.push([lle ? 'Aterriza' : 'En MDE', hm(t.time)]);
+    const lle = t.type === 'lle', ground = isGround(t), cells = [];
+    if (t.flight && !ground) cells.push(['Vuelo', t.flight]);
+    if (t.time && hm(t.time)) cells.push([lle ? (ground ? 'Sales' : 'Aterriza') : 'En MDE', hm(t.time)]);
     const lv = t.level === 'private' ? 'Privado' : t.level === 'shared' ? 'Compartido' : '';
     if (lv) cells.push(['Nivel', lv]);
     if (t.bags != null && t.bags !== '') cells.push(['Maletas', String(t.bags)]);
-    if (!cells.length) return '';
-    return `<div class="rx-trip-info rx-in" style="--d:3;grid-template-columns:repeat(${cells.length},1fr)">`
-      + cells.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('') + '</div>';
+    const ord = pickupOrder(t);
+    if (!cells.length && !ord) return '';
+    const n = cells.length + (ord ? 1 : 0);
+    return `<div class="rx-trip-info rx-in" style="--d:3;grid-template-columns:repeat(${n > 4 ? 3 : n},1fr)">`
+      + cells.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')
+      + (ord ? `<div class="rx-trip-ord"><span>${esc(ord.label)}</span><b>${esc(ord.text)}</b></div>` : '') + '</div>';
   }
   function privHTML(t) {
     try { return W.AuxPrivado && typeof W.AuxPrivado.statusHTML === 'function' ? (W.AuxPrivado.statusHTML(t) || '') : ''; }
@@ -283,6 +306,22 @@
     if (t.status !== 'done' || !hasDrv(t)) return '';
     if (t.rated) return `<div class="rx-note">${ic('Star', 15)}<span>Ya calificaste este viaje.</span></div>`;
     return btn('Calificar a ' + (drvFirst(t) || 'tu conductor'), { icon: 'Star', attrs: { 'data-rx': 'rate-open', 'data-id': t.id } });
+  }
+  // Modificar desde la hoja (pedido 29-sep), ENCIMA de «Cancelar traslado»:
+  // salida «Cambio de presentación», llegada «Cambio de hora de llegada», llegada
+  // de tierra «Cambio de hora». Abre la pantalla 'flight' de aux-rx-vuelo.js ya
+  // sobre ESTE traslado (fv-open con data-id y data-mode). Sale en los mismos
+  // estados en que Inicio ofrece «Cambió mi vuelo» (AuxRxInicio.canChangeFlight,
+  // la misma regla); sin esa regla o sin la pantalla no se ofrece: no habría a
+  // dónde ir.
+  function changeBtnHTML(t) {
+    const I = W.AuxRxInicio, V = W.AuxRxVuelo, S = W.AuxShell;
+    if (!t || isClosed(t) || !I || typeof I.canChangeFlight !== 'function') return '';
+    if (!V || typeof V.changeOf !== 'function' || !S || typeof S.registered !== 'function' || !S.registered('flight')) return '';
+    let c = null;
+    try { c = I.canChangeFlight(t) ? V.changeOf(t) : null; } catch (_) { c = null; }
+    if (!c || !c.label) return '';
+    return btn(c.label, { kind: 'sec', icon: c.icon, attrs: { 'data-rx': 'fv-open', 'data-id': t.id, 'data-mode': c.mode } });
   }
   function cancelBtnHTML(t) {
     return !isClosed(t) && ['pending', 'assigned', 'onway'].includes(t.status)
@@ -460,7 +499,7 @@
   const BLK = {
     tag: tagHTML, share: shareHTML, meet: meetHTML, drv: drvHTML,
     acts: (t) => actsHTML(t, Number(ST().chatUnread) || 0),
-    info: infoHTML, priv: privHTML, notes: notesHTML, cta: ctaHTML, rate: rateBtnHTML, cancel: cancelBtnHTML,
+    info: infoHTML, priv: privHTML, notes: notesHTML, cta: ctaHTML, rate: rateBtnHTML, change: changeBtnHTML, cancel: cancelBtnHTML,
     chat: (t) => (hasDrv(t) && !isClosed(t) ? chatHTML(t) : ''),
   };
   // Firma de cada bloque: su HTML, salvo el código (lo resalta el HUD) y el
@@ -500,7 +539,7 @@
       + (closed ? '' : hudHTML() + lateHTML(t))
       + phaseHTML(t)
       + blk('meet', t) + blk('drv', t) + blk('acts', t) + blk('info', t) + blk('priv', t)
-      + blk('notes', t) + blk('cta', t) + blk('rate', t) + blk('cancel', t)
+      + blk('notes', t) + blk('cta', t) + blk('rate', t) + blk('change', t) + blk('cancel', t)
       + '</div>'
       + blk('chat', t)
       + '</div>';

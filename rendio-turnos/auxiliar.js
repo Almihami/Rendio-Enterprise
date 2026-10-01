@@ -189,6 +189,37 @@
     // Api.getMyAuxHeader(): aerolínea, desde cuándo, residencias, nivel
     // preferido y punto de encuentro. Lo llena auxInit; null sin dato.
     header: null,
+
+    // ── Trabajo en tierra (0092, 29-sep-2026) ─────────────────────────────────
+    // No todos vuelan: el personal de operaciones del aeropuerto va a MDE y
+    // vuelve igual que la tripulación, pero SIN vuelo. En la llegada no hay
+    // número que pedir y la hora no es la de aterrizaje sino la de salir del
+    // terminal (el tablero no le suma desembarque). Paga igual y lo pide por el
+    // mismo camino. Van aquí y no sueltos: auxiliar.js comparte el ámbito global.
+    // Los textos del interruptor: una sola fuente para la pantalla de siempre y
+    // para el rediseño (AuxRxPedir).
+    tierra: {
+      label: 'Trabajo en tierra (sin vuelo)',
+      hint: 'Operaciones del aeropuerto: vas a MDE sin tomar un vuelo.',
+      salNote: 'Es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.',
+      lleNote: 'Es la hora a la que sales del terminal. Como no vienes en un vuelo, no le sumamos tiempo de desembarque.',
+    },
+    // ¿Este viaje (forma T) va en tierra?
+    isGround: (t) => !!(t && (t.groundOps === true || t.ground_ops === true)),
+    // El interruptor arranca como quedó en su ÚLTIMO pedido (el más reciente por
+    // cuándo lo pidió; cancelados incluidos: lo que dice es a qué se dedica, no
+    // si el viaje se hizo). Sin viajes, apagado. No se guarda en el teléfono: el
+    // dato está en la base (reservations.ground_ops) y de ahí sale.
+    groundDefault: () => {
+      let last = null, lastTs = -Infinity;
+      auxState.trips.forEach(t => {
+        const c = t && t.createdAt ? Date.parse(t.createdAt) : NaN;
+        const ts = !isNaN(c) ? c : auxWhenTs(t);
+        const v = ts == null || isNaN(ts) ? -Infinity : ts;
+        if (!last || v >= lastTs) { last = t; lastTs = v; }
+      });
+      return window.Auxiliar.isGround(last);
+    },
   };
 
   async function auxInit(profile) {
@@ -663,7 +694,7 @@
       </div>
       <div class="ax-trip-bot">
         <span><svg class="icon"><use href="#i-clock"/></svg>${auxDateES(t.date)} · ${t.type === 'lle' ? 'llega' : 'en MDE'} ${auxHM(t.time)}</span>
-        <span class="ax-flight">${t.flight || ''}</span>
+        <span class="ax-flight">${window.Auxiliar.isGround(t) ? 'Tierra' : (t.flight || '')}</span>
       </div>
     </button>`;
   }
@@ -952,27 +983,36 @@
   function auxStep2() {
     const isLle = auxState.form.type === 'lle';
     const f = auxState.form;
+    // Trabajo en tierra (0092): sin vuelo. En la llegada no se pide número y la
+    // hora es la de salir del aeropuerto; la pernocta (noche entre vuelos) no
+    // aplica. Mismo interruptor y mismas reglas que el rediseño (auxCtaState).
+    const tierra = !!f.groundOps;
+    const TX = window.Auxiliar.tierra;
     return `
+      <div class="ax-toggles">
+        ${auxToggle(TX.label, 'groundOps', tierra, TX.hint)}
+      </div>
       ${/* SOLO EL VUELO DE LLEGADA (Julián, 25-ago-2026): "omitir ese primer
            número de vuelo, realmente solo nos interesa saber el vuelo de
            llegada". En una salida el número de ida no se usa para nada — lo que
            manda es a qué hora tiene que estar en MDE. En una llegada este mismo
            campo SÍ es el vuelo que aterriza, y ahí es obligatorio: es el que se
            rastrea cuando el avión se retrasa. */ ''}
-      ${isLle ? auxFlightField('Número de vuelo', 'flight', '9412') : ''}
-      ${auxField('Fecha del vuelo', 'date', f.date || '', '', 'date', `min="${auxTodayISO()}"`)}
+      ${isLle && !tierra ? auxFlightField('Número de vuelo', 'flight', '9412') : ''}
+      ${auxField(tierra ? 'Fecha' : 'Fecha del vuelo', 'date', f.date || '', '', 'date', `min="${auxTodayISO()}"`)}
       ${auxDateChips(f)}
-      ${auxField(isLle ? 'Hora de aterrizaje' : 'Hora en que quieres estar en el aeropuerto',
-        'time', f.time || '', isLle ? '06:18' : '05:10', 'time')}
-      ${isLle ? '' : `<div class="ax-geo-hint">No es tu hora de presentación: es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.</div>`}
+      ${auxField(isLle ? (tierra ? 'Hora en que sales del aeropuerto' : 'Hora de aterrizaje') : 'Hora en que quieres estar en el aeropuerto',
+        'time', f.time || '', isLle ? (tierra ? '17:00' : '06:18') : '05:10', 'time')}
+      ${isLle ? (tierra ? `<div class="ax-geo-hint">${TX.lleNote}</div>` : '')
+        : `<div class="ax-geo-hint">${tierra ? TX.salNote : 'No es tu hora de presentación: es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.'}</div>`}
       <div id="ax-time-hints">${auxTimeHints()}</div>
       ${isLle ? '' : `
         <div class="ax-sec">El regreso</div>
         ${auxToggle('Regreso el mismo día', 'sameDayBack', f.sameDayBack,
           'Si vuelves hoy mismo, lo dejamos pedido de una vez y no tienes que volver a entrar.')}
         ${f.sameDayBack ? `
-          ${auxField('Hora a la que aterrizas de vuelta', 'backTime', f.backTime || '', '19:40', 'time')}
-          ${auxFlightField('Número del vuelo con el que aterrizas', 'backFlight', '9413')}
+          ${auxField(tierra ? 'Hora en que sales del aeropuerto' : 'Hora a la que aterrizas de vuelta', 'backTime', f.backTime || '', tierra ? '17:00' : '19:40', 'time')}
+          ${tierra ? '' : auxFlightField('Número del vuelo con el que aterrizas', 'backFlight', '9413')}
           <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Quedan dos traslados: el de ida y el de regreso. Puedes cancelar cualquiera por separado.</div>`
           : ''}`}
       ${/* La pernocta y la reserva en firme vivían en el paso del punto de
@@ -980,7 +1020,7 @@
            datos del VIAJE, no de la dirección: van aquí, con el vuelo. */ ''}
       <div class="ax-sec">Sobre el viaje</div>
       <div class="ax-toggles">
-        ${auxToggle('¿Es una pernocta?', 'isPernocta', f.isPernocta, 'Pasas la noche entre vuelos (hotel).')}
+        ${tierra ? '' : auxToggle('¿Es una pernocta?', 'isPernocta', f.isPernocta, 'Pasas la noche entre vuelos (hotel).')}
         ${auxToggle('¿Es una reserva en firme?', 'isReserva', f.isReserva !== false, 'Confírmanos que el viaje va.')}
       </div>`;
   }
@@ -993,7 +1033,7 @@
     const lead = auxLeadCheck(f);
     if (lead) return { level: lead.level, text: lead.text };
     if (!f.time) return null;
-    return { level: 'ok', text: isLle ? 'Te esperamos al bajar del avión.' : 'Te dejamos en MDE a la hora que pediste. La hora de recogida te la confirmamos cuando armemos la ruta del día.' };
+    return { level: 'ok', text: auxTimeHints(true) };
   }
   // Repinta #ax-time-hints sin remontar los campos. Con el rediseño lo pinta
   // AuxRxPedir.timeHintsHTML(dato) si existe.
@@ -1002,8 +1042,14 @@
     hints.innerHTML = (auxShellOn() && window.AuxRxPedir && typeof AuxRxPedir.timeHintsHTML === 'function')
       ? AuxRxPedir.timeHintsHTML(auxTimeHint()) : auxTimeHints();
   }
-  function auxTimeHints() {
+  // soloTexto: el «ok» como texto, para auxTimeHint (un solo sitio para el
+  // texto; en tierra, 0092, no hay avión del que bajar).
+  function auxTimeHints(soloTexto) {
     const f = auxState.form, isLle = f.type === 'lle';
+    const okText = isLle
+      ? (f.groundOps ? 'Te recogemos en el aeropuerto a esa hora.' : 'Te esperamos al bajar del avión.')
+      : 'Te dejamos en MDE a la hora que pediste. La hora de recogida te la confirmamos cuando armemos la ruta del día.';
+    if (soloTexto) return okText;
     const lead = auxLeadCheck(f);
     if (lead) return `<div class="ax-hint ${lead.level === 'bad' ? 'bad' : ''}"><svg class="icon"><use href="#i-info"/></svg>${lead.text}</div>`;
     if (!f.time) return '';
@@ -1014,7 +1060,7 @@
     // desde Olivar en franja 12–19, o sea 10 de sobra sobre la hora que
     // prometíamos. Él pidió un rango con 20 min de gabela y "a espera de
     // confirmación"; la decisión fue más simple: no prometer hora.
-    return `<div class="ax-hint ok"><svg class="icon"><use href="#i-clock"/></svg>${isLle ? 'Te esperamos al bajar del avión.' : 'Te dejamos en MDE a la hora que pediste. La hora de recogida te la confirmamos cuando armemos la ruta del día.'}</div>`;
+    return `<div class="ax-hint ok"><svg class="icon"><use href="#i-clock"/></svg>${okText}</div>`;
   }
 
   // El paso del punto ('donde'). Desde la entrega del 17-ago el camino PRINCIPAL
@@ -1071,14 +1117,16 @@
     // de ahí». Sin catálogo no hay lista que abrir, así que el botón no va.
     const cambiar = (window.AuxResidencias && AuxResidencias.hasCatalog())
       ? `<button class="ax-link" data-ax="donde-cambiar">Cambiar</button>` : '';
+    // En tierra (0092) no hay vuelo: ni se pinta uno que haya quedado escrito.
+    const tierra = !!f.groundOps;
     return `
       <div class="ax-sum">
         <div class="ax-sum-head ${m.cls}">${auxRouteHTML(m)}</div>
-        ${f.flight ? row('Vuelo', f.flight) : ''}
+        ${tierra ? row('Trabajo', 'En tierra (sin vuelo)') : (f.flight ? row('Vuelo', f.flight) : '')}
         ${row('Fecha', f.date ? auxDateES(f.date) : '—')}
-        ${row(f.type === 'lle' ? 'Aterriza' : 'Estar en el aeropuerto', auxHM(f.time))}
+        ${row(f.type === 'lle' ? (tierra ? 'Sales del aeropuerto' : 'Aterriza') : 'Estar en el aeropuerto', auxHM(f.time))}
         ${f.type !== 'lle' && f.sameDayBack && f.backTime
-          ? row('Regreso (aterriza)', auxHM(f.backTime) + (f.backFlight ? ' · ' + f.backFlight : ''))
+          ? row(tierra ? 'Regreso (sales del aeropuerto)' : 'Regreso (aterriza)', auxHM(f.backTime) + (!tierra && f.backFlight ? ' · ' + f.backFlight : ''))
           : ''}
         ${row(f.residenceId ? (f.type === 'lle' ? 'Te dejamos en' : 'Te recogemos en') : 'Dirección', auxShortAddr(f.address), cambiar)}
         ${f.residenceUnit ? row('Unidad', f.residenceUnit) : ''}
@@ -1088,7 +1136,7 @@
               ? 'Privado · con costo'
               : 'Compartido · incluido')
           : ''}
-        ${f.isPernocta ? row('Pernocta', 'Sí (hotel)') : ''}
+        ${f.isPernocta && !tierra ? row('Pernocta', 'Sí (hotel)') : ''}
         ${f.isReserva === false ? row('Reserva', 'Tentativa (sin confirmar)') : ''}
       </div>
       ${/* Con el privado elegido, la franja Select: cuánto, quién lo confirma y
@@ -1100,6 +1148,11 @@
            listener de input), así que una fila «Notas» ahí quedaría vieja. */ ''}
       ${auxField('Notas para el conductor (opcional)', 'notes', f.notes || '', 'Ej: portería 3, timbre 302', 'textarea')}
       <div class="ax-hint ok"><svg class="icon"><use href="#i-info"/></svg>Al confirmar, tu traslado entra a la planeación del día. Cuando le asignen conductor, lo verás en tu traslado.</div>
+      ${/* Vacaciones (0094, 30-sep): si este viaje supera lo que declaró en ese
+           cobro, cuánto se suma a su cuenta (no bloquea). Lo arma AuxPagos con
+           los datos de la base (sin ellos, nada); vive allá y no aquí para no
+           sumarle nombres al ámbito global (revisión 1-oct). */
+        window.AuxPagos && typeof AuxPagos.axVacExtraHTML === 'function' ? AuxPagos.axVacExtraHTML(f) : ''}
       ${auxPolicyHTML()}`;
   }
 
@@ -1143,10 +1196,16 @@
     // auxIataCorta: la sigla escrita a mano que quedó en UNA letra. No se deja
     // pasar —"A9412" no lo sabe leer ni el tablero ni nosotros— y el porqué se
     // dice en el aviso de debajo del campo, que se repinta en el mismo teclazo.
+    // Trabajo en tierra (0092): sin vuelo que pedir, ni en la llegada ni en el
+    // regreso del mismo día (solo la hora). El regreso solo cuenta en una salida:
+    // es la única que lo muestra, y un interruptor que quedó encendido antes de
+    // cambiar a llegada no puede trancar un paso donde ni se ve.
+    const tierra = !!f.groundOps;
     const disabled = (kind === 'tipo' && !f.type)
-      || (kind === 'vuelo' && ((f.type === 'lle' && (!f.flight || auxIataCorta('flight')))
+      || (kind === 'vuelo' && ((f.type === 'lle' && !tierra && (!f.flight || auxIataCorta('flight')))
             || !f.date || !f.time || badDate
-            || (f.sameDayBack && (!f.backTime || !f.backFlight || auxIataCorta('backFlight')))))
+            || (f.type !== 'lle' && f.sameDayBack
+                && (!f.backTime || (!tierra && (!f.backFlight || auxIataCorta('backFlight')))))))
       || (kind === 'donde' && !paso3Listo)
       || (kind === 'nivel' && !f.level)
       || (kind === 'revisar' && badDate);
@@ -1448,6 +1507,12 @@
     // que la camioneta no quede «por confirmar» se pregunta acá también —
     // askCupo no repite la consulta si ya la hizo para esa misma hora.
     if (kind === 'nivel') auxNivelEnter();
+    // Vacaciones (0094): el aviso de «este viaje se suma a tu cuenta» necesita
+    // la cuenta; sin el rediseño nadie la pedía antes del primer pedido. AuxPagos
+    // la pide y repinta el aviso en su lugar mientras siga en «Revisa y confirma».
+    if (kind === 'revisar' && !auxShellOn() && window.AuxPagos && typeof AuxPagos.axVacExtraEnsure === 'function') {
+      AuxPagos.axVacExtraEnsure(() => (!auxShellOn() && auxState.view === 'form' && auxStepKind(auxState.step) === 'revisar' ? auxState.form : null));
+    }
     if (kind !== 'donde') return;
     const f = auxState.form;
     // Con conjunto elegido el mapa lo monta aux-residencias (pin FIJO). El de
@@ -1525,9 +1590,12 @@
   // la pantalla de viajes salía «[object Object]».
   function auxNuevoTrip(f) {
     const priv = f.level === 'private';
+    const tierra = f.groundOps === true;
     return {
       id: 't' + Date.now() + Math.random().toString(36).slice(2, 6),
-      type: f.type, flight: f.flight, date: f.date, time: f.time,
+      type: f.type, flight: tierra ? '' : f.flight, date: f.date, time: f.time,
+      // Trabajo en tierra (0092): el mismo dato que trae el servidor.
+      groundOps: tierra,
       address: f.address, lat: f.lat, lng: f.lng,
       residenceId: f.residenceId || null,
       residenceUnit: f.residenceUnit || null,
@@ -1596,11 +1664,16 @@
   }
 
   async function auxSubmit() {
-    const f = auxState.form;
     // Último apretón de tuercas: el canónico SIGLA+DÍGITOS se rearma en cada
     // teclazo, pero la sigla del perfil viaja en una consulta aparte y podría
     // haber llegado después del último. Rearmarlo aquí cuesta nada.
     auxFlightSyncAll();
+    // En tierra (0092) no viaja ningún vuelo —aunque haya quedado escrito uno de
+    // antes de encender el interruptor— ni la pernocta (noche entre vuelos), que
+    // en ese caso ni se muestra. Es una copia: el formulario no se toca.
+    const f = auxState.form.groundOps === true
+      ? { ...auxState.form, groundOps: true, flight: '', backFlight: '', isPernocta: false }
+      : auxState.form;
     const trip = auxNuevoTrip(f);
     // Persistir en dev si hay sesión real; si falla, no se inventa nada.
     try { trip.id = await Api.createReservation(f); }
@@ -1636,6 +1709,8 @@
       const back = {
         ...f, type: 'lle',
         time: f.backTime,
+        // En tierra (f ya viene sin vuelos) el regreso tampoco lleva: es la
+        // hora a la que sale del aeropuerto, sin desembarque.
         flight: f.backFlight || f.flight,
         // Marcarlo como pernocta al regreso no tiene sentido: la pernocta es
         // del viaje de ida.
@@ -1653,6 +1728,10 @@
         auxToast('Guardamos tu ida, pero el regreso no quedó. Pídelo aparte desde «Pedir traslado».');
       }
     }
+
+    // Vacaciones (0094): con un viaje de más la base recalcula la cuenta (o deja
+    // el cargo para el próximo cobro): Pagos y el próximo aviso de Pedir lo leen de nuevo.
+    try { if (window.AuxPagos && typeof AuxPagos.refresh === 'function') Promise.resolve(AuxPagos.refresh({ force: true })).catch(() => {}); } catch (_) { /* sin Pagos */ }
 
     auxState.step = 1; auxState.stepDir = 'fwd'; auxState.form = {};
     if (window.AuxResidencias) AuxResidencias.newTrip();
@@ -1899,8 +1978,9 @@
         <div class="ax-sum">
           <div class="ax-sum-row"><span>Te recogen en</span><b>${t.type === 'lle' ? 'MDE' : auxShortAddr(t.address)}</b></div>
           <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Te dejan en' : 'Destino'}</span><b>${t.type === 'lle' ? auxShortAddr(t.address) : 'MDE'}</b></div>
-          <div class="ax-sum-row"><span>Vuelo</span><b>${t.flight || '—'}</b></div>
-          <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Aterriza' : 'Estar en MDE'}</span><b>${auxDateES(t.date)} · ${auxHM(t.time)}</b></div>
+          ${/* En tierra (0092) no hay vuelo: se dice, en vez de un «—». */ ''}
+          <div class="ax-sum-row"><span>${window.Auxiliar.isGround(t) ? 'Trabajo' : 'Vuelo'}</span><b>${window.Auxiliar.isGround(t) ? 'En tierra (sin vuelo)' : (t.flight || '—')}</b></div>
+          <div class="ax-sum-row"><span>${t.type === 'lle' ? (window.Auxiliar.isGround(t) ? 'Sale del aeropuerto' : 'Aterriza') : 'Estar en MDE'}</span><b>${auxDateES(t.date)} · ${auxHM(t.time)}</b></div>
           ${t.isPernocta ? `<div class="ax-sum-row"><span>Pernocta</span><b>Sí (hotel)</b></div>` : ''}
           ${t.isReserva === false ? `<div class="ax-sum-row"><span>Reserva</span><b>Tentativa</b></div>` : ''}
           ${t.notes ? `<div class="ax-sum-row"><span>Notas</span><b>${t.notes}</b></div>` : ''}
@@ -3007,7 +3087,8 @@
   function auxStartNew() {
     if (auxState.typeTimer) { clearTimeout(auxState.typeTimer); auxState.typeTimer = null; }
     auxState.view = 'form'; auxState.step = 1; auxState.stepDir = 'fwd';
-    auxState.form = { isReserva: true, date: auxDefaultDate() };
+    // Trabajo en tierra (0092): arranca como su último pedido.
+    auxState.form = { isReserva: true, date: auxDefaultDate(), groundOps: window.Auxiliar.groundDefault() };
     // El catálogo se pide ya, para que el paso del punto no muestre spinner
     // (y para que con una unidad ni aparezca). Las siglas también: si la
     // primera vez no llegaron (app abierta sin señal, perfil recién creado),
@@ -3271,6 +3352,8 @@
         auxState.view = 'form'; auxState.step = 1;
         auxState.form = {
           isReserva: true, type: last.type,
+          // Trabajo en tierra (0092): es de lo estable, como el tipo y el punto.
+          groundOps: window.Auxiliar.isGround(last),
           date: auxDefaultDate(),
           // Las notas guardadas llevan pegados el vuelo de ESA vez («Vuelo AV9412. »,
           // createReservation) y la marca del regreso. Repetirlos metía un vuelo viejo
@@ -3433,7 +3516,13 @@
         const inp = auxRoot() && auxRoot().querySelector('[data-field="' + k + 'Iata"]');
         if (inp) { try { inp.focus(); inp.select(); } catch (_) {} }
       }
-      else if (a === 'toggle') { const k = el.dataset.key; auxState.form[k] = !auxState.form[k]; auxRender(); }
+      else if (a === 'toggle') {
+        const k = el.dataset.key; auxState.form[k] = !auxState.form[k];
+        // En tierra (0092) el campo del vuelo se va: el selector de la sigla,
+        // si estaba abierto, no vuelve a aparecer abierto al apagarlo.
+        if (k === 'groundOps') auxState.form.flPick = null;
+        auxRender();
+      }
       else if (a === 'pin-confirm') { auxState.form.locConfirmed = true; auxRefreshPinRow(); auxToast('Ubicación confirmada.'); }
       else if (a === 'pin-edit') { auxState.form.locConfirmed = false; auxRefreshPinRow(); }
       else if (a === 'trip') { window.Auxiliar.openTrip(el.dataset.id); }

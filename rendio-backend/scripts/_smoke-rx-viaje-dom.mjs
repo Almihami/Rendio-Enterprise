@@ -22,11 +22,19 @@
 //   · un cambio de estado repinta y RECREA .rx-trip-big (key={st});
 //   · sin textos prohibidos del diseño en ninguna pantalla;
 //   · con la bandera APAGADA, el viaje sigue saliendo con la UI de siempre.
+//   · pedido del 29-sep: «Recogida 2/3» / «Parada 3/3» / «1/1» como última celda
+//     de la grilla solo publicado; tierra sin «Vuelo» y con «Sales»; el botón de
+//     cambio («Cambio de presentación», «Cambio de hora de llegada», «Cambio de
+//     hora») encima de «Cancelar traslado», con la MISMA regla que Inicio, que
+//     abre «flight» con ese reservationId y su título (en un arranque aparte con
+//     aux-rx-inicio.js y aux-rx-vuelo.js); la entrada de Inicio no cambia.
 //
 // NO CUBRE: layout (jsdom no mide: no prueba que el mapa quede detrás de la hoja,
 // ni el :has() de «Sin ubicación todavía», ni tamaños), animaciones reales (solo
 // que la clase/nodo correcto exista), Leaflet real (tiles, OSRM, invalidateSize),
-// navigator.share, tel:, push real, ni el teléfono de verdad.
+// navigator.share, tel:, push real, ni el teléfono de verdad. Tampoco que la
+// grilla de cinco celdas deje «Recogida» en la fila de Maletas (es layout: se
+// comprueba el orden y las columnas, no dónde cae), ni la RPC real de 0093.
 //
 //   cd rendio-backend && node scripts/_smoke-rx-viaje-dom.mjs
 import { JSDOM } from 'jsdom';
@@ -44,7 +52,11 @@ const PROHIBIDOS = ['Carlos', 'Mejía', 'AV9525', 'Juliana', 'Plan B', '24/7', '
   ' kit', 'Kit ', 'Preparado', 'Esta noche te avisamos', '38 auxiliares', '8:00 p. m.', 'puntos', '2 horas', '$', 'pts',
   'Enlace copiado', 'Carlos va a ver', 'te escribe'];
 
-async function boot({ rx = true } = {}) {
+// conVuelo: además carga aux-rx-inicio.js y aux-rx-vuelo.js (en el orden de
+// index.html) para el botón de cambio de la hoja, que usa la regla de Inicio y
+// abre la pantalla 'flight'. Va en un arranque aparte: el mapa «En vivo» de
+// Inicio contaría como otro mapa en las pruebas de arriba.
+async function boot({ rx = true, conVuelo = false } = {}) {
   const dom = new JSDOM(read('index.html'), { runScripts: 'outside-only', pretendToBeVisual: true, url: 'http://localhost/' });
   const w = dom.window;
   const errores = [];
@@ -68,7 +80,9 @@ async function boot({ rx = true } = {}) {
   w.setInterval = (fn, ms, ...a) => si(fn, ms === 6000 ? 90 : ms === 5000 ? 70 : ms, ...a);   // rastreo 6 s y chat 5 s
   w.eval(readFix('fake-leaflet.js'));
   w.localStorage.setItem('rendio.aux.rx', rx ? '1' : '0');
-  for (const f of ['api.js', 'api-aux.js', 'aux-rx-ui.js', 'aux-shell.js', 'aux-residencias.js', 'aux-privado.js', 'aux-presentacion.js', 'aux-rx-viaje.js', 'auxiliar.js']) {
+  const files = ['api.js', 'api-aux.js', 'aux-rx-ui.js', 'aux-shell.js', 'aux-residencias.js', 'aux-privado.js', 'aux-presentacion.js',
+    ...(conVuelo ? ['aux-rx-inicio.js'] : []), 'aux-rx-viaje.js', ...(conVuelo ? ['aux-rx-vuelo.js'] : []), 'auxiliar.js'];
+  for (const f of files) {
     try { w.eval(read(f)); } catch (e) { errores.push(f + ': ' + e.message); }
   }
   w.eval(readFix('aux-escenarios.js'));
@@ -84,6 +98,8 @@ async function boot({ rx = true } = {}) {
   const q = (s) => w.document.querySelector(s);
   const qa = (s) => [...w.document.querySelectorAll(s)];
   const click = (el) => el && el.dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true }));
+  const type = (el, v) => { el.value = v; el.dispatchEvent(new w.Event('input', { bubbles: true })); };
+  const layer = (id) => q(`.rx-layer[data-scr="${id}"]:not(.out)`);
   async function abrir(n, mut) {
     try { A.stopTrack(); } catch (_) {}
     if (AS && AS.popAll) { try { AS.popAll(); } catch (_) {} }
@@ -96,7 +112,7 @@ async function boot({ rx = true } = {}) {
     await wait(260);    // primer tic + capa + un par de tics
     return d;
   }
-  return { w, A, E, L, AS, q, qa, click, abrir, errores, red, toasts, origErr };
+  return { w, A, E, L, AS, q, qa, click, type, layer, abrir, errores, red, toasts, origErr };
 }
 
 const TRIP_IDS = ['ax-track-map', 'ax-eta-label', 'ax-eta-min', 'ax-eta', 'ax-count', 'ax-wait', 'ax-late-wrap', 'ax-track-fresh',
@@ -155,7 +171,10 @@ t('la espera en el punto se muestra (#ax-wait sin hidden)', !q('#ax-wait').class
 // Llegada con conductor el día del viaje: el código sí (en MDE es donde más se necesita).
 const P = E.piezas;
 d = await abrir('asignado-publicado', (dd) => {
-  const h = P.enMin(40);
+  // HOY de verdad: después de las 23:20 de Bogotá, «dentro de 40 min» ya es
+  // mañana y meetVisible (t.date === hoy) daba falso sin que nada estuviera mal.
+  const h40 = P.enMin(40);
+  const h = h40.date === P.dia(0) ? h40 : { date: P.dia(0), time: '23:59' };
   const tr = dd.trips[0];
   Object.assign(tr, { type: 'lle', date: h.date, time: h.time, flight: 'JA5116', requiredAt: P.iso(h.date, h.time) });
   dd.track[tr.id].direction = 'airport_to_home';
@@ -370,6 +389,28 @@ click(q('[data-rx="rate-open"]'));
 await wait(360);
 t('«Calificar a Mauricio»: se cierra y a los 280 ms entra Calificar', !!q('.rx-layer.modal[data-scr="rate"]:not(.out) .rx-rate-scr') && !A.rateSkipped(d.principal));
 
+console.log('\n── Pedido 29-sep: orden en el carro y tierra en la hoja ──');
+const infoCells = () => qa('.rx-trip-info > div').map(c => c.querySelector('span').textContent + ' ' + c.querySelector('b').textContent);
+d = await abrir('ruta-2-de-3');
+let ordEl = q('.rx-trip-info .rx-trip-ord');
+t('publicado con orden: «Recogida 2/3» como ÚLTIMA celda de la grilla', !!ordEl && ordEl === q('.rx-trip-info').lastElementChild && ordEl.querySelector('span').textContent === 'Recogida' && ordEl.querySelector('b').textContent === '2/3');
+t('cinco celdas: la grilla pasa a 3 columnas y el orden queda después de Maletas', infoCells().join('|') === 'Vuelo AV9412|En MDE 05:10|Nivel Compartido|Maletas 1|Recogida 2/3'
+  && /repeat\(3,\s*1fr\)/.test(q('.rx-trip-info').getAttribute('style')), infoCells().join('|'));
+d = await abrir('ruta-sola');
+t('sola en el carro: «1/1»', (q('.rx-trip-info .rx-trip-ord b') || {}).textContent === '1/1');
+d = await abrir('llegada-parada');
+t('llegada: «Parada 3/3», cuatro celdas en una fila', infoCells().join('|') === 'Vuelo LA4021|Aterriza 21:40|Nivel Compartido|Parada 3/3' && /repeat\(4,\s*1fr\)/.test(q('.rx-trip-info').getAttribute('style')), infoCells().join('|'));
+d = await abrir('pendiente-sin-plan');
+t('sin publicar: sin celda de orden', !q('.rx-trip-ord') && !/\d\/\d/.test(q('.rx-trip-info').textContent));
+d = await abrir('asignado-publicado');
+t('publicado sin el dato: sin celda de orden y la grilla de siempre', !q('.rx-trip-ord') && qa('.rx-trip-info span').map(s => s.textContent).join() === 'Vuelo,En MDE,Nivel,Maletas');
+d = await abrir('ruta-2-de-3', (dd) => { dd.trips[0].published = false; A.state.trips[0].published = false; });
+t('con el dato pero published ≠ true: no se pinta', !q('.rx-trip-ord'));
+d = await abrir('tierra-llegada');
+t('tierra, llegada: sin «Vuelo», la hora es «Sales»', infoCells().join('|') === 'Sales 14:00|Nivel Compartido|Maletas 1', infoCells().join('|'));
+t('tierra, llegada pedida: «sales del aeropuerto a las 14:00» (no «aterrizas»)', /sales del aeropuerto a las 14:00/.test(q('#ax-eta-label').textContent) && !/aterriza/i.test(q('.rx-trip-sheet').textContent), q('#ax-eta-label').textContent);
+t('sin aux-rx-inicio / aux-rx-vuelo cargados NO se ofrece el cambio (no hay a dónde ir)', !q('[data-rx="fv-open"]') && !!q('[data-ax="cancel-trip"]'));
+
 console.log('\n── Textos prohibidos del diseño ──');
 const hallados = {};
 for (const n of E.list()) {
@@ -391,6 +432,97 @@ click(q('[data-ax="cancel-abort"]')); await wait(240);
 t('ningún escenario ni hoja pinta textos prohibidos', Object.keys(hallados).length === 0 && pa.length === 0, JSON.stringify(hallados) + pa.join(','));
 t('ninguna excepción ni error de consola en todo el recorrido', errores.length === 0, errores.slice(0, 3).join(' | '));
 t('sin red (window.sb nunca se tocó)', red.length === 0, red.slice(0, 5).join('.'));
+
+console.log('\n── Pedido 29-sep: botón de cambio en la hoja (con Inicio y la pantalla «flight») ──');
+const B2 = await boot({ conVuelo: true });
+{
+  const { w: w2, A: A2, E: E2, AS: AS2, q: q2, qa: qa2, click: click2, type: type2, layer: layer2, abrir: abrir2 } = B2;
+  const chBtn = () => q2('.rx-layer[data-scr="trip"]:not(.out) [data-rx="fv-open"]');
+  const flTitle = () => (layer2('flight') && layer2('flight').querySelector('.rx-head-c b') || {}).textContent;
+  t('cargan AuxRxInicio.canChangeFlight y AuxRxVuelo.changeOf, y «flight» está registrada', typeof w2.AuxRxInicio.canChangeFlight === 'function' && typeof w2.AuxRxVuelo.changeOf === 'function' && AS2.registered('flight'));
+
+  // Salida pedida → «Cambio de presentación», justo encima de «Cancelar traslado».
+  let dd = await abrir2('pendiente-sin-plan');
+  let b = chBtn();
+  t('salida: «Cambio de presentación» (rx-btn sec, data-mode presentacion, data-id del traslado)', !!b && b.textContent.trim() === 'Cambio de presentación' && b.classList.contains('rx-btn') && b.classList.contains('sec')
+    && b.getAttribute('data-mode') === 'presentacion' && b.getAttribute('data-id') === dd.principal, b && b.outerHTML.slice(0, 160));
+  const blkCh = b && b.closest('[data-rx-blk]');
+  t('va ENCIMA de «Cancelar traslado» (el bloque siguiente es el de cancelar)', !!blkCh && blkCh.getAttribute('data-rx-blk') === 'change' && blkCh.nextElementSibling && blkCh.nextElementSibling.getAttribute('data-rx-blk') === 'cancel'
+    && !!blkCh.nextElementSibling.querySelector('[data-ax="cancel-trip"]'));
+  click2(b); await new Promise(r => setTimeout(r, 80));
+  let cur = AS2.current();
+  t('tocarlo abre «flight» con ESE reservationId y el modo', cur && cur.id === 'flight' && cur.props.reservationId === dd.principal && cur.props.mode === 'presentacion', JSON.stringify(cur));
+  t('la pantalla dice «Cambio de presentación», con «Estar en MDE» y el vuelo opcional', flTitle() === 'Cambio de presentación' && /Estar en MDE/.test(layer2('flight').querySelector('.rx-fv-when').textContent)
+    && layer2('flight').querySelector('[data-rx-field="fv-flight"]').getAttribute('placeholder') === 'Número de vuelo (opcional)', flTitle());
+  t('abierta desde el traslado: formulario de ESE traslado y sin «Es otro traslado»', /Tu salida de mañana/.test(layer2('flight').querySelector('.rx-ob-h p').textContent) && !layer2('flight').querySelector('.rx-fv-other'));
+  click2(layer2('flight').querySelector('[data-rx="rx-pop"]')); await new Promise(r => setTimeout(r, 320));
+  t('Volver: se va «flight» y queda la hoja del viaje', !layer2('flight') && !!q2('.rx-layer[data-scr="trip"]:not(.out) .rx-trip') && AS2.current().id === 'trip');
+
+  // Llegada con vuelo → «Cambio de hora de llegada».
+  dd = await abrir2('llegada-parada');
+  b = chBtn();
+  t('llegada: «Cambio de hora de llegada» (data-mode llegada)', !!b && b.textContent.trim() === 'Cambio de hora de llegada' && b.getAttribute('data-mode') === 'llegada');
+  click2(b); await new Promise(r => setTimeout(r, 80));
+  t('…abre «Cambio de hora de llegada» con «Aterrizas» y el vuelo obligatorio', flTitle() === 'Cambio de hora de llegada' && /Aterrizas/.test(layer2('flight').querySelector('.rx-fv-when').textContent)
+    && layer2('flight').querySelector('[data-rx-field="fv-flight"]').getAttribute('placeholder') === 'Número de vuelo' && layer2('flight').querySelector('[data-rx-field="fv-flight"]').value === 'LA4021');
+  AS2.popAll(); await new Promise(r => setTimeout(r, 320));
+
+  // Llegada de tierra → «Cambio de hora», sin vuelo; enviar va con vuelo vacío.
+  dd = await abrir2('tierra-llegada');
+  b = chBtn();
+  t('llegada de tierra: «Cambio de hora» (data-mode hora)', !!b && b.textContent.trim() === 'Cambio de hora' && b.getAttribute('data-mode') === 'hora');
+  click2(b); await new Promise(r => setTimeout(r, 80));
+  let fl = layer2('flight');
+  t('…«Cambio de hora» SIN campo de vuelo y con «Sales del aeropuerto»', flTitle() === 'Cambio de hora' && !fl.querySelector('[data-rx-field="fv-flight"]') && /Sales del aeropuerto/.test(fl.querySelector('.rx-fv-when').textContent)
+    && /Ahora sales/.test(fl.querySelector('.rx-flight-new').textContent) && !/vuelo/i.test(fl.querySelector('.rx-ob-h p').textContent));
+  type2(fl.querySelector('[data-rx-field="fv-time"]'), '15:30');
+  const nCF = E2.llamadas.filter(c => c.fn === 'ApiAux.changeFlight').length;
+  click2(fl.querySelector('[data-rx="fv-send"]')); await new Promise(r => setTimeout(r, 80));
+  const cf = E2.llamadas.filter(c => c.fn === 'ApiAux.changeFlight');
+  t('enviar: ApiAux.changeFlight(id, {flight:"", time:"15:30"}) sin pedir vuelo', cf.length === nCF + 1 && cf[cf.length - 1].args[0] === dd.principal && cf[cf.length - 1].args[1].flight === '' && cf[cf.length - 1].args[1].time === '15:30',
+    JSON.stringify(cf[cf.length - 1] && cf[cf.length - 1].args));
+  t('…y el «hecho» habla de la hora de salida del aeropuerto', /Nueva hora de salida del aeropuerto/.test((layer2('flight').querySelector('.rx-center-in') || {}).textContent || ''));
+  AS2.popAll(); await new Promise(r => setTimeout(r, 320));
+
+  // Mismos estados que Inicio: la regla es AuxRxInicio.canChangeFlight.
+  const malos2 = [];
+  for (const n of E2.list()) {
+    const x = E2.datos(n);
+    if (!x.principal) continue;
+    await abrir2(n);
+    const tr = A2.state.trips.find(y => y.id === x.principal);
+    const hay = !!chBtn();
+    if (!tr || hay !== !!w2.AuxRxInicio.canChangeFlight(tr)) malos2.push(n + (hay ? ' (sale)' : ' (no sale)'));
+  }
+  t('en todos los escenarios el botón sale justo cuando Inicio ofrece «Cambió mi vuelo»', malos2.length === 0, malos2.join(','));
+  for (const n of ['en-camino', 'cancelado', 'entregado-sin-calificar', 'pendiente-vencido', 'a-bordo-salida']) {
+    await abrir2(n);
+    t(`${n}: sin botón de cambio`, !chBtn());
+  }
+
+  // La entrada de Inicio sigue igual: «Cambió mi vuelo», sin modo.
+  try { A2.stopTrack(); } catch (_) {}
+  AS2.popAll(); A2.state.view = 'home'; A2.state.tab = 'inicio';
+  E2.montar('pendiente-sin-plan'); await new Promise(r => setTimeout(r, 60));
+  const qaFl = q2('.rx-tabview[data-scr="home"] .rx-qa-b[data-rx="open-flight"]');
+  t('Inicio conserva «Cambió mi vuelo»', !!qaFl && /Cambió mi vuelo/.test(qaFl.textContent));
+  click2(qaFl); await new Promise(r => setTimeout(r, 80));
+  cur = AS2.current();
+  t('…y abre la pantalla con su título de siempre, sin modo', flTitle() === 'Cambió mi vuelo' && cur && cur.id === 'flight' && !('mode' in (cur.props || {})), JSON.stringify(cur && cur.props));
+  AS2.popAll(); await new Promise(r => setTimeout(r, 320));
+
+  const txtB2 = [];
+  for (const n of ['pendiente-sin-plan', 'llegada-parada', 'tierra-llegada', 'ruta-2-de-3']) {
+    await abrir2(n);
+    const bb = chBtn(); if (bb) { click2(bb); await new Promise(r => setTimeout(r, 80)); }
+    const p = prohibidos((q2('#auxiliar-ui') || { textContent: '' }).textContent);
+    if (p.length) txtB2.push(n + ': ' + p.join(','));
+    AS2.popAll(); await new Promise(r => setTimeout(r, 300));
+  }
+  t('hoja + pantalla de cambio sin textos prohibidos del diseño', txtB2.length === 0, txtB2.join(' | '));
+  t('arranque con Inicio y Vuelo: sin errores de consola ni red', B2.errores.length === 0 && B2.red.length === 0, B2.errores.slice(0, 3).join(' | ') + B2.red.slice(0, 5).join('.'));
+  try { A2.stopTrack(); } catch (_) {}
+}
 
 console.log('\n── Bandera APAGADA: la UI de siempre ──');
 const B0 = await boot({ rx: false });

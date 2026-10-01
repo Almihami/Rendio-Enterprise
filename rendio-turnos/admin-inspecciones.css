@@ -1,0 +1,47 @@
+/* =============== ADMIN: INSPECCIONES — barra de filtros (29-sep-2026) ===============
+   Fecha (un día o rango), conductor y carro encima de la cola. La arma
+   inspState.filtros.montar() en admin-inspecciones.js, debajo de las pestañas
+   de estado (#insp-filter).
+
+   No es una pieza nueva: la caja es la de .bal-controls (Balance), los campos
+   los .rl-field/.rl-input, el buscador el .av-search (Disponibilidad) y el
+   selector «Un día / Rango» el mismo .seg de esta pestaña. Van copiados y
+   scopeados bajo #inspections-ui porque cada panel del admin trae sus propios
+   tokens (--panel, --line2, --ink3…), definidos en styles.css. */
+#inspections-ui .iflt{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:14px 16px;display:flex;align-items:flex-end;gap:12px 14px;flex-wrap:wrap;margin-bottom:16px}
+#inspections-ui .iflt .f{min-width:0}
+#inspections-ui .iflt .f>label{display:block;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px}
+#inspections-ui .iflt .fdate{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#inspections-ui .iflt .fdate .fa{font-size:12.5px;font-weight:700;color:var(--ink3)}
+#inspections-ui .iflt .seg{margin:0}
+#inspections-ui .iflt .inp{height:40px;border:1px solid var(--line2);border-radius:10px;background:var(--panel);padding:0 12px;font-family:var(--font);font-size:13px;color:var(--ink);outline:none}
+#inspections-ui .iflt .inp:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+#inspections-ui .iflt .inp[type=date]{font-family:var(--mono);font-size:12.5px}
+#inspections-ui .iflt select.inp{min-width:190px;cursor:pointer}
+#inspections-ui .iflt .isearch{height:40px;min-width:210px;border:1px solid var(--line2);border-radius:10px;background:var(--panel);display:flex;align-items:center;gap:9px;padding:0 12px;color:var(--ink3)}
+#inspections-ui .iflt .isearch:focus-within{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+#inspections-ui .iflt .isearch input{-webkit-appearance:none;appearance:none;border:0;background:transparent;outline:none;font-family:var(--font);font-size:13px;color:var(--ink);width:100%;height:100%;min-width:0}
+#inspections-ui .iflt .sp{flex:1}
+#inspections-ui .iflt .ict{align-self:center;font-size:12.5px;font-weight:700;color:var(--ink2);white-space:nowrap}
+#inspections-ui .iflt .ict b{font-family:var(--mono);font-weight:700;color:var(--ink)}
+#inspections-ui .iflt .ict .tope{font-weight:600;color:var(--ink3)}
+#inspections-ui .iflt .ict:empty{display:none}
+/* El modo «Un día / Rango» esconde campos con .hidden; no se deja colgado de
+   que Tailwind alcance a generar la clase. */
+#inspections-ui .iflt .hidden{display:none}
+
+/* Celular: cada campo a lo ancho, como .bal-controls en el mismo corte. Los
+   campos suben a 44 px de alto (el mismo criterio de toque del resto del admin). */
+@media (max-width: 768px){
+  #inspections-ui .iflt{padding:14px;gap:10px}
+  #inspections-ui .iflt .f{flex:1 1 100%}
+  /* «Un día / Rango» en su propio renglón: así «desde a hasta» caben juntos debajo. */
+  #inspections-ui .iflt .fdate .seg{flex:1 1 100%}
+  #inspections-ui .iflt .fdate .inp{flex:1 1 120px;min-width:0}
+  #inspections-ui .iflt .inp,
+  #inspections-ui .iflt .isearch{height:44px}
+  #inspections-ui .iflt select.inp,
+  #inspections-ui .iflt .isearch{width:100%;min-width:0}
+  #inspections-ui .iflt .sp{display:none}
+  #inspections-ui .iflt .ict{flex:1 1 auto;white-space:normal}
+}

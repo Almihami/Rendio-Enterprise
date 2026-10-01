@@ -83,6 +83,12 @@
     vehiclesCache = vehs;
     await vehLoadColors(vehs);
     vehColorField();
+    // 0095: SOAT y técnico-mecánica también se ven en Repuestos, con el resto de
+    // los documentos. Una línea debajo de las dos fechas, una sola vez.
+    const soatGrid = document.getElementById('new-veh-soat')?.closest('.set-grid2');
+    if (soatGrid && !document.getElementById('new-veh-docs-hint')) {
+      soatGrid.insertAdjacentHTML('afterend', '<p class="set-hint" id="new-veh-docs-hint" style="margin:8px 2px 0">Son las mismas fechas de Repuestos › Documentos del carro: lo que se cambie en un lado queda igual en el otro. Allá están también el seguro, las pólizas, el impuesto, el extintor y la tarjeta de propiedad.</p>');
+    }
     setOilBadge(vehs);   // refresca el "!" de Ajustes con la lista ya cargada
     if (!vehs.length) { box.innerHTML = '<p class="set-hint">Aún no hay vehículos. Agrega el primero abajo.</p>'; return; }
     box.innerHTML = vehs.map(v => {
@@ -119,6 +125,9 @@
     set('capacity', v.capacity || 4); set('km', v.current_km || 0);
     set('interval', v.maintenance_interval_km || 7000); set('lastmaint', v.last_maintenance_km != null ? v.last_maintenance_km : '');
     set('soat', v.soat_expires_at || ''); set('tecno', v.tecnomec_expires_at || '');
+    // 0095: SOAT y técnico-mecánica son las mismas fechas de Repuestos › Documentos.
+    // Se anota con qué valor abrió el formulario para mandarlas solo si se tocan acá.
+    ['soat', 'tecno'].forEach(f => { const el = $('#new-veh-' + f); if (el) el.dataset.orig = el.value || ''; });
     set('color', v.color || '');
     const btn = $('#new-veh-create-btn'); if (btn) btn.innerHTML = '<svg class="icon"><use href="#i-check"/></svg>Guardar cambios';
     const st = $('#new-veh-state'); if (st) st.textContent = `Editando ${v.internal_code || v.license_plate || ''}…`;
@@ -127,6 +136,7 @@
   function resetVehicleForm() {
     vehiclesEditId = null;
     ['code', 'plate', 'brand', 'model', 'color', 'soat', 'tecno', 'lastmaint'].forEach(f => { const el = $('#new-veh-' + f); if (el) el.value = ''; });
+    ['soat', 'tecno'].forEach(f => { const el = $('#new-veh-' + f); if (el) delete el.dataset.orig; });
     if ($('#new-veh-capacity')) $('#new-veh-capacity').value = '4';
     if ($('#new-veh-km')) $('#new-veh-km').value = '0';
     if ($('#new-veh-interval')) $('#new-veh-interval').value = '7000';
@@ -162,6 +172,13 @@
     try {
       if (editing) {
         const { organization_id, ...patch } = veh;   // no se cambia la organización
+        // 0095: una fecha que no se tocó en este formulario no se manda. Si en
+        // el entretanto la cambiaron en Repuestos › Documentos, el formulario
+        // abierto desde antes la pisaría con la vieja (la base las espeja).
+        [['soat', 'soat_expires_at'], ['tecno', 'tecnomec_expires_at']].forEach(([f, col]) => {
+          const el = $('#new-veh-' + f);
+          if (el && el.dataset.orig !== undefined && (el.value || '') === el.dataset.orig) delete patch[col];
+        });
         await Api.updateVehicle(vehiclesEditId, patch);
         const prev = (vehiclesCache.find(x => x.id === vehiclesEditId) || {}).color || '';
         if (await vehSaveColor(vehiclesEditId, prev)) toast('Vehículo actualizado.');

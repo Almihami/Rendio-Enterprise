@@ -194,11 +194,12 @@
   // con la ruta.
   function calcKey(f) { return 'calc:' + (f.type || '') + ':' + (f.time || ''); }
   // Como en el diseño, sin --d: al re-montarse corren rxRise y rxPop.
+  // En tierra (0092) la llegada no aterriza: sale del aeropuerto a esa hora.
   function calcHTML(f) {
     if (!f.time) return `<div class="rx-pd-calc-slot" data-rx-key="calc:"></div>`;
     const lle = f.type === 'lle';
     return `<div class="rx-calc rx-in" data-rx-key="${esc(calcKey(f))}">`
-      + `<span class="rx-calc-l">${lle ? 'Aterrizas' : 'Estar en MDE'}</span>`
+      + `<span class="rx-calc-l">${lle ? (f.groundOps ? 'Sales de MDE' : 'Aterrizas') : 'Estar en MDE'}</span>`
       + `<b class="rx-calc-t">${esc(hm(f.time))}</b>`
       + `<span class="rx-calc-s">La hora de recogida te la confirmamos cuando armemos tu ruta.</span></div>`;
   }
@@ -222,22 +223,29 @@
   function titleOf(kind, f) {
     const lle = f.type === 'lle';
     if (kind === 'tipo') return '¿A dónde vas?';
+    // En tierra (0092) no hay vuelo por el que preguntar.
+    if (kind === 'vuelo' && f.groundOps) return lle ? '¿A qué hora sales?' : '¿Cuándo vas al aeropuerto?';
     if (kind === 'vuelo') return lle ? '¿Cuál es tu vuelo?' : '¿Cuándo es tu vuelo?';
     if (kind === 'donde') return lle ? '¿A dónde te llevamos?' : '¿Dónde te recogemos?';
     if (kind === 'nivel') return '¿Cómo quieres ir?';
     return 'Revisa tu traslado';
   }
 
+  // Quien trabaja en tierra (0092; el pedido arranca como su último traslado)
+  // no va «para su vuelo» ni «aterriza»: el subtítulo lo dice sin avión, y la
+  // pista de la pernocta (noche entre vuelos) no le aplica.
+  const TYPES_TIERRA = { sal: 'Te llevamos al aeropuerto', lle: 'Te recogemos al salir del aeropuerto' };
   function tipoHTML(f) {
+    const tierra = !!f.groundOps;
     const btn = (type, i) => {
       const t = TYPES[type];
       return `<button type="button" class="rx-type rx-in t-${t.tone}${f.type === type ? ' on' : ''}" style="--d:${i}" data-ax="type" data-type="${type}">`
         + `<span class="rx-type-ic">${ic(t.ic, 24)}</span>`
-        + `<span class="rx-type-tx"><b>${esc(t.t)}</b><span>${esc(t.s)}</span></span>`
+        + `<span class="rx-type-tx"><b>${esc(t.t)}</b><span>${esc(tierra ? TYPES_TIERRA[type] : t.s)}</span></span>`
         + `<span class="rx-type-code">${t.from}${ic('ArrowRight', 13)}${t.to}</span></button>`;
     };
     return btn('sal', 0) + btn('lle', 1)
-      + `<div class="rx-note rx-in" style="--d:2">${ic('Info', 15)}<span>Si tu vuelo incluye pernocta, lo marcas en el siguiente paso, con los datos del vuelo.</span></div>`;
+      + (tierra ? '' : `<div class="rx-note rx-in" style="--d:2">${ic('Info', 15)}<span>Si tu vuelo incluye pernocta, lo marcas en el siguiente paso, con los datos del vuelo.</span></div>`);
   }
 
   function chipsHTML(f) {
@@ -256,13 +264,35 @@
       + `</div>`;
   }
 
+  // Los textos del trabajo en tierra salen de auxiliar.js (una sola fuente con
+  // la pantalla de siempre); este respaldo solo corre si no cargó.
+  const TIERRA_RESPALDO = {
+    label: 'Trabajo en tierra (sin vuelo)',
+    hint: 'Operaciones del aeropuerto: vas a MDE sin tomar un vuelo.',
+    salNote: 'Es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.',
+    lleNote: 'Es la hora a la que sales del terminal. Como no vienes en un vuelo, no le sumamos tiempo de desembarque.',
+  };
+  const tierraTx = () => (A() && A().tierra) || TIERRA_RESPALDO;
+
   function vueloHTML(f) {
     const lle = f.type === 'lle';
+    // Trabajo en tierra (0092): arriba del paso, en su tarjeta. Encendido, la
+    // llegada no pide vuelo y su hora es la de salir del aeropuerto (sin
+    // desembarque); la salida queda igual. La pernocta y el vuelo del regreso
+    // se esconden: no tienen sentido sin avión.
+    const tierra = !!f.groundOps;
+    const TX = tierraTx();
     let d = 1;
-    let h = chipsHTML(f);
-    if (lle) h += flightField('Número de vuelo', 'flight', '9412', { d: d++ });
-    h += field(lle ? 'Hora de aterrizaje' : 'Hora en que quieres estar en el aeropuerto', 'time', f.time || '', lle ? '06:18' : '05:10', 'time', '', { d: d++ });
-    if (!lle) h += `<div class="rx-note rx-in" style="--d:${d++}">${ic('Info', 15)}<span>No es tu hora de presentación: es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.</span></div>`;
+    let h = `<div class="rx-card rx-in" style="--d:0" data-rx-key="ground">${toggleHTML(TX.label, 'groundOps', tierra, TX.hint)}</div>`;
+    h += chipsHTML(f);
+    if (lle && !tierra) h += flightField('Número de vuelo', 'flight', '9412', { d: d++ });
+    const lbl = lle ? (tierra ? 'Hora en que sales del aeropuerto' : 'Hora de aterrizaje') : 'Hora en que quieres estar en el aeropuerto';
+    h += field(lbl, 'time', f.time || '', lle ? (tierra ? '17:00' : '06:18') : '05:10', 'time', '', { d: d++ });
+    // La nota lleva key propia: al encender el interruptor cambia de texto en el
+    // mismo nodo, y en la llegada aparece o se va sin mover a las demás.
+    const nota = lle ? (tierra ? TX.lleNote : '')
+      : (tierra ? TX.salNote : 'No es tu hora de presentación: es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.');
+    if (nota) h += `<div class="rx-note rx-in" style="--d:${d++}" data-rx-key="timenote">${ic('Info', 15)}<span>${esc(nota)}</span></div>`;
     h += calcHTML(f);
     const hint = A() && typeof A().timeHint === 'function' ? A().timeHint() : null;
     h += `<div id="ax-time-hints" data-rx-key="hints">${timeHintsHTML(hint)}</div>`;
@@ -273,13 +303,14 @@
       card += toggleHTML('Regreso el mismo día', 'sameDayBack', f.sameDayBack,
         'Si vuelves hoy mismo, lo dejamos pedido de una vez.');
       if (f.sameDayBack) {
-        card += `<label class="rx-set col" data-rx-key="backTime"><b>Hora a la que aterrizas de vuelta</b>`
-          + `<input data-field="backTime" type="time" value="${esc(f.backTime || '')}" placeholder="19:40" /></label>`;
-        card += flightField('Número del vuelo con el que aterrizas', 'backFlight', '9413', { compact: true });
+        // En tierra el regreso es solo la hora de salir del aeropuerto.
+        card += `<label class="rx-set col" data-rx-key="backTime"><b>${tierra ? 'Hora en que sales del aeropuerto' : 'Hora a la que aterrizas de vuelta'}</b>`
+          + `<input data-field="backTime" type="time" value="${esc(f.backTime || '')}" placeholder="${tierra ? '17:00' : '19:40'}" /></label>`;
+        if (!tierra) card += flightField('Número del vuelo con el que aterrizas', 'backFlight', '9413', { compact: true });
         card += `<div class="rx-set rx-pd-set-note" data-rx-key="backNote"><span class="rx-note">${ic('Info', 15)}<span>Quedan dos traslados: el de ida y el de regreso. Puedes cancelar cualquiera por separado.</span></span></div>`;
       }
     }
-    card += toggleHTML('¿Es una pernocta?', 'isPernocta', f.isPernocta, 'Pasas la noche entre vuelos (hotel).');
+    if (!tierra) card += toggleHTML('¿Es una pernocta?', 'isPernocta', f.isPernocta, 'Pasas la noche entre vuelos (hotel).');
     card += toggleHTML('¿Es una reserva en firme?', 'isReserva', f.isReserva !== false, 'Confírmanos que el viaje va.');
     h += `<div class="rx-card rx-in" style="--d:${d++}" data-rx-key="opts">${card}</div>`;
     return h;
@@ -365,6 +396,21 @@
 
   function shortAddr(a) { return String(a || '').split(',')[0]; }
 
+  // Vacaciones (0094, 30-sep: «si reserva más viajes de los que declaró, se le
+  // cobra la diferencia»): si este viaje (o la ida y el regreso del mismo día)
+  // supera lo que declaró en ese cobro, se le dice cuánto se suma ANTES de
+  // confirmar. No bloquea. Lo calcula AuxPagos con lo que da la base (su cuenta);
+  // sin ese dato, no se pinta nada.
+  function vacExtraHTML(f) {
+    const PG = window.AuxPagos;
+    if (!PG || typeof PG.vacExtraFor !== 'function' || !f || !f.date) return '';
+    const n = 1 + (f.type !== 'lle' && f.sameDayBack && f.backTime ? 1 : 0);
+    let x = null;
+    try { x = PG.vacExtraFor(f.date, n); } catch (_) { x = null; }
+    if (!x || !x.text) return '';
+    return `<div class="rx-note warn rx-in" style="--d:2" data-rx-key="vacextra">${ic('Sun', 15)}<span>${esc(x.text)}</span></div>`;
+  }
+
   function revisarHTML(f) {
     const lle = f.type === 'lle';
     const kinds = A() && typeof A().kinds === 'function' ? A().kinds() : [];
@@ -379,9 +425,17 @@
     let rows = '';
     // El día y la hora ya van grandes arriba: la fila dice el vuelo (llegada)
     // o para qué es la hora (salida).
-    const vuelo = lle ? [f.flight, f.time ? 'aterriza ' + hm(f.time) : ''].filter(Boolean).join(' · ')
-      : (f.time ? 'Estar en MDE ' + hm(f.time) : '');
-    rows += row('Plane', 'Vuelo', vuelo || '—', goVuelo);
+    const tierra = !!f.groundOps;
+    if (tierra) {
+      // En tierra (0092) la fila dice eso, no un vuelo (tampoco uno que haya
+      // quedado escrito antes de encender el interruptor: ese no viaja).
+      const cuando = f.time ? (lle ? 'sales ' : 'estar en MDE ') + hm(f.time) : '';
+      rows += row('Briefcase', 'Trabajo', ['En tierra', cuando].filter(Boolean).join(' · '), goVuelo);
+    } else {
+      const vuelo = lle ? [f.flight, f.time ? 'aterriza ' + hm(f.time) : ''].filter(Boolean).join(' · ')
+        : (f.time ? 'Estar en MDE ' + hm(f.time) : '');
+      rows += row('Plane', 'Vuelo', vuelo || '—', goVuelo);
+    }
     const place = [shortAddr(f.address), f.residenceUnit].filter(Boolean).join(' · ') || '—';
     rows += row('MapPin', lle ? 'Destino' : 'Recogida', place, (R && R.hasCatalog()) ? 'data-ax="donde-cambiar"' : '');
     if (kinds.indexOf('nivel') >= 0) {
@@ -389,16 +443,17 @@
       rows += row(priv ? 'Sparkle' : 'Users', 'Nivel', priv ? 'Privado · Con costo' : 'Compartido · Incluido', 'data-rx="goto-step" data-step="nivel"');
     }
     if (!lle && f.sameDayBack && f.backTime) {
-      rows += row('RotateCcw', 'Regreso', 'Aterriza ' + hm(f.backTime) + (f.backFlight ? ' · ' + f.backFlight : ''), goVuelo);
+      rows += row('RotateCcw', 'Regreso', tierra ? 'Sales de MDE ' + hm(f.backTime)
+        : 'Aterriza ' + hm(f.backTime) + (f.backFlight ? ' · ' + f.backFlight : ''), goVuelo);
     }
-    if (f.isPernocta) rows += row('Moon', 'Pernocta', 'Sí (hotel)', goVuelo);
+    if (f.isPernocta && !tierra) rows += row('Moon', 'Pernocta', 'Sí (hotel)', goVuelo);
     if (f.isReserva === false) rows += row('Calendar', 'Reserva', 'Tentativa (sin confirmar)', goVuelo);
 
     const bags = Math.max(0, Math.min(3, Number(f.bags) || 0));
     const ctl = U() ? U().stepCtl(bags) : '';
     return `<div class="rx-review rx-in" data-rx-key="review">`
       + `<div class="rx-rv-time"><span>${esc(dayLabel(f.date) || '—')}</span><b>${esc(hm(f.time) || '--:--')}</b>`
-      + `<span>${lle ? 'aterrizas' : 'estar en MDE'}</span>`
+      + `<span>${lle ? (tierra ? 'sales de MDE' : 'aterrizas') : 'estar en MDE'}</span>`
       + `<span class="rx-pd-rv-sub">La recogida te la confirmamos cuando armemos tu ruta.</span></div>`
       + rows + `</div>`
       + `<div class="rx-card rx-in" style="--d:1" data-rx-key="extras">`
@@ -406,6 +461,7 @@
       + `<label class="rx-set col"><b>Nota para el conductor</b><input data-field="notes" type="text" value="${esc(f.notes || '')}" placeholder="Ej. salgo por la portería de visitantes" /></label>`
       + `</div>`
       + ((P && typeof P.sumHTML === 'function') ? `<div class="rx-pd-sum" data-rx-key="sum">${P.sumHTML(f) || ''}</div>` : '')
+      + vacExtraHTML(f)
       + policyHTML(2);
   }
 

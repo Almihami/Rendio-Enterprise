@@ -154,3 +154,39 @@
   #cobro-ui .cb-filters::-webkit-scrollbar{display:none}
   #cobro-ui .cb-hist{display:block;overflow-x:auto}
 }
+
+/* 0094 · Tarifas por sector, vacaciones y balance del mes. Mismas piezas del panel
+   (cb-panel, cb-kvs, cb-hist, cb-tag, cb-filters, cb-method, set-input); aquí solo
+   lo que les falta para estos datos. Sin animaciones. */
+#cobro-ui .cb-views{margin:-4px 0 14px}
+#cobro-ui .cb-bad{color:var(--red);font-weight:800}
+#cobro-ui .cb-kvs b.bad{color:var(--red)}
+#cobro-ui .cb-kvs em{display:block;font-style:normal;font-size:11px;color:var(--ink3);margin-top:1px}
+#cobro-ui .cb-bal-kvs{grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px 16px}
+#cobro-ui .cb-bal-kvs > div{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+#cobro-ui .cb-bal-kvs > div b{font-size:16px;font-variant-numeric:tabular-nums}
+#cobro-ui .cb-bal-tools{align-items:flex-end}
+#cobro-ui .cb-bal-tools .cb-f{flex:0 0 190px}
+#cobro-ui .cb-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+#cobro-ui .cb-scroll .cb-hist{min-width:760px}
+#cobro-ui .cb-hist td b{font-weight:800}
+#cobro-ui .cb-hist tr.over td{background:var(--red-soft)}
+#cobro-ui .cb-hist td.cb-empty-td{color:var(--ink3);text-align:center;padding:14px}
+#cobro-ui .cb-rates td{vertical-align:middle}
+#cobro-ui .cb-rates .set-input{height:36px;min-width:120px}
+#cobro-ui .cb-rates .set-btn{height:34px;padding:0 12px;font-size:12.5px}
+#cobro-ui .cb-rates tr.cb-rate-new td{background:var(--panel2)}
+#cobro-ui .cb-method span + span{margin-top:2px}
+#cobro-ui select.set-input{padding-right:8px}
+@media (max-width: 900px){
+  #cobro-ui .cb-bal-tools .cb-f{flex:1 1 100%}
+  #cobro-ui .cb-rates{display:block;overflow-x:auto}
+}
+/* 0094 · «N con valor propio (no usan esta mensualidad)» y el botón para quitárselo. */
+#cobro-ui .cb-hist td em.warn{color:var(--amber);font-weight:700}
+#cobro-ui .cb-rates td .set-btn + .set-btn{margin-left:6px}
+/* 30-sep · Se cobra la diferencia: la marca roja «Tiene extra: N viajes · $V» dentro
+   de la celda (le gana al gris de los <em> de la tabla) y el balance, que ahora
+   tiene 15 columnas, un poco más ancho antes de deslizar. Sin animaciones. */
+#cobro-ui .cb-hist td em.cb-bad{color:var(--red);font-weight:800}
+#cobro-ui .cb-scroll .cb-bal-rows{min-width:1080px}

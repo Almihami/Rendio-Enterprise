@@ -16,11 +16,24 @@
 //   · segmentados: indicador sin repintar + cuerpo RECREADO con .rx-anim (key);
 //   · historial: «Sin realizar», estrellas, «Calificar» (abre con rate:true);
 //   · ids reservados de §2.4 fuera de la base; bandera APAGADA = UI de siempre.
+//   · pedido del 29-sep: MDE con «JMC» y «Rionegro» en dos líneas (Inicio y
+//     Viajes); «Recogida 2/3» / «Parada 3/3» / «1/1» SOLO publicado, como última
+//     celda en la fila de Maletas; sin publicar o sin el dato, nada; mapTrip de
+//     0093; tierra sin «Vuelo» y «Sales del aeropuerto»; la regla de «Cambió mi
+//     vuelo» (canChangeFlight) en todos los escenarios; lectura estática de 0093
+//     (cuenta la vuelta del CARRO, no la route_assignment: el caso de la ruta en
+//     curso + la nueva que saveRoutePlan crea al lado; 0093 = 0087/0089 + lo
+//     nuevo) y de su down (las funciones EXACTAS de 0087 y 0089).
 //
 // NO CUBRE: layout ni animación real (jsdom no pinta: que el pase, el mapa o las
 // entradas .rx-in se VEAN bien hay que revisarlo en el teléfono), Leaflet real
 // (tiles, tamaño), push real del sistema (el SW es falso), ni la hora de Bogotá
-// en los bordes del día (el saludo depende del reloj de la máquina).
+// en los bordes del día (el saludo depende del reloj de la máquina). Tampoco que
+// las dos líneas de MDE queden alineadas con CASA ni que «Recogida 2/3» quepa en
+// un teléfono de 320 px (eso es layout), ni la SQL de 0093 contra una base: solo
+// se lee el archivo (que compile, que el cruce de tramos junte bien a Ana, Beto
+// y Carla y no la vuelta siguiente, y el down aplicado, hay que verlo en la base
+// local).
 //
 //   cd rendio-backend && node scripts/_smoke-rx-inicio-dom.mjs
 import { JSDOM } from 'jsdom';
@@ -216,6 +229,155 @@ await montar('traslado-noche');
 h = homeEl();
 t('dos próximos: «Ver tus 2 traslados» lleva a Viajes', /Ver tus 2 traslados/.test(h.textContent) && h.querySelector('.rx-home-more').getAttribute('data-tab') === 'viajes');
 t('noche: la salida de las 20:30 es «Mañana» (día de Bogotá)', /^Mañana/.test(h.querySelector('.rx-pass-day').textContent), h.querySelector('.rx-pass-day').textContent);
+
+console.log('\n── Pedido 29-sep: MDE con «JMC» y «Rionegro» en dos líneas ──');
+const lineas = (pt) => (pt ? [...pt.querySelectorAll('span')].map(s => s.textContent).join('|') : '');
+await montar('asignado-publicado');
+h = homeEl();
+t('salida: a la derecha (.r) «MDE» grande y debajo «JMC» y «Rionegro»', h.querySelector('.rx-pass-pt.r b').textContent === 'MDE' && lineas(h.querySelector('.rx-pass-pt.r')) === 'JMC|Rionegro', lineas(h.querySelector('.rx-pass-pt.r')));
+t('salida: a la izquierda «CASA» con una sola línea (el conjunto)', h.querySelector('.rx-pass-pt:not(.r) b').textContent === 'CASA' && lineas(h.querySelector('.rx-pass-pt:not(.r)')) === 'El Olivar');
+t('ya no queda «JMC · Rionegro» en una sola línea (Inicio)', !/JMC\s*·\s*Rionegro/.test(h.textContent));
+await montar('llegada-parada');
+h = homeEl();
+t('llegada: a la izquierda «MDE» con «JMC» y «Rionegro»; a la derecha «CASA»', h.querySelector('.rx-pass-pt:not(.r) b').textContent === 'MDE' && lineas(h.querySelector('.rx-pass-pt:not(.r)')) === 'JMC|Rionegro'
+  && h.querySelector('.rx-pass-pt.r b').textContent === 'CASA' && lineas(h.querySelector('.rx-pass-pt.r')) === 'El Olivar');
+AS.setTab('viajes'); await wait(20);
+t('Viajes pinta el mismo pase (dos líneas, sin «JMC · Rionegro»)', lineas(tripsEl().querySelector('.rx-pass-pt:not(.r)')) === 'JMC|Rionegro' && !/JMC\s*·\s*Rionegro/.test(tripsEl().textContent));
+AS.setTab('inicio'); await wait(10);
+
+console.log('\n── Pedido 29-sep: orden en el carro («Recogida 2/3») ──');
+const ordDe = (el) => el && el.querySelector('.rx-pass-grid .rx-pass-ord');
+const celdas = (el) => [...el.querySelectorAll('.rx-pass-grid > div')].map(c => c.querySelector('span').textContent + ' ' + c.querySelector('b').textContent);
+await montar('ruta-2-de-3');
+h = homeEl();
+let od = ordDe(h);
+t('publicado con orden: celda «Recogida» «2/3»', !!od && od.querySelector('span').textContent === 'Recogida' && od.querySelector('b').textContent === '2/3', od && od.textContent);
+t('…es la ÚLTIMA celda, en la misma fila que Maletas (4 celdas → 4 columnas)', od && od === h.querySelector('.rx-pass-grid').lastElementChild
+  && celdas(h).join('|') === 'En MDE 05:10|Vuelo AV9412|Maletas 1|Recogida 2/3' && /repeat\(4,\s*1fr\)/.test(h.querySelector('.rx-pass-grid').getAttribute('style') || ''), celdas(h).join('|'));
+AS.setTab('viajes'); await wait(20);
+t('Viajes: el mismo «Recogida 2/3»', (ordDe(tripsEl()) || {}).textContent === 'Recogida2/3');
+AS.setTab('inicio'); await wait(10);
+await montar('ruta-sola');
+od = ordDe(homeEl());
+t('va sola en el carro: «1/1»', !!od && od.querySelector('b').textContent === '1/1');
+await montar('llegada-parada');
+od = ordDe(homeEl());
+t('llegada: el orden en que la dejan, «Parada 3/3»', !!od && od.querySelector('span').textContent === 'Parada' && od.querySelector('b').textContent === '3/3');
+t('llegada con 3 celdas: la grilla sigue en 3 columnas (sin style)', !homeEl().querySelector('.rx-pass-grid').getAttribute('style') && celdas(homeEl()).join('|') === 'Vuelo LA4021|Aterriza 21:40|Parada 3/3', celdas(homeEl()).join('|'));
+await montar('pendiente-sin-plan');
+h = homeEl();
+t('sin publicar: NO hay celda de orden (ni placeholder) y la grilla queda como el diseño', !ordDe(h) && !/\d\/\d/.test(h.querySelector('.rx-pass-grid').textContent) && !h.querySelector('.rx-pass-grid').getAttribute('style'));
+await montar('asignado-publicado');
+t('publicado pero sin el dato (0093 sin aplicar): no se pinta nada', !ordDe(homeEl()));
+// El front no confía a ciegas: sin published o con números incoherentes, nada.
+await montar('ruta-2-de-3');
+A.state.trips[0].published = false; A.rerender(); await wait(20);
+t('con pickupPos pero published ≠ true: NO se pinta', !ordDe(homeEl()));
+A.state.trips[0].published = true; A.state.trips[0].pickupPos = 4; A.rerender(); await wait(20);
+t('pos > total (4/3): NO se pinta', !ordDe(homeEl()));
+A.state.trips[0].pickupPos = 1.5; A.rerender(); await wait(20);
+t('pos no entero: NO se pinta', !ordDe(homeEl()));
+t('AuxRxInicio.pickupOrder: el mismo criterio', w.AuxRxInicio.pickupOrder({ published: true, pickupPos: 2, pickupTotal: 3, type: 'sal' }).text === '2/3'
+  && w.AuxRxInicio.pickupOrder({ published: true, pickupPos: 1, pickupTotal: 1, type: 'lle' }).label === 'Parada'
+  && w.AuxRxInicio.pickupOrder({ published: false, pickupPos: 1, pickupTotal: 1 }) === null && w.AuxRxInicio.pickupOrder({ published: true, pickupPos: null, pickupTotal: 3 }) === null);
+
+console.log('\n── Pedido 29-sep: ApiAux.mapTrip (0093) ──');
+const fila = (o) => w.ApiAux.mapTrip(Object.assign({ id: 'x', direction: 'home_to_airport', raw_status: 'assigned' }, o));
+let mt = fila({ published: true, pickup_pos: 2, pickup_total: 3, ground_ops: true });
+t('publicado: pickupPos 2 · pickupTotal 3 · groundOps true', mt.pickupPos === 2 && mt.pickupTotal === 3 && mt.groundOps === true);
+mt = fila({ published: false, pickup_pos: 2, pickup_total: 3 });
+t('sin publicar: los dos en null aunque la fila los traiga', mt.pickupPos === null && mt.pickupTotal === null && mt.groundOps === false);
+mt = fila({ published: true, pickup_pos: 3, pickup_total: 2 });
+t('incoherente (3 de 2): null', mt.pickupPos === null && mt.pickupTotal === null);
+mt = fila({ published: true });
+t('fila de 0087 (sin las claves nuevas): null y groundOps false, sin romper nada', mt.pickupPos === null && mt.pickupTotal === null && mt.groundOps === false && mt.published === true);
+
+console.log('\n── Pedido 29-sep: traslado de tierra (groundOps) ──');
+await montar('tierra-llegada');
+h = homeEl();
+t('tierra, llegada sin plan: la hora grande dice «Sales del aeropuerto» (no «Aterrizas»)', /^Sales del aeropuerto\s*14:00$/.test(h.querySelector('.rx-pass-time').textContent.trim()) && !/Aterriza/.test(h.querySelector('.rx-pass').textContent), h.querySelector('.rx-pass-time').textContent);
+t('tierra: sin celda «Vuelo»', !/Vuelo/.test((h.querySelector('.rx-pass-grid') || { textContent: '' }).textContent) && celdas(h).join('|') === 'Maletas 1', celdas(h).join('|'));
+await montar('llegada-parada');
+Object.assign(A.state.trips[0], { groundOps: true }); A.rerender(); await wait(20);
+h = homeEl();
+t('tierra, llegada publicada: sin «Vuelo» aunque viniera y la celda dice «Sales», no «Aterriza»', celdas(h).join('|') === 'Sales 21:40|Parada 3/3' && /Te esperamos en MDE/.test(h.querySelector('.rx-pass-time').textContent), celdas(h).join('|'));
+await montar('asignado-publicado');
+Object.assign(A.state.trips[0], { groundOps: true }); A.rerender(); await wait(20);
+t('tierra, salida: sin «Vuelo»; «Estar en MDE» no cambia', !/Vuelo/.test(homeEl().querySelector('.rx-pass-grid').textContent) && /En MDE\s*05:10/.test(homeEl().querySelector('.rx-pass-grid').textContent));
+
+console.log('\n── Pedido 29-sep: la regla de «Cambió mi vuelo» es una sola ──');
+const CF = w.AuxRxInicio.canChangeFlight;
+t('AuxRxInicio.canChangeFlight exportada', typeof CF === 'function');
+const reglaOk = [];
+for (const n of E.list()) {
+  await montar(n); await wait(5);
+  const qaB = homeEl().querySelector('.rx-qa-b[data-rx="open-flight"]');
+  const esperado = A.upcoming().find(x => CF(x));
+  if ((!!qaB) !== (!!esperado) || (qaB && esperado && qaB.getAttribute('data-id') !== esperado.id)) reglaOk.push(n);
+}
+t(`${E.list().length} escenarios: «Cambió mi vuelo» sale justo cuando canChangeFlight lo dice (y con ese id)`, reglaOk.length === 0, reglaOk.join(','));
+await montar('en-camino'); t('en camino: canChangeFlight = false', !CF(A.state.trips[0]));
+await montar('llego'); t('llegó por ti: canChangeFlight = false', !CF(A.state.trips[0]));
+await montar('pendiente-vencido'); t('vencido: canChangeFlight = false (no es próximo)', !CF(A.state.trips[0]));
+await montar('pendiente-sin-plan'); t('pedido: canChangeFlight = true', CF(A.state.trips[0]) === true);
+
+console.log('\n── 0093 (lectura del archivo, sin base) ──');
+const M93 = readFileSync(new URL('../supabase/migrations/0093_orden_de_recogida.sql', import.meta.url), 'utf8');
+t('0093: BEGIN/COMMIT y ADD COLUMN IF NOT EXISTS ground_ops boolean NOT NULL DEFAULT false', /\nBEGIN;/.test(M93) && /\nCOMMIT;\s*$/.test(M93) && /ADD COLUMN IF NOT EXISTS ground_ops boolean NOT NULL DEFAULT false/.test(M93));
+t('0093: pickup_pos / pickup_total SOLO con k.pub', /'pickup_pos',\s*CASE WHEN k\.pub THEN po\.pos END/.test(M93) && /'pickup_total',\s*CASE WHEN k\.pub THEN po\.total END/.test(M93));
+t('0093: sin cancelados ni no-show y misma dirección', /r2\.direction = r\.direction/.test(M93) && /r2\.cancelled_at IS NULL/.test(M93)
+  && /rs2\.status <> 'no_show'/.test(M93) && /NOT IN \('cancelled', 'no_show'\)/.test(M93));
+// La revisión del 29-sep: saveRoutePlan nunca le agrega paradas a una ruta
+// 'in_progress'; al republicar, el pasajero nuevo de un carro que ya va rodando
+// queda en OTRA route_assignment del mismo carro (su parada 1). Contar solo la
+// route_assignment le decía «1/1» a Carla siendo la 3.ª de 3 (y «x/2» a Ana y
+// Beto). Sin base no se puede correr: se comprueba que la SQL junte la vuelta
+// del carro y no la route_assignment.
+{
+  const po = (M93.match(/LEFT JOIN LATERAL \(\s*SELECT o\.pos, o\.total[\s\S]*?\) po ON true/) || [''])[0];
+  const sw = (M93.match(/LEFT JOIN LATERAL \(\s*SELECT greatest\(s\.ra_start, max\(ms\.estimated_arrival_at\)\) AS w1[\s\S]*?\) sw ON true/) || [''])[0];
+  t('0093 (revisión): «s» trae la dirección y el arranque de mi ruta', /ra\.direction AS ra_dir, ra\.planned_start_at AS ra_start/.test(M93));
+  t('0093 (revisión): el tramo de mi ruta va del arranque a la última hora estimada, solo publicado', !!sw && /WHERE k\.pub AND ms\.route_assignment_id = s\.ra_id/.test(sw) && M93.indexOf(sw) < M93.indexOf(po));
+  t('0093 (revisión): cuenta la VUELTA DEL CARRO — mi ruta o las del mismo vehículo, dirección, con conductor y publicadas', !!po
+    && /ra2\.id = s\.ra_id\s*OR \(ra2\.vehicle_id = s\.veh/.test(po) && /ra2\.direction = s\.ra_dir/.test(po) && /ra2\.driver_profile_id IS NOT NULL/.test(po)
+    && /ra2\.status IN \('planned', 'in_progress', 'completed'\)/.test(po) && !/rs2\.route_assignment_id = s\.ra_id/.test(po));
+  t('0093 (revisión): …solo si los tramos se cruzan (la vuelta siguiente del carro no entra)', /ra2\.planned_start_at <= sw\.w1/.test(po)
+    && /s\.ra_start <= \(\s*SELECT greatest\(ra2\.planned_start_at, max\(os\.estimated_arrival_at\)\)\s*FROM public\.route_stops os\s*WHERE os\.route_assignment_id = ra2\.id\)/.test(po));
+  t('0093 (revisión): una reserva en dos rutas cuenta una vez (la mía primero)', /SELECT DISTINCT ON \(rs2\.reservation_id\)/.test(po) && /ORDER BY rs2\.reservation_id, \(ra2\.id = s\.ra_id\) DESC/.test(po));
+  t('0093 (revisión): una ruta = stop_order como antes; varias = la hora estimada de cada parada manda', /bool_or\(cand\.ra_id <> s\.ra_id\) OVER \(\) AS varias/.test(po)
+    && /row_number\(\) OVER \(ORDER BY CASE WHEN cv\.varias THEN cv\.t_k END,\s*cv\.ra_start, cv\.stop_order, cv\.id\)/.test(po)
+    && /coalesce\(rs2\.estimated_arrival_at, ra2\.planned_start_at\) AS t_k/.test(po) && /\(count\(\*\) OVER \(\)\)::int AS total/.test(po));
+}
+// 0093 = 0087 + líneas nuevas (ninguna de 0087 se pierde ni cambia), y el
+// cambio de vuelo = 0089 salvo la exigencia de vuelo en la llegada.
+const M87 = readFileSync(new URL('../supabase/migrations/0087_aux_mis_viajes.sql', import.meta.url), 'utf8');
+const M89 = readFileSync(new URL('../supabase/migrations/0089_cambio_de_vuelo.sql', import.meta.url), 'utf8');
+const bloque = (sql, fn) => (sql.match(new RegExp('CREATE OR REPLACE FUNCTION public\\.' + fn + '\\([\\s\\S]*?GRANT EXECUTE ON FUNCTION public\\.' + fn + '\\([^;]*;')) || [''])[0];
+const subsec = (base, nuevo, fuera = []) => {
+  const b = base.split('\n').filter(l => !fuera.some(f => l.includes(f))), n = nuevo.split('\n');
+  let j = 0; for (const l of n) if (j < b.length && l === b[j]) j++;
+  return b.length > 10 && j === b.length;
+};
+t('0093: auxiliar_my_trips conserva TODAS las líneas de 0087, en orden', subsec(bloque(M87, 'auxiliar_my_trips'), bloque(M93, 'auxiliar_my_trips')));
+t('0093: auxiliar_change_flight = 0089 salvo la exigencia de vuelo y su comentario', subsec(bloque(M89, 'auxiliar_change_flight'), bloque(M93, 'auxiliar_change_flight'),
+  ["IF v_flight IS NULL AND r.direction = 'airport_to_home' THEN", 'v_notes := r.notes;  -- salida sin vuelo nuevo']));
+// El down (revisión del 29-sep): sin él, revertir 0092 como dice su down dejaba
+// las funciones de 0093 leyendo r.ground_ops sin la columna.
+{
+  let D93 = '';
+  try { D93 = readFileSync(new URL('../down_migrations/0093_orden_de_recogida.down.sql', import.meta.url), 'utf8'); } catch (_) {}
+  const D92 = readFileSync(new URL('../down_migrations/0092_trabajo_en_tierra.down.sql', import.meta.url), 'utf8');
+  t('down de 0093: existe, con BEGIN/COMMIT, y la cabecera de 0093 lo nombra', !!D93 && /\nBEGIN;/.test(D93) && /\nCOMMIT;\s*$/.test(D93) && /Down: down_migrations\/0093_orden_de_recogida\.down\.sql/.test(M93));
+  t('down de 0093: auxiliar_my_trips EXACTA de 0087 (con REVOKE/GRANT)', !!bloque(D93, 'auxiliar_my_trips') && bloque(D93, 'auxiliar_my_trips') === bloque(M87, 'auxiliar_my_trips'));
+  t('down de 0093: auxiliar_change_flight EXACTA de 0089 (con REVOKE/GRANT)', !!bloque(D93, 'auxiliar_change_flight') && bloque(D93, 'auxiliar_change_flight') === bloque(M89, 'auxiliar_change_flight'));
+  t('down de 0093: no toca ground_ops (es de 0092) ni nombra las claves nuevas', !/ground_ops/.test(D93.replace(/^--.*$/gm, '')) && !/pickup_pos|pickup_total/.test(D93.replace(/^--.*$/gm, '')) && !/DROP COLUMN/.test(D93));
+  t('el down de 0092 pide correr primero el de 0093', /0093[\s\S]{0,200}PRIMERO/.test(D92));
+}
+t('0093: devuelve ground_ops y conserva las claves de 0087', /'ground_ops',\s*r\.ground_ops/.test(M93) && ['published', 'pickup_at', 'meet_code', 'driver', 'vehicle', 'stop_status', 'dropped_at', 'notes_user'].every(k => M93.includes(`'${k}'`)));
+t('0093: la llegada de tierra acepta vuelo vacío (y el resto de 0089 igual)', /AND NOT coalesce\(r\.ground_ops, false\) THEN\s*RAISE EXCEPTION 'Escribe el número de vuelo en el que llegas'/.test(M93) && /enqueue_incident_alert\(v_inc\)/.test(M93));
+t('0093: SECURITY DEFINER con search_path fijo y los GRANT de 0087/0089', (M93.match(/SECURITY DEFINER\s*\nSET search_path = public, pg_temp/g) || []).length === 2
+  && /REVOKE ALL ON FUNCTION public\.auxiliar_my_trips\(int\) FROM PUBLIC, anon;\s*GRANT EXECUTE ON FUNCTION public\.auxiliar_my_trips\(int\) TO authenticated;/.test(M93)
+  && /REVOKE ALL ON FUNCTION public\.auxiliar_change_flight\(uuid, text, timestamptz\) FROM PUBLIC, anon;\s*GRANT EXECUTE ON FUNCTION public\.auxiliar_change_flight\(uuid, text, timestamptz\) TO authenticated;/.test(M93));
 
 console.log('\n── Anzuelo, franjas, ajustes y permiso de notificaciones ──');
 await montar('asignado-publicado');

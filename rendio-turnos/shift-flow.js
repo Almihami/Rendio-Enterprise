@@ -434,6 +434,9 @@
     if (sf._navWasShown) nav.classList.remove('show');
     document.getElementById('driver-save-bar')?.classList.add('hidden');
     wiz.innerHTML = `<div class="min-h-screen flex items-center justify-center text-sm text-slate-500">Cargando vehículos…</div>`;
+    // Los documentos del carro (0095) se piden a la par de los vehículos. Nunca
+    // rechaza: si fallan, el paso 1 queda como antes (chip del SOAT de vehicles).
+    const docsListos = cargarDocs();
     try {
       sf.vehicles = await Api.listVehiclesForShift();
     } catch (e) {
@@ -457,6 +460,9 @@
           : 'Recuperamos tu avance. Sigue donde ibas.');
       }
     } catch (e) { /* sin borrador recuperable: arranca limpio */ }
+    // Un rato corto, para que los chips salgan en la primera pintada; si la base
+    // se demora más, se pinta sin ellos y cargarDocs los pone cuando lleguen.
+    await Promise.race([docsListos, new Promise(r => setTimeout(r, DOCS_ESPERA_MS))]);
     render();
   }
 
@@ -803,17 +809,131 @@
     return null;
   }
 
+  // ---------- documentos del carro (0095) ----------
+  // La dueña (30-sep-2026), sobre si el conductor ve los vencidos al iniciar
+  // turno: «y los más relevantes». Al elegir carro, además del SOAT, salen los
+  // de la vía —técnico-mecánica, seguro, pólizas RC, extintor— cuando están
+  // vencidos o por vencer. ES SOLO UN AVISO: nada de esto bloquea el carro.
+  //
+  // El estado lo calcula la base (driver_vehicle_documents: fecha de Bogotá y la
+  // misma ventana del aviso a los jefes). Sin dato, al día o «No aplica» no se
+  // pinta. Si la RPC no está (0095 sin aplicar) o falla, sf.docs queda en null y
+  // todo sigue como antes: el chip del SOAT con la fecha de vehicles (soatInfo).
+  const DOCS_ESPERA_MS = 1500;   // lo que se espera a los documentos antes de pintar sin ellos
+  // n = como va en el chip; min = como va dentro de una frase; g = género/número.
+  const DOC_CORTO = {
+    soat:          { n: 'SOAT',          min: 'el SOAT',          g: 'm' },
+    tecnomecanica: { n: 'Tecnomecánica', min: 'la tecnomecánica', g: 'f' },
+    seguro:        { n: 'Seguro',        min: 'el seguro',        g: 'm' },
+    polizas_rc:    { n: 'Pólizas RC',    min: 'las pólizas RC',   g: 'fp' },
+    extintor:      { n: 'Extintor',      min: 'el extintor',      g: 'm' },
+  };
+  const vencidoSegun = (g) => g === 'f' ? 'vencida' : g === 'fp' ? 'vencidas' : 'vencido';
+
+  const chip = (tone, label) => {
+    const cls = tone === 'rose' ? 'bg-rose-100 text-rose-700'
+      : tone === 'amber' ? 'bg-amber-100 text-amber-700'
+      : 'bg-emerald-100 text-emerald-700';
+    return `<span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${cls}">${esc(label)}</span>`;
+  };
+
+  // Las filas de un carro, o null si la base no las dio (sin RPC, falló o el
+  // carro no vino): entonces manda el respaldo de vehicles.
+  function docsDe(vehicleId) {
+    if (!Array.isArray(sf.docs)) return null;
+    const mias = sf.docs.filter(d => d && d.vehicle_id === vehicleId && DOC_CORTO[d.kind]);
+    return mias.length ? mias : null;
+  }
+
+  function docChipInfo(d) {
+    const m = DOC_CORTO[d.kind];
+    if (!m) return null;
+    const vence = m.g === 'fp' ? 'vencen' : 'vence';
+    if (d.status === 'vencido') return { tone: 'rose', label: `${m.n} ${vencidoSegun(m.g)}` };
+    if (d.status === 'hoy') return { tone: 'amber', label: `${m.n} ${vence} hoy` };
+    if (d.status === 'por_vencer' && Number(d.days_left) > 0) return { tone: 'amber', label: `${m.n} ${vence} en ${Number(d.days_left)} d.` };
+    return null;   // al día, sin dato o «No aplica»: no se pinta
+  }
+
+  function docChipsHtml(v) {
+    const mias = docsDe(v.id);
+    if (!mias) { const si = soatInfo(v); return si ? chip(si.tone, si.label) : ''; }
+    return mias.map(docChipInfo).filter(Boolean).map(x => chip(x.tone, x.label)).join('');
+  }
+
+  // La nota de antes de arrancar: «Este carro tiene el SOAT y la tecnomecánica
+  // vencidos. Puedes salir igual; avísale al jefe.» Solo lo VENCIDO (lo que vence
+  // hoy todavía vale hoy) y solo con datos de la base: sin la RPC no hay nota,
+  // como antes. No bloquea: no deshabilita ningún botón.
+  function docsVencidosTexto(vehicleId) {
+    const venc = (docsDe(vehicleId) || []).filter(d => d.status === 'vencido');
+    if (!venc.length) return '';
+    const partes = venc.map(d => DOC_CORTO[d.kind].min);
+    const lista = partes.length === 1 ? partes[0] : `${partes.slice(0, -1).join(', ')} y ${partes[partes.length - 1]}`;
+    const adj = venc.length === 1 ? vencidoSegun(DOC_CORTO[venc[0].kind].g)
+      : venc.every(d => DOC_CORTO[d.kind].g !== 'm') ? 'vencidas' : 'vencidos';
+    return `Este carro tiene ${lista} ${adj}. Puedes salir igual; avísale al jefe.`;
+  }
+  function docsNotaHtml(vehicleId) {
+    const t = docsVencidosTexto(vehicleId);
+    return t ? `<div id="sf-docs-nota" class="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-2.5 text-[12.5px] text-amber-800 flex gap-2"><span>📄</span><span>${esc(t)}</span></div>` : '';
+  }
+
+  // La constancia en las notas de la inspección. Sin ella, el jefe veía en
+  // Inspecciones «SOAT vigente: OK» (el conductor tocó «Marcar todos OK») de un
+  // carro que la app sabía vencido. No bloquea ni manda nada: es la misma línea
+  // que deja el aviso de kilometraje. Solo con datos de la base; sin RPC, nada.
+  function docsVencidosConstancia(vehicleId) {
+    const venc = (docsDe(vehicleId) || []).filter(d => d.status === 'vencido');
+    if (!venc.length) return '';
+    const partes = venc.map(d => DOC_CORTO[d.kind].min.replace(/^(el|la|los|las) /, ''));
+    const lista = partes.length === 1 ? partes[0] : `${partes.slice(0, -1).join(', ')} y ${partes[partes.length - 1]}`;
+    return `Documentos del carro vencidos según la app: ${lista}. Es solo un aviso; no bloquea el carro.`;
+  }
+
+  // Si los documentos llegan con la pantalla ya pintada, la nota se pone en su
+  // hueco sin repintar (el km tecleado y la firma se quedan como están): el del
+  // inicio rápido (#fk-docs-slot) o el del paso 6 (#sf-docs-slot, que solo existe
+  // cuando la nota aplica: ni al completar una inspección diferida ni con NO APTO).
+  function ponerNotaTardia() {
+    if (document.getElementById('sf-docs-nota')) return;
+    const nota = docsNotaHtml(sf.vehicleId);
+    if (!nota) return;
+    const fk = document.getElementById('fk-docs-slot');
+    if (fk) { fk.innerHTML = nota; fk.hidden = false; return; }
+    const cf = document.getElementById('sf-docs-slot');
+    if (cf) cf.innerHTML = `<div class="mt-3">${nota}</div>`;
+  }
+
+  // Pide los documentos sin frenar el asistente. Si llegan después de pintado el
+  // paso 1, se reemplazan SOLO los chips de cada tarjeta (no se repinta la
+  // pantalla: el conductor puede estar tocando, reservando o en el inicio rápido),
+  // y la nota de vencidos entra en su hueco si esa pantalla ya está abierta.
+  // vehicleIds: null = los de su organización (paso 1); [id] = solo ese carro.
+  let _docsPedido = 0;
+  function cargarDocs(vehicleIds) {
+    sf.docs = null;
+    const mio = ++_docsPedido;
+    if (!window.Api || typeof Api.driverVehicleDocuments !== 'function') return Promise.resolve();
+    return Promise.resolve()
+      .then(() => Api.driverVehicleDocuments(vehicleIds || null))
+      .then((rows) => {
+        if (mio !== _docsPedido) return;   // respuesta de una apertura anterior
+        sf.docs = Array.isArray(rows) ? rows : null;
+        document.querySelectorAll('#shift-wizard [data-doc-chips]').forEach(el => {
+          const v = (sf.vehicles || []).find(x => x.id === el.dataset.docChips);
+          if (v) el.innerHTML = docChipsHtml(v);
+        });
+        ponerNotaTardia();
+      })
+      .catch(() => { /* sin 0095 o sin señal: queda el chip del SOAT de vehicles */ });
+  }
+
   const STATUS_ES = { available: null, in_use: 'En uso', reserved: 'Reservado', maintenance: 'En revisión', blocked: 'Cambio de aceite' };
 
   // ---------- Paso 1: vehículo ----------
 
   function renderVehicle(wiz) {
-    const chip = (tone, label) => {
-      const cls = tone === 'rose' ? 'bg-rose-100 text-rose-700'
-        : tone === 'amber' ? 'bg-amber-100 text-amber-700'
-        : 'bg-emerald-100 text-emerald-700';
-      return `<span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${cls}">${esc(label)}</span>`;
-    };
     const rank = v => (v.status === 'available' || v.id === sf.myReservedVehicleId) ? 0 : 1;
     const rows = sf.vehicles
       .slice()
@@ -827,7 +947,10 @@
         else if (STATUS_ES[v.status]) chips.push(chip('rose', STATUS_ES[v.status]));
         // El chip de estado ya dice "Cambio de aceite" si está bloqueado; evita duplicar.
         const mi = (v.status === 'blocked') ? null : maintenanceInfo(v); if (mi) chips.push(chip(mi.tone, mi.label));
-        const si = soatInfo(v); if (si) chips.push(chip(si.tone, si.label));
+        // Documentos (0095): en su propio contenedor para poder ponerlos cuando
+        // lleguen sin repintar la tarjeta. display:contents → se acomodan en la
+        // misma fila de chips.
+        chips.push(`<span class="contents" data-doc-chips="${esc(v.id)}">${docChipsHtml(v)}</span>`);
         const card = `<button data-vehicle="${v.id}" ${disabled ? 'disabled' : ''}
           class="w-full text-left bg-white border-2 ${isSel ? 'border-brand' : 'border-slate-200'} rounded-2xl p-4 flex gap-3 items-start transition ${disabled ? 'opacity-50' : 'active:scale-[0.99]'}">
           <div class="flex-1 min-w-0">
@@ -1317,6 +1440,11 @@
     const blocked = !apt;
     const sevLabel = { leve: 'Leve — operación normal', media: 'Media — con seguimiento', grave: 'Grave — bloquea operación' }[sf.severity] || '';
     const driverName = (sf.profile && sf.profile.full_name) || 'Conductor';
+    // Documentos vencidos del carro (0095): aviso, nunca muro. No sale al
+    // completar una inspección diferida (el turno ya va en ruta) ni con NO APTO
+    // (ese turno no arranca: «puedes salir igual» no aplica). Va en un hueco
+    // (#sf-docs-slot) para que, si los documentos llegan tarde, entre sin repintar.
+    const docsNota = (!sf.completing && !blocked) ? docsNotaHtml(sf.vehicleId) : '';
 
     const row = (icon, label, value, tone) => `<div class="flex items-center gap-3 px-4 py-3.5 border-b border-slate-100 last:border-0">
       <div class="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">${icon}</div>
@@ -1365,6 +1493,7 @@
         ${row('🛞', 'Kilometraje inicial', `${fmtKm(sf.km)} km`, 'ok')}
         ${issuesBlock}
       </div>
+      ${(!sf.completing && !blocked) ? `<div id="sf-docs-slot">${docsNota ? `<div class="mt-3">${docsNota}</div>` : ''}</div>` : ''}
       ${aptBlock}
       ${signBlock}
       <div class="mt-3 p-3 rounded-xl bg-slate-100 text-xs text-slate-500 flex gap-2 items-start">
@@ -1406,12 +1535,16 @@
 
   // Las observaciones del conductor y, si la hubo, la constancia del aviso de
   // kilometraje. Van juntas porque es el único texto libre que viaja pegado a la
-  // lectura del odómetro y a su foto del tablero.
+  // lectura del odómetro y a su foto del tablero. También la de los documentos
+  // vencidos según la base (0095), para que la inspección no diga «todo OK» de
+  // un carro con el SOAT vencido sin que quede escrito.
   function notasInspeccion() {
     const partes = [];
     if (sf.corta) partes.push(`Relevo propio (doble turno): mismo carro, cerró hace ${sf.corta.min} min. Inspección corta, sin checklist ni fotos.`);
     if (sf.note && sf.note.trim()) partes.push(sf.note.trim());
     if (sf.kmAviso) partes.push(sf.kmAviso);
+    const docs = docsVencidosConstancia(sf.vehicleId);
+    if (docs) partes.push(docs);
     return partes.length ? partes.join('\n') : null;
   }
 
@@ -2231,6 +2364,9 @@
   function renderFastKm() {
     const wiz = $('#shift-wizard'); const v = selectedVehicle() || {};
     const grace = fmtGrace(sf.settings && sf.settings.inspection_grace_minutes);
+    // La nota de vencidos (0095). Su hueco queda aunque esté vacía (oculto, para
+    // no sumar el espacio de space-y): si los documentos llegan tarde, entra ahí.
+    const docsNota = docsNotaHtml(sf.vehicleId);
     wiz.innerHTML = `<div class="max-w-lg mx-auto min-h-screen flex flex-col bg-slate-50">
       <div class="px-5 pt-4 pb-2" style="padding-top:calc(16px + env(safe-area-inset-top));">
         <div class="flex items-center justify-between mb-3">
@@ -2246,6 +2382,7 @@
           <div class="flex items-baseline gap-1"><input id="fk-km" type="tel" inputmode="numeric" placeholder="Ej: 128.450" value="${sf.km ? Number(sf.km).toLocaleString('es-CO') : ''}" class="w-full text-2xl font-extrabold text-ink bg-transparent focus:outline-none placeholder:text-slate-300 tabular-nums border-b-2 border-brand-200 focus:border-brand-500"><span class="text-sm font-bold text-slate-400">km</span></div>
         </div>
         <div class="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-2.5 text-[12.5px] text-amber-800 flex gap-2"><span>⏳</span><span>Tendrás <b>${esc(grace)}</b> para hacer la inspección. Si no la haces a tiempo, será un strike.</span></div>
+        <div id="fk-docs-slot"${docsNota ? '' : ' hidden'}>${docsNota}</div>
       </div>
       <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-5 py-3 z-10" style="padding-bottom:calc(12px + env(safe-area-inset-bottom));">
         <div class="max-w-lg mx-auto"><p id="fk-state" class="text-xs text-slate-500 text-center mb-1.5"></p>
@@ -2316,6 +2453,10 @@
     // El km de apertura ya pasó por el aviso cuando arrancó el turno: se da por
     // avisado ese número. Si acá lo cambia, el aviso vuelve a preguntar.
     sf.kmAvisado = Number(sf.km) || null; sf.kmAviso = null;
+    // Los documentos de ESTE carro (0095), solo para la constancia en las notas
+    // de la inspección: aquí no hay chips ni nota (el turno ya va en ruta). No se
+    // espera: llegan mientras hace el checklist; si no llegan, no hay constancia.
+    cargarDocs([shift.vehicle_id]);
     const wiz = $('#shift-wizard'); wiz.classList.remove('hidden'); document.body.style.overflow = 'hidden';
     const nav = document.getElementById('driver-nav'); sf._navWasShown = !!(nav && nav.classList.contains('show')); if (sf._navWasShown) nav.classList.remove('show');
     document.getElementById('driver-save-bar')?.classList.add('hidden');
