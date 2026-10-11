@@ -1,4 +1,4 @@
-// Migraciones del arranque con tripulantes (11-oct-2026: 0096–0100) contra DEV.
+// Migraciones del arranque con tripulantes (11-oct-2026: 0096–0101) contra DEV.
 //
 //   cd rendio-backend/scripts && set -a && source ../.env.dev && set +a && node _aplicar-arranque-1011.mjs --seco
 //   cd rendio-backend/scripts && set -a && source ../.env.dev && set +a && node _aplicar-arranque-1011.mjs --aplicar
@@ -32,6 +32,7 @@ const ARCHIVOS = [
   '0098_telefono_propio.sql',
   '0099_vuelos.sql',
   '0100_recordatorio_libres.sql',
+  '0101_asignado_al_publicar.sql',
 ];
 
 const c = new pg.Client({ host: 'aws-1-us-east-1.pooler.supabase.com', port: 5432, user: 'postgres.' + ref,
