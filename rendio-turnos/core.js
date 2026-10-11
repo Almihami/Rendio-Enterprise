@@ -419,6 +419,10 @@
       $('#driver-tabs-root')?.classList.remove('nav-on');
       await refreshDriverView();
       setDriverTab('home'); // arranca en las 2 tarjetas
+      // Celular obligatorio (pedido del jefe, 11-oct-2026): sin él, el
+      // tripulante no tiene a quién llamar. Si está vacío, una ventana que no
+      // se cierra sin un número válido (driver-celular.js).
+      if (typeof drvTelPedirSiFalta === 'function') drvTelPedirSiFalta();
       // Inicio de turno (Etapa 1 módulo conductor) — card + wizard.
       if (window.ShiftFlow) ShiftFlow.init(state.profile).catch(e => console.error(e));
     }

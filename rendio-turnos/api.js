@@ -1857,14 +1857,19 @@
   }
 
   async function getInspectionDetail(id) {
-    const cols = extra =>
+    const cols = (extra, fotos) =>
       `id,kind,has_damage,checklist,notes,odometer_km,review_status,reviewed_by,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id${extra},` +
       'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
       'driver_profiles(profiles(id,full_name,email)),' +
-      'inspection_photos(photo_type,storage_path,size_bytes)';
-    // Cascada: con is_apt/signed_name (0028) → sin ellos (legado).
-    let { data, error } = await sb.from('inspections').select(cols(',is_apt,signed_name')).eq('id', id).single();
-    if (error) ({ data, error } = await sb.from('inspections').select(cols('')).eq('id', id).single());
+      `inspection_photos(${fotos})`;
+    const FOTOS = 'photo_type,storage_path,size_bytes';
+    const leer = (extra, fotos) => sb.from('inspections').select(cols(extra, fotos)).eq('id', id).single();
+    // Cascada: con purged_at (las fotos de rutina de más de 60 días se borran del
+    // almacenamiento y quedan marcadas) → sin purged_at (base que aún no tiene la
+    // columna) → sin is_apt/signed_name (0028, legado).
+    let { data, error } = await leer(',is_apt,signed_name', FOTOS + ',purged_at');
+    if (error) ({ data, error } = await leer(',is_apt,signed_name', FOTOS));
+    if (error) ({ data, error } = await leer('', FOTOS));
     if (error) throw error;
     return data;
   }

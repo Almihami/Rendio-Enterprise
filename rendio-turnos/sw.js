@@ -37,6 +37,7 @@ const APP_SHELL = [
   // Estado de vuelos (0099).
   '/api-vuelos.js',
   '/vuelos-ui.js',
+  '/api-jefe.js',
   '/shift-flow.js',
   '/core.js',
   '/usuarios.js',
@@ -53,7 +54,9 @@ const APP_SHELL = [
   '/admin-revision.js',
   '/driver-home.js',
   '/admin-recompensas.js',
+  '/driver-horas.js',
   '/driver-perfil.js',
+  '/driver-celular.js',
   '/driver-disponibilidad.js',
   '/driver-tabs.js',
   '/admin-consola.js',

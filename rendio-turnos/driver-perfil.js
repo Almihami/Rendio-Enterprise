@@ -49,7 +49,7 @@
     try {
       if (!state.driverId) { try { state.driverId = await Api.getMyDriverProfileId(state.profile.id); } catch (e) { /* */ } }
       const did = state.driverId;
-      const [prof, strikes, closed, rewards, redemptions, openShift, susp, docsCarros] = await Promise.all([
+      const [prof, strikes, closed, rewards, redemptions, openShift, susp, docsCarros, horas] = await Promise.all([
         Api.getMyFullProfile().catch(() => state.profile),
         Api.listDriverStrikes(state.profile.id).catch(() => []),
         did ? Api.listMyClosedShifts(did).catch(() => []) : Promise.resolve([]),
@@ -61,6 +61,11 @@
         // turno se filtra abajo. null = la RPC no está o falló (queda lo de antes).
         (did && typeof Api.driverVehicleDocuments === 'function')
           ? Api.driverVehicleDocuments(null).catch(() => null) : Promise.resolve(null),
+        // Mis horas (driver-horas.js, 11-oct-2026): el corte en curso y el
+        // anterior con la cifra del Balance. null = no se puede decir (no sale
+        // la tarjeta); { error } = la base no respondió (lo dice).
+        (did && typeof dhCargarHoras === 'function')
+          ? dhCargarHoras(did).catch(e => { console.error(e); return { error: true }; }) : Promise.resolve(null),
       ]);
       // El número que ve el conductor es el de ESTE MES. Antes se contaba todo lo
       // que estuviera vivo desde que entró a la empresa: un strike de marzo seguía
@@ -80,7 +85,7 @@
       const kmTotal = (closed || []).reduce((s, sh) => s + kmDrivenOf(sh), 0);
       const carDocs = (Array.isArray(docsCarros) && openShift && openShift.vehicle_id)
         ? docsCarros.filter(x => x && x.vehicle_id === openShift.vehicle_id) : null;
-      state.profileData = { prof: prof || state.profile, strikes: strikes || [], activeStrikes, oldStrikes, period, closed: closed || [], rewards: rewards || [], redemptions: redemptions || [], openShift, susp, kmTotal, carDocs };
+      state.profileData = { prof: prof || state.profile, strikes: strikes || [], activeStrikes, oldStrikes, period, closed: closed || [], rewards: rewards || [], redemptions: redemptions || [], openShift, susp, kmTotal, carDocs, horas };
       drawProfileView();
     } catch (e) {
       console.error(e);
@@ -91,7 +96,10 @@
   function drawProfileView() {
     const box = $('#driver-profile-container'); if (!box) return;
     const v = state.profileView || 'main';
-    box.innerHTML = v === 'rewards' ? rewardsViewHtml() : v === 'strikes' ? strikesViewHtml() : profileMainHtml();
+    box.innerHTML = v === 'rewards' ? rewardsViewHtml()
+      : v === 'strikes' ? strikesViewHtml()
+      : (v === 'horas' && typeof dhVistaHtml === 'function') ? dhVistaHtml(state.profileData.horas)
+      : profileMainHtml();
     bindProfile();
     box.scrollTop = 0; window.scrollTo(0, 0);
   }
@@ -152,6 +160,8 @@
 
       <div style="margin-top:16px" class="rc-in d1">${profileStrikeNoteHtml(sc, d.susp, d.period)}</div>
 
+      ${typeof dhTarjetaHtml === 'function' ? dhTarjetaHtml(d.horas) : ''}
+
       <div class="rc-sechd">Recompensas por kilómetro</div>
       <button id="pf-rewards-btn" class="rc-pf-km rc-in d2" type="button">
         <span class="l">${tier ? `Nivel ${TIER_META[tier].label}` : 'Kilómetros acumulados'}</span>
@@ -202,6 +212,12 @@
       </div>
 
       <div class="rc-card tight" style="margin-top:10px">
+        ${typeof drvTelAbrir === 'function' ? `<button class="rc-listrow" id="pf-phone" type="button">
+          <span class="ic">${avIcon('phone', 18)}</span>
+          <span class="lbl">Mi celular</span>
+          <span class="val"${p.phone ? '' : ' style="color:var(--r-warn);font-weight:650"'}>${p.phone ? escapeHtml(drvTelFormato(p.phone)) : 'Agrégalo'}</span>
+          <span class="chev">${avIcon('chevronRight', 16)}</span>
+        </button>` : ''}
         <button class="rc-listrow" id="pf-strikes-btn" type="button">
           <span class="ic">${avIcon('alert', 18)}</span>
           <span class="lbl">Mis strikes</span>
@@ -350,12 +366,19 @@
           </div>
         </div>`;
     }).join('') : '<div class="px-1 text-sm text-slate-500">Aún no hay recompensas configuradas. Tu administrador las definirá pronto.</div>';
+    // Cada turno con su horario y su duración (11-oct-2026): «30 sep · 2:30 a. m.
+    // → 3:27 p. m. · 12 h 57 min» y los km a la derecha. La línea la arma
+    // driver-horas.js con BalanceCore, igual que en «Mis horas».
     const hist = d.closed.length ? d.closed.map(sh => {
       const k = kmDrivenOf(sh); const veh = sh.vehicles ? (sh.vehicles.internal_code || sh.vehicles.license_plate || '') : '';
-      const date = sh.end_at ? new Date(sh.end_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }) : '';
-      return `<div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 last:border-0">
-          <div class="flex items-center gap-3"><div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-sm">🚐</div><div><p class="text-sm font-semibold text-ink">${escapeHtml(date)}</p><p class="text-[11px] text-slate-400">${escapeHtml(veh || 'Turno')}</p></div></div>
-          <span class="text-sm font-bold tabular-nums text-emerald-600">+${k.toLocaleString('es-CO')} km</span>
+      const linea = typeof dhTurnoLinea === 'function' ? dhTurnoLinea(sh) : null;
+      // Los km ya van a la derecha: la línea va sin ellos.
+      const dateHtml = linea ? dhPartesHtml(linea.partes.filter(x => !/^\+[\d.,]+ km$/.test(x)))
+        : escapeHtml(sh.end_at ? new Date(sh.end_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }) : '');
+      const sub = [linea && linea.marca, veh || (linea ? '' : 'Turno')].filter(Boolean).join(' · ');
+      return `<div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 last:border-0">
+          <div class="flex items-center gap-3 min-w-0"><div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-sm shrink-0">🚐</div><div class="min-w-0"><p class="text-sm font-semibold text-ink">${dateHtml}</p>${sub ? `<p class="text-[11px] ${linea && linea.marca ? 'text-amber-600 font-semibold' : 'text-slate-400'}">${escapeHtml(sub)}</p>` : ''}</div></div>
+          <span class="text-sm font-bold tabular-nums text-emerald-600 shrink-0">+${k.toLocaleString('es-CO')} km</span>
         </div>`;
     }).join('') : '<div class="px-4 py-4 text-sm text-slate-500">Aún no has cerrado turnos.</div>';
     return `
@@ -381,6 +404,11 @@
     const box = $('#driver-profile-container'); if (!box) return;
     $('#pf-rewards-btn')?.addEventListener('click', () => { state.profileView = 'rewards'; drawProfileView(); });
     $('#pf-strikes-btn')?.addEventListener('click', () => { state.profileView = 'strikes'; drawProfileView(); });
+    $('#pf-horas-btn')?.addEventListener('click', () => { state.profileView = 'horas'; drawProfileView(); });
+    $('#pf-phone')?.addEventListener('click', async () => {
+      const nuevo = await drvTelAbrir({ forzado: false });
+      if (nuevo && state.profileView === 'main') drawProfileView();
+    });
     $('#pf-back')?.addEventListener('click', () => { state.profileView = 'main'; drawProfileView(); });
     $('#pf-logout')?.addEventListener('click', onLogout);
     $('#pf-mypw')?.addEventListener('click', () => openCambiarMiClave());

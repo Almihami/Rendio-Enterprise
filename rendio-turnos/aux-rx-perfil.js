@@ -10,8 +10,9 @@
 //                 pantalla de P5 (AuxResidencias.pickerScreenHTML, que usa
 //                 pickerHTML({mode:'perfil'})) y, si no existe, un selector propio.
 // Acciones data-rx propias: me-level, pref-level (reemplaza la de P6, que lo
-// permite), me-meet, me-meet-save, me-pwa, me-push, me-res-pick, me-res-save,
-// me-res-retry. Campos: data-rx-field="meetingPoint" y "me-res-q".
+// permite), me-meet, me-meet-save, me-phone, me-phone-save (11-oct-2026), me-pwa,
+// me-push, me-res-pick, me-res-save, me-res-retry. Campos:
+// data-rx-field="meetingPoint", "me-phone" y "me-res-q".
 //
 // Lo que cambia respecto al diseño, por decisión (plan §1.6 / AJUSTES §4):
 //   · «Coordinación» sin «24/7» ni «a cualquier hora»: el subtítulo es el horario
@@ -53,6 +54,7 @@
     meHost: null,       // .rx-scrhost de la pestaña montada
     levelBusy: false,
     meetBusy: false,
+    phoneBusy: false,
     pwa: undefined,     // 'on' | 'off' | 'blocked' | 'na' (undefined = sin mirar todavía)
   };
   // Pila «Mi residencia».
@@ -277,7 +279,9 @@
       U.row({ icon: 'Home', tone: 'h2a', title: 'Mi residencia', sub: resSub, attrs: { 'data-rx': 'open-residence', 'data-me': 'row-res' } }),
       U.row({ icon: lv.ic, tone: lv.tone, title: 'Nivel preferido', sub: lv.name, attrs: { 'data-rx': 'me-level', 'data-me': 'row-level' } }),
       U.row({ icon: 'MapPin', tone: 'n', title: 'Punto de encuentro', sub: meet || 'Opcional · dónde esperas al conductor', attrs: { 'data-rx': 'me-meet', 'data-me': 'row-meet' } }),
-      U.row({ tag: 'div', cls: 'static', icon: 'Phone', tone: 'n', title: 'Teléfono', sub: phone || 'Sin teléfono registrado', chevron: false, attrs: { 'data-me': 'row-phone' } }),
+      // Editable desde el 11-oct-2026 (antes era solo lectura): hoja propia que
+      // guarda con Api.setMyPhone (0098 · set_my_phone).
+      U.row({ icon: 'Phone', tone: 'n', title: 'Teléfono', sub: phone || 'Sin teléfono registrado', attrs: { 'data-rx': 'me-phone', 'data-me': 'row-phone' } }),
       U.row({ icon: 'Wallet', tone: pay.tone, title: 'Pagos y mensualidad', sub: pay.sub, attrs: { 'data-rx': 'rx-tab', 'data-tab': 'pagos', 'data-me': 'row-pay' } }),
     ].join('');
 
@@ -562,6 +566,62 @@
     }
   }
 
+  // ── Teléfono (hoja, data-rx-field: estado propio) ────────────────────────
+  // El celular es lo que usa el conductor para llamarte si no te encuentra. Se
+  // valida aquí (Api.normalizarCelular: 10 dígitos que empiezan por 3; espacios,
+  // guiones y +57 valen) y la base lo vuelve a validar y lo guarda normalizado.
+  const PHONE_RULE = 'El celular debe tener 10 dígitos y empezar por 3.';
+  function phoneSheetHTML() {
+    const p = STATE().profile || {};
+    const cur = phoneText(p.phone);
+    return `<div class="rx-sh">
+      <h3>Tu teléfono</h3>
+      <p>Tu celular, para que el conductor te pueda llamar si no te encuentra en el punto de recogida.</p>
+      <label class="rx-field"><span>Celular</span>
+        <div class="rx-input">${ic('Phone', 18)}<input type="tel" inputmode="tel" autocomplete="tel" data-rx-field="me-phone" maxlength="20" enterkeyhint="done" value="${esc(cur)}" placeholder="300 123 4567" /></div>
+      </label>
+      <div class="rx-me-err" data-me-err hidden></div>
+      ${UI().btn('Guardar', { attrs: { 'data-rx': 'me-phone-save' } })}
+      ${UI().btn('Ahora no', { kind: 'ghost', attrs: { 'data-rx': 'sheet-close' } })}
+    </div>`;
+  }
+  function openPhone() {
+    if (!SH()) return;
+    SH().sheet(phoneSheetHTML(), {
+      after(sh) {
+        const inp = sh.querySelector('[data-rx-field="me-phone"]');
+        if (inp) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); savePhone(sh); } });
+      },
+    });
+  }
+  async function savePhone(sh) {
+    if (st.phoneBusy || !sh) return;
+    const inp = sh.querySelector('[data-rx-field="me-phone"]');
+    const v = inp ? String(inp.value || '') : '';
+    const A = window.Api;
+    if (!A || typeof A.setMyPhone !== 'function' || typeof A.normalizarCelular !== 'function') { sheetErr(sh, 'No se puede guardar desde aquí todavía.'); return; }
+    const norm = A.normalizarCelular(v);
+    if (!norm) { sheetErr(sh, PHONE_RULE); return; }
+    const p = STATE().profile || {};
+    if (String(p.phone || '').replace(/\D/g, '') === norm) { SH().closeSheet(); return; }
+    const btn = sh.querySelector('[data-rx="me-phone-save"]');
+    st.phoneBusy = true; if (btn) btn.disabled = true; sheetErr(sh, '');
+    let saved = null, err = '';
+    try { saved = await A.setMyPhone(v); } catch (e) { err = (e && e.message) || ''; }
+    st.phoneBusy = false; if (btn) btn.disabled = false;
+    if (saved) {
+      p.phone = saved;
+      // El perfil del shell (core.js) es el mismo objeto casi siempre; si no, se
+      // le pone igual para que nada vuelva a pintar el número viejo.
+      try { if (typeof state !== 'undefined' && state.profile && state.profile !== p && state.profile.id === p.id) state.profile.phone = saved; } catch (_) { /* */ }
+      SH().closeSheet();
+      SH().toast('Teléfono guardado', 'Phone');
+      refreshMe();
+    } else {
+      sheetErr(sh, err || 'No pudimos guardarlo. Inténtalo de nuevo en un momento.');
+    }
+  }
+
   // ── Mi residencia (pila «residence», #27) ────────────────────────────────
   // Estado propio, nunca Auxiliar.state.form. Si P5 ya trae la pantalla
   // (AuxResidencias.pickerScreenHTML: selector con pickerHTML({mode:'perfil'}),
@@ -759,6 +819,8 @@
     S.action('me-meet', () => openMeet());
     S.action('me-pwa', () => openPwa());
     S.action('me-meet-save', (el) => { saveMeet(el.closest('.rx-sheet')); });
+    S.action('me-phone', () => openPhone());
+    S.action('me-phone-save', (el) => { savePhone(el.closest('.rx-sheet')); });
     S.action('me-push', (el) => { const to = el.getAttribute('data-to'); if (to) S.push(to, {}); });
     S.action('me-res-pick', (el) => pickResidence(el.getAttribute('data-id')));
     S.action('me-res-save', (el) => { saveResidence(el); });
@@ -768,7 +830,7 @@
   register();
 
   window.AuxRxPerfil = {
-    meHTML, residenceHTML, levelSheetHTML, meetSheetHTML,
+    meHTML, residenceHTML, levelSheetHTML, meetSheetHTML, phoneSheetHTML,
     refresh: refreshMe, reloadStats: loadStats, register,
     // Para las pruebas: estado propio (nunca es Auxiliar.state.form).
     _st: st, _R: R,
