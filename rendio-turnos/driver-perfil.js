@@ -413,7 +413,9 @@
     $('#pf-logout')?.addEventListener('click', onLogout);
     $('#pf-mypw')?.addEventListener('click', () => openCambiarMiClave());
     $('#pf-avatar-btn')?.addEventListener('click', () => $('#pf-avatar-input')?.click());
-    $('#pf-avatar-input')?.addEventListener('change', onPickAvatar);
+    // El listener recibe el EVENTO: hay que pasarle el campo (antes recibía el
+    // evento como si fuera el input, `files` venía undefined y no pasaba nada).
+    $('#pf-avatar-input')?.addEventListener('change', (e) => onPickAvatar(e.currentTarget || e.target));
     // Tema claro/oscuro de las pestañas del conductor (rediseño 2026-08-16).
     $('#pf-theme')?.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-t]');
