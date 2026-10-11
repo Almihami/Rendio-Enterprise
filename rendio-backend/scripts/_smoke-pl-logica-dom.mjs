@@ -340,7 +340,9 @@ console.log('\n── rastreo: fusiona (#6), fases y código sin repintar (#5) �
   t('…y pide UN repintado al shell (patch)', shell.renders === r0 + 1);
   // fases de llegada
   const ph = A.phases({ type: 'lle', status: 'onboard' }, { remaining_before: 0 });
-  t('llegada: 5 fases y «Rumbo a casa» sin paradas antes', ph.steps.length === 5 && ph.current === 'homebound');
+  // 0097: la llegada suma «Te espera en MDE» (cuando el conductor marca «Llegué al aeropuerto»).
+  t('llegada: 6 fases y «Rumbo a casa» sin paradas antes', ph.steps.length === 6 && ph.current === 'homebound');
+  t('llegada: «Te espera en MDE» cuando la parada quedó «arrived»', A.phases({ type: 'lle', status: 'assigned' }, { stop_status: 'arrived' }).current === 'arrived');
   t('salida: 6 fases', A.phases({ type: 'sal', status: 'pending' }).steps.length === 6);
   window.eval('auxStopTrack')();
   S.view = 'home'; S.editingTrip = null;

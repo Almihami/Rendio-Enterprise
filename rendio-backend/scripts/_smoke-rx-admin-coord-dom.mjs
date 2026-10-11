@@ -289,7 +289,7 @@ console.log('\n── driver-rutas.js · lo que el tripulante dijo, el código y
 async function driverRun(conSprite) {
   const { w, toasts, errores } = boot();
   if (conSprite) w.eval(read('aux-rx-ui.js'));
-  const notifs = [], stops = [], chats = [];
+  const notifs = [], stops = [], chats = [], boards = [], apt = [], aptNo = [];
   w.notify = (ids, title, body, url) => notifs.push({ ids, title, body, url });
   const pickup = (o) => Object.assign({ kind: 'pickup', lat: 6.15, lng: -75.37, addr: 'Cra 1 #2-3', unit: '', flight: '', dl: '05:30', phone: '300 000 0001',
     notes: '', bags: null, quiet: false, meetCode: '', meetingPoint: '', level: 'shared', privateStatus: null }, o);
@@ -312,6 +312,16 @@ async function driverRun(conSprite) {
     markReservationMessagesRead: async () => 0,
     sendReservationMessage: async (rid, body, opts) => { chats.push({ rid, body, opts }); return { notified: true, recipients: ['P1'] }; },
     sendDriverLocation: async () => {},
+    // 0097: el conductor escribe el código; la base lo valida y avisa al tripulante.
+    driverBoardWithCode: async (rid, code, sin) => {
+      boards.push([rid, code, !!sin]);
+      const real = { R1: '0613', R2: '7720', R4: '3391' }[rid] || '';
+      if (!sin && real && code !== real) { const e = new Error('El código no coincide'); e.hint = 'codigo_incorrecto'; throw e; }
+      return { ok: true, verificado: !sin };
+    },
+    driverMarkAirportArrival: async (ra) => { apt.push(ra); return 2; },
+    driverAirportNoShow: async (rid) => { aptNo.push(rid); },
+    driverNearStop: async () => true,
   };
   w.state = { settings: { aux_wait_minutes: 5 }, profile: { role: 'driver' } };
   w.eval(read('driver-rutas.js'));
@@ -321,7 +331,7 @@ async function driverRun(conSprite) {
   await click('[data-dr="openroute"][data-id="V1"]');
   const stopsEls = [...root().querySelectorAll('.dr-stop')];
   const s1 = stopsEls[0].textContent.replace(/\s+/g, ' '), s2 = stopsEls[1].textContent.replace(/\s+/g, ' '), s3 = stopsEls[2].textContent.replace(/\s+/g, ' ');
-  return { w, toasts, errores, notifs, stops, chats, root, click, s1, s2, s3, stopsEls };
+  return { w, toasts, errores, notifs, stops, chats, boards, apt, aptNo, root, click, s1, s2, s3, stopsEls };
 }
 {
   const D = await driverRun(true);
@@ -335,19 +345,23 @@ async function driverRun(conSprite) {
   t('punto de encuentro en la parada, escapado', /Portería 2 <b>/.test(D.s1) && !D.stopsEls[0].querySelector('.dr-tags b'));
   t('la lista de paradas NO muestra el código (es para la acera)', !/0613/.test(root().textContent));
 
+  const { boards, apt, aptNo } = D;
+  // Escribe en un campo de código como lo haría el conductor (evento input).
+  const teclea = async (sel, val) => { const el = root().querySelector(sel); if (!el) return false; el.value = val; el.dispatchEvent(new w.Event('input', { bubbles: true })); await wait(60); return true; };
   await click('[data-dr="start"]');
-  t('al iniciar: «Eres el siguiente» a /#/viaje?r=R1', notifs.some(n => n.title.startsWith('Eres el siguiente') && n.url === '/#/viaje?r=R1'), JSON.stringify(notifs));
+  t('al iniciar: sale el estado en_route (la base avisa «Eres el siguiente», 0097)', stops.some(s => s[0] === 'R1' && s[1] === 'en_route'));
+  t('el teléfono del conductor ya NO manda el aviso (lo manda la base, con reintento)', notifs.length === 0, JSON.stringify(notifs));
   const sheet = () => (root().querySelector('.dr-sheet') || { textContent: '' }).textContent.replace(/\s+/g, ' ');
   t('en camino: chips de maletas y silencio en la hoja', /2 maletas/.test(sheet()) && /Prefiere silencio/.test(sheet()));
   t('en camino: «Punto de encuentro: …» aparte', /Punto de encuentro: Portería 2/.test(sheet()));
-  t('en camino todavía no pide el código', !/Pídele el código/.test(sheet()));
+  t('en camino todavía no pide el código', !root().querySelector('#dr-code-in'));
+  t('en camino: la hora es la de recogida (no «Llegada estimada» con la presentación)', /Recoges a las/.test(sheet()) && !/Llegada estimada/.test(sheet()), sheet().slice(0, 200));
 
   await click('[data-dr="arrived"]');
-  t('fase de llegada: «Pídele el código: 0613» (de la base)', /Pídele el código: 0613/.test(sheet()), sheet().slice(0, 200));
-  const arr = notifs.find(n => n.title.startsWith('¡Tu conductor llegó'));
-  t('push de llegada con «Tu código es 0613.»', arr && /Tu código es 0613\./.test(arr.body), arr && arr.body);
-  t('push de llegada a /#/viaje?r=R1', arr && arr.url === '/#/viaje?r=R1');
-  t('el estado at_pickup sigue saliendo', stops.some(s => s[0] === 'R1' && s[1] === 'at_pickup'));
+  t('fase de llegada: pide escribir el código (campo de 4 para un código viejo de 4)', /Pídele a Marta su código y escríbelo/.test(sheet()) && root().querySelector('#dr-code-in').getAttribute('maxlength') === '4', sheet().slice(0, 200));
+  t('el código NO sale en la pantalla del conductor (se lo dice el tripulante)', !/0613/.test(sheet()));
+  t('el estado at_pickup sigue saliendo (la base avisa «¡Llegó!»)', stops.some(s => s[0] === 'R1' && s[1] === 'at_pickup'));
+  t('«a bordo» espera el código (botón deshabilitado)', root().querySelector('[data-dr="board-wait"]').disabled === true);
 
   // Chat con el tripulante.
   await click('[data-dr="chat"]');
@@ -356,32 +370,49 @@ async function driverRun(conSprite) {
   t('chat al tripulante: opts.url /#/viaje?r=R1', chats.length === 1 && chats[0].opts.url === '/#/viaje?r=R1' && chats[0].opts.title === 'Mensaje de tu conductor', JSON.stringify(chats));
   await click('[data-dr="chat-close"]');
 
-  await click('[data-dr="next"]');   // Marta a bordo → Diego
-  t('siguiente parada: aviso «Eres el siguiente» a /#/viaje?r=R2', notifs.some(n => n.title.startsWith('Eres el siguiente') && n.url === '/#/viaje?r=R2'));
+  await teclea('#dr-code-in', '1111');
+  t('código equivocado: lo dice y NO lo sube', /Ese no es el código de Marta/.test(sheet()) && /Marta Ríos/.test(sheet()) && boards.length === 1, sheet().slice(0, 220));
+  await teclea('#dr-code-in', '0613');
+  t('código correcto: lo sube y pasa a Diego', boards.some(b => b[0] === 'R1' && b[1] === '0613' && !b[2]) && /Diego Toro/.test(sheet()), sheet().slice(0, 160));
+  t('siguiente parada: estado en_route de Diego', stops.some(s => s[0] === 'R2' && s[1] === 'en_route'));
   t('Diego (privado pendiente): sin «Prefiere silencio»', !/Prefiere silencio/.test(sheet()) && /Sin maletas/.test(sheet()));
   await click('[data-dr="arrived"]');
-  await click('[data-dr="next"]');   // Diego → Ana
+  await click('[data-dr="sincodigo"]');
+  t('«No tiene el código»: el primer toque solo pide confirmar', boards.filter(b => b[0] === 'R2').length === 0 && /Toca otra vez/.test(sheet()));
+  await click('[data-dr="sincodigo"]');
+  t('el segundo toque lo sube sin código (queda registrado)', boards.some(b => b[0] === 'R2' && b[2] === true) && /Ana/.test(sheet()));
   t('nombre y notas del tripulante escapados en la hoja', /Ana <i>Paz<\/i>/.test(sheet()) && /Timbre <b>2<\/b>/.test(sheet()) && !root().querySelector('.dr-aux-t i, .dr-notes:not(.dr-meetpt) b'), sheet().slice(0, 160));
   await click('[data-dr="arrived"]');
-  t('sin código en la base: ni caja ni «Tu código es»', !/Pídele el código/.test(sheet()) && !/Tu código es/.test(notifs.filter(n => n.ids[0] === 'P3').map(n => n.body).join(' ')));
+  t('sin código en la base: ni campo de código, botón «a bordo» directo', !root().querySelector('#dr-code-in') && !!root().querySelector('[data-dr="board-nocode"]'));
   // No-show de Ana tras la espera: el botón se suelta con el reloj; se fuerza.
   const ns = root().querySelector('#dr-noshow'); ns.disabled = false; ns.removeAttribute('disabled');
   await click('#dr-noshow');
-  t('«No pudimos recogerte» a /#/viaje?r=R3', notifs.some(n => n.title === 'No pudimos recogerte' && n.url === '/#/viaje?r=R3'));
-  t('ningún aviso del conductor al tripulante queda en «/»', notifs.every(n => n.url && n.url.startsWith('/#/viaje?r=')), notifs.map(n => n.url).join(','));
+  t('«No se presentó»: sale el estado no_show (la base le avisa)', stops.some(s => s[0] === 'R3' && s[1] === 'no_show'));
+  t('ningún aviso al tripulante sale del teléfono del conductor', notifs.length === 0, JSON.stringify(notifs));
 
-  // Llegada (MDE → casa): códigos en el aeropuerto.
-  await click('[data-dr="arrived"]');  // «Llegué al aeropuerto» (salida)
-  t('salida, en MDE: no lista códigos (ya van a bordo)', !/Pídele el código/.test(sheet()));
+  // Salida en MDE: entrega a los que van a bordo, NO al que no se presentó.
+  await click('[data-dr="arrived"]');
+  t('salida, en MDE: no pide códigos (ya van a bordo)', !root().querySelector('.dr-code-in'));
   await click('[data-dr="next"]');     // auxiliares entregados → fin de V1
+  t('entregados: Marta y Diego sí, Ana (no se presentó) NO', stops.some(s => s[0] === 'R1' && s[1] === 'delivered') && stops.some(s => s[0] === 'R2' && s[1] === 'delivered') && !stops.some(s => s[0] === 'R3' && s[1] === 'delivered'), JSON.stringify(stops));
   t('la vuelta de salida termina («¡Vuelta completa!»)', !!root().querySelector('.dr-done'));
   w.localStorage.clear();              // sin avance guardado: se reabre en «Mi día»
   await w.DriverRutas.open({ id: 'pD', full_name: 'Jorge Arango' }); await wait(40);
   await click('[data-dr="openroute"][data-id="V2"]');
   await click('[data-dr="start"]');
-  t('llegada, en camino a MDE: sin códigos todavía', !/Pídele el código/.test(sheet()));
+  t('llegada, en camino a MDE: sin códigos todavía', !root().querySelector('.dr-code-in'));
   await click('[data-dr="arrived"]');
-  t('llegada, en MDE: «Pídele el código a cada uno» con los de la base', /Pídele el código a cada uno/.test(sheet()) && /Luis Mora\s*3391/.test(sheet()) && !/Eva Sol/.test((root().querySelector('#dr-meet') || { textContent: '' }).textContent), sheet().slice(0, 240));
+  t('«Llegué al aeropuerto» avisa por la base (driver_mark_airport_arrival)', apt.join(',') === 'RA2', apt.join(','));
+  t('llegada, en MDE: una fila con campo de código por tripulante', /Pídele el código a cada uno/.test(sheet()) && root().querySelectorAll('.dr-apt-code').length === 2 && !/3391/.test(sheet()), sheet().slice(0, 240));
+  t('«Salir del aeropuerto» espera a que todos queden resueltos', root().querySelector('[data-dr="next"]').disabled === true && /Faltan 2 por resolver/.test(sheet()));
+  await teclea('.dr-apt-code[data-rid="R4"]', '3391');
+  t('Luis con su código: ✓ A bordo', boards.some(b => b[0] === 'R4' && b[1] === '3391') && /Luis Mora\s*✓ A bordo/.test(sheet()), sheet().slice(0, 240));
+  await click('[data-dr="apt-noshow"][data-rid="R5"]');
+  await click('[data-dr="apt-noshow"][data-rid="R5"]'); await wait(40);
+  t('Eva «No llegó» (dos toques) → driver_airport_no_show', aptNo.join(',') === 'R5' && /Eva Sol\s*No llegó/.test(sheet()), aptNo.join(',') + ' | ' + sheet().slice(0, 200));
+  t('ya se puede salir: «Salir del aeropuerto · 1 a bordo»', root().querySelector('[data-dr="next"]').disabled === false && /Salir del aeropuerto · 1 a bordo/.test(sheet()));
+  await click('[data-dr="next"]');
+  t('y va a la casa de Luis (salta la de Eva)', /Luis Mora/.test(sheet()) && !/Eva Sol/.test(sheet()), sheet().slice(0, 160));
   t('sin textos prohibidos en la vista del conductor', prohibidos(root().innerHTML).length === 0, prohibidos(root().innerHTML).join(','));
   t('sin errores de script', D.errores.length === 0, D.errores.join(' | '));
 }
