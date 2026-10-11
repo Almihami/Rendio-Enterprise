@@ -152,22 +152,31 @@
     rt.MAX_EARLY = s.route_max_early_min != null ? Number(s.route_max_early_min) : 60;
   }
 
-  async function rtLoad() {
+  // `day` (YYYY-MM-DD, opcional): el día que se quiere planear. Sin él, como
+  // siempre, el próximo día con reservas — que con algo pendiente de hoy nunca
+  // dejaba planear mañana (la barra ‹ día › de Asignación v2 pasa el día).
+  async function rtLoad(day) {
     rtCfg();
     let loaded = null;
-    try { if (Api.listRoutePlanning) loaded = await Api.listRoutePlanning('all'); }
+    try { if (Api.listRoutePlanning) loaded = await Api.listRoutePlanning('all', day || undefined); }
     catch (e) { loaded = null; }
     if (loaded && loaded.aux && Object.keys(loaded.aux).length) {
       rt.aux = loaded.aux; rt.colors = loaded.colors || {}; rt.cars = loaded.cars || [];
       rt.drivers = loaded.drivers || []; rt.plan = loaded.plan || {}; rt.source = 'live';
-      rt.day = loaded.day || null; // día operativo real (para persistir el plan)
+      rt.day = loaded.day || day || null; // día operativo real (para persistir el plan)
     } else {
-      // Sin reservas reales para el próximo día operativo: tablero VACÍO.
+      // Sin reservas reales para ese día: tablero VACÍO.
       // `reason` explica qué falta (reservas o vehículos), no se inventa nada.
+      // Si se pidió un día, se queda ese día (para poder decir «sin traslados
+      // para el martes» y seguir navegando); publicar sigue exigiendo 'live'.
       rt.aux = {}; rt.colors = {}; rt.cars = []; rt.drivers = [];
-      rt.plan = {}; rt.source = 'empty'; rt.day = null;
+      rt.plan = {}; rt.source = 'empty'; rt.day = day || null;
       rt.emptyReason = (loaded && loaded.noVehicles) ? 'vehiculos' : 'reservas';
     }
+    // Lo publicado de ESTE día se vuelve a leer en cada carga (Asignación v2):
+    // la firma dice si lo que hay en pantalla es lo que ya tienen los conductores.
+    rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {};
+    rt.etaSource = null;
     // Estado inicial: una vuelta vacía por carro; todos los auxiliares en el pool.
     rt.lanes = rt.cars.map(c => ({ id: `${c.id}·V1`, car: c.id, vuelta: 1, start: c.avail0 || '02:00', origin: null }));
     rt.order = {}; rt.lanes.forEach(l => { rt.order[l.id] = []; });
@@ -202,6 +211,16 @@
         }
       } catch (e) { /* sin horario → fallback a todos */ }
     }
+    rt.cargadoEn = Date.now();
+  }
+  // Huella del plan EN MEMORIA tal como lo publicaría rtSavePlan: vueltas
+  // (carro, tipo, hora, paradas en orden) y conductores. Si es igual a la del
+  // último plan publicado/leído, lo que se ve es lo que tienen los conductores.
+  function rtFirmaPlan() {
+    const lanes = (rt.lanes || []).filter(l => rt.order[l.id] && rt.order[l.id].length)
+      .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(',')]);
+    const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null]);
+    return JSON.stringify([lanes, drv]);
   }
   const rtCarOf = (lane) => rt.cars.find(c => c.id === lane.car);
   const rtLaneOf = (laneId) => rt.lanes.find(l => l.id === laneId);
@@ -453,7 +472,11 @@
   //   2) OSRM    → tiempos reales por carretera, pero de vía libre.
   //   3) haversine → línea recta ×1.4. Último recurso.
   // Los niveles 2 y 3 se corrigen con TRAFFIC_FACTOR; el 1 no (ver rtLegMin).
-  async function rtBuildMatrix() {
+  // opts.sinTrafico (Asignación v2, al LEER un plan ya publicado): no se le pide
+  // nada nuevo a TomTom —cobra por celda, ~400 transacciones en un día de 80
+  // traslados— solo por abrir la pantalla. Se usa su respuesta en caché si
+  // sigue fresca y, si no, OSRM. Optimizar sigue pidiendo TomTom como siempre.
+  async function rtBuildMatrix(opts = {}) {
     const keys = ['depot', 'airport', ...Object.keys(rt.aux)];
     const pts = keys.map(rtCoordsOf);
     rt.mHasTraffic = false; rt.trafficDelay = 0;
@@ -483,10 +506,9 @@
         const hit = rt._mCache;
         // El tráfico en vivo cambia solo: se cachea 3 minutos, no 10.
         const ttl = (mode === 'live' ? 3 : 10) * 60000;
-        const r = (hit && hit.key === ck && Date.now() - hit.at < ttl)
-          ? hit.data
-          : await Api.trafficMatrix(coords, departAt, mode);
-        rt.trafficMode = mode;
+        const fresco = hit && hit.key === ck && Date.now() - hit.at < ttl;
+        const r = fresco ? hit.data : (opts.sinTrafico ? null : await Api.trafficMatrix(coords, departAt, mode));
+        if (r) rt.trafficMode = mode;
         if (r && Array.isArray(r.durations)) {
           rt._mCache = { key: ck, at: (hit && hit.key === ck) ? hit.at : Date.now(), data: r };
           const M = {};
@@ -1358,7 +1380,10 @@
   function rtRenderAll() { rtRenderPool(); rtRenderLanes(); rtRenderStats(); rtRenderClock(); }
 
   const RT_STEPS = ['Leyendo sectores de Rionegro…', 'Calculando tiempos reales por carretera…', 'Agrupando por sector y cercanía…', 'Eligiendo el mejor orden de cada carro…'];
-  async function rtOptimize() {
+  // opts.toast: a dónde va el aviso final (Asignación v2 lo muestra en su
+  // propio aviso, con «Deshacer»). Sin opts, como siempre.
+  async function rtOptimize(opts = {}) {
+    const say = typeof opts.toast === 'function' ? opts.toast : toast;
     $('#rt-ovl').classList.add('show');
     let i = 0; $('#rt-ovlStep').textContent = RT_STEPS[0];
     const iv = setInterval(() => { i++; if (i < RT_STEPS.length) $('#rt-ovlStep').textContent = RT_STEPS[i]; }, 480);
@@ -1385,13 +1410,16 @@
     const dia = rt.diaLentoNombre
       ? ` · ${rt.diaLentoNombre}${rt.HOLIDAY_SHIFT ? `, se recoge ${rt.HOLIDAY_SHIFT} min más tarde` : ', tratado como día normal'}`
       : '';
-    toast((s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ajustada, revísala.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`) + dia);
+    say((s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ajustada, revísala.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`) + dia);
   }
 
   // Persiste el plan del día: cada vuelta → route_assignment + route_stops.
   // Las vueltas con conductor asignado quedan visibles para ese conductor.
-  async function rtSavePlan() {
-    if (rt.source !== 'live' || !rt.day) { toast('Solo se publica con reservas reales.'); return; }
+  // opts.toast: igual que en rtOptimize. Devuelve { ok, saved, … } para que
+  // quien llama sepa si quedó publicado (antes no devolvía nada).
+  async function rtSavePlan(opts = {}) {
+    const say = typeof opts.toast === 'function' ? opts.toast : toast;
+    if (rt.source !== 'live' || !rt.day) { say('Solo se publica con reservas reales.'); return { ok: false }; }
     const lanes = rt.lanes.filter(l => rt.order[l.id] && rt.order[l.id].length).map(l => {
       const car = rt.cars.find(c => c.id === l.car);
       // La hora a la que el carro llega a CADA parada ya está calculada: es la
@@ -1416,10 +1444,15 @@
       };
     });
     const withDriver = lanes.filter(l => l.driverProfileId).length;
-    $('#rt-saveBtn').innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicando…';
+    const saveBtn = $('#rt-saveBtn');
+    if (saveBtn) saveBtn.innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicando…';
+    let result = { ok: false };
     try {
+      const firma = rtFirmaPlan();
       const r = await Api.saveRoutePlan(rt.day, lanes);
-      toast(withDriver
+      rt.firmaPublicada = firma;
+      result = { ok: true, saved: r.saved, skipped: r.skipped, kept: r.kept, withDriver, lanes: lanes.length };
+      say(withDriver
         ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado)${r.kept ? ` · ${r.kept} paradas ya en curso quedaron intactas` : ''}. Los conductores ya lo ven.`
         : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.`);
       // Push a los auxiliares cuya asignación CAMBIÓ de verdad. Antes se le
@@ -1457,8 +1490,9 @@
           url: '/',
         });
       } catch (_) {}
-    } catch (e) { toast('No se pudo publicar: ' + (e.message || 'error')); }
-    $('#rt-saveBtn').innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicar plan';
+    } catch (e) { say('No se pudo publicar: ' + (e.message || 'error')); result = { ok: false, error: e }; }
+    if (saveBtn) saveBtn.innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicar plan';
+    return result;
   }
 
   function rtOpenDrawer(laneId) {
@@ -1784,12 +1818,24 @@
         if (bad) { rt.expandedLane = bad.id; rtRenderLanes(); const el = root.querySelector(`[data-lane="${bad.id}"]`); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); toast(`${bad.id} no llega: sal más temprano (ver "sal máx") o mueve una parada a otra vuelta.`); }
         return;
       }
-      if (e.target.closest('#rt-dayprev') || e.target.closest('#rt-daynext')) { toast('Navegación de día disponible al conectar reservas reales.'); return; }
+      if (e.target.closest('#rt-dayprev') || e.target.closest('#rt-daynext')) {
+        // El cambio de día lo lleva Asignación v2 (rtLoad con el día pedido) y
+        // repinta la vista que esté abierta.
+        if (window.RendioRutasV2) window.RendioRutasV2.cambiarDia(e.target.closest('#rt-dayprev') ? -1 : 1);
+        else toast('Navegación de día disponible al conectar reservas reales.');
+        return;
+      }
     });
   }
 
   async function renderRoutes() {
+    // Asignación v2 es la vista por defecto (admin-rutas-v2.js). Esta función
+    // sigue siendo la puerta de la pestaña; la vista anterior queda entera y se
+    // usa si se elige «Vista anterior» o si el archivo nuevo no cargó.
+    if (window.RendioRutasV2 && window.RendioRutasV2.activa()) return window.RendioRutasV2.entrar();
+    if (window.RendioRutasV2) window.RendioRutasV2.ocultar();
     await rtLoad();
+    if (window.RendioRutasV2) window.RendioRutasV2.rotularVieja();
     $('#rt-optBtn').innerHTML = '<svg class="icon"><use href="#i-bolt"/></svg>Optimizar';
     $('#rt-h1').textContent = 'Rutas del día';
     rtRenderAll();

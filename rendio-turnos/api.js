@@ -179,13 +179,14 @@
       .eq('role', 'driver').is('deleted_at', null).order('full_name');
     // Fallback en capas: 0012 (priority) y 0013 (can_coordinate) podrían no
     // estar aplicadas todavía. Conserva priority si solo falta can_coordinate.
-    let { data, error } = await sel('id, full_name, email, role, is_active, priority, can_coordinate');
-    if (error) ({ data, error } = await sel('id, full_name, email, role, is_active, priority'));
+    // phone (0001): lo usa Asignación v2 para el botón de llamar al conductor.
+    let { data, error } = await sel('id, full_name, email, phone, role, is_active, priority, can_coordinate');
+    if (error) ({ data, error } = await sel('id, full_name, email, phone, role, is_active, priority'));
     if (error) ({ data, error } = await sel('id, full_name, email, role, is_active'));
     if (error) throw error;
     return (data || []).filter(p => p.is_active !== false)
       .map(p => ({
-        id: p.id, name: p.full_name, email: p.email,
+        id: p.id, name: p.full_name, email: p.email, phone: p.phone || '',
         priority: p.priority || 1,
         can_coordinate: p.can_coordinate === true,
       }));
@@ -2281,24 +2282,34 @@
       .trim();
   }
 
-  async function listRoutePlanning(tripType) {
+  // `day` (YYYY-MM-DD, opcional, 10-oct-2026): el día a planear. Sin él, como
+  // siempre, el próximo día con reservas desde hoy. Con él se piden SOLO las
+  // reservas de ese día de Colombia (00:00 a 24:00 -05:00) — pasado, hoy o
+  // mañana, aunque hoy todavía tenga traslados pendientes.
+  async function listRoutePlanning(tripType, day) {
     // Día en hora de COLOMBIA (no UTC): un viaje de las 21:10 Col NO debe rodar
     // al día siguiente (21:10 Col = 02:10 UTC). Agrupamos por America/Bogota.
     const bogDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    const pedido = (typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day)) ? day : null;
     let rows = null;
     try {
       // Ventana amplia en UTC (ayer→) para no perder madrugadas de Colombia;
       // el filtro fino por día operativo se hace abajo en hora local.
-      const floor = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+      const floor = pedido ? new Date(pedido + 'T00:00:00-05:00').toISOString()
+        : new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+      const ceil = pedido ? new Date(Date.parse(pedido + 'T00:00:00-05:00') + 86400000).toISOString() : null;
       // El tablero mostraba solo nombre y zona: para decidir un cambio de ruta el
       // admin tenía que abrir Reservas en otra pestaña. Se traen también vuelo,
       // teléfono, notas y pernocta. Defensivo igual que listMyReservations: si
       // 0050 no está aplicada, se reintenta sin las columnas nuevas.
       const COLS = 'id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)';
-      const q = cols => sb.from('reservations').select(cols)
-        .is('cancelled_at', null)
-        .gte('required_arrival_at', floor)
-        .order('required_arrival_at', { ascending: true });
+      const q = cols => {
+        let b = sb.from('reservations').select(cols)
+          .is('cancelled_at', null)
+          .gte('required_arrival_at', floor);
+        if (ceil) b = b.lt('required_arrival_at', ceil);
+        return b.order('required_arrival_at', { ascending: true });
+      };
       // La residencia (0055) es lo que permite tratar una portería como UNA
       // parada: dos tripulantes del mismo conjunto son un solo frenazo. Va en
       // su propio reintento porque main todavía no tiene la 0055.
@@ -2307,7 +2318,10 @@
       // programa con el modelo calculado, como antes.
       // 0092: trabajo en tierra, escalón propio encima de todo. Sin la migración
       // se cae al de siempre y el tablero trata a todos como si vinieran en vuelo.
-      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe), ground_ops');
+      // El sector del conjunto (0055) es solo la etiqueta que se muestra en
+      // Asignación v2 («Olivar · Llanogrande»); va en su propio escalón.
+      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe, sector), ground_ops');
+      if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe), ground_ops');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe)');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name)');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm');
@@ -2317,12 +2331,19 @@
     } catch (e) { return null; } // RLS / tabla ausente → demo
     if (!rows || !rows.length) return null;
 
-    // Día operativo más próximo (en hora de Colombia) con reservas.
-    const todayBog = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-    const upcoming = rows.filter(r => bogDay(r.required_arrival_at) >= todayBog);
-    if (!upcoming.length) return null;
-    const day0 = bogDay(upcoming[0].required_arrival_at);
-    rows = upcoming.filter(r => bogDay(r.required_arrival_at) === day0);
+    let day0;
+    if (pedido) {
+      day0 = pedido;
+      rows = rows.filter(r => bogDay(r.required_arrival_at) === pedido);
+      if (!rows.length) return null;
+    } else {
+      // Día operativo más próximo (en hora de Colombia) con reservas.
+      const todayBog = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+      const upcoming = rows.filter(r => bogDay(r.required_arrival_at) >= todayBog);
+      if (!upcoming.length) return null;
+      day0 = bogDay(upcoming[0].required_arrival_at);
+      rows = upcoming.filter(r => bogDay(r.required_arrival_at) === day0);
+    }
 
     const aux = {}, colors = {};
     rows.forEach((r, i) => {
@@ -2341,6 +2362,7 @@
         // Zona de la tabla de tiempos de Julián (0062). null = todavía no la
         // confirmó para ese conjunto → esa parada se programa como antes.
         zonaJefe: r.residences?.zona_jefe || null,
+        sector: r.residences?.sector || '',
         dir: r.pickup_address || '',
         lat: r.pickup_latitude, lng: r.pickup_longitude,
         dl: rtHHMM(r.required_arrival_at),
@@ -2388,7 +2410,7 @@
     let drivers = [];
     try {
       const ds = await listDrivers();
-      drivers = (ds || []).map((d, i) => ({ id: d.id, n: d.full_name || d.name || 'Conductor', turno: 'Mañana', c: RT_PALETTE[i % RT_PALETTE.length] }));
+      drivers = (ds || []).map((d, i) => ({ id: d.id, n: d.full_name || d.name || 'Conductor', turno: 'Mañana', c: RT_PALETTE[i % RT_PALETTE.length], tel: d.phone || '' }));
     } catch (_) {}
     return { aux, colors, cars, drivers, plan: {}, source: 'live', day: day0 };
   }
@@ -3457,8 +3479,12 @@
   // Devuelve las vueltas VIVAS del día con sus paradas pendientes, el cupo del
   // carro, los deadlines de cada pasajero y la última posición del conductor.
   // ════════════════════════════════════════════════════════════════════
-  async function getPublishedPlan(day) {
+  // opts.estados (10-oct-2026): qué rutas traer. Por defecto las VIVAS
+  // (planned + in_progress), como siempre. Asignación v2 pide también
+  // draft (publicadas sin conductor) y completed, para mostrar el día entero.
+  async function getPublishedPlan(day, opts) {
     const d0 = day + 'T00:00:00-05:00', d1 = day + 'T23:59:59-05:00';
+    const estados = (opts && Array.isArray(opts.estados) && opts.estados.length) ? opts.estados : ['planned', 'in_progress'];
     const { data, error } = await sb.from('route_assignments')
       .select('id, direction, status, planned_start_at, driver_profile_id, vehicle_id, ' +
         'vehicles(license_plate, internal_code, capacity), ' +
@@ -3466,7 +3492,7 @@
         'route_stops(id, stop_order, status, estimated_arrival_at, reservation_id, ' +
         'reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, ' +
         'residence_id, cancelled_at, auxiliar_profiles(profiles(full_name))))')
-      .in('status', ['planned', 'in_progress'])
+      .in('status', estados)
       .gte('planned_start_at', d0).lte('planned_start_at', d1)
       .order('planned_start_at');
     if (error) throw error;

@@ -1,0 +1,434 @@
+/* =====================================================================
+   Rendio · Rutas › Asignación v2 (entrega del UX, 10-oct-2026)
+   Port de Visual/entrega-asignacion-v2-2026-10-10/src/asignacion-v2.css.
+   Todo va acotado a #routes-v2 y a los overlays .rv2-*: no toca estilos
+   globales de la app ni la vista anterior (#routes-ui).
+
+   QUÉ CAMBIA RESPECTO A LA ENTREGA (y por qué):
+   · Los tokens no van en :root sino en #routes-v2 y en sus overlays
+     (la app no declara nada en :root; ver styles.css › #routes-ui).
+   · El marco .proto-* no se porta: en la app manda el shell del admin.
+   · Los puntos de quiebre de la lista: la entrega los mide contra la ventana
+     con un riel de 72 px. En la app el menú lateral mide 264 px (o 72
+     plegado), así que a 1440 px quedaban 1144 px y la fila de escritorio
+     (774 px fijos) no cabía junto al detalle de 420. admin-rutas-v2.js mide
+     el ancho REAL de #routes-v2 y pone data-lay / data-det / data-fila; aquí
+     solo se leen. Sin esos atributos (jsdom, o antes de medir) se ve el
+     diseño de escritorio tal cual. El celular (≤ 767 px) sigue por media query,
+     igual que en la entrega.
+   · El reloj de anillos ya no aparece (README §1): lo reemplaza la vista Carros.
+   ===================================================================== */
+
+#routes-v2, .rv2-sheet, .rv2-scrim, .rv2-toast {
+  /* Tokens existentes de #routes-ui (styles.css) */
+  --bg: #F4F3F0;
+  --panel: #FFFFFF;
+  --panel2: #F7F6F3;
+  --ink: #1E1C19;
+  --ink2: #5F5B55;
+  --ink3: #9D998F;
+  --line: #E7E5DF;
+  --line2: #D6D2C9;
+  --orange: #E2551A;
+  --orange-soft: #FBE5D8;
+  --green: #16936A;
+  --green-soft: #E3F1EA;
+  --amber: #C9810F;
+  --amber-soft: #FBEBCF;
+  --red: #D6473B;
+  --red-soft: #FADFDC;
+  --h2a: #E2551A;      /* salida casa → MDE */
+  --a2h: #1BB07E;      /* llegada MDE → casa */
+  --hotel: #F0A21E;    /* con hotel */
+  --shadow: 0 6px 18px rgba(30, 28, 25, .07);
+  --shadow-lg: 0 22px 44px rgba(30, 28, 25, .18);
+  --font: "Hanken Grotesk", system-ui, sans-serif;
+  --mono: "Space Mono", ui-monospace, monospace;
+
+  /* Nuevos (v2): versiones de texto con contraste ≥ 4.5:1 sobre su fondo suave */
+  --red-ink: #C23A2F;
+  --amber-ink: #9A6208;
+  --orange-ink: #C84A14;
+  --risk-row: #FFF5EF;
+  --focus: 0 0 0 3px rgba(226, 85, 26, .35);
+  font-family: var(--font);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+#routes-v2 *, .rv2-sheet *, .rv2-toast * { box-sizing: border-box; }
+#routes-v2 :is(button, input, select), .rv2-sheet :is(button, input, select), .rv2-toast button { font: inherit; color: inherit; }
+#routes-v2 button, .rv2-sheet button, .rv2-toast button { cursor: pointer; }
+#routes-v2 button:disabled, .rv2-sheet button:disabled { cursor: not-allowed; }
+#routes-v2 .mono, .rv2-sheet .mono { font-family: var(--mono); }
+#routes-v2[hidden], #routes-v2 [hidden], .rv2-sheet[hidden], .rv2-sheet [hidden], .rv2-scrim[hidden], .rv2-toast[hidden] { display: none !important; }
+#routes-v2 :focus-visible, .rv2-sheet :focus-visible, .rv2-toast :focus-visible { outline: none; box-shadow: var(--focus); }
+#routes-v2 h1, #routes-v2 h2, #routes-v2 h3, #routes-v2 p, .rv2-sheet h2, .rv2-sheet h3, .rv2-sheet p { margin: 0; }
+
+/* La vista anterior queda en el DOM (no se borró) pero sin ocupar espacio
+   mientras la v2 está activa. El overlay «Optimizando…» y el mapa del trayecto
+   son de ella y se siguen usando desde la v2, por eso no se esconden. */
+#routes-ui.rv2-fuera { height: 0 !important; min-height: 0 !important; border: 0 !important; overflow: visible !important; }
+#routes-ui.rv2-fuera > :not(.mapovl):not(.ovl) { display: none !important; }
+/* Enlace «Vista nueva» dentro de la vista anterior */
+#routes-ui .rv2-vista-nueva { border: 0; background: transparent; color: var(--orange); font: 700 12.5px var(--font); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 4px 2px; }
+#routes-ui .rv2-vista-nueva[hidden] { display: none; }
+
+/* ---------- Contenedor ---------- */
+#routes-v2 { height: calc(100dvh - 110px); min-height: 560px; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+
+/* Barra superior */
+#routes-v2 .rv2-bar { display: flex; align-items: center; gap: 10px; padding: 14px 16px 14px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+#routes-v2 .rv2-title { font-size: 20px; font-weight: 800; letter-spacing: -.02em; margin: 0 6px 0 0; }
+#routes-v2 .rv2-day { display: flex; align-items: center; gap: 6px; }
+#routes-v2 .rv2-day b { min-width: 92px; text-align: center; font-size: 14px; font-weight: 600; }
+#routes-v2 .rv2-ic, .rv2-sheet .rv2-ic { width: 32px; height: 32px; display: inline-grid; place-items: center; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); color: var(--ink); flex: 0 0 auto; text-decoration: none; padding: 0; }
+#routes-v2 .rv2-ic:hover, .rv2-sheet .rv2-ic:hover { border-color: var(--ink3); }
+#routes-v2 .rv2-ic:disabled { opacity: .4; }
+#routes-v2 .rv2-ic svg, .rv2-sheet .rv2-ic svg { width: 15px; height: 15px; }
+/* Chip «Publicado» (pedido de la profa): mismo molde que la etiqueta mono del prototipo. */
+#routes-v2 .rv2-pub { font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--green); background: var(--green-soft); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+#routes-v2 .rv2-pub.is-changed { color: var(--amber-ink); background: var(--amber-soft); }
+#routes-v2 .rv2-search, .rv2-sheet .rv2-search { display: flex; align-items: center; gap: 8px; height: 36px; width: 400px; max-width: 100%; padding: 0 10px 0 12px; background: var(--panel); border: 1px solid var(--line2); border-radius: 9px; }
+#routes-v2 .rv2-search:focus-within, .rv2-sheet .rv2-search:focus-within { border-color: var(--orange); box-shadow: var(--focus); }
+#routes-v2 .rv2-search svg, .rv2-sheet .rv2-search svg { width: 15px; height: 15px; color: var(--ink3); flex: 0 0 auto; }
+#routes-v2 .rv2-search input:focus-visible, .rv2-sheet .rv2-search input:focus-visible { box-shadow: none; }
+#routes-v2 .rv2-search input, .rv2-sheet .rv2-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 13.5px; padding: 0; }
+#routes-v2 .rv2-search kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); border: 1px solid var(--line2); border-radius: 5px; padding: 0 5px; }
+#routes-v2 .rv2-spacer { flex: 1; }
+#routes-v2 .rv2-seg { display: flex; gap: 2px; padding: 3px; background: #EAE8E3; border-radius: 9px; }
+#routes-v2 .rv2-seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 7px; font-size: 13px; font-weight: 600; color: var(--ink2); }
+#routes-v2 .rv2-seg button[aria-selected="true"] { background: var(--panel); color: var(--ink); font-weight: 700; box-shadow: 0 1px 2px rgba(30, 28, 25, .12); }
+#routes-v2 .rv2-seg button:disabled { opacity: .45; cursor: not-allowed; }
+/* Botón de WhatsApp: solo el logo, monocromo en tinta secundaria (sutil). */
+#routes-v2 .rv2-wa { width: 38px; height: 38px; border-radius: 9px; color: var(--ink2); }
+#routes-v2 .rv2-wa svg { width: 19px; height: 19px; }
+#routes-v2 .rv2-wa:hover { color: var(--ink); }
+#routes-v2 .rv2-btn, .rv2-sheet .rv2-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 37px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--line2); background: var(--panel); font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+#routes-v2 .rv2-btn:hover, .rv2-sheet .rv2-btn:hover { border-color: var(--ink3); }
+#routes-v2 .rv2-btn:disabled, .rv2-sheet .rv2-btn:disabled { opacity: .55; }
+#routes-v2 .rv2-btn svg, .rv2-sheet .rv2-btn svg { width: 15px; height: 15px; }
+#routes-v2 .rv2-btn--cta, .rv2-sheet .rv2-btn--cta { background: var(--orange); border-color: var(--orange); color: #FFF; box-shadow: 0 6px 14px rgba(226, 85, 26, .3); }
+#routes-v2 .rv2-btn--cta:hover, .rv2-sheet .rv2-btn--cta:hover { background: #CF4B14; border-color: #CF4B14; }
+#routes-v2 .rv2-btn--cta:disabled, .rv2-sheet .rv2-btn--cta:disabled { background: #E9B9A3; border-color: #E9B9A3; box-shadow: none; opacity: 1; }
+#routes-v2 .rv2-btn--soft, .rv2-sheet .rv2-btn--soft { background: var(--orange-soft); border-color: #EE9A74; color: var(--orange-ink); }
+#routes-v2 .rv2-btn--sm, .rv2-sheet .rv2-btn--sm { height: 30px; padding: 0 12px; font-size: 12.5px; border-radius: 8px; }
+#routes-v2 .rv2-btn--block { width: 100%; height: 46px; font-size: 15px; border-radius: 12px; }
+#routes-v2 .rv2-badge { font-family: var(--mono); font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 7px; border-radius: 999px; background: #FFF; color: var(--orange); }
+
+/* Estado y filtros */
+#routes-v2 .rv2-status { display: flex; align-items: center; gap: 10px; padding: 12px 16px 12px 20px; border-bottom: 1px solid var(--line); }
+#routes-v2 .rv2-progress { width: 210px; flex: 0 0 auto; }
+#routes-v2 .rv2-progress p { margin: 0 0 6px; font-size: 13px; color: var(--ink2); }
+#routes-v2 .rv2-progress b { color: var(--ink); }
+#routes-v2 .rv2-track { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+#routes-v2 .rv2-track i { display: block; height: 100%; width: 0; background: var(--green); border-radius: 999px; transition: width .3s; }
+#routes-v2 .rv2-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+#routes-v2 .rv2-chips::-webkit-scrollbar { display: none; }
+#routes-v2 .rv2-chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 13px; border-radius: 999px; border: 1px solid transparent; font-size: 13px; font-weight: 700; white-space: nowrap; }
+#routes-v2 .rv2-chip b { font-family: var(--mono); font-size: 12px; }
+#routes-v2 .rv2-chip[data-k="all"] { background: var(--panel); border-color: var(--line2); color: var(--ink); }
+#routes-v2 .rv2-chip[data-k="risk"] { background: var(--red-soft); border-color: #F2B8B2; color: var(--red-ink); }
+#routes-v2 .rv2-chip[data-k="nodriver"] { background: var(--orange-soft); border-color: #F3C2A8; color: var(--orange-ink); }
+#routes-v2 .rv2-chip[data-k="adj"] { background: var(--amber-soft); border-color: #EFD3A0; color: var(--amber-ink); }
+#routes-v2 .rv2-chip[data-k="ok"] { background: var(--green-soft); border-color: #BFE0CF; color: var(--green); }
+#routes-v2 .rv2-chip[data-k="unrouted"] { background: var(--panel); border: 1px dashed var(--ink3); color: var(--ink2); }
+#routes-v2 .rv2-chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #FFF; border-style: solid; }
+#routes-v2 .rv2-select { height: 32px; border: 1px solid var(--line2); border-radius: 9px; background: var(--panel); padding: 0 10px; font-size: 13px; font-weight: 600; color: var(--ink2); }
+/* «Vista anterior»: discreto, al final de la fila de estado. */
+#routes-v2 .rv2-old { border: 0; background: transparent; padding: 4px 2px; font-size: 12px; font-weight: 600; color: var(--ink3); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+#routes-v2 .rv2-old:hover { color: var(--ink2); }
+
+/* Rutas por hora */
+#routes-v2 .rv2-hist { margin: 16px 16px 0; padding: 10px 16px 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 16px; align-items: end; }
+#routes-v2 .rv2-hist-cap { font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; color: var(--ink3); line-height: 1.5; padding-bottom: 6px; }
+#routes-v2 .rv2-hist-bars { display: grid; grid-template-columns: repeat(24, 1fr); gap: 6px; align-items: end; }
+#routes-v2 .rv2-hb { border: 0; background: transparent; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 66px; justify-content: flex-end; border-radius: 6px; position: relative; }
+#routes-v2 .rv2-hb i { display: block; width: 100%; max-width: 30px; background: var(--line2); border-radius: 3px; min-height: 2px; }
+#routes-v2 .rv2-hb.on i { background: var(--orange); }
+#routes-v2 .rv2-hb:hover i { background: var(--ink3); }
+#routes-v2 .rv2-hb.on:hover i { background: #CF4B14; }
+#routes-v2 .rv2-hb span { font-family: var(--mono); font-size: 9px; color: var(--ink3); height: 11px; }
+#routes-v2 .rv2-hb .dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+
+/* Escenario: lista + detalle */
+#routes-v2 .rv2-stage { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px; padding: 16px; }
+#routes-v2 .rv2-listwrap, #routes-v2 .rv2-carros { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: auto; min-height: 0; }
+#routes-v2 .rv2-cols, #routes-v2 .rv2-row { display: grid; grid-template-columns: 108px 150px 120px minmax(0, 1fr) 110px 170px; gap: 16px; align-items: center; padding: 0 18px; }
+#routes-v2 .rv2-cols { position: sticky; top: 0; z-index: 2; height: 36px; background: var(--panel); border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .06em; color: var(--ink3); text-transform: uppercase; }
+#routes-v2 .rv2-group { border: 0; width: 100%; text-align: left; display: block; line-height: 1.5; padding: 9px 18px; background: var(--panel2); border-bottom: 1px solid #EFEDE8; font-size: 12.5px; color: var(--ink2); position: sticky; top: 36px; z-index: 1; }
+#routes-v2 .rv2-group strong { color: var(--ink); }
+#routes-v2 .rv2-group .car { transition: transform .15s; display: inline-block; width: 10px; margin-right: 6px; }
+#routes-v2 .rv2-group[aria-expanded="true"] .car { transform: rotate(90deg); }
+#routes-v2 .t-risk, .rv2-sheet .t-risk { color: var(--red-ink); }
+#routes-v2 .t-nod { color: var(--orange-ink); }
+#routes-v2 .t-adj, .rv2-sheet .t-adj { color: var(--amber-ink); }
+#routes-v2 .t-ok, .rv2-sheet .t-ok { color: var(--green); }
+#routes-v2 .rv2-row { min-height: 46px; border-bottom: 1px solid #EFEDE8; cursor: pointer; position: relative; font-size: 13px; }
+#routes-v2 .rv2-row:hover { background: #FBFAF8; }
+#routes-v2 .rv2-row[aria-current="true"] { background: var(--risk-row); box-shadow: inset 3px 0 0 var(--orange); }
+#routes-v2 .rv2-row .names { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#routes-v2 .rv2-row .names .more { color: var(--ink3); }
+#routes-v2 .rv2-row .time, #routes-v2 .rv2-row .mg { font-family: var(--mono); font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+#routes-v2 .rv2-row .car { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#routes-v2 .rv2-row .car b { font-weight: 800; }
+#routes-v2 .rv2-row .car span, #routes-v2 .rv2-row .drv.none { color: #8A867E; }
+#routes-v2 .rv2-row .drv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#routes-v2 .rv2-row .mg.neg { color: var(--red-ink); }
+#routes-v2 .rv2-row .mg.adj { color: var(--amber-ink); }
+#routes-v2 .rv2-row .mg.ok { color: var(--ink2); }
+#routes-v2 mark { background: #FFE7A8; color: inherit; border-radius: 3px; padding: 0 1px; }
+#routes-v2 .rv2-more { border: 0; background: transparent; width: 100%; text-align: left; padding: 8px 18px; font-size: 12px; font-weight: 700; color: var(--orange-ink); border-bottom: 1px solid #EFEDE8; }
+#routes-v2 .rv2-empty { padding: 48px 24px; text-align: center; color: var(--ink3); font-size: 14px; line-height: 1.5; }
+#routes-v2 .rv2-empty b { display: block; color: var(--ink2); font-size: 15px; margin-bottom: 4px; }
+#routes-v2 .rv2-empty .rv2-btn { margin-top: 14px; }
+
+/* Píldora de estado */
+#routes-v2 .st, .rv2-sheet .st { display: inline-flex; justify-content: center; align-items: center; width: 108px; height: 24px; border-radius: 999px; font-size: 11.5px; font-weight: 800; white-space: nowrap; }
+#routes-v2 .st--ok, .rv2-sheet .st--ok { background: var(--green-soft); color: var(--green); }
+#routes-v2 .st--adj, .rv2-sheet .st--adj { background: var(--amber-soft); color: var(--amber-ink); }
+#routes-v2 .st--risk, .rv2-sheet .st--risk { background: var(--red-soft); color: var(--red-ink); }
+#routes-v2 .st--nodriver, .rv2-sheet .st--nodriver { background: var(--panel); color: var(--orange-ink); border: 1px solid var(--orange); }
+#routes-v2 .st--off, .rv2-sheet .st--off { background: var(--panel2); color: var(--ink3); }
+#routes-v2 .st--auto, .rv2-sheet .st--auto { width: auto; padding: 0 10px; }
+
+/* Auxiliares sin rutear */
+#routes-v2 .rv2-crew { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 12px 18px; border-bottom: 1px solid #EFEDE8; font-size: 13px; }
+#routes-v2 .rv2-av, .rv2-sheet .rv2-av { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #FFF; font-size: 11.5px; font-weight: 800; background: #5B6B7A; flex: 0 0 auto; }
+#routes-v2 .rv2-crew small { display: block; color: var(--ink2); font-size: 12px; }
+
+/* Detalle */
+#routes-v2 .rv2-detail { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+#routes-v2 .rv2-dhead { display: flex; align-items: flex-start; gap: 10px; padding: 18px 18px 12px; }
+#routes-v2 .rv2-dhead h2 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+#routes-v2 .rv2-dhead p { margin: 3px 0 0; font-size: 12.5px; color: var(--ink2); }
+#routes-v2 .rv2-dhead .rv2-back { display: none; }
+#routes-v2 .rv2-dhead .x { margin-left: auto; display: none; }
+#routes-v2 .rv2-dbody { flex: 1; overflow: auto; padding: 0 18px 18px; display: flex; flex-direction: column; gap: 14px; }
+#routes-v2 .rv2-alert { margin: 0; padding: 9px 12px; border-radius: 9px; font-size: 12.5px; font-weight: 700; line-height: 1.45; }
+#routes-v2 .rv2-alert--risk { background: var(--red-soft); color: var(--red-ink); }
+#routes-v2 .rv2-alert--adj { background: var(--amber-soft); color: var(--amber-ink); }
+#routes-v2 .rv2-alert--ok { background: var(--green-soft); color: var(--green); }
+#routes-v2 .rv2-alert--nodriver { background: var(--orange-soft); color: var(--orange-ink); }
+#routes-v2 .rv2-note { font-size: 12px; color: var(--ink2); line-height: 1.5; }
+#routes-v2 .rv2-sug { padding: 14px; background: #FFF6F0; border: 1px solid #F5C7AE; border-radius: 12px; display: flex; flex-direction: column; gap: 10px; }
+#routes-v2 .rv2-sug h3 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; }
+#routes-v2 .rv2-sug h3 svg { width: 15px; height: 15px; color: var(--orange); }
+#routes-v2 .rv2-sug p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink2); }
+#routes-v2 .rv2-sug p b { color: var(--ink); }
+#routes-v2 .rv2-sug .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+#routes-v2 .rv2-drv { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; font-size: 12.5px; color: var(--ink2); }
+#routes-v2 .rv2-drv b { color: var(--ink); display: block; font-size: 13px; }
+#routes-v2 .rv2-drv > div { flex: 1; min-width: 0; }
+#routes-v2 .rv2-cap, .rv2-sheet .rv2-cap { margin: 4px 0 0; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: var(--ink3); text-transform: uppercase; }
+#routes-v2 .rv2-stops { list-style: none; margin: 0; padding: 0; }
+#routes-v2 .rv2-stops li { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px dashed var(--line); font-size: 13px; color: #8A867E; }
+#routes-v2 .rv2-stops li:last-child { border-bottom: 0; }
+#routes-v2 .rv2-stops li .mono { font-size: 12.5px; font-weight: 700; color: var(--ink); }
+#routes-v2 .rv2-stops li b { display: block; color: var(--ink); }
+#routes-v2 .rv2-stops li.end .mono.neg { color: var(--red-ink); }
+#routes-v2 .rv2-stops .rv2-ic { color: var(--orange); }
+#routes-v2 .rv2-stops .rv2-ic:disabled { color: var(--ink3); }
+#routes-v2 .rv2-dfoot { display: flex; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--line); }
+#routes-v2 .rv2-dfoot .rv2-btn { flex: 1; padding: 0 8px; }
+#routes-v2 .rv2-dempty { margin: auto; padding: 40px; text-align: center; color: var(--ink3); font-size: 13.5px; }
+
+/* Vista Carros (reemplaza al reloj de anillos) */
+#routes-v2 .rv2-carros { position: relative; }
+#routes-v2 .rv2-tl { --hw: 72px; position: relative; min-width: calc(200px + 24 * var(--hw)); }
+#routes-v2 .rv2-tl-head { position: sticky; top: 0; z-index: 3; display: grid; grid-template-columns: 200px 1fr; height: 34px; background: var(--panel); border-bottom: 1px solid var(--line); }
+#routes-v2 .rv2-tl-head .lab { position: sticky; left: 0; z-index: 2; background: var(--panel); border-right: 1px solid var(--line); }
+#routes-v2 .rv2-tl-hours { position: relative; }
+#routes-v2 .rv2-tl-hours span { position: absolute; top: 10px; transform: translateX(-50%); font-family: var(--mono); font-size: 10px; color: var(--ink3); }
+#routes-v2 .rv2-tl-row { display: grid; grid-template-columns: 200px 1fr; height: 44px; border-bottom: 1px solid #F1EFEA; }
+#routes-v2 .rv2-tl-row:nth-child(even) { background: #FCFBF9; }
+#routes-v2 .rv2-tl-lab { position: sticky; left: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 0 14px; font-size: 13px; background-color: var(--panel); border-right: 1px solid var(--line); min-width: 0; }
+#routes-v2 .rv2-tl-lab b { font-weight: 800; white-space: nowrap; }
+#routes-v2 .rv2-tl-lab span { color: #8A867E; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#routes-v2 .rv2-tl-lab span.none { color: var(--orange-ink); font-weight: 700; }
+#routes-v2 .rv2-tl-track { position: relative; background-image: repeating-linear-gradient(90deg, #F1EFEA 0 1px, transparent 1px var(--hw)); }
+#routes-v2 .rv2-tl-pm { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px dashed var(--ink3); z-index: 1; pointer-events: none; }
+#routes-v2 .rv2-blk { position: absolute; top: 8px; height: 28px; border-radius: 6px; border: 0; color: #FFF; font-size: 11.5px; font-weight: 800; text-align: left; padding: 0 8px; white-space: nowrap; overflow: hidden; }
+#routes-v2 .rv2-blk.salida { background: var(--h2a); }
+#routes-v2 .rv2-blk.llegada { background: var(--a2h); }
+#routes-v2 .rv2-blk.hotel { background: var(--hotel); }
+#routes-v2 .rv2-blk.risk { box-shadow: inset 0 0 0 3px #A3271E; }
+#routes-v2 .rv2-blk.adj { box-shadow: inset 0 0 0 2.5px #8A5807; }
+#routes-v2 .rv2-blk.nodriver { background: rgba(226, 85, 26, .22); color: var(--orange-ink); outline: 1.5px dashed var(--orange); outline-offset: -1.5px; }
+#routes-v2 .rv2-blk[aria-current="true"] { outline: 3px solid var(--ink); outline-offset: 1px; }
+
+/* Barra fija inferior (solo celular) */
+#routes-v2 .rv2-mbar { display: none; }
+
+/* Hojas (modal en PC, hoja inferior en celular) */
+.rv2-scrim { position: fixed; inset: 0; background: rgba(30, 28, 25, .42); z-index: 60; backdrop-filter: blur(2px); }
+.rv2-sheet { position: fixed; z-index: 70; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(500px, 94vw); max-height: 86dvh; display: flex; flex-direction: column; background: var(--panel); border-radius: 20px; box-shadow: var(--shadow-lg); overflow: hidden; }
+.rv2-sheet .rv2-sh-head { display: flex; align-items: flex-start; gap: 10px; padding: 18px 20px 10px; }
+.rv2-sheet .rv2-sh-head h2 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+.rv2-sheet .rv2-sh-head p { margin: 3px 0 0; font-size: 12.5px; color: var(--ink2); }
+.rv2-sheet .rv2-sh-head .rv2-ic { margin-left: auto; }
+.rv2-sheet .rv2-sh-body { overflow: auto; padding: 4px 20px 12px; display: flex; flex-direction: column; gap: 10px; }
+.rv2-sheet .rv2-sh-foot { display: flex; gap: 8px; padding: 12px 20px 18px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.rv2-sheet .rv2-sh-foot .rv2-btn { flex: 1; height: 44px; }
+.rv2-sheet .rv2-handle { display: none; }
+.rv2-sheet .rv2-opt { width: 100%; text-align: left; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.rv2-sheet .rv2-opt:hover { border-color: var(--ink3); }
+.rv2-sheet .rv2-opt:disabled { opacity: .6; }
+.rv2-sheet .rv2-opt:disabled:hover { border-color: var(--line); }
+.rv2-sheet .rv2-opt[aria-checked="true"] { border: 2px solid var(--orange); background: #FFF6F0; padding: 11px 13px; }
+.rv2-sheet .rv2-opt .t { font-size: 14px; }
+.rv2-sheet .rv2-opt small { grid-column: 1 / -1; color: #8A867E; font-size: 12.5px; }
+.rv2-sheet .rv2-opt .st { width: auto; padding: 0 9px; height: 22px; font-size: 11px; }
+.rv2-sheet .rv2-impact { font-size: 12.5px; color: var(--ink2); padding: 8px 12px; background: var(--panel2); border-radius: 10px; line-height: 1.5; }
+.rv2-sheet .rv2-impact.is-warn { background: var(--amber-soft); color: var(--amber-ink); }
+.rv2-sheet .rv2-check { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.rv2-sheet .rv2-check .ico { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+.rv2-sheet .rv2-check .ico.ok { background: var(--green-soft); color: var(--green); }
+.rv2-sheet .rv2-check .ico.bad { background: var(--red-soft); color: var(--red-ink); }
+.rv2-sheet .rv2-check .ico.warn { background: var(--amber-soft); color: var(--amber-ink); }
+.rv2-sheet .rv2-check small { display: block; color: var(--ink2); font-size: 12.5px; }
+.rv2-sheet .rv2-ack { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; padding: 10px 0 0; line-height: 1.4; }
+.rv2-sheet .rv2-ack input { width: 18px; height: 18px; accent-color: var(--orange); flex: 0 0 auto; margin: 1px 0 0; }
+/* «Publicar de todos modos» (decisión de la profa: a las 3 a. m. puede no
+   haber cómo arreglar una ruta y no se puede frenar la operación). */
+.rv2-sheet .rv2-force { border: 1px solid #F2B8B2; background: #FFF8F6; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.rv2-sheet .rv2-force > p { font-size: 12.5px; color: var(--red-ink); font-weight: 700; line-height: 1.45; }
+.rv2-sheet .rv2-force ul { margin: 2px 0 0 18px; padding: 0; font-size: 12.5px; color: var(--ink2); }
+.rv2-sheet .rv2-linkbtn { border: 0; background: transparent; padding: 6px 0; font-size: 12.5px; font-weight: 700; color: var(--red-ink); text-decoration: underline; text-underline-offset: 3px; text-align: left; align-self: flex-start; }
+.rv2-sheet .rv2-btn--danger { background: var(--red-ink); border-color: var(--red-ink); color: #FFF; }
+.rv2-sheet .rv2-btn--danger:hover { background: #A8322A; border-color: #A8322A; }
+.rv2-sheet .rv2-btn--danger:disabled { background: #E7B1AB; border-color: #E7B1AB; opacity: 1; }
+
+/* Aviso inferior */
+.rv2-toast { position: fixed; z-index: 80; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 12px 14px 12px 18px; background: var(--ink); color: #F4F3F0; border-radius: 12px; box-shadow: var(--shadow-lg); font-size: 13.5px; max-width: 92vw; line-height: 1.4; }
+.rv2-toast button { border: 0; background: transparent; color: #F59A73; font-weight: 800; padding: 4px 6px; flex: 0 0 auto; }
+
+/* =====================================================================
+   Anchos intermedios (medidos por admin-rutas-v2.js sobre #routes-v2).
+   :where() deja la especificidad igual a la de la entrega, así el bloque de
+   celular de abajo sigue mandando sobre estos, como en el CSS original.
+   ===================================================================== */
+#routes-v2:where([data-det="380"]) .rv2-stage { grid-template-columns: minmax(0, 1fr) 380px; }
+/* Fila «md» = la de tablet de la entrega */
+#routes-v2:where([data-fila="md"]) .rv2-cols, #routes-v2:where([data-fila="md"]) .rv2-row { grid-template-columns: 104px 140px 110px minmax(0, 1fr) 90px 140px; gap: 12px; }
+/* Fila «sm»: para cuando el menú lateral abierto deja poca lista (p. ej. 1024 px). */
+#routes-v2:where([data-fila="sm"]) .rv2-cols, #routes-v2:where([data-fila="sm"]) .rv2-row { grid-template-columns: 96px 116px 84px minmax(0, 1fr) 72px 116px; gap: 10px; padding: 0 14px; }
+#routes-v2:where([data-fila="sm"]) .st { width: 96px; font-size: 11px; }
+#routes-v2:where([data-fila="sm"]) .rv2-row .time, #routes-v2:where([data-fila="sm"]) .rv2-row .mg { font-size: 11.5px; }
+#routes-v2:where([data-fila="sm"]) .rv2-row .car span { display: none; }
+
+/* Cajón lateral (la «tablet» de la entrega): el detalle sale de la derecha */
+#routes-v2:where([data-lay="cajon"]) .rv2-stage { grid-template-columns: minmax(0, 1fr); }
+#routes-v2:where([data-lay="cajon"]) .rv2-detail { position: fixed; z-index: 65; top: 0; right: 0; bottom: 0; width: min(440px, 94vw); border-radius: 0; border: 0; border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); transform: translateX(105%); transition: transform .26s cubic-bezier(.2, .8, .2, 1), visibility 0s linear .26s; visibility: hidden; }
+/* visibility: cerrado, el cajón queda fuera de la pantalla pero NO en el orden
+   del tabulador ni en el lector de pantalla (se oculta al terminar de salir). */
+#routes-v2:where([data-lay="cajon"]) .rv2-detail.is-open { transform: none; visibility: visible; transition: transform .26s cubic-bezier(.2, .8, .2, 1); }
+#routes-v2:where([data-lay="cajon"]) .rv2-dhead .x { display: inline-grid; }
+#routes-v2:where([data-lay="cajon"]) .rv2-search { width: 300px; }
+
+/* =====================================================================
+   Tarjetas (celular, o una lista de menos de 600 px)
+   ===================================================================== */
+#routes-v2:where([data-fila="tarjeta"]) .rv2-listwrap { background: transparent; border: 0; border-radius: 0; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-cols { display: none; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-group { top: 0; background: var(--bg); border: 0; padding: 14px 2px 6px; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row {
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "time time time st" "names names names names" "car drv drv mg";
+  gap: 6px 8px; padding: 12px 14px; margin-bottom: 8px; min-height: 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+}
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row[data-s="risk"] { background: #FFF8F6; border-color: #F2B8B2; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row[aria-current="true"] { box-shadow: none; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row .st { grid-area: st; width: auto; padding: 0 10px; height: 24px; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row .time { grid-area: time; font-size: 14.5px; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row .names { grid-area: names; white-space: normal; font-size: 13.5px; font-weight: 600; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row .car { grid-area: car; font-size: 12.5px; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row .car span { display: inline; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row .drv { grid-area: drv; font-size: 12.5px; color: #8A867E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row .mg { grid-area: mg; font-size: 12.5px; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row .rv2-btn--sm { height: 36px; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-more { text-align: center; border: 0; padding: 4px 0 10px; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-crew { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; grid-template-columns: 36px minmax(0, 1fr) auto; }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-crew .when { display: none; }
+
+/* =====================================================================
+   Celular: ≤ 767 px → una columna, tarjetas, hojas inferiores
+   ===================================================================== */
+@media (max-width: 767px) {
+  /* #app-main trae 16 px a cada lado: se devuelven para que las tarjetas
+     queden con los 12 px de la entrega. Aquí el que se desplaza es #app-main
+     (no #routes-v2), por eso el contenedor no recorta (si no, el «sticky» de
+     las franjas y del botón de publicar no funcionaría). */
+  #routes-v2 { margin: 0 -16px; border: 0; border-radius: 0; height: auto; min-height: 0; overflow: visible; }
+  /* ÚNICA regla fuera de #routes-v2: mientras la v2 está a la vista en el
+     celular, #app-main no lleva relleno arriba ni abajo. Chrome descuenta ese
+     relleno al pegar un «sticky»: con los 96 px de pb-24 el botón «Publicar
+     plan» quedaba flotando 96 px por encima del borde y las franjas pegadas a
+     20 px del tope, con filas asomándose por encima. */
+  #app-main:has(section[data-panel="routes"]:not(.hidden) > #routes-v2:not([hidden])) { padding-top: 0; padding-bottom: 0; }
+  #routes-v2 .rv2-bar { padding: 10px 12px; gap: 8px; }
+  #routes-v2 .rv2-title { font-size: 18px; flex: 1; }
+  #routes-v2 .rv2-day .rv2-ic { width: 44px; height: 44px; }
+  #routes-v2 .rv2-day b { min-width: 76px; }
+  #routes-v2 .rv2-wa { width: 44px; height: 44px; }
+  #routes-v2 .rv2-pub { order: 4; }
+  #routes-v2 .rv2-search { order: 5; width: 100%; height: 44px; }
+  #routes-v2 .rv2-search kbd { display: none; }
+  #routes-v2 .rv2-bar .rv2-spacer, #routes-v2 #rv2-reopt, #routes-v2 #rv2-publish { display: none; }
+  #routes-v2 .rv2-seg { order: 6; width: 100%; }
+  /* 44 px en el celular (README §9); la entrega traía 38. */
+  #routes-v2 .rv2-seg button { flex: 1; height: 44px; }
+
+  #routes-v2 .rv2-status { flex-direction: column; align-items: stretch; padding: 10px 12px; gap: 10px; }
+  #routes-v2 .rv2-progress { width: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+  #routes-v2 .rv2-chips { margin: 0 -12px; padding: 0 12px; }
+  #routes-v2 .rv2-chip { height: 44px; }
+  #routes-v2 .rv2-status .rv2-spacer, #routes-v2 .rv2-select { display: none; }
+  #routes-v2 .rv2-old { align-self: flex-end; min-height: 44px; }
+  #routes-v2:where([data-fila="tarjeta"]) .rv2-group { min-height: 44px; }
+  #routes-v2 .rv2-hist { display: none; }
+
+  #routes-v2 .rv2-stage { padding: 0 12px 12px; gap: 0; flex: none; min-height: auto; }
+  #routes-v2 .rv2-listwrap { overflow: visible; }
+
+  #routes-v2 .rv2-carros { margin: 0 -12px; border-radius: 0; border-left: 0; border-right: 0; max-height: 70dvh; }
+  #routes-v2 .rv2-tl { --hw: 60px; min-width: calc(120px + 24 * var(--hw)); }
+  #routes-v2 .rv2-tl-head, #routes-v2 .rv2-tl-row { grid-template-columns: 120px 1fr; }
+  #routes-v2 .rv2-tl-lab span { display: none; }
+
+  /* Detalle a pantalla completa */
+  #routes-v2 .rv2-detail { width: 100vw; border-left: 0; }
+  #routes-v2 .rv2-dhead { padding: 10px 12px; align-items: center; border-bottom: 1px solid var(--line); }
+  #routes-v2 .rv2-dhead .rv2-back { display: inline-grid; width: 44px; height: 44px; border: 0; }
+  #routes-v2 .rv2-dhead .x { display: none; }
+  #routes-v2 .rv2-dbody { padding: 12px; }
+  #routes-v2 .rv2-stops .rv2-ic { width: 44px; height: 44px; border-radius: 12px; }
+  #routes-v2 .rv2-drv .rv2-ic { width: 44px; height: 44px; border-radius: 12px; }
+  #routes-v2 .rv2-drv .rv2-btn--sm, #routes-v2 .rv2-sug .rv2-btn--sm { height: 44px; padding: 0 16px; }
+  #routes-v2 .rv2-dfoot { padding: 12px 12px calc(14px + env(safe-area-inset-bottom)); }
+  #routes-v2 .rv2-dfoot .rv2-btn { height: 46px; border-radius: 12px; }
+  #routes-v2 .rv2-crew .rv2-btn--sm { height: 44px; }
+  #routes-v2:where([data-fila="tarjeta"]) .rv2-row .rv2-btn--sm { height: 44px; }
+  #routes-v2:where([data-fila="tarjeta"]) .rv2-more { min-height: 44px; }
+
+  #routes-v2 .rv2-mbar { display: block; position: sticky; bottom: 0; z-index: 5; padding: 12px 12px calc(14px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--line); margin-top: auto; }
+
+  /* Hoja inferior */
+  .rv2-sheet { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: 100%; max-height: 88dvh; border-radius: 22px 22px 0 0; }
+  .rv2-sheet .rv2-handle { display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line2); margin: 10px auto 0; }
+  .rv2-sheet .rv2-sh-head { padding: 10px 16px 8px; }
+  .rv2-sheet .rv2-sh-head .rv2-ic { width: 44px; height: 44px; }
+  .rv2-sheet .rv2-sh-body { padding: 4px 16px 12px; }
+  .rv2-sheet .rv2-sh-foot { padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .rv2-sheet .rv2-sh-foot .rv2-btn { height: 48px; border-radius: 12px; }
+  .rv2-sheet .rv2-check .rv2-btn--sm { height: 44px; }
+  .rv2-sheet .rv2-opt { min-height: 56px; }
+  .rv2-sheet .rv2-ack { min-height: 44px; align-items: center; }
+  .rv2-sheet .rv2-linkbtn { min-height: 44px; }
+  .rv2-toast { bottom: 96px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #routes-v2 *, .rv2-sheet *, .rv2-toast * { transition: none !important; animation: none !important; }
+}
