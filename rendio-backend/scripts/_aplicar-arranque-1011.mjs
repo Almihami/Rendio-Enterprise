@@ -45,7 +45,11 @@ try {
   if (!aplicar) await c.query('BEGIN');
   for (const f of ARCHIVOS.filter(f => !SOLO.length || SOLO.some(n => f.startsWith(n)))) {
     let sql = readFileSync(join(DIR, f), 'utf8');
-    if (!aplicar) sql = sql.replace(/^\s*BEGIN;\s*$/m, '').replace(/^\s*COMMIT;\s*$/m, '');
+    // En seco se quitan el BEGIN; y el COMMIT; propios del archivo (en mayúscula
+    // o minúscula: la 0098 los trae en minúscula y su commit; cerraba la
+    // transacción de la prueba, o sea que la «prueba» aplicaba de verdad).
+    if (!aplicar) sql = sql.replace(/^\s*BEGIN;\s*$/gmi, '').replace(/^\s*COMMIT;\s*$/gmi, '');
+    if (!aplicar && /^\s*(BEGIN|COMMIT|END)\s*;/mi.test(sql.replace(/\$\$[\s\S]*?\$\$/g, ''))) throw new Error(f + ': quedó un BEGIN/COMMIT fuera de una función; en seco no se puede garantizar el ROLLBACK');
     if (!aplicar) await c.query('SAVEPOINT paso');
     try {
       await c.query(sql);
