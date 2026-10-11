@@ -51,6 +51,7 @@
     }
     rvState.items = rows;
     await rvLoadExtras(rows);
+    await rvuLoadFlights(rows);
     renderReservasList();
     // Si llegamos desde un push (`#/reservas?chat=<id>`), se abre directo el hilo
     // que motivó el aviso. Se consume una sola vez: un refresco no lo reabre.
@@ -82,6 +83,22 @@
         r.quiet = x.quiet_ride === true;
       });
     } catch (_) { /* sin el dato, sin la etiqueta */ }
+  }
+  // Estado del vuelo (0099, vuelos-ui.js): una sola consulta para los días de la
+  // lista. Con la integración apagada, sin la migración o si falla, la caché
+  // queda vacía y cada fila muestra su vuelo como siempre («✈ AV9563»): nunca un
+  // estado inventado.
+  async function rvuLoadFlights(rows) {
+    if (!window.RendioVuelos) return;
+    const days = [...new Set((rows || []).filter(r => !r.groundOps && r.flight).map(r => rvBogDay(r.when)).filter(Boolean))];
+    if (!days.length) return;
+    try { await RendioVuelos.cargar(days); } catch (_) { /* sin estado, sin chip */ }
+  }
+  // El vuelo de la fila: el chip si hay estado, y si no el texto de siempre.
+  function rvuFlightLabel(r) {
+    if (r.groundOps || !r.flight) return '';
+    const chip = window.RendioVuelos ? RendioVuelos.chip(RendioVuelos.para(r.flight, rvBogDay(r.when), r.type)) : '';
+    return ' · ' + (chip || '✈ ' + escapeHtml(r.flight));
   }
   // «2 maletas», «1 maleta», «Sin maletas». null = el tripulante no lo dijo.
   const rvBagsLabel = (n) => n == null ? '' : n === 0 ? 'Sin maletas' : `${n} maleta${n === 1 ? '' : 's'}`;
@@ -152,7 +169,7 @@
           <b>${escapeHtml(r.name)}</b>
           <span class="rv-st ${st.cls}">${st.label}</span>
         </div>
-        <div class="rv-sub">${escapeHtml(dir)} · ${escapeHtml(r.address || 'sin dirección')}${!r.groundOps && r.flight ? ' · ✈ ' + escapeHtml(r.flight) : ''}</div>
+        <div class="rv-sub">${escapeHtml(dir)} · ${escapeHtml(r.address || 'sin dirección')}${rvuFlightLabel(r)}</div>
         ${chips.length ? `<div class="rv-tags">${chips.join('')}</div>` : ''}
         ${r.cancelledAt ? `<div class="rv-note">Cancelado${r.cancelReason ? ': ' + escapeHtml(r.cancelReason) : ''}</div>` : ''}
         ${cancelling ? `<div class="rv-cancel">

@@ -34,6 +34,9 @@ const APP_SHELL = [
   '/api-aux.js',
   '/api-cobro.js',
   '/api-puntos.js',
+  // Estado de vuelos (0099).
+  '/api-vuelos.js',
+  '/vuelos-ui.js',
   '/shift-flow.js',
   '/core.js',
   '/usuarios.js',
@@ -105,6 +108,7 @@ const APP_SHELL = [
   '/admin-cobro.css',
   '/admin-puntos.css',
   '/admin-inspecciones.css',
+  '/vuelos.css',
   '/manifest.json',
   '/assets/logo.png',
   '/assets/logo-icon.png',
