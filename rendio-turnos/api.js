@@ -3185,7 +3185,7 @@
         const r = s.reservations || {};
         return { name: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar', addr: r.pickup_address || '',
           unit: r.residence_unit || '',
-          lat: r.pickup_latitude, lng: r.pickup_longitude, flight: r.flights?.flight_number || '',
+          lat: r.pickup_latitude, lng: r.pickup_longitude, flight: r.flights?.flight_number || _flightFromNotes(r.notes),
           dl: rtHHMM(r.required_arrival_at), kind: type === 'lle' ? 'dropoff' : 'pickup',
           phone: r.auxiliar_profiles?.profiles?.phone || '', notes: r.notes || '',
           // null/'' cuando la columna no existe o no hay dato: el conductor no

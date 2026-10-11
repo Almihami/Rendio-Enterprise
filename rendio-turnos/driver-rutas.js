@@ -66,6 +66,7 @@
       if (l.arrivedAt && l.stopStatus === 'arrived') { const t = Date.parse(l.arrivedAt); if (isFinite(t)) l._arrivedAt = t; }
     }));
     drBindOnce();
+    drLoadFlights();   // sin await: el chip aparece cuando llegue el dato
     const pedida = opts && opts.startAssignment
       ? drState.vueltas.find(v => v.assignmentId === opts.startAssignment && !v.done) : null;
     if (pedida) { drState.activeId = pedida.id; drStartVuelta(); return; }
@@ -333,6 +334,29 @@
     el.dataset.armed = '1'; el.dataset.txt = el.textContent; el.textContent = txt; el.classList.add('armed');
     setTimeout(() => { if (el.isConnected && el.dataset.armed === '1') { el.dataset.armed = ''; el.textContent = el.dataset.txt; el.classList.remove('armed'); } }, 4000);
     return false;
+  }
+
+  // ---------- Estado del vuelo (0099) ----------
+  // Si la integración de vuelos está encendida y hay dato, el chip dice «a tiempo
+  // · 25 min tarde · aterrizó 14:31»; si no, no se pinta nada (sin inventar).
+  function drFlightChip(v, leg) {
+    try {
+      if (!leg || !leg.flight || !window.RendioVuelos) return '';
+      const st = RendioVuelos.para(leg.flight, v && v.day, v && v.type === 'lle' ? 'lle' : 'sal');
+      return st ? ' ' + RendioVuelos.chip(st) : '';
+    } catch (_) { return ''; }
+  }
+  async function drLoadFlights() {
+    try {
+      if (!window.RendioVuelos || !drState.vueltas.length) return;
+      const days = [...new Set(drState.vueltas.map(v => v.day).filter(Boolean))];
+      await RendioVuelos.cargar(days);
+      // Solo se repinta si de verdad hay un chip nuevo y no está escribiendo un
+      // código (repintar le borraría lo que lleva escrito).
+      const hay = drState.vueltas.some(v => v.legs.some(l => drFlightChip(v, l)));
+      const escribiendo = document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('dr-code-in');
+      if (hay && drState.view === 'exec' && !escribiendo) drRender();
+    } catch (_) {}
   }
 
   // ---------- OVERVIEW: "Mi día" (maqueta route-screens.jsx) ----------
@@ -781,7 +805,7 @@
             ${!isApt ? `<button class="nav" data-dr="nav" data-lat="${leg.lat}" data-lng="${leg.lng}"><svg class="icon"><use href="#i-route"/></svg>Navegar</button>` : ''}
             <button class="dr-cta ${primary.cls}" data-dr="${primary.act}"${primary.disabled ? ' disabled' : ''}><svg class="icon" style="width:18px;height:18px"><use href="#${primary.ic}"/></svg>${primary.label}</button>
           </div>
-          ${!isApt ? `<div class="dr-foot"><span>${leg.flight ? '✈ ' + drEsc(leg.flight) : ''}</span>${footLinks}</div>` : ''}
+          ${!isApt ? `<div class="dr-foot"><span>${leg.flight ? '✈ ' + drEsc(leg.flight) : ''}${drFlightChip(v, leg)}</span>${footLinks}</div>` : ''}
         </div>
       </div>
     </div>`;
