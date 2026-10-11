@@ -100,6 +100,8 @@
   <link rel="stylesheet" href="admin-puntos.css" />
   <link rel="stylesheet" href="admin-inspecciones.css" />
   <link rel="stylesheet" href="admin-whatsapp.css" />
+  <!-- Estado de vuelos (0099): el chip de vuelos-ui.js -->
+  <link rel="stylesheet" href="vuelos.css" />
 </head>
 <body class="bg-[#F8FAFC] text-slate-900 min-h-screen font-sans antialiased">
 
@@ -1446,6 +1448,9 @@
   <script src="api-aux.js"></script>
   <script src="api-cobro.js"></script>
   <script src="api-puntos.js"></script>
+  <!-- Estado de vuelos (0099): extiende window.Api (después de api.js) + el chip -->
+  <script src="api-vuelos.js"></script>
+  <script src="vuelos-ui.js"></script>
   <script src="shift-flow.js"></script>
   <!-- app.js fue dividido en módulos por feature (split mecánico 2026-07-10).
        Comparten scope global; el ORDEN de carga importa: core.js primero

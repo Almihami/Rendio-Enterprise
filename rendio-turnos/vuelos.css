@@ -1,0 +1,24 @@
+/* vuelos.css — chip de estado de vuelo (0099, vuelos-ui.js). Prefijo rvu-.
+   El color acompaña al texto («25 min tarde», «cancelado»…), nunca lo reemplaza.
+   Tonos propios (no dependen de las variables de cada pantalla) y modo oscuro
+   cuando la pantalla que lo contiene tiene data-theme="dark". */
+.rvu-chip{
+  --rvu-bg:#EEF2F6; --rvu-fg:#475569; --rvu-bd:#D7DEE7;
+  display:inline-flex; align-items:center; gap:4px; max-width:100%;
+  font-size:11px; font-weight:700; line-height:1.25; letter-spacing:.01em;
+  padding:2px 8px; border-radius:999px; border:1px solid var(--rvu-bd);
+  background:var(--rvu-bg); color:var(--rvu-fg);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; vertical-align:baseline;
+}
+.rvu-chip--ok   { --rvu-bg:#E0F1E8; --rvu-fg:#0F6E4E; --rvu-bd:#BFE3D0; }
+.rvu-chip--warn { --rvu-bg:#FBEBCF; --rvu-fg:#8A5300; --rvu-bd:#F2D49C; }
+.rvu-chip--bad  { --rvu-bg:#FADFDC; --rvu-fg:#A8281D; --rvu-bd:#F2BDB7; }
+.rvu-chip--info { --rvu-bg:#E2ECFB; --rvu-fg:#1F55B0; --rvu-bd:#C3D6F5; }
+.rvu-chip--muted{ --rvu-bg:#F1F5F9; --rvu-fg:#5B6472; --rvu-bd:#E2E8F0; }
+
+[data-theme="dark"] .rvu-chip       { --rvu-bg:#1A1D24; --rvu-fg:#9AA1AB; --rvu-bd:#333944; }
+[data-theme="dark"] .rvu-chip--ok   { --rvu-bg:#10271E; --rvu-fg:#2ED391; --rvu-bd:#1D4A37; }
+[data-theme="dark"] .rvu-chip--warn { --rvu-bg:#2C2212; --rvu-fg:#F5B53D; --rvu-bd:#4E3C1C; }
+[data-theme="dark"] .rvu-chip--bad  { --rvu-bg:#2E1512; --rvu-fg:#FF7A6D; --rvu-bd:#55261F; }
+[data-theme="dark"] .rvu-chip--info { --rvu-bg:#14213A; --rvu-fg:#7FA9F2; --rvu-bd:#26406B; }
+[data-theme="dark"] .rvu-chip--muted{ --rvu-bg:#1A1D24; --rvu-fg:#9AA1AB; --rvu-bd:#333944; }
