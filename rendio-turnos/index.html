@@ -624,7 +624,7 @@
         <div id="settings-ui" class="set-ui" data-theme="light">
           <div class="set-head">
             <h1>Ajustes del turno</h1>
-            <p>Lo que necesita el generador de turnos: jornadas, cupos, strikes y el inicio rápido. Los números del optimizador se mudaron a <b>Rutas › Configuración › Calibración</b>, y los carros a <b>Turnos › Revisión › Flota</b>. La antigüedad y los descansos fijos se guardan al instante.</p>
+            <p>Lo que necesita el generador de turnos: jornadas, cupos, strikes, el inicio rápido y cuánto se guardan las fotos de inspección. Los números del optimizador se mudaron a <b>Rutas › Configuración › Calibración</b>, y los carros a <b>Turnos › Revisión › Flota</b>. La antigüedad y los descansos fijos se guardan al instante.</p>
           </div>
 
           <!-- 1 · Parámetros del turno -->
@@ -672,6 +672,20 @@
                 <div class="set-field"><label>Plazo para la inspección (min)</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint">Si no la hace en este tiempo → strike automático. Default 90.</div></div>
                 <div class="set-field"></div>
               </div>
+                </div>
+              </details>
+
+              <!-- 0096 (11-oct-2026): el bucket de fotos iba en 873 MB de 1 GB y nada se
+                   borraba nunca. Cada noche se borra la RUTINA más vieja que esto; las
+                   excepciones las decide la base (photo_purge_candidates), no esta pantalla. -->
+              <details class="set-sec" data-guarda="btn" data-secval="setting-photo-retention">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Fotos de inspección</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+              <div class="set-row2">
+                <div class="set-field"><label>Días que se guardan las fotos de inspección</label><input id="setting-photo-retention" class="set-input" type="number" min="30" max="365" step="1" inputmode="numeric" /><div class="set-hint" id="setting-photo-retention-hint">Entre 30 y 365. Default 60. Cada noche (3:15 a. m.) se borran las fotos de <b>rutina</b> más viejas que esto.</div></div>
+                <div class="set-field"></div>
+              </div>
+              <div class="set-hint" id="setting-photo-retention-rules" style="margin-top:12px"><b>Nunca se borran:</b> la foto del golpe o daño, las adicionales del conductor y las que sube el jefe; los comprobantes de tanqueo; ni ninguna foto de una inspección pendiente, rechazada, NO APTA, con alguna falla del checklist o de un turno con novedad. De esas fotos borradas queda la constancia en la inspección.</div>
                 </div>
               </details>
               <div class="set-savebar">

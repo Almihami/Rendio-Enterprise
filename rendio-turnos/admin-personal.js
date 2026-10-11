@@ -544,9 +544,34 @@
     if ($('#setting-fast-start-from')) $('#setting-fast-start-from').value = S.fast_start_from_hour != null ? S.fast_start_from_hour : 12;
     if ($('#setting-fast-start-to')) $('#setting-fast-start-to').value = S.fast_start_to_hour != null ? S.fast_start_to_hour : 16;
     if ($('#setting-inspection-grace')) $('#setting-inspection-grace').value = S.inspection_grace_minutes != null ? S.inspection_grace_minutes : 90;
+    setPintarRetencionFotos(S);
     renderPriorityList();
     renderRulesEditor();
     setPrepararBloque('turno');
+  }
+
+  // Días que se guardan las fotos de inspección (0096). Si la fila de ajustes se
+  // leyó y NO trae la columna, esta base no tiene la migración: el campo se
+  // apaga y lo dice, en vez de mostrar un 60 que no se guarda en ningún lado.
+  const SET_RET_MIN = 30, SET_RET_MAX = 365, SET_RET_DEF = 60;
+  function setRetencionSinColumna(S) { return !!(S && S._loaded && !('photo_retention_days' in S)); }
+  function setPintarRetencionFotos(S) {
+    const inp = $('#setting-photo-retention');
+    if (!inp) return;
+    const sin = setRetencionSinColumna(S);
+    inp.value = S && S.photo_retention_days != null ? S.photo_retention_days : SET_RET_DEF;
+    inp.disabled = sin;
+    const hint = $('#setting-photo-retention-hint');
+    if (hint) hint.innerHTML = sin
+      ? '<b>Esta base todavía no tiene la migración 0096:</b> no se guarda el número y no se borra ninguna foto.'
+      : `Entre ${SET_RET_MIN} y ${SET_RET_MAX}. Default ${SET_RET_DEF}. Cada noche (3:15 a. m.) se borran las fotos de <b>rutina</b> más viejas que esto.`;
+  }
+  // El número que se guarda: entero, dentro del rango que también exige la base.
+  function setLeerRetencionFotos() {
+    const inp = $('#setting-photo-retention');
+    if (!inp || inp.disabled) return null;
+    const n = parseInt(inp.value, 10);
+    return Math.min(SET_RET_MAX, Math.max(SET_RET_MIN, Number.isFinite(n) ? n : SET_RET_DEF));
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -888,7 +913,19 @@
 
   // Turnos › Configuración › Ajustes — los 13 del turno del conductor.
   async function onSaveSettings() {
+    // Fotos de inspección (0096): solo viaja si el campo está activo; sin la
+    // migración no se manda la llave (ni como undefined, que pisaría el estado).
+    const retencion = setLeerRetencionFotos();
+    const extra = retencion == null ? {} : { photo_retention_days: retencion };
+    if (retencion != null && $('#setting-photo-retention')) $('#setting-photo-retention').value = retencion;
+    // Bajar el número es lo único de esta pantalla que borra algo (esa misma
+    // noche, y no se deshace): se pregunta. Subirlo no borra nada.
+    const antes = state.settings && state.settings.photo_retention_days;
+    if (retencion != null && antes != null && retencion < antes
+        && !confirm(`Vas a bajar de ${antes} a ${retencion} los días que se guardan las fotos de inspección.\n\n`
+          + `Esta noche se borran las fotos de rutina de más de ${retencion} días, y eso no se deshace.\n\n¿Guardar?`)) return;
     await setGuardarBloque('turno', {
+      ...extra,
       morning_label: $('#setting-morning-label').value,
       afternoon_label: $('#setting-afternoon-label').value,
       morning_slots: Math.max(1, parseInt($('#setting-morning-slots').value, 10) || 2),

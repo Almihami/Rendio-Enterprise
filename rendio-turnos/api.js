@@ -916,7 +916,12 @@
     // cae al de siempre y quedan undefined (Coordinación sin teléfono, Puntos apagado).
     const AUX_RX_COLS = ', ops_contact_phone, ops_contact_hours, aux_points_enabled';
     // 0082: el descanso después de una doble. Si no está, se asume 24 h.
-    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS);
+    // 0096: días que se guardan las fotos de inspección. Escalón propio ARRIBA de
+    // todo: sin la migración se cae exactamente al escalón de antes y la columna
+    // queda ausente — Ajustes lo nota (`'photo_retention_days' in S`) y apaga el campo.
+    const RET_COLS = ', photo_retention_days';
+    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS + RET_COLS);
+    if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours'));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS));
@@ -1023,7 +1028,11 @@
       route_car_priority: s.route_car_priority,
       route_sweep_tol_min: s.route_sweep_tol_min,
       route_max_early_min: s.route_max_early_min };
-    let { error } = await upd(conJulian);
+    // 0096: días que se guardan las fotos. Escalón propio arriba de todo, y solo
+    // si viene el número (Ajustes no lo manda cuando la base no tiene la columna).
+    let error = null;
+    if (s.photo_retention_days != null) ({ error } = await upd({ ...conJulian, photo_retention_days: s.photo_retention_days }));
+    if (s.photo_retention_days == null || error) ({ error } = await upd(conJulian));
     if (error) ({ error } = await upd({ ...conPrivado, route_zone_cushion_min: s.route_zone_cushion_min }));
     if (error) ({ error } = await upd(conPrivado));
     if (error) ({ error } = await upd({ ...conFestivo, route_zone_cushion_min: s.route_zone_cushion_min }));
