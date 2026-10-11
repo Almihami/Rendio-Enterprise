@@ -16,15 +16,16 @@
   // ═══════════════════════════════════════════════════════════════════════════
   // A5 · Modo nocturno
   // ═══════════════════════════════════════════════════════════════════════════
-  // Automático 19:00–05:59 hora de Colombia, con override manual. La decisión de
-  // que sea automático POR DEFECTO es del diseñador y tiene razón operativa:
-  // quien sale a las 3 a.m. no va a entrar a Ajustes a cambiar el tema; y quien
-  // lo odie lo apaga una vez y queda.
+  // Claro POR DEFECTO desde el 11-oct-2026 (pedido de la dueña: «que siempre sea
+  // claro al crear la cuenta; si el usuario quiere, que lo ponga negro»). Antes
+  // era automático (nocturno de 19:00 a 05:59, idea del diseñador). Quien elija
+  // «Automático» o «Nocturno» en su Perfil lo conserva: eso queda guardado.
   const KEY_THEME = 'rendio.aux.night';   // 'auto' | 'light' | 'night'
   const KEY_ONB   = 'rendio.aux.onboarded';
+  const THEME_DEFAULT = 'light';
 
   function pref() {
-    try { return localStorage.getItem(KEY_THEME) || 'auto'; } catch (_) { return 'auto'; }
+    try { return localStorage.getItem(KEY_THEME) || THEME_DEFAULT; } catch (_) { return THEME_DEFAULT; }
   }
   function setPref(v) {
     try { localStorage.setItem(KEY_THEME, v); } catch (_) {}

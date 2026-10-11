@@ -2872,6 +2872,31 @@ html,body{overflow-x:hidden}
 #driver-ruta-ui .dr-notes .icon{width:15px;height:15px;flex:0 0 auto;margin-top:1px}
 #driver-ruta-ui .dr-eta{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:12px;background:var(--r-info-soft);color:var(--r-info);font-size:13px;margin-bottom:12px}
 #driver-ruta-ui .dr-eta .km{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums}
+/* 0097 · Código de encuentro: el conductor lo escribe (los dígitos grandes, teclado numérico) */
+#driver-ruta-ui .dr-code{border:1.5px solid var(--r-accent);border-radius:14px;padding:12px 14px;margin-bottom:12px;background:var(--r-card)}
+#driver-ruta-ui .dr-code label{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--r-text);margin-bottom:10px}
+#driver-ruta-ui .dr-code label .icon{width:16px;height:16px;color:var(--r-accent)}
+#driver-ruta-ui .dr-code-row{display:flex;align-items:center;gap:12px}
+#driver-ruta-ui .dr-code-in{width:112px;height:56px;border-radius:12px;border:1.5px solid var(--r-border-strong);font:700 28px/1 'Space Mono',ui-monospace,monospace;letter-spacing:10px;text-align:center;padding-left:10px;color:var(--r-text);background:var(--r-bg)}
+#driver-ruta-ui .dr-code-in:focus{outline:none;border-color:var(--r-accent);box-shadow:0 0 0 3px rgba(242,101,34,.18)}
+#driver-ruta-ui .dr-code-in.bad{border-color:var(--r-error);animation:dr-shake .32s}
+#driver-ruta-ui .dr-code-msg{font-size:12.5px;color:var(--r-text-2);flex:1;min-width:0}
+#driver-ruta-ui .dr-code-msg.bad{color:var(--r-error);font-weight:600}
+#driver-ruta-ui .dr-code-skip{margin-top:10px;background:none;border:none;padding:6px 0;font:inherit;font-size:13px;font-weight:600;color:var(--r-text-2);text-decoration:underline;cursor:pointer;min-height:36px}
+#driver-ruta-ui .dr-code-skip.armed,#driver-ruta-ui .dr-apt-row .acts button.armed{color:var(--r-error)}
+#driver-ruta-ui .dr-apt-row{display:grid;grid-template-columns:1fr auto;grid-template-areas:'nm in' 'acts acts';align-items:center;gap:6px 10px;padding:10px 0;border-top:1px solid var(--r-border)}
+#driver-ruta-ui .dr-apt-row:first-of-type{border-top:none}
+#driver-ruta-ui .dr-apt-row .nm{grid-area:nm;font-size:14.5px;font-weight:600;color:var(--r-text)}
+#driver-ruta-ui .dr-apt-row .dr-code-in{grid-area:in;width:96px;height:48px;font-size:24px}
+#driver-ruta-ui .dr-apt-row .acts{grid-area:acts;display:flex;gap:16px}
+#driver-ruta-ui .dr-apt-row .acts button{background:none;border:none;padding:4px 0;font:inherit;font-size:12.5px;font-weight:600;color:var(--r-text-2);text-decoration:underline;cursor:pointer;min-height:32px}
+#driver-ruta-ui .dr-apt-row.ok,#driver-ruta-ui .dr-apt-row.no{grid-template-areas:'nm st'}
+#driver-ruta-ui .dr-apt-row .st{grid-area:st;font-size:13px}
+#driver-ruta-ui .dr-apt-row.ok .st{color:var(--r-success)}
+#driver-ruta-ui .dr-apt-row.no .st{color:var(--r-text-3)}
+#driver-ruta-ui .dr-cta:disabled{opacity:.45;cursor:default}
+@keyframes dr-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@media (prefers-reduced-motion:reduce){#driver-ruta-ui .dr-code-in.bad{animation:none}}
 #driver-ruta-ui .dr-btnrow{display:flex;gap:10px}
 #driver-ruta-ui .dr-btnrow .nav{flex:0 0 auto;height:56px;padding:0 18px;border-radius:14px;border:1px solid var(--r-border-strong);background:var(--r-card);color:var(--r-text);font:inherit;font-size:15px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
 #driver-ruta-ui .dr-btnrow .nav .icon{color:var(--r-accent);width:18px;height:18px}
@@ -4017,3 +4042,13 @@ html,body{overflow-x:hidden}
 /* «Puedo doblar» en la consolidada del jefe */
 #avail-ui .av-dblmark{display:block;margin:4px auto 0;border:0;background:transparent;font-size:11px;line-height:1;padding:2px 6px;border-radius:6px;color:var(--ink3);opacity:.35;cursor:pointer}
 #avail-ui .av-dblmark.on{opacity:1;background:#FBEBCF;color:#7A4B06;font-weight:800}
+
+/* 11-oct-2026 · Marca «Rendio» (isotipo R con punto naranja + palabra). Reemplaza
+   el logo con el avión: con rendio.co entran también los tripulantes. */
+.rendio-word{display:inline-flex;align-items:center;gap:10px;font-family:'Hanken Grotesk',var(--font,system-ui),sans-serif;color:#1E1C19;line-height:1}
+.rendio-word b{font-size:24px;font-weight:800;letter-spacing:-.03em}
+.rendio-word-r{height:30px;width:auto}
+.rendio-word-lg b{font-size:34px}
+.rendio-word-lg .rendio-word-r{height:44px}
+.rendio-word-xl b{font-size:44px}
+.rendio-word-xl .rendio-word-r{height:58px}

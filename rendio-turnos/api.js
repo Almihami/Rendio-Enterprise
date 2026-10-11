@@ -3160,7 +3160,7 @@
     // «prefiere silencio», código y punto de encuentro (0086) y el nivel (0069).
     // Cada grupo en su escalón: sin 0086 la ruta se pinta igual, sin esos datos.
     const rv = (extra) => sb.from('route_assignments')
-      .select(`id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, residence_unit${extra}, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))`)
+      .select(`id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, status, actual_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, residence_unit${extra}, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))`)
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true });
     let { data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status');
@@ -3168,7 +3168,7 @@
     if (error) ({ data, error } = await rv(''));
     // 0075 puede no estar aplicada: sin el apartamento la ruta se pinta igual.
     if (error) ({ data, error } = await sb.from('route_assignments')
-      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
+      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, status, actual_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true }));
     if (error) return null;
@@ -3193,11 +3193,21 @@
           bags: r.bags != null ? r.bags : null, quiet: r.quiet_ride === true,
           meetCode: r.meet_code || '', meetingPoint: r.meeting_point || '',
           level: r.service_level || 'shared', privateStatus: r.private_status || null,
+          // 0097: hora de recogida PUBLICADA de esta parada (no la presentación) y
+          // el avance que ya quedó en la base, para reanudar sin repetir avisos
+          // aunque se haya perdido el teléfono o el localStorage.
+          pickup: r.calculated_pickup_at ? rtHHMM(r.calculated_pickup_at) : '',
+          stopStatus: s.status || 'pending', arrivedAt: s.actual_arrival_at || null,
           reservationId: s.reservation_id, auxProfileId: r.auxiliar_profiles?.profiles?.id || null };
       });
+      // La ruta nunca pasa a 'completed' en la base (nadie la cierra), así que una
+      // vuelta con todas las paradas resueltas se da por hecha aquí: si no, al
+      // reabrir la app volvía a ofrecer «Iniciar ruta» sobre algo ya terminado.
+      const RESUELTA = ['delivered', 'no_show'];
+      const todasResueltas = stops.length > 0 && stops.every(x => RESUELTA.includes(x.stopStatus));
       const air = { name: MDE.name, addr: MDE.addr, lat: MDE.lat, lng: MDE.lng, kind: 'airport' };
       const legs = type === 'lle' ? [air, ...stops] : [...stops, air]; // llegada: sale de MDE; salida: termina en MDE
-      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), done: ra.status === 'completed', legs, assignmentId: ra.id, day: day0 };
+      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: day0 };
     });
   }
 
@@ -3209,6 +3219,37 @@
     if (!reservationId || !status) return;
     const { error } = await sb.rpc('driver_set_reservation_status', { p_reservation_id: reservationId, p_status: status });
     if (error) throw error;
+  }
+
+  // 0097 · Abordar con el código de encuentro que dice el tripulante. Devuelve
+  // { ok, verificado }. Si el código no coincide, el error trae hint
+  // 'codigo_incorrecto' (o 'codigo_vacio'). sinCodigo=true: sube sin código y
+  // queda registrado. Los avisos al tripulante los manda la base (0097).
+  async function driverBoardWithCode(reservationId, code, sinCodigo) {
+    const { data, error } = await sb.rpc('driver_board_with_code', {
+      p_reservation_id: reservationId, p_code: code == null ? null : String(code), p_sin_codigo: !!sinCodigo,
+    });
+    if (error) throw error;
+    return data || { ok: true };
+  }
+  // 0097 · Llegadas: «Llegué al aeropuerto» (marca la llegada en las paradas de
+  // la vuelta y le avisa a cada tripulante). Devuelve cuántas paradas marcó.
+  async function driverMarkAirportArrival(routeAssignmentId) {
+    const { data, error } = await sb.rpc('driver_mark_airport_arrival', { p_route_assignment_id: routeAssignmentId });
+    if (error) throw error;
+    return data;
+  }
+  // 0097 · Llegadas: el tripulante no apareció en el aeropuerto.
+  async function driverAirportNoShow(reservationId) {
+    const { error } = await sb.rpc('driver_airport_no_show', { p_reservation_id: reservationId });
+    if (error) throw error;
+  }
+  // 0097 · «Estoy cerca» (GPS del teléfono a menos de 300 m). Una vez por parada:
+  // la base no lo repite aunque se llame de nuevo.
+  async function driverNearStop(reservationId) {
+    const { data, error } = await sb.rpc('driver_near_stop', { p_reservation_id: reservationId });
+    if (error) throw error;
+    return data;
   }
 
   // ---------------------------------------------------------------------------
@@ -3514,6 +3555,7 @@
     privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
+    driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverNearStop,
     sendDriverLocation, listLiveOperation,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
     chatUnreadFor,

@@ -2391,7 +2391,9 @@
   // estado de la parada que reporta el rastreo (stop_status === 'arrived').
   const AUX_PH_SAL = [['booked', 'Pedido'], ['assigned', 'Conductor asignado'], ['enroute', 'En camino'],
     ['arrived', 'Llegó por ti'], ['onboard', 'A bordo'], ['done', 'En el aeropuerto']];
-  const AUX_PH_LLE = [['booked', 'Pedido'], ['assigned', 'Conductor asignado'], ['onboard', 'A bordo'],
+  // 0097: en una llegada, «Te espera en MDE» cuando el conductor marca «Llegué
+  // al aeropuerto» (la parada queda 'arrived' y al tripulante le llega el aviso).
+  const AUX_PH_LLE = [['booked', 'Pedido'], ['assigned', 'Conductor asignado'], ['arrived', 'Te espera en MDE'], ['onboard', 'A bordo'],
     ['homebound', 'Rumbo a casa'], ['done', 'En casa']];
   function auxPhaseKey(t, info) {
     if (!t) return null;
@@ -2403,7 +2405,7 @@
       // A bordo mientras dejan a otros antes que a mí; «rumbo a casa» cuando
       // la siguiente parada es la mía.
       if (s === 'onboard') return auxPendingAhead(t, info) > 0 ? 'onboard' : 'homebound';
-      if (s === 'assigned' || s === 'onway') return 'assigned';
+      if (s === 'assigned' || s === 'onway') return llego ? 'arrived' : 'assigned';
       return 'booked';
     }
     if (s === 'done') return 'done';
@@ -2455,6 +2457,16 @@
 
   // Pinta el mapa: destino fijo + carro que se desliza ENTRE dos reportes reales.
   // No extrapola: al llegar al último punto conocido, se queda quieto.
+  // Encuadre de TODO lo que le falta al carro (paradas pendientes y destino
+  // final), no solo carro + destino inmediato: si no, las paradas quedaban fuera.
+  function auxFitRoute(t, info, driverPt, destPt) {
+    const map = auxState.trackMap; if (!map) return;
+    let pts = [destPt];
+    try { if (driverPt) pts = auxRouteAhead(t, info, driverPt).pts.concat([destPt]); } catch (_) {}
+    pts = pts.filter(p => p && p[0] != null && isFinite(p[0]));
+    if (pts.length > 1) map.fitBounds(pts, { padding: [55, 55], maxZoom: 16 });
+    else if (pts.length) map.setView(pts[0], 14);
+  }
   function auxPlotDriver(t, info) {
     auxUpdateTrackHUD(t, info);
     const el = document.getElementById('ax-track-map');
@@ -2474,7 +2486,7 @@
         ? L.marker(destPt, { icon: auxLfIcon(auxDestIsApt(t, info) ? 'apt' : 'pin'), interactive: false }).addTo(map)
         : L.circleMarker(destPt, { radius: 8, color: '#F26522', fillColor: '#F26522', fillOpacity: 1, weight: 3 }).addTo(map);
       auxPlotStops(t, info);
-      if (driverPt) { auxMountCar(t, info, driverPt, destPt); map.fitBounds([driverPt, destPt], { padding: [55, 55] }); }
+      if (driverPt) { auxMountCar(t, info, driverPt, destPt); auxFitRoute(t, info, driverPt, destPt); }
       else { map.setView(destPt, 14); }
       setTimeout(() => map.invalidateSize(), 60);
       // La capa del viaje entra deslizando (rxIn .34s): Leaflet midió el
@@ -2488,13 +2500,13 @@
     if (auxState.trackDestPt && auxDistM(auxState.trackDestPt, destPt) > 30) {
       auxState.trackDestPt = destPt;
       if (auxState.trackDestMk) auxState.trackDestMk.setLatLng(destPt);
-      if (driverPt) auxState.trackMap.fitBounds([driverPt, destPt], { padding: [55, 55] });
+      if (driverPt) auxFitRoute(t, info, driverPt, destPt);
     }
     auxPlotStops(t, info);
     if (!driverPt) return;                                 // aún sin ping: dejamos el destino
     if (!auxState.trackCar) {                              // el carro apareció tras el montaje
       auxMountCar(t, info, driverPt, destPt);
-      auxState.trackMap.fitBounds([driverPt, destPt], { padding: [55, 55] });
+      auxFitRoute(t, info, driverPt, destPt);
       return;
     }
     const last = auxState.trackLast;
@@ -2514,7 +2526,10 @@
   // un punto, así que el que iba a bordo no veía por qué el viaje seguía dando vueltas.
   function auxPlotStops(t, info) {
     const map = auxState.trackMap; if (!map) return;
-    const pend = t.status === 'onboard' ? auxPendingStops(t, info) : [];
+    // 11-oct-2026: también ANTES de subir en una salida. La línea ya pasaba por
+    // las paradas de los compañeros pero no se veían, así que el tripulante no
+    // sabía si el carro iba directo o le faltaba recoger gente.
+    const pend = (t.status === 'onboard' || (t.type === 'sal' && t.status === 'onway')) ? auxPendingStops(t, info) : [];
     // Firma del recorrido pendiente: si no cambió, no se repinta (tick de 6 s).
     const sig = pend.map(s => `${s.order}:${s.lat},${s.lng}`).join('|');
     if (sig === auxState.stopSig) return;
@@ -2656,6 +2671,10 @@
       // Sin respuesta de OSRM se deja la recta, pero PUNTEADA: el punteado dice
       // "esto es la dirección, no el camino". No se finge una vía que no sabemos.
       auxState.routePath = null;
+      // 11-oct-2026: antes solo cambiaba el estilo y se quedaba dibujada la vía
+      // VIEJA (la de antes de cerrar una parada). Ahora se dibuja el recorrido
+      // que falta, en rectas punteadas.
+      auxState.trackLine.setLatLngs(ahead.pts);
       auxState.trackLine.setStyle({ dashArray: '6 8', opacity: .45, weight: 4 });
     }
     // Hora estimada: suma de los tramos hasta MI punto + lo que toma cada

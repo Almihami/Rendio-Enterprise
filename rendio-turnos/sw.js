@@ -1,4 +1,4 @@
-// Service Worker — Rendio Turnos
+// Service Worker — Rendio
 // Estrategia:
 //   - Assets estáticos (HTML/JS/CSS/SVG/PNG): stale-while-revalidate.
 //     La app sirve rápido desde caché, pero descarga la versión fresca en
@@ -106,7 +106,8 @@ const APP_SHELL = [
   '/admin-puntos.css',
   '/admin-inspecciones.css',
   '/manifest.json',
-  '/assets/logo.png',
+  '/assets/rendio-r.svg',
+  '/assets/logo-icon.svg',
   '/assets/logo-icon.png',
   '/assets/icon-192.png',
   '/assets/icon-512.png',
@@ -134,7 +135,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) { data = { body: event.data && event.data.text() }; }
-  const title = data.title || 'Rendio Turnos';
+  const title = data.title || 'Rendio';
   const options = {
     body: data.body || '',
     icon: '/assets/icon-192.png',

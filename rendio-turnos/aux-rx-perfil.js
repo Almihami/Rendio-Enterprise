@@ -132,8 +132,8 @@
     catch (_) { return null; }
   }
   function themePref() {
-    try { return (window.AuxPresentacion && AuxPresentacion.themePref && AuxPresentacion.themePref()) || 'auto'; }
-    catch (_) { return 'auto'; }
+    try { return (window.AuxPresentacion && AuxPresentacion.themePref && AuxPresentacion.themePref()) || 'light'; }
+    catch (_) { return 'light'; }
   }
   function themeSub(m) {
     return m === 'auto' ? 'Nocturno de 7:00 p. m. a 6:00 a. m.' : m === 'night' ? 'Nocturno' : 'Claro';
