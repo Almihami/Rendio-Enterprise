@@ -147,6 +147,8 @@
       return ['Pedido', joinDot(dayLabel(t.date), t.time ? cuando + hm(t.time) : '')];
     }
     if (s === 'assigned') {
+      // 0097: en una llegada, el conductor ya marcó «Llegué al aeropuerto».
+      if (lle && arrivedNow(t)) return ['Te espera', `${first} ya está en MDE`];
       if (t.pickupAt && hm(t.pickupAt)) return [hm(t.pickupAt), `${dayWord(t.pickupAt)} te recogemos${lle ? ' en MDE' : ''}`];
       return ['Por confirmar', 'Te avisamos cuando armemos tu ruta'];
     }

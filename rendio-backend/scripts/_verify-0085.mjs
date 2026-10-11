@@ -152,7 +152,8 @@ try {
   check('UPDATE directo no toca ninguna fila', upd.rowCount === 0, upd.rowCount);
   await asAdminDb(c);
   const st = await one(`SELECT status_h2a::text s, notes FROM public.reservations WHERE id = $1`, [s3]);
-  check('el estado quedó como estaba', st.s === 'requested' && st.notes == null, JSON.stringify(st));
+  // Desde 0101 una reserva en ruta publicada con conductor está 'assigned' (no 'requested').
+  check('el estado quedó como estaba', ['requested', 'assigned'].includes(st.s) && st.notes == null, JSON.stringify(st));
 
   console.log('\n8. Efecto documentado: la regla de 2 h de la función vieja');
   // Traslado en 3 h con la recogida publicada en 1 h: dentro de las 2 h.

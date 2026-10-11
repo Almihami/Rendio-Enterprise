@@ -116,7 +116,7 @@
         </button>${v === primera && v.assignmentId ? `
         <button class="rc-btn-primary rc-in d2" data-vuelta-start="${escapeHtml(v.assignmentId)}" type="button"
                 style="width:100%;height:52px;border:none;border-radius:14px;background:var(--r-accent);color:#fff;font:inherit;font-size:16px;font-weight:650;display:flex;align-items:center;justify-content:center;gap:8px;margin:-2px 0 14px;cursor:pointer">
-          ${avIcon('car', 18, 1.8)}Iniciar ruta${v.start ? ` · ${escapeHtml(v.start)}` : ''}
+          ${avIcon('car', 18, 1.8)}${(v.legs || []).some(l => l.stopStatus && l.stopStatus !== 'pending') ? 'Seguir ruta' : 'Iniciar ruta'}${v.start ? ` · ${escapeHtml(v.start)}` : ''}
         </button>` : ''}`;
     }).join('');
 

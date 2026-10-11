@@ -707,11 +707,14 @@
     const v = drVuelta(); if (!v) { drState.view = 'overview'; return drOverviewHTML(); }
     const leg = v.legs[drState.legIdx];
     const total = drStopsOf(v).length;
-    const onboard = v.legs.slice(0, drState.legIdx).filter(l => l.kind !== 'airport').length;
+    // A bordo = los que de verdad subieron y todavía no se bajan. Antes contaba
+    // las paradas ya pasadas: en el aeropuerto de una llegada decía «0/2» con uno
+    // ya arriba, y contaba como «a bordo» al que no se presentó.
+    const onboard = drStopsOf(v).filter(l => l.stopStatus === 'picked_up').length;
     const isApt = leg.kind === 'airport';
     const m = drTypeMeta(v.type);
     const tone = m.cls === 'lle' ? 'lle' : 'sal';
-    const chipTxt = isApt ? '✈ Aeropuerto MDE' : `Parada ${onboard + 1} de ${total}`;
+    const chipTxt = isApt ? '✈ Aeropuerto MDE' : `Parada ${drStopsOf(v).indexOf(leg) + 1} de ${total}`;
     const enCamino = drState.legState === 'en_camino';
     const first = (leg.name || '').split(' ')[0];
     const prev = drState.legIdx > 0 ? v.legs[drState.legIdx - 1] : null;
@@ -854,9 +857,17 @@
       drState.meMarker = L.marker(here, { icon: ic, zIndexOffset: 1000, interactive: false }).addTo(drState.map);
     } else drState.meMarker.setLatLng(here);
     if (drState.follow !== false) {
-      const z = Math.max(drState.map.getZoom(), 15);
-      const pt = drState.map.project(here, z).add([0, 90]); // centro 90px abajo → yo quedo arriba del sheet
-      drState.map.setView(drState.map.unproject(pt, z), z, { animate: true, duration: 0.5 });
+      // Si el GPS llega mientras el mapa todavía se está armando (antes de su
+      // primer setView), getZoom() no tiene valor y Math.max daba NaN: Leaflet
+      // reventaba («infinite number of tiles») y la ruta nunca se dibujaba.
+      // Hallazgo de la prueba de punta a punta del 11-oct-2026.
+      const z0 = drState.map.getZoom();
+      const z = Number.isFinite(z0) ? Math.max(z0, 15) : 15;
+      if (!drState.map._loaded) drState.map.setView(here, z, { animate: false });
+      else {
+        const pt = drState.map.project(here, z).add([0, 90]); // centro 90px abajo → yo quedo arriba del sheet
+        drState.map.setView(drState.map.unproject(pt, z), z, { animate: true, duration: 0.5 });
+      }
     }
     drUpdateDistHUD(here);
   }

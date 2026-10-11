@@ -2317,10 +2317,18 @@
       auxRender();
       return;
     }
+    // 0097 · Llegada: el conductor marcó «Llegué al aeropuerto» (la parada queda
+    // 'arrived'). El rastreo no comparte posición todavía (la reserva aún no está
+    // «a bordo»), pero el carro SÍ está en MDE: se pinta ahí, como «última
+    // parada», y la pantalla pasa a «Te espera» una vez. Antes seguía diciendo
+    // «Conductor asignado» y «Sin ubicación todavía» con el conductor esperando.
+    const lleEspera = t.type === 'lle' && ['assigned', 'onway'].includes(t.status) && info.stop_status === 'arrived';
+    if (lleEspera && !info.pos) info.pos = { lat: AUX_MDE.lat, lng: AUX_MDE.lng, source: 'anchor', at: info.arrived_at || new Date().toISOString() };
+    if (lleEspera && !t._aptArrived) { t._aptArrived = true; auxRender(); return; }
     // Fase «llegó» y código de encuentro, sin repintar (§3.7, #5).
     auxPaintPhase(t, info);
     auxPaintMeet(t, info);
-    if (t.status === 'onway' || t.status === 'onboard') {
+    if (t.status === 'onway' || t.status === 'onboard' || lleEspera) {
       auxPlotDriver(t, info);
     }
     // Mensajes nuevos del conductor con la pantalla abierta: el push avisa
@@ -2499,7 +2507,14 @@
     // el punto del primer montaje y la vía apuntaba a donde el carro ya no iba).
     if (auxState.trackDestPt && auxDistM(auxState.trackDestPt, destPt) > 30) {
       auxState.trackDestPt = destPt;
-      if (auxState.trackDestMk) auxState.trackDestMk.setLatLng(destPt);
+      if (auxState.trackDestMk) {
+        auxState.trackDestMk.setLatLng(destPt);
+        // Cambió a dónde va el carro: el ícono también (casa ↔ avión). Antes se
+        // movía el marcador pero seguía la casita rumbo a MDE.
+        if (auxShellOn() && typeof auxState.trackDestMk.setIcon === 'function') {
+          auxState.trackDestMk.setIcon(auxLfIcon(auxDestIsApt(t, info) ? 'apt' : 'pin'));
+        }
+      }
       if (driverPt) auxFitRoute(t, info, driverPt, destPt);
     }
     auxPlotStops(t, info);
@@ -2544,13 +2559,19 @@
     if (!pend.length) return;
     const layer = auxState.stopLayer = L.layerGroup().addTo(map);
     const rx = auxShellOn();
+    // Dos paradas en el mismo conjunto (o con la coordenada redondeada igual)
+    // quedaban una encima de la otra («2★»): se corren unos metros de lado.
+    const vistos = {};
     pend.forEach((s, i) => {
+      const k = `${Number(s.lat).toFixed(4)},${Number(s.lng).toFixed(4)}`;
+      const n = vistos[k] = (vistos[k] || 0) + 1;
+      const lng = s.lng + (n - 1) * 0.00022;
       const mine = !!s.mine;
       const cls = `${rx ? 'rx-lf-stop' : 'ax-stop'}${i === 0 ? ' next' : ''}${mine ? ' mine' : ''}`;
       const icon = L.divIcon({ className: '', html: `<div class="${cls}">${mine ? '★' : i + 1}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
       // De los compañeros solo se nombra el sector: nunca quién es ni dónde vive.
       const label = mine ? 'Tu parada' : (s.sector ? `Recogida · ${s.sector}` : 'Otra recogida');
-      L.marker([s.lat, s.lng], { icon }).addTo(layer).bindTooltip(label, { direction: 'top', offset: [0, -14] });
+      L.marker([s.lat, lng], { icon }).addTo(layer).bindTooltip(label, { direction: 'top', offset: [0, -14] });
     });
     // Destino final. En una llegada mi casa YA es una de las paradas: no se repite.
     if (t.type !== 'sal' && pend.some(s => s.mine)) return;
@@ -2854,7 +2875,10 @@
       if (secs > 0) { etaMin = Math.max(1, Math.round(secs / 60)); etaHM = auxHMBog(new Date(Date.now() + secs * 1000)); }
     }
     let big, label;
-    if (t.status === 'onway') {
+    if (t.type === 'lle' && t.status === 'assigned' && info && info.stop_status === 'arrived') {
+      // 0097: llegada con el conductor ya en MDE (aún no a bordo).
+      big = 'Te espera'; label = `${quien} ya está en MDE`;
+    } else if (t.status === 'onway') {
       if (s.arrived)                   { big = 'Llegó'; label = `${quien} te espera afuera`; }
       else if (s.near)                 { big = 'Ya casi'; label = `${quien} está por llegar`; }
       else if (etaMin != null && auxState.etaKind === 'pickup') { big = `${etaMin} min`; label = `${quien} va por ti`; }
