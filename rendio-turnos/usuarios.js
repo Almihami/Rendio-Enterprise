@@ -1,7 +1,8 @@
 // usuarios.js — Usuarios (0081, 27-sep-2026): los modales que abre el jefe desde
-// Personal y Tripulantes (editar datos, restablecer contraseña) y el de «Cambiar
-// mi contraseña», que usan los tres roles. Toda la escritura pasa por las
-// funciones de la base (Api.admin*), que validan que quien llama sea jefe.
+// Personal, Tripulantes y la sección Usuarios (admin-usuarios.js): editar datos,
+// restablecer contraseña, crear cuenta (11-oct) y el de «Cambiar mi contraseña»,
+// que usan los tres roles. Toda la escritura pasa por las funciones de la base
+// (Api.admin*), que validan que quien llama sea jefe.
 // Comparte scope global con los demás módulos; el orden de carga está en index.html.
 
   // Regla única de contraseña (U7): 10 o más caracteres, con letras y números.
@@ -199,6 +200,139 @@
     if (status === 'deleted') await Api.softDeleteProfile(id);
     else if (status === 'active' && wasDeleted) await Api.undeleteProfile(id);
     else await Api.setProfileActive(id, status === 'active');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Crear una cuenta de conductor o de jefe (U6). Un jefe nace como conductor
+  // (create-driver solo sabe eso) y se promueve en el mismo paso; si la
+  // promoción falla queda de conductor y se devuelve el error para decirlo.
+  // Con forceChange, además se le marca que cambie la contraseña al entrar
+  // (es la misma función de «Restablecer», con la clave que se acaba de poner).
+  // La usan «Crear conductor» de Personal y «Crear usuario» de Usuarios.
+  // ─────────────────────────────────────────────────────────────────────
+  async function usrCrearCuenta({ name, email, phone, password, role = 'driver', priority = 1, canCoord = false, forceChange = false }) {
+    const created = await Api.createDriver({ email, password, full_name: name, phone, priority, can_coordinate: canCoord });
+    let promoteError = null, forceError = null;
+    if (role === 'admin' && created && created.id) {
+      try { await Api.adminSetRole(created.id, 'admin'); } catch (e) { promoteError = e; }
+    }
+    if (forceChange && created && created.id) {
+      try { await Api.adminSetPassword(created.id, password, true); } catch (e) { forceError = e; }
+    }
+    return { created, promoteError, forceError };
+  }
+  // U10: el correo de un eliminado no se puede volver a crear (la cuenta sigue
+  // existiendo). Devuelve de quién es, para ofrecer restaurarlo, o null.
+  async function usrEliminadoConCorreo(err, email) {
+    if (!/ya existe/i.test((err && err.message) || '')) return null;
+    const del = await Api.listDeletedProfiles().catch(() => []);
+    return (del || []).find(x => (x.email || '').toLowerCase() === (email || '').toLowerCase()) || null;
+  }
+  // El teléfono como lo acepta create-driver: solo dígitos y un + adelante.
+  const usrLimpiarTel = (t) => String(t || '').trim().replace(/[^\d+]/g, '');
+
+  // El modal de «Crear usuario» (sección Usuarios). Los tripulantes no: se
+  // registran solos desde la app (0075).
+  function openCrearUsuario(onDone) {
+    const body = usrField('Nombre completo', 'full_name', '', 'text', 'autocomplete="off" placeholder="Ej: Juan Pérez García"')
+      + `<div class="set-grid2" style="margin-top:14px">
+          ${usrField('Correo (usuario para entrar)', 'email', '', 'email', 'autocomplete="off" placeholder="nombre@rendio.co"')}
+          ${usrField('Teléfono', 'phone', '', 'tel', 'inputmode="tel" autocomplete="off" placeholder="3001234567"')}
+        </div>
+        <div class="set-grid2" style="margin-top:14px">
+          <div class="set-field"><label>Crear como</label><div class="set-selwrap"><select class="set-sel" data-f="role">
+            <option value="driver" selected>Conductor</option><option value="admin">Administrador (jefe)</option>
+          </select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
+          <div class="set-field" data-usr="prio"><label>Prioridad</label><div class="set-selwrap"><select class="set-sel" data-f="priority">
+            <option value="1" selected>1 · Nuevo</option><option value="2">2 · Con tiempo</option><option value="3">3 · Antiguo</option><option value="4">4 · Máxima</option>
+          </select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
+        </div>
+        <label class="set-checkrow" data-usr="coord" style="margin-top:12px">
+          <input type="checkbox" class="set-chk-input" data-f="can_coordinate">
+          <span class="set-chk"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span>
+          <span>¿Puede ser líder de turno? (entra al pool de líderes)</span>
+        </label>
+        <div class="set-field" style="margin-top:14px"><label>Contraseña</label>
+          <div class="set-pwwrap">
+            <input class="set-input mono" data-f="password" type="text" autocomplete="new-password" value="${usrTempPassword()}">
+            <button class="set-btn ghost" data-usr="gen" type="button" title="Generar otra">Otra</button>
+          </div>
+          <div class="set-hint">${USR_PW_RULE} Puedes dejar la generada o escribir una.</div>
+        </div>
+        <label class="set-checkrow" style="margin-top:10px">
+          <input type="checkbox" class="set-chk-input" data-f="force" checked>
+          <span class="set-chk"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span>
+          <span>Pedirle que la cambie al entrar</span>
+        </label>
+        <p class="set-hint" style="margin-top:12px">Los tripulantes no se crean acá: se registran solos desde la app.</p>`;
+    const ov = usrModal('usr-new-modal', 'Crear usuario', 'Conductor o administrador', body,
+      `<button class="wk-btn wk-coord-off" data-usr="cancel">Cancelar</button><button class="wk-btn wk-coord-on" data-usr="save">Crear cuenta</button>`);
+    const f = (k) => ov.querySelector(`[data-f="${k}"]`);
+    const syncRol = () => {
+      const esJefe = f('role').value === 'admin';
+      ov.querySelector('[data-usr="prio"]').classList.toggle('hidden', esJefe);
+      ov.querySelector('[data-usr="coord"]').classList.toggle('hidden', esJefe);
+    };
+    f('role').addEventListener('change', syncRol);
+    ov.querySelector('[data-usr="gen"]').addEventListener('click', () => { f('password').value = usrTempPassword(); });
+
+    // La pantalla final: la única vez que se ve la contraseña.
+    const resultado = (nombre, email, pw, avisos) => {
+      ov.querySelector('.usr-body').innerHTML = `
+        <p style="font-size:13px;color:var(--ink2)">Cuenta lista. Pásale estos datos a <b>${escapeHtml(nombre)}</b>. La contraseña no se vuelve a mostrar.</p>
+        <div class="set-field" style="margin-top:10px"><label>Correo</label><input class="set-input mono" readonly value="${escapeAttr(email)}"></div>
+        <div class="set-pwwrap" style="margin-top:10px">
+          <input class="set-input mono" readonly value="${escapeAttr(pw)}" data-usr="pwout">
+          <button class="set-btn ghost" data-usr="copy" type="button">Copiar</button>
+        </div>
+        ${avisos.map(a => `<div class="usr-reason">${escapeHtml(a)}</div>`).join('')}`;
+      ov.querySelector('.modal-actions').innerHTML = '<button class="wk-btn wk-coord-on" data-usr="cancel">Listo</button>';
+      ov.querySelector('[data-usr="cancel"]').addEventListener('click', () => ov.remove());
+      ov.querySelector('[data-usr="copy"]').addEventListener('click', async (e2) => {
+        try { await navigator.clipboard.writeText(`${email} / ${pw}`); e2.currentTarget.textContent = 'Copiada'; }
+        catch (_) { ov.querySelector('[data-usr="pwout"]').select(); }
+      });
+    };
+
+    ov.querySelector('[data-usr="save"]').addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget;
+      const name = f('full_name').value.trim();
+      const email = f('email').value.trim().toLowerCase();
+      const phone = usrLimpiarTel(f('phone').value);
+      const password = f('password').value.trim();
+      const role = f('role').value === 'admin' ? 'admin' : 'driver';
+      const priority = parseInt(f('priority').value, 10) || 1;
+      const canCoord = role === 'driver' && f('can_coordinate').checked;
+      const forceChange = f('force').checked;
+      if (name.length < 3) { usrShowErr(ov, 'Escribe el nombre completo.'); return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { usrShowErr(ov, 'El correo no parece válido.'); return; }
+      if (phone && !/^\+?\d{7,15}$/.test(phone)) { usrShowErr(ov, 'El teléfono no parece válido (7 a 15 dígitos).'); return; }
+      if (!usrPasswordOk(password)) { usrShowErr(ov, USR_PW_RULE); return; }
+      btn.disabled = true; usrShowErr(ov, '');
+      try {
+        const r = await usrCrearCuenta({ name, email, phone, password, role, priority, canCoord, forceChange });
+        const avisos = [];
+        if (r.promoteError) avisos.push(`Quedó como conductor: no se pudo hacer administrador (${r.promoteError.message}). Hazlo desde la lista.`);
+        if (r.forceError) avisos.push(`No se pudo marcar que cambie la contraseña al entrar (${r.forceError.message}).`);
+        else if (forceChange) avisos.push('Al entrar, la app le pedirá cambiarla.');
+        resultado(name, email, password, avisos);
+        toast(`${name} quedó creado.`);
+        if (onDone) await onDone();
+      } catch (e) {
+        const del = await usrEliminadoConCorreo(e, email);
+        if (del && confirm(`Ese correo es de ${del.full_name}, que está eliminado. ¿Restaurarlo? Vuelve activo con su contraseña de antes (si no la recuerda, restablécela).`)) {
+          try {
+            await usrSetStatus(del.id, 'active', null, { wasDeleted: true });
+            ov.remove();
+            toast(`${del.full_name} fue restaurado.`);
+            if (onDone) await onDone();
+          } catch (e2) { usrShowErr(ov, e2.message || 'No se pudo restaurar.'); btn.disabled = false; }
+          return;
+        }
+        usrShowErr(ov, e.message || 'No se pudo crear la cuenta.');
+        btn.disabled = false;
+      }
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────

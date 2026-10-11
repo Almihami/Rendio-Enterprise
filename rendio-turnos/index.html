@@ -102,6 +102,7 @@
   <link rel="stylesheet" href="admin-whatsapp.css" />
   <!-- Estado de vuelos (0099): el chip de vuelos-ui.js -->
   <link rel="stylesheet" href="vuelos.css" />
+  <link rel="stylesheet" href="admin-usuarios.css" />
 </head>
 <body class="bg-[#F8FAFC] text-slate-900 min-h-screen font-sans antialiased">
 
@@ -627,7 +628,7 @@
         <div id="settings-ui" class="set-ui" data-theme="light">
           <div class="set-head">
             <h1>Ajustes del turno</h1>
-            <p>Lo que necesita el generador de turnos: jornadas, cupos, strikes y el inicio rápido. Los números del optimizador se mudaron a <b>Rutas › Configuración › Calibración</b>, y los carros a <b>Turnos › Revisión › Flota</b>. La antigüedad y los descansos fijos se guardan al instante.</p>
+            <p>Lo que necesita el generador de turnos: jornadas, cupos, strikes, el inicio rápido y cuánto se guardan las fotos de inspección. Los números del optimizador se mudaron a <b>Rutas › Configuración › Calibración</b>, y los carros a <b>Turnos › Revisión › Flota</b>. La antigüedad y los descansos fijos se guardan al instante.</p>
           </div>
 
           <!-- 1 · Parámetros del turno -->
@@ -675,6 +676,20 @@
                 <div class="set-field"><label>Plazo para la inspección (min)</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint">Si no la hace en este tiempo → strike automático. Default 90.</div></div>
                 <div class="set-field"></div>
               </div>
+                </div>
+              </details>
+
+              <!-- 0096 (11-oct-2026): el bucket de fotos iba en 873 MB de 1 GB y nada se
+                   borraba nunca. Cada noche se borra la RUTINA más vieja que esto; las
+                   excepciones las decide la base (photo_purge_candidates), no esta pantalla. -->
+              <details class="set-sec" data-guarda="btn" data-secval="setting-photo-retention">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Fotos de inspección</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+              <div class="set-row2">
+                <div class="set-field"><label>Días que se guardan las fotos de inspección</label><input id="setting-photo-retention" class="set-input" type="number" min="30" max="365" step="1" inputmode="numeric" /><div class="set-hint" id="setting-photo-retention-hint">Entre 30 y 365. Default 60. Cada noche (3:15 a. m.) se borran las fotos de <b>rutina</b> más viejas que esto.</div></div>
+                <div class="set-field"></div>
+              </div>
+              <div class="set-hint" id="setting-photo-retention-rules" style="margin-top:12px"><b>Nunca se borran:</b> la foto del golpe o daño, las adicionales del conductor y las que sube el jefe; los comprobantes de tanqueo; ni ninguna foto de una inspección pendiente, rechazada, NO APTA, con alguna falla del checklist o de un turno con novedad. De esas fotos borradas queda la constancia en la inspección.</div>
                 </div>
               </details>
               <div class="set-savebar">
@@ -1124,6 +1139,34 @@
         </div>
       </section>
 
+      <!-- ADMIN: Usuarios (11-oct-2026). Todas las cuentas —conductores, jefes y
+           tripulantes— con buscador y las acciones de cada una. Las pinta
+           admin-usuarios.js con los modales de usuarios.js; las mismas acciones
+           siguen en Personal y Tripulantes. -->
+      <section data-panel="usuarios" class="hidden">
+        <div id="usuarios-ui" data-theme="light">
+          <div class="us-phead">
+            <div>
+              <h1>Usuarios <span class="us-ct" id="us-count">0</span></h1>
+              <p>Todas las cuentas: conductores, jefes y tripulantes. Acá se <b>restablece la contraseña</b>,
+                 se corrigen los datos y el correo, se suspende, se elimina o se restaura, y se hace jefe a un conductor.</p>
+            </div>
+            <div class="us-hacts">
+              <button class="us-btn primary" data-us="crear"><svg class="icon"><use href="#i-userplus"/></svg>Crear usuario</button>
+              <button class="us-btn ghost" data-us="reload"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+            </div>
+          </div>
+          <div class="us-tools">
+            <div class="us-search">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input id="us-search" type="search" placeholder="Busca por nombre, correo o teléfono" autocomplete="off" aria-label="Buscar usuario" />
+            </div>
+            <div class="us-filters" id="us-filters"></div>
+          </div>
+          <div id="us-body"></div>
+        </div>
+      </section>
+
       <section data-panel="privados" class="hidden">
         <div id="privados-ui" data-theme="light">
           <div class="sh-phead">
@@ -1478,6 +1521,7 @@
   <script src="admin-rutas.js"></script>
   <script src="admin-reservas.js"></script>
   <script src="admin-tripulantes.js"></script>
+  <script src="admin-usuarios.js"></script>
   <script src="admin-privados.js"></script>
   <script src="admin-operacion.js"></script>
   <script src="admin-eventualidades.js"></script>

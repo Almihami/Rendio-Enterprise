@@ -1157,7 +1157,22 @@
 
   // ---------- Paso 3: fotos ----------
 
-  async function compressPhoto(file, maxDim = 1280, quality = 0.8) {
+  // CÓMO SE COMPRIME CADA FOTO (0096, 11-oct-2026). El bucket iba en 873 MB de
+  // 1 GB: 11 fotos por inicio de turno a ~280 KB cada una (1280 px, calidad 0.8).
+  //   · RUTINA — las 11 del recorrido al carro: 1280 px y calidad 0.6. Medido:
+  //     pesa ~55 % de lo de antes, o sea ~150 KB por foto real (no los 110 que
+  //     se buscaban: para eso habría que bajar a calidad ~0.4 y ya se nota).
+  //     Se ven para revisar que el carro esté como debe; no son para ampliar.
+  //   · LEGIBLE — comprobantes de tanqueo, foto del golpe, adicionales y evidencia
+  //     del cierre: hay que poder LEER un valor o ver un daño de cerca, y además
+  //     no se borran nunca. 1600 px y calidad 0.7.
+  // Medido con una foto de prueba de 12 MP en Chrome: scripts/_medir-compresion-fotos.mjs.
+  const FOTO_RUTINA = { maxDim: 1280, quality: 0.6 };
+  const FOTO_LEGIBLE = { maxDim: 1600, quality: 0.7 };
+
+  async function compressPhoto(file, perfil = FOTO_RUTINA) {
+    const maxDim = (perfil && perfil.maxDim) || FOTO_RUTINA.maxDim;
+    const quality = (perfil && perfil.quality) || FOTO_RUTINA.quality;
     const url = URL.createObjectURL(file);
     try {
       const img = await new Promise((res, rej) => {
@@ -1258,7 +1273,9 @@
       const stateEl = $('#sf-photo-state');
       if (stateEl) stateEl.textContent = 'Procesando foto…';
       try {
-        const blob = await compressPhoto(file);
+        // El recorrido al carro va en RUTINA; el golpe y las adicionales, LEGIBLE.
+        const rutina = PHOTO_SLOTS.some(sl => sl.id === sf._slot);
+        const blob = await compressPhoto(file, rutina ? FOTO_RUTINA : FOTO_LEGIBLE);
         if (sf._slot === '__extra__') {
           sf.extraPhotos.push({ blob, url: URL.createObjectURL(blob), size: blob.size });
           bdGuardar(BD_FOTOS, '__extras__', sf.extraPhotos.map(p => p.blob));
@@ -1996,7 +2013,7 @@
     if (!f) return;
     try {
       if (kind === 'photo') {
-        const blob = await compressPhoto(f);
+        const blob = await compressPhoto(f, FOTO_LEGIBLE);   // evidencia de una novedad
         sf.close.media.push({ kind: 'photo', blob, url: URL.createObjectURL(blob), size: blob.size });
       } else {
         if (f.size > 25 * 1024 * 1024) { sfToast('El video es muy pesado. Graba uno más corto.'); return; }
@@ -2011,7 +2028,7 @@
     const f = input.files && input.files[0]; input.value = '';
     if (!f) return;
     try {
-      const blob = await compressPhoto(f);
+      const blob = await compressPhoto(f, FOTO_LEGIBLE);     // que el valor se pueda leer
       sf.close.receipts.push({ blob, url: URL.createObjectURL(blob), amount: 0 });
       renderClose();
     } catch (e) { console.error(e); sfToast('No se pudo agregar el comprobante.'); }
@@ -2464,5 +2481,6 @@
     render();
   }
 
-  window.ShiftFlow = { init, refresh: renderCard };
+  // _compressPhoto y los perfiles se exponen para medirlos (scripts/_medir-compresion-fotos.mjs).
+  window.ShiftFlow = { init, refresh: renderCard, _compressPhoto: compressPhoto, FOTO_RUTINA, FOTO_LEGIBLE };
 })();
