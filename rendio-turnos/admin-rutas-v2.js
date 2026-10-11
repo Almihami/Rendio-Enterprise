@@ -561,13 +561,21 @@
     el.carros.innerHTML = html + '</div>';
   }
 
+  // Estado del vuelo (0099). Apagado o sin dato → nada (sin inventar).
+  function chipVuelo(code, dir) {
+    try {
+      if (!code || !window.RendioVuelos) return '';
+      const st = window.RendioVuelos.para(code, rt.day || ui.dia, dir);
+      return st ? ' ' + window.RendioVuelos.chip(st) : '';
+    } catch (_) { return ''; }
+  }
   function stopsHTML(r) {
     const fija = r.fija === 'completed';
     const stops = r.stops.map((st) => {
       const a = aux(st.crewId) || {};
       const extra = r.type === 'llegada'
-        ? (a.tierra ? ' · tierra' : (a.vuelo ? ' · vuelo ' + esc(a.vuelo) : ''))
-        : (a.dl ? ' · pres. ' + esc(a.dl) : '');
+        ? (a.tierra ? ' · tierra' : (a.vuelo ? ' · vuelo ' + esc(a.vuelo) + chipVuelo(a.vuelo, 'lle') : ''))
+        : (a.dl ? ' · pres. ' + esc(a.dl) : '') + (a.vuelo ? chipVuelo(a.vuelo, 'sal') : '');
       const at = atendida(st.crewId);
       const tel = a.tel ? `<a class="rv2-ic" href="${esc(telHref(a.tel))}" aria-label="Llamar a ${esc(a.n)}">${IC.phone}</a>`
         : `<button class="rv2-ic" disabled aria-label="${esc(a.n)} no tiene teléfono registrado" title="Sin teléfono registrado">${IC.phone}</button>`;
@@ -989,6 +997,9 @@
       toast('No se pudo cargar el día: ' + ((e && e.message) || 'error'));
     } finally { ui.cargando = false; }
     rotularVieja();
+    // Los vuelos del día (si la integración está encendida) llegan después y
+    // solo agregan el chip en el detalle.
+    if (window.RendioVuelos) window.RendioVuelos.cargar(ui.dia).then(() => { if (root() && !root().hidden) render(); }).catch(() => {});
     if (root() && !root().hidden) { render(); autoSelect(); }
     else if (typeof rtRenderAll === 'function') { rtRenderAll(); syncVieja(); }
   }
