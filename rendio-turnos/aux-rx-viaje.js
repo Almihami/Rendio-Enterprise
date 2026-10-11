@@ -176,7 +176,7 @@
     try { h = a && typeof a.lateHTML === 'function' ? (a.lateHTML(t) || '') : ''; } catch (_) { h = ''; }
     return `<div class="rx-trip-late" id="ax-late-wrap">${h}</div>`;
   }
-  // Fases (#ax-phase): 6 en salida, 5 en llegada. El HUD mueve .done/.now.
+  // Fases (#ax-phase): 6 en salida y 6 en llegada (0097: «Te espera en MDE»). El HUD mueve .done/.now.
   function phaseHTML(t) {
     if (t.status === 'cancelled' || t.status === 'noshow') return '';
     const ph = phasesOf(t);

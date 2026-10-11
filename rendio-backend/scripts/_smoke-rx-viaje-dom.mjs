@@ -145,8 +145,9 @@ t('salida en camino: «En camino» es la actual', q('#ax-phase [data-ph="enroute
 t('salida: el texto «Llegó por ti» está', /Llegó por ti/.test(q('#ax-phase').textContent));
 await abrir('a-bordo-llegada');
 ph = qa('#ax-phase > .rx-tl-s[data-ph]').map(e => e.getAttribute('data-ph'));
-t('llegada: 5 fases (Pedido · Conductor asignado · A bordo · Rumbo a casa · En casa)', ph.join() === 'booked,assigned,onboard,homebound,done', ph.join());
-t('llegada: rejilla de 5 columnas', /repeat\(5/.test(q('#ax-phase').getAttribute('style') || ''));
+// 0097: la llegada suma «Te espera en MDE» (el conductor marcó «Llegué al aeropuerto»).
+t('llegada: 6 fases (Pedido · Conductor asignado · Te espera en MDE · A bordo · Rumbo a casa · En casa)', ph.join() === 'booked,assigned,arrived,onboard,homebound,done', ph.join());
+t('llegada: rejilla de 6 columnas', /repeat\(6/.test(q('#ax-phase').getAttribute('style') || ''));
 
 console.log('\n── Código de encuentro (meetVisible) y «llegó» sin repintar ──');
 let d = await abrir('asignado-publicado');
