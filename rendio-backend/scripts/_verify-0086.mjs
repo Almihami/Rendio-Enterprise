@@ -68,7 +68,8 @@ try {
   await como(fx.auxUser);
   const r1 = await one(`INSERT INTO public.reservations (auxiliar_profile_id, direction, status_h2a, required_arrival_at, residence_id, bags, meet_code)
      VALUES ($1, 'home_to_airport', 'requested', now() + interval '2 days', $2, 2, 'abcd') RETURNING id, meet_code, bags, quiet_ride`, [fx.aux, fx.olivar]);
-  check('tripulante: el código sale de 4 dígitos (ignora el que mandó)', /^[0-9]{4}$/.test(r1.meet_code), r1.meet_code);
+  // Desde 0097 el código es de 2 dígitos (se dice en la acera en un segundo).
+  check('tripulante: el código lo pone la base, 2 dígitos (ignora el que mandó)', /^[0-9]{2}$/.test(r1.meet_code), r1.meet_code);
   check('bags se guarda', r1.bags === 2, r1.bags);
   check('quiet_ride por defecto false', r1.quiet_ride === false, r1.quiet_ride);
   let e = await debeFallar(`INSERT INTO public.reservations (auxiliar_profile_id, direction, status_h2a, required_arrival_at, bags)

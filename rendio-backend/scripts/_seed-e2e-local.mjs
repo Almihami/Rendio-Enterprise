@@ -80,7 +80,8 @@ async function cuenta(email, full_name, role, phone) {
   return uid;
 }
 const JEFE = await cuenta('jefe.local@rendio.test', 'Julián Prueba', 'admin', '3004445566');
-if (!SOLO_RESERVAS) await sb.from('profiles').update({ receives_ops_alerts: true }).eq('id', JEFE);
+// Sin marcar receives_ops_alerts: con nadie marcado los avisos van a todos los jefes
+// activos (0066), y las pruebas _verify-* siguen encontrando a su propio jefe.
 const DRV = {
   carlos: await cuenta('carlos.local@rendio.test', 'Carlos Mejía', 'driver', '3001112233'),
   diana: await cuenta('diana.local@rendio.test', 'Diana Ríos', 'driver', '3015556677'),

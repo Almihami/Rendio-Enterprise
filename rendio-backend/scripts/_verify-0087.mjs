@@ -97,7 +97,7 @@ try {
   const cp = (await one(`SELECT calculated_pickup_at FROM public.reservations WHERE id = $1`, [s1.id])).calculated_pickup_at;
   check('published = true', t.published === true);
   check('pickup_at = la hora publicada (0085)', t.pickup_at && Date.parse(t.pickup_at) === cp.getTime(), `${t.pickup_at} vs ${cp && cp.toISOString()}`);
-  check('meet_code = el de la reserva', t.meet_code === s1.meet_code && /^[0-9]{4}$/.test(t.meet_code || ''), `${t.meet_code} vs ${s1.meet_code}`);
+  check('meet_code = el de la reserva', t.meet_code === s1.meet_code && /^[0-9]{2}([0-9]{2})?$/.test(t.meet_code || ''), `${t.meet_code} vs ${s1.meet_code}`);
   check('driver: nombre, foto y teléfono', t.driver && t.driver.name && t.driver.avatar_url && t.driver.phone === '3001234567', JSON.stringify(t.driver));
   check('vehicle: placa, marca, modelo y color', t.vehicle && t.vehicle.plate === 'RDO481' && t.vehicle.brand === 'Chevrolet' && t.vehicle.model === 'Spark' && t.vehicle.color === 'Gris', JSON.stringify(t.vehicle));
   check('stop_status pending', t.stop_status === 'pending', t.stop_status);
