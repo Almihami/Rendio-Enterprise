@@ -98,6 +98,8 @@
   <link rel="stylesheet" href="admin-cobro.css" />
   <link rel="stylesheet" href="admin-puntos.css" />
   <link rel="stylesheet" href="admin-inspecciones.css" />
+  <!-- Rutas › Asignación v2 (10-oct-2026): acotado a #routes-v2 y .rv2-* -->
+  <link rel="stylesheet" href="admin-rutas-v2.css" />
 </head>
 <body class="bg-[#F8FAFC] text-slate-900 min-h-screen font-sans antialiased">
 
@@ -1213,9 +1215,60 @@
 
       <!-- ===================== RUTAS: ASIGNACIÓN (planeación) ===================== -->
       <section data-panel="routes" class="hidden">
+        <!-- ===== Asignación v2 (entrega del UX 10-oct-2026): vista por defecto =====
+             La pinta admin-rutas-v2.js con el estado de admin-rutas.js. Nace
+             escondida: si ese archivo no carga, se ve la vista anterior (#routes-ui). -->
+        <section id="routes-v2" aria-label="Asignación de rutas" hidden>
+          <div class="rv2-bar">
+            <h1 class="rv2-title">Rutas del día</h1>
+            <div class="rv2-day">
+              <button class="rv2-ic" data-act="nav" data-dir="-1" aria-label="Día anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+              <b id="rv2-dayLabel">—</b>
+              <button class="rv2-ic" data-act="nav" data-dir="1" aria-label="Día siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            </div>
+            <span class="rv2-pub" id="rv2-pubChip" hidden></span>
+            <label class="rv2-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="rv2-q" type="search" placeholder="Buscar tripulante, carro o conductor" autocomplete="off" aria-label="Buscar tripulante, carro, conductor o conjunto"><kbd>/</kbd></label>
+            <div class="rv2-spacer"></div>
+            <div class="rv2-seg" role="tablist" aria-label="Vista">
+              <button role="tab" aria-selected="true" data-view="lista">Lista</button>
+              <button role="tab" aria-selected="false" data-view="carros">Carros</button>
+              <button role="tab" aria-selected="false" disabled title="Próximamente" aria-label="Mapa (próximamente)">Mapa</button>
+            </div>
+            <button class="rv2-ic rv2-wa" id="rv2-wa" type="button" title="Copiar plan para WhatsApp" aria-label="Copiar plan para WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg></button>
+            <button class="rv2-btn" id="rv2-reopt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg><span id="rv2-reoptLabel">Re-optimizar</span></button>
+            <button class="rv2-btn rv2-btn--cta" id="rv2-publish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg><span id="rv2-publishLabel">Publicar plan</span><span class="rv2-badge" id="rv2-pending">0</span></button>
+          </div>
+
+          <div class="rv2-status">
+            <div class="rv2-progress"><p><b id="rv2-readyN">0</b> de <span id="rv2-totalN">0</span> rutas listas</p><div class="rv2-track"><i id="rv2-fill"></i></div></div>
+            <div class="rv2-chips" id="rv2-chips" role="toolbar" aria-label="Filtrar por estado"></div>
+            <div class="rv2-spacer"></div>
+            <select id="rv2-type" class="rv2-select" aria-label="Tipo de vuelta">
+              <option value="">Tipo: todos</option><option value="salida">Salida</option><option value="llegada">Llegada</option><option value="hotel">Hotel</option>
+            </select>
+            <button class="rv2-old" type="button" data-act="vista" data-v="v1">Vista anterior</button>
+          </div>
+
+          <div class="rv2-hist" id="rv2-hist">
+            <div class="rv2-hist-cap">RUTAS POR HORA<br>Toca una franja<br>para ir a ella</div>
+            <div class="rv2-hist-bars" id="rv2-hist-bars"></div>
+          </div>
+
+          <div class="rv2-stage">
+            <div class="rv2-listwrap" id="rv2-listwrap">
+              <div class="rv2-cols" aria-hidden="true"><span>Estado</span><span>Recogida → MDE</span><span>Carro · tipo</span><span>Tripulantes</span><span>Margen</span><span>Conductor</span></div>
+              <div class="rv2-list" id="rv2-list"></div>
+            </div>
+            <div class="rv2-carros" id="rv2-carros" hidden></div>
+            <aside class="rv2-detail" id="rv2-detail" aria-label="Detalle de la ruta"></aside>
+          </div>
+
+          <div class="rv2-mbar"><button class="rv2-btn rv2-btn--cta rv2-btn--block" id="rv2-publishM">Publicar plan</button></div>
+        </section>
         <div id="routes-ui" data-theme="light">
           <div class="sub">
             <h1 id="rt-h1">Rutas del día</h1>
+            <button class="rv2-vista-nueva" id="rt-vistaNueva" type="button" hidden>Vista nueva</button>
             <div class="daypick">
               <button class="nav" id="rt-dayprev" title="Día anterior"><svg class="icon"><use href="#i-l"/></svg></button>
               <b id="rt-dayLabel">Hoy</b>
@@ -1276,6 +1329,10 @@
           <div class="scrim" id="rt-scrim"></div>
           <aside class="drawer" id="rt-drawer"></aside>
         </div>
+        <!-- Overlays de Asignación v2 (fuera de #routes-v2 para que el fondo cubra todo). -->
+        <div class="rv2-scrim" id="rv2-scrim" hidden></div>
+        <div class="rv2-sheet" id="rv2-sheet" role="dialog" aria-modal="true" hidden></div>
+        <div class="rv2-toast" id="rv2-toast" role="status" aria-live="polite" hidden></div>
       </section>
 
       <!-- ===================== RUTAS: OPERACIÓN EN VIVO (mapa real OSM) ===================== -->
@@ -1468,6 +1525,7 @@
   <!-- Rutas de auxiliares (feat/rutas-modular): consola/sidebar + asignación + operación -->
   <script src="admin-consola.js"></script>
   <script src="admin-rutas.js"></script>
+  <script src="admin-rutas-v2.js"></script>
   <script src="admin-reservas.js"></script>
   <script src="admin-tripulantes.js"></script>
   <script src="admin-privados.js"></script>
