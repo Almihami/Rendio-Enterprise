@@ -297,7 +297,7 @@ const pos = (s) => html.indexOf(`<script src="${s}"></script>`);
 t('index.html: admin-usuarios.js carga después de usuarios.js y antes de ui-push.js', pos('admin-usuarios.js') > pos('usuarios.js') && pos('admin-usuarios.js') < pos('ui-push.js') && pos('usuarios.js') > 0);
 t('index.html: enlaza admin-usuarios.css', html.includes('<link rel="stylesheet" href="admin-usuarios.css" />'));
 t('sw.js: los dos archivos en APP_SHELL', sw.includes("'/admin-usuarios.js',") && sw.includes("'/admin-usuarios.css',"));
-t('sw.js: CACHE_VERSION no se tocó en esta rama (v167)', /CACHE_VERSION\s*=\s*['"][^'"]*167/.test(sw), (sw.match(/CACHE_VERSION[^\n]*/) || [''])[0]);
+t('sw.js: CACHE_VERSION con el formato de siempre (la sube quien integra)', /const CACHE_VERSION = 'rendio-turnos-v\d+';/.test(sw), (sw.match(/const CACHE_VERSION = [^;]+;/) || [''])[0]);
 t('core.js: setTab pinta Usuarios (con typeof)', /name === 'usuarios' && typeof window\.renderUsuarios === 'function'/.test(core));
 t('CSS: por debajo de 1180 px (menú lateral + tabla no caben) la fila se vuelve tarjeta', /@media \(max-width: 1180px\)[\s\S]*\.us-head \{ display: none; \}/.test(css));
 t('CSS: en celular, botones del tamaño de un dedo y buscador a 16 px (sin zoom en iPhone)', /@media \(max-width: 768px\)[\s\S]*min-height: 44px[\s\S]*font-size: 16px/.test(css));
