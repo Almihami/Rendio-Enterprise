@@ -16,6 +16,8 @@
 //   · Pagos, Puntos e Invitar dicen «Todavía no disponible» (Puntos e Invitar sin flecha);
 //   · escribir el punto de encuentro no cambia Auxiliar.state.form, y guardarlo
 //     llama a ApiAux.saveMyPrefs({meetingPoint});
+//   · el teléfono se edita (11-oct-2026): hoja propia, valida el celular
+//     (Api.normalizarCelular) y guarda con Api.setMyPhone (0098), sin repintar;
 //   · Nivel preferido → hoja → saveMyPrefs({preferredLevel});
 //   · Mi residencia (#27): pila 'residence' con estado propio → buscar → hoja →
 //     Api.saveMyResidence; el pedido (state.form) no se toca; la segunda unidad
@@ -71,7 +73,7 @@ async function boot(rx) {
   w.state = { settings: {} };
   w.localStorage.setItem('rendio.aux.rx', rx ? '1' : '0');
   w.localStorage.setItem('rendio.aux.onboarded', '1');
-  for (const f of ['api.js', 'api-aux.js', 'aux-rx-ui.js', 'aux-shell.js', 'aux-residencias.js', 'aux-privado.js', 'aux-presentacion.js',
+  for (const f of ['api.js', 'api-jefe.js', 'api-aux.js', 'aux-rx-ui.js', 'aux-shell.js', 'aux-residencias.js', 'aux-privado.js', 'aux-presentacion.js',
     'aux-rx-perfil.js', 'auxiliar.js']) {
     try { w.eval(read(f)); } catch (e) { errors.push(f + ': ' + e.message); }
   }
@@ -308,6 +310,43 @@ console.log('\n── Bandera ENCENDIDA: la pestaña Perfil ──');
     AS.popAll(); await wait(30);
     if (modo === 'propio' && p5) AR.pickerScreenHTML = p5;
   }
+
+  // Teléfono editable (11-oct-2026)
+  console.log('\n── Teléfono editable (Api.setMyPhone · 0098) ──');
+  E.montar('historial');
+  AS.setTab('inicio'); await wait(20);
+  AS.setTab('perfil'); await wait(40);
+  const tabT = meEl(b);
+  const telCalls = [];
+  let telRespuesta = async (v) => '3209998877';
+  w.Api.setMyPhone = async (v) => { telCalls.push(v); return telRespuesta(v); };
+  t('la fila Teléfono ya no es estática: abre su hoja (data-rx="me-phone", con flecha)', row(b, 'row-phone').getAttribute('data-rx') === 'me-phone' && !row(b, 'row-phone').classList.contains('static'));
+  b.click(row(b, 'row-phone')); await wait(20);
+  const ti = b.q('.rx-sheet [data-rx-field="me-phone"]');
+  t('la hoja trae el campo tel con el número actual', !!ti && ti.value === '300 123 4567' && ti.type === 'tel' && /Tu teléfono/.test(b.q('.rx-sheet h3').textContent));
+  const errT = () => b.q('.rx-sheet [data-me-err]');
+  b.type(ti, '2001234567'); b.click(b.q('.rx-sheet [data-rx="me-phone-save"]')); await wait(30);
+  t('número inválido: lo dice y NO llama a la base', /10 dígitos y empezar por 3/.test(errT().textContent) && !errT().hidden && telCalls.length === 0, errT().textContent);
+  telRespuesta = async () => { throw new Error('El celular debe tener 10 dígitos y empezar por 3'); };
+  b.type(ti, '3001112233'); b.click(b.q('.rx-sheet [data-rx="me-phone-save"]')); await wait(30);
+  t('si la base lo rechaza: su mensaje, la hoja sigue abierta', /10 dígitos/.test(errT().textContent) && !!b.q('.rx-sheet') && telCalls.length === 1);
+  telRespuesta = async () => '3209998877';
+  b.type(ti, '+57 320-999-8877'); b.click(b.q('.rx-sheet [data-rx="me-phone-save"]')); await wait(40);
+  t('válido: Api.setMyPhone("+57 320-999-8877")', telCalls.length === 2 && telCalls[1] === '+57 320-999-8877', JSON.stringify(telCalls));
+  t('la fila muestra 320 999 8877 sin repintar la pestaña', sub(row(b, 'row-phone')) === '320 999 8877' && meEl(b) === tabT, sub(row(b, 'row-phone')));
+  t('toast «Teléfono guardado» y el perfil queda normalizado', /Teléfono guardado/.test((b.q('.rx-toast') || {}).textContent || '') && A.state.profile.phone === '3209998877');
+  await wait(260);
+  t('la hoja se cierra', !b.q('.rx-sheet-bg'));
+  b.click(row(b, 'row-phone')); await wait(20);
+  b.click(b.q('.rx-sheet [data-rx="me-phone-save"]')); await wait(30);
+  t('guardar el mismo número no llama a la base (solo cierra)', telCalls.length === 2);
+  await wait(260);
+  const sinFn = w.Api.setMyPhone; delete w.Api.setMyPhone;
+  b.click(row(b, 'row-phone')); await wait(20);
+  b.type(b.q('.rx-sheet [data-rx-field="me-phone"]'), '3001234567'); b.click(b.q('.rx-sheet [data-rx="me-phone-save"]')); await wait(20);
+  t('sin api-jefe.js: «No se puede guardar desde aquí todavía.» (no falla)', /No se puede guardar desde aquí todavía/.test(errT().textContent));
+  w.Api.setMyPhone = sinFn;
+  b.click(b.q('.rx-sheet-bg')); await wait(260);
 
   // Teléfono vacío y H nulo
   console.log('\n── Sin dato ──');

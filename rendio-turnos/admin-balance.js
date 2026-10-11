@@ -13,6 +13,12 @@
 // verdad del cálculo y admin-revision.js consume exactamente estas funciones:
 // si dos pantallas muestran la misma cifra es porque llamaron a la misma
 // función, no porque casualmente coincidan.
+//
+// 2026-10-11 · HORAS Y MINUTOS. El jefe de operación pidió dejar los decimales:
+// todo se pinta «96 h 30 min» (BalanceCore.hm) y el Excel guarda la duración
+// como número con formato [h]:mm (BalanceCore.diaExcel). Ya no hay redondeo a la
+// décima: lo único que se redondea es cada turno a su minuto (minutosDe). El
+// perfil del conductor lee este mismo motor para su tarjeta «Mis horas».
   // ====================================================================
   // Balance de turnos (informe para los jefes)
   // ====================================================================
@@ -112,10 +118,68 @@
   function minutosPagables(turnos) {
     return (turnos || []).reduce((a, s) => a + (clasificar(s) === 'ok' ? minutosDe(s) : 0), 0);
   }
-  // Minutos → horas con 1 decimal. ESTE es el único redondeo de toda la cadena y
-  // solo se llama al pintar (pantalla o celda de Excel). Va en enteros (minutos
-  // entre 6 = décimas de hora) para no arrastrar el error del flotante.
+  // Minutos → horas con 1 decimal. YA NO SE PINTA en ninguna parte (ver hm()
+  // abajo); se queda exportada en BalanceCore para no romperle la llamada a un
+  // módulo que todavía la use.
   function horas(minutos) { return Math.round((minutos || 0) / 6) / 10; }
+
+  // ── Horas y minutos (pedido del jefe de operación, 11-oct-2026) ─────────────
+  // «Cambiar las horas de decimales a horas y minutos»: 12,5 h obligaba a hacer
+  // la cuenta de cabeza (¿12 h 30 o 12 h 50?). Desde acá todo se PINTA en horas
+  // y minutos y, como el motor ya acumulaba minutos enteros, el redondeo a la
+  // décima desaparece: la cifra de pantalla, la de cada hoja del Excel y la de la
+  // Revisión son los mismos minutos, sin ningún redondeo de por medio.
+  //
+  // Pantalla: «96 h 30 min», «12 h» (hora exacta), «45 min» (menos de una hora),
+  // «0 h» (nada). Minutos negativos o basura → 0 (cinturón, como minutosDe).
+  function balMinEnteros(minutos) { const m = Math.round(Number(minutos) || 0); return m > 0 ? m : 0; }
+  function hm(minutos) {
+    const m = balMinEnteros(minutos);
+    const h = Math.floor(m / 60), r = m % 60;
+    if (!h) return r ? `${r} min` : '0 h';
+    return r ? `${h} h ${r} min` : `${h} h`;
+  }
+  // Lo mismo para las cifras grandes de las tarjetas, con la unidad en <s> (el
+  // estilo que ya tenían «582,3<s> h</s>»). Devuelve HTML: solo números y unidades.
+  function hmHtml(minutos) {
+    const m = balMinEnteros(minutos);
+    const h = Math.floor(m / 60), r = m % 60;
+    if (!h) return r ? `${r}<s> min</s>` : '0<s> h</s>';
+    return r ? `${h}<s> h</s> ${r}<s> min</s>` : `${h}<s> h</s>`;
+  }
+  // Para las celdas de TEXTO del Excel («Camilo — 12:30 h»): h:mm.
+  function hmCorto(minutos) { const m = balMinEnteros(minutos); return `${Math.floor(m / 60)}:${balP2(m % 60)}`; }
+  // Para las celdas de NÚMERO del Excel: la duración real como fracción de día
+  // (así guarda Excel las duraciones), con formato [h]:mm. Se ve «96:30», pasa de
+  // 24 h sin volver a cero y SE PUEDE SUMAR con =SUMA(). Como los minutos son
+  // enteros, cualquier suma de celdas vuelve a caer en un minuto exacto: el
+  // total que escriba el jefe a mano da lo mismo que el TOTAL de la hoja.
+  const BAL_HM_FMT = '[h]:mm';
+  function diaExcel(minutos) { return balMinEnteros(minutos) / 1440; }
+
+  // ── Qué turnos son de un corte (la MISMA regla para el jefe y el conductor) ──
+  // Un turno pertenece al día en que ARRANCÓ, en hora de Bogotá. El informe pide
+  // al servidor [desde 00:00, día siguiente al hasta 00:00) con huso -05:00, y el
+  // perfil del conductor filtra con enRango(): son la misma frontera escrita dos
+  // veces en el mismo archivo, una para PostgREST y otra para la memoria.
+  function limitesDe(fromV, toV) {
+    return { desde: `${fromV}T00:00:00-05:00`, hasta: `${dayAfterISO(toV)}T00:00:00-05:00` };
+  }
+  function diaDeArranque(turno) { return turno && turno.start_at ? balYmdUTC(balBog(turno.start_at)) : null; }
+  function enRango(turno, fromV, toV) {
+    const k = diaDeArranque(turno);
+    return !!k && k >= fromV && k <= toV;
+  }
+  // Resumen de un corte para UNA persona: lo que el conductor ve en su perfil.
+  // Sale de las mismas funciones que la Hoja 3 (clasificar + minutosDe): ok es lo
+  // único pagable; auto/curso/falso se cuentan aparte y suman 0.
+  function delCorte(turnos, corte) {
+    const lista = (turnos || []).filter(t => enRango(t, corte.from, corte.to));
+    const r = { corte, turnos: lista, pagablesMin: 0, ok: 0, auto: 0, curso: 0, falso: 0 };
+    lista.forEach(t => { const c = clasificar(t); r[c]++; });
+    r.pagablesMin = minutosPagables(lista);
+    return r;
+  }
 
   // Sello de generación en hora Bogotá: el informe vale para el instante en que
   // se generó, no para el instante en que alguien abre el Excel.
@@ -173,9 +237,8 @@
   }
 
   // Agrupa los turnos del rango por persona (profile_id) y acumula MINUTOS.
-  // okH/autoH salen de horas() y existen solo para pintar: sumar esa lista de
-  // decimales es exactamente el bug que se está matando, por eso los totales se
-  // sacan siempre de okMin/autoMin.
+  // okH/autoH son TEXTO para pintar («12 h 30 min», de hm()): los totales se
+  // sacan siempre de okMin/autoMin, nunca de esas cadenas.
   function aggregateRealHours(shifts) {
     const agg = {};
     shifts.forEach(s => {
@@ -194,7 +257,7 @@
     const adminIds = new Set((state.admins || []).map(a => a.id));
     const driverIds = new Set((state.drivers || []).map(d => d.id));
     const list = Object.values(agg).map(a => ({
-      ...a, okH: horas(a.okMin), autoH: horas(a.autoMin),
+      ...a, okH: hm(a.okMin), autoH: hm(a.autoMin),
       role: adminIds.has(a.id) ? 'Admin' : (driverIds.has(a.id) ? 'Conductor' : '—'),
     })).sort((x, y) => y.okMin - x.okMin || y.ok - x.ok || x.name.localeCompare(y.name));
     return {
@@ -223,8 +286,9 @@
     let shifts, scheds = [], schedError = '';
     try {
       const semDesde = Scheduler.startOfWeekISO(fromV), semHasta = Scheduler.startOfWeekISO(toV);
+      const lim = limitesDe(fromV, toV);
       const [sh, sc] = await Promise.all([
-        Api.listShiftsForBalance(`${fromV}T00:00:00-05:00`, `${dayAfterISO(toV)}T00:00:00-05:00`),
+        Api.listShiftsForBalance(lim.desde, lim.hasta),
         // Si el horario falla no se cae el informe de horas (que es el que se
         // paga): se congela vacío y se avisa. Lo que no puede volver a pasar es
         // leerlo después, en otro instante.
@@ -253,20 +317,19 @@
     const bd = state.balanceData;
     const r = agg.list;
     const totOk = r.reduce((a, x) => a + x.ok, 0);
-    const totOkH = horas(agg.totalMin);
+    const totOkH = hm(agg.totalMin);
     const totAuto = r.reduce((a, x) => a + x.auto, 0);
-    const totAutoH = horas(agg.totalAutoMin);
     const totFalso = r.reduce((a, x) => a + x.falso, 0);
     const maxMin = Math.max(...r.map(x => x.okMin), 1);
-    // El promedio también sale de minutos: promediar cifras ya redondeadas es la
-    // misma trampa en pequeño.
-    const avg = r.length ? horas(Math.round(agg.totalMin / r.length)) : 0;
+    // El promedio también sale de minutos (redondeado al minuto): promediar
+    // cifras ya pintadas es la misma trampa en pequeño.
+    const avgMin = r.length ? Math.round(agg.totalMin / r.length) : 0;
     const corte = corteDelRango(fromV, toV);
     sum.innerHTML = `
-      <div class="bal-scard accent"><div class="n">${totOkH}<s> h</s></div><div class="l">Horas reales trabajadas</div></div>
+      <div class="bal-scard accent"><div class="n">${hmHtml(agg.totalMin)}</div><div class="l">Horas reales trabajadas</div></div>
       <div class="bal-scard"><div class="n">${totOk}</div><div class="l">Turnos completos</div></div>
       <div class="bal-scard"><div class="n">${r.length}</div><div class="l">Personas</div></div>
-      <div class="bal-scard"><div class="n">${avg}<s> h</s></div><div class="l">Promedio por persona</div></div>`;
+      <div class="bal-scard"><div class="n">${hmHtml(avgMin)}</div><div class="l">Promedio por persona</div></div>`;
     const warn = (txt, title) => `<span class="bal-pill z" title="${escapeHtml(title)}" style="background:#fde68a;color:#7c2d12">${txt}</span>`;
     const zero = '<span class="bal-pill z">0</span>';
     const aviso = bd.provisional
@@ -285,16 +348,16 @@
           <tbody>${r.map(p => `<tr>
             <td><div class="person"><span class="bal-avt" style="background:${colorOfId(p.id)}">${escapeHtml(initialsOf(p.name))}</span><div><b>${escapeHtml(p.name)}</b><span>${escapeHtml(p.email || p.role)}</span></div></div></td>
             <td class="num"><b>${p.ok}</b></td>
-            <td class="num"><div class="bal-hrs"><span class="bar"><i style="width:${Math.round(p.okMin / maxMin * 100)}%"></i></span><b>${p.okH} h</b></div></td>
-            <td class="num">${p.auto ? warn(`${p.auto} · ${p.autoH}h`, 'Los cerró el sistema con la hora del cron o del clic, no el conductor — esas horas no son las trabajadas y NO se pagan') : zero}</td>
+            <td class="num"><div class="bal-hrs"><span class="bar"><i style="width:${Math.round(p.okMin / maxMin * 100)}%"></i></span><b>${p.okH}</b></div></td>
+            <td class="num">${p.auto ? warn(`${p.auto} · ${p.autoH}`, 'Los cerró el sistema con la hora del cron o del clic, no el conductor — esas horas no son las trabajadas y NO se pagan') : zero}</td>
             <td class="num">${p.falso ? warn(p.falso, 'Reserva/inspección sin avanzar — no hubo trabajo (0 h)') : zero}</td>
             <td class="num">${p.curso ? `<span class="bal-pill z" style="background:#dbeafe;color:#1e3a8a">${p.curso}</span>` : zero}</td>
           </tr>`).join('')}</tbody>
           <tfoot><tr>
             <td>Total · ${r.length} personas</td>
             <td class="num">${totOk}</td>
-            <td class="num">${totOkH} h</td>
-            <td class="num">${totAuto}${totAutoH ? ' · ' + totAutoH + 'h' : ''}</td>
+            <td class="num">${totOkH}</td>
+            <td class="num">${totAuto}${agg.totalAutoMin ? ' · ' + hm(agg.totalAutoMin) : ''}</td>
             <td class="num">${totFalso}</td>
             <td class="num">${totCurso}</td>
           </tr></tfoot>
@@ -402,11 +465,15 @@
       t2.alignment = { vertical: 'middle', wrapText: true }; hoja.getRow(2).height = 18;
     };
 
+    // Las celdas de horas son NÚMEROS (fracción de día, ver diaExcel) con formato
+    // [h]:mm: se leen «96:30» y se pueden sumar. Las de texto dicen «12:30 h».
+    const horaCelda = (c) => { c.numFmt = BAL_HM_FMT; };
+
     // ---- Hoja 1: Publicado vs Trabajado ----
     const ws = wb.addWorksheet('Publicado vs Trabajado', { views: [{ showGridLines: false, state: 'frozen', ySplit: 3 }] });
     ws.columns = [{ width: 14 }, { width: 8 }, { width: 34 }, { width: 42 }, { width: 12 }, { width: 26 }, { width: 26 }];
     titulo(ws, 'G', 'Publicado vs Trabajado');
-    ['Día', 'Jornada', 'Publicados (● = líder)', 'Trabajaron real (horas)', 'Horas verif.', 'No se presentó', 'Trabajó sin publicar']
+    ['Día', 'Jornada', 'Publicados (● = líder)', 'Trabajaron real (h:mm)', 'Horas verif. (h:mm)', 'No se presentó', 'Trabajó sin publicar']
       .forEach((h, i) => headCell(ws.getRow(3).getCell(i + 1), h));
     ws.getRow(3).height = 28;
 
@@ -421,17 +488,17 @@
         const pubIds = slot === 'AM' ? P.AM : P.PM;
         const pubNames = pubIds.map(id => (coordSet.has(id) ? '● ' : '') + nameOf(id));
         const realArr = Rr[slot];
-        const realNames = realArr.map(x => `${x.name} — ${horas(x.min)}h${x.tipo === 'auto' ? ' (auto, NO pagable)' : ''}${x.tipo === 'curso' ? ' (en curso)' : ''}`);
-        // Minutos primero, horas después: la celda redondea una vez y el TOTAL de
-        // abajo no suma celdas redondeadas, suma los minutos del día.
+        const realNames = realArr.map(x => `${x.name} — ${hmCorto(x.min)} h${x.tipo === 'auto' ? ' (auto, NO pagable)' : ''}${x.tipo === 'curso' ? ' (en curso)' : ''}`);
+        // Minutos primero, la celda después: el TOTAL de abajo no suma celdas,
+        // suma los minutos del día.
         const jmin = realArr.reduce((a, x) => a + (x.tipo === 'ok' ? x.min : 0), 0);
         minHoja1 += jmin;
         const realPids = new Set(realArr.map(x => x.pid));
         const noShow = pubIds.filter(id => !realPids.has(id)).map(id => nameOf(id));
         const extra = realArr.filter(x => !pubIds.includes(x.pid)).map(x => x.name);
         const rr = ws.getRow(row);
-        const vals = [balDayLabel(key), slot, pubNames.join('\n') || '—', realNames.join('\n') || '—', horas(jmin), noShow.join('\n') || '—', extra.join('\n') || '—'];
-        vals.forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'top', wrapText: true, horizontal: (i === 1 || i === 4) ? 'center' : 'left' }; c.border = AB; });
+        const vals = [balDayLabel(key), slot, pubNames.join('\n') || '—', realNames.join('\n') || '—', diaExcel(jmin), noShow.join('\n') || '—', extra.join('\n') || '—'];
+        vals.forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'top', wrapText: true, horizontal: (i === 1 || i === 4) ? 'center' : 'left' }; c.border = AB; if (i === 4) horaCelda(c); });
         rr.getCell(2).fill = slot === 'AM' ? H_AM : H_PM;
         if (slot === 'AM') rr.getCell(1).font = { name: 'Arial', size: 10, bold: true };
         rr.height = Math.max(18, Math.max(pubNames.length, realNames.length, noShow.length, extra.length, 1) * 14);
@@ -440,10 +507,10 @@
     }
     // TOTAL de la Hoja 1: sale de los minutos que se acumularon celda por celda.
     // Tiene que dar EXACTAMENTE lo mismo que la Hoja 3 y que la pantalla; si un
-    // día no cuadra, es que alguien volvió a sumar celdas ya redondeadas.
+    // día no cuadra, es que alguien volvió a sumar por fuera del motor.
     const t1r = ws.getRow(row++);
-    [`TOTAL · ${bd.fromV} a ${bd.toV}`, '', '', (minHoja1 === bd.totalMin ? 'Horas verificadas del rango · cuadra con la Hoja 2 (pagables), la Hoja 3 y la pantalla' : `Horas verificadas del rango · ¡DESCUADRE! la Hoja 3 dice ${horas(bd.totalMin)} h — no pagues hasta revisarlo`), horas(minHoja1), '', '']
-      .forEach((v, i) => { const c = t1r.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10, bold: true }; c.fill = TOT; c.alignment = { vertical: 'middle', horizontal: i === 4 ? 'center' : 'left' }; c.border = AB; });
+    [`TOTAL · ${bd.fromV} a ${bd.toV}`, '', '', (minHoja1 === bd.totalMin ? 'Horas verificadas del rango · cuadra con la Hoja 2 (pagables), la Hoja 3 y la pantalla' : `Horas verificadas del rango · ¡DESCUADRE! la Hoja 3 dice ${hm(bd.totalMin)} — no pagues hasta revisarlo`), diaExcel(minHoja1), '', '']
+      .forEach((v, i) => { const c = t1r.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10, bold: true }; c.fill = TOT; c.alignment = { vertical: 'middle', horizontal: i === 4 ? 'center' : 'left' }; c.border = AB; if (i === 4) horaCelda(c); });
     t1r.height = 20;
 
     // ---- Hoja 1, sección "Excluidos del cruce" ----
@@ -456,7 +523,7 @@
     exTi.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
     exTi.fill = HEAD; exTi.alignment = { vertical: 'middle' };
     ws.getRow(row).height = 22; row++;
-    ['Día', 'Jornada', 'Conductor', 'Inicio', 'Cierre', 'Horas (NO pagables)', 'Motivo']
+    ['Día', 'Jornada', 'Conductor', 'Inicio', 'Cierre', 'Horas NO pagables (h:mm)', 'Motivo']
       .forEach((h, i) => headCell(ws.getRow(row).getCell(i + 1), h));
     ws.getRow(row).height = 22; row++;
     if (!excluidos.length) {
@@ -469,8 +536,8 @@
       excluidos.sort((a, b) => new Date(a.start) - new Date(b.start));
       excluidos.forEach(x => {
         const rr = ws.getRow(row++);
-        const vals = [balDayLabel(x.key), x.slot, x.name, balFmtDT(x.start), balFmtDT(x.end), x.tipo === 'falso' ? 0 : horas(x.min), x.motivo];
-        vals.forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'middle', horizontal: (i === 1 || i === 5) ? 'center' : 'left' }; c.border = AB; });
+        const vals = [balDayLabel(x.key), x.slot, x.name, balFmtDT(x.start), balFmtDT(x.end), x.tipo === 'falso' ? 0 : diaExcel(x.min), x.motivo];
+        vals.forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'middle', horizontal: (i === 1 || i === 5) ? 'center' : 'left' }; c.border = AB; if (i === 5) horaCelda(c); });
         rr.getCell(7).font = { name: 'Arial', size: 10, color: { argb: 'FFB91C1C' } };
       });
     }
@@ -488,7 +555,7 @@
     const ws2 = wb.addWorksheet('Detalle turnos reales', { views: [{ showGridLines: false, state: 'frozen', ySplit: 3 }] });
     ws2.columns = [{ width: 14 }, { width: 8 }, { width: 26 }, { width: 16 }, { width: 16 }, { width: 15 }, { width: 17 }, { width: 44 }];
     titulo(ws2, 'H', 'Detalle turnos reales');
-    ['Día', 'Jornada', 'Conductor', 'Inicio', 'Cierre', 'Horas pagables', 'Horas NO pagables', 'Motivo']
+    ['Día', 'Jornada', 'Conductor', 'Inicio', 'Cierre', 'Horas pagables (h:mm)', 'Horas NO pagables (h:mm)', 'Motivo']
       .forEach((h, i) => headCell(ws2.getRow(3).getCell(i + 1), h));
     ws2.getRow(3).height = 26;
     detail.sort((a, b) => new Date(a.start) - new Date(b.start));
@@ -501,28 +568,28 @@
       const noPag = d.tipo === 'auto' ? d.min : 0;
       minPag += pag; minNoPag += noPag;
       const rr = ws2.getRow(r2++);
-      const vals = [balDayLabel(d.key), d.slot, d.name, balFmtDT(d.start), balFmtDT(d.end), horas(pag), horas(noPag), MOTIVO[d.tipo] || ''];
-      vals.forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'middle', horizontal: (i === 1 || i === 5 || i === 6) ? 'center' : 'left' }; c.border = AB; });
+      const vals = [balDayLabel(d.key), d.slot, d.name, balFmtDT(d.start), balFmtDT(d.end), diaExcel(pag), diaExcel(noPag), MOTIVO[d.tipo] || ''];
+      vals.forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'middle', horizontal: (i === 1 || i === 5 || i === 6) ? 'center' : 'left' }; c.border = AB; if (i === 5 || i === 6) horaCelda(c); });
       if (d.tipo === 'falso' || d.tipo === 'curso') rr.getCell(8).font = { name: 'Arial', size: 10, color: { argb: 'FFB91C1C' } };
       if (d.tipo === 'auto') rr.getCell(8).font = { name: 'Arial', size: 10, color: { argb: 'FF92400E' } };
     });
     const t2r = ws2.getRow(r2);
-    [`TOTAL · ${detail.length} turnos`, '', '', '', '', horas(minPag), horas(minNoPag), (minPag === bd.totalMin ? 'Solo "Horas pagables" se paga; las NO pagables son turnos auto-cerrados. Cuadra con la Hoja 1, la Hoja 3 y la pantalla.' : `Solo "Horas pagables" se paga. ¡DESCUADRE! la Hoja 3 dice ${horas(bd.totalMin)} h — no pagues hasta revisarlo.`)]
-      .forEach((v, i) => { const c = t2r.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10, bold: true }; c.fill = TOT; c.alignment = { vertical: 'middle', horizontal: (i === 5 || i === 6) ? 'center' : 'left' }; c.border = AB; });
+    [`TOTAL · ${detail.length} turnos`, '', '', '', '', diaExcel(minPag), diaExcel(minNoPag), (minPag === bd.totalMin ? 'Solo "Horas pagables" se paga; las NO pagables son turnos auto-cerrados. Cuadra con la Hoja 1, la Hoja 3 y la pantalla.' : `Solo "Horas pagables" se paga. ¡DESCUADRE! la Hoja 3 dice ${hm(bd.totalMin)} — no pagues hasta revisarlo.`)]
+      .forEach((v, i) => { const c = t2r.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10, bold: true }; c.fill = TOT; c.alignment = { vertical: 'middle', horizontal: (i === 5 || i === 6) ? 'center' : 'left' }; c.border = AB; if (i === 5 || i === 6) horaCelda(c); });
     t2r.height = 20;
 
     // ---- Hoja 3: Resumen por persona (= tabla en pantalla) ----
     const ws3 = wb.addWorksheet('Resumen por persona', { views: [{ showGridLines: false, state: 'frozen', ySplit: 3 }] });
     ws3.columns = [{ width: 26 }, { width: 12 }, { width: 12 }, { width: 13 }, { width: 17 }, { width: 12 }, { width: 9 }, { width: 16 }];
     titulo(ws3, 'H', 'Resumen por persona');
-    ['Conductor', 'Turnos completos', 'Horas reales', 'Turnos auto-cerrados', 'Horas auto (NO pagables)', 'Arranques falsos', 'En curso', 'Valor a pagar']
+    ['Conductor', 'Turnos completos', 'Horas reales (h:mm)', 'Turnos auto-cerrados', 'Horas auto, NO pagables (h:mm)', 'Arranques falsos', 'En curso', 'Valor a pagar']
       .forEach((h, i) => headCell(ws3.getRow(3).getCell(i + 1), h));
     ws3.getRow(3).height = 30;
     let r3 = 4;
     bd.list.forEach(p => {
       const rr = ws3.getRow(r3++);
-      [p.name, p.ok, horas(p.okMin), p.auto, horas(p.autoMin), p.falso, p.curso]
-        .forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' }; c.border = AB; });
+      [p.name, p.ok, diaExcel(p.okMin), p.auto, diaExcel(p.autoMin), p.falso, p.curso]
+        .forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' }; c.border = AB; if (i === 2 || i === 4) horaCelda(c); });
       // "Valor a pagar" va VACÍA a propósito: la escribe el jefe a mano. La app
       // no conoce tarifas (y app_settings lo lee cualquier usuario).
       const vc = rr.getCell(8);
@@ -532,8 +599,8 @@
     // Los totales salen de los MINUTOS acumulados, nunca de las celdas de arriba.
     const T = k => bd.list.reduce((a, x) => a + x[k], 0);
     const trr = ws3.getRow(r3);
-    ['Total', T('ok'), horas(bd.totalMin), T('auto'), horas(bd.totalAutoMin), T('falso'), T('curso')]
-      .forEach((v, i) => { const c = trr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10, bold: true }; c.fill = TOT; c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' }; c.border = AB; });
+    ['Total', T('ok'), diaExcel(bd.totalMin), T('auto'), diaExcel(bd.totalAutoMin), T('falso'), T('curso')]
+      .forEach((v, i) => { const c = trr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10, bold: true }; c.fill = TOT; c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' }; c.border = AB; if (i === 2 || i === 4) horaCelda(c); });
     // El total de "Valor a pagar" SÍ suma celdas: es una fórmula de Excel, para
     // que se recalcule sola mientras el jefe escribe. En el archivo va en inglés
     // (SUM) y Excel la muestra como SUMA.
@@ -555,14 +622,27 @@
 
   // El motor de cálculo, expuesto para que admin-revision.js (y lo que venga
   // después) no vuelva a escribir su propia versión de "cuántas horas son".
+  // 11-oct-2026: + hm/hmHtml/hmCorto/diaExcel (horas y minutos en vez de
+  // decimales) y limitesDe/enRango/diaDeArranque/delCorte (qué turnos son de un
+  // corte), que usa el perfil del conductor para enseñarle EXACTAMENTE lo que se
+  // le va a pagar.
   window.BalanceCore = {
     clasificar,
     minutosDe,
     minutosPagables,
     horas,
+    hm,
+    hmHtml,
+    hmCorto,
+    diaExcel,
+    HM_FMT: BAL_HM_FMT,
     corteDe,
     corteEnCurso,
     corteAnterior,
+    limitesDe,
+    enRango,
+    diaDeArranque,
+    delCorte,
   };
 
 

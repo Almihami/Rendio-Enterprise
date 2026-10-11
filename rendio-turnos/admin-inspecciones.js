@@ -724,6 +724,8 @@
     try { insp = await Api.getInspectionDetail(id); }
     catch (e) { console.error(e); view.innerHTML = '<button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver</button><div class="card">No se pudo cargar la inspección.</div>'; return; }
     inspState.current = insp;
+    // Horas del turno y quién revisó: arrancan ya, en paralelo con el cierre.
+    const horarioP = inspHorarioDatos(insp);
     // Cierre del mismo turno (inspección final + comprobantes de tanqueo) para
     // anexarlo a esta tarjeta y dar el ciclo completo del turno al admin.
     let closeData = null;
@@ -741,14 +743,126 @@
         if (final || (receipts && receipts.length) || fuel) closeData = { final, receipts: receipts || [], fuel };
       }
     } catch (e) { console.error(e); }
-    const paths = (insp.inspection_photos || []).map(p => p.storage_path);
+    // Las fotos que ya se borraron por antigüedad no se firman: no existen.
+    const paths = (insp.inspection_photos || []).filter(p => !p.purged_at).map(p => p.storage_path);
     if (closeData) (closeData.receipts || []).forEach(r => paths.push(r.storage_path));
     let urls = {};
     try { urls = await Api.signedInspectionPhotoUrls(paths); } catch (e) { console.error(e); }
-    renderInspectionDetail(insp, urls, closeData);
+    const horario = await horarioP;
+    // Otra inspección se abrió mientras esta cargaba: no se pinta encima.
+    if (inspState.current !== insp) return;
+    renderInspectionDetail(insp, urls, closeData, horario);
   }
 
-  function renderInspectionDetail(insp, urls, closeData) {
+  // ---------- Horario del turno (pedido del jefe de operación, 11-oct-2026) ----------
+  // «La revisión no es la hora de inicio del turno»: el detalle mostraba
+  // "Revisada" (la hora en que el JEFE la miró, después) y nada sobre el turno,
+  // así que se leía como si fuera el arranque. Este bloque pone las cinco horas
+  // que sí son del turno, cada una con su nombre. Nunca lanza: si el turno no se
+  // puede leer, el bloque lo dice y el resto del detalle sale igual.
+  async function inspHorarioDatos(insp) {
+    const out = { turno: null, revisor: '', leido: false };
+    const turnoP = (insp.shift_id && typeof Api.getShiftTimes === 'function')
+      ? Api.getShiftTimes(insp.shift_id).then(t => { out.leido = true; return t; }).catch(e => { console.error(e); return null; })
+      : Promise.resolve(null);
+    const revP = insp.reviewed_by ? inspNombreRevisor(insp.reviewed_by) : Promise.resolve('');
+    [out.turno, out.revisor] = await Promise.all([turnoP, revP]);
+    return out;
+  }
+  async function inspNombreRevisor(id) {
+    const a = ((typeof state !== 'undefined' && state && state.admins) || []).find(x => x.id === id);
+    if (a && a.name) return a.name;
+    if (typeof Api.profileNames !== 'function') return '';
+    try { return (await Api.profileNames([id]))[id] || ''; } catch (e) { console.error(e); return ''; }
+  }
+  function inspFechaHora(iso) {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }); }
+    catch (e) { return ''; }
+  }
+  function inspHorarioHtml(insp, closeData, horario) {
+    const BC = window.BalanceCore || null;
+    const h = horario || {};
+    const t = h.turno;
+    const kv = (k, v, extra) => `<div class="kv"><span class="k">${k}</span><span class="v"${extra || ''}>${v}</span></div>`;
+    const fin = closeData && closeData.final && closeData.final.performed_at;
+    let cuerpo, nota = '';
+    if (!insp.shift_id) {
+      nota = 'Esta inspección no quedó ligada a un turno: no hay hora de inicio ni de fin que mostrar.';
+    } else if (!t) {
+      nota = h.leido
+        ? 'No se encontró el turno de esta inspección.'
+        : 'No se pudo leer el turno: las horas de inicio y fin no están disponibles ahora. Vuelve a abrir la inspección para reintentar.';
+    }
+    const clase = t && BC ? BC.clasificar(t) : null;
+    const filas = [];
+    filas.push(kv('Inicio de turno', t && t.start_at ? escapeHtml(inspFechaHora(t.start_at)) : '—'));
+    filas.push(kv('Inspección enviada', insp.performed_at ? escapeHtml(inspFechaHora(insp.performed_at)) : '—'));
+    filas.push(kv('Revisada por el jefe', insp.reviewed_at
+      ? escapeHtml(inspFechaHora(insp.reviewed_at) + (h.revisor ? ' · ' + h.revisor : ''))
+      : '<span style="color:var(--ink3);font-weight:600">Todavía no</span>'));
+    let finTxt = '—';
+    if (t && t.end_at) finTxt = escapeHtml(inspFechaHora(t.end_at)) + (clase === 'auto' ? ' <span style="color:var(--amber)">(lo cerró el sistema)</span>' : '');
+    else if (t && !t.end_at) finTxt = '<span style="color:var(--ink3);font-weight:600">Turno abierto</span>';
+    else if (fin) finTxt = escapeHtml(inspFechaHora(fin)) + ' <span style="color:var(--ink3);font-weight:600">(inspección de cierre)</span>';
+    filas.push(kv('Fin de turno', finTxt));
+    if (t && BC) {
+      const min = BC.minutosDe(t);
+      let dur;
+      if (clase === 'ok') dur = escapeHtml(BC.hm(min));
+      else if (clase === 'auto') dur = `${escapeHtml(BC.hm(min))} <span style="color:var(--amber)">· no se paga</span>`;
+      else if (clase === 'curso') {
+        const lleva = t.start_at ? Math.max(0, Math.round((Date.now() - new Date(t.start_at).getTime()) / 60000)) : 0;
+        dur = `<span style="color:var(--ink3);font-weight:600">En curso · lleva ${escapeHtml(BC.hm(lleva))}</span>`;
+      } else dur = '<span style="color:var(--ink3);font-weight:600">No arrancó (sin km de salida) · 0 h</span>';
+      filas.push(kv('Duración', dur, clase === 'ok' ? ' style="color:var(--green)"' : ''));
+    }
+    if (clase === 'auto') {
+      const n = String((t && t.notes) || '');
+      const quien = /CIERRE FORZADO/i.test(n) ? 'un jefe lo cerró a la fuerza desde Turnos activos'
+        : /CIERRE AUTOM/i.test(n) ? 'el cierre automático lo cerró por llevar demasiadas horas abierto'
+        : 'lo cerró el sistema';
+      nota = `<b>Este turno no lo cerró el conductor:</b> ${quien}, sin kilometraje de cierre, y le puso la hora de ese momento. Por eso esa duración no es la trabajada y no entra al pago.`;
+    }
+    cuerpo = filas.join('');
+    return `<div class="card" data-insp-horario>
+      <h2><svg class="icon"><use href="#i-clock"/></svg>Horario del turno</h2>
+      <p class="csub">Cuándo arrancó y terminó el turno de esta inspección. La revisión del jefe es otra hora: la de cuando la miró.</p>
+      <div style="margin-top:6px">${cuerpo}</div>
+      ${nota ? `<div style="margin-top:10px"><div class="note">${nota}</div></div>` : ''}
+    </div>`;
+  }
+
+  // ---------- Fotos borradas por antigüedad ----------
+  // Las fotos de rutina de más de 60 días se borran del almacenamiento y la fila
+  // queda con inspection_photos.purged_at. Una foto así (o una sin URL firmada en
+  // una inspección de más de 60 días, para la base que aún no tiene la columna)
+  // sale como un recuadro que lo dice, no como una imagen rota. Sin URL en una
+  // inspección reciente NO se dice «por antigüedad»: sería inventar la causa.
+  const INSP_FOTO_DIAS = 60;
+  function inspInspeccionVieja(insp) {
+    const t = insp && insp.performed_at ? new Date(insp.performed_at).getTime() : NaN;
+    return Number.isFinite(t) && (Date.now() - t) > INSP_FOTO_DIAS * 86400000;
+  }
+  function inspFotoNoEstaHtml(label, porAntiguedad) {
+    return `<div class="photo gone" data-insp-gone="${porAntiguedad ? 'antiguedad' : 'falla'}"><svg class="icon"><use href="#i-cam"/></svg><span class="gone-t">${porAntiguedad ? 'Foto eliminada por antigüedad' : 'Foto no disponible'}</span><span class="plabel">${label}</span></div>`;
+  }
+  // Si la URL firmada llegó pero el archivo ya no está, la <img> falla: se
+  // cambia por el mismo recuadro (y deja de abrir el visor).
+  function inspCablearFotosCaidas(root, vieja) {
+    (root ? root.querySelectorAll('.photo img') : []).forEach(img => {
+      img.addEventListener('error', () => {
+        const box = img.closest('.photo');
+        if (!box || box.classList.contains('gone')) return;
+        const lab = box.querySelector('.plabel');
+        const tmp = document.createElement('div');
+        tmp.innerHTML = inspFotoNoEstaHtml(lab ? lab.innerHTML : '', vieja);
+        box.replaceWith(tmp.firstElementChild);
+      }, { once: true });
+    });
+  }
+
+  function renderInspectionDetail(insp, urls, closeData, horario) {
     const v = insp.vehicles || {};
     const sev = INSP_SEV[inspSeverityOf(insp)] || INSP_SEV.media;
     const st = INSP_ST[insp.review_status] || INSP_ST.pending;
@@ -757,12 +871,15 @@
     // Orden: los 11 fijos primero (en el orden del wizard), luego golpe y adicionales.
     const photoRank = (t) => { const i = PHOTO_ORDER.indexOf(t); return i === -1 ? 99 : i; };
     const photos = (insp.inspection_photos || []).slice().sort((a, b) => photoRank(a.photo_type) - photoRank(b.photo_type));
+    const vieja = inspInspeccionVieja(insp);
     const photosHtml = photos.length ? photos.map(p => {
       const url = urls[p.storage_path];
       const label = escapeHtml(PHOTO_LABELS[p.photo_type] || p.photo_type);
-      const inner = url ? `<img src="${url}" alt="${label}">` : `<svg class="icon"><use href="#i-cam"/></svg>`;
-      return `<div class="photo"${url ? ` data-insp-photo="${url}"` : ''}>${inner}<span class="plabel">${label}</span></div>`;
+      if (p.purged_at) return inspFotoNoEstaHtml(label, true);
+      if (!url) return inspFotoNoEstaHtml(label, vieja);
+      return `<div class="photo" data-insp-photo="${url}"><img src="${url}" alt="${label}"><span class="plabel">${label}</span></div>`;
     }).join('') : '<p style="color:var(--ink2);font-size:13px">Sin fotos.</p>';
+    const borradas = photos.filter(p => p.purged_at || (!urls[p.storage_path] && vieja)).length;
     const checklistHtml = items.length ? items.map(it => {
       const bad = it.result === 'issue';
       return `<div class="ckrow ${bad ? 'issue' : 'ok'}"><svg class="icon ci"><use href="#${bad ? 'i-warn' : 'i-check'}"/></svg><div><div class="lbl">${escapeHtml(it.label || '')}</div>${it.hint ? `<div class="hint">${escapeHtml(it.hint)}</div>` : ''}</div><span class="badge">${bad ? 'Con falla' : 'OK'}</span></div>`;
@@ -789,7 +906,7 @@
          </div>`
       : `<div class="card"><h2>Revisión</h2>
            <div class="kv"><span class="k">Estado</span><span class="v" style="color:${insp.review_status === 'approved' ? 'var(--green)' : 'var(--red)'}">${st[1]}</span></div>
-           ${insp.reviewed_at ? `<div class="kv"><span class="k">Revisada</span><span class="v">${escapeHtml(fmtDT(insp.reviewed_at))}</span></div>` : ''}
+           ${insp.reviewed_at ? `<div class="kv"><span class="k">Revisada por el jefe</span><span class="v">${escapeHtml(fmtDT(insp.reviewed_at) + (horario && horario.revisor ? ' · ' + horario.revisor : ''))}</span></div>` : ''}
            ${insp.review_notes ? `<div style="margin-top:10px"><div class="note"><b>Nota del admin:</b> ${escapeHtml(insp.review_notes)}</div></div>` : ''}</div>`;
     $('#insp-v-detalle').innerHTML = `
       <button class="back" data-insp-back><svg class="icon"><use href="#i-back"/></svg>Volver a la cola</button>
@@ -804,10 +921,11 @@
           <span class="st ${st[0]}"><svg><use href="#${st[2]}"/></svg>${st[1]}</span>
         </div>
       </div>
+      ${inspHorarioHtml(insp, closeData, horario)}
       <div class="cols">
         <div class="card" style="margin-bottom:0">
           <h2><svg class="icon"><use href="#i-cam"/></svg>Fotos de la inspección</h2>
-          <p class="csub">Capturadas por el conductor. Toca una para ampliar.</p>
+          <p class="csub">Capturadas por el conductor. Toca una para ampliar.${borradas ? ` ${borradas === photos.length ? 'Las fotos de rutina' : 'Algunas fotos de rutina'} se borran a los ${INSP_FOTO_DIAS} días.` : ''}</p>
           <div class="pgrid">${photosHtml}</div>
         </div>
         <div class="card" style="margin-bottom:0">
@@ -829,6 +947,7 @@
       </div>
       ${closeCardHtml(insp, urls, closeData)}
       ${decision}`;
+    inspCablearFotosCaidas($('#insp-v-detalle'), vieja);
   }
 
   // Tarjeta de CIERRE de turno anexada al detalle (km final, novedad, comprobantes

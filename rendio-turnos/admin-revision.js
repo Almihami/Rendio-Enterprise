@@ -17,7 +17,7 @@
 //
 // Y el tono importa tanto como el dato: los jefes leen esto. No hay "errores" ni
 // culpables; hay UN HECHO Y UNA PREGUNTA. "Turno del jueves sin inspección de
-// inicio · 12,0 h · ¿se aprueban las horas?" — nunca "Camilo no hizo la
+// inicio · 12 h · ¿se aprueban las horas?" — nunca "Camilo no hizo la
 // inspección". El que revisa decide; la pantalla solo pone el hecho enfrente.
 //
 // PRIMERA VERSIÓN: SOLO LECTURA. No escribe una sola fila en la base. Las
@@ -77,14 +77,14 @@
   // tiene plan B: un plan B sería una segunda forma de contar las mismas horas.
   function rvClase(t) { const bc = rvBC(); return bc ? bc.clasificar(t) : null; }
   function rvMin(t) { const bc = rvBC(); return bc ? bc.minutosDe(t) : null; }
-  function rvHoras(min) {
-    const bc = rvBC();
-    if (!bc || min == null) return null;
-    return bc.horas(min);
-  }
-  // Horas ya escritas para meter en una frase ("12,0 h"). Si no hay cálculo
+  // Horas ya escritas para meter en una frase ("12 h 30 min", BalanceCore.hm:
+  // el jefe pidió horas y minutos, no decimales, 11-oct-2026). Si no hay cálculo
   // disponible el punto se queda sin la cifra, no con una cifra inventada.
-  function rvHTxt(min) { const h = rvHoras(min); return h == null ? '' : `${h} h`; }
+  function rvHTxt(min) {
+    const bc = rvBC();
+    if (!bc || min == null || typeof bc.hm !== 'function') return '';
+    return bc.hm(min);
+  }
 
   // ====================================================================
   // Fechas — Bogotá es UTC-5 y no tiene horario de verano
@@ -113,8 +113,8 @@
   // Antigüedad de un turno abierto, EN MINUTOS ENTEROS. Ojo con confundirla con
   // horas pagables: un turno en curso paga 0 h hasta que cierre, y esta cuenta
   // jamás entra a un total — es la edad del turno, para decir "lleva 19 h abierto"
-  // y para medir cuánto le falta al cron. Se pinta con BalanceCore.horas(), que es
-  // la misma función que redondea todo lo demás.
+  // y para medir cuánto le falta al cron. Se pinta con BalanceCore.hm(), que es
+  // la misma función que escribe todo lo demás.
   function rvEdadMin(t, ahora) {
     if (!t.start_at) return 0;
     return Math.max(0, Math.round((ahora - new Date(t.start_at).getTime()) / 60000));
@@ -597,7 +597,7 @@
   }
 
   // LA CIFRA. Una sola, y no sale de acá: sale de BalanceCore.minutosPagables +
-  // BalanceCore.horas, las mismas dos funciones que usa el informe que se paga.
+  // BalanceCore.hmHtml, las mismas dos funciones que usa el informe que se paga.
   // Se pinta tal cual las devuelve, sin volver a formatearla, porque cualquier
   // retoque de acá es una quinta versión del mismo número.
   function rvCifraHtml() {
@@ -612,17 +612,20 @@
         </div>
       </div>`;
     }
-    const horas = bc.horas(bc.minutosPagables(revState.shifts || []));
+    const minPag = bc.minutosPagables(revState.shifts || []);
+    // «96 h 30 min» con las unidades pequeñas, como el resto de cifras grandes.
+    const horasHtml = (typeof bc.hmHtml === 'function' ? bc.hmHtml(minPag) : escapeHtml(rvHTxt(minPag)))
+      .replace(/<s>/g, '<s style="font-size:20px;color:var(--ink3);text-decoration:none;font-weight:700">');
     const abiertos = (revState.shifts || []).filter(t => bc.clasificar(t) === 'curso').length;
     const nota = abiertos
       ? `${abiertos} turno(s) siguen abiertos y hoy suman 0 h: esta cifra sube cuando cierren.`
       : 'Todos los turnos del corte están cerrados.';
     return `<div style="${RV_CARD};padding:20px 22px;margin-bottom:16px;background:linear-gradient(180deg,var(--panel),var(--orange-soft));border-color:color-mix(in srgb,var(--orange) 26%,var(--line))">
       <div style="font-size:11.5px;font-weight:700;color:var(--ink2)">Horas pagables acumuladas del corte</div>
-      <div style="font-size:44px;font-weight:800;letter-spacing:-.03em;line-height:1.05;color:var(--orange);font-variant-numeric:tabular-nums;margin-top:4px">${horas}<s style="font-size:20px;color:var(--ink3);text-decoration:none;font-weight:700"> h</s></div>
+      <div style="font-size:44px;font-weight:800;letter-spacing:-.03em;line-height:1.05;color:var(--orange);font-variant-numeric:tabular-nums;margin-top:4px">${horasHtml}</div>
       <div style="font-size:12px;color:var(--ink2);margin-top:6px">Calculado hoy ${escapeHtml(sello)} · ${escapeHtml(nota)}</div>
       ${typeof rdWhy === 'function' ? rdWhy('¿Por qué este número y no otro?',
-        'Sale de <b>BalanceCore</b>, la misma función que usa el informe de nómina: suma minutos enteros de los turnos que el conductor <b>abrió y cerró</b>, y redondea <b>una sola vez</b>, al pintar. Esta pantalla no vuelve a sumar nada por su cuenta. Los turnos que cerró el sistema (auto-cerrados) no entran, y los que siguen abiertos suman 0 h hasta que cierren — por eso la cifra puede subir de una hora a otra, y por eso arriba dice a qué hora se calculó.') : ''}
+        'Sale de <b>BalanceCore</b>, la misma función que usa el informe de nómina: suma los minutos de los turnos que el conductor <b>abrió y cerró</b> y los escribe en <b>horas y minutos</b>, sin redondear a la décima. Esta pantalla no vuelve a sumar nada por su cuenta. Los turnos que cerró el sistema (auto-cerrados) no entran, y los que siguen abiertos suman 0 h hasta que cierren — por eso la cifra puede subir de una hora a otra, y por eso arriba dice a qué hora se calculó.') : ''}
     </div>`;
   }
 
