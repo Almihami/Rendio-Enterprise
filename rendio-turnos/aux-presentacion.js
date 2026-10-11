@@ -313,9 +313,11 @@
           <div class="axo-why-row"><svg class="icon"><use href="#i-warn"/></svg>
             <div><b>Si algo cambia</b><span>Un retraso que te afecte, o un cambio de carro.</span></div></div>
         </div>
+        ${iosInstallHTML()}
         <div class="axo-acts">
-          <button class="ax-btn ax-btn-primary" data-ax="onb-allow"><svg class="icon"><use href="#i-check"/></svg>Sí, avísenme</button>
-          <button class="axo-skip" data-ax="onb-later">Ahora no</button>
+          ${needsInstall()
+            ? '<button class="ax-btn ax-btn-primary" data-ax="onb-later"><svg class="icon"><use href="#i-check"/></svg>Entendido</button>'
+            : '<button class="ax-btn ax-btn-primary" data-ax="onb-allow"><svg class="icon"><use href="#i-check"/></svg>Sí, avísenme</button><button class="axo-skip" data-ax="onb-later">Ahora no</button>'}
         </div>
       </div>`;
   }
@@ -438,6 +440,21 @@
     </div>`;
   }
 
+  // iPhone en Safari sin instalar (ui-push.js): primero hay que agregar Rendio a
+  // la pantalla de inicio; desde el ícono la bienvenida vuelve a salir (iOS le da
+  // a la app instalada su propio almacenamiento) y ahí sí se activan los avisos.
+  function needsInstall() {
+    try { return typeof window.rendioPushNeedsInstall === 'function' && window.rendioPushNeedsInstall(); } catch (_) { return false; }
+  }
+  function iosInstallHTML() {
+    if (!needsInstall()) return '';
+    return `<div class="rx-ios-install" role="note">
+      <b>En iPhone, primero instala Rendio</b>
+      <ol><li>Toca <b>Compartir</b> (el cuadro con la flecha) abajo en Safari.</li>
+      <li>Elige <b>«Agregar a inicio»</b>.</li>
+      <li>Abre Rendio desde el ícono y activa los avisos.</li></ol>
+    </div>`;
+  }
   function rxNotifHTML() {
     return `<div class="rx-ob" data-ob="notif">
       <div class="rx-scr rx-center">
@@ -445,7 +462,10 @@
         <h1 class="rx-c-h">Te avisamos en el momento justo</h1>
         <p class="rx-c-p">Cuando te asignen conductor, cuando salga hacia tu punto y si algo cambia en tu traslado. Nada de promociones.</p>
         <div class="rx-demo-push"><span class="rx-push-ic">${rxIc('Nav', 15)}</span><div><b>${rxEsc(RX_DEMO_PUSH.t)}</b><span>${rxEsc(RX_DEMO_PUSH.d)}</span></div></div>
-        <div class="rx-foot abs">${rxBtn('Activar notificaciones', { attrs: { 'data-ax': 'onb-allow' } })}${rxBtn('Ahora no', { kind: 'ghost', attrs: { 'data-ax': 'onb-later' } })}</div>
+        ${iosInstallHTML()}
+        <div class="rx-foot abs">${needsInstall()
+          ? rxBtn('Entendido', { attrs: { 'data-ax': 'onb-later' } })
+          : rxBtn('Activar notificaciones', { attrs: { 'data-ax': 'onb-allow' } }) + rxBtn('Ahora no', { kind: 'ghost', attrs: { 'data-ax': 'onb-later' } })}</div>
       </div>
     </div>`;
   }

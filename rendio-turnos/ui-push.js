@@ -86,6 +86,17 @@
   function pushSupported() {
     return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && !!VAPID_PUBLIC_KEY;
   }
+  // iPhone/iPad en Safari SIN instalar: iOS solo entrega avisos a la app que está
+  // en la pantalla de inicio. Ahí «Activar notificaciones» no puede funcionar, y
+  // hay que decirle a la persona qué hacer en vez de un «no disponible» a secas.
+  function pushNeedsInstall() {
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    return ios && !standalone && !('PushManager' in window);
+  }
+  window.rendioPushNeedsInstall = pushNeedsInstall;
+  const IOS_PUSH_MSG = 'En iPhone los avisos solo llegan con Rendio en tu pantalla de inicio: toca Compartir → «Agregar a inicio» y ábrela desde el ícono.';
 
   function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -98,7 +109,7 @@
 
   // Suscribe el dispositivo y guarda la suscripción en la BD.
   async function enablePush() {
-    if (!pushSupported()) { toast('Las notificaciones no están disponibles en este dispositivo.'); return; }
+    if (!pushSupported()) { toast(pushNeedsInstall() ? IOS_PUSH_MSG : 'Las notificaciones no están disponibles en este dispositivo.'); return; }
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { toast('No autorizaste las notificaciones.'); return; }

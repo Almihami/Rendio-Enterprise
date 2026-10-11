@@ -98,3 +98,9 @@
 
 /* «Listo»: el aviso queda sobre el confeti, como el título. */
 #auxiliar-ui.rx-phone .rx-ready .rx-note{ position:relative; z-index:1; text-align:left; }
+
+/* 11-oct-2026 · iPhone en Safari sin instalar: instrucción para agregar Rendio a inicio */
+.rx-ios-install,.axo .rx-ios-install{margin:14px auto 0;max-width:340px;text-align:left;border:1px solid var(--r-border,rgba(0,0,0,.12));border-radius:14px;padding:12px 14px;background:var(--r-card,#fff);font-size:13.5px;line-height:1.45;color:var(--r-text,#1E1C19)}
+.rx-ios-install b{font-weight:700}
+.rx-ios-install ol{margin:6px 0 0 18px;padding:0}
+.rx-ios-install li{margin:3px 0}
