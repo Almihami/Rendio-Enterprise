@@ -98,6 +98,7 @@
   <link rel="stylesheet" href="admin-cobro.css" />
   <link rel="stylesheet" href="admin-puntos.css" />
   <link rel="stylesheet" href="admin-inspecciones.css" />
+  <link rel="stylesheet" href="admin-usuarios.css" />
 </head>
 <body class="bg-[#F8FAFC] text-slate-900 min-h-screen font-sans antialiased">
 
@@ -1135,6 +1136,34 @@
         </div>
       </section>
 
+      <!-- ADMIN: Usuarios (11-oct-2026). Todas las cuentas —conductores, jefes y
+           tripulantes— con buscador y las acciones de cada una. Las pinta
+           admin-usuarios.js con los modales de usuarios.js; las mismas acciones
+           siguen en Personal y Tripulantes. -->
+      <section data-panel="usuarios" class="hidden">
+        <div id="usuarios-ui" data-theme="light">
+          <div class="us-phead">
+            <div>
+              <h1>Usuarios <span class="us-ct" id="us-count">0</span></h1>
+              <p>Todas las cuentas: conductores, jefes y tripulantes. Acá se <b>restablece la contraseña</b>,
+                 se corrigen los datos y el correo, se suspende, se elimina o se restaura, y se hace jefe a un conductor.</p>
+            </div>
+            <div class="us-hacts">
+              <button class="us-btn primary" data-us="crear"><svg class="icon"><use href="#i-userplus"/></svg>Crear usuario</button>
+              <button class="us-btn ghost" data-us="reload"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+            </div>
+          </div>
+          <div class="us-tools">
+            <div class="us-search">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input id="us-search" type="search" placeholder="Busca por nombre, correo o teléfono" autocomplete="off" aria-label="Buscar usuario" />
+            </div>
+            <div class="us-filters" id="us-filters"></div>
+          </div>
+          <div id="us-body"></div>
+        </div>
+      </section>
+
       <section data-panel="privados" class="hidden">
         <div id="privados-ui" data-theme="light">
           <div class="sh-phead">
@@ -1484,6 +1513,7 @@
   <script src="admin-rutas.js"></script>
   <script src="admin-reservas.js"></script>
   <script src="admin-tripulantes.js"></script>
+  <script src="admin-usuarios.js"></script>
   <script src="admin-privados.js"></script>
   <script src="admin-operacion.js"></script>
   <script src="admin-eventualidades.js"></script>

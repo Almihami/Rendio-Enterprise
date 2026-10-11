@@ -37,6 +37,10 @@
         ] },
         { id: 'team', name: 'Equipo', icon: 'g-team', desc: 'Personas y motivación', items: [
           { id: 'personal', name: 'Personal', icon: 'm-personal', desc: 'Conductores y admins: estado, strikes, coordinación.', tab: 'workers' },
+          // Usuarios (11-oct-2026) vive en los DOS espacios: las cuentas son de los
+          // dos (conductores y jefes acá, tripulantes en Rutas). findModuleByTab
+          // prefiere el espacio en el que está el jefe, así que no lo cambia de lado.
+          { id: 'usuarios', name: 'Usuarios', icon: 'i-shield', desc: 'Todas las cuentas: restablecer contraseñas, corregir datos y correo, suspender, eliminar o restaurar, y hacer jefe.', tab: 'usuarios', need: 'renderUsuarios' },
           { id: 'recomp', name: 'Recompensas', icon: 'm-recomp', desc: 'Premios por kilometraje y solicitudes de redención.', tab: 'rewards' },
         ] },
         { id: 'data', name: 'Análisis', icon: 'g-data', desc: 'Reportes', items: [
@@ -71,6 +75,7 @@
         ] },
         { id: 'team', name: 'Equipo', icon: 'g-team', desc: 'Personas', items: [
           { id: 'personas', name: 'Tripulantes', icon: 'm-personas', desc: 'Los TCP que se registraron solos: aerolínea, punto de recogida, sus dos unidades y la antigüedad con Rendio.', tab: 'tripulantes' },
+          { id: 'usuarios', name: 'Usuarios', icon: 'i-shield', desc: 'Todas las cuentas: restablecer contraseñas, corregir datos y correo, suspender, eliminar o restaurar, y hacer jefe.', tab: 'usuarios', need: 'renderUsuarios' },
           { id: 'cobro', name: 'Cuentas de cobro', icon: 'i-doc', desc: 'La mensualidad de cada tripulante: estado, comprobantes por revisar, marcar pagado y los datos de pago de la organización.', tab: 'cobro', need: 'renderCobro' },
           { id: 'puntos', name: 'Rendio Points', icon: 'i-gift', desc: 'Encender el programa, los valores de cada acción y los canjes por cumplir.', tab: 'puntos', need: 'renderPuntos' },
         ] },
@@ -104,8 +109,10 @@
   const cnItemOn = (it) => !it.need || typeof window[it.need] === 'function';
 
   // Busca el módulo (y su espacio) por su tab. Devuelve {ws, group, item} o null.
+  // Primero en el espacio activo: un módulo que vive en los dos (Usuarios) no
+  // saca al jefe del espacio en el que está.
   function findModuleByTab(tab) {
-    for (const ws of Object.keys(CN_DATA)) {
+    for (const ws of [cnWs, ...Object.keys(CN_DATA).filter(w => w !== cnWs)]) {
       for (const g of CN_DATA[ws].groups) {
         const item = g.items.find(it => it.tab === tab);
         if (item) return { ws, group: g, item };

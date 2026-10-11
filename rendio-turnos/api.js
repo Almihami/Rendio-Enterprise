@@ -301,6 +301,24 @@
     return data || [];
   }
 
+  // Usuarios (11-oct-2026): TODAS las cuentas de la organización —conductores,
+  // jefes y tripulantes, también suspendidos y eliminados— en una sola consulta,
+  // para la sección Usuarios del admin. La RLS ya limita a la organización.
+  async function listAllUsersForAdmin() {
+    const sel = (cols) => sb.from('profiles').select(cols)
+      .in('role', ['driver', 'admin', 'auxiliar']).order('full_name');
+    let { data, error } = await sel('id, full_name, email, phone, role, is_active, deleted_at, suspended_reason, must_change_password, created_at');
+    // Sin 0081 no hay motivo de suspensión ni «debe cambiar la clave».
+    if (error) ({ data, error } = await sel('id, full_name, email, phone, role, is_active, deleted_at, created_at'));
+    if (error) throw error;
+    return (data || []).map((p) => ({
+      id: p.id, name: p.full_name || '—', email: p.email || '', phone: p.phone || '',
+      role: p.role, active: p.is_active !== false, deleted: !!p.deleted_at, deletedAt: p.deleted_at || null,
+      suspendedReason: p.suspended_reason || '', mustChange: p.must_change_password === true,
+      createdAt: p.created_at || null,
+    }));
+  }
+
   async function rpcOrThrow(fn, args) {
     const { error } = await sb.rpc(fn, args);
     if (error) throw new Error(error.message);
@@ -3489,7 +3507,7 @@
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins, setOpsAlerts,
-    getProfileForEdit, listDeletedProfiles, adminUpdateProfile, adminSetEmail, adminSetPassword, adminSetStatus, adminSetRole, changeMyPassword,
+    getProfileForEdit, listDeletedProfiles, listAllUsersForAdmin, adminUpdateProfile, adminSetEmail, adminSetPassword, adminSetStatus, adminSetRole, changeMyPassword,
     listAllDriversForAdmin, setProfileActive, softDeleteProfile, undeleteProfile, setAdminCoordinator, setDriverPriority, setDriverCanCoordinate,
     createDriver,
     listSubmittedDriverIds,

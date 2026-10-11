@@ -831,16 +831,13 @@
     btn.textContent = 'Creando…';
     setState('Creando cuenta en Supabase…', 'info');
     try {
-      const created = await Api.createDriver({
-        email, password, full_name: name, phone,
-        priority, can_coordinate: canCoord,
+      // Jefe: la cuenta nace como conductor y se promueve enseguida (usuarios.js).
+      // Si la promoción falla, queda de conductor y se dice.
+      const { promoteError } = await usrCrearCuenta({
+        name, email, phone, password, role: asAdmin ? 'admin' : 'driver',
+        priority, canCoord,
       });
-      // Jefe: la cuenta nace como conductor (create-driver solo sabe eso) y se
-      // promueve enseguida. Si la promoción falla, queda de conductor y se dice.
-      if (asAdmin && created && created.id) {
-        try { await Api.adminSetRole(created.id, 'admin'); }
-        catch (eR) { toast(`Se creó como conductor, pero no se pudo hacer administrador: ${eR.message}`); }
-      }
+      if (promoteError) toast(`Se creó como conductor, pero no se pudo hacer administrador: ${promoteError.message}`);
       // Refresca la lista de conductores en memoria para que aparezca al instante.
       state.drivers = await Api.listDrivers();
       // Mensaje copiable con las credenciales.
@@ -862,9 +859,7 @@
       // U10: el correo de un eliminado no se puede volver a crear (la cuenta
       // sigue existiendo). Se ofrece restaurarla, que es casi siempre lo que se
       // quiere: la misma persona que volvió.
-      const del = /ya existe/i.test(e.message || '')
-        ? (await Api.listDeletedProfiles().catch(() => [])).find(x => (x.email || '').toLowerCase() === email)
-        : null;
+      const del = await usrEliminadoConCorreo(e, email);
       if (del && confirm(`Ese correo es de ${del.full_name}, que está eliminado. ¿Restaurarlo? Vuelve activo con su contraseña de antes (si no la recuerda, restablécela desde Personal).`)) {
         try {
           await usrSetStatus(del.id, 'active', null, { wasDeleted: true });

@@ -485,6 +485,9 @@
     if (name === 'reservas') renderReservas();
     if (name === 'privados') renderPrivados();
     if (name === 'tripulantes') renderTripulantes();
+    // Usuarios (11-oct-2026): módulo IIFE que exporta por window, con typeof
+    // por la misma razón que Coordinación: si no cargó, la navegación no se cae.
+    if (name === 'usuarios' && typeof window.renderUsuarios === 'function') window.renderUsuarios();
     if (name === 'eventualidades') renderEventualidades();
     else stopEvtTimer(); // al salir de la bandeja, frena su polling
     if (name === 'oper') renderOperacion();
