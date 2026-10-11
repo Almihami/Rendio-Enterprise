@@ -61,8 +61,10 @@ const TRIPU = [
 for (const [email, phone, dir, hhmm, vuelo] of TRIPU) {
   const p = await prof(email); if (!p) { console.warn('  no existe', email); continue; }
   await sb.from('profiles').update({ phone }).eq('id', p.id);
-  const ap = must(await sb.from('auxiliar_profiles').select('id, residence_id, residence_unit, meeting_point, home_address, home_latitude, home_longitude, residences(name, latitude, longitude)').eq('profile_id', p.id).maybeSingle(), 'aux ' + email);
+  const ap = must(await sb.from('auxiliar_profiles').select('id, residence_id, residence_unit, meeting_point, home_address, home_latitude, home_longitude').eq('profile_id', p.id).maybeSingle(), 'aux ' + email);
   if (!ap) { console.warn('  sin perfil de tripulante', email); continue; }
+  // auxiliar_profiles tiene dos llaves a residences (residence_id y _2): se trae aparte.
+  ap.residences = ap.residence_id ? must(await sb.from('residences').select('name, latitude, longitude').eq('id', ap.residence_id).maybeSingle(), 'conjunto') : null;
   const lat = ap.residences?.latitude ?? ap.home_latitude, lng = ap.residences?.longitude ?? ap.home_longitude;
   if (lat == null) { console.warn('  sin punto de recogida', email); continue; }
   // Limpia lo del mismo día de esta persona (re-correr no duplica).
