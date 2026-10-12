@@ -20,8 +20,12 @@ const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_R
 const must = (r, what) => { if (r.error) { console.error(what, r.error.message); process.exit(1); } return r.data; };
 
 const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-const DIA = process.argv[2] || (() => { const d = new Date(hoy + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); })();
+// «ahora»: HOY, con horas contadas desde este momento (para probar en vivo con
+// los jefes: da tiempo de armar y publicar el plan antes de la primera recogida).
+const AHORA = process.argv[2] === 'ahora';
+const DIA = AHORA ? hoy : (process.argv[2] || (() => { const d = new Date(hoy + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); })());
 const at = (hhmm) => `${DIA}T${hhmm}:00-05:00`;
+const enMin = (m) => { const t = new Date(Date.now() + m * 60000); return new Date(Math.round(t.getTime() / 300000) * 300000).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' }); };
 const lunesDe = (iso) => { const d = new Date(iso + 'T12:00:00Z'); const w = d.getUTCDay(); d.setUTCDate(d.getUTCDate() - (w === 0 ? 6 : w - 1)); return d.toISOString().slice(0, 10); };
 const mas7 = (iso) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 7); return d.toISOString().slice(0, 10); };
 
@@ -41,7 +45,7 @@ const NAMES = Object.fromEntries(Object.values(C).map(c => [c.id, c.full_name]))
 for (const week of [lunesDe(DIA), mas7(lunesDe(DIA))]) {
   const data = { _names: NAMES };
   for (const d of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']) {
-    data[d] = { morning: [C.julian.id, C.franco.id], afternoon: [C.demo.id, C.franco.id], coord_am: [C.julian.id], coord_pm: [C.demo.id], rest: [] };
+    data[d] = { morning: [C.julian.id, C.franco.id, C.demo.id], afternoon: [C.julian.id, C.franco.id, C.demo.id], coord_am: [C.julian.id], coord_pm: [C.franco.id], rest: [] };
   }
   const prev = must(await sb.from('weekly_schedules').select('id').eq('week_start_date', week).maybeSingle(), 'horario');
   must(prev ? await sb.from('weekly_schedules').update({ data, published: true }).eq('id', prev.id)
@@ -50,13 +54,18 @@ for (const week of [lunesDe(DIA), mas7(lunesDe(DIA))]) {
 }
 
 // Tripulantes del escenario (cuentas demo existentes).
+// Con «ahora»: la salida de 3 se presenta en ~1 h 40 (la recogida queda en
+// ~40–60 min), la sola en ~2 h 40 y la llegada aterriza en ~50 min.
+const H = AHORA
+  ? { grupo: enMin(100), sola: enMin(160), llegada: enMin(50) }
+  : { grupo: '06:00', sola: '09:30', llegada: '14:20' };
 const TRIPU = [
-  ['laura.gomez@rendio.demo', '3105550201', 'home_to_airport', '06:00', 'AV9412'],
-  ['camila.rios@rendio.demo', '3105550202', 'home_to_airport', '06:00', 'AV9412'],
-  ['andres.pena@rendio.demo', '3105550203', 'home_to_airport', '06:00', 'AV9412'],
-  ['sara.quintero@rendio.demo', '3105550204', 'home_to_airport', '09:30', 'LA4025'],
-  ['mateo.cardona@rendio.demo', '3105550205', 'airport_to_home', '14:20', 'AV9563'],
-  ['manuela.gil@rendio.demo', '3105550206', 'airport_to_home', '14:20', 'AV9563'],
+  ['laura.gomez@rendio.demo', '3105550201', 'home_to_airport', H.grupo, 'AV9412'],
+  ['camila.rios@rendio.demo', '3105550202', 'home_to_airport', H.grupo, 'AV9412'],
+  ['andres.pena@rendio.demo', '3105550203', 'home_to_airport', H.grupo, 'AV9412'],
+  ['sara.quintero@rendio.demo', '3105550204', 'home_to_airport', H.sola, 'LA4025'],
+  ['mateo.cardona@rendio.demo', '3105550205', 'airport_to_home', H.llegada, 'AV9563'],
+  ['manuela.gil@rendio.demo', '3105550206', 'airport_to_home', H.llegada, 'AV9563'],
 ];
 for (const [email, phone, dir, hhmm, vuelo] of TRIPU) {
   const p = await prof(email); if (!p) { console.warn('  no existe', email); continue; }
