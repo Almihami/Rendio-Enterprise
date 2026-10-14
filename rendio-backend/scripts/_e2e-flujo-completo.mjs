@@ -12,12 +12,12 @@
 //   tripulante → crear cuenta desde el login, pedir una salida, verla en Viajes
 //                y abrir su detalle.
 //   celular    → el conductor sin celular (pedro.local) no sigue sin uno válido.
-//   salida     → casa → MDE: «Tu día» › «Iniciar ruta», avisos por hora y por GPS
+//   salida     → casa → JMC: «Tu día» › «Iniciar ruta», avisos por hora y por GPS
 //                (teléfono < 300 m y detector del servidor < 400 m), llamar, chat,
 //                código de 2 dígitos (malo y bueno), «No tiene el código»,
 //                recargar a mitad de ruta, «No se presentó», «Auxiliares
 //                entregados», y el mapa del tripulante.
-//   llegada    → MDE → casa: «Llegué al aeropuerto», una fila por tripulante,
+//   llegada    → JMC → casa: «Llegué al aeropuerto», una fila por tripulante,
 //                código, «No llegó», «Salir del aeropuerto», entrega en casa.
 //   jefe       → pedidos del jefe del 11-oct: Usuarios (restablecer contraseña),
 //                «Horario del turno» en Inspecciones, horas en «h y min» (Balance y
@@ -129,12 +129,12 @@ const CAT = [
     '«Crear mi cuenta» en el login: paso 1 nombre, correo, celular y contraseña (crea la cuenta); paso 2 aerolínea y conjunto del catálogo; pantalla de bienvenida y presentación de 3 pasos.',
     '1) Login › «Crear mi cuenta». 2) Datos con un correo nuevo @rendio.test. 3) Aerolínea Avianca + conjunto Olivar Apartamentos. 4) «Crear mi cuenta». 5) «Entrar a la app» y saltar la presentación.',
     'Termina en «Te damos la bienvenida», llega a su Inicio y en la base queda el perfil de tripulante con su conjunto y aerolínea.'],
-  ['T02', 'tripulante', 'Tripulante', 'Pide un traslado (salida casa → MDE) y lo ve en su lista con fecha, hora y punto.',
+  ['T02', 'tripulante', 'Tripulante', 'Pide un traslado (salida casa → JMC) y lo ve en su lista con fecha, hora y punto.',
     '«Pedir traslado» en 4 pasos (a dónde, cuándo, nivel, revisar) que se confirma deslizando; queda en Viajes › Próximos.',
-    '1) «Pedir traslado». 2) Casa → Aeropuerto. 3) Mañana, estar en MDE 06:30. 4) Compartido. 5) Deslizar para pedir. 6) Viajes › Próximos.',
-    'En Viajes aparece la salida con la fecha, la hora en MDE y su punto de recogida; la reserva queda en la base.'],
+    '1) «Pedir traslado». 2) Casa → Aeropuerto. 3) Mañana, estar en JMC 06:30. 4) Compartido. 5) Deslizar para pedir. 6) Viajes › Próximos.',
+    'En Viajes aparece la salida con la fecha, la hora en JMC y su punto de recogida; la reserva queda en la base.'],
   ['T03', 'tripulante', 'Tripulante', 'Empieza revisando su reserva y la información pertinente.',
-    'Al tocar el traslado se abre su detalle: fecha, hora en MDE, nivel, estado del traslado y los botones de cambio de presentación y cancelar.',
+    'Al tocar el traslado se abre su detalle: fecha, hora en JMC, nivel, estado del traslado y los botones de cambio de presentación y cancelar.',
     '1) En Viajes, tocar el traslado recién pedido.',
     'El detalle muestra su reserva (fecha, hora, punto) y dice que la hora de recogida llega cuando armen la ruta.'],
   ['T04', 'salida', 'Tripulante', 'Cuando el conductor arranca la ruta recibe el aviso («Eres el siguiente») y lo ve en la app.',
@@ -163,12 +163,12 @@ const CAT = [
     'Se ve un código de 2 dígitos igual al de la base.'],
   ['T10', 'salida', 'Tripulante', 'Ve el trayecto en el mapa: el carro, las paradas que faltan (si le falta gente por recoger o si va directo al aeropuerto) y la línea de la ruta.',
     'El mapa del viaje pinta el carro con el último GPS, las paradas pendientes numeradas (de los compañeros solo el sector), el aeropuerto y la línea: la vía real de OSRM o, si el servidor público no responde, rectas punteadas.',
-    '1) A bordo, con dos paradas por delante: captura del mapa. 2) Ya sin paradas: captura del mapa yendo a MDE. 3) Se cuentan los marcadores y se mira la línea.',
+    '1) A bordo, con dos paradas por delante: captura del mapa. 2) Ya sin paradas: captura del mapa yendo a JMC. 3) Se cuentan los marcadores y se mira la línea.',
     'Con paradas pendientes: carro + paradas numeradas + aeropuerto + línea. Sin paradas: carro + aeropuerto + línea directa, y el texto lo dice.'],
-  ['T11', 'llegada', 'Tripulante', 'Llegada (MDE → casa): cuando el conductor marca «Llegué al aeropuerto», el tripulante recibe el aviso y ve «Te espera en MDE».',
-    'driver_mark_airport_arrival marca la llegada en todas las paradas de la vuelta y encola «¡Tu conductor llegó al aeropuerto! ✈️» a cada uno; la fase del viaje pasa a «Te espera en MDE».',
+  ['T11', 'llegada', 'Tripulante', 'Llegada (JMC → casa): cuando el conductor marca «Llegué al aeropuerto», el tripulante recibe el aviso y ve «Te espera en JMC».',
+    'driver_mark_airport_arrival marca la llegada en todas las paradas de la vuelta y encola «¡Tu conductor llegó al aeropuerto! ✈️» a cada uno; la fase del viaje pasa a «Te espera en JMC».',
     '1) El conductor de la llegada toca «Llegué al aeropuerto». 2) Bandeja de cada tripulante. 3) Pantalla del viaje del tripulante.',
-    'Una fila por tripulante en la bandeja y la pantalla en «Te espera en MDE» con su código.'],
+    'Una fila por tripulante en la bandeja y la pantalla en «Te espera en JMC» con su código.'],
   ['T12', 'tripulante', 'Tripulante', 'Servicio de puerto a casa: el tripulante pide una LLEGADA (Aeropuerto → Casa) desde la app (pedido del 12-oct).',
     'Pedir (aux-rx-pedir.js): tipo «Aeropuerto → Casa», día, aerolínea + número de vuelo, hora de aterrizaje, nivel, revisar y deslizar. Se guarda como airport_to_home en estado «scheduled».',
     '1) Con la tripulante de T01: Inicio › Pedir. 2) «Aeropuerto → Casa», mañana, AV 9412, aterriza 14:20. 3) Compartido. 4) Deslizar. 5) Revisar la base.',
@@ -206,8 +206,8 @@ const CAT = [
     '1) En la última parada, «Llegué». 2) Ver el botón deshabilitado y la cuenta. 3) Esperar los minutos de Ajustes. 4) «No se presentó».',
     'El botón solo se habilita al vencer la espera; la reserva queda no_show y el tripulante recibe «No pudimos recogerte».'],
   ['C09', 'salida', 'Conductor', 'En el aeropuerto (salida): «Auxiliares entregados» entrega solo a los que van a bordo.',
-    'En MDE, «Auxiliares entregados» marca delivered a las paradas recogidas y deja como está a la que no se presentó.',
-    '1) Llegar a MDE con 2 a bordo y 1 «no se presentó». 2) «Llegué al aeropuerto» › «Auxiliares entregados». 3) Revisar la base.',
+    'En JMC, «Auxiliares entregados» marca delivered a las paradas recogidas y deja como está a la que no se presentó.',
+    '1) Llegar a JMC con 2 a bordo y 1 «no se presentó». 2) «Llegué al aeropuerto» › «Auxiliares entregados». 3) Revisar la base.',
     'Los 2 a bordo quedan delivered; el que no se presentó sigue no_show; la vuelta queda completa.'],
   ['C10', 'llegada', 'Conductor', 'Llegada: «Llegué al aeropuerto» → una fila por tripulante con su campo de código.',
     'En la llegada, «Llegué al aeropuerto» muestra una fila por tripulante con su campo de código, «Sin código» y «No llegó».',
@@ -234,16 +234,16 @@ const CAT = [
     '1) Al iniciar la ruta, al pasar de parada, al recargar y al iniciar la llegada: contar lo que pinta el mapa del conductor (Ejecución: .rt-map-full, líneas y pines). 2) Errores de JavaScript en ese momento.',
     'En cada momento el mapa tiene la línea de la ruta y los puntos de las paradas, sin errores.'],
   ['C16', 'llegada', 'Conductor', '«Llegué al aeropuerto» antes de llegar NO debe avisarles a los tripulantes (pedido del 12-oct: el conductor lo marcó sin haber llegado y a los tripulantes les apareció).',
-    'Ruta v2: driver-rutas.js · arrive() compara el GPS con MDE (1,5 km; 600 m en una casa) y abre la hoja «Todavía no estás en MDE» (rt-sheets.jsx · RtConfirmGps) antes de llamar a driver_mark_airport_arrival.',
-    '1) Iniciar la llegada con el carro a ~2 km de MDE. 2) «Llegué al aeropuerto». 3) «Avisar cuando llegue». 4) Contar los avisos «llegó al aeropuerto» en la bandeja. 5) Mover el GPS a MDE y volver a tocar.',
-    'Sale la hoja con la distancia real; con «Avisar cuando llegue» no sale ningún aviso y la pantalla sigue rumbo a MDE; ya en MDE sí avisa.'],
+    'Ruta v2: driver-rutas.js · arrive() compara el GPS con JMC (1,5 km; 600 m en una casa) y abre la hoja «Todavía no estás en JMC» (rt-sheets.jsx · RtConfirmGps) antes de llamar a driver_mark_airport_arrival.',
+    '1) Iniciar la llegada con el carro a ~2 km de JMC. 2) «Llegué al aeropuerto». 3) «Avisar cuando llegue». 4) Contar los avisos «llegó al aeropuerto» en la bandeja. 5) Mover el GPS a JMC y volver a tocar.',
+    'Sale la hoja con la distancia real; con «Avisar cuando llegue» no sale ningún aviso y la pantalla sigue rumbo a JMC; ya en JMC sí avisa.'],
   ['C17', 'llegada', 'Conductor', 'En la lista del aeropuerto, «Deshacer» un «a bordo» o un «No llegó» tocado por error (entrega del diseñador del 12-oct).',
-    'Mig 0102 · driver_airport_undo(reserva): devuelve la parada a «llegó» mientras el carro siga en MDE; al de «No llegó» le avisa una vez «Tu conductor todavía te espera».',
+    'Mig 0102 · driver_airport_undo(reserva): devuelve la parada a «llegó» mientras el carro siga en JMC; al de «No llegó» le avisa una vez «Tu conductor todavía te espera».',
     '1) Con A a bordo (código) y B «No llegó»: «Deshacer» en B y en A. 2) Revisar la base y la bandeja de B. 3) Volver a resolverlos.',
     'Las dos filas vuelven a quedar por resolver; A pierde la marca de abordaje (status_a2h driver_assigned); B recibe «Tu conductor todavía te espera»; al resolverlos de nuevo todo queda como antes.'],
   ['C18', 'llegada', 'Conductor', '¿Dónde se habla con el tripulante? Chat con cualquier tripulante de la vuelta (Detalle y lista del aeropuerto), y el aviso del mensaje lleva al chat.',
     'Ruta v2: botón de chat en cada parada del Detalle y «Escribir» en cada fila del aeropuerto (RtChat con respuestas rápidas). Si el tripulante escribe con el chat cerrado, aparece el aviso de arriba (RxPushBanner) y al tocarlo abre ese chat. El push del tripulante al conductor ahora lleva #/viaje?r=<reserva>, que el conductor resuelve abriendo ese chat.',
-    '1) En MDE, «Escribir» en la fila de A y mandar una respuesta rápida. 2) A responde desde su app. 3) Ver el aviso en la ruta del conductor y tocarlo. 4) Volver al Detalle y contar los botones de chat. 5) Revisar la URL del push que mandó la app de A.',
+    '1) En JMC, «Escribir» en la fila de A y mandar una respuesta rápida. 2) A responde desde su app. 3) Ver el aviso en la ruta del conductor y tocarlo. 4) Volver al Detalle y contar los botones de chat. 5) Revisar la URL del push que mandó la app de A.',
     'Los dos mensajes quedan guardados; el conductor ve el aviso con el texto de A y al tocarlo se abre el chat con el mensaje; cada parada del Detalle tiene su chat; el push de A apunta a #/viaje?r=<reserva>.'],
   ['C19', 'salida', 'Conductor', 'La ubicación sigue compartiéndose al salir de la pantalla de ejecución, y se vuelve con un toque (entrega del diseñador del 12-oct).',
     'Ruta v2: «Volver» desde Ejecución ya no apaga el GPS; Mi día y el Detalle muestran la barra «V1 en curso · ubicación activa» (RtNowBar) que lleva de vuelta a la parada.',
@@ -265,8 +265,8 @@ const CAT = [
     'El detector del minuto toma el último GPS guardado del carro (menos de 2 min) y, si está a menos de 400 m de la parada en camino, encola «Tu conductor está por llegar».',
     '1) GPS del conductor a ~350 m de la parada 3 (afuera del radio de 300 m del teléfono). 2) Esperar el ping en driver_locations. 3) SELECT detect_trip_reminders(). 4) Bandeja.',
     'Fila «Tu conductor está por llegar» para el tripulante de esa parada, sin que el teléfono la haya pedido.'],
-  ['S03', 'llegada', 'Sistema', 'Aviso por hora en llegadas: «Tu conductor sale de MDE a las …» 10 min antes.',
-    'El mismo detector, en llegadas, encola «Tu conductor sale de MDE a las …» a cada tripulante 10 min antes de la salida del carro.',
+  ['S03', 'llegada', 'Sistema', 'Aviso por hora en llegadas: «Tu conductor sale de JMC a las …» 10 min antes.',
+    'El mismo detector, en llegadas, encola «Tu conductor sale de JMC a las …» a cada tripulante 10 min antes de la salida del carro.',
     '1) Se adelanta por SQL la salida de la vuelta de llegada a ahora + 9 min. 2) SELECT detect_trip_reminders(). 3) Bandeja de cada tripulante.',
     'Una fila por tripulante de la llegada con la hora, el conductor y su código.'],
   ['S04', 'llegada', 'Sistema', 'Recordatorio al conductor antes de su vuelta.',
@@ -451,10 +451,10 @@ async function legActual(pg) {
     const ex = x && x.querySelector('.rt-exec');
     const q = (s) => ex && ex.querySelector(s);
     const eb = (q('.rt-eb')?.innerText || '').trim();
-    const apt = !q('.rt-person') && /aeropuerto|MDE/i.test(eb);
+    const apt = !q('.rt-person') && /aeropuerto|JMC/i.test(eb);
     const cta = q('.rt-cta .rx-btn:not(.rt-nav)');
     return {
-      nombre: apt ? 'Aeropuerto MDE' : (q('.rt-person-tx > b')?.innerText || '').trim(),
+      nombre: apt ? 'Aeropuerto JMC' : (q('.rt-person-tx > b')?.innerText || '').trim(),
       cta: (cta?.innerText || '').trim(), ctaAct: cta?.getAttribute('data-rt') || '', ctaOff: !!(cta && cta.disabled),
       exec: !!ex, chip: (q('.rt-steps > span')?.innerText || '').trim(), eb,
       pill: (q('.rt-x-pill')?.innerText || '').replace(/\s+/g, ' ').trim(),
@@ -1002,7 +1002,7 @@ async function bloqueTripulante() {
     const ok = pedido && /06:30/.test(tarjeta) && /Olivar/i.test(tarjeta) && tarjeta.includes(diaTxt) && r && r.direction === 'home_to_airport';
     return {
       estado: ok ? 'OK' : 'FALLA', captura: capLista,
-      obtenido: `«¡Traslado pedido!»: ${pedido ? 'sí' : 'no'}. Tarjeta en Viajes › Próximos: «${tarjeta.slice(0, 200)}». En la base: ${r ? `${r.direction}, estar en MDE ${hhmm(r.required_arrival_at)} del ${diaBog(r.required_arrival_at)}, recogida «${r.pickup_address}», ${r.service_level}, estado ${r.status_h2a}` : 'NO hay reserva'}.`,
+      obtenido: `«¡Traslado pedido!»: ${pedido ? 'sí' : 'no'}. Tarjeta en Viajes › Próximos: «${tarjeta.slice(0, 200)}». En la base: ${r ? `${r.direction}, estar en JMC ${hhmm(r.required_arrival_at)} del ${diaBog(r.required_arrival_at)}, recogida «${r.pickup_address}», ${r.service_level}, estado ${r.status_h2a}` : 'NO hay reserva'}.`,
       nota: `La hora de recogida aún no existe (la publica el plan). Otras capturas: ${caps.join(', ')}`,
     };
   });
@@ -1118,10 +1118,10 @@ async function bloqueCelular() {
   await ctx.close();
 }
 
-// ================================================================= SALIDA (casa → MDE)
+// ================================================================= SALIDA (casa → JMC)
 async function bloqueSalida() {
   NUM = Math.max(NUM, RANGO.salida);
-  console.log('\n[salida] Casa → MDE');
+  console.log('\n[salida] Casa → JMC');
   const ra = PLAN.filter(r => r.direction === 'home_to_airport' && r.driver_profile_id)
     .sort((a, b) => b.stops.length - a.stops.length || new Date(a.planned_start_at) - new Date(b.planned_start_at))[0];
   if (!ra || !ra.conductor) {
@@ -1515,7 +1515,7 @@ async function bloqueSalida() {
     });
   } else corta('C08', 'la vuelta tiene menos de 3 paradas');
 
-  // --- T10 (2/2) mapa ya sin paradas, rumbo a MDE
+  // --- T10 (2/2) mapa ya sin paradas, rumbo a JMC
   await prueba('T10', pgA, 'tripulante', async () => {
     await gps(norte(S(ultimo).lat, S(ultimo).lng, 300));
     const v2 = await esperar(async () => { const x = await leerViaje(pgA); return x.fase === 'onboard' && x.carro && !x.paradas.length ? x : null; }, { timeout: 25000, cada: 1000 });
@@ -1529,15 +1529,15 @@ async function bloqueSalida() {
     const est = mapa1 && mapa1.paradaEstilo;
     const sinForma = est && (est.fondo === 'rgba(0, 0, 0, 0)' || est.fondo === 'transparent') && !/50%|\d{2}px/.test(est.radio || '');
     const ok2 = v2 && m2.carro && m2.lineas.length && (m2.aeropuerto || m2.casa);
-    // Rumbo a MDE el destino tiene que ser el avión, no la casita.
+    // Rumbo a JMC el destino tiene que ser el avión, no la casita.
     const casitaEnMde = v2 && !m2.aeropuerto && m2.casa > 0;
     const punteada = [mapa1, m2].some(m => m && m.lineas.some(l => l.punteada));
     return { estado: ok1 && ok2 ? (sinForma || casitaEnMde ? 'PARCIAL' : 'OK') : 'FALLA', captura: capMapa1 || cap2,
-      obtenido: `${mapa1 ? `A bordo con ${stops.length - 1} paradas por delante: ${d(mapa1)}. ` : ''}Sin paradas (rumbo a MDE): ${d(m2)}.${est ? ` Marcador de parada: clase ${est.clase}, ${est.ancho}×${est.alto} px, fondo ${est.fondo}, borde ${est.radio || '0'}${sinForma ? ' → se pinta como TEXTO SUELTO (sin círculo)' : ''}.` : ''}`,
+      obtenido: `${mapa1 ? `A bordo con ${stops.length - 1} paradas por delante: ${d(mapa1)}. ` : ''}Sin paradas (rumbo a JMC): ${d(m2)}.${est ? ` Marcador de parada: clase ${est.clase}, ${est.ancho}×${est.alto} px, fondo ${est.fondo}, borde ${est.radio || '0'}${sinForma ? ' → se pinta como TEXTO SUELTO (sin círculo)' : ''}.` : ''}`,
       nota: `${casitaEnMde ? 'Hallazgo: ya sin paradas, rumbo al aeropuerto, el destino se pinta con la CASITA (rx-lf-pin) encima del aeropuerto: auxPlotDriver (rendio-turnos/auxiliar.js ~2492) mueve trackDestMk con setLatLng pero no le cambia el ícono, que se eligió al montar el mapa (auxDestIsApt). ' : ''}${sinForma ? 'Hallazgo: las paradas pendientes usan la clase .rx-lf-stop (rendio-turnos/auxiliar.js, auxPlotStops ~2534) y ninguna hoja de estilos la define (solo existe .ax-stop en styles.css:2563 para la piel vieja): salen como un número/★ suelto encima del mapa, y dos paradas en el mismo conjunto se montan («2★»). ' : ''}${punteada ? 'La línea quedó RECTA PUNTEADA: el servidor público de rutas (router.project-osrm.org) no respondió en ese momento. ' : 'La línea es la vía real de OSRM (servidor público). '}De los compañeros solo se muestra el número de parada y el sector. Otra captura: ${cap2}` };
   });
 
-  // --- C09 «Auxiliares entregados» en MDE
+  // --- C09 «Auxiliares entregados» en JMC
   await prueba('C09', pgD, 'conductor', async () => {
     await gps({ latitude: 6.1715, longitude: -75.4270 }); await sleep(1500);
     let leg = await legActual(pgD);
@@ -1557,7 +1557,7 @@ async function bloqueSalida() {
     const okNoShow = ultimo < 2 || filas[ultimo].status_h2a === 'no_show';
     const ra2 = await q1(`SELECT status FROM public.route_assignments WHERE id = $1`, [ra.id]);
     return { estado: fin && okEntrega && okNoShow ? 'OK' : 'FALLA', captura: capE,
-      obtenido: `Botón en MDE: «${leg.cta}». Después: ${fin ? '«¡Vuelta completa!»' : 'NO terminó la vuelta'}. Base: ${filas.map(f => `${f.full_name.split(' ')[0]} ${f.status_h2a}/${f.parada}`).join(' · ')}. route_assignments.status = ${ra2.status}.`,
+      obtenido: `Botón en JMC: «${leg.cta}». Después: ${fin ? '«¡Vuelta completa!»' : 'NO terminó la vuelta'}. Base: ${filas.map(f => `${f.full_name.split(' ')[0]} ${f.status_h2a}/${f.parada}`).join(' · ')}. route_assignments.status = ${ra2.status}.`,
       nota: `Otra captura: ${cap}` };
   });
   if (pgA) { await sleep(6500); await foto(pgA, 'tripulante', 'en-el-aeropuerto'); }
@@ -1575,10 +1575,10 @@ async function bloqueSalida() {
   for (const c of [ctxD, ctxA, ctxL]) if (c) await c.close();
 }
 
-// ================================================================= LLEGADA (MDE → casa)
+// ================================================================= LLEGADA (JMC → casa)
 async function bloqueLlegada() {
   NUM = Math.max(NUM, RANGO.llegada);
-  console.log('\n[llegada] MDE → casa');
+  console.log('\n[llegada] JMC → casa');
   const ra = PLAN.filter(r => r.direction === 'airport_to_home' && r.driver_profile_id).sort((a, b) => b.stops.length - a.stops.length)[0];
   if (!ra || !ra.conductor) {
     for (const id of CAT.filter(c => c[1] === 'llegada').map(c => c[0])) resultado(id, 'NO PROBADO', 'No hay una llegada publicada con conductor para hoy (ver A01).', '', '');
@@ -1592,8 +1592,8 @@ async function bloqueLlegada() {
   const nom1 = (s) => (s.full_name || '').split(' ')[0];
   const A = stops[0], B = stops[1] || null;
   console.log(`  Vuelta ${hhmm(ra.planned_start_at)} · ${drv.full_name} · ${stops.map(s => `${s.orden}.${nom1(s)}`).join(', ')}`);
-  const MDE = { latitude: 6.1715, longitude: -75.4270 };
-  const ctxD = await contexto('movil', { latitude: MDE.latitude, longitude: MDE.longitude + 0.02, accuracy: 10 });
+  const JMC = { latitude: 6.1715, longitude: -75.4270 };
+  const ctxD = await contexto('movil', { latitude: JMC.latitude, longitude: JMC.longitude + 0.02, accuracy: 10 });
   const ctxA = await contexto('movil');
   const gps = async (p) => ctxD.setGeolocation({ latitude: p.latitude, longitude: p.longitude, accuracy: 10 });
   let pgD = null;
@@ -1610,9 +1610,9 @@ async function bloqueLlegada() {
     for (const s of stops) filas.push([s, await esperarAviso(s.profile_id, `trip:${s.id}:remind:%`, 10000)]);
     await sleep(6500);
     const cap = await foto(pgA, 'tripulante', 'llegada-recordatorio');
-    const ok = filas.every(([s, a]) => a && /sale de MDE/.test(a.title) && (!s.meet_code || a.body.includes(s.meet_code)));
+    const ok = filas.every(([s, a]) => a && /sale de JMC/.test(a.title) && (!s.meet_code || a.body.includes(s.meet_code)));
     return { estado: ok ? 'OK' : 'FALLA', captura: cap,
-      obtenido: `Salida de MDE adelantada a ${hhmm(pub.calculated_pickup_at)}. detect_trip_reminders → «${det.r}». ${filas.map(([s, a]) => `${nom1(s)}: ${fmtAviso(a)}`).join(' | ')}.`,
+      obtenido: `Salida de JMC adelantada a ${hhmm(pub.calculated_pickup_at)}. detect_trip_reminders → «${det.r}». ${filas.map(([s, a]) => `${nom1(s)}: ${fmtAviso(a)}`).join(' | ')}.`,
       nota: 'Reloj simulado: se adelantó por SQL route_assignments.planned_start_at a ahora+9 min.' };
   });
   await prueba('S04', null, 'sistema', async () => {
@@ -1652,18 +1652,18 @@ async function bloqueLlegada() {
     const leg0 = await legActual(pgD);
     const capIni = await foto(pgD, 'conductor', 'llegada-iniciada');
     await mapaConductor(pgD, 'al iniciar la llegada (aeropuerto)', capIni);
-    // C16: el carro está a ~2 km de MDE (contexto del conductor): «Llegué al aeropuerto»
+    // C16: el carro está a ~2 km de JMC (contexto del conductor): «Llegué al aeropuerto»
     // pide confirmar y «Avisar cuando llegue» NO le avisa a nadie.
-    await gps({ latitude: MDE.latitude, longitude: MDE.longitude + 0.02 }); await sleep(1500);
+    await gps({ latitude: JMC.latitude, longitude: JMC.longitude + 0.02 }); await sleep(1500);
     await pgD.click(`${EX} [data-rt=arrive]`);
     const hojaGps = await pgD.waitForSelector(`${SH} .rx-sh`, { timeout: 8000 }).then(() => pgD.$eval(`${SH} .rx-sh`, e => e.innerText.replace(/\s+/g, ' ').trim()), () => '');
     const capGps = await foto(pgD, 'conductor', 'llegue-aeropuerto-lejos');
     await pgD.click(`${SH} [data-rt=sheet-close]`).catch(() => {}); await sleep(2500);
     const avisosLejos = (await q(`SELECT count(*)::int n FROM public.notification_outbox WHERE dedupe_key LIKE 'trip:%:apt_arrived' AND created_at >= $1 AND profile_id = ANY($2)`, [INICIO, stops.map(s => s.profile_id)]))[0].n;
     const sigueRumbo = (await legActual(pgD)).ctaAct === 'arrive';
-    resultado('C16', /todavía no estás en MDE/i.test(hojaGps) && avisosLejos === 0 && sigueRumbo ? 'OK' : 'FALLA',
-      `A ~2 km del aeropuerto, «Llegué al aeropuerto» abre: «${hojaGps.slice(0, 220)}». Tras «Avisar cuando llegue»: ${avisosLejos} avisos «llegó al aeropuerto» en la bandeja; la pantalla sigue rumbo a MDE: ${sigueRumbo ? 'sí' : 'no'}.`, capGps, '');
-    await gps(MDE); await sleep(1500);
+    resultado('C16', /todavía no estás en JMC/i.test(hojaGps) && avisosLejos === 0 && sigueRumbo ? 'OK' : 'FALLA',
+      `A ~2 km del aeropuerto, «Llegué al aeropuerto» abre: «${hojaGps.slice(0, 220)}». Tras «Avisar cuando llegue»: ${avisosLejos} avisos «llegó al aeropuerto» en la bandeja; la pantalla sigue rumbo a JMC: ${sigueRumbo ? 'sí' : 'no'}.`, capGps, '');
+    await gps(JMC); await sleep(1500);
     await pgD.click(`${EX} [data-rt=arrive]`);
     await pgD.waitForSelector(`${EX} .rt-cr`, { timeout: 10000 });
     await sleep(800);
@@ -1677,7 +1677,7 @@ async function bloqueLlegada() {
   });
   if (bloqueo || !pgD) { ['T11', 'C11', 'C12', 'C13'].forEach(id => resultado(id, 'NO PROBADO', `No se llegó a este paso: ${bloqueo || 'no se pudo iniciar la llegada'}`, '', '')); for (const c of [ctxD, ctxA]) await c.close(); return; }
 
-  // --- T11 «Te espera en MDE»
+  // --- T11 «Te espera en JMC»
   await prueba('T11', pgA, 'tripulante', async () => {
     const filas = [];
     for (const s of stops) filas.push([s, await esperarAviso(s.profile_id, `trip:${s.id}:apt_arrived`, 12000)]);
@@ -1689,7 +1689,7 @@ async function bloqueLlegada() {
     const ok = filas.every(([, a]) => a) && v;
     return { estado: ok ? 'OK' : (filas.every(([, a]) => a) ? 'PARCIAL' : 'FALLA'), captura: cap,
       obtenido: `${filas.map(([s, a]) => `${nom1(s)}: ${fmtAviso(a)}`).join(' | ')}. Pantalla de ${nom1(A)}: fase actual «${vv.fase}» («${textoFase}»), código ${vv.codigo || '(no se ve)'}${vv.codigoLlego ? ' resaltado' : ''}; arriba dice «${vv.texto.slice(0, 40)}»; carro en el mapa: ${vv.carro ? 'sí' : 'no'}.`,
-      nota: vv.carro ? '' : 'Observación: con el conductor ya en MDE (la base guarda su ancla en el aeropuerto) el mapa del tripulante sigue «Sin ubicación todavía» y la píldora de arriba sigue en «Conductor asignado»: en llegadas el rastreo solo pinta el carro desde «A bordo» (auxTrackTick, rendio-turnos/auxiliar.js ~2300).' };
+      nota: vv.carro ? '' : 'Observación: con el conductor ya en JMC (la base guarda su ancla en el aeropuerto) el mapa del tripulante sigue «Sin ubicación todavía» y la píldora de arriba sigue en «Conductor asignado»: en llegadas el rastreo solo pinta el carro desde «A bordo» (auxTrackTick, rendio-turnos/auxiliar.js ~2300).' };
   });
 
   // --- C18 chat desde la lista del aeropuerto + aviso de mensaje + chat en el Detalle

@@ -112,7 +112,7 @@ t('con la confirmación compacta del punto (sin «Cambiar» propio ni «guardar�
 console.log('\n── el resumen y el envío ──');
 click('[data-ax="next"]'); await wait();
 click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia desde el 17-sep)
-t(RX?'el resumen dice «estar en MDE», no «Presentación»':'el resumen dice «Estar en el aeropuerto», no «Presentación»', (RX?/estar en MDE/:/Estar en el aeropuerto/).test(txt()) && !/Presentación 05:10/.test(txt()), txt().slice(0,260));
+t(RX?'el resumen dice «estar en JMC», no «Presentación»':'el resumen dice «Estar en el aeropuerto», no «Presentación»', (RX?/estar en JMC/:/Estar en el aeropuerto/).test(txt()) && !/Presentación 05:10/.test(txt()), txt().slice(0,260));
 // textContent pega <span>etiqueta</span><b>valor</b> sin espacio: se compara
 // contra la cadena tal cual sale, no como se lee en pantalla.
 t('el resumen muestra la unidad', RX ? /Casa 8/.test(filaPunto()) : /UnidadCasa 8/.test(txt()), txt().slice(0,300));

@@ -557,7 +557,7 @@
         const sig = M && typeof M.sigla === 'function' ? M.sigla(a) : String(a.iata_code || a.name || '').slice(0, 2).toUpperCase();
         const m = M && typeof M.color === 'function' ? M.color(a) : rep;
         return workOpt(a.id, a.name, sig, m, on, on ? 'Tu aerolínea' : 'Toca para elegirla', i);
-      }).join('') + workOpt(TIERRA_ID, 'Trabajo en el aeropuerto', 'MDE', rep, ground,
+      }).join('') + workOpt(TIERRA_ID, 'Trabajo en el aeropuerto', 'JMC', rep, ground,
         ground ? 'Personal de tierra' : 'Personal de tierra · no vuelo', W.cat.length);
     }
     return `<div class="rx-sh"><h3>Dónde trabajas</h3>

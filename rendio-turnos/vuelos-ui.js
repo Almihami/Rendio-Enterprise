@@ -117,7 +117,7 @@
     if (stale) parts.push('sin actualizar desde ' + hhmm(st.fetchedAt));
 
     const det = [
-      'Vuelo ' + st.code + (sal ? ' · salida de MDE' : ' · llegada a MDE'),
+      'Vuelo ' + st.code + (sal ? ' · salida de JMC' : ' · llegada a JMC'),
       st.schedAt ? 'programada ' + hhmm(st.schedAt) : '',
       st.estimatedAt && !st.actualAt ? 'estimada ' + hhmm(st.estimatedAt) : '',
       st.actualAt ? (sal ? 'despegó ' : 'aterrizó ') + hhmm(st.actualAt) : '',

@@ -1,7 +1,7 @@
 // T8 · Trabajo en tierra (sin vuelo), 29-sep-2026 — prueba jsdom + solver.
 //
 // «No todos trabajan con vuelo, solo trabajan por tierra»: el personal de
-// operaciones del aeropuerto va a MDE igual que la tripulación, pero sin vuelo.
+// operaciones del aeropuerto va a JMC igual que la tripulación, pero sin vuelo.
 // Respuestas de la profa: manda la hora de LLEGADA AL DESTINO, lo piden desde la
 // misma app y pagan igual. Esta prueba comprueba:
 //
@@ -11,7 +11,7 @@
 //      · apagado = lo de siempre (en la llegada el vuelo es obligatorio);
 //      · llegada en tierra: sin número de vuelo, la hora se llama «Hora en que
 //        sales del aeropuerto», el CTA se habilita solo con fecha y hora, y el
-//        resumen dice «En tierra» y «sales de MDE»;
+//        resumen dice «En tierra» y «sales de JMC»;
 //      · el envío manda ground_ops=true y NINGÚN vuelo (ni uno escrito antes de
 //        encender el interruptor); apagado no manda la columna;
 //      · salida en tierra: misma hora de siempre, sin pernocta, y el regreso del
@@ -177,7 +177,7 @@ t('sin campo de número de vuelo ni chip de aerolínea', !E.$('[data-field="flig
 t('la hora se llama «Hora en que sales del aeropuerto»', /Hora en que sales del aeropuerto/.test(txt(E)) && !/Hora de aterrizaje/.test(txt(E)));
 t('el título ya no pregunta por un vuelo («¿A qué hora sales?»)', /A qué hora sales/.test(txt(E)) && !/Cuál es tu vuelo/.test(txt(E)));
 t('la nota dice que no se suma desembarque', /no le sumamos tiempo de desembarque/.test(txt(E)));
-t('rx-calc «Sales de MDE» con la hora puesta', /Sales de MDE/.test(E.$(bk + ' .rx-calc')?.textContent || '') && E.$(bk + ' .rx-calc .rx-calc-t')?.textContent === '17:00');
+t('rx-calc «Sales de JMC» con la hora puesta', /Sales de JMC/.test(E.$(bk + ' .rx-calc')?.textContent || '') && E.$(bk + ' .rx-calc .rx-calc-t')?.textContent === '17:00');
 t('la hora escrita no se perdió', E.$('[data-field="time"]').value === '17:00' && E.A().form.time === '17:00');
 t('sin pernocta (noche entre vuelos) en tierra', !E.$('[data-key="isPernocta"]') && !!E.$('[data-key="isReserva"]'));
 t('Continuar habilitado solo con fecha y hora (sin vuelo)', !cont(E).disabled);
@@ -188,7 +188,7 @@ t('hint «ok» sin avión: no dice «al bajar del avión»', E.w.Auxiliar.timeHi
 await hastaRevisar(E);
 const rv = E.$(bk + ' .rx-review');
 t('resumen: fila «Trabajo · En tierra · sales 17:00» (sin fila Vuelo)', /Trabajo/.test(rv.textContent) && /En tierra/.test(rv.textContent) && /sales 17:00/.test(rv.textContent) && !/AV9412/.test(rv.textContent) && !/Vuelo/.test(rv.textContent), rv.textContent.replace(/\s+/g, ' '));
-t('la hora grande dice «sales de MDE»', /sales de MDE/.test(rv.querySelector('.rx-rv-time').textContent) && !/aterrizas/.test(rv.querySelector('.rx-rv-time').textContent));
+t('la hora grande dice «sales de JMC»', /sales de JMC/.test(rv.querySelector('.rx-rv-time').textContent) && !/aterrizas/.test(rv.querySelector('.rx-rv-time').textContent));
 t('la fila lleva el ícono Briefcase y vuelve al paso', !!rv.querySelector('.rx-rv-row[data-step="vuelo"] use[href="#rx-Briefcase"]'));
 E.inserts.length = 0;
 await enviar(E);
@@ -233,7 +233,7 @@ t('Continuar bloqueado hasta poner esa hora', cont(E).disabled);
 E.set('backTime', '14:30');
 t('con la hora del regreso, Continuar habilitado (no pide vuelo)', !cont(E).disabled);
 await hastaRevisar(E);
-t('resumen: «En tierra · estar en MDE 05:10» y regreso «Sales de MDE 14:30»', /En tierra · estar en MDE 05:10/.test(txt(E)) && /Sales de MDE 14:30/.test(txt(E)) && !/Pernocta/.test(txt(E)), txt(E));
+t('resumen: «En tierra · estar en JMC 05:10» y regreso «Sales de JMC 14:30»', /En tierra · estar en JMC 05:10/.test(txt(E)) && /Sales de JMC 14:30/.test(txt(E)) && !/Pernocta/.test(txt(E)), txt(E));
 E.inserts.length = 0;
 await enviar(E);
 const ida = E.inserts[0] || {}, vuelta = E.inserts[1] || {};

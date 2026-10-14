@@ -267,7 +267,7 @@ console.log('\n── Bandera ENCENDIDA: la pestaña Perfil ──');
   b.click(row(b, 'row-work'));
   await wait(60);
   const wo = b.qa('.rx-sheet [data-rx="me-work-pick"]');
-  t('la hoja «Dónde trabajas» lista las 4 aerolíneas y, al final, «Trabajo en el aeropuerto» (MDE)', /Dónde trabajas/.test((b.q('.rx-sheet h3') || {}).textContent || '') && wo.length === 5 && wo[4].dataset.id === '__tierra__' && /MDE/.test(wo[4].textContent), wo.map(x => x.dataset.id).join(','));
+  t('la hoja «Dónde trabajas» lista las 4 aerolíneas y, al final, «Trabajo en el aeropuerto» (JMC)', /Dónde trabajas/.test((b.q('.rx-sheet h3') || {}).textContent || '') && wo.length === 5 && wo[4].dataset.id === '__tierra__' && /JMC/.test(wo[4].textContent), wo.map(x => x.dataset.id).join(','));
   t('Avianca sale elegida', wo[0] && wo[0].classList.contains('on') && wo.filter(x => x.classList.contains('on')).length === 1);
   b.click(wo[4]);
   await wait(60);

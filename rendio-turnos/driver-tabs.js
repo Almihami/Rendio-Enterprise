@@ -111,7 +111,7 @@
             <span style="font-size:11.5px;font-weight:700;color:${tono};letter-spacing:.5px;text-transform:uppercase">${salida ? 'Salida' : 'Llegada'}</span>
             <span style="margin-left:auto;font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;background:${fondo};color:${tono}">${v.done ? 'Terminada' : 'Asignada'}</span>
           </span>
-          <span style="display:block;font-size:16px;font-weight:650;letter-spacing:-.3px">${salida ? 'Casas → Aeropuerto MDE' : 'Aeropuerto MDE → Casas'}</span>
+          <span style="display:block;font-size:16px;font-weight:650;letter-spacing:-.3px">${salida ? 'Casas → Aeropuerto JMC' : 'Aeropuerto JMC → Casas'}</span>
           <span style="display:block;font-size:13px;color:var(--r-text-2);margin-top:3px">
             ${n} auxiliar${n === 1 ? '' : 'es'}${v.start ? ` · sale ${escapeHtml(v.start)}` : ''}
           </span>

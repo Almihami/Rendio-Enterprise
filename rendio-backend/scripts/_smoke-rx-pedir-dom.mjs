@@ -225,7 +225,7 @@ t('el calendario enciende «Otro día» con la fecha (sin repintar)', E.$('[data
 const nextBtn = cont(E);
 E.set('time', '05:10');
 const calc = E.$('[data-scr="book"]:not(.out) .rx-calc');
-t('con hora: rx-calc «Estar en MDE» + 05:10 + la recogida se confirma con la ruta', !!calc && /Estar en MDE/.test(calc.textContent) && calc.querySelector('.rx-calc-t').textContent === '05:10' && /confirmamos cuando armemos tu ruta/.test(calc.textContent));
+t('con hora: rx-calc «Estar en JMC» + 05:10 + la recogida se confirma con la ruta', !!calc && /Estar en JMC/.test(calc.textContent) && calc.querySelector('.rx-calc-t').textContent === '05:10' && /confirmamos cuando armemos tu ruta/.test(calc.textContent));
 t('Continuar se habilita sin rehacer el botón (#17)', cont(E) === nextBtn && !nextBtn.disabled);
 E.set('time', '05:40');
 const calc2 = E.$('[data-scr="book"]:not(.out) .rx-calc');
@@ -258,7 +258,7 @@ E.click(cont(E)); await wait(); E.click(cont(E)); await wait();
 console.log('\n── revisar ──');
 t('revisar 4/4 con «Revisa tu traslado»', E.w.Auxiliar.stepKind() === 'revisar' && stepN(E) === '4/4' && /Revisa tu traslado/.test(txt(E)));
 const rv = E.$('[data-scr="book"]:not(.out) .rx-review');
-t('.rx-review con rx-rv-time: día, hora, «estar en MDE» y la recogida por confirmar', !!rv && /05:40/.test(rv.querySelector('.rx-rv-time').textContent) && /estar en MDE/.test(rv.querySelector('.rx-rv-time').textContent) && /La recogida te la confirmamos/.test(rv.querySelector('.rx-rv-time').textContent));
+t('.rx-review con rx-rv-time: día, hora, «estar en JMC» y la recogida por confirmar', !!rv && /05:40/.test(rv.querySelector('.rx-rv-time').textContent) && /estar en JMC/.test(rv.querySelector('.rx-rv-time').textContent) && /La recogida te la confirmamos/.test(rv.querySelector('.rx-rv-time').textContent));
 t('fila Vuelo → goto-step vuelo', !!rv.querySelector('.rx-rv-row[data-rx="goto-step"][data-step="vuelo"]'));
 t('fila Recogida → donde-cambiar (con el conjunto)', /Olivar Apartamentos/.test(rv.querySelector('.rx-rv-row[data-ax="donde-cambiar"]')?.textContent || ''));
 t('fila Nivel → goto-step nivel, «Compartido · Incluido»', /Compartido · Incluido/.test(rv.querySelector('.rx-rv-row[data-step="nivel"]')?.textContent || ''));

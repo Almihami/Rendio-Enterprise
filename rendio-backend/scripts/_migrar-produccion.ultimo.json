@@ -2,7 +2,32 @@
  "aplicar": true,
  "resultado": "COMMIT",
  "bien": [
-  "0079_fotos_kit_tarjeta_llanta.sql"
+  "0080_strikes_mensuales.sql",
+  "0081_usuarios_admin.sql",
+  "0082_doblar_turno.sql",
+  "0083_pin_manual_sin_conjunto.sql",
+  "0085_hora_de_recogida_publicada.sql",
+  "0086_aux_datos_del_viaje.sql",
+  "0087_aux_mis_viajes.sql",
+  "0088_coordinacion.sql",
+  "0089_cambio_de_vuelo.sql",
+  "0090_facturario.sql",
+  "0091_rendio_points.sql",
+  "0092_trabajo_en_tierra.sql",
+  "0093_orden_de_recogida.sql",
+  "0094_tarifas_sector_vacaciones.sql",
+  "0095_documentos_del_carro.sql",
+  "0096_retencion_fotos.sql",
+  "0097_avisos_del_traslado.sql",
+  "0098_telefono_propio.sql",
+  "0099_vuelos.sql",
+  "0100_recordatorio_libres.sql",
+  "0101_asignado_al_publicar.sql",
+  "0102_deshacer_en_aeropuerto.sql",
+  "0103_privado_tarifa_y_cobro.sql",
+  "0104_olvide_contrasena.sql",
+  "0105_inspeccion_al_cerrar.sql",
+  "0106_personal_de_tierra.sql"
  ],
  "mal": []
 }

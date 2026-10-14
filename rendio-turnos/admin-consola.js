@@ -54,7 +54,7 @@
     },
     rutas: {
       label: 'Rutas', tag: 'rutas',
-      sub: 'Transporte de auxiliares entre casa y el aeropuerto MDE: planear rutas óptimas y monitorear que nunca lleguen tarde.',
+      sub: 'Transporte de auxiliares entre casa y el aeropuerto JMC: planear rutas óptimas y monitorear que nunca lleguen tarde.',
       groups: [
         { id: 'plan', name: 'Planeación', icon: 'g-plan', desc: 'Armar las rutas del día', items: [
           { id: 'asign', name: 'Asignación', icon: 'm-asign', desc: 'Optimizar reservas en rutas para 2–3 carros, con semáforo de holgura vs. deadline.', star: true, tab: 'routes' },

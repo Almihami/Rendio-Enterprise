@@ -140,7 +140,7 @@ console.log('\n── Integración encendida ──');
   const c1 = b.chipOf('r1');
   t('llegada AV9563: chip «AV9563 · 25 min tarde · 14:35» junto al vuelo', c1 && txt(c1) === '✈ AV9563 · 25 min tarde · 14:35', txt(c1));
   t('…con tono «warn» y su estado en data-rvu-status', c1 && c1.classList.contains('rvu-chip--warn') && c1.dataset.rvuStatus === 'in_air', c1 && c1.className);
-  t('…dentro de la línea del vuelo, sin repetir el «✈ AV9563» viejo', /^MDE → casa · El Olivar · ✈ AV9563 · 25 min tarde · 14:35$/.test(b.sub('r1')), b.sub('r1'));
+  t('…dentro de la línea del vuelo, sin repetir el «✈ AV9563» viejo', /^JMC → casa · El Olivar · ✈ AV9563 · 25 min tarde · 14:35$/.test(b.sub('r1')), b.sub('r1'));
   t('…el detalle va en el title (programada, estimada, puerta, fuente)', c1 && /programada 14:10/.test(c1.title) && /estimada 14:35/.test(c1.title) && /puerta 12/.test(c1.title) && /AeroDataBox/.test(c1.title), c1 && c1.title);
   const c2 = b.chipOf('r2');
   t('salida LA4025 solo con horario: «programado 16:20», tono muted', c2 && txt(c2) === '✈ LA4025 · programado 16:20' && c2.classList.contains('rvu-chip--muted'), txt(c2));

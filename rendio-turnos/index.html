@@ -832,10 +832,10 @@
               </div>
               <div class="set-row2" style="margin-top:14px">
                 <div class="set-field"><label>Factor de tráfico</label><input id="setting-route-traffic" class="set-input" type="number" min="1" max="2" step="0.01" /><div class="set-hint">Multiplica el manejo cuando el tiempo sale de OSRM, que calcula con la vía libre. No aplica con TomTom (ese ya trae el tráfico). Default 1.05, calibrado contra la programación manual.</div></div>
-                <div class="set-field"><label>Colchón al entregar en MDE (min)</label><input id="setting-route-buffer" class="set-input" type="number" min="0" max="45" /><div class="set-hint">Bajar maletas y entrar al terminal. Llegar justo a la hora de presentación es llegar tarde. Default 10.</div></div>
+                <div class="set-field"><label>Colchón al entregar en JMC (min)</label><input id="setting-route-buffer" class="set-input" type="number" min="0" max="45" /><div class="set-hint">Bajar maletas y entrar al terminal. Llegar justo a la hora de presentación es llegar tarde. Default 10.</div></div>
               </div>
               <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Factor del tramo al aeropuerto</label><input id="setting-route-aero" class="set-input" type="number" min="0.5" max="1.5" step="0.01" /><div class="set-hint">Corrige <b>solo</b> el viaje a/desde MDE, aparte del factor de tráfico. Va por debajo de 1 porque OSRM sobreestima ese corredor: la operación hace en 20 min lo que él calcula en 27. Entre casa y casa no se toca, ahí OSRM acierta. Medido contra 99 vueltas de la programación manual. Default 0.80.</div></div>
+                <div class="set-field"><label>Factor del tramo al aeropuerto</label><input id="setting-route-aero" class="set-input" type="number" min="0.5" max="1.5" step="0.01" /><div class="set-hint">Corrige <b>solo</b> el viaje a/desde JMC, aparte del factor de tráfico. Va por debajo de 1 porque OSRM sobreestima ese corredor: la operación hace en 20 min lo que él calcula en 27. Entre casa y casa no se toca, ahí OSRM acierta. Medido contra 99 vueltas de la programación manual. Default 0.80.</div></div>
               </div>
                 </div>
               </details>
@@ -898,6 +898,16 @@
               </div>
               <div class="set-row2" style="margin-top:14px">
                 <div class="set-field"><label>Tolerancia del anillo (min)</label><input id="setting-sweep-tol" class="set-input" type="number" min="0" max="15" /><div class="set-hint"><b>El barrido:</b> cada vuelta arranca en la parada más lejana al aeropuerto y de ahí solo se acerca — nunca se devuelve. Regla suya, dictada el 21-ago. Esta tolerancia es lo que puede alejarse sin contar como devolverse: él sí salta dentro de un mismo anillo (Cerezos 28 → Río Vivo 28), pero no se sale.</div></div>
+              </div>
+                </div>
+              </details>
+
+              <details class="set-sec" data-guarda="btn" data-secval="setting-night-cutoff">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Vuelos de madrugada</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+                <p class="set-hint" style="margin:0 0 10px 2px">Los turnos van de 2 a 2: un vuelo que aterriza a las 12:40 a. m. del jueves lo hace el turno PM del miércoles con sus últimas rutas.</p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Las vueltas que salen antes de</label><select id="setting-night-cutoff" class="set-input"><option value="0">00:00 (medianoche)</option><option value="30">00:30 a. m.</option><option value="60">01:00 a. m.</option><option value="90">01:30 a. m.</option><option value="120">02:00 a. m.</option><option value="150">02:30 a. m.</option><option value="180">03:00 a. m.</option><option value="210">03:30 a. m.</option><option value="240">04:00 a. m.</option></select><div class="set-hint">son del <b>turno PM del día anterior</b>. Asignación las programa con ese conductor y tú lo puedes cambiar en cada carro.</div><div class="set-hint" id="setting-night-cutoff-off" hidden>Falta la migración 0107 en esta base: se usa 02:00.</div></div>
               </div>
                 </div>
               </details>
@@ -1313,7 +1323,7 @@
 
           <div class="rv2-stage">
             <div class="rv2-listwrap" id="rv2-listwrap">
-              <div class="rv2-cols" aria-hidden="true"><span>Estado</span><span>Recogida → MDE</span><span>Carro · tipo</span><span>Tripulantes</span><span>Margen</span><span>Conductor</span></div>
+              <div class="rv2-cols" aria-hidden="true"><span>Estado</span><span>Recogida → JMC</span><span>Carro · tipo</span><span>Tripulantes</span><span>Margen</span><span>Conductor</span></div>
               <div class="rv2-list" id="rv2-list"></div>
             </div>
             <div class="rv2-carros" id="rv2-carros" hidden></div>
@@ -1362,9 +1372,9 @@
             <div class="clock-h">
               <b>Día completo</b>
               <div class="clock-legend">
-                <span class="lg"><i style="background:#F26522"></i>Salida (casa → MDE)</span>
+                <span class="lg"><i style="background:#F26522"></i>Salida (casa → JMC)</span>
                 <span class="lg"><i style="background:#F59E0B"></i>Con hotel</span>
-                <span class="lg"><i style="background:#10B981"></i>Llegada (MDE → casa)</span>
+                <span class="lg"><i style="background:#10B981"></i>Llegada (JMC → casa)</span>
                 <span class="lg"><i class="nowline"></i>Ahora</span>
               </div>
             </div>

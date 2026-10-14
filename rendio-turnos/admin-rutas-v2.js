@@ -56,7 +56,7 @@
   const TOL_CHOQUE = 4;
   const LABEL = { risk: 'En riesgo', nodriver: 'Sin conductor', adj: 'Ajustada', ok: 'Lista' };
   const TYPE = { salida: 'Salida', llegada: 'Llegada', hotel: 'Hotel' };
-  const TYPE_LONG = { salida: 'Salida casa → MDE', llegada: 'Llegada MDE → casa', hotel: 'Salida con hotel → MDE' };
+  const TYPE_LONG = { salida: 'Salida casa → JMC', llegada: 'Llegada JMC → casa', hotel: 'Salida con hotel → JMC' };
   const PRIO = { risk: 0, nodriver: 1, adj: 2, ok: 3 };
   const KEY_VISTA = 'rendio.rutas.vista';
   const ESTADOS_PLAN = ['draft', 'planned', 'in_progress', 'completed'];
@@ -75,8 +75,8 @@
   // tras una llegada queda en la última casa (+2) y, si lo que sigue es otra
   // llegada, tiene que volver a MDE.
   // La PRIMERA vuelta del carro no tiene con qué chocar: devuelve null. (El
-  // solver la acota a avail0 = 01:30, pero una vuelta de las 00:30 la hace el
-  // carro del turno PM del día anterior; marcarla «tarde» sería falso.)
+  // solver arranca los carros a la medianoche: lo que sale antes del corte de
+  // Calibración lo hace el turno PM del día anterior; marcarla «tarde» sería falso.)
   function libreDe(lane) {
     const lanes = lanesDeCarro(lane.car);
     const i = lanes.findIndex((l) => l.id === lane.id);
@@ -138,7 +138,7 @@
     if (!id) return null;
     const d = (rt.drivers || []).find((x) => x.id === id);
     if (d) return { id, name: d.n || 'Conductor', phone: d.tel || '' };
-    const s = rt.shift && [...(rt.shift.am || []), ...(rt.shift.pm || [])].find((x) => x.id === id);
+    const s = [...((rt.shift && rt.shift.am) || []), ...((rt.shift && rt.shift.pm) || []), ...((rt.shiftPrev && rt.shiftPrev.pm) || [])].find((x) => x.id === id);
     return { id, name: (s && s.n) || 'Conductor', phone: '' };
   }
 
@@ -163,7 +163,7 @@
       end = c.arrival + retraso;
       wait = Math.max(0, Math.round(Math.max(c.wait || 0, start + retraso - (c.depart != null ? c.depart : start))));
     } else {
-      arrival = c.arrival + retraso;                         // ETA a MDE
+      arrival = c.arrival + retraso;                         // ETA a JMC
       end = arrival;
       pres = c.hardDL;
       // Margen = presentación − (llegada a MDE + colchón de entrega). Es la
@@ -200,7 +200,7 @@
     return {
       date: rt.day || ui.dia,
       published: !!rt.firmaPublicada,
-      vehicles: (rt.cars || []).map((c) => ({ id: c.id, am: c.driverAM || null, pm: c.driverPM || null, capacity: rtCapOf(c) })),
+      vehicles: (rt.cars || []).map((c) => ({ id: c.id, am: c.driverAM || null, pm: c.driverPM || null, mad: c.driverMad || null, capacity: rtCapOf(c) })),
       drivers: (rt.drivers || []).map((d) => ({ id: d.id, name: d.n, phone: d.tel || '' })),
       crew, routes, byId,
       unrouted: (rt.pool || []).slice(),
@@ -212,7 +212,7 @@
     list.forEach((r) => { c[r.status]++; });
     return c;
   }
-  const timeSpan = (r) => (r.type === 'llegada' ? `MDE ${hhmm(r.arrival)} → ${hhmm(r.end)}` : `${hhmm(r.pickup)} → ${hhmm(r.arrival)}`);
+  const timeSpan = (r) => (r.type === 'llegada' ? `JMC ${hhmm(r.arrival)} → ${hhmm(r.end)}` : `${hhmm(r.pickup)} → ${hhmm(r.arrival)}`);
   const hayVueltas = () => (rt.lanes || []).some((l) => (rt.order[l.id] || []).length);
   const firmaActual = () => (typeof rtFirmaPlan === 'function' ? rtFirmaPlan() : '');
   const publicado = () => !!rt.firmaPublicada;
@@ -220,11 +220,11 @@
   const sinPublicar = () => rt.source === 'live' && hayVueltas() && firmaActual() !== rt.firmaPublicada;
 
   /* ---------- 3. Mover / simular (con el modelo de tiempos real) ---------- */
-  const foto = () => ({ lanes: clone(rt.lanes), order: clone(rt.order), pool: rt.pool.slice(), drv: rt.cars.map((c) => [c.driverAM || null, c.driverPM || null]), optimized: rt.optimized, fijas: clone(rt.rv2Fijas || {}) });
+  const foto = () => ({ lanes: clone(rt.lanes), order: clone(rt.order), pool: rt.pool.slice(), drv: rt.cars.map((c) => [c.driverAM || null, c.driverPM || null, c.driverMad || null]), optimized: rt.optimized, fijas: clone(rt.rv2Fijas || {}) });
   function restaurar(f) {
     rt.lanes = clone(f.lanes); rt.order = clone(f.order); rt.pool = f.pool.slice(); rt.optimized = f.optimized;
     rt.rv2Fijas = clone(f.fijas || {});
-    rt.cars.forEach((c, i) => { const d = f.drv[i] || [null, null]; c.driverAM = d[0]; c.driverPM = d[1]; });
+    rt.cars.forEach((c, i) => { const d = f.drv[i] || [null, null, null]; c.driverAM = d[0]; c.driverPM = d[1]; c.driverMad = d[2] || null; });
   }
   function aplicarMovida(crewId, fromId, toId) {
     const to = rtLaneOf(toId);
@@ -447,7 +447,7 @@
       const w = r.wait || 0;
       mgTxt = w > LLE_ESPERA_LARGA ? `esp. ${w}` : '—';
       mgCls = w > LLE_ESPERA_LARGA ? 'adj' : 'ok';
-      mgTitle = w > 0 ? `El tripulante espera ${w} min en MDE` : 'No aplica para llegadas';
+      mgTitle = w > 0 ? `El tripulante espera ${w} min en JMC` : 'No aplica para llegadas';
     } else {
       mgTxt = signed(m); mgCls = m < 0 ? 'neg' : m < ADJ_MIN ? 'adj' : 'ok';
       mgTitle = `Margen contra la hora de presentación, ya descontados ${BUF()} min de entrega`;
@@ -544,12 +544,12 @@
       // Una sola línea al lado del carro: si le falta conductor en algún turno
       // con vueltas, eso es lo que se dice (es lo que pide acción); si no, los
       // conductores de sus turnos. El detalle completo va en el title.
-      const bands = [...new Set(rs.map((r) => r.shift))].sort();
-      const faltan = bands.filter((b) => !(b === 'am' ? car.driverAM : car.driverPM));
-      const nombres = bands.map((b) => { const id = b === 'am' ? car.driverAM : car.driverPM; return id ? `${b.toUpperCase()} ${conductor(id).name}` : `${b.toUpperCase()} sin conductor`; });
+      const bands = [...new Set(rs.map((r) => r.shift))].sort((a, b) => RT_BANDS.indexOf(a) - RT_BANDS.indexOf(b));
+      const faltan = bands.filter((b) => !rtCarDrv(car, b));
+      const nombres = bands.map((b) => { const id = rtCarDrv(car, b); return id ? `${rtBandName(b)} ${conductor(id).name}` : `${rtBandName(b)} sin conductor`; });
       const lab = !rs.length ? '<span>Sin vueltas</span>'
-        : faltan.length ? `<span class="none" title="${esc(nombres.join(' · '))}">Sin conductor ${faltan.map((b) => b.toUpperCase()).join('/')}</span>`
-        : `<span title="${esc(nombres.join(' · '))}">${bands.map((b) => esc(shortName(conductor(b === 'am' ? car.driverAM : car.driverPM).name))).join(' / ')}</span>`;
+        : faltan.length ? `<span class="none" title="${esc(nombres.join(' · '))}">Sin conductor ${faltan.map((b) => rtBandName(b)).join(" / ")}</span>`
+        : `<span title="${esc(nombres.join(' · '))}">${bands.map((b) => esc(shortName((conductor(rtCarDrv(car, b)) || {}).name || '—'))).join(' / ')}</span>`;
       html += `<div class="rv2-tl-row" role="listitem"><div class="rv2-tl-lab"><b>${esc(car.id)}</b>${lab}</div><div class="rv2-tl-track">` +
         `<i class="rv2-tl-pm" style="left:calc(14 * var(--hw))" title="Relevo AM → PM (14:00)"></i>` +
         rs.map((r) => {
@@ -588,9 +588,9 @@
     let end;
     if (r.type === 'llegada') {
       const tierra = r.stops.every((s) => aux(s.crewId) && aux(s.crewId).tierra);
-      end = `<li class="end"><span class="mono">${hhmm(r.pickup)}</span><div><b>Recogida en MDE</b>${tierra ? 'Salen del terminal' : 'Aterriza'} ${hhmm(r.arrival)}${r.wait ? ` · <span class="${r.wait > LLE_ESPERA_LARGA ? 't-adj' : ''}">espera ${r.wait} min</span>` : ''}</div></li>`;
+      end = `<li class="end"><span class="mono">${hhmm(r.pickup)}</span><div><b>Recogida en JMC</b>${tierra ? 'Salen del terminal' : 'Aterriza'} ${hhmm(r.arrival)}${r.wait ? ` · <span class="${r.wait > LLE_ESPERA_LARGA ? 't-adj' : ''}">espera ${r.wait} min</span>` : ''}</div></li>`;
     } else {
-      end = `<li class="end"><span class="mono${m < 0 ? ' neg' : ''}">${hhmm(r.arrival)}</span><div><b>Llegada MDE</b>Presentación ${hhmm(r.pres)} · ${BUF()} min de entrega · <span class="${m < 0 ? 't-risk' : m < ADJ_MIN ? 't-adj' : 't-ok'}">${m < 0 ? Math.abs(m) + ' min tarde' : m + ' min de margen'}</span></div></li>`;
+      end = `<li class="end"><span class="mono${m < 0 ? ' neg' : ''}">${hhmm(r.arrival)}</span><div><b>Llegada JMC</b>Presentación ${hhmm(r.pres)} · ${BUF()} min de entrega · <span class="${m < 0 ? 't-risk' : m < ADJ_MIN ? 't-adj' : 't-ok'}">${m < 0 ? Math.abs(m) + ' min tarde' : m + ' min de margen'}</span></div></li>`;
     }
     return r.type === 'llegada' ? end + stops : stops + end;
   }
@@ -600,9 +600,9 @@
     const choque = r.retraso ? ` · el carro termina su vuelta anterior ${r.retraso} min tarde` : '';
     if (r.fija === 'completed') return 'Terminada · el conductor ya la cerró';
     if (r.status === 'risk') return `En riesgo · llega ${hhmm(r.arrival)}; con ${B} min de entrega no alcanza la presentación (${hhmm(r.pres)}): ${Math.abs(m)} min tarde${choque}`;
-    if (r.status === 'nodriver') return `Sin conductor para el turno ${r.shift.toUpperCase()} de ${r.vehicle}`;
+    if (r.status === 'nodriver') return `Sin conductor para el turno ${rtBandName(r.shift)} de ${r.vehicle}`;
     if (r.status === 'adj') {
-      if (r.type === 'llegada') return `Ajustada · el tripulante esperaría ${r.wait} min en MDE${choque}`;
+      if (r.type === 'llegada') return `Ajustada · el tripulante esperaría ${r.wait} min en JMC${choque}`;
       return `Ajustada · llega ${hhmm(r.arrival)}; con ${B} min de entrega le quedan ${m} min a la presentación (${hhmm(r.pres)})${choque}`;
     }
     if (r.type === 'llegada') return `Lista · aterrizaje ${hhmm(r.arrival)}, última entrega ${hhmm(r.end)}`;
@@ -622,7 +622,7 @@
       `<div class="acts"><button class="rv2-btn rv2-btn--cta rv2-btn--sm" data-act="apply" data-crew="${esc(sug.crewId)}" data-from="${esc(r.id)}" data-to="${esc(sug.to)}">Aplicar</button>` +
       `<button class="rv2-btn rv2-btn--sm" data-act="move" data-crew="${esc(sug.crewId)}" data-from="${esc(r.id)}">Ver otras opciones</button></div></div>`
       : (r.status === 'risk' && r.type !== 'llegada' && !r.fija ? '<p class="rv2-note">Rendio no encontró a quién mover sin dejar otra ruta tarde. Prueba «Mover auxiliar», Re-optimizar o, si no hay cómo, publícala de todos modos.</p>' : '');
-    const turno = r.shift.toUpperCase();
+    const turno = rtBandName(r.shift);
     const drvHTML = `<div class="rv2-drv"><span class="rv2-av">${d ? esc(initials(d.name)) : '?'}</span><div>${d ? `<b>${esc(d.name)}</b>Conductor · turno ${turno}` : `<b>Sin conductor</b>Turno ${turno} de ${esc(r.vehicle)}`}</div>` +
       (d && d.phone ? `<a class="rv2-ic" href="${esc(telHref(d.phone))}" aria-label="Llamar a ${esc(d.name)}">${IC.phone}</a>` : '') +
       (r.fija === 'completed' ? '' : `<button class="rv2-btn ${d ? '' : 'rv2-btn--soft'} rv2-btn--sm" data-act="assign" data-id="${esc(r.id)}">${d ? 'Cambiar' : 'Asignar'}</button>`) + '</div>';
@@ -669,16 +669,16 @@
     D.routes.forEach((r) => { if (!r.driverId && r.fija !== 'completed') { const k = r.vehicle + '|' + r.shift; if (!slots.has(k)) slots.set(k, r); } });
     return slots;
   }
-  const usadoEn = (shift, driverId, exceptCar) => (rt.cars || []).find((c) => c.id !== exceptCar && (shift === 'am' ? c.driverAM : c.driverPM) === driverId) || null;
+  const usadoEn = (shift, driverId, exceptCar) => (rt.cars || []).find((c) => c.id !== exceptCar && rtCarDrv(c, shift) === driverId) || null;
   function poolTurno(shift) { return (typeof rtPoolFor === 'function' ? rtPoolFor(shift) : rt.drivers) || []; }
 
   function assignDriver(carId, shift, driverId) {
     const car = rt.cars.find((c) => c.id === carId); if (!car) return;
     const otro = usadoEn(shift, driverId, carId);
-    if (otro) { toast(`${conductor(driverId).name} ya maneja ${otro.id} en el turno ${shift.toUpperCase()}: no puede estar en dos carros a la vez.`); return; }
+    if (otro) { toast(`${conductor(driverId).name} ya maneja ${otro.id} en el turno ${rtBandName(shift)}: no puede estar en dos carros a la vez.`); return; }
     snapshot('conductor');
-    if (shift === 'am') car.driverAM = driverId; else car.driverPM = driverId;
-    commit(`${conductor(driverId).name} asignado a ${carId} · turno ${shift.toUpperCase()}`);
+    rtSetCarDrv(car, shift, driverId);
+    commit(`${conductor(driverId).name} asignado a ${carId} · turno ${rtBandName(shift)}`);
   }
 
   function autoAssign() {
@@ -689,7 +689,7 @@
       const [carId, shift] = k.split('|');
       const car = rt.cars.find((c) => c.id === carId); if (!car) return;
       const d = poolTurno(shift).find((x) => !usadoEn(shift, x.id, null));
-      if (d) { if (shift === 'am') car.driverAM = d.id; else car.driverPM = d.id; n++; }
+      if (d) { rtSetCarDrv(car, shift, d.id); n++; }
     });
     if (!n) { hist.pop(); render(); toast('No hay conductores libres en el turno para asignar'); return; }
     const faltan = slots.length - n;
@@ -826,21 +826,30 @@
   function openAssign(routeId) {
     const r = D.byId[routeId]; if (!r) return;
     const shift = r.shift; const car = rt.cars.find((c) => c.id === r.vehicle); if (!car) return;
-    const cur = shift === 'am' ? car.driverAM : car.driverPM;
+    const cur = rtCarDrv(car, shift);
     const pool = poolTurno(shift);
     const opts = pool.map((d) => ({ d, otro: usadoEn(shift, d.id, car.id) }));
+    // El jefe manda (13-oct-2026): además de los del turno, cualquier otro
+    // conductor, por si hace falta cubrir con alguien que no estaba programado.
+    const enPool = new Set(pool.map((d) => d.id));
+    const otros = (rt.drivers || []).filter((d) => !enPool.has(d.id)).map((d) => ({ d, otro: usadoEn(shift, d.id, car.id) }));
     let sel = cur || (opts.find((o) => !o.otro) || {}).d?.id || null;
     const slots = slotsSinConductor();
-    const nota = rt.shiftLoaded ? `En turno ${shift.toUpperCase()} según el horario publicado` : 'Sin horario publicado para ese día: se muestran todos los conductores';
+    const cargado = shift === 'mad' ? rt.shiftPrevLoaded : rt.shiftLoaded;
+    const nota = cargado
+      ? (shift === 'mad' ? `En turno PM del día anterior según el horario publicado (las vueltas antes de las ${rtHHc()})` : `En turno ${rtBandName(shift)} según el horario publicado`)
+      : 'Sin horario publicado para ese día: se muestran todos los conductores';
     const curName = cur ? conductor(cur).name : null;
-    openSheet(sheetHead(`Conductor para ${esc(r.vehicle)}`, `Turno ${shift.toUpperCase()} · aplica a todas sus vueltas de ese turno${curName ? ' · hoy: ' + esc(curName) : ''}`) +
+    const optBtn = ({ d, otro }, fuera) => {
+      const full = (rt.drivers || []).find((x) => x.id === d.id) || {};
+      const pill = d.id === cur ? '<span class="st st--ok">Actual</span>' : otro ? `<span class="st st--off">Maneja ${esc(otro.id)}</span>` : fuera ? '<span class="st st--adj">Fuera de turno</span>' : '<span class="st st--ok">Libre</span>';
+      const small = [full.tel || '', otro ? 'ya tiene carro en este turno' : (d.id === cur ? 'asignado a este carro' : fuera ? 'no está en este turno en el horario' : 'sin carro en este turno')].filter(Boolean).join(' · ');
+      return `<button class="rv2-opt" role="radio" aria-checked="${d.id === sel}" data-pick="${esc(d.id)}"${otro ? ' disabled' : ''}><span class="t"><b>${esc(d.n)}</b></span>${pill}<small>${esc(small)}</small></button>`;
+    };
+    openSheet(sheetHead(`Conductor para ${esc(r.vehicle)}`, `Turno ${rtBandName(shift)} · aplica a todas sus vueltas de ese turno${curName ? ' · hoy: ' + esc(curName) : ''}`) +
       `<div class="rv2-sh-body"><h3 class="rv2-cap">${esc(nota)}</h3><div id="rv2-dopts" role="radiogroup" aria-label="Conductores disponibles" style="display:flex;flex-direction:column;gap:8px">` +
-      (opts.length ? opts.map(({ d, otro }) => {
-        const full = (rt.drivers || []).find((x) => x.id === d.id) || {};
-        const pill = d.id === cur ? '<span class="st st--ok">Actual</span>' : otro ? `<span class="st st--off">Maneja ${esc(otro.id)}</span>` : '<span class="st st--ok">Libre</span>';
-        const small = [full.tel || '', otro ? 'ya tiene carro en este turno' : (d.id === cur ? 'asignado a este carro' : 'sin carro en este turno')].filter(Boolean).join(' · ');
-        return `<button class="rv2-opt" role="radio" aria-checked="${d.id === sel}" data-pick="${esc(d.id)}"${otro ? ' disabled' : ''}><span class="t"><b>${esc(d.n)}</b></span>${pill}<small>${esc(small)}</small></button>`;
-      }).join('') : `<p class="rv2-impact">Nadie en turno ${shift.toUpperCase()} ese día en el horario publicado. Publica o ajusta el horario.</p>`) +
+      (opts.length ? opts.map((o) => optBtn(o, false)).join('') : `<p class="rv2-impact">Nadie en turno ${rtBandName(shift)} ese día en el horario publicado. Puedes elegir otro conductor abajo.</p>`) +
+      (cargado && otros.length ? `<h3 class="rv2-cap" style="margin-top:6px">Otros conductores</h3>` + otros.map((o) => optBtn(o, true)).join('') : '') +
       `</div>${slots.size > 1 ? `<button class="rv2-btn" data-act="autoassign" style="margin-top:4px">Autoasignar todos los carros sin conductor (${slots.size})</button>` : ''}</div>` +
       `<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button><button class="rv2-btn rv2-btn--cta" id="rv2-doAssign"${sel && sel !== cur ? '' : ' disabled'}>Asignar</button></div>`);
     setLabel();
@@ -871,7 +880,7 @@
       item(!c.risk, false, c.risk ? `${plural(c.risk, 'ruta', 'rutas')} en riesgo` : 'Ninguna ruta en riesgo', 'Todas deben llegar antes de la hora de presentación.', 'risk') +
       item(!c.nodriver, false, c.nodriver ? `${plural(c.nodriver, 'ruta', 'rutas')} sin conductor` : 'Todos los carros con conductor', 'Cada carro necesita conductor en cada turno con vueltas.', 'nodriver') +
       item(!unr, false, unr ? `${plural(unr, 'tripulante', 'tripulantes')} sin rutear` : 'Todos los tripulantes ruteados', 'Nadie puede quedar sin carro.', 'unrouted') +
-      item(!c.adj, true, c.adj ? `${plural(c.adj, 'ruta ajustada', 'rutas ajustadas')}` : 'Ninguna ruta ajustada', `Llegan con menos de ${ADJ_MIN} min de margen (o el tripulante espera más de ${LLE_ESPERA_LARGA} min en MDE). No bloquea.`, 'adj') +
+      item(!c.adj, true, c.adj ? `${plural(c.adj, 'ruta ajustada', 'rutas ajustadas')}` : 'Ninguna ruta ajustada', `Llegan con menos de ${ADJ_MIN} min de margen (o el tripulante espera más de ${LLE_ESPERA_LARGA} min en JMC). No bloquea.`, 'adj') +
       (c.adj ? `<label class="rv2-ack"><input type="checkbox" id="rv2-ack"> Revisé las rutas ajustadas</label>` : '') +
       (blocking ? `<button class="rv2-linkbtn" id="rv2-forceOpen" aria-expanded="false" aria-controls="rv2-force">Publicar de todos modos…</button>` +
         `<div class="rv2-force" id="rv2-force" hidden><p>Vas a publicar con:</p><ul>${forzarItems.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` +
@@ -950,7 +959,7 @@
       let car = rt.cars.find((c) => c.vehicleId && c.vehicleId === v.vehicleId);
       if (!car) {
         let id = v.carro || 'Carro'; while (rt.cars.some((c) => c.id === id)) id += '·';
-        car = { id, avail0: '01:30', driver: null, capacity: v.cap || rt.CAP, vehicleId: v.vehicleId };
+        car = { id, avail0: '00:00', driver: null, capacity: v.cap || rt.CAP, vehicleId: v.vehicleId };
         rt.cars.push(car);
       }
       const stops = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
@@ -968,8 +977,8 @@
       else if ((v.atendidas || []).length) fijas[lane.id] = 'in_progress';
       if (v.driverProfileId) {
         if (!(rt.drivers || []).some((d) => d.id === v.driverProfileId)) rt.drivers.push({ id: v.driverProfileId, n: v.conductor || 'Conductor', c: '#8895a7' });
-        if (rtBandOf(lane) === 'am') car.driverAM = car.driverAM || v.driverProfileId;
-        else car.driverPM = car.driverPM || v.driverProfileId;
+        const banda = rtBandOf(lane);
+        rtSetCarDrv(car, banda, rtCarDrv(car, banda) || v.driverProfileId);
       }
     });
     if (!lanes.length) return false;

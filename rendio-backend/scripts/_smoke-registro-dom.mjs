@@ -505,7 +505,7 @@ console.log('\n── personal de tierra (0106) ──');
   const tierra = q('[data-rg="airline"][data-id="__tierra__"]');
   t('la sección dice «Dónde trabajas»', /Dónde trabajas/.test(txt()));
   t('«Trabajo en el aeropuerto» va de ÚLTIMA, después de las 4 aerolíneas', !!tierra && opciones.length === CAT.airlines.length + 1 && opciones[opciones.length - 1] === tierra, String(opciones.length));
-  t('con la sigla MDE y «Personal de tierra · no vuelo»', !!tierra && /MDE/.test(tierra.textContent) && /Personal de tierra · no vuelo/.test(tierra.textContent));
+  t('con la sigla JMC y «Personal de tierra · no vuelo»', !!tierra && /JMC/.test(tierra.textContent) && /Personal de tierra · no vuelo/.test(tierra.textContent));
   E.click(tierra); await wait();
   const on = qa(AIR_ON);
   t('al tocarla queda elegida, y solo ella', on.length === 1 && on[0].dataset.id === '__tierra__', on.map(b => b.dataset.id).join(','));

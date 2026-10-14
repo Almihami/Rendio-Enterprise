@@ -1090,6 +1090,21 @@
       ({ error } = await upd({ fast_start_deadline: s.fast_start_deadline }));
       if (error) throw error;
     }
+    // 0107: el corte de la madrugada, aparte por el mismo motivo.
+    if (s.route_night_cutoff_min != null) {
+      ({ error } = await upd({ route_night_cutoff_min: s.route_night_cutoff_min }));
+      if (error) throw error;
+    }
+  }
+
+  // 0107: hasta qué hora (min desde medianoche) las vueltas son del turno PM del
+  // día anterior. Lectura propia —no en getSettings, que tiene que ser una sola
+  // ida a la base—: la piden solo Asignación y Calibración. null = la base no
+  // tiene la columna (el tablero usa 02:00 y Calibración apaga el campo).
+  async function getRouteNightCutoff() {
+    const { data, error } = await sb.from('app_settings').select('route_night_cutoff_min').eq('id', 'singleton').maybeSingle();
+    if (error || !data || data.route_night_cutoff_min == null) return null;
+    return Number(data.route_night_cutoff_min);
   }
 
   // Actualiza un vehículo (admin). RLS: p_vehicles_admin_mutate.
@@ -2427,7 +2442,7 @@
       // Se configura en Ajustes; si la columna no existe todavía se comporta
       // como siempre (2).
       const nCarros = Math.max(1, Number((await getSettings())?.route_cars_count) || 2);
-      cars = (vs || []).slice(0, nCarros).map((v, i) => ({ id: v.internal_code || v.license_plate || ('Carro ' + (i + 1)), avail0: '01:30', driver: null, capacity: v.capacity || 4, vehicleId: v.id }));
+      cars = (vs || []).slice(0, nCarros).map((v, i) => ({ id: v.internal_code || v.license_plate || ('Carro ' + (i + 1)), avail0: '00:00', driver: null, capacity: v.capacity || 4, vehicleId: v.id }));
     } catch (_) {}
     if (!cars.length) return { aux: {}, colors: {}, cars: [], drivers: [], plan: {}, source: 'empty', day: day0, noVehicles: true };
     let drivers = [];
@@ -3282,7 +3297,7 @@
       .order('planned_start_at', { ascending: true }));
     if (error) return null;
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-    const MDE = { name: 'Aeropuerto MDE', addr: 'Terminal de pasajeros · José María Córdova', lat: 6.1715, lng: -75.4270 };
+    const MDE = { name: 'Aeropuerto JMC', addr: 'Terminal de pasajeros · José María Córdova', lat: 6.1715, lng: -75.4270 };
     // Día operativo MÁS PRÓXIMO con ruta (hoy si la hay; si no, la siguiente).
     const active = (data || []).filter(ra => ra.planned_start_at && ra.status !== 'completed' && _bogDay(ra.planned_start_at) >= today);
     if (!active.length) return [];
@@ -3318,7 +3333,7 @@
       const RESUELTA = ['delivered', 'no_show'];
       const todasResueltas = stops.length > 0 && stops.every(x => RESUELTA.includes(x.stopStatus));
       const air = { name: MDE.name, addr: MDE.addr, lat: MDE.lat, lng: MDE.lng, kind: 'airport' };
-      const legs = type === 'lle' ? [air, ...stops] : [...stops, air]; // llegada: sale de MDE; salida: termina en MDE
+      const legs = type === 'lle' ? [air, ...stops] : [...stops, air]; // llegada: sale de JMC; salida: termina en JMC
       return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at, done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: day0 };
     });
   }
@@ -3506,7 +3521,7 @@
         flight,
         pres: presAt ? rtHHMM(presAt) : '—',
         presAt,
-        next: nextStop ? `${shortName(nameOf(nextStop))} · ${(nextStop.reservations?.pickup_address || '').split(',')[0]}` : (type === 'lle' ? 'Entregas pendientes' : 'Aeropuerto MDE'),
+        next: nextStop ? `${shortName(nameOf(nextStop))} · ${(nextStop.reservations?.pickup_address || '').split(',')[0]}` : (type === 'lle' ? 'Entregas pendientes' : 'Aeropuerto JMC'),
         nextPos: nextStop && nextStop.reservations?.pickup_latitude
           ? [nextStop.reservations.pickup_latitude, nextStop.reservations.pickup_longitude]
           : null,
@@ -3650,7 +3665,7 @@
     getWeeklyAvailability, getMyWeeklyAvailability,
     upsertAvailabilityRow, saveDriverWeekAvailability,
     getSchedule, saveSchedule, deleteSchedule, listPublishedSchedules, listDriversOnShift,
-    getSettings, saveSettings, setAvailabilityReopen,
+    getSettings, saveSettings, getRouteNightCutoff, setAvailabilityReopen,
     listMyApprovalRequests, listPendingApprovals, resolveApproval, runAutoResolve,
     listDriverStrikes, getActiveStrikeCounts, addStrike, voidStrike,
     getWeekSuspensions, getMyWeekSuspension, addManualSuspension, liftSuspension,

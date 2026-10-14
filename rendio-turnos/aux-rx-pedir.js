@@ -68,8 +68,8 @@
 
   // ── Tipos (RX_TYPES del diseño, sin Hotel: D22) ─────────────────────────────
   const TYPES = {
-    sal: { t: 'Casa → Aeropuerto', s: 'Te recogemos para tu vuelo', ic: 'Plane', tone: 'h2a', from: 'CASA', to: 'MDE' },
-    lle: { t: 'Aeropuerto → Casa', s: 'Te esperamos al aterrizar', ic: 'Home', tone: 'a2h', from: 'MDE', to: 'CASA' },
+    sal: { t: 'Casa → Aeropuerto', s: 'Te recogemos para tu vuelo', ic: 'Plane', tone: 'h2a', from: 'CASA', to: 'JMC' },
+    lle: { t: 'Aeropuerto → Casa', s: 'Te esperamos al aterrizar', ic: 'Home', tone: 'a2h', from: 'JMC', to: 'CASA' },
   };
 
   // ── Días (hora de Bogotá, nunca el reloj del teléfono) ──────────────────────
@@ -199,7 +199,7 @@
     if (!f.time) return `<div class="rx-pd-calc-slot" data-rx-key="calc:"></div>`;
     const lle = f.type === 'lle';
     return `<div class="rx-calc rx-in" data-rx-key="${esc(calcKey(f))}">`
-      + `<span class="rx-calc-l">${lle ? (f.groundOps ? 'Sales de MDE' : 'Aterrizas') : 'Estar en MDE'}</span>`
+      + `<span class="rx-calc-l">${lle ? (f.groundOps ? 'Sales de JMC' : 'Aterrizas') : 'Estar en JMC'}</span>`
       + `<b class="rx-calc-t">${esc(hm(f.time))}</b>`
       + `<span class="rx-calc-s">La hora de recogida te la confirmamos cuando armemos tu ruta.</span></div>`;
   }
@@ -268,7 +268,7 @@
   // la pantalla de siempre); este respaldo solo corre si no cargó.
   const TIERRA_RESPALDO = {
     label: 'Trabajo en tierra (sin vuelo)',
-    hint: 'Operaciones del aeropuerto: vas a MDE sin tomar un vuelo.',
+    hint: 'Operaciones del aeropuerto: vas a JMC sin tomar un vuelo.',
     salNote: 'Es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.',
     lleNote: 'Es la hora a la que sales del terminal. Como no vienes en un vuelo, no le sumamos tiempo de desembarque.',
   };
@@ -429,11 +429,11 @@
     if (tierra) {
       // En tierra (0092) la fila dice eso, no un vuelo (tampoco uno que haya
       // quedado escrito antes de encender el interruptor: ese no viaja).
-      const cuando = f.time ? (lle ? 'sales ' : 'estar en MDE ') + hm(f.time) : '';
+      const cuando = f.time ? (lle ? 'sales ' : 'estar en JMC ') + hm(f.time) : '';
       rows += row('Briefcase', 'Trabajo', ['En tierra', cuando].filter(Boolean).join(' · '), goVuelo);
     } else {
       const vuelo = lle ? [f.flight, f.time ? 'aterriza ' + hm(f.time) : ''].filter(Boolean).join(' · ')
-        : (f.time ? 'Estar en MDE ' + hm(f.time) : '');
+        : (f.time ? 'Estar en JMC ' + hm(f.time) : '');
       rows += row('Plane', 'Vuelo', vuelo || '—', goVuelo);
     }
     const place = [shortAddr(f.address), f.residenceUnit].filter(Boolean).join(' · ') || '—';
@@ -446,7 +446,7 @@
       rows += row(priv ? 'Sparkle' : 'Users', 'Nivel', priv ? 'Privado · ' + (pp || 'con costo') : 'Compartido · Incluido', 'data-rx="goto-step" data-step="nivel"');
     }
     if (!lle && f.sameDayBack && f.backTime) {
-      rows += row('RotateCcw', 'Regreso', tierra ? 'Sales de MDE ' + hm(f.backTime)
+      rows += row('RotateCcw', 'Regreso', tierra ? 'Sales de JMC ' + hm(f.backTime)
         : 'Aterriza ' + hm(f.backTime) + (f.backFlight ? ' · ' + f.backFlight : ''), goVuelo);
     }
     if (f.isPernocta && !tierra) rows += row('Moon', 'Pernocta', 'Sí (hotel)', goVuelo);
@@ -456,7 +456,7 @@
     const ctl = U() ? U().stepCtl(bags) : '';
     return `<div class="rx-review rx-in" data-rx-key="review">`
       + `<div class="rx-rv-time"><span>${esc(dayLabel(f.date) || '—')}</span><b>${esc(hm(f.time) || '--:--')}</b>`
-      + `<span>${lle ? (tierra ? 'sales de MDE' : 'aterrizas') : 'estar en MDE'}</span>`
+      + `<span>${lle ? (tierra ? 'sales de JMC' : 'aterrizas') : 'estar en JMC'}</span>`
       + `<span class="rx-pd-rv-sub">La recogida te la confirmamos cuando armemos tu ruta.</span></div>`
       + rows + `</div>`
       + `<div class="rx-card rx-in" style="--d:1" data-rx-key="extras">`
