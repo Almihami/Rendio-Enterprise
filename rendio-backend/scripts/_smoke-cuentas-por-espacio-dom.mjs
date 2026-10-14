@@ -6,7 +6,7 @@
 //
 //   1. El menú: «Usuarios» ya no sale en ningún espacio ni en la Consola;
 //      Personal sigue en Turnos › Equipo y Tripulantes en Rutas › Equipo.
-//   2. Lo cableado: index.html, sw.js (v175, sin admin-usuarios), los archivos
+//   2. Lo cableado: index.html, sw.js (v176, sin admin-usuarios), los archivos
 //      borrados, api.js sin listAllUsersForAdmin y el enlace del push en core.js
 //      (#/workers → Personal, #/tripulantes y el viejo #/usuarios → Tripulantes).
 //   3. Tripulantes: solo las solicitudes de contraseña de TRIPULANTES; los
@@ -125,7 +125,7 @@ console.log('\n2 · Lo cableado');
   const html = read('index.html'), sw = read('sw.js'), core = read('core.js'), api = read('api.js');
   t('index.html sin el panel, el CSS ni el script de Usuarios', !/data-panel="usuarios"/.test(html) && !/admin-usuarios/.test(html));
   t('…pero con usuarios.js (los modales compartidos)', /<script src="usuarios\.js"><\/script>/.test(html));
-  t('sw.js: v175 y sin admin-usuarios en el APP_SHELL', /CACHE_VERSION = 'rendio-turnos-v175'/.test(sw) && !/admin-usuarios/.test(sw));
+  t('sw.js: v176 y sin admin-usuarios en el APP_SHELL', /CACHE_VERSION = 'rendio-turnos-v176'/.test(sw) && !/admin-usuarios/.test(sw));
   t('admin-usuarios.js y .css ya no existen', !existsSync(APP + 'admin-usuarios.js') && !existsSync(APP + 'admin-usuarios.css'));
   t('api.js sin listAllUsersForAdmin', !/listAllUsersForAdmin/.test(api));
   t('core.js sin renderUsuarios', !/renderUsuarios/.test(core));
