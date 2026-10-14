@@ -930,7 +930,7 @@
       + '<td><input class="set-input" data-cbt-new="perTripCOP" inputmode="numeric" value="' + esc(nf.perTripCOP || '') + '" placeholder="Por viaje" autocomplete="off"></td>'
       + '<td><button class="set-btn ghost" data-cb="rate-add"' + (cb.busy ? ' disabled' : '') + '>' + icon('i-plus') + 'Agregar</button></td></tr>';
     return '<div class="cb-panel">'
-      + '<div class="cb-panel-h"><b>Tarifas por sector</b><span>Cada sector se dibuja en el mapa: quien vive adentro (conjunto o casa con pin) es de ese sector. La mensualidad del sector es la que paga quien vive ahí, salvo que su cuenta tenga un valor propio (las cuentas creadas antes de las tarifas casi todas lo tienen: el conteo lo dice). El valor por viaje es el de las vacaciones: ese cobro vale viajes × valor en vez de la mensualidad. Vacío = sin valor: nadie cobra con un valor inventado.</span></div>'
+      + '<div class="cb-panel-h"><b>Tarifas por sector</b><span>Cada sector se dibuja en el mapa: quien vive adentro (conjunto o casa con pin) es de ese sector. Son aparte de las zonas de tiempos (Calibración › Zonas de tiempos). La mensualidad del sector es la que paga quien vive ahí, salvo que su cuenta tenga un valor propio (las cuentas creadas antes de las tarifas casi todas lo tienen: el conteo lo dice). El valor por viaje es el de las vacaciones: ese cobro vale viajes × valor en vez de la mensualidad. Vacío = sin valor: nadie cobra con un valor inventado.</span></div>'
       + '<p class="cb-mini' + (none ? ' warn' : '') + '" data-cb-rates-sum>' + esc(pl(total, 'tripulante', 'tripulantes') + ' · ' + pl(none, 'sin sector', 'sin sector')
         + (none ? ': asígnaselo en su cuenta (Editar cuenta › Sector).' : '.')) + '</p>'
       + zMapaHTML()

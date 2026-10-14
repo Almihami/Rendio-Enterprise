@@ -757,7 +757,9 @@ details[open] .details-chevron { transform: rotate(180deg); }
 :is(.set-ui,#cobro-ui) .zn-editbar-t{flex:1;min-width:220px}
 /* .hidden pierde contra display:flex de arriba (más específico): se repite aquí */
 .set-ui .zn-nueva.hidden,.set-ui .zn-editbar.hidden,.set-ui .zn-map.hidden,.set-ui .set-btn.hidden,.set-ui .zn-err.hidden{display:none}
-#cobro-ui .zn-editbar.hidden{display:none}
+/* Con el mismo :is() que la regla que la muestra: si no, el #cobro-ui le gana al
+   .hidden y la barra sale vacía sin estar dibujando (pasó en Calibración, 13-oct). */
+:is(.set-ui,#cobro-ui) .zn-editbar.hidden,:is(.set-ui,#cobro-ui) .zn-map.hidden{display:none}
 :is(.set-ui,#cobro-ui) .zn-editbar-t small{display:block;margin-top:2px;font-size:11.5px;line-height:1.35;color:var(--ink2);min-height:2.7em}
 /* ↑ dos líneas reservadas: el texto cambia al tercer punto y el mapa no debe moverse mientras se marca */
 .set-ui .zn-lista{margin-top:10px}
