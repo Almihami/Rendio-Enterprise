@@ -1,5 +1,6 @@
-// Migraciones de la ruta del conductor v2 y los ajustes del 12-oct-2026 (0102–0105) y
-// personal de tierra del 13-oct (0106) contra DEV. --solo=0106 aplica solo esa.
+// Migraciones de la ruta del conductor v2 y los ajustes del 12-oct-2026 (0102–0105),
+// personal de tierra (0106), madrugada/JMC (0107) y el aviso de contraseña por
+// espacio (0110) del 13-oct, contra DEV. --solo=0110 aplica solo esa.
 //
 //   cd rendio-backend/scripts && set -a && source ../.env.dev && set +a && node _aplicar-ruta-v2-1012.mjs --estado
 //   cd rendio-backend/scripts && set -a && source ../.env.dev && set +a && node _aplicar-ruta-v2-1012.mjs --seco
@@ -36,6 +37,7 @@ const ARCHIVOS = [
   '0105_inspeccion_al_cerrar.sql',
   '0106_personal_de_tierra.sql',
   '0107_madrugada_y_jmc.sql',
+  '0110_claves_por_espacio.sql',   // 0108/0109 son de la rama de zonas (sin publicar)
 ].filter(f => !SOLO.length || SOLO.some(n => f.startsWith(n)));
 
 const c = new pg.Client({ host: 'aws-1-us-east-1.pooler.supabase.com', port: 5432, user: 'postgres.' + ref,
@@ -58,6 +60,7 @@ if (estado) {
   console.log('  0105 app_settings.fast_start_deadline:', await col('app_settings', 'fast_start_deadline'));
   console.log('  0106 auxiliar_profiles.ground_staff:', await col('auxiliar_profiles', 'ground_staff'));
   console.log('  0107 app_settings.route_night_cutoff_min:', await col('app_settings', 'route_night_cutoff_min'));
+  console.log('  0110 aviso de contraseña por espacio:', (await one(`SELECT count(*)::int n FROM pg_proc WHERE proname = 'request_password_reset' AND prosrc LIKE '%Rutas › Tripulantes%'`)).n > 0);
   const s = await one(`SELECT aux_private_price_cop FROM public.app_settings WHERE id = 'singleton'`).catch(() => null);
   console.log('  tarifa del privado hoy:', s ? s.aux_private_price_cop : '(sin fila)');
   await c.end();

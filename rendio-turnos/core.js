@@ -489,9 +489,6 @@
     if (name === 'reservas') renderReservas();
     if (name === 'privados') renderPrivados();
     if (name === 'tripulantes') renderTripulantes();
-    // Usuarios (11-oct-2026): módulo IIFE que exporta por window, con typeof
-    // por la misma razón que Coordinación: si no cargó, la navegación no se cae.
-    if (name === 'usuarios' && typeof window.renderUsuarios === 'function') window.renderUsuarios();
     if (name === 'eventualidades') renderEventualidades();
     else stopEvtTimer(); // al salir de la bandeja, frena su polling
     if (name === 'oper') renderOperacion();
@@ -531,8 +528,12 @@
       : m[1] === 'coordinacion' && typeof window.renderCoordinacion === 'function' ? 'coordinacion'
       : m[1] === 'cobro' && typeof window.renderCobro === 'function' ? 'cobro'
       : m[1] === 'puntos' && typeof window.renderPuntos === 'function' ? 'puntos'
-      // 0104: «Pidieron restablecer una contraseña» abre Usuarios (la solicitud sale arriba).
-      : m[1] === 'usuarios' && typeof window.renderUsuarios === 'function' ? 'usuarios' : null;
+      // «Pidieron restablecer una contraseña» (0104/0110) abre la pantalla de esa
+      // persona, con la solicitud arriba: Personal o Tripulantes. #/usuarios es el
+      // enlace de los avisos de antes de 0110 (la sección se quitó el 13-oct): va a
+      // Tripulantes, que es de donde salen casi todos los pedidos.
+      : m[1] === 'workers' ? 'workers'
+      : m[1] === 'tripulantes' || m[1] === 'usuarios' ? 'tripulantes' : null;
     if (!tab) return false;
     const params = new URLSearchParams(m[2] || '');
     const ev = params.get('ev');

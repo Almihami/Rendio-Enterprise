@@ -1,8 +1,10 @@
 // usuarios.js — Usuarios (0081, 27-sep-2026): los modales que abre el jefe desde
-// Personal, Tripulantes y la sección Usuarios (admin-usuarios.js): editar datos,
-// restablecer contraseña, crear cuenta (11-oct) y el de «Cambiar mi contraseña»,
-// que usan los tres roles. Toda la escritura pasa por las funciones de la base
-// (Api.admin*), que validan que quien llama sea jefe.
+// Personal (conductores y jefes) y Tripulantes: editar datos, restablecer
+// contraseña, el banner de solicitudes de contraseña (0104) y el de «Cambiar mi
+// contraseña», que usan los tres roles. Toda la escritura pasa por las
+// funciones de la base (Api.admin*), que validan que quien llama sea jefe.
+// La sección «Usuarios» que juntaba todas las cuentas (11-oct) se quitó el
+// 13-oct: cada quien se gestiona en la pantalla de su espacio.
 // Comparte scope global con los demás módulos; el orden de carga está en index.html.
 
   // Regla única de contraseña (U7): 10 o más caracteres, con letras y números.
@@ -139,7 +141,7 @@
   // Restablecer contraseña (U2). Temporal generada o una que escriba el jefe.
   // Se muestra UNA vez y no queda guardada en ningún lado de la app.
   // onDone (opcional, 0104): se llama cuando la contraseña ya quedó puesta
-  // (Usuarios lo usa para cerrar el pedido de «Olvidé mi contraseña»).
+  // (usrPedidoAccion lo usa para cerrar el pedido de «Olvidé mi contraseña»).
   // ─────────────────────────────────────────────────────────────────────
   function openRestablecerClave(profileId, name, onDone) {
     const temp = usrTempPassword();
@@ -212,7 +214,7 @@
   // promoción falla queda de conductor y se devuelve el error para decirlo.
   // Con forceChange, además se le marca que cambie la contraseña al entrar
   // (es la misma función de «Restablecer», con la clave que se acaba de poner).
-  // La usan «Crear conductor» de Personal y «Crear usuario» de Usuarios.
+  // La usa «Crear conductor» de Personal (que también crea jefes).
   // ─────────────────────────────────────────────────────────────────────
   async function usrCrearCuenta({ name, email, phone, password, role = 'driver', priority = 1, canCoord = false, forceChange = false }) {
     const created = await Api.createDriver({ email, password, full_name: name, phone, priority, can_coordinate: canCoord });
@@ -232,111 +234,86 @@
     const del = await Api.listDeletedProfiles().catch(() => []);
     return (del || []).find(x => (x.email || '').toLowerCase() === (email || '').toLowerCase()) || null;
   }
-  // El teléfono como lo acepta create-driver: solo dígitos y un + adelante.
-  const usrLimpiarTel = (t) => String(t || '').trim().replace(/[^\d+]/g, '');
+  // ─────────────────────────────────────────────────────────────────────
+  // Solicitudes de contraseña (0104). Quien no puede entrar la pide desde el
+  // login («¿Problemas para entrar?») y el jefe la atiende ARRIBA de la
+  // pantalla donde ya gestiona a esa persona: Personal muestra las de
+  // conductores y jefes; Tripulantes, las de tripulantes (13-oct-2026, al
+  // quitar la sección Usuarios, que juntaba a 10 conductores con 200
+  // tripulantes en una sola lista). Las dos pantallas pintan el mismo banner
+  // (usrPedidosHTML) y le pasan los clics a usrPedidoAccion.
+  // ─────────────────────────────────────────────────────────────────────
+  // roles: los de esa pantalla. '' = el pedido se quedó sin cuenta (la persona
+  // se borró de la base): sale en Personal, solo para descartarlo.
+  async function usrPedidosClave(roles) {
+    if (typeof Api.listPasswordResetRequests !== 'function') return [];
+    // Si falla, la pantalla sale igual: es un aviso de más, no lo principal.
+    try { return (await Api.listPasswordResetRequests()).filter(r => roles.includes(r.role || '')); }
+    catch (e) { console.error(e); return []; }
+  }
 
-  // El modal de «Crear usuario» (sección Usuarios). Los tripulantes no: se
-  // registran solos desde la app (0075).
-  function openCrearUsuario(onDone) {
-    const body = usrField('Nombre completo', 'full_name', '', 'text', 'autocomplete="off" placeholder="Ej: Juan Pérez García"')
-      + `<div class="set-grid2" style="margin-top:14px">
-          ${usrField('Correo (usuario para entrar)', 'email', '', 'email', 'autocomplete="off" placeholder="nombre@rendio.co"')}
-          ${usrField('Teléfono', 'phone', '', 'tel', 'inputmode="tel" autocomplete="off" placeholder="3001234567"')}
-        </div>
-        <div class="set-grid2" style="margin-top:14px">
-          <div class="set-field"><label>Crear como</label><div class="set-selwrap"><select class="set-sel" data-f="role">
-            <option value="driver" selected>Conductor</option><option value="admin">Administrador (jefe)</option>
-          </select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
-          <div class="set-field" data-usr="prio"><label>Prioridad</label><div class="set-selwrap"><select class="set-sel" data-f="priority">
-            <option value="1" selected>1 · Nuevo</option><option value="2">2 · Con tiempo</option><option value="3">3 · Antiguo</option><option value="4">4 · Máxima</option>
-          </select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
-        </div>
-        <label class="set-checkrow" data-usr="coord" style="margin-top:12px">
-          <input type="checkbox" class="set-chk-input" data-f="can_coordinate">
-          <span class="set-chk"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span>
-          <span>¿Puede ser líder de turno? (entra al pool de líderes)</span>
-        </label>
-        <div class="set-field" style="margin-top:14px"><label>Contraseña</label>
-          <div class="set-pwwrap">
-            <input class="set-input mono" data-f="password" type="text" autocomplete="new-password" value="${usrTempPassword()}">
-            <button class="set-btn ghost" data-usr="gen" type="button" title="Generar otra">Otra</button>
+  // «hace 5 min», «hace 2 h», «hace 3 días»: cuánto lleva esperando.
+  function usrHaceCuanto(iso) {
+    const t = iso ? new Date(iso).getTime() : NaN;
+    if (!isFinite(t)) return '';
+    const min = Math.max(0, Math.round((Date.now() - t) / 60000));
+    if (min < 1) return 'hace un momento';
+    if (min < 60) return `hace ${min} min`;
+    const h = Math.round(min / 60);
+    if (h < 24) return `hace ${h} h`;
+    const d = Math.round(h / 24);
+    return d === 1 ? 'hace 1 día' : `hace ${d} días`;
+  }
+
+  function usrPedidosHTML(list) {
+    if (!list || !list.length) return '';
+    return `<div class="usr-pw" role="region" aria-label="Solicitudes de contraseña">
+      <div class="usr-pw-head">
+        <svg class="icon"><use href="#i-lock"/></svg>
+        <div><b>Solicitudes de contraseña <span class="usr-pw-n">${list.length}</span></b>
+          <span>Pidieron una contraseña nueva desde la pantalla de entrada. Ponle una temporal y pásasela por WhatsApp o llamada: al entrar, la cambia.</span></div>
+      </div>
+      <div class="usr-pw-list">${list.map(r => {
+        const quien = r.name || r.contact || 'Sin nombre';
+        return `<div class="usr-pw-row" data-pw="${escapeAttr(r.id)}">
+          <div class="usr-pw-who"><b>${escapeHtml(quien)}</b><span>${r.name && r.contact ? escapeHtml(r.contact) + ' · ' : ''}${escapeHtml(usrHaceCuanto(r.createdAt))}${r.profileId ? '' : ' · ya no tiene cuenta'}</span></div>
+          <div class="usr-pw-acts">
+            ${r.profileId ? `<button class="usr-pw-btn primary" data-usr-pw="reset" data-id="${escapeAttr(r.id)}">Restablecer</button>` : ''}
+            <button class="usr-pw-btn" data-usr-pw="dismiss" data-id="${escapeAttr(r.id)}">Descartar</button>
           </div>
-          <div class="set-hint">${USR_PW_RULE} Puedes dejar la generada o escribir una.</div>
-        </div>
-        <label class="set-checkrow" style="margin-top:10px">
-          <input type="checkbox" class="set-chk-input" data-f="force" checked>
-          <span class="set-chk"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span>
-          <span>Pedirle que la cambie al entrar</span>
-        </label>
-        <p class="set-hint" style="margin-top:12px">Los tripulantes no se crean acá: se registran solos desde la app.</p>`;
-    const ov = usrModal('usr-new-modal', 'Crear usuario', 'Conductor o administrador', body,
-      `<button class="wk-btn wk-coord-off" data-usr="cancel">Cancelar</button><button class="wk-btn wk-coord-on" data-usr="save">Crear cuenta</button>`);
-    const f = (k) => ov.querySelector(`[data-f="${k}"]`);
-    const syncRol = () => {
-      const esJefe = f('role').value === 'admin';
-      ov.querySelector('[data-usr="prio"]').classList.toggle('hidden', esJefe);
-      ov.querySelector('[data-usr="coord"]').classList.toggle('hidden', esJefe);
-    };
-    f('role').addEventListener('change', syncRol);
-    ov.querySelector('[data-usr="gen"]').addEventListener('click', () => { f('password').value = usrTempPassword(); });
+        </div>`;
+      }).join('')}</div>
+    </div>`;
+  }
 
-    // La pantalla final: la única vez que se ve la contraseña.
-    const resultado = (nombre, email, pw, avisos) => {
-      ov.querySelector('.usr-body').innerHTML = `
-        <p style="font-size:13px;color:var(--ink2)">Cuenta lista. Pásale estos datos a <b>${escapeHtml(nombre)}</b>. La contraseña no se vuelve a mostrar.</p>
-        <div class="set-field" style="margin-top:10px"><label>Correo</label><input class="set-input mono" readonly value="${escapeAttr(email)}"></div>
-        <div class="set-pwwrap" style="margin-top:10px">
-          <input class="set-input mono" readonly value="${escapeAttr(pw)}" data-usr="pwout">
-          <button class="set-btn ghost" data-usr="copy" type="button">Copiar</button>
-        </div>
-        ${avisos.map(a => `<div class="usr-reason">${escapeHtml(a)}</div>`).join('')}`;
-      ov.querySelector('.modal-actions').innerHTML = '<button class="wk-btn wk-coord-on" data-usr="cancel">Listo</button>';
-      ov.querySelector('[data-usr="cancel"]').addEventListener('click', () => ov.remove());
-      ov.querySelector('[data-usr="copy"]').addEventListener('click', async (e2) => {
-        try { await navigator.clipboard.writeText(`${email} / ${pw}`); e2.currentTarget.textContent = 'Copiada'; }
-        catch (_) { ov.querySelector('[data-usr="pwout"]').select(); }
+  // Un clic en el banner. «Restablecer» abre el modal de siempre y, cuando la
+  // temporal queda puesta, el pedido pasa a «done» (la base también lo cierra
+  // sola por la bitácora de 0081); «Descartar» lo pasa a «dismissed».
+  // onChange(lista) recibe la lista sin ese pedido; onRestablecido (opcional)
+  // recarga la pantalla para que salga «Clave temporal».
+  async function usrPedidoAccion(btn, list, onChange, onRestablecido) {
+    const r = (list || []).find(x => x.id === btn.dataset.id); if (!r) return;
+    const sin = () => (list || []).filter(x => x.id !== r.id);
+    if (btn.dataset.usrPw === 'reset') {
+      if (!r.profileId) return;
+      openRestablecerClave(r.profileId, r.name || r.contact, async () => {
+        try { await Api.resolvePasswordResetRequest(r.id, 'done'); } catch (e) { console.error(e); }
+        onChange(sin());
+        if (onRestablecido) await onRestablecido();
       });
-    };
-
-    ov.querySelector('[data-usr="save"]').addEventListener('click', async (ev) => {
-      const btn = ev.currentTarget;
-      const name = f('full_name').value.trim();
-      const email = f('email').value.trim().toLowerCase();
-      const phone = usrLimpiarTel(f('phone').value);
-      const password = f('password').value.trim();
-      const role = f('role').value === 'admin' ? 'admin' : 'driver';
-      const priority = parseInt(f('priority').value, 10) || 1;
-      const canCoord = role === 'driver' && f('can_coordinate').checked;
-      const forceChange = f('force').checked;
-      if (name.length < 3) { usrShowErr(ov, 'Escribe el nombre completo.'); return; }
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { usrShowErr(ov, 'El correo no parece válido.'); return; }
-      if (phone && !/^\+?\d{7,15}$/.test(phone)) { usrShowErr(ov, 'El teléfono no parece válido (7 a 15 dígitos).'); return; }
-      if (!usrPasswordOk(password)) { usrShowErr(ov, USR_PW_RULE); return; }
-      btn.disabled = true; usrShowErr(ov, '');
+      return;
+    }
+    if (btn.dataset.usrPw === 'dismiss') {
+      btn.disabled = true;
       try {
-        const r = await usrCrearCuenta({ name, email, phone, password, role, priority, canCoord, forceChange });
-        const avisos = [];
-        if (r.promoteError) avisos.push(`Quedó como conductor: no se pudo hacer administrador (${r.promoteError.message}). Hazlo desde la lista.`);
-        if (r.forceError) avisos.push(`No se pudo marcar que cambie la contraseña al entrar (${r.forceError.message}).`);
-        else if (forceChange) avisos.push('Al entrar, la app le pedirá cambiarla.');
-        resultado(name, email, password, avisos);
-        toast(`${name} quedó creado.`);
-        if (onDone) await onDone();
+        await Api.resolvePasswordResetRequest(r.id, 'dismissed');
+        onChange(sin());
+        toast('Pedido descartado.');
       } catch (e) {
-        const del = await usrEliminadoConCorreo(e, email);
-        if (del && confirm(`Ese correo es de ${del.full_name}, que está eliminado. ¿Restaurarlo? Vuelve activo con su contraseña de antes (si no la recuerda, restablécela).`)) {
-          try {
-            await usrSetStatus(del.id, 'active', null, { wasDeleted: true });
-            ov.remove();
-            toast(`${del.full_name} fue restaurado.`);
-            if (onDone) await onDone();
-          } catch (e2) { usrShowErr(ov, e2.message || 'No se pudo restaurar.'); btn.disabled = false; }
-          return;
-        }
-        usrShowErr(ov, e.message || 'No se pudo crear la cuenta.');
         btn.disabled = false;
+        alert('Error: ' + ((e && e.message) || 'no se pudo'));
       }
-    });
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────

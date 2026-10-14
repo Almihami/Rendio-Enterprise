@@ -626,3 +626,13 @@
 #auxiliar-ui.rx-phone .rx-noanim .rx-check polyline{ stroke-dashoffset:0; }
 #auxiliar-ui.rx-phone .rx-noanim .rx-anim .rx-check circle{ stroke-dashoffset:151; }
 #auxiliar-ui.rx-phone .rx-noanim .rx-anim .rx-check polyline{ stroke-dashoffset:36; }
+
+/* ── 8. Textos de los jefes y foto de perfil del tripulante (14-oct-2026) ───────
+   El remate de la bienvenida (.rx-wel-tag / .rx-c-tag: la frase corta que cierra
+   cada pantalla) y el botón de la foto en Perfil (aux-rx-perfil.js · me-photo). */
+#auxiliar-ui.rx-phone .rx-c-p.rx-c-tag{color:var(--r-text);font-weight:600;margin-top:-4px}
+#auxiliar-ui.rx-phone .rx-wel-tx p.rx-wel-tag{color:var(--r-text);font-weight:600;margin-top:10px}
+#auxiliar-ui.rx-phone .rx-me-photo{position:relative;border:0;padding:0;background:none;border-radius:50%;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#auxiliar-ui.rx-phone .rx-me-photo:active{transform:scale(.97)}
+#auxiliar-ui.rx-phone .rx-me-photo:focus-visible{outline:2px solid var(--r-accent);outline-offset:3px}
+#auxiliar-ui.rx-phone .rx-me-cam{position:absolute;right:-2px;bottom:-2px;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--r-card);color:var(--r-text);border:1px solid var(--r-border);box-shadow:0 2px 6px rgba(0,0,0,.12)}

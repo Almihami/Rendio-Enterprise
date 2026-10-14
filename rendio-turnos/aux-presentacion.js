@@ -101,8 +101,10 @@
     },
     {
       art: 'punto',
-      h: 'Ya sabemos dónde queda tu portería',
-      p: 'Tenemos ubicadas las porterías de los conjuntos de Rionegro con la coordenada medida a mano. Eliges la tuya de una lista: no escribes direcciones ni arrastras pines.',
+      h: 'Sabemos dónde recogerte',
+      p: 'Tenemos ubicadas las porterías de los conjuntos residenciales y los puntos de encuentro de las viviendas. Solo selecciona tu lugar de recogida de la lista y nosotros nos encargamos del resto.',
+      // Texto de los jefes (14-oct-2026). El cierre va aparte, como remate.
+      tag: 'Sin marcar ubicaciones manualmente.',
     },
     {
       art: 'conductor',
@@ -249,7 +251,7 @@
         </div>
         <div class="axo-copy">
           <h1>${s.h}</h1>
-          <p>${s.p}</p>
+          <p>${s.p}</p>${s.tag ? `<p><b>${s.tag}</b></p>` : ''}
         </div>
         <div class="axo-dots">${SLIDES.map((_, n) => `<button class="axo-dot${n === i ? ' on' : ''}${n < i ? ' seen' : ''}" data-ax="onb-go" data-i="${n}" aria-label="Pantalla ${n + 1}"></button>`).join('')}</div>
         <div class="axo-acts">
@@ -421,7 +423,7 @@
 
   // La lámina (key={i}) y el texto (key={'t'+i}).
   const rxArtInner = (i) => `<div class="rx-art">${ART[SLIDES[i].art] || ''}</div>`;
-  const rxTxInner = (i) => `<h1>${SLIDES[i].h}</h1><p>${SLIDES[i].p}</p>`;
+  const rxTxInner = (i) => `<h1>${SLIDES[i].h}</h1><p>${SLIDES[i].p}</p>${SLIDES[i].tag ? `<p class="rx-wel-tag">${SLIDES[i].tag}</p>` : ''}`;
   const rxNextLabel = (i) => (i < rxLast() ? 'Siguiente' : 'Entendido');
   function rxDotsHTML(i) {
     return SLIDES.map((_, k) => `<button type="button"${k === i ? ' class="on" aria-current="step"' : ''} data-ax="onb-go" data-i="${k}" aria-label="Paso ${k + 1} de ${SLIDES.length}"></button>`).join('');
@@ -459,8 +461,9 @@
     return `<div class="rx-ob" data-ob="notif">
       <div class="rx-scr rx-center">
         <div class="rx-bell-big">${rxIc('Bell', 40)}<i></i><i></i></div>
-        <h1 class="rx-c-h">Te avisamos en el momento justo</h1>
-        <p class="rx-c-p">Cuando te asignen conductor, cuando salga hacia tu punto y si algo cambia en tu traslado. Nada de promociones.</p>
+        <h1 class="rx-c-h">Siempre informado, en el momento justo</h1>
+        <p class="rx-c-p">Recibe notificaciones cuando te asignemos un conductor, cuando esté en camino hacia tu punto de recogida y si se presenta alguna novedad durante tu traslado.</p>
+        <p class="rx-c-p rx-c-tag">Tu viaje bajo control, de principio a fin.</p>
         <div class="rx-demo-push"><span class="rx-push-ic">${rxIc('Nav', 15)}</span><div><b>${rxEsc(RX_DEMO_PUSH.t)}</b><span>${rxEsc(RX_DEMO_PUSH.d)}</span></div></div>
         ${iosInstallHTML()}
         <div class="rx-foot abs">${needsInstall()

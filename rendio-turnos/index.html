@@ -106,7 +106,6 @@
   <link rel="stylesheet" href="admin-whatsapp.css" />
   <!-- Estado de vuelos (0099): el chip de vuelos-ui.js -->
   <link rel="stylesheet" href="vuelos.css" />
-  <link rel="stylesheet" href="admin-usuarios.css" />
   <!-- Rutas › Asignación v2 (10-oct-2026): acotado a #routes-v2 y .rv2-* -->
   <link rel="stylesheet" href="admin-rutas-v2.css" />
 </head>
@@ -580,7 +579,7 @@
       <section data-panel="workers" class="hidden space-y-3">
         <div>
           <h2 class="text-xl md:text-2xl font-bold text-ink">Personal</h2>
-          <p class="text-sm text-slate-500">Usuarios cargados en el sistema.</p>
+          <p class="text-sm text-slate-500">El equipo de Rendio: conductores y jefes. Contraseñas, datos, estado, strikes y liderazgo.</p>
         </div>
         <div id="workers-list" class="space-y-2"></div>
 
@@ -799,12 +798,83 @@
             <p>Los números con los que el sistema decide a qué hora sale cada carro y quién se sube con quién. Casi todos salieron de medir la programación manual contra el plan del sistema: cada sección dice contra qué se midió.</p>
           </div>
 
-          <div class="set-card" data-bloque="calib">
+          <div class="set-card" id="zonas-card">
             <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
+              <div>
+                <h2>Zonas de tiempos</h2>
+                <p>Las de la tabla de Julián: a qué hora se recoge. Cada conjunto toma la zona del dibujo que lo contiene. Los sectores de cobro van aparte, en Cuentas de cobro › Tarifas por sector.</p>
+              </div>
+              <button class="set-btn sm" id="zona-agregar-btn" style="margin-left:auto"><svg class="icon"><use href="#i-plus"/></svg>Agregar zona</button>
+            </div>
+            <div class="set-cb">
+              <div class="zn-nueva hidden" id="zona-nueva">
+                <input class="zn-input" id="zona-nueva-nombre" maxlength="60" placeholder="Barro Blanco" aria-label="Nombre de la zona nueva" />
+                <button class="set-btn dark sm" id="zona-nueva-crear">Crear y dibujar</button>
+                <button class="set-btn ghost sm" id="zona-nueva-cancelar">Cancelar</button>
+                <div class="zn-err hidden" id="zona-nueva-err"></div>
+              </div>
+              <div class="zn-editbar hidden" id="zona-editbar">
+                <div class="zn-editbar-t" id="zona-editbar-t"></div>
+                <button class="set-btn ghost sm" id="zona-deshacer-btn">Deshacer</button>
+                <button class="set-btn ghost sm" id="zona-cancelar-dibujo-btn">Cancelar</button>
+                <button class="set-btn dark sm" id="zona-guardar-dibujo-btn">Guardar dibujo</button>
+              </div>
+              <div class="zn-map" id="zonas-map"></div>
+              <p class="set-hint" style="margin:8px 0 0 2px">Los puntos son los conjuntos del catálogo, del color de su zona. Gris = sin zona. La gente que vive en casa con pin propio también toma la zona del dibujo, aunque no salga aquí.</p>
+              <div class="zn-lista" id="zonas-lista"></div>
+              <div class="set-hint" id="zonas-aviso" style="margin:10px 0 0 2px"></div>
+            </div>
+          </div>
+
+          <details class="set-card set-card-acc" data-acc="conjuntos">
+            <summary class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
+              <div>
+                <h2>Zona de cada conjunto</h2>
+                <p>Las excepciones al mapa. Lo puesto aquí a mano gana sobre el dibujo. Se guarda al instante.</p>
+              </div>
+              <span class="set-sec-ya">Se guarda solo</span>
+              <svg class="icon details-chevron set-card-chev"><use href="#i-chev"/></svg>
+            </summary>
+            <div class="set-cb">
+              <p class="set-hint" style="margin:0 0 12px 2px">Lo normal es <b>«Según el mapa»</b>: el conjunto toma la zona del dibujo que lo contiene. Se elige una zona a mano solo cuando el dibujo no basta, porque las zonas de Julián son de operación y no de geografía: Los Cerezos queda a 200 m de Olivar (Fontibón), pero él lo quiere en Porvenir. Un conjunto <b>sin zona</b> (fuera de los dibujos, o dentro de dos a la vez) se programa con el cálculo por carretera.</p>
+              <div id="residence-zones"></div>
+            </div>
+          </details>
+
+          <details class="set-card set-card-acc" data-acc="tabla">
+            <summary class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
+              <div>
+                <h2>Tabla de tiempos de la operación</h2>
+                <p>Los minutos que Julián maneja para recoger. No los calcula el sistema: los dicta él y aquí se editan.</p>
+              </div>
+              <svg class="icon details-chevron set-card-chev"><use href="#i-chev"/></svg>
+            </summary>
+            <div class="set-cb">
+              <p class="set-hint" style="margin:0 0 12px 2px">Estos tiempos <b>no reemplazan</b> el cálculo por carretera: mandan cuando son mayores. Así la tabla nunca promete algo que el carro no pueda hacer, y el cálculo nunca recoge más tarde de lo que él recogería. Un conjunto sin zona, o de una zona sin minutos, se programa con el cálculo, como antes. Una zona nueva llega con la columna en blanco: se llena toda y se guarda.</p>
+
+              <p class="set-hint" style="margin:6px 0 6px 2px;font-weight:700">De recoger al primero a llegar al aeropuerto</p>
+              <p class="set-hint" style="margin:0 0 10px 2px">Los dos números son el rango según cuánta gente va: <b>uno solo va con el mínimo</b>, tres o más con el máximo, y dos por la mitad.</p>
+              <div style="overflow-x:auto"><table class="set-matrix" id="zone-times-table"></table></div>
+
+              <p class="set-hint" style="margin:18px 0 6px 2px;font-weight:700">Solo el tramo final, desde la última persona recogida</p>
+              <p class="set-hint" style="margin:0 0 10px 2px">En una vuelta con varias paradas este tramo tiene que caber dentro del total de arriba, así que funciona como un piso aparte.</p>
+              <div style="overflow-x:auto"><table class="set-matrix" id="leg-times-table"></table></div>
+
+              <div id="zone-times-warn" class="set-hint" style="margin:14px 0 0 2px"></div>
+              <div class="set-foot"><button class="set-btn dark" id="save-route-tables-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar tabla</button></div>
+            </div>
+          </details>
+
+          <details class="set-card set-card-acc" data-acc="parametros" data-bloque="calib">
+            <summary class="set-ch">
               <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
               <div><h2>Parámetros del optimizador</h2><p>Tráfico, esperas, desembarque y la forma de despachar. Lo que se cambie acá manda en el próximo plan, no en el que ya está corriendo.</p></div>
               <span class="set-saved" id="set-saved-calib"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg>Guardado</span>
-            </div>
+              <span class="set-sec-dot set-card-dot"></span><svg class="icon details-chevron set-card-chev"><use href="#i-chev"/></svg>
+            </summary>
             <div class="set-cb">
               <details class="set-sec" data-guarda="btn" data-secval="setting-aux-wait,setting-aux-lead,setting-priv-enabled,setting-priv-vehicle,setting-priv-price,setting-priv-block">
                 <summary><span class="set-sec-dot"></span><span class="set-sec-t">Traslados de auxiliares</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
@@ -927,46 +997,7 @@
                 <span class="set-savenote"></span>
               </div>
             </div>
-          </div>
-
-          <div class="set-card">
-            <div class="set-ch">
-              <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
-              <div>
-                <h2>Tabla de tiempos de la operación</h2>
-                <p>Los minutos que Julián maneja para recoger. No los calcula el sistema: los dicta él y aquí se editan.</p>
-              </div>
-            </div>
-            <div class="set-cb">
-              <p class="set-hint" style="margin:0 0 12px 2px">Estos tiempos <b>no reemplazan</b> el cálculo por carretera: mandan cuando son mayores. Así la tabla nunca promete algo que el carro no pueda hacer, y el cálculo nunca recoge más tarde de lo que él recogería. Un conjunto sin zona asignada se programa con el cálculo, como antes.</p>
-
-              <p class="set-hint" style="margin:6px 0 6px 2px;font-weight:700">De recoger al primero a llegar al aeropuerto</p>
-              <p class="set-hint" style="margin:0 0 10px 2px">Los dos números son el rango según cuánta gente va: <b>uno solo va con el mínimo</b>, tres o más con el máximo, y dos por la mitad.</p>
-              <div style="overflow-x:auto"><table class="set-matrix" id="zone-times-table"></table></div>
-
-              <p class="set-hint" style="margin:18px 0 6px 2px;font-weight:700">Solo el tramo final, desde la última persona recogida</p>
-              <p class="set-hint" style="margin:0 0 10px 2px">En una vuelta con varias paradas este tramo tiene que caber dentro del total de arriba, así que funciona como un piso aparte.</p>
-              <div style="overflow-x:auto"><table class="set-matrix" id="leg-times-table"></table></div>
-
-              <div id="zone-times-warn" class="set-hint" style="margin:14px 0 0 2px"></div>
-              <div class="set-foot"><button class="set-btn dark" id="save-route-tables-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar tabla</button></div>
-            </div>
-          </div>
-
-          <div class="set-card">
-            <div class="set-ch">
-              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
-              <div>
-                <h2>Zona de cada conjunto</h2>
-                <p>En cuál de las cuatro zonas de Julián cae cada residencia. Se guarda al instante.</p>
-              </div>
-              <span class="set-sec-ya">Se guarda solo</span>
-            </div>
-            <div class="set-cb">
-              <p class="set-hint" style="margin:0 0 12px 2px">Esto <b>no se puede deducir</b>: los conjuntos caben en dos kilómetros a la redonda, así que por mapa salen mal. Lo tiene que decir él. Mientras una residencia esté <b>Sin asignar</b>, sus traslados se programan con el cálculo por carretera y la tabla no se les aplica.</p>
-              <div id="residence-zones"></div>
-            </div>
-          </div>
+          </details>
         </div>
       </section>
 
@@ -1135,7 +1166,8 @@
               <h1>Tripulantes <span class="sh-ct" id="tp-count">0</span></h1>
               <p>Los TCP que se crearon cuenta desde la app. Acá se corrige la <b>fecha de ingreso</b>
                  de quienes ya llevaban tiempo con Rendio — el registro la estampa con el día en que
-                 abrieron la app, y de esa fecha salen los beneficios por antigüedad.</p>
+                 abrieron la app, y de esa fecha salen los beneficios por antigüedad. También se les
+                 <b>restablece la contraseña</b>, se corrigen sus datos y se suspenden o restauran.</p>
             </div>
             <div class="tp-acts">
               <button class="set-btn ghost" data-tp="air">Aerolíneas</button>
@@ -1153,40 +1185,13 @@
               <button data-tp="filtro" data-f="sin-fecha">Sin fecha de ingreso</button>
               <button data-tp="filtro" data-f="dos-unidades">Con dos unidades</button>
               <button data-tp="filtro" data-f="suspendidos">Suspendidos</button>
+              <button data-tp="filtro" data-f="eliminados">Eliminados</button>
             </div>
             <label class="tp-airf">Aerolínea
               <select id="tp-air-filter"><option value="">Todas</option></select>
             </label>
           </div>
           <div id="tp-body"></div>
-        </div>
-      </section>
-
-      <!-- ADMIN: Usuarios (11-oct-2026). Todas las cuentas —conductores, jefes y
-           tripulantes— con buscador y las acciones de cada una. Las pinta
-           admin-usuarios.js con los modales de usuarios.js; las mismas acciones
-           siguen en Personal y Tripulantes. -->
-      <section data-panel="usuarios" class="hidden">
-        <div id="usuarios-ui" data-theme="light">
-          <div class="us-phead">
-            <div>
-              <h1>Usuarios <span class="us-ct" id="us-count">0</span></h1>
-              <p>Todas las cuentas: conductores, jefes y tripulantes. Acá se <b>restablece la contraseña</b>,
-                 se corrigen los datos y el correo, se suspende, se elimina o se restaura, y se hace jefe a un conductor.</p>
-            </div>
-            <div class="us-hacts">
-              <button class="us-btn primary" data-us="crear"><svg class="icon"><use href="#i-userplus"/></svg>Crear usuario</button>
-              <button class="us-btn ghost" data-us="reload"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
-            </div>
-          </div>
-          <div class="us-tools">
-            <div class="us-search">
-              <svg class="icon"><use href="#i-search"/></svg>
-              <input id="us-search" type="search" placeholder="Busca por nombre, correo o teléfono" autocomplete="off" aria-label="Buscar usuario" />
-            </div>
-            <div class="us-filters" id="us-filters"></div>
-          </div>
-          <div id="us-body"></div>
         </div>
       </section>
 
@@ -1564,6 +1569,8 @@
   <script src="config.js"></script>
   <script src="supabase-client.js"></script>
   <script src="scheduler.js"></script>
+  <script src="zonas-dibujo.js"></script>
+  <script src="mapa-zonas.js"></script>
   <script src="api.js"></script>
   <!-- APIs del rediseño del auxiliar: después de api.js (usan window.sb) -->
   <script src="api-aux.js"></script>
@@ -1588,6 +1595,7 @@
   <script src="admin-disponibilidad.js"></script>
   <script src="admin-personal.js"></script>
   <script src="admin-calibracion.js"></script>
+  <script src="admin-zonas.js"></script>
   <script src="admin-flota.js"></script>
   <script src="admin-balance.js"></script>
   <script src="admin-revision.js"></script>
@@ -1604,7 +1612,6 @@
   <script src="admin-rutas-v2.js"></script>
   <script src="admin-reservas.js"></script>
   <script src="admin-tripulantes.js"></script>
-  <script src="admin-usuarios.js"></script>
   <script src="admin-privados.js"></script>
   <script src="admin-operacion.js"></script>
   <script src="admin-eventualidades.js"></script>

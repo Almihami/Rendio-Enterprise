@@ -391,6 +391,12 @@ console.log('\n── F · Carros, teclado, WhatsApp, mapa ──');
   click(q('.rv2-blk[data-id="V-03·V3"]'));
   t('tocar una barra abre su detalle', V2()._ui.sel === 'V-03·V3' && /V-03 · Vuelta 3/.test(txt(q('#rv2-detail h2'))) && q('.rv2-blk[data-id="V-03·V3"]').getAttribute('aria-current') === 'true');
   t('detalle de una llegada: recogida en JMC primero, aterrizaje', /^16:30 Recogida en JMC Aterriza 16:10/.test(leer(q('#rv2-detail .rv2-stops li'))), leer(q('#rv2-detail .rv2-stops li')));
+  t('…cada hora dice qué es: «20 min para salir del aeropuerto» y «Llega a casa» en las entregas (14-oct)',
+    /Aterriza 16:10 · 20 min para salir del aeropuerto/.test(leer(q('#rv2-detail .rv2-stops li'))) && qa('#rv2-detail .rv2-stops li:not(.end)').every((li) => /Llega a casa · /.test(leer(li))),
+    leer(q('#rv2-detail .rv2-stops')));
+  t('…y «última entrega» es la hora de la última parada, la misma de abajo',
+    (txt(q('#rv2-detail .rv2-alert')).match(/última entrega (\d\d:\d\d)/) || [])[1] === leer(qa('#rv2-detail .rv2-stops li:not(.end)').pop()).slice(0, 5),
+    txt(q('#rv2-detail .rv2-alert')));
   click(b.chip('unrouted'));
   t('«Sin rutear» desde Carros vuelve a la Lista', V2()._ui.view === 'lista' && !q('#rv2-listwrap').hidden);
   click(b.chip('all'));

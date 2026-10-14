@@ -506,8 +506,8 @@
   }
 
   // ── Tarifas por sector, sector a mano, vacaciones y balance (0094) ───────
-  // { sectors: [{sector, rateId, monthlyCOP, perTripCOP, fromResidences, residences,
-  //   crew, crewManual, crewOwn}], crewWithoutSector, crewTotal }
+  // { sectors: [{sector, rateId, monthlyCOP, perTripCOP, polygon (0109), fromResidences,
+  //   residences, crew, crewManual, crewOwn}], crewWithoutSector, crewTotal }
   async function adminSectorRates() {
     const d = await rpc('admin_billing_sector_rates');
     return d && typeof d === 'object' ? d : { sectors: [], crewWithoutSector: 0, crewTotal: 0 };
@@ -527,6 +527,24 @@
   async function adminUseSectorRate(sector) {
     if (!String(sector || '').trim()) throw new Error('Falta el nombre del sector');
     return rpc('admin_billing_use_sector_rate', { p_sector: String(sector).trim() });
+  }
+  // ── Sectores de cobro dibujados (0109) ────────────────────────────────────
+  // Dibujar crea el sector si no existe (sin valores). polygon = [[lat, lng], …];
+  // null borra el dibujo (y el sector, si tampoco tiene valores).
+  async function adminSectorShape(sector, polygon) {
+    if (!String(sector || '').trim()) throw new Error('Falta el nombre del sector');
+    return rpc('admin_billing_sector_shape', { p_sector: String(sector).trim(), p_polygon: polygon || null });
+  }
+  // Se llevan la tarifa, el dibujo y a quienes lo tenían a mano. → { sector, manualMoved }
+  async function adminSectorRename(oldName, newName) {
+    if (!String(newName || '').trim()) throw new Error('Escribe el nombre del sector');
+    return rpc('admin_billing_sector_rename', { p_old: String(oldName || '').trim(), p_new: String(newName).trim() });
+  }
+  // Se van la tarifa y el dibujo; quien lo tenía a mano vuelve a «el de donde vive».
+  // → { sector, manualCleared }
+  async function adminSectorDelete(sector) {
+    if (!String(sector || '').trim()) throw new Error('Falta el nombre del sector');
+    return rpc('admin_billing_sector_delete', { p_sector: String(sector).trim() });
   }
   // Sector a mano en la cuenta del tripulante ('' o null = el de su residencia).
   async function adminSetSector(auxId, sector) {
@@ -575,6 +593,6 @@
     adminSettings, adminSaveSettings, adminMethods, adminSaveMethod, adminSetMethodActive, adminDeleteMethod,
     adminAlerts, adminLastRun,
     // jefe (0094)
-    adminSectorRates, adminSaveSectorRate, adminUseSectorRate, adminSetSector, adminSetVacation, adminCancelVacation, adminBalance,
+    adminSectorRates, adminSaveSectorRate, adminUseSectorRate, adminSectorShape, adminSectorRename, adminSectorDelete, adminSetSector, adminSetVacation, adminCancelVacation, adminBalance,
   };
 })();

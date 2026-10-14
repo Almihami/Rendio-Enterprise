@@ -10,7 +10,7 @@
 //                 pantalla de P5 (AuxResidencias.pickerScreenHTML, que usa
 //                 pickerHTML({mode:'perfil'})) y, si no existe, un selector propio.
 // Acciones data-rx propias: me-level, pref-level (reemplaza la de P6, que lo
-// permite), me-meet, me-meet-save, me-phone, me-phone-save (11-oct-2026), me-pwa,
+// permite), me-meet, me-meet-save, me-phone, me-phone-save (11-oct-2026), me-photo (14-oct-2026), me-pwa,
 // me-push, me-res-pick, me-res-save, me-res-retry. Campos:
 // data-rx-field="meetingPoint", "me-phone" y "me-res-q".
 //
@@ -56,6 +56,7 @@
     levelBusy: false,
     meetBusy: false,
     phoneBusy: false,
+    photoBusy: false,
     pwa: undefined,     // 'on' | 'off' | 'blocked' | 'na' (undefined = sin mirar todavía)
   };
   // Pila «Mi residencia».
@@ -337,7 +338,7 @@
 
     return `<div class="rx-scr"><div class="rx-body me">
       <div class="rx-me-hero rx-in">
-        ${avatar}
+        <button type="button" class="rx-me-photo" data-rx="me-photo" data-me="photo" aria-label="${p.avatar_url ? 'Cambiar mi foto de perfil' : 'Poner mi foto de perfil'}"${st.photoBusy ? ' disabled aria-busy="true"' : ''}>${avatar}<span class="rx-me-cam">${st.photoBusy ? '<span class="rx-spin dk"></span>' : ic('Camera', 15)}</span></button>
         ${name ? `<h1 data-me="name">${esc(name)}</h1>` : ''}
         <span data-me="line">${esc(heroLine())}</span>
         ${statsHTML()}
@@ -720,6 +721,57 @@
     }
   }
 
+  // ── Foto de perfil (pedido de los jefes, 14-oct-2026) ─────────────────────
+  // La misma subida del conductor (Api.uploadMyAvatar: bucket público
+  // 'profiles', {uid}.jpg, y profiles.avatar_url). Se achica aquí a 512 px en
+  // JPEG: una foto del iPhone pesa 3–5 MB y por datos móviles no sube.
+  function openPhoto() {
+    if (st.photoBusy) return;
+    const A = window.Api;
+    if (!A || typeof A.uploadMyAvatar !== 'function') { SH().toast('No se puede cambiar la foto desde aquí todavía.', 'AlertTriangle'); return; }
+    // El input va al documento antes del click(): Safari en iPhone a veces no
+    // abre el selector de un input suelto.
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*'; inp.hidden = true;
+    inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; inp.remove(); if (f) savePhoto(f); });
+    document.body.appendChild(inp);
+    inp.click();
+  }
+  function photoJpeg(file, max) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * k));
+        c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob((b) => (b ? resolve(b) : reject(new Error('NO_BLOB'))), 'image/jpeg', 0.85);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('NO_IMAGE')); };
+      img.src = url;
+    });
+  }
+  async function savePhoto(file) {
+    if (st.photoBusy) return;
+    if (!/^image\//.test(file.type || 'image/')) { SH().toast('Elige una foto.', 'AlertTriangle'); return; }
+    st.photoBusy = true; refreshMe();
+    let url = null;
+    try { url = await window.Api.uploadMyAvatar(await photoJpeg(file, 512)); } catch (e) { console.error('[perfil] foto:', e); }
+    st.photoBusy = false;
+    if (url) {
+      const p = STATE().profile || {};
+      p.avatar_url = url;
+      try { if (typeof state !== 'undefined' && state.profile && state.profile !== p && state.profile.id === p.id) state.profile.avatar_url = url; } catch (_) { /* */ }
+      SH().toast('Foto actualizada', 'Check');
+    } else {
+      SH().toast('No pudimos subir la foto. Inténtalo de nuevo.', 'AlertTriangle');
+    }
+    refreshMe();
+  }
+
   // ── Mi residencia (pila «residence», #27) ────────────────────────────────
   // Estado propio, nunca Auxiliar.state.form. Si P5 ya trae la pantalla
   // (AuxResidencias.pickerScreenHTML: selector con pickerHTML({mode:'perfil'}),
@@ -920,6 +972,7 @@
     S.action('me-pwa', () => openPwa());
     S.action('me-meet-save', (el) => { saveMeet(el.closest('.rx-sheet')); });
     S.action('me-phone', () => openPhone());
+    S.action('me-photo', () => openPhoto());
     S.action('me-phone-save', (el) => { savePhone(el.closest('.rx-sheet')); });
     S.action('me-push', (el) => { const to = el.getAttribute('data-to'); if (to) S.push(to, {}); });
     S.action('me-res-pick', (el) => pickResidence(el.getAttribute('data-id')));

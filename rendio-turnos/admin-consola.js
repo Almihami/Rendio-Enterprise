@@ -36,11 +36,11 @@
           { id: 'flota', name: 'Flota', icon: 'm-flota', desc: 'Los carros: alta, baja, kilometraje y cambio de aceite. De acá eligen los conductores al iniciar turno.', tab: 'flota' },
         ] },
         { id: 'team', name: 'Equipo', icon: 'g-team', desc: 'Personas y motivación', items: [
-          { id: 'personal', name: 'Personal', icon: 'm-personal', desc: 'Conductores y admins: estado, strikes, coordinación.', tab: 'workers' },
-          // Usuarios (11-oct-2026) vive en los DOS espacios: las cuentas son de los
-          // dos (conductores y jefes acá, tripulantes en Rutas). findModuleByTab
-          // prefiere el espacio en el que está el jefe, así que no lo cambia de lado.
-          { id: 'usuarios', name: 'Usuarios', icon: 'i-shield', desc: 'Todas las cuentas: restablecer contraseñas, corregir datos y correo, suspender, eliminar o restaurar, y hacer jefe.', tab: 'usuarios', need: 'renderUsuarios' },
+          { id: 'personal', name: 'Personal', icon: 'm-personal', desc: 'Conductores y admins: contraseñas, datos, estado, strikes y coordinación.', tab: 'workers' },
+          // Acá estuvo «Usuarios» (11-oct-2026): todas las cuentas de los tres roles
+          // en una lista, en los dos espacios. Se quitó el 13-oct porque revolvía a
+          // 10 conductores con 200 tripulantes: las cuentas de conductores y jefes se
+          // gestionan en Personal, y las de los tripulantes en Rutas › Tripulantes.
           { id: 'recomp', name: 'Recompensas', icon: 'm-recomp', desc: 'Premios por kilometraje y solicitudes de redención.', tab: 'rewards' },
         ] },
         { id: 'data', name: 'Análisis', icon: 'g-data', desc: 'Reportes', items: [
@@ -74,8 +74,7 @@
           // mismo y mandar al jefe a la pantalla equivocada.
         ] },
         { id: 'team', name: 'Equipo', icon: 'g-team', desc: 'Personas', items: [
-          { id: 'personas', name: 'Tripulantes', icon: 'm-personas', desc: 'Los TCP que se registraron solos: aerolínea, punto de recogida, sus dos unidades y la antigüedad con Rendio.', tab: 'tripulantes' },
-          { id: 'usuarios', name: 'Usuarios', icon: 'i-shield', desc: 'Todas las cuentas: restablecer contraseñas, corregir datos y correo, suspender, eliminar o restaurar, y hacer jefe.', tab: 'usuarios', need: 'renderUsuarios' },
+          { id: 'personas', name: 'Tripulantes', icon: 'm-personas', desc: 'Los TCP que se registraron solos: aerolínea, punto de recogida, sus dos unidades, la antigüedad con Rendio y su cuenta (contraseña, suspender o restaurar).', tab: 'tripulantes' },
           { id: 'cobro', name: 'Cuentas de cobro', icon: 'i-doc', desc: 'La mensualidad de cada tripulante: estado, comprobantes por revisar, marcar pagado y los datos de pago de la organización.', tab: 'cobro', need: 'renderCobro' },
           { id: 'puntos', name: 'Rendio Points', icon: 'i-gift', desc: 'Encender el programa, los valores de cada acción y los canjes por cumplir.', tab: 'puntos', need: 'renderPuntos' },
         ] },
@@ -109,7 +108,7 @@
   const cnItemOn = (it) => !it.need || typeof window[it.need] === 'function';
 
   // Busca el módulo (y su espacio) por su tab. Devuelve {ws, group, item} o null.
-  // Primero en el espacio activo: un módulo que vive en los dos (Usuarios) no
+  // Primero en el espacio activo: si algún día un módulo vive en los dos, no
   // saca al jefe del espacio en el que está.
   function findModuleByTab(tab) {
     for (const ws of [cnWs, ...Object.keys(CN_DATA).filter(w => w !== cnWs)]) {

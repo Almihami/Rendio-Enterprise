@@ -16,7 +16,8 @@
 //   2. Correo conocido (con mayúsculas y espacios), llamando como anon → la
 //      respuesta neutra, UN pedido pendiente (contacto normalizado, la persona y
 //      su organización) y UN aviso en la bandeja por jefe de su organización,
-//      con el título, el cuerpo («Laura no puede entrar…») y el enlace a Usuarios.
+//      con el título, el cuerpo («Laura no puede entrar…») y el enlace a SU
+//      pantalla (0110: tripulante → Rutas › Tripulantes; jefe/conductor → Personal).
 //      Un jefe de OTRA organización no recibe nada.
 //   3. Repetir en menos de 30 min (también por celular) → ni pedido ni aviso.
 //   4. Celular (+57, espacios, guiones) contra profiles.phone → pedido.
@@ -143,8 +144,8 @@ try {
   const para = A.map(a => a.profile_id).sort();
   check('un aviso por jefe de SU organización (los dos), ninguno al de la otra', A.length === 2 && JSON.stringify(para) === JSON.stringify([jefe, jefe2].sort()), A.map(a => a.profile_id));
   check('título «Pidieron restablecer una contraseña»', A.every(a => a.title === 'Pidieron restablecer una contraseña'), A.map(a => a.title));
-  check('cuerpo «Laura no puede entrar. Restablécela desde Usuarios.»', A.every(a => a.body === 'Laura no puede entrar. Restablécela desde Usuarios.'), A.map(a => a.body));
-  check('enlace a Usuarios y sin enviar todavía', A.every(a => a.url === '/#/usuarios' && a.sent_at === null && a.incident_id === null));
+  check('cuerpo «Laura no puede entrar. Restablécela desde Rutas › Tripulantes.» (0110)', A.every(a => a.body === 'Laura no puede entrar. Restablécela desde Rutas › Tripulantes.'), A.map(a => a.body));
+  check('enlace a Tripulantes (0110) y sin enviar todavía', A.every(a => a.url === '/#/tripulantes' && a.sent_at === null && a.incident_id === null));
 
   console.log('\n── 3 · repetir en menos de 30 min ──');
   r = await pedir(correoAux);
@@ -236,7 +237,7 @@ try {
   // Todo corre con el mismo now(): los avisos de ESTE pedido se buscan por su id.
   const pj = (await pedidos()).find(p => p.profile_id === jefe);
   A = pj ? (await avisos()).filter(a => a.dedupe_key.startsWith('pwreset:' + pj.id + ':')) : [];
-  check('le avisa al otro jefe, no a sí misma', esNeutra(r) && A.length === 1 && A[0].profile_id === jefe2 && A[0].body === 'Jefa no puede entrar. Restablécela desde Usuarios.', A);
+  check('le avisa al otro jefe, no a sí misma', esNeutra(r) && A.length === 1 && A[0].profile_id === jefe2 && A[0].body === 'Jefa no puede entrar. Restablécela desde Turnos › Personal.' && A[0].url === '/#/workers', A);
 } catch (e) {
   fail++;
   console.log('  ✗ ERROR INESPERADO → ' + (e && e.stack ? e.stack : e));

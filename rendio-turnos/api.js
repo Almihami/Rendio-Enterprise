@@ -116,10 +116,13 @@
     if (error) ({ data, error } = await sb.from('auxiliar_profiles')
       .select('id, profile_id, residence_unit, home_address, residence_id, residences!auxiliar_profiles_residence_id_fkey(id, name, sector), profiles(id, full_name, email, phone, is_active, deleted_at, created_at)'));
     if (error) throw error;
+    // Los eliminados también vienen (13-oct-2026), marcados: Tripulantes los
+    // muestra solo en su filtro «Eliminados», para poder restaurarlos.
     return (data || [])
-      .filter(a => a.profiles && !a.profiles.deleted_at)
+      .filter(a => a.profiles)
       .map(a => ({
         id: a.id, profileId: a.profile_id,
+        deleted: !!a.profiles.deleted_at,
         name: a.profiles?.full_name || '—',
         email: a.profiles?.email || '',
         phone: a.profiles?.phone || '',
@@ -303,24 +306,6 @@
       .order('deleted_at', { ascending: false });
     if (error) throw error;
     return data || [];
-  }
-
-  // Usuarios (11-oct-2026): TODAS las cuentas de la organización —conductores,
-  // jefes y tripulantes, también suspendidos y eliminados— en una sola consulta,
-  // para la sección Usuarios del admin. La RLS ya limita a la organización.
-  async function listAllUsersForAdmin() {
-    const sel = (cols) => sb.from('profiles').select(cols)
-      .in('role', ['driver', 'admin', 'auxiliar']).order('full_name');
-    let { data, error } = await sel('id, full_name, email, phone, role, is_active, deleted_at, suspended_reason, must_change_password, created_at');
-    // Sin 0081 no hay motivo de suspensión ni «debe cambiar la clave».
-    if (error) ({ data, error } = await sel('id, full_name, email, phone, role, is_active, deleted_at, created_at'));
-    if (error) throw error;
-    return (data || []).map((p) => ({
-      id: p.id, name: p.full_name || '—', email: p.email || '', phone: p.phone || '',
-      role: p.role, active: p.is_active !== false, deleted: !!p.deleted_at, deletedAt: p.deleted_at || null,
-      suspendedReason: p.suspended_reason || '', mustChange: p.must_change_password === true,
-      createdAt: p.created_at || null,
-    }));
   }
 
   async function rpcOrThrow(fn, args) {
@@ -2171,23 +2156,69 @@
         if (data) { out.esFestivo = true; out.festivo = data.name; }
       } catch (e) { /* sin tabla de festivos → solo domingos */ }
     }
-    // Conjuntos que Julián todavía no ha clasificado: se listan para poder
-    // preguntarle, y mientras tanto se programan con el modelo calculado.
+    // Conjuntos que se quedan sin zona: se listan para poder preguntarle a
+    // Julián, y mientras tanto se programan con el modelo calculado. Desde 0108
+    // la zona sale del dibujo cuando no está puesta a mano (zonas-dibujo.js), así
+    // que «sin zona» ya no es lo mismo que zona_jefe vacía.
     try {
-      const { data } = await sb.from('residences').select('name').is('zona_jefe', null).eq('is_active', true).order('name');
-      out.sinConfirmar = (data || []).map(r => r.name);
+      const [{ data }, dibujos] = await Promise.all([
+        sb.from('residences').select('name, zona_jefe, latitude, longitude').eq('is_active', true).order('name'),
+        listRouteZones(),
+      ]);
+      const efectiva = typeof zonaEfectiva === 'function' ? zonaEfectiva : (m) => ({ zona: m || null });
+      out.sinConfirmar = (data || []).filter(r => !efectiva(r.zona_jefe, dibujos || [], r.latitude, r.longitude).zona).map(r => r.name);
     } catch (e) { /* sin la columna → nada que reportar */ }
     return out;
   }
 
+  // ── Zonas dibujadas (0108) ────────────────────────────────────────────────
+  // La lista de zonas, en el orden de las columnas, con su dibujo
+  // ([[lat, lng], …] o null). null si la migración no está: la pantalla vuelve
+  // entonces a las zonas que haya en la tabla de tiempos.
+  async function listRouteZones() {
+    const { data, error } = await sb.from('route_zones')
+      .select('name, polygon, sort_order').order('sort_order').order('name');
+    if (error) return null;
+    return data || [];
+  }
+
+  // Las escrituras de zonas piden la fila de vuelta: con la sesión caída el
+  // UPDATE no da error, solo no toca nada (ver «Error RLS al guardar»), y la
+  // pantalla diría «guardado» sin haber guardado.
+  async function createRouteZone(name, sortOrder) {
+    const { data, error } = await sb.from('route_zones')
+      .insert({ name, sort_order: sortOrder || 0 }).select('name');
+    if (error) throw error;
+    if (!data || !data.length) throw new Error('No se guardó. Vuelve a entrar e inténtalo de nuevo.');
+  }
+
+  // `patch`: { name } para renombrar (la BD lo propaga a la tabla de tiempos y a
+  // los conjuntos) y/o { polygon } para el dibujo.
+  async function updateRouteZone(name, patch) {
+    const { data, error } = await sb.from('route_zones').update(patch).eq('name', name).select('name');
+    if (error) throw error;
+    if (!data || !data.length) throw new Error('No se guardó. Vuelve a entrar e inténtalo de nuevo.');
+  }
+
+  // Se llevan sus minutos (CASCADE) y sus conjuntos puestos a mano vuelven a
+  // «según el mapa» (SET NULL). Ver 0108.
+  async function deleteRouteZone(name) {
+    const { data, error } = await sb.from('route_zones').delete().eq('name', name).select('name');
+    if (error) throw error;
+    if (!data || !data.length) throw new Error('No se quitó. Vuelve a entrar e inténtalo de nuevo.');
+  }
+
   // Guarda la tabla editada desde Ajustes. Cada fila trae su llave natural
-  // (zona + franja), así que va por update, no por delete+insert: si a alguien
-  // se le cae la conexión a la mitad no se queda la operación sin tabla.
+  // (zona + franja), así que no va por delete+insert: si a alguien se le cae la
+  // conexión a la mitad no se queda la operación sin tabla. Las zonas van por
+  // upsert porque una zona nueva (0108) llega sin filas y la primera vez se
+  // insertan; por eso cada fila trae también band_to.
   async function saveRouteTables(zonas, tramos) {
-    for (const r of zonas || []) {
-      const { error } = await sb.from('route_zone_times')
-        .update({ min_minutes: r.min_minutes, max_minutes: r.max_minutes, asumida: false })
-        .eq('zone', r.zone).eq('band_from', r.band_from);
+    if ((zonas || []).length) {
+      const { error } = await sb.from('route_zone_times').upsert(zonas.map(r => ({
+        zone: r.zone, band_from: r.band_from, band_to: r.band_to,
+        min_minutes: r.min_minutes, max_minutes: r.max_minutes, asumida: false,
+      })), { onConflict: 'zone,band_from' });
       if (error) throw error;
     }
     for (const r of tramos || []) {
@@ -2201,7 +2232,7 @@
   // Catálogo de residencias con su zona, para la pantalla donde se clasifican.
   async function listResidencesZones() {
     const { data, error } = await sb.from('residences')
-      .select('id, name, sector, zona_jefe').eq('is_active', true).order('name');
+      .select('id, name, sector, zona_jefe, latitude, longitude').eq('is_active', true).order('name');
     if (error) throw error;
     return data || [];
   }
@@ -2281,9 +2312,11 @@
     return data || [];
   }
 
+  // zona = '' / null → «según el mapa» (0108): el conjunto toma la del dibujo.
   async function saveResidenceZone(id, zona) {
-    const { error } = await sb.from('residences').update({ zona_jefe: zona || null }).eq('id', id);
+    const { data, error } = await sb.from('residences').update({ zona_jefe: zona || null }).eq('id', id).select('id');
     if (error) throw error;
+    if (!data || !data.length) throw new Error('No se guardó. Vuelve a entrar e inténtalo de nuevo.');
   }
 
   // EL NÚMERO DE VUELO VIVE DENTRO DE `notes`, no en la tabla flights: la
@@ -2383,6 +2416,14 @@
       rows = upcoming.filter(r => bogDay(r.required_arrival_at) === day0);
     }
 
+    // Zonas dibujadas (0108): la parada que no tiene zona puesta a mano toma la
+    // del dibujo que contiene su punto de recogida. Eso cubre también a quien
+    // vive en casa con pin propio, que no tiene conjunto. Sin la migración la
+    // lista llega vacía y queda solo lo puesto a mano, como antes.
+    let dibujos = [];
+    try { dibujos = (await listRouteZones()) || []; } catch (e) { dibujos = []; }
+    const efectiva = typeof zonaEfectiva === 'function' ? zonaEfectiva : (m) => ({ zona: m || null });
+
     const aux = {}, colors = {};
     rows.forEach((r, i) => {
       const key = 'r' + String(r.id).slice(0, 8);
@@ -2397,9 +2438,10 @@
           || (parts.length > 1 ? parts[parts.length - 1] : parts[0] || '—').trim(),
         // Llave de PARADA: dos reservas de la misma residencia son una portería.
         resId: r.residence_id || null,
-        // Zona de la tabla de tiempos de Julián (0062). null = todavía no la
-        // confirmó para ese conjunto → esa parada se programa como antes.
-        zonaJefe: r.residences?.zona_jefe || null,
+        // Zona de la tabla de tiempos de Julián (0062): la puesta a mano o, si
+        // no hay, la del dibujo (0108). null = sin zona → esa parada se
+        // programa con el modelo calculado, como antes.
+        zonaJefe: efectiva(r.residences?.zona_jefe || null, dibujos, r.pickup_latitude, r.pickup_longitude).zona,
         sector: r.residences?.sector || '',
         dir: r.pickup_address || '',
         lat: r.pickup_latitude, lng: r.pickup_longitude,
@@ -3658,7 +3700,7 @@
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins, setOpsAlerts,
-    getProfileForEdit, listDeletedProfiles, listAllUsersForAdmin, adminUpdateProfile, adminSetEmail, adminSetPassword, adminSetStatus, adminSetRole, changeMyPassword,
+    getProfileForEdit, listDeletedProfiles, adminUpdateProfile, adminSetEmail, adminSetPassword, adminSetStatus, adminSetRole, changeMyPassword,
     listAllDriversForAdmin, setProfileActive, softDeleteProfile, undeleteProfile, setAdminCoordinator, setDriverPriority, setDriverCanCoordinate,
     createDriver,
     listSubmittedDriverIds,
@@ -3684,6 +3726,7 @@
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment, getRouteTables, saveRouteTables, listResidencesZones, saveResidenceZone,
+    listRouteZones, createRouteZone, updateRouteZone, deleteRouteZone,
     signUpAuxiliar, signupCatalogs, registerAuxiliar,
     listAuxiliares, setAuxiliarJoinedAt, listAirlines, createAirline, setAirlineActive,
     getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,

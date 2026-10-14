@@ -71,15 +71,44 @@
     // pantalla manda el vehículo, y si el desplegable llegara tarde se guardaría
     // el valor viejo. Ver privVehiculoAGuardar(), que existe por eso mismo.
     fillPrivateVehicles();
-    renderRouteTables();
-    renderResidenceZones();
+    // Zonas (0108): carga la lista y el catálogo una vez y pinta las tres
+    // tarjetas que dependen de ellos — el mapa, la tabla y las excepciones.
+    zonasRecargar();
+    calibAcordeones();
     setPrepararBloque('calib');
   }
 
+  // ---- TARJETAS PLEGABLES (13-oct) -------------------------------------------
+  // La pantalla pesaba mucho: Zona de cada conjunto, Tabla de tiempos y
+  // Parámetros del optimizador son <details> que nacen cerrados. Se recuerda en
+  // ESTE equipo cuáles dejó abiertas el jefe (localStorage; si el navegador no
+  // deja guardar, simplemente nacen cerradas).
+  const CALIB_ABIERTAS = 'rendio.calib.abiertas';
+  function calibAcordeones() {
+    let abiertas = [];
+    try { abiertas = JSON.parse(localStorage.getItem(CALIB_ABIERTAS) || '[]'); } catch (_) { abiertas = []; }
+    document.querySelectorAll('#calib-ui details.set-card-acc[data-acc]').forEach(d => {
+      if (d.dataset.accLista === '1') return;   // una sola vez por carga de la app
+      d.dataset.accLista = '1';
+      d.open = Array.isArray(abiertas) && abiertas.includes(d.dataset.acc);
+      d.addEventListener('toggle', () => {
+        const ahora = [...document.querySelectorAll('#calib-ui details.set-card-acc[data-acc][open]')].map(x => x.dataset.acc);
+        try { localStorage.setItem(CALIB_ABIERTAS, JSON.stringify(ahora)); } catch (_) { /* sin almacenamiento: no se recuerda */ }
+      });
+    });
+  }
+
   // ---- LA TABLA DE TIEMPOS DE JULIÁN (0062) --------------------------------
-  // Las zonas son suyas y son fijas: si algún día agrega una, se agrega aquí y
-  // en la migración. El orden es el que él usó al dictarlas.
-  const RT_ZONAS = ['Fontibón', 'Porvenir', 'Sendai/San Antonio', 'Marinilla'];
+  // Desde 0108 las zonas no son fijas: se crean, renombran, dibujan y quitan en
+  // la tarjeta «Zonas» (admin-zonas.js) y las columnas salen de route_zones, en
+  // su orden. Sin esa migración, de las zonas que tenga la tabla, en el orden en
+  // que él las dictó.
+  const RT_ZONAS_DICTADAS = ['Fontibón', 'Porvenir', 'Sendai/San Antonio', 'Marinilla'];
+  function rtZonasColumnas(t) {
+    if (zonasMapa.lista) return zonasMapa.lista.map(z => z.name);
+    const pos = (z) => { const i = RT_ZONAS_DICTADAS.indexOf(z); return i < 0 ? 99 : i; };
+    return Object.keys((t && t.zonas) || {}).sort((a, b) => pos(a) - pos(b) || a.localeCompare(b, 'es'));
+  }
   const RT_FRANJA_LABEL = (f, t) => {
     const h = (n) => n === 0 ? '12 a.m.' : n === 12 ? '12 m.' : n < 12 ? `${n} a.m.` : n === 24 ? '12 a.m.' : `${n - 12} p.m.`;
     return `${h(f)} – ${h(t)}`;
@@ -92,25 +121,30 @@
     if (!Api.getRouteTables) { tz.innerHTML = ''; return; }
     let t = null;
     try { t = await Api.getRouteTables(null); } catch (e) { t = null; }
-    if (!t || !Object.keys(t.zonas || {}).length) {
+    // Las franjas salen del tramo final, que siempre trae las seis: una zona
+    // recién creada todavía no tiene filas de donde sacarlas.
+    const base = t ? ((t.tramos || []).length ? t.tramos : (Object.values(t.zonas || {})[0] || [])) : [];
+    const franjas = base.map(r => ({ f: r.band_from, to: r.band_to }));
+    if (!t || !franjas.length) {
       // Sin la migración: se dice, no se finge una tabla vacía editable.
       tz.innerHTML = '<tr><td class="franja">La tabla todavía no está en esta base de datos.</td></tr>';
       tl.innerHTML = ''; if (warn) warn.textContent = '';
       return;
     }
     rtTablas = t;
-    const franjas = (t.zonas[RT_ZONAS[0]] || []).map(r => ({ f: r.band_from, to: r.band_to }));
+    const cols = rtZonasColumnas(t);
+    // Una zona sin minutos se ve con las casillas vacías: se llenan aquí mismo.
+    const sinMinutos = cols.filter(z => !(t.zonas[z] || []).length);
     const celda = (val, asum, ds) =>
-      `<input type="number" min="0" max="240" value="${val}" class="${asum ? 'asumida' : ''}" ${ds} />`;
+      `<input type="number" min="0" max="240" value="${val == null ? '' : val}" placeholder="—" class="${asum ? 'asumida' : ''}" ${ds} />`;
 
     tz.innerHTML =
-      `<tr><th class="franja">Franja</th>${RT_ZONAS.map(z => `<th>${z}</th>`).join('')}</tr>` +
+      `<tr><th class="franja">Franja</th>${cols.map(z => `<th>${escapeHtml(z)}${sinMinutos.includes(z) ? '<small class="rz-sinmin">sin minutos</small>' : ''}</th>`).join('')}</tr>` +
       franjas.map(fr => {
-        const tds = RT_ZONAS.map(z => {
+        const tds = cols.map(z => {
           const r = (t.zonas[z] || []).find(x => x.band_from === fr.f);
-          if (!r) return '<td>—</td>';
-          const d = `data-kind="zona" data-zone="${z}" data-band="${fr.f}"`;
-          return `<td>${celda(r.min_minutes, r.asumida, d + ' data-lim="min"')}<span class="sep">/</span>${celda(r.max_minutes, r.asumida, d + ' data-lim="max"')}</td>`;
+          const d = `data-kind="zona" data-zone="${escapeHtml(z)}" data-band="${fr.f}" data-band-to="${fr.to}"`;
+          return `<td>${celda(r ? r.min_minutes : null, r && r.asumida, d + ' data-lim="min"')}<span class="sep">/</span>${celda(r ? r.max_minutes : null, r && r.asumida, d + ' data-lim="max"')}</td>`;
         }).join('');
         return `<tr><td class="franja">${RT_FRANJA_LABEL(fr.f, fr.to)}</td>${tds}</tr>`;
       }).join('');
@@ -127,27 +161,54 @@
     if (warn) {
       const asum = [...(t.tramos || []), ...Object.values(t.zonas).flat()].filter(r => r.asumida).length;
       const sin = (t.sinConfirmar || []).length;
+      const sm = sinMinutos.length;
       warn.innerHTML = [
         asum ? `<b>${asum} casilla${asum > 1 ? 's' : ''} con borde punteado</b>: la franja de 12 a 2 de la mañana no la dictó él, se copió de la de 7 p.m. a 12. Al guardar dejan de estar marcadas.` : '',
-        sin ? `<b>${sin} conjunto${sin > 1 ? 's' : ''} sin zona</b>: sus traslados se programan con el cálculo por carretera, no con esta tabla.` : '',
+        sm ? `<b>${sinMinutos.map(escapeHtml).join(', ')}</b> ${sm > 1 ? 'no tienen' : 'no tiene'} minutos: mientras la columna no esté completa, sus conjuntos se programan con el cálculo por carretera.` : '',
+        sin ? `<b>${sin} conjunto${sin > 1 ? 's' : ''} sin zona</b> (ni a mano ni dentro de un dibujo): sus traslados se programan con el cálculo por carretera, no con esta tabla.` : '',
       ].filter(Boolean).join('<br>');
     }
   }
 
   async function saveRouteTables() {
     if (!rtTablas || !Api.saveRouteTables) return;
-    const zonas = [], tramos = [];
-    document.querySelectorAll('#zone-times-table input, #leg-times-table input').forEach(inp => {
+    // Zonas: casilla vacía = null, para distinguir «no la ha dado» de un 0.
+    const valor = (inp) => {
+      const v = String(inp.value).trim();
+      return v === '' ? null : Math.min(240, Math.max(0, parseInt(v, 10) || 0));
+    };
+    const porZona = {}, tramos = [];
+    document.querySelectorAll('#zone-times-table input').forEach(inp => {
+      const z = inp.dataset.zone, band = Number(inp.dataset.band);
+      const filas = porZona[z] = porZona[z] || {};
+      const row = filas[band] = filas[band] || { zone: z, band_from: band, band_to: Number(inp.dataset.bandTo) };
+      row[inp.dataset.lim === 'min' ? 'min_minutes' : 'max_minutes'] = valor(inp);
+    });
+    document.querySelectorAll('#leg-times-table input').forEach(inp => {
       const n = Math.min(240, Math.max(0, parseInt(inp.value, 10) || 0));
       const band = Number(inp.dataset.band);
-      const arr = inp.dataset.kind === 'zona' ? zonas : tramos;
-      const llave = inp.dataset.kind === 'zona'
-        ? r => r.zone === inp.dataset.zone && r.band_from === band
-        : r => r.band_from === band;
-      let row = arr.find(llave);
-      if (!row) { row = inp.dataset.kind === 'zona' ? { zone: inp.dataset.zone, band_from: band } : { band_from: band }; arr.push(row); }
+      let row = tramos.find(r => r.band_from === band);
+      if (!row) { row = { band_from: band }; tramos.push(row); }
       row[inp.dataset.lim === 'min' ? 'min_minutes' : 'max_minutes'] = n;
     });
+    // TODO O NADA POR ZONA. Media columna no se puede aplicar: el tablero no
+    // sabría qué hacer en las franjas vacías. Una zona nueva puede quedarse
+    // toda en blanco (todavía no tiene minutos); una que ya los tenía, no.
+    const zonas = [], incompletas = [], vaciadas = [];
+    Object.entries(porZona).forEach(([z, filas]) => {
+      const rows = Object.values(filas);
+      const llenas = rows.reduce((n, r) => n + (r.min_minutes != null) + (r.max_minutes != null), 0);
+      if (llenas === 0) { if ((rtTablas.zonas[z] || []).length) vaciadas.push(z); return; }
+      if (llenas < rows.length * 2) { incompletas.push(z); return; }
+      zonas.push(...rows);
+    });
+    if (incompletas.length || vaciadas.length) {
+      toast([
+        incompletas.length ? `Faltan minutos en ${incompletas.join(', ')}: llena todas sus franjas, o déjala toda en blanco si todavía no los tiene.` : '',
+        vaciadas.length ? `${vaciadas.join(', ')} ya tenía minutos y no puede quedar en blanco.` : '',
+      ].filter(Boolean).join(' ') + ' No se guardó nada.');
+      return;
+    }
     // El máximo nunca por debajo del mínimo: la BD lo rechazaría y el admin se
     // quedaría sin saber por qué. Se corrige aquí y se avisa.
     let ajustadas = 0;
@@ -164,30 +225,58 @@
     } finally { if (btn) btn.disabled = false; }
   }
 
-  // ---- ZONA DE CADA CONJUNTO ------------------------------------------------
+  // ---- ZONA DE CADA CONJUNTO: LAS EXCEPCIONES (0108) -------------------------
+  // Lo normal es que la zona salga del dibujo. Aquí se pone a mano cuando el
+  // dibujo no basta (Los Cerezos: a 200 m de Olivar, pero Julián lo quiere en
+  // Porvenir). Lo puesto a mano gana siempre; «Según el mapa» lo devuelve al
+  // dibujo. Los datos los trae zonasRecargar() (admin-zonas.js).
+  //
+  // El orden se fija la primera vez y no se vuelve a ordenar al cambiar un
+  // desplegable: si la fila saltara de lugar, el jefe perdería por dónde iba.
   async function renderResidenceZones() {
     const box = $('#residence-zones');
-    if (!box || !Api.listResidencesZones) return;
-    let rows = null;
-    try { rows = await Api.listResidencesZones(); } catch (e) { rows = null; }
+    if (!box) return;
+    const rows = zonasMapa.residencias;
     if (!rows) { box.innerHTML = '<p class="set-hint">El catálogo de residencias no está disponible en esta base de datos.</p>'; return; }
-    // Sin asignar primero: es la lista de trabajo, no un detalle al final.
-    rows.sort((a, b) => (!!a.zona_jefe - !!b.zona_jefe) || a.name.localeCompare(b.name, 'es'));
-    box.innerHTML = rows.map(r => `
-      <div class="rz-row ${r.zona_jefe ? '' : 'sin'}">
-        <div class="rz-name">${escapeHtml(r.name)}<small>${escapeHtml(r.sector || "sin sector")}</small></div>
+    const dib = zonasMapa.lista || [];
+    const cols = zonasMapa.lista ? dib.map(z => z.name) : rtZonasColumnas(rtTablas);
+    const info = rows.map(r => ({ r, e: zonaEfectiva(r.zona_jefe, dib, r.latitude, r.longitude) }));
+    if (!zonasMapa.ordenFilas) {
+      // Sin zona primero (es la lista de trabajo), luego las excepciones.
+      const peso = ({ e }) => !e.zona ? 0 : e.origen === 'mano' ? 1 : 2;
+      zonasMapa.ordenFilas = info.slice()
+        .sort((a, b) => peso(a) - peso(b) || a.r.name.localeCompare(b.r.name, 'es'))
+        .map(x => x.r.id);
+    }
+    const pos = (id) => { const i = zonasMapa.ordenFilas.indexOf(id); return i < 0 ? 1e6 : i; };
+    info.sort((a, b) => pos(a.r.id) - pos(b.r.id));
+    box.innerHTML = info.map(({ r, e }) => {
+      const porMapa = e.en.length === 1 ? e.en[0] : null;
+      const nota = e.en.length > 1 ? `en dos zonas del mapa (${e.en.join(', ')})`
+        : porMapa ? `por el mapa: ${porMapa}` : 'fuera de las zonas dibujadas';
+      return `
+      <div class="rz-row ${e.zona ? '' : 'sin'} ${e.origen === 'mano' ? 'mano' : ''}">
+        <div class="rz-name">${escapeHtml(r.name)}${e.origen === 'mano' ? '<span class="rz-tag">a mano</span>' : ''}<small>${escapeHtml([r.sector, nota].filter(Boolean).join(' · '))}</small></div>
         <select data-id="${r.id}">
-          <option value="">Sin asignar</option>
-          ${RT_ZONAS.map(z => `<option value="${escapeHtml(z)}" ${r.zona_jefe === z ? 'selected' : ''}>${escapeHtml(z)}</option>`).join('')}
+          <option value="">${porMapa ? 'Según el mapa (' + escapeHtml(porMapa) + ')' : 'Según el mapa (sin zona)'}</option>
+          ${cols.map(z => `<option value="${escapeHtml(z)}" ${r.zona_jefe === z ? 'selected' : ''}>${escapeHtml(z)}</option>`).join('')}
         </select>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     box.querySelectorAll('select').forEach(sel => {
       sel.addEventListener('change', async () => {
+        sel.disabled = true;
         try {
           await Api.saveResidenceZone(sel.dataset.id, sel.value);
-          sel.closest('.rz-row').classList.toggle('sin', !sel.value);
-          await renderRouteTables();   // el contador de "sin zona" cambia
-        } catch (e) { toast('No se pudo guardar la zona: ' + (e.message || e)); }
+          const r = rows.find(x => x.id === sel.dataset.id);
+          if (r) r.zona_jefe = sel.value || null;
+          renderZonasCard();          // el color del punto y los conteos cambian
+          renderResidenceZones();
+          renderRouteTables();        // el contador de «sin zona» cambia
+        } catch (e) {
+          toast('No se pudo guardar la zona: ' + (e.message || e));
+          renderResidenceZones();     // el desplegable vuelve a lo que de verdad quedó
+        }
       });
     });
   }

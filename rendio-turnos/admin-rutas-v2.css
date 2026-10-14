@@ -324,6 +324,11 @@
    del tabulador ni en el lector de pantalla (se oculta al terminar de salir). */
 #routes-v2:where([data-lay="cajon"]) .rv2-detail.is-open { transform: none; visibility: visible; transition: transform .26s cubic-bezier(.2, .8, .2, 1); }
 #routes-v2:where([data-lay="cajon"]) .rv2-dhead .x { display: inline-grid; }
+/* El cajón va pegado arriba (top: 0) y la app instalada pinta debajo de la
+   barra de estado (viewport-fit=cover + black-translucent): sin este margen la
+   hora del iPhone tapa la cabecera y la flecha de volver no se puede tocar
+   (video de los jefes, 14-oct-2026). */
+#routes-v2:where([data-lay="cajon"]) .rv2-dhead { padding-top: calc(18px + env(safe-area-inset-top, 0px)); }
 #routes-v2:where([data-lay="cajon"]) .rv2-search { width: 300px; }
 
 /* =====================================================================
@@ -399,7 +404,7 @@
 
   /* Detalle a pantalla completa */
   #routes-v2 .rv2-detail { width: 100vw; border-left: 0; }
-  #routes-v2 .rv2-dhead { padding: 10px 12px; align-items: center; border-bottom: 1px solid var(--line); }
+  #routes-v2 .rv2-dhead { padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px; align-items: center; border-bottom: 1px solid var(--line); }
   #routes-v2 .rv2-dhead .rv2-back { display: inline-grid; width: 44px; height: 44px; border: 0; }
   #routes-v2 .rv2-dhead .x { display: none; }
   #routes-v2 .rv2-dbody { padding: 12px; }

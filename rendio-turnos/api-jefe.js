@@ -32,7 +32,7 @@
 //   Api.listPasswordResetRequests()    → [{ id, profileId, name, email, phone,
 //                                            role, contact, createdAt }]
 //       Los pendientes de la organización, el más nuevo primero. RLS: solo
-//       jefes. Sin 0104 en la base devuelve [] (Usuarios funciona igual).
+//       jefes. Sin 0104 en la base devuelve [] (Personal y Tripulantes salen igual).
 //   Api.resolvePasswordResetRequest(id, status)  → status ('done' | 'dismissed')
 //       Quién y cuándo lo sella la base (trigger de 0104).
 (function () {
