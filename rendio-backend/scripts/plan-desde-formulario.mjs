@@ -29,6 +29,7 @@ import { norm, catalogo, leerPlan } from './planes-jefe/lib-plan.mjs';
 const RUTAS_JS = new URL('../../rendio-turnos/admin-rutas.js', import.meta.url).pathname;
 const CONSOLA_JS = new URL('../../rendio-turnos/admin-consola.js', import.meta.url).pathname;
 const CATALOGO = new URL('../../docs/catalogo-residencias.json', import.meta.url).pathname;
+const ZONAS_JS = new URL('../../rendio-turnos/zonas-dibujo.js', import.meta.url).pathname;
 
 const FORM = process.argv[2];
 const DIA = process.argv.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a));
@@ -232,8 +233,12 @@ function casaDe(nombre) {
 
 // Zona del jefe por conjunto (0062). Sin la migración el Map queda vacío y
 // todo el día se programa con el modelo calculado, como antes.
+// Desde 0108 lo de este Map es solo lo puesto A MANO; lo demás sale del dibujo
+// (route_zones), con la MISMA regla del tablero: se evalúa zonas-dibujo.js.
 const zonaJefePorNombre = new Map();
 for (const r of resid || []) if (r.zona_jefe) zonaJefePorNombre.set(norm(r.name), r.zona_jefe);
+const { zonaEfectiva } = new Function(`${readFileSync(ZONAS_JS, 'utf8')}\nreturn { zonaEfectiva };`)();
+const { data: zonasDibujo } = await sbCat.from('route_zones').select('name, polygon');   // sin 0108 → null
 
 // LA HORA DE LLEGADA DEL FORMULARIO VIENE SUELTA Y A VECES MAL. Dos arreglos,
 // los dos deducidos de correcciones que hizo Julián a mano:
@@ -286,7 +291,7 @@ filas.forEach((f, i) => {
     n: f.nombre, zona: casa.sitio.nombre, resId: 'r:' + norm(casa.sitio.nombre),
     // Zona de la tabla de tiempos de Julián (0062). null = todavía no la
     // confirmó para ese conjunto → esa parada se programa como antes.
-    zonaJefe: zonaJefePorNombre.get(norm(casa.sitio.nombre)) || null,
+    zonaJefe: zonaEfectiva(zonaJefePorNombre.get(norm(casa.sitio.nombre)) || null, zonasDibujo || [], casa.sitio.lat, casa.sitio.lng).zona,
     lat: casa.sitio.lat, lng: casa.sitio.lng, pax: 1,
     hotel: f.reserva, firme: false, notas: f.reserva ? 'RESERVA' : (f.pernocta ? 'pernocta' : ''),
   };

@@ -929,6 +929,35 @@
             </div>
           </div>
 
+          <div class="set-card" id="zonas-card">
+            <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
+              <div>
+                <h2>Zonas</h2>
+                <p>Se dibujan en el mapa. Cada conjunto toma la zona del dibujo que lo contiene; las excepciones se ponen abajo, en «Zona de cada conjunto».</p>
+              </div>
+              <button class="set-btn sm" id="zona-agregar-btn" style="margin-left:auto"><svg class="icon"><use href="#i-plus"/></svg>Agregar zona</button>
+            </div>
+            <div class="set-cb">
+              <div class="zn-nueva hidden" id="zona-nueva">
+                <input class="zn-input" id="zona-nueva-nombre" maxlength="60" placeholder="Barro Blanco" aria-label="Nombre de la zona nueva" />
+                <button class="set-btn dark sm" id="zona-nueva-crear">Crear y dibujar</button>
+                <button class="set-btn ghost sm" id="zona-nueva-cancelar">Cancelar</button>
+                <div class="zn-err hidden" id="zona-nueva-err"></div>
+              </div>
+              <div class="zn-editbar hidden" id="zona-editbar">
+                <div class="zn-editbar-t" id="zona-editbar-t"></div>
+                <button class="set-btn ghost sm" id="zona-deshacer-btn">Deshacer</button>
+                <button class="set-btn ghost sm" id="zona-cancelar-dibujo-btn">Cancelar</button>
+                <button class="set-btn dark sm" id="zona-guardar-dibujo-btn">Guardar dibujo</button>
+              </div>
+              <div class="zn-map" id="zonas-map"></div>
+              <p class="set-hint" style="margin:8px 0 0 2px">Los puntos son los conjuntos del catálogo, del color de su zona. Gris = sin zona. La gente que vive en casa con pin propio también toma la zona del dibujo, aunque no salga aquí.</p>
+              <div class="zn-lista" id="zonas-lista"></div>
+              <div class="set-hint" id="zonas-aviso" style="margin:10px 0 0 2px"></div>
+            </div>
+          </div>
+
           <div class="set-card">
             <div class="set-ch">
               <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
@@ -938,7 +967,7 @@
               </div>
             </div>
             <div class="set-cb">
-              <p class="set-hint" style="margin:0 0 12px 2px">Estos tiempos <b>no reemplazan</b> el cálculo por carretera: mandan cuando son mayores. Así la tabla nunca promete algo que el carro no pueda hacer, y el cálculo nunca recoge más tarde de lo que él recogería. Un conjunto sin zona asignada se programa con el cálculo, como antes.</p>
+              <p class="set-hint" style="margin:0 0 12px 2px">Estos tiempos <b>no reemplazan</b> el cálculo por carretera: mandan cuando son mayores. Así la tabla nunca promete algo que el carro no pueda hacer, y el cálculo nunca recoge más tarde de lo que él recogería. Un conjunto sin zona, o de una zona sin minutos, se programa con el cálculo, como antes. Una zona nueva llega con la columna en blanco: se llena toda y se guarda.</p>
 
               <p class="set-hint" style="margin:6px 0 6px 2px;font-weight:700">De recoger al primero a llegar al aeropuerto</p>
               <p class="set-hint" style="margin:0 0 10px 2px">Los dos números son el rango según cuánta gente va: <b>uno solo va con el mínimo</b>, tres o más con el máximo, y dos por la mitad.</p>
@@ -958,12 +987,12 @@
               <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
               <div>
                 <h2>Zona de cada conjunto</h2>
-                <p>En cuál de las cuatro zonas de Julián cae cada residencia. Se guarda al instante.</p>
+                <p>Las excepciones al mapa. Lo puesto aquí a mano gana sobre el dibujo. Se guarda al instante.</p>
               </div>
               <span class="set-sec-ya">Se guarda solo</span>
             </div>
             <div class="set-cb">
-              <p class="set-hint" style="margin:0 0 12px 2px">Esto <b>no se puede deducir</b>: los conjuntos caben en dos kilómetros a la redonda, así que por mapa salen mal. Lo tiene que decir él. Mientras una residencia esté <b>Sin asignar</b>, sus traslados se programan con el cálculo por carretera y la tabla no se les aplica.</p>
+              <p class="set-hint" style="margin:0 0 12px 2px">Lo normal es <b>«Según el mapa»</b>: el conjunto toma la zona del dibujo que lo contiene. Se elige una zona a mano solo cuando el dibujo no basta, porque las zonas de Julián son de operación y no de geografía: Los Cerezos queda a 200 m de Olivar (Fontibón), pero él lo quiere en Porvenir. Un conjunto <b>sin zona</b> (fuera de los dibujos, o dentro de dos a la vez) se programa con el cálculo por carretera.</p>
               <div id="residence-zones"></div>
             </div>
           </div>
@@ -1564,6 +1593,7 @@
   <script src="config.js"></script>
   <script src="supabase-client.js"></script>
   <script src="scheduler.js"></script>
+  <script src="zonas-dibujo.js"></script>
   <script src="api.js"></script>
   <!-- APIs del rediseño del auxiliar: después de api.js (usan window.sb) -->
   <script src="api-aux.js"></script>
@@ -1588,6 +1618,7 @@
   <script src="admin-disponibilidad.js"></script>
   <script src="admin-personal.js"></script>
   <script src="admin-calibracion.js"></script>
+  <script src="admin-zonas.js"></script>
   <script src="admin-flota.js"></script>
   <script src="admin-balance.js"></script>
   <script src="admin-revision.js"></script>
