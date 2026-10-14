@@ -882,6 +882,20 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .set-ui .set-sec[open] > summary{border-bottom:1px dashed var(--line)}
 .set-ui .set-sec-body{padding:14px 0 18px}
 
+/* Calibración: tarjetas plegables (13-oct). El encabezado de la tarjeta es el
+   <summary>; cerrada queda solo esa barra. Zonas de tiempos no se pliega. */
+.set-ui details.set-card-acc > summary.set-ch{cursor:pointer;user-select:none;list-style:none}
+.set-ui details.set-card-acc > summary.set-ch > div:not(.set-ci){flex:1;min-width:0}
+.set-ui details.set-card-acc > summary.set-ch:hover h2{color:var(--orange)}
+.set-ui details.set-card-acc > summary.set-ch:focus-visible{outline:2px solid var(--orange);outline-offset:-2px;border-radius:16px}
+.set-ui details.set-card-acc:not([open]) > summary.set-ch{border-bottom:0}
+.set-ui .set-card-chev{color:var(--ink3);flex:0 0 auto;margin-left:6px}
+/* Cambios sin guardar adentro: el punto naranja también en la tarjeta cerrada. */
+.set-ui .set-card-acc:has(.set-sec.sucio) > summary .set-card-dot{opacity:1}
+/* Cada flecha gira solo con SU <details>: la regla global details[open] .details-chevron
+   giraría también las de las secciones cerradas que hay dentro de una tarjeta abierta. */
+.set-ui details:not([open]) > summary .details-chevron{transform:none}
+
 /* Punto naranja: esta sección tiene cambios sin guardar. Se ve AUNQUE esté
    cerrada — si no, plegar convierte el botón Guardar global en una trampa. */
 .set-ui .set-sec-dot{width:7px;height:7px;border-radius:999px;background:var(--orange);flex:0 0 auto;opacity:0;transition:opacity .15s}

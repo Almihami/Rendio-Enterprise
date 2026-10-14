@@ -74,7 +74,28 @@
     // Zonas (0108): carga la lista y el catálogo una vez y pinta las tres
     // tarjetas que dependen de ellos — el mapa, la tabla y las excepciones.
     zonasRecargar();
+    calibAcordeones();
     setPrepararBloque('calib');
+  }
+
+  // ---- TARJETAS PLEGABLES (13-oct) -------------------------------------------
+  // La pantalla pesaba mucho: Zona de cada conjunto, Tabla de tiempos y
+  // Parámetros del optimizador son <details> que nacen cerrados. Se recuerda en
+  // ESTE equipo cuáles dejó abiertas el jefe (localStorage; si el navegador no
+  // deja guardar, simplemente nacen cerradas).
+  const CALIB_ABIERTAS = 'rendio.calib.abiertas';
+  function calibAcordeones() {
+    let abiertas = [];
+    try { abiertas = JSON.parse(localStorage.getItem(CALIB_ABIERTAS) || '[]'); } catch (_) { abiertas = []; }
+    document.querySelectorAll('#calib-ui details.set-card-acc[data-acc]').forEach(d => {
+      if (d.dataset.accLista === '1') return;   // una sola vez por carga de la app
+      d.dataset.accLista = '1';
+      d.open = Array.isArray(abiertas) && abiertas.includes(d.dataset.acc);
+      d.addEventListener('toggle', () => {
+        const ahora = [...document.querySelectorAll('#calib-ui details.set-card-acc[data-acc][open]')].map(x => x.dataset.acc);
+        try { localStorage.setItem(CALIB_ABIERTAS, JSON.stringify(ahora)); } catch (_) { /* sin almacenamiento: no se recuerda */ }
+      });
+    });
   }
 
   // ---- LA TABLA DE TIEMPOS DE JULIÁN (0062) --------------------------------

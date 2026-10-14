@@ -798,12 +798,83 @@
             <p>Los números con los que el sistema decide a qué hora sale cada carro y quién se sube con quién. Casi todos salieron de medir la programación manual contra el plan del sistema: cada sección dice contra qué se midió.</p>
           </div>
 
-          <div class="set-card" data-bloque="calib">
+          <div class="set-card" id="zonas-card">
             <div class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
+              <div>
+                <h2>Zonas de tiempos</h2>
+                <p>Las de la tabla de Julián: a qué hora se recoge. Cada conjunto toma la zona del dibujo que lo contiene. Los sectores de cobro van aparte, en Cuentas de cobro › Tarifas por sector.</p>
+              </div>
+              <button class="set-btn sm" id="zona-agregar-btn" style="margin-left:auto"><svg class="icon"><use href="#i-plus"/></svg>Agregar zona</button>
+            </div>
+            <div class="set-cb">
+              <div class="zn-nueva hidden" id="zona-nueva">
+                <input class="zn-input" id="zona-nueva-nombre" maxlength="60" placeholder="Barro Blanco" aria-label="Nombre de la zona nueva" />
+                <button class="set-btn dark sm" id="zona-nueva-crear">Crear y dibujar</button>
+                <button class="set-btn ghost sm" id="zona-nueva-cancelar">Cancelar</button>
+                <div class="zn-err hidden" id="zona-nueva-err"></div>
+              </div>
+              <div class="zn-editbar hidden" id="zona-editbar">
+                <div class="zn-editbar-t" id="zona-editbar-t"></div>
+                <button class="set-btn ghost sm" id="zona-deshacer-btn">Deshacer</button>
+                <button class="set-btn ghost sm" id="zona-cancelar-dibujo-btn">Cancelar</button>
+                <button class="set-btn dark sm" id="zona-guardar-dibujo-btn">Guardar dibujo</button>
+              </div>
+              <div class="zn-map" id="zonas-map"></div>
+              <p class="set-hint" style="margin:8px 0 0 2px">Los puntos son los conjuntos del catálogo, del color de su zona. Gris = sin zona. La gente que vive en casa con pin propio también toma la zona del dibujo, aunque no salga aquí.</p>
+              <div class="zn-lista" id="zonas-lista"></div>
+              <div class="set-hint" id="zonas-aviso" style="margin:10px 0 0 2px"></div>
+            </div>
+          </div>
+
+          <details class="set-card set-card-acc" data-acc="conjuntos">
+            <summary class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
+              <div>
+                <h2>Zona de cada conjunto</h2>
+                <p>Las excepciones al mapa. Lo puesto aquí a mano gana sobre el dibujo. Se guarda al instante.</p>
+              </div>
+              <span class="set-sec-ya">Se guarda solo</span>
+              <svg class="icon details-chevron set-card-chev"><use href="#i-chev"/></svg>
+            </summary>
+            <div class="set-cb">
+              <p class="set-hint" style="margin:0 0 12px 2px">Lo normal es <b>«Según el mapa»</b>: el conjunto toma la zona del dibujo que lo contiene. Se elige una zona a mano solo cuando el dibujo no basta, porque las zonas de Julián son de operación y no de geografía: Los Cerezos queda a 200 m de Olivar (Fontibón), pero él lo quiere en Porvenir. Un conjunto <b>sin zona</b> (fuera de los dibujos, o dentro de dos a la vez) se programa con el cálculo por carretera.</p>
+              <div id="residence-zones"></div>
+            </div>
+          </details>
+
+          <details class="set-card set-card-acc" data-acc="tabla">
+            <summary class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
+              <div>
+                <h2>Tabla de tiempos de la operación</h2>
+                <p>Los minutos que Julián maneja para recoger. No los calcula el sistema: los dicta él y aquí se editan.</p>
+              </div>
+              <svg class="icon details-chevron set-card-chev"><use href="#i-chev"/></svg>
+            </summary>
+            <div class="set-cb">
+              <p class="set-hint" style="margin:0 0 12px 2px">Estos tiempos <b>no reemplazan</b> el cálculo por carretera: mandan cuando son mayores. Así la tabla nunca promete algo que el carro no pueda hacer, y el cálculo nunca recoge más tarde de lo que él recogería. Un conjunto sin zona, o de una zona sin minutos, se programa con el cálculo, como antes. Una zona nueva llega con la columna en blanco: se llena toda y se guarda.</p>
+
+              <p class="set-hint" style="margin:6px 0 6px 2px;font-weight:700">De recoger al primero a llegar al aeropuerto</p>
+              <p class="set-hint" style="margin:0 0 10px 2px">Los dos números son el rango según cuánta gente va: <b>uno solo va con el mínimo</b>, tres o más con el máximo, y dos por la mitad.</p>
+              <div style="overflow-x:auto"><table class="set-matrix" id="zone-times-table"></table></div>
+
+              <p class="set-hint" style="margin:18px 0 6px 2px;font-weight:700">Solo el tramo final, desde la última persona recogida</p>
+              <p class="set-hint" style="margin:0 0 10px 2px">En una vuelta con varias paradas este tramo tiene que caber dentro del total de arriba, así que funciona como un piso aparte.</p>
+              <div style="overflow-x:auto"><table class="set-matrix" id="leg-times-table"></table></div>
+
+              <div id="zone-times-warn" class="set-hint" style="margin:14px 0 0 2px"></div>
+              <div class="set-foot"><button class="set-btn dark" id="save-route-tables-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar tabla</button></div>
+            </div>
+          </details>
+
+          <details class="set-card set-card-acc" data-acc="parametros" data-bloque="calib">
+            <summary class="set-ch">
               <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
               <div><h2>Parámetros del optimizador</h2><p>Tráfico, esperas, desembarque y la forma de despachar. Lo que se cambie acá manda en el próximo plan, no en el que ya está corriendo.</p></div>
               <span class="set-saved" id="set-saved-calib"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg>Guardado</span>
-            </div>
+              <span class="set-sec-dot set-card-dot"></span><svg class="icon details-chevron set-card-chev"><use href="#i-chev"/></svg>
+            </summary>
             <div class="set-cb">
               <details class="set-sec" data-guarda="btn" data-secval="setting-aux-wait,setting-aux-lead,setting-priv-enabled,setting-priv-vehicle,setting-priv-price,setting-priv-block">
                 <summary><span class="set-sec-dot"></span><span class="set-sec-t">Traslados de auxiliares</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
@@ -926,75 +997,7 @@
                 <span class="set-savenote"></span>
               </div>
             </div>
-          </div>
-
-          <div class="set-card" id="zonas-card">
-            <div class="set-ch">
-              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
-              <div>
-                <h2>Zonas de tiempos</h2>
-                <p>Las de la tabla de Julián: a qué hora se recoge. Cada conjunto toma la zona del dibujo que lo contiene. Los sectores de cobro van aparte, en Cuentas de cobro › Tarifas por sector.</p>
-              </div>
-              <button class="set-btn sm" id="zona-agregar-btn" style="margin-left:auto"><svg class="icon"><use href="#i-plus"/></svg>Agregar zona</button>
-            </div>
-            <div class="set-cb">
-              <div class="zn-nueva hidden" id="zona-nueva">
-                <input class="zn-input" id="zona-nueva-nombre" maxlength="60" placeholder="Barro Blanco" aria-label="Nombre de la zona nueva" />
-                <button class="set-btn dark sm" id="zona-nueva-crear">Crear y dibujar</button>
-                <button class="set-btn ghost sm" id="zona-nueva-cancelar">Cancelar</button>
-                <div class="zn-err hidden" id="zona-nueva-err"></div>
-              </div>
-              <div class="zn-editbar hidden" id="zona-editbar">
-                <div class="zn-editbar-t" id="zona-editbar-t"></div>
-                <button class="set-btn ghost sm" id="zona-deshacer-btn">Deshacer</button>
-                <button class="set-btn ghost sm" id="zona-cancelar-dibujo-btn">Cancelar</button>
-                <button class="set-btn dark sm" id="zona-guardar-dibujo-btn">Guardar dibujo</button>
-              </div>
-              <div class="zn-map" id="zonas-map"></div>
-              <p class="set-hint" style="margin:8px 0 0 2px">Los puntos son los conjuntos del catálogo, del color de su zona. Gris = sin zona. La gente que vive en casa con pin propio también toma la zona del dibujo, aunque no salga aquí.</p>
-              <div class="zn-lista" id="zonas-lista"></div>
-              <div class="set-hint" id="zonas-aviso" style="margin:10px 0 0 2px"></div>
-            </div>
-          </div>
-
-          <div class="set-card">
-            <div class="set-ch">
-              <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
-              <div>
-                <h2>Tabla de tiempos de la operación</h2>
-                <p>Los minutos que Julián maneja para recoger. No los calcula el sistema: los dicta él y aquí se editan.</p>
-              </div>
-            </div>
-            <div class="set-cb">
-              <p class="set-hint" style="margin:0 0 12px 2px">Estos tiempos <b>no reemplazan</b> el cálculo por carretera: mandan cuando son mayores. Así la tabla nunca promete algo que el carro no pueda hacer, y el cálculo nunca recoge más tarde de lo que él recogería. Un conjunto sin zona, o de una zona sin minutos, se programa con el cálculo, como antes. Una zona nueva llega con la columna en blanco: se llena toda y se guarda.</p>
-
-              <p class="set-hint" style="margin:6px 0 6px 2px;font-weight:700">De recoger al primero a llegar al aeropuerto</p>
-              <p class="set-hint" style="margin:0 0 10px 2px">Los dos números son el rango según cuánta gente va: <b>uno solo va con el mínimo</b>, tres o más con el máximo, y dos por la mitad.</p>
-              <div style="overflow-x:auto"><table class="set-matrix" id="zone-times-table"></table></div>
-
-              <p class="set-hint" style="margin:18px 0 6px 2px;font-weight:700">Solo el tramo final, desde la última persona recogida</p>
-              <p class="set-hint" style="margin:0 0 10px 2px">En una vuelta con varias paradas este tramo tiene que caber dentro del total de arriba, así que funciona como un piso aparte.</p>
-              <div style="overflow-x:auto"><table class="set-matrix" id="leg-times-table"></table></div>
-
-              <div id="zone-times-warn" class="set-hint" style="margin:14px 0 0 2px"></div>
-              <div class="set-foot"><button class="set-btn dark" id="save-route-tables-btn"><svg class="icon"><use href="#i-check"/></svg>Guardar tabla</button></div>
-            </div>
-          </div>
-
-          <div class="set-card">
-            <div class="set-ch">
-              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
-              <div>
-                <h2>Zona de cada conjunto</h2>
-                <p>Las excepciones al mapa. Lo puesto aquí a mano gana sobre el dibujo. Se guarda al instante.</p>
-              </div>
-              <span class="set-sec-ya">Se guarda solo</span>
-            </div>
-            <div class="set-cb">
-              <p class="set-hint" style="margin:0 0 12px 2px">Lo normal es <b>«Según el mapa»</b>: el conjunto toma la zona del dibujo que lo contiene. Se elige una zona a mano solo cuando el dibujo no basta, porque las zonas de Julián son de operación y no de geografía: Los Cerezos queda a 200 m de Olivar (Fontibón), pero él lo quiere en Porvenir. Un conjunto <b>sin zona</b> (fuera de los dibujos, o dentro de dos a la vez) se programa con el cálculo por carretera.</p>
-              <div id="residence-zones"></div>
-            </div>
-          </div>
+          </details>
         </div>
       </section>
 
