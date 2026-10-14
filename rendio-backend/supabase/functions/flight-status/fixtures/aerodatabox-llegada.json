@@ -1,0 +1,42 @@
+[
+  {
+    "greatCircleDistance": { "meter": 215440.7, "km": 215.441, "mile": 133.869, "nm": 116.329, "feet": 706826.6 },
+    "departure": {
+      "airport": {
+        "icao": "SKBO", "iata": "BOG", "name": "Bogotá El Dorado", "shortName": "El Dorado",
+        "municipalityName": "Bogotá", "location": { "lat": 4.70159, "lon": -74.1469 },
+        "countryCode": "CO", "timeZone": "America/Bogota"
+      },
+      "scheduledTime": { "utc": "2026-10-11 18:15Z", "local": "2026-10-11 13:15-05:00" },
+      "revisedTime": { "utc": "2026-10-11 18:38Z", "local": "2026-10-11 13:38-05:00" },
+      "runwayTime": { "utc": "2026-10-11 18:51Z", "local": "2026-10-11 13:51-05:00" },
+      "terminal": "1",
+      "checkInDesk": "N2",
+      "gate": "C4",
+      "runway": "13L",
+      "quality": ["Basic", "Live"]
+    },
+    "arrival": {
+      "airport": {
+        "icao": "SKRG", "iata": "MDE", "name": "Rionegro José María Córdova", "shortName": "José María Córdova",
+        "municipalityName": "Rionegro", "location": { "lat": 6.16454, "lon": -75.4231 },
+        "countryCode": "CO", "timeZone": "America/Bogota"
+      },
+      "scheduledTime": { "utc": "2026-10-11 19:10Z", "local": "2026-10-11 14:10-05:00" },
+      "revisedTime": { "utc": "2026-10-11 19:35Z", "local": "2026-10-11 14:35-05:00" },
+      "predictedTime": { "utc": "2026-10-11 19:31Z", "local": "2026-10-11 14:31-05:00" },
+      "terminal": "1",
+      "gate": "12",
+      "baggageBelt": "3",
+      "quality": ["Basic", "Live"]
+    },
+    "lastUpdatedUtc": "2026-10-11 18:56Z",
+    "number": "AV 9563",
+    "callSign": "AVA9563",
+    "status": "EnRoute",
+    "codeshareStatus": "IsOperator",
+    "isCargo": false,
+    "aircraft": { "reg": "N724AV", "modeS": "A9A1B2", "model": "Airbus A320" },
+    "airline": { "name": "Avianca", "iata": "AV", "icao": "AVA" }
+  }
+]

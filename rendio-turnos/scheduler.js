@@ -233,7 +233,9 @@
     if (!cell) return 0;
     if ((cell[shift] || 'unset') !== 'available') return 0;
     const pref = cell.shift_pref;
-    if (!pref || pref === 'any') return 0;
+    // 'both' es «Puedo doblar» (27-sep-2026): no dice qué jornada prefiere, y
+    // leerlo como «prefiere la otra» lo mandaba al final de las dos.
+    if (!pref || pref === 'any' || pref === 'both') return 0;
     return pref === shift ? -1 : 1;
   }
 
@@ -271,8 +273,21 @@
     return sorted.slice(0, count);
   }
 
-  function generateSchedule({ drivers, settings, availability, admins = [], flexCoordinatorId = null, weekStart = '', nonce = '', seedPmIds = [] }) {
+  function generateSchedule({ drivers, settings, availability, admins = [], flexCoordinatorId = null, weekStart = '', nonce = '', seedPmIds = [], doubles = [], restSlots = 2 }) {
     const warnings = [];
+    // Dobles que el jefe ya marcó (D1: el generador nunca dobla por su cuenta,
+    // pero si se regenera con dobles marcadas, las respeta): esas dos jornadas
+    // quedan fijas y las del descanso posterior (y la anterior), bloqueadas.
+    const fixedKeys = new Set(), blockedKeys = new Set();
+    const keepDoubles = doubles.filter(x => drivers.some(d => d.id === x.id) && doubleStartSlot(x) >= 0 && doubleStartSlot(x) + 1 < DAYS.length * 2);
+    keepDoubles.forEach(x => {
+      const k = doubleStartSlot(x);
+      fixedKeys.add(x.id + '|' + k); fixedKeys.add(x.id + '|' + (k + 1));
+      blockedKeys.add(x.id + '|' + (k - 1));
+      for (let j = 2; j < 2 + restSlots; j++) blockedKeys.add(x.id + '|' + (k + j));
+    });
+    const fixedFor = (day, shift) => drivers.filter(d => fixedKeys.has(d.id + '|' + slotOf(day, shift)));
+    const isBlocked = (id, day, shift) => blockedKeys.has(id + '|' + slotOf(day, shift));
     const workerLoads = new Map(drivers.map(d => [d.id, 0]));
     // Carga de LIDERAZGO por conductor (cuántas jornadas ha liderado esta semana),
     // para que el rol de líder rote y nadie quede liderando toda la semana.
@@ -295,6 +310,8 @@
       const st = getState(availability, d.id, day, shift);
       return st !== 'unavailable' && st !== 'unset' &&
         !ruleBlocked(d, day, shift) &&
+        !isBlocked(d.id, day, shift) &&
+        !fixedKeys.has(d.id + '|' + slotOf(day, shift === 'am' ? 'pm' : 'am')) &&
         !(shift === 'am' && prevPmIds.has(d.id));
     };
 
@@ -316,6 +333,7 @@
     // cambia al conductor menos crítico, sin sacar nunca a la prioridad 4 dura).
     function ensureLeaderCapable(set, day, shift, usedToday, slots) {
       if (hasLeader(set)) return set;
+      const fijo = (d) => fixedKeys.has(d.id + '|' + slotOf(day, shift));
       const inSet = new Set(set.map(d => d.id));
       const cand = drivers
         .filter(d => d.can_coordinate && !usedToday.has(d.id) && !inSet.has(d.id) && eligibleFor(d, day, shift))
@@ -323,7 +341,7 @@
       if (!cand) return set;                                // no hay líder disponible → warning aparte
       if (set.length < slots) return [...set, cand];        // hay cupo libre: agrégalo
       const removable = set
-        .filter(d => (d.priority || 1) < 4)                 // nunca se saca a la prioridad 4 dura
+        .filter(d => (d.priority || 1) < 4 && !fijo(d))     // nunca se saca a la prioridad 4 dura ni a una doble
         .sort((a, b) => {
           const wa = workerLoads.get(a.id) || 0, wb = workerLoads.get(b.id) || 0;
           if (wa !== wb) return wb - wa;                    // el de mayor carga sale primero
@@ -343,10 +361,11 @@
       const usedToday = new Set();
 
       // --- MAÑANA: elige conductores y asegura que uno de ellos pueda liderar ---
-      let morning = pickForShift(
-        drivers.filter(d => eligibleFor(d, day, 'am')),
-        workerLoads, availability, day, 'am', settings.morningSlots, driverRank
-      );
+      const fixAm = fixedFor(day, 'am');
+      let morning = [...fixAm, ...pickForShift(
+        drivers.filter(d => !fixAm.includes(d) && eligibleFor(d, day, 'am')),
+        workerLoads, availability, day, 'am', Math.max(0, settings.morningSlots - fixAm.length), driverRank
+      )];
       morning = ensureLeaderCapable(morning, day, 'am', usedToday, settings.morningSlots);
       morning.forEach(d => { usedToday.add(d.id); workerLoads.set(d.id, (workerLoads.get(d.id) || 0) + 1); });
       if (morning.length < settings.morningSlots) {
@@ -356,10 +375,11 @@
       if (!coordAm.length) warnings.push(`Falta líder en la Mañana de ${DAY_LABELS_ES[day]} (ningún conductor de la jornada puede liderar; marca a más como "Líder de turno").`);
 
       // --- TARDE ---
-      let afternoon = pickForShift(
-        drivers.filter(d => !usedToday.has(d.id) && eligibleFor(d, day, 'pm')),
-        workerLoads, availability, day, 'pm', settings.afternoonSlots, driverRank
-      );
+      const fixPm = fixedFor(day, 'pm');
+      let afternoon = [...fixPm, ...pickForShift(
+        drivers.filter(d => !fixPm.includes(d) && !usedToday.has(d.id) && eligibleFor(d, day, 'pm')),
+        workerLoads, availability, day, 'pm', Math.max(0, settings.afternoonSlots - fixPm.length), driverRank
+      )];
       afternoon = ensureLeaderCapable(afternoon, day, 'pm', usedToday, settings.afternoonSlots);
       afternoon.forEach(d => { usedToday.add(d.id); workerLoads.set(d.id, (workerLoads.get(d.id) || 0) + 1); });
       if (afternoon.length < settings.afternoonSlots) {
@@ -384,7 +404,74 @@
       prevPmIds = new Set(afternoon.map(d => d.id));
     }
 
+    if (keepDoubles.length) result._doubles = keepDoubles.map(x => ({ ...x }));
     return { schedule: result, warnings, loads: Object.fromEntries(workerLoads) };
+  }
+
+  // ===================== Doble turno (27-sep-2026) =====================
+  // Una doble son dos jornadas SEGUIDAS del mismo conductor que el jefe autoriza
+  // con un motivo (D1). Viven en data._doubles = [{ day, id, tipo, nota }]:
+  //   tipo 'dia'   → mañana + tarde de `day`
+  //   tipo 'noche' → tarde de `day` + madrugada del día siguiente (misma semana)
+  // Cada jornada es un "slot" de ~12 h: k = índiceDía*2 (+1 si es la tarde). Dos
+  // slots seguidos son 24 h, el máximo (D3), y después van restSlots de descanso.
+  function slotOf(day, shift) { const i = DAYS.indexOf(day); return i < 0 ? -99 : i * 2 + (shift === 'pm' ? 1 : 0); }
+  function slotDay(k) { return DAYS[Math.floor(k / 2)]; }
+  function slotShift(k) { return k % 2 ? 'pm' : 'am'; }
+  function doublesOf(data) { return (data && Array.isArray(data._doubles)) ? data._doubles : []; }
+  function doubleStartSlot(x) { return slotOf(x.day, x.tipo === 'noche' ? 'pm' : 'am'); }
+  function workedSlots(data, id) {
+    const out = new Set();
+    DAYS.forEach(day => {
+      const d = (data && data[day]) || {};
+      if ((d.morning || []).includes(id)) out.add(slotOf(day, 'am'));
+      if ((d.afternoon || []).includes(id)) out.add(slotOf(day, 'pm'));
+    });
+    return out;
+  }
+  // Cuántas jornadas de descanso van después de una doble (D3: 24 h).
+  function restSlotsFor(settings) {
+    const rest = Number(settings && settings.double_rest_hours) || 24;
+    // Una jornada es media día (AM/PM) aunque shift_hours diga otra cosa.
+    return Math.max(0, Math.ceil(rest / 12));
+  }
+  // La doble de `id` que cubre ese día/jornada, o null.
+  function doubleAt(data, id, day, shift) {
+    const k = slotOf(day, shift);
+    const w = workedSlots(data, id);
+    return doublesOf(data).find(x => x.id === id && (doubleStartSlot(x) === k || doubleStartSlot(x) + 1 === k)
+      && w.has(doubleStartSlot(x)) && w.has(doubleStartSlot(x) + 1)) || null;
+  }
+  // Problemas de `id` por jornada: Map(slot -> código)
+  //   'triple'  más de 24 h seguidas
+  //   'double'  mañana + tarde del mismo día sin autorizar
+  //   'pmam'    tarde + madrugada del día siguiente sin autorizar
+  //   'rest'    trabaja dentro del descanso obligatorio después de una doble
+  function doubleIssues(data, id, restSlots = 2) {
+    const w = workedSlots(data, id);
+    const out = new Map();
+    const put = (k, code) => { if (!out.has(k)) out.set(k, code); };
+    const auth = new Set(doublesOf(data).filter(x => x.id === id).map(doubleStartSlot));
+    w.forEach(k => { if (w.has(k + 1) && w.has(k + 2)) { put(k, 'triple'); put(k + 1, 'triple'); put(k + 2, 'triple'); } });
+    w.forEach(k => {
+      if (!w.has(k + 1) || auth.has(k)) return;
+      const code = k % 2 === 0 ? 'double' : 'pmam';
+      put(k, code); put(k + 1, code);
+    });
+    auth.forEach(k => {
+      if (!(w.has(k) && w.has(k + 1))) return;   // doble a medias: no aplica
+      for (let j = 2; j < 2 + restSlots; j++) if (w.has(k + j)) put(k + j, 'rest');
+    });
+    return out;
+  }
+  // Quita las dobles que ya no existen (el jefe sacó al conductor de una de las
+  // dos jornadas): la marca no puede quedar colgando de un turno que no está.
+  function cleanDoubles(data) {
+    if (!data || !Array.isArray(data._doubles)) return;
+    data._doubles = data._doubles.filter(x => {
+      const w = workedSlots(data, x.id), k = doubleStartSlot(x);
+      return k >= 0 && w.has(k) && w.has(k + 1);
+    });
   }
 
   // ===================== Swaps entre conductores (Fase 3) =====================
@@ -413,20 +500,9 @@
     return out;
   }
 
-  // Mapa driverId -> { day -> Set(shift) } de turnos de MANEJO (morning/afternoon).
-  function drivingMap(data) {
-    const m = {};
-    DAYS.forEach(day => {
-      const d = data[day] || {};
-      (d.morning || []).forEach(id => { (m[id] = m[id] || {})[day] = (m[id][day] || new Set()).add('am'); });
-      (d.afternoon || []).forEach(id => { (m[id] = m[id] || {})[day] = (m[id][day] || new Set()).add('pm'); });
-    });
-    return m;
-  }
-
   // Valida un swap propuesto sobre el horario PUBLICADO base.
   // driversById: { id: { email, name } }. Devuelve { ok, reason }.
-  function validateSwap(data, swap, driversById = {}) {
+  function validateSwap(data, swap, driversById = {}, restSlots = 2) {
     const fromKey = DAYS[swap.from_day], toKey = DAYS[swap.to_day];
     const a = swap.requester_id, b = swap.target_id;
     const fromSlot = SLOT_OF[swap.from_shift], toSlot = SLOT_OF[swap.to_shift];
@@ -445,26 +521,24 @@
     if (ruleBlocked(driversById[b], fromKey, swap.from_shift))
       return { ok: false, reason: `${bName} tiene descanso fijo (parametrización) en ${DAY_LABELS_ES[fromKey]} ${swap.from_shift.toUpperCase()}.` };
 
-    // 3. Construir el resultado y validar doble turno / PM→AM por persona.
-    const m = drivingMap(data);
-    const moveOut = (id, day, shift) => { if (m[id]?.[day]) { m[id][day].delete(shift); if (!m[id][day].size) delete m[id][day]; } };
-    const moveIn = (id, day, shift) => { (m[id] = m[id] || {})[day] = (m[id][day] || new Set()).add(shift); };
-    moveOut(a, fromKey, swap.from_shift); moveIn(a, toKey, swap.to_shift);
-    moveOut(b, toKey, swap.to_shift);     moveIn(b, fromKey, swap.from_shift);
-
+    // 3. Construir el resultado y validar por persona. Desde el 27-sep-2026 una
+    //    doble AUTORIZADA por el jefe no es error; sí lo son las no autorizadas,
+    //    más de 24 h seguidas y trabajar en el descanso posterior a una doble.
+    const res = JSON.parse(JSON.stringify(data));
+    const out = (id, day, slot) => { if (res[day]) res[day][slot] = (res[day][slot] || []).map(x => (x === id ? null : x)); };
+    const inn = (id, day, slot) => { res[day] = res[day] || {}; res[day][slot] = [...(res[day][slot] || []), id]; };
+    out(a, fromKey, fromSlot); out(b, toKey, toSlot);
+    inn(a, toKey, toSlot); inn(b, fromKey, fromSlot);
+    const MSG = {
+      triple: (l) => `${l} quedaría con más de 24 horas seguidas.`,
+      double: (l, k) => `${l} quedaría con Mañana y Tarde el mismo día (${DAY_LABELS_ES[slotDay(k)]}) sin una doble autorizada.`,
+      pmam: (l, k) => `${l} cerraría ${DAY_LABELS_ES[slotDay(k)]} PM y madrugaría ${DAY_LABELS_ES[slotDay(k + 1)] || 'al día siguiente'} AM (no permitido sin una doble autorizada).`,
+      rest: (l, k) => `${l} trabajaría ${DAY_LABELS_ES[slotDay(k)]} ${slotShift(k).toUpperCase()}, dentro del descanso obligatorio después de su doble.`,
+    };
     for (const [id, label] of [[a, aName], [b, bName]]) {
-      const byDay = m[id] || {};
-      // Doble turno el mismo día.
-      for (const day of DAYS) {
-        const set = byDay[day];
-        if (set && set.has('am') && set.has('pm'))
-          return { ok: false, reason: `${label} quedaría con Mañana y Tarde el mismo día (${DAY_LABELS_ES[day]}).` };
-      }
-      // PM hoy ⇒ no AM mañana (dentro de la semana).
-      for (let i = 0; i < DAYS.length - 1; i++) {
-        if (byDay[DAYS[i]]?.has('pm') && byDay[DAYS[i + 1]]?.has('am'))
-          return { ok: false, reason: `${label} cerraría ${DAY_LABELS_ES[DAYS[i]]} PM y madrugaría ${DAY_LABELS_ES[DAYS[i + 1]]} AM (no permitido).` };
-      }
+      const iss = doubleIssues(res, id, restSlots);
+      const first = [...iss.entries()].sort((x, y) => x[0] - y[0])[0];
+      if (first) return { ok: false, reason: MSG[first[1]](label, first[0]) };
     }
     return { ok: true, reason: '' };
   }
@@ -482,5 +556,6 @@
     availabilityCutoff, availabilityCutoffLabel, deadlineLabel, availabilityClosed, availabilityClosingSoon,
     generateSchedule, emptySchedule, getState, getRawState, getEffectiveState,
     ruleBlocked, setRules, applySwaps, validateSwap,
+    slotOf, doublesOf, doubleAt, doubleIssues, cleanDoubles, restSlotsFor, workedSlots,
   };
 })();

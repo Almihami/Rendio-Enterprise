@@ -94,10 +94,17 @@
             await Api.signOut();
             nextAction = () => showLogin('Tu cuenta no tiene perfil asociado.');
           }
+        } else if (profile.deleted_at) {
+          // Eliminado (0081): no entra. La cuenta ya está bloqueada en Supabase;
+          // esto cubre la sesión que tuviera guardada de antes.
+          await Api.signOut();
+          nextAction = () => showLogin('Tu cuenta fue dada de baja. Si crees que es un error, habla con tu jefe.');
         } else {
           // Suspendido: lo dejamos entrar a ver el banner; el módulo se bloquea.
           state.profile = profile;
-          nextAction = () => enterApp();
+          nextAction = profile.must_change_password
+            ? async () => { showLogin(); await openCambiarMiClave({ forced: true }); return enterApp(); }
+            : () => enterApp();
         }
       }
     } catch (e) {
@@ -320,7 +327,13 @@
       await Api.signIn(email, password);
       const profile = await Api.getCurrentProfile();
       if (!profile) throw new Error('Tu cuenta no tiene perfil asociado.');
+      if (profile.deleted_at) {
+        await Api.signOut();
+        throw new Error('Tu cuenta fue dada de baja. Si crees que es un error, habla con tu jefe.');
+      }
       state.profile = profile;
+      // Contraseña temporal puesta por el jefe: primero se cambia (U2).
+      if (profile.must_change_password) await openCambiarMiClave({ forced: true });
       await enterApp();
     } catch (err) {
       showLogin(err.message || 'Error iniciando sesión');
@@ -406,6 +419,10 @@
       $('#driver-tabs-root')?.classList.remove('nav-on');
       await refreshDriverView();
       setDriverTab('home'); // arranca en las 2 tarjetas
+      // Celular obligatorio (pedido del jefe, 11-oct-2026): sin él, el
+      // tripulante no tiene a quién llamar. Si está vacío, una ventana que no
+      // se cierra sin un número válido (driver-celular.js).
+      if (typeof drvTelPedirSiFalta === 'function') drvTelPedirSiFalta();
       // Inicio de turno (Etapa 1 módulo conductor) — card + wizard.
       if (window.ShiftFlow) ShiftFlow.init(state.profile).catch(e => console.error(e));
     }
@@ -472,10 +489,22 @@
     if (name === 'reservas') renderReservas();
     if (name === 'privados') renderPrivados();
     if (name === 'tripulantes') renderTripulantes();
+    // Usuarios (11-oct-2026): módulo IIFE que exporta por window, con typeof
+    // por la misma razón que Coordinación: si no cargó, la navegación no se cae.
+    if (name === 'usuarios' && typeof window.renderUsuarios === 'function') window.renderUsuarios();
     if (name === 'eventualidades') renderEventualidades();
     else stopEvtTimer(); // al salir de la bandeja, frena su polling
     if (name === 'oper') renderOperacion();
     else stopOperTimers(); // al salir de Operación, frena el reloj/simulación
+    // Rediseño del auxiliar (27-sep-2026): Coordinación, Cuentas de cobro y
+    // Rendio Points. Viven en módulos IIFE que exportan por window, y mientras
+    // sean stub no existen: el typeof evita que la navegación del admin se caiga.
+    if (name === 'coordinacion') { if (typeof window.renderCoordinacion === 'function') window.renderCoordinacion(); }
+    else if (typeof window.stopCoordTimer === 'function') window.stopCoordTimer(); // frena su consulta cada 5 s
+    if (name === 'cobro') { if (typeof window.renderCobro === 'function') window.renderCobro(); }
+    else if (typeof window.stopCobroTimer === 'function') window.stopCobroTimer();
+    if (name === 'puntos') { if (typeof window.renderPuntos === 'function') window.renderPuntos(); }
+    else if (typeof window.stopPuntosTimer === 'function') window.stopPuntosTimer();
   }
 
   // Enlace profundo desde una notificación push: `#/eventualidades?ev=<id>` abre
@@ -493,14 +522,26 @@
     // traslado ya abierto. Es a donde apunta el aviso de "un tripulante escribió
     // y no tiene carro asignado": ese mensaje NO crea una eventualidad, así que
     // mandarlo a la bandeja sería mandarlo a una pantalla donde no está.
+    // Rediseño del tripulante (28-sep): los avisos de Coordinación, del cobro y
+    // de los canjes de puntos traen `#/coordinacion?aux=`, `#/cobro?aux=` y
+    // `#/puntos`. Los enlaces DEL TRIPULANTE (#/viaje, #/pagos…) no pasan por
+    // aquí: los resuelve aux-shell.js (este camino es solo del admin).
     const tab = m[1] === 'eventualidades' ? 'eventualidades'
-      : m[1] === 'reservas' ? 'reservas' : null;
+      : m[1] === 'reservas' ? 'reservas'
+      : m[1] === 'coordinacion' && typeof window.renderCoordinacion === 'function' ? 'coordinacion'
+      : m[1] === 'cobro' && typeof window.renderCobro === 'function' ? 'cobro'
+      : m[1] === 'puntos' && typeof window.renderPuntos === 'function' ? 'puntos'
+      // 0104: «Pidieron restablecer una contraseña» abre Usuarios (la solicitud sale arriba).
+      : m[1] === 'usuarios' && typeof window.renderUsuarios === 'function' ? 'usuarios' : null;
     if (!tab) return false;
     const params = new URLSearchParams(m[2] || '');
     const ev = params.get('ev');
     if (ev) evtState.focusId = ev;
     const chat = params.get('chat');
     if (chat) rvState.focusChatId = chat;
+    const aux = params.get('aux');
+    if (aux && tab === 'coordinacion' && typeof window.renderCoordinacion.focus === 'function') window.renderCoordinacion.focus(aux);
+    if (aux && tab === 'cobro' && typeof window.renderCobro.focus === 'function') window.renderCobro.focus(aux);
     // Se limpia el hash para que un refresco no vuelva a abrir lo mismo.
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* */ }
     setTab(tab);

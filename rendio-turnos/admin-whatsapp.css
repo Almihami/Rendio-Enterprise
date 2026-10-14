@@ -1,0 +1,76 @@
+/* admin-whatsapp.css — Admin › Asignación: «Copiar plan para WhatsApp»
+   (admin-whatsapp.js). El modal va colgado de <body> —no dentro de #routes-ui—
+   para que lo pueda abrir también la v2 de la pantalla, así que redeclara aquí
+   los tokens de #routes-ui (tema claro, como el tablero) igual que hace cada
+   panel del admin con los suyos. Mismas piezas que el visor de trayecto
+   (.mapovl/.mapbox/.maphead/.mapclose) y los botones de la barra. En el celular
+   es una hoja desde abajo. Sin animaciones. */
+
+/* El botón de la barra: un ícono sutil al lado de «Optimizar». */
+#routes-ui .rt-wabtn{width:38px;height:38px;border-radius:11px;flex:0 0 auto}
+#routes-ui .rt-wabtn:hover{color:var(--ink);border-color:var(--ink3)}
+#routes-ui .rt-wabtn svg{width:18px;height:18px}
+
+#rwa-ovl{
+  --panel:#FFFFFF; --panel2:#F7F6F3; --ink:#1E1C19; --ink2:#5F5B55; --ink3:#9D998F;
+  --line:#E7E5DF; --line2:#D6D2C9;
+  --orange:#E2551A; --orange-soft:#FBE5D8;
+  --green:#16936A; --green-soft:#E3F1EA;
+  --amber:#C9810F; --amber-soft:#FBEBCF;
+  --red:#D6473B;
+  --font:"Hanken Grotesk",system-ui,sans-serif; --mono:"Space Mono",ui-monospace,monospace;
+  position:fixed;inset:0;z-index:450;display:none;align-items:center;justify-content:center;padding:24px;
+  background:rgba(15,14,12,.55);font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased;
+}
+#rwa-ovl.show{display:flex}
+#rwa-ovl *{box-sizing:border-box}
+#rwa-ovl svg{width:16px;height:16px;flex:0 0 auto}
+#rwa-ovl [hidden]{display:none !important}
+
+#rwa-ovl .rwa-box{background:var(--panel);border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,.35);width:min(620px,94vw);max-height:min(88dvh,820px);display:flex;flex-direction:column;overflow:hidden}
+#rwa-ovl .rwa-h{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line2)}
+#rwa-ovl .rwa-hic{width:34px;height:34px;border-radius:10px;background:var(--green-soft);color:var(--green);display:grid;place-items:center;flex:0 0 auto}
+#rwa-ovl .rwa-hic svg{width:18px;height:18px}
+#rwa-ovl .rwa-ht{flex:1;min-width:0}
+#rwa-ovl .rwa-ht b{display:block;font-size:15.5px;font-weight:800;color:var(--ink)}
+#rwa-ovl .rwa-ht span{display:block;font-size:12px;color:var(--ink3);margin-top:2px;font-family:var(--mono)}
+#rwa-ovl .rwa-x{width:34px;height:34px;border-radius:9px;border:1.5px solid var(--line2);background:var(--panel);color:var(--ink2);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;padding:0}
+#rwa-ovl .rwa-x:hover{color:var(--ink);border-color:var(--ink3)}
+
+#rwa-ovl .rwa-b{padding:14px 18px;overflow:auto;display:flex;flex-direction:column;gap:10px;min-height:0;flex:1}
+#rwa-ovl .rwa-nota{border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.45;background:var(--panel2);border:1px solid var(--line);color:var(--ink2)}
+#rwa-ovl .rwa-nota b{color:var(--ink);font-weight:800}
+#rwa-ovl .rwa-nota.warn{background:var(--amber-soft);border-color:transparent;color:var(--ink)}
+#rwa-ovl .rwa-nota ul{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:3px}
+#rwa-ovl .rwa-nota li{font-weight:600}
+#rwa-ovl .rwa-nota .rwa-hr{display:inline-block;min-width:44px;font-family:var(--mono);font-weight:700}
+#rwa-ovl .rwa-nota .rwa-z{color:var(--ink2);font-weight:500}
+#rwa-ovl .rwa-nota .rwa-mas{color:var(--ink2);font-weight:600}
+
+#rwa-ovl .rwa-ta{display:block;width:100%;min-height:280px;flex:1;resize:vertical;margin:0;border:1px solid var(--line2);border-radius:12px;background:var(--panel2);color:var(--ink);padding:12px 14px;font-family:var(--mono);font-size:12.5px;line-height:1.6;outline:none}
+#rwa-ovl .rwa-ta:focus{border-color:var(--orange)}
+
+#rwa-ovl .rwa-vacio{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:28px 12px}
+#rwa-ovl .rwa-vacio b{font-size:15px;font-weight:800;color:var(--ink)}
+#rwa-ovl .rwa-vacio p{margin:0;max-width:420px;font-size:13px;line-height:1.5;color:var(--ink2)}
+
+#rwa-ovl .rwa-f{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--line2);background:var(--panel)}
+#rwa-ovl .rwa-chk{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--ink2);cursor:pointer;margin-right:auto}
+#rwa-ovl .rwa-chk input{width:15px;height:15px;accent-color:var(--orange);margin:0}
+#rwa-ovl .rwa-ok{font-size:12.5px;font-weight:700;color:var(--green)}
+#rwa-ovl .rwa-ok.err{color:var(--red)}
+#rwa-ovl .rwa-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:var(--font);font-size:13.5px;font-weight:800;cursor:pointer;text-decoration:none;white-space:nowrap;box-shadow:0 9px 22px rgba(226,85,26,.26)}
+#rwa-ovl .rwa-btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:none;font-weight:700}
+#rwa-ovl .rwa-btn:disabled,#rwa-ovl .rwa-btn.off{opacity:.5;cursor:not-allowed;box-shadow:none;pointer-events:none}
+
+@media (max-width: 768px){
+  #rwa-ovl{padding:0;align-items:flex-end}
+  #rwa-ovl .rwa-box{width:100%;max-height:92dvh;border-radius:18px 18px 0 0}
+  #rwa-ovl .rwa-h,#rwa-ovl .rwa-b{padding-left:16px;padding-right:16px}
+  #rwa-ovl .rwa-ta{min-height:220px;font-size:12px}
+  #rwa-ovl .rwa-f{padding:12px 16px calc(12px + env(safe-area-inset-bottom, 0px))}
+  #rwa-ovl .rwa-chk{flex:1 1 100%;margin-right:0}
+  #rwa-ovl .rwa-ok{flex:1 1 100%;order:3}
+  #rwa-ovl .rwa-ok:empty{display:none}
+  #rwa-ovl .rwa-btn{flex:1 1 0}
+}

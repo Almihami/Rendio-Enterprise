@@ -8,6 +8,12 @@
 // REQUIERE jsdom (no está en el repo, es solo para probar):
 //   cd rendio-backend && npm install --no-save jsdom
 //
+// REDISEÑO (P5, 27-sep-2026): mientras exista el interruptor corre en los DOS
+// modos. RX=0 (o sin variable) = el pedido de siempre; RX=1 = el pedido nuevo
+// (.rx-book: .rx-review, .rx-list, deslizador). Mismo contrato res-*.
+//   RX=0 node scripts/_smoke-una-unidad-dom.mjs
+//   RX=1 node scripts/_smoke-una-unidad-dom.mjs
+//
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'fs';
 const APP='../rendio-turnos/';
@@ -27,9 +33,24 @@ window.Api={ listMyReservations:async()=>[], listResidences:async()=>RES,
   saveMyResidence:async()=>true, createReservation:async(f)=>{creadas.push(JSON.parse(JSON.stringify(f)));return 'r'+creadas.length;},
   getSettings:async()=>({}) };
 window.state={settings:{aux_min_lead_hours:6,aux_wait_minutes:5}}; global.state=window.state;
-for(const f of ['aux-residencias.js','aux-privado.js','aux-presentacion.js','auxiliar.js']) window.eval(readFileSync(APP+f,'utf8'));
+const RX=process.env.RX==='1';
+console.log('Modo: '+(RX?'RX=1 (rediseño encendido)':'RX=0 (el pedido de siempre)'));
+window.localStorage.setItem('rendio.aux.rx',RX?'1':'0');
+// Los mismos archivos en los dos modos (la app real los carga todos); solo cambia la bandera.
+const PANTALLAS=['aux-rx-inicio.js','aux-rx-viajes.js','aux-rx-avisos.js','aux-rx-viaje.js','aux-rx-pedir.js','aux-rx-perfil.js','aux-rx-pagos.js','aux-rx-puntos.js','aux-rx-coord.js','aux-rx-vuelo.js'];
+for(const f of ['aux-rx-ui.js','aux-shell.js','api-aux.js','aux-residencias.js','aux-privado.js','aux-celebracion.js','aux-presentacion.js',...PANTALLAS,'auxiliar.js']) window.eval(readFileSync(APP+f,'utf8'));
 const ui=()=>window.document.getElementById('auxiliar-ui');
-const txt=()=>ui().textContent.replace(/\s+/g,' ');
+// Con el rediseño el pedido vive en su capa (data-scr="book"); la pestaña de atrás no cuenta.
+const scope=()=>(RX&&ui().querySelector('[data-scr="book"]:not(.out)'))||ui();
+const txt=()=>scope().textContent.replace(/\s+/g,' ');
+const T_REVISAR=RX?/Revisa tu traslado/:/Revisa y confirma/;
+// Paso 1: con el rediseño avanza solo a los 260 ms; sin él, «Continuar».
+async function tipo(tp){ click(`[data-ax="type"][data-type="${tp}"]`); if(RX) await wait(320); else click('[data-ax="next"]'); }
+// El confirmar del último paso: el deslizador (toque sin arrastre + 380 ms) o el botón.
+const confirmBloqueado=()=>RX?ui().querySelector('[data-scr="book"] .rx-slide').classList.contains('off'):ui().querySelector('[data-ax="next"]').hasAttribute('disabled');
+async function confirmar(){ if(RX){ click('[data-scr="book"] .rx-slide-k'); await wait(460); } else { click('[data-ax="next"]'); await wait(120); } }
+// La fila del punto en el resumen.
+const filaPunto=()=>RX?(ui().querySelector('[data-scr="book"] .rx-rv-row[data-ax="donde-cambiar"]')?.textContent||''):txt();
 const click=(s)=>{const e=ui().querySelector(s); if(!e) throw new Error('no existe: '+s); e.click();};
 const set=(k,v)=>{const i=ui().querySelector(`[data-field="${k}"]`); i.value=v; i.dispatchEvent(new window.Event('input',{bubbles:true}));};
 const wait=(ms=40)=>new Promise(r=>setTimeout(r,ms));
@@ -39,7 +60,7 @@ await window.Auxiliar.init({id:'p1',full_name:'Julián Andrés López Mesa',role
 window.Auxiliar.state.view='form'; window.Auxiliar.state.step=1; window.Auxiliar.state.form={isReserva:true};
 window.AuxResidencias.newTrip(); window.AuxResidencias.load(); await wait(80);
 window.Auxiliar.rerender();
-click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]');
+await tipo('sal');
 // En una SALIDA no hay campo de vuelo desde el 25-ago (solo interesa el de
 // llegada). Pedirlo aquí es lo que tenía esta prueba rota.
 set('date','2026-12-20'); set('time','05:10');
@@ -51,17 +72,17 @@ t('tras el vuelo NO se pide el punto: se cae en el nivel', window.Auxiliar.stepK
 t('son 4 pasos: tipo, vuelo, nivel, revisar', JSON.stringify(window.Auxiliar.kinds())==='["tipo","vuelo","nivel","revisar"]' && /3\/4/.test(txt()),
   JSON.stringify(window.Auxiliar.kinds()));
 click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia desde el 17-sep)
-t('y de ahí a revisar', /Revisa y confirma/.test(txt()), txt().slice(0,160));
+t('y de ahí a revisar', T_REVISAR.test(txt()), txt().slice(0,160));
 t('NO pregunta de cuál unidad sale', !/De cuál sales/.test(txt()));
 t('ni pide la dirección', !/Dónde te recogemos/.test(txt()));
 // 7-sep-2026: «si solo tiene una dirección asociada, que se autocomplete».
 t('el punto llegó puesto solo', A().form.residenceId==='r1' && A().form.placeAuto===true);
-t('y el resumen lo muestra verificado', /Te recogemos enOlivar Apartamentos/.test(txt()) && /UbicaciónVerificada/.test(txt()), txt().slice(0,240));
+t('y el resumen lo muestra'+(RX?' (fila «Recogida»)':' verificado'), RX ? /Recogida.*Olivar Apartamentos/.test(filaPunto()) : (/Te recogemos enOlivar Apartamentos/.test(txt()) && /UbicaciónVerificada/.test(txt())), filaPunto().slice(0,240));
 t('arrastra el apartamento del perfil', A().form.residenceUnit==='Torre 3 · 302');
-t('el resumen lleva la unidad', /UnidadTorre 3 · 302/.test(txt()), txt().slice(0,240));
-t('ofrece «Cambiar» al lado del punto', !!ui().querySelector('.ax-sum-row [data-ax="donde-cambiar"]'));
-t('el botón de confirmar queda habilitado sin tocar nada', !ui().querySelector('[data-ax="next"]').hasAttribute('disabled'));
-click('[data-ax="next"]'); await wait(120);
+t('el resumen lleva la unidad', RX ? /Torre 3 · 302/.test(filaPunto()) : /UnidadTorre 3 · 302/.test(txt()), filaPunto().slice(0,240));
+t('ofrece «Cambiar» al lado del punto', !!ui().querySelector(RX?'[data-scr="book"] .rx-review .rx-rv-row[data-ax="donde-cambiar"]':'.ax-sum-row [data-ax="donde-cambiar"]'));
+t('el botón de confirmar queda habilitado sin tocar nada', !confirmBloqueado());
+await confirmar();
 t('crea UNA sola reserva (no marcó regreso)', creadas.length===1, 'creadas='+creadas.length);
 t('con conjunto y apartamento', creadas[0]?.residenceId==='r1' && creadas[0]?.residenceUnit==='Torre 3 · 302');
 
@@ -70,7 +91,7 @@ window.Auxiliar.state.view='form';
 window.Auxiliar.state.form={isReserva:true,type:'sal',date:'2026-12-21',time:'06:00'};
 window.AuxResidencias.newTrip();
 window.Auxiliar.state.step=window.Auxiliar.kinds().indexOf('revisar')+1; window.Auxiliar.rerender(); await wait();
-t('arranca en revisar con el punto puesto', /Revisa y confirma/.test(txt()) && A().form.residenceId==='r1');
+t('arranca en revisar con el punto puesto', T_REVISAR.test(txt()) && A().form.residenceId==='r1');
 click('[data-ax="donde-cambiar"]'); await wait();
 t('«Cambiar» abre el paso del punto', /Dónde te recogemos/.test(txt()), txt().slice(0,160));
 t('el paso del punto ahora EXISTE en la lista', window.Auxiliar.kinds().includes('donde') && window.Auxiliar.stepKind()==='donde',
@@ -95,7 +116,7 @@ t('sigue en el paso del punto (con «Cambiar» propio)', window.Auxiliar.stepKin
 click('[data-ax="next"]'); await wait();
 click('[data-ax="next"]'); await wait();   // el paso del nivel (primicia desde el 17-sep)
 
-t('Continuar lleva al resumen con el punto nuevo', /Revisa y confirma/.test(txt()) && /Te recogemos enSolare/.test(txt()), txt().slice(0,240));
+t('Continuar lleva al resumen con el punto nuevo', T_REVISAR.test(txt()) && (RX ? /Solare/.test(filaPunto()) : /Te recogemos enSolare/.test(txt())), txt().slice(0,240));
 t('ahora son 5 pasos (el del punto se quedó)', /5\/5/.test(txt()) && window.Auxiliar.kinds().includes('donde'), txt().slice(0,40));
 click('[data-ax="back"]'); await wait();
 t('volver atrás cae en el nivel', window.Auxiliar.stepKind()==='nivel');
@@ -106,14 +127,17 @@ console.log('\n── la fecha llega puesta en mañana ──');
 // Se entra por el botón de verdad («Pedir traslado»), que es donde se arma el
 // formulario: si se monta el estado a mano, la fecha por defecto no se prueba.
 window.Auxiliar.state.view='home'; window.Auxiliar.state.source='live'; window.Auxiliar.rerender(); await wait();
-click('[data-ax="new"]'); await wait();
+// Con el rediseño el botón es el + de Inicio (.rx-fab, P3); si Inicio aún no está, la misma entrada (newTrip).
+if(RX && !ui().querySelector('.rx-fab[data-ax="new"], [data-ax="new"]')){ console.log('  · (Inicio del rediseño sin «+»: se entra por Auxiliar.newTrip)'); window.Auxiliar.newTrip(); }
+else click(RX && ui().querySelector('.rx-fab[data-ax="new"]') ? '.rx-fab[data-ax="new"]' : '[data-ax="new"]');
+await wait();
 const manana=new Date(Date.now()+86400000).toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
 t('el pedido nuevo arranca con la fecha de mañana', window.Auxiliar.state.form.date===manana,
   'quedó: '+window.Auxiliar.state.form.date+' · esperada: '+manana);
 t('y sin el «Cambiar» del pedido anterior', !window.Auxiliar.state.form.dondeForced && !window.Auxiliar.kinds().includes('donde'));
-click('[data-ax="type"][data-type="sal"]'); click('[data-ax="next"]'); await wait();
+await tipo('sal'); await wait();
 t('el campo de fecha la muestra', ui().querySelector('[data-field="date"]').value===manana);
-t('y el atajo «Mañana» está encendido', !!ui().querySelector('.ax-daychip.on'));
+t('y el atajo «Mañana» está encendido', !!ui().querySelector(RX?'[data-scr="book"] .rx-chips button.on[data-iso="'+manana+'"]':'.ax-daychip.on'));
 t('se puede cambiar a hoy con un toque', (()=>{ const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   click(`[data-ax="date"][data-iso="${hoy}"]`); return window.Auxiliar.state.form.date===hoy; })());
 

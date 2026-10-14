@@ -88,7 +88,16 @@
       if (window.Api && Api.listMyVueltasForDriver) vueltas = await Api.listMyVueltasForDriver(state.profile.id);
     } catch (e) { /* sin ruta: la sección simplemente no aparece */ }
     if (!vueltas || !vueltas.length) return;
+    // Si quedó una vuelta en curso (la app se cerró o se recargó), la ubicación vuelve
+    // a compartirse sin tener que entrar a la ruta (ruta v2, cambio 1 de la entrega).
+    if (window.DriverRutas && DriverRutas.background) DriverRutas.background(state.profile, vueltas);
+    // Llegó desde el aviso de un mensaje (#/viaje?r=…): abre ese chat en la ruta.
+    if (window.DriverRutas && DriverRutas.deepLink) DriverRutas.deepLink(state.profile);
 
+    // La primera vuelta sin terminar lleva su «Iniciar ruta» aquí mismo: un toque
+    // abre la ruta en ejecución y la base le avisa al primer tripulante (0097).
+    // Antes eran 3–4 toques (Ruta → la vuelta → Iniciar ruta).
+    const primera = vueltas.find(v => !v.done);
     box.innerHTML = `<div class="rc-sechd">Tu día</div>` + vueltas.map((v, i) => {
       const salida = v.type !== 'lle';
       const tono = salida ? 'var(--r-h2a)' : 'var(--r-a2h)';
@@ -109,11 +118,18 @@
           <span style="display:flex;align-items:center;gap:6px;margin-top:11px;font-size:13px;font-weight:600;color:var(--r-accent)">
             Ver la vuelta ${avIcon('chevronRight', 15)}
           </span>
-        </button>`;
+        </button>${v === primera && v.assignmentId ? `
+        <button class="rc-btn-primary rc-in d2" data-vuelta-start="${escapeHtml(v.assignmentId)}" type="button"
+                style="width:100%;height:52px;border:none;border-radius:14px;background:var(--r-accent);color:#fff;font:inherit;font-size:16px;font-weight:650;display:flex;align-items:center;justify-content:center;gap:8px;margin:-2px 0 14px;cursor:pointer">
+          ${avIcon('car', 18, 1.8)}${(v.legs || []).some(l => l.stopStatus && l.stopStatus !== 'pending') ? 'Seguir ruta' : 'Iniciar ruta'}${v.start ? ` · ${escapeHtml(v.start)}` : ''}
+        </button>` : ''}`;
     }).join('');
 
     box.querySelectorAll('[data-vuelta]').forEach(b => {
       b.addEventListener('click', () => { if (window.DriverRutas) DriverRutas.open(state.profile); });
+    });
+    box.querySelectorAll('[data-vuelta-start]').forEach(b => {
+      b.addEventListener('click', () => { if (window.DriverRutas) DriverRutas.open(state.profile, { startAssignment: b.dataset.vueltaStart }); });
     });
   }
 

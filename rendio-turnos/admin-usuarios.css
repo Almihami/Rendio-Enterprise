@@ -1,0 +1,155 @@
+/* ============================================================================
+   admin-usuarios.css — Usuarios (#usuarios-ui), 11-oct-2026
+   ============================================================================
+   Todas las cuentas en una lista. Los colores son los tokens de .admin-shell
+   (styles.css): mismo papel, misma tinta y mismo naranja que el resto del
+   admin. El encabezado y el buscador siguen a Tripulantes (rc-auxiliar.css),
+   que es la pantalla hermana; los segmentos, al .seg de Inspecciones.
+
+   En escritorio cada cuenta es una fila de cinco columnas (persona, contacto,
+   rol, estado, acciones). Por debajo de 1180 px de pantalla (el menú lateral
+   fijo se come 264 y a la tabla le quedan menos de ~880) se apila como TARJETA: nombre
+   arriba, contacto debajo, rol y estado en un renglón y los botones a lo ancho,
+   del tamaño de un dedo. Los modales son los de usuarios.js (.usr-card).
+   ============================================================================ */
+#usuarios-ui { font-family: var(--font); color: var(--ink); padding: 4px 0 48px; }
+#usuarios-ui *, #usuarios-ui *::before, #usuarios-ui *::after { box-sizing: border-box; }
+#usuarios-ui .icon { width: 15px; height: 15px; flex: 0 0 auto; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+
+/* Encabezado */
+#usuarios-ui .us-phead { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 16px; }
+#usuarios-ui .us-phead h1 { font-size: 26px; font-weight: 800; letter-spacing: -.03em; line-height: 1; display: flex; align-items: center; gap: 11px; color: var(--ink); margin: 0; }
+#usuarios-ui .us-ct { font-size: 13px; font-weight: 800; font-family: var(--mono); background: var(--orange-soft); color: var(--orange); border-radius: 999px; padding: 3px 11px; }
+#usuarios-ui .us-phead p { font-size: 13px; color: var(--ink2); margin: 8px 0 0; max-width: 660px; line-height: 1.5; }
+#usuarios-ui .us-phead p b { color: var(--ink); font-weight: 700; }
+#usuarios-ui .us-hacts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Botones */
+#usuarios-ui .us-btn { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 16px; border-radius: 11px; border: 0;
+  background: var(--orange); color: #fff; font-family: var(--font); font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  box-shadow: 0 9px 22px rgba(242, 101, 34, .26); transition: background .14s, color .14s, border-color .14s; }
+#usuarios-ui .us-btn.ghost { background: var(--panel); color: var(--ink); border: 1px solid var(--line2); box-shadow: none; }
+#usuarios-ui .us-btn.ghost:hover { border-color: var(--ink3); }
+#usuarios-ui .us-btn.danger { background: var(--panel); color: var(--red); border: 1px solid var(--red-soft); box-shadow: none; }
+#usuarios-ui .us-btn.danger:hover { background: var(--red); color: #fff; border-color: var(--red); }
+#usuarios-ui .us-btn.sm { height: 34px; padding: 0 12px; font-size: 12.5px; box-shadow: none; }
+#usuarios-ui .us-btn:disabled { opacity: .55; cursor: not-allowed; }
+#usuarios-ui .us-btn:focus-visible, #usuarios-ui .us-seg button:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+
+/* Buscador y filtros */
+#usuarios-ui .us-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+#usuarios-ui .us-search { position: relative; flex: 1 1 260px; min-width: 0; }
+#usuarios-ui .us-search > .icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--ink3); pointer-events: none; }
+#usuarios-ui .us-search input { width: 100%; height: 40px; padding: 0 12px 0 36px; border: 1px solid var(--line2); border-radius: 10px;
+  font-family: inherit; font-size: 14px; color: var(--ink); background: var(--panel); -webkit-appearance: none; appearance: none; }
+#usuarios-ui .us-search input:focus { outline: none; border-color: var(--orange); box-shadow: 0 0 0 3px var(--orange-soft); }
+#usuarios-ui .us-filters { display: flex; gap: 10px; flex-wrap: wrap; }
+#usuarios-ui .us-seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; max-width: 100%; }
+#usuarios-ui .us-seg button { border: 0; background: transparent; color: var(--ink2); font-family: inherit; font-size: 12.5px; font-weight: 700;
+  padding: 7px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap; }
+#usuarios-ui .us-seg button.on { background: var(--panel); color: var(--ink); box-shadow: 0 1px 3px rgba(30, 28, 25, .1); }
+#usuarios-ui .us-seg .n { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--ink3); margin-left: 3px; }
+
+/* La lista */
+#usuarios-ui .us-list { display: flex; flex-direction: column; gap: 8px; }
+#usuarios-ui .us-head, #usuarios-ui .us-main {
+  display: grid; gap: 14px; align-items: center;
+  /* Columnas fijas a la derecha: cada fila es su propia grilla y, si la última
+     midiera lo que miden sus botones, las columnas no quedarían alineadas. */
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.6fr) 104px 118px 256px;
+}
+#usuarios-ui .us-head { padding: 0 15px 2px; font-size: 10.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--ink3); }
+#usuarios-ui .us-row { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+#usuarios-ui .us-row.open { border-color: var(--orange); }
+#usuarios-ui .us-row.us-suspendido { background: linear-gradient(rgba(201, 129, 15, .05), rgba(201, 129, 15, .05)), var(--panel); }
+#usuarios-ui .us-row.us-eliminado { background: var(--panel2); }
+#usuarios-ui .us-row.us-eliminado .us-nm b, #usuarios-ui .us-row.us-eliminado .us-mail { color: var(--ink3); }
+#usuarios-ui .us-main { padding: 12px 15px; }
+
+#usuarios-ui .us-who { display: flex; align-items: center; gap: 11px; min-width: 0; }
+#usuarios-ui .us-av { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%; color: #fff; font-size: 13px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center; }
+#usuarios-ui .us-nm { min-width: 0; }
+#usuarios-ui .us-nm b { display: block; font-size: 14.5px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+#usuarios-ui .us-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+#usuarios-ui .us-tag { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; border-radius: 5px; padding: 2px 6px; vertical-align: middle; }
+#usuarios-ui .us-tag.yo { background: var(--blue-soft); color: var(--blue); margin-left: 4px; }
+#usuarios-ui .us-tag.temp { background: var(--amber-soft); color: #7A4B06; }
+
+#usuarios-ui .us-contact { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#usuarios-ui .us-mail { font-size: 13px; color: var(--ink2); overflow-wrap: anywhere; }
+#usuarios-ui .us-tel { font-size: 12.5px; color: var(--ink3); text-decoration: none; font-family: var(--mono); }
+#usuarios-ui .us-tel:hover { color: var(--orange); }
+#usuarios-ui .us-falta { font-size: 12px; color: var(--ink3); }
+
+#usuarios-ui .us-role { display: inline-block; font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 3px 10px; background: var(--panel2); color: var(--ink2); white-space: nowrap; }
+#usuarios-ui .us-role.r-admin { background: var(--orange-soft); color: var(--orange); }
+#usuarios-ui .us-role.r-auxiliar { background: var(--blue-soft); color: var(--blue); }
+#usuarios-ui .us-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--ink2); white-space: nowrap; }
+#usuarios-ui .us-state .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+#usuarios-ui .us-state.s-suspendido { color: #7A4B06; }
+#usuarios-ui .us-state.s-suspendido .dot { background: var(--amber); }
+#usuarios-ui .us-state.s-eliminado { color: var(--ink3); }
+#usuarios-ui .us-state.s-eliminado .dot { background: var(--red); }
+
+#usuarios-ui .us-go { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+#usuarios-ui .us-panel { border-top: 1px solid var(--line); padding: 12px 15px 14px; display: flex; flex-direction: column; gap: 10px; }
+#usuarios-ui .us-que { font-size: 12.5px; color: var(--ink2); margin: 0; line-height: 1.5; }
+#usuarios-ui .us-motivo { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--amber-soft); color: #7A4B06; font-size: 13px; line-height: 1.4; }
+#usuarios-ui .us-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+#usuarios-ui .us-empty { border: 1px dashed var(--line2); border-radius: 14px; padding: 30px 20px; text-align: center; color: var(--ink2); }
+#usuarios-ui .us-empty b { display: block; font-size: 15px; color: var(--ink); }
+#usuarios-ui .us-empty span { display: block; font-size: 13px; margin: 6px auto 0; max-width: 420px; line-height: 1.5; }
+#usuarios-ui .us-empty .us-btn { margin-top: 14px; }
+
+/* Solicitudes de contraseña (0104, 12-oct-2026): arriba de la lista, en naranja
+   suave (es algo que espera al jefe), con una fila por pedido. */
+#usuarios-ui .us-pw { border: 1px solid var(--orange); background: var(--orange-soft); border-radius: 14px; padding: 13px 15px; margin-bottom: 14px; }
+#usuarios-ui .us-pw-head { display: flex; gap: 10px; align-items: flex-start; }
+#usuarios-ui .us-pw-head > .icon { width: 17px; height: 17px; color: var(--orange); margin-top: 1px; }
+#usuarios-ui .us-pw-head b { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+#usuarios-ui .us-pw-head span { display: block; font-size: 12.5px; color: var(--ink2); margin-top: 3px; line-height: 1.45; }
+#usuarios-ui .us-pw-n { font-size: 12px; font-weight: 800; font-family: var(--mono); background: var(--orange); color: #fff; border-radius: 999px; padding: 1px 8px; }
+#usuarios-ui .us-pw-list { display: flex; flex-direction: column; gap: 6px; margin-top: 11px; }
+#usuarios-ui .us-pw-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--panel); border-radius: 11px; padding: 9px 12px; }
+#usuarios-ui .us-pw-who { min-width: 0; }
+#usuarios-ui .us-pw-who b { display: block; font-size: 13.5px; color: var(--ink); }
+#usuarios-ui .us-pw-who span { display: block; font-size: 12px; color: var(--ink3); margin-top: 2px; word-break: break-word; }
+#usuarios-ui .us-pw-acts { display: flex; gap: 6px; flex: 0 0 auto; }
+
+/* Portátil chico, tablet y celular: cada cuenta es una tarjeta */
+@media (max-width: 1180px) {
+  #usuarios-ui .us-head { display: none; }
+  #usuarios-ui .us-main { grid-template-columns: minmax(0, 1fr) auto; row-gap: 10px; align-items: start; }
+  #usuarios-ui .us-who { grid-column: 1 / -1; }
+  #usuarios-ui .us-contact { grid-column: 1 / -1; padding-left: 47px; }
+  #usuarios-ui .us-rol { grid-column: 1; padding-left: 47px; }
+  #usuarios-ui .us-est { grid-column: 2; justify-self: end; }
+  #usuarios-ui .us-go { grid-column: 1 / -1; justify-content: stretch; }
+  #usuarios-ui .us-go .us-btn { flex: 1 1 0; justify-content: center; min-height: 42px; }
+  #usuarios-ui .us-acts .us-btn { flex: 1 1 calc(50% - 8px); justify-content: center; min-height: 42px; white-space: normal; text-align: center; }
+}
+@media (max-width: 768px) {
+  #usuarios-ui .us-phead { gap: 12px; }
+  #usuarios-ui .us-phead h1 { font-size: 22px; }
+  #usuarios-ui .us-hacts { width: 100%; }
+  #usuarios-ui .us-hacts .us-btn { flex: 1 1 0; justify-content: center; min-height: 44px; }
+  #usuarios-ui .us-tools { gap: 10px; }
+  #usuarios-ui .us-search { flex: 1 1 100%; }
+  /* 16 px: con menos, Safari del iPhone hace zoom al tocar el buscador. */
+  #usuarios-ui .us-search input { height: 44px; font-size: 16px; }
+  #usuarios-ui .us-filters { width: 100%; flex-direction: column; gap: 8px; }
+  /* El carril se desliza DENTRO de la caja (la caja tiene borde: no se sangra). */
+  #usuarios-ui .us-seg { display: flex; width: 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    /* La máscara del borde derecho es lo que dice «hay más a la derecha» (como en Tripulantes). */
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); }
+  #usuarios-ui .us-seg::-webkit-scrollbar { display: none; }
+  #usuarios-ui .us-seg button { flex: 1 0 auto; min-height: 40px; }
+}
+@media (max-width: 420px) {
+  #usuarios-ui .us-contact, #usuarios-ui .us-rol { padding-left: 0; }
+  #usuarios-ui .us-pw-row { flex-direction: column; align-items: stretch; }
+  #usuarios-ui .us-pw-acts .us-btn { flex: 1 1 0; justify-content: center; min-height: 42px; }
+  #usuarios-ui .us-acts .us-btn { flex-basis: 100%; }
+}

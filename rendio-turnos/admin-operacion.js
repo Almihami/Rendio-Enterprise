@@ -5,6 +5,8 @@
   // OPERACIÓN EN VIVO — mapa real OSM (Leaflet) + monitoreo de carros.
   // Plan de Rutas: mapa OSM (gratis) + ETAs OSRM (gratis). Tráfico (Google/
   // TomTom) y vuelos (AeroDataBox) quedan STUBBEADOS (requieren API key).
+  // Vuelos: la integración vive en 0099 + vuelos-ui.js (RendioVuelos), apagada
+  // por defecto; esta pantalla todavía no la pinta.
   // Las posiciones salen de driver_locations (GPS de la app del conductor) y de
   // las anclas por evento (mig 0045). Desde 2026-07-25 NO hay data de ejemplo:
   // sin operación real la pantalla queda vacía y explica qué falta.
@@ -426,7 +428,14 @@
     const box = document.getElementById('oper-delay');
     if (!box) return;
     if (late) {
-      const t = document.getElementById('oper-delayTitle'); if (t) t.textContent = `${late.id} va tarde para el vuelo ${late.flight}`;
+      // En tierra (0092) no hay vuelo que perder: la hora es la de llegar a su
+      // turno. Sin vuelo conocido tampoco se escribe «el vuelo —».
+      const t = document.getElementById('oper-delayTitle');
+      if (t) {
+        t.textContent = late.flight === 'Tierra' ? `${late.id} va tarde (trabajo en tierra)`
+          : (late.flight && late.flight !== '—') ? `${late.id} va tarde para el vuelo ${late.flight}`
+          : `${late.id} va tarde para la presentación`;
+      }
       const s = document.getElementById('oper-delaySub');
       // El atraso sale de la ETA real, no de un número escrito a mano.
       const mins = late.lateMin != null ? late.lateMin : 8;

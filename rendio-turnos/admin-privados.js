@@ -40,9 +40,29 @@
 
   async function load() {
     st.loading = true; paint();
-    try { st.items = await Api.listPrivateRequests(); }
+    try {
+      st.items = await Api.listPrivateRequests();
+      if (Array.isArray(st.items)) await conSilencio(st.items);
+    }
     catch (_) { st.items = null; }
     finally { st.loading = false; paint(); }
+  }
+
+  // «Prefiero silencio» (reservations.quiet_ride, 0086). listPrivateRequests
+  // (api.js) no la trae, así que se pide aparte y solo para estos ids. Si la
+  // columna no existe todavía (0086 sin aplicar) o la consulta falla, cada
+  // tarjeta se queda sin el dato: no se pinta nada en vez de adivinar.
+  async function conSilencio(items) {
+    const ids = items.map(x => x.id).filter(Boolean);
+    items.forEach(x => { x.quiet = null; });
+    const cli = window.sb;
+    if (!ids.length || !cli || typeof cli.from !== 'function') return;
+    try {
+      const { data, error } = await cli.from('reservations').select('id, quiet_ride').in('id', ids);
+      if (error || !Array.isArray(data)) return;
+      const q = new Map(data.map(r => [r.id, r.quiet_ride === true]));
+      items.forEach(x => { if (q.has(x.id)) x.quiet = q.get(x.id); });
+    } catch (_) { /* sin el dato, sin la etiqueta */ }
   }
 
   // ¿Este privado se pisa con otro ya aprobado? Se calcula en el cliente sobre
@@ -109,6 +129,7 @@
         <span><b>Tarifa</b>${money(x.price)}</span>
         ${x.phone ? `<span><b>Teléfono</b>${esc(x.phone)}</span>` : ''}
         ${x.plate ? `<span><b>Vehículo</b>${esc(x.plate)}${x.vehicle ? ' · ' + esc(x.vehicle) : ''}</span>` : ''}
+        ${x.quiet === true ? `<span class="pv-quiet"><b>Viaje</b>Pidió silencio</span>` : ''}
       </div>
       ${x.notes ? `<div class="pv-notes">${esc(x.notes)}</div>` : ''}
       ${/* Este cruce NO se pliega, aunque sea largo: la segunda frase es la
@@ -159,7 +180,9 @@
             body: aprueba
               ? 'La camioneta es tuya para ese trayecto.'
               : ((motivo ? motivo + ' ' : '') + 'Tu traslado sigue en pie en compartido, sin costo.'),
-            url: '/',
+            // Aterriza en ESE viaje (#/viaje?r=, rediseño del auxiliar 27-sep):
+            // ahí ve el privado confirmado o el motivo del no, sin buscarlo.
+            url: '/#/viaje?r=' + encodeURIComponent(id),
           });
           sono = (p && typeof p.sent === 'number') ? p.sent > 0 : null;
         } catch (_) { sono = false; }

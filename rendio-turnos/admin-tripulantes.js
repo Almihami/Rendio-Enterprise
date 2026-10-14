@@ -15,6 +15,10 @@
 //      unidad y teléfono, que hasta ahora vivían repartidos entre un WhatsApp y
 //      la cabeza del coordinador.
 //
+// 27-sep-2026 (0081, U4): el jefe también edita nombre, teléfono, correo y
+// aerolínea, restablece la contraseña y suspende o reactiva. Suspendido = entra
+// a la app pero no pide traslados nuevos.
+//
 // LO QUE NO HACE
 // No crea ni borra tripulantes: ese es justo el trabajo que el registro vino a
 // quitar. Tampoco edita la dirección de nadie — el punto de recogida es del
@@ -26,7 +30,8 @@
 
   const st = {
     items: null, airlines: null, loading: false,
-    q: '', filtro: 'todos',        // todos | sin-fecha | dos-unidades
+    q: '', filtro: 'todos',        // todos | sin-fecha | dos-unidades | suspendidos
+    aerolinea: '',                  // '' = todas · SIN_AEROLINEA · el nombre de una (12-oct-2026)
     editing: null,                  // id del tripulante con la fecha abierta
     busy: null,
     airOpen: false, airName: '', airCode: '', airBusy: false,
@@ -38,6 +43,14 @@
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
   const hoyISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+
+  // Filtro por aerolínea (12-oct-2026). Va por el NOMBRE, que es lo que trae
+  // cada fila (listAuxiliares) y es único en el catálogo; se suma (Y) al chip y
+  // a la búsqueda. Vive solo en memoria: al recargar la página vuelve a «Todas».
+  const SIN_AEROLINEA = '__sin';
+  // Personal de tierra (0106, 13-oct-2026): trabaja en el aeropuerto y no vuela.
+  // No tiene aerolínea, pero NO es «sin aerolínea» (eso es un dato que falta).
+  const TIERRA = '__tierra';
 
   // Cuánto lleva con nosotros, en palabras. El número exacto de días no le sirve
   // a nadie; «1 año y 2 meses» sí, porque es el lenguaje en que están escritos
@@ -90,18 +103,53 @@
     let l = st.items || [];
     if (st.q) {
       const q = norm(st.q);
-      l = l.filter(a => norm([a.name, a.email, a.phone, a.airline, a.res1?.name, a.res2?.name,
+      l = l.filter(a => norm([a.name, a.email, a.phone, a.airline, a.groundStaff ? 'personal de tierra aeropuerto' : '', a.res1?.name, a.res2?.name,
         a.unit1, a.unit2].filter(Boolean).join(' ')).includes(q));
     }
     if (st.filtro === 'sin-fecha') l = l.filter(a => !a.joinedAt);
     if (st.filtro === 'dos-unidades') l = l.filter(a => !!a.res2);
+    if (st.filtro === 'suspendidos') l = l.filter(a => !a.active);
+    if (st.aerolinea === SIN_AEROLINEA) l = l.filter(a => !a.airline && !a.groundStaff);
+    else if (st.aerolinea === TIERRA) l = l.filter(a => a.groundStaff);
+    else if (st.aerolinea) l = l.filter(a => a.airline === st.aerolinea);
     return l;
+  }
+
+  // Las opciones del desplegable, con cuántos tripulantes hay en cada una (de
+  // todo el padrón: el número no baila mientras se escribe en el buscador).
+  // Salen las aerolíneas con gente y las encendidas del catálogo; una apagada
+  // y sin nadie no aporta. La elegida siempre está, aunque se quede en 0.
+  function opcionesAerolinea() {
+    const items = st.items || [];
+    const n = new Map();
+    items.forEach(a => { if (a.airline) n.set(a.airline, (n.get(a.airline) || 0) + 1); });
+    (st.airlines || []).forEach(x => { if (x && x.name && x.is_active !== false && !n.has(x.name)) n.set(x.name, 0); });
+    if (st.aerolinea && st.aerolinea !== SIN_AEROLINEA && st.aerolinea !== TIERRA && !n.has(st.aerolinea)) n.set(st.aerolinea, 0);
+    const out = [['', 'Todas', items.length]];
+    [...n.keys()].sort((x, y) => x.localeCompare(y, 'es')).forEach(k => out.push([k, k, n.get(k)]));
+    const tierra = items.filter(a => a.groundStaff).length;
+    if (tierra || st.aerolinea === TIERRA) out.push([TIERRA, 'Personal de tierra', tierra]);
+    const sin = items.filter(a => !a.airline && !a.groundStaff).length;
+    if (sin || st.aerolinea === SIN_AEROLINEA) out.push([SIN_AEROLINEA, 'Sin aerolínea', sin]);
+    return out;
+  }
+
+  function paintAirFilter() {
+    const sel = document.getElementById('tp-air-filter'); if (!sel) return;
+    const html = opcionesAerolinea().map(([v, label, c]) =>
+      `<option value="${esc(v)}"${v === st.aerolinea ? ' selected' : ''}>${esc(label)} (${c})</option>`).join('');
+    // Solo si cambió: rehacerlo mientras alguien lo tiene abierto lo cerraría.
+    if (sel.__tpHtml !== html) { sel.innerHTML = html; sel.__tpHtml = html; }
+    if (sel.value !== st.aerolinea) sel.value = st.aerolinea;
+    sel.disabled = !st.items;
+    const lab = sel.closest('.tp-airf'); if (lab) lab.classList.toggle('on', !!st.aerolinea);
   }
 
   function paint() {
     const root = document.getElementById('tp-body'); if (!root) return;
     const total = (st.items || []).length;
     const cnt = document.getElementById('tp-count'); if (cnt) cnt.textContent = total;
+    paintAirFilter();
 
     if (st.loading && !st.items) {
       root.innerHTML = `<div class="tp-empty">Cargando el padrón…</div>`;
@@ -128,7 +176,7 @@
         <span>Sin ella no se les puede calcular la antigüedad para las promociones.</span></div>
       </div>` : ''}
       ${l.length ? `<div class="tp-list">${l.map(fila).join('')}</div>`
-        : `<div class="tp-empty"><b>Nadie coincide con la búsqueda.</b></div>`}`;
+        : `<div class="tp-empty"><b>Nadie coincide con la búsqueda.</b>${st.aerolinea ? '<span>Revisa también el filtro de aerolínea.</span>' : ''}</div>`}`;
   }
 
   function fila(a) {
@@ -141,13 +189,13 @@
       ? esc(a.res2.name) + (a.unit2 ? ' · <b>' + esc(a.unit2) + '</b>' : '')
       : null;
     return `
-      <div class="tp-row${editando ? ' open' : ''}">
+      <div class="tp-row${editando ? ' open' : ''}${a.active ? '' : ' sus'}">
         <div class="tp-main">
           <div class="tp-who">
-            <b>${esc(a.name)}</b>
+            <b>${esc(a.name)}${a.active ? '' : ' <span class="tp-tag tp-sus">Suspendida</span>'}</b>
             <span>${esc(a.email)}${a.phone ? ' · ' + esc(a.phone) : ' · <i>sin teléfono</i>'}</span>
           </div>
-          <div class="tp-air">${a.airline ? esc(a.airline) : '<i>sin aerolínea</i>'}</div>
+          <div class="tp-air">${a.groundStaff ? '<span class="tp-tag tp-tierra">Personal de tierra</span>' : a.airline ? esc(a.airline) : '<i>sin aerolínea</i>'}</div>
           <div class="tp-punto">
             <div>${punto}</div>
             ${punto2 ? `<div class="tp-punto2"><span class="tp-tag">2ª unidad</span>${punto2}</div>` : ''}
@@ -158,7 +206,7 @@
               : `<b class="falta">Sin fecha</b><span>se registró ${fechaES((a.createdAt || '').slice(0, 10))}</span>`}
           </div>
           <button class="set-btn ghost tp-edit" data-tp="edit" data-id="${esc(a.id)}">
-            ${editando ? 'Cerrar' : (a.joinedAt ? 'Cambiar fecha' : 'Poner fecha')}
+            ${editando ? 'Cerrar' : 'Gestionar'}
           </button>
         </div>
         ${editando ? `
@@ -171,12 +219,21 @@
             </button>
             <p>La estampa el registro con el día en que se creó la cuenta. Corrígela para quien
                ya llevaba tiempo con nosotros: de esta fecha salen los beneficios por antigüedad.</p>
+          </div>
+          <div class="tp-editor tp-cuenta">
+            ${!a.active && a.suspendedReason ? `<p class="tp-motivo"><b>Motivo de la suspensión:</b> ${esc(a.suspendedReason)}</p>` : ''}
+            <button class="set-btn ghost" data-tp="datos" data-pid="${esc(a.profileId)}">Editar datos</button>
+            <button class="set-btn ghost" data-tp="clave" data-pid="${esc(a.profileId)}" data-name="${esc(a.name)}">Restablecer contraseña</button>
+            <button class="set-btn ${a.active ? 'ghost' : 'primary'}" data-tp="${a.active ? 'suspender' : 'reactivar'}" data-pid="${esc(a.profileId)}" data-name="${esc(a.name)}" ${st.busy === a.profileId ? 'disabled' : ''}>
+              ${a.active ? 'Suspender' : 'Reactivar'}
+            </button>
           </div>` : ''}
       </div>`;
   }
 
   // ---- Aerolíneas del desplegable ----
   function paintAirlines() {
+    paintAirFilter();   // una aerolínea nueva o apagada cambia el desplegable
     const box = document.getElementById('tp-air-box'); if (!box) return;
     if (!st.airOpen) { box.innerHTML = ''; box.classList.add('hidden'); return; }
     box.classList.remove('hidden');
@@ -226,6 +283,9 @@
         return paint();
       }
       if (a === 'save') return guardarFecha(b.dataset.id);
+      if (a === 'datos') return openEditarDatos(b.dataset.pid, recargar);
+      if (a === 'clave') return openRestablecerClave(b.dataset.pid, b.dataset.name);
+      if (a === 'suspender' || a === 'reactivar') return cambiarEstado(b.dataset.pid, b.dataset.name, a === 'suspender');
       if (a === 'air') { st.airOpen = !st.airOpen; return paintAirlines(); }
       if (a === 'air-add') return agregarAerolinea();
       if (a === 'air-toggle') {
@@ -236,6 +296,10 @@
         } catch (err) { toast('No se pudo cambiar la aerolínea.'); }
         return;
       }
+    });
+
+    ui.addEventListener('change', (e) => {
+      if (e.target.id === 'tp-air-filter') { st.aerolinea = e.target.value; return paint(); }
     });
 
     ui.addEventListener('input', (e) => {
@@ -259,6 +323,28 @@
       toast('Antigüedad actualizada.');
     } catch (e) {
       toast(e?.message || 'No se pudo guardar la fecha.');
+    } finally { st.busy = null; paint(); }
+  }
+
+  async function recargar() {
+    try { st.items = await Api.listAuxiliares(); } catch (_) {}
+    paint();
+  }
+
+  // Suspender pide motivo: lo ve la tripulante en su app.
+  async function cambiarEstado(pid, name, suspender) {
+    let reason = null;
+    if (suspender) {
+      reason = prompt(`¿Suspender a ${name}? Sigue entrando a la app y ve sus viajes, pero no puede pedir traslados nuevos. Los que ya pidió se respetan.\n\nMotivo (lo verá ella):`, '');
+      if (reason === null) return;
+    } else if (!confirm(`¿Reactivar a ${name}? Vuelve a poder pedir traslados.`)) return;
+    st.busy = pid; paint();
+    try {
+      await usrSetStatus(pid, suspender ? 'suspended' : 'active', reason);
+      toast(suspender ? `${name} quedó suspendida.` : `${name} quedó activa.`);
+      st.items = await Api.listAuxiliares();
+    } catch (e) {
+      toast(e?.message || 'No se pudo cambiar el estado.');
     } finally { st.busy = null; paint(); }
   }
 

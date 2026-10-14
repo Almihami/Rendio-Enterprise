@@ -3,6 +3,11 @@
 
   async function signIn(email, password) {
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    // Un eliminado tiene la cuenta bloqueada (0081): Supabase contesta en
+    // inglés «User is banned», que no le dice nada a nadie.
+    if (error && /banned/i.test(error.message || '')) {
+      throw new Error('Tu cuenta fue dada de baja. Si crees que es un error, habla con tu jefe.');
+    }
     if (error) throw error;
     return data;
   }
@@ -19,11 +24,11 @@
   async function getCurrentProfile() {
     const session = await getSession();
     if (!session) return null;
-    const { data, error } = await sb
-      .from('profiles')
-      .select('id, full_name, email, role, organization_id, is_active')
-      .eq('id', session.user.id)
-      .maybeSingle();
+    const sel = cols => sb.from('profiles').select(cols).eq('id', session.user.id).maybeSingle();
+    // 0081 trae la contraseña temporal y el motivo de la suspensión. Si no está
+    // aplicada, se entra como antes.
+    let { data, error } = await sel('id, full_name, email, phone, role, organization_id, is_active, deleted_at, must_change_password, suspended_reason');
+    if (error) ({ data, error } = await sel('id, full_name, email, phone, role, organization_id, is_active, deleted_at'));
     if (error) throw error;
     return data;
   }
@@ -99,12 +104,17 @@
       + 'airlines(id, name), '
       + 'residences!auxiliar_profiles_residence_id_fkey(id, name, sector), '
       + 'res2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector), '
-      + 'profiles(id, full_name, email, phone, is_active, created_at)';
-    let { data, error } = await sb.from('auxiliar_profiles').select(COLS);
+      + 'profiles(id, full_name, email, phone, is_active, deleted_at, suspended_reason, created_at)';
+    // 0106: personal de tierra. Sin la migración, lo mismo sin esa columna.
+    let { data, error } = await sb.from('auxiliar_profiles').select(COLS.replace('airline_id, ', 'airline_id, ground_staff, '));
+    if (error) ({ data, error } = await sb.from('auxiliar_profiles').select(COLS));
+    // Sin 0081 no hay motivo de suspensión: se pide lo mismo sin esa columna.
+    if (error) ({ data, error } = await sb.from('auxiliar_profiles')
+      .select(COLS.replace(', suspended_reason', '')));
     // Si 0075 no estuviera aplicada, se cae a lo que había antes: sin aerolínea
     // ni antigüedad ni segunda unidad, pero con el padrón visible.
     if (error) ({ data, error } = await sb.from('auxiliar_profiles')
-      .select('id, profile_id, residence_unit, home_address, residence_id, residences!auxiliar_profiles_residence_id_fkey(id, name, sector), profiles(id, full_name, email, phone, is_active, created_at)'));
+      .select('id, profile_id, residence_unit, home_address, residence_id, residences!auxiliar_profiles_residence_id_fkey(id, name, sector), profiles(id, full_name, email, phone, is_active, deleted_at, created_at)'));
     if (error) throw error;
     return (data || [])
       .filter(a => a.profiles && !a.profiles.deleted_at)
@@ -114,10 +124,12 @@
         email: a.profiles?.email || '',
         phone: a.profiles?.phone || '',
         active: a.profiles?.is_active !== false,
+        suspendedReason: a.profiles?.suspended_reason || '',
         createdAt: a.profiles?.created_at || null,
         joinedAt: a.joined_at || null,
         airlineId: a.airline_id || null,
         airline: a.airlines?.name || '',
+        groundStaff: a.ground_staff === true,
         res1: a.residences ? { name: a.residences.name, sector: a.residences.sector } : null,
         unit1: a.residence_unit || '',
         res2: a.res2 ? { name: a.res2.name, sector: a.res2.sector } : null,
@@ -170,13 +182,14 @@
       .eq('role', 'driver').is('deleted_at', null).order('full_name');
     // Fallback en capas: 0012 (priority) y 0013 (can_coordinate) podrían no
     // estar aplicadas todavía. Conserva priority si solo falta can_coordinate.
-    let { data, error } = await sel('id, full_name, email, role, is_active, priority, can_coordinate');
-    if (error) ({ data, error } = await sel('id, full_name, email, role, is_active, priority'));
+    // phone (0001): lo usa Asignación v2 para el botón de llamar al conductor.
+    let { data, error } = await sel('id, full_name, email, phone, role, is_active, priority, can_coordinate');
+    if (error) ({ data, error } = await sel('id, full_name, email, phone, role, is_active, priority'));
     if (error) ({ data, error } = await sel('id, full_name, email, role, is_active'));
     if (error) throw error;
     return (data || []).filter(p => p.is_active !== false)
       .map(p => ({
-        id: p.id, name: p.full_name, email: p.email,
+        id: p.id, name: p.full_name, email: p.email, phone: p.phone || '',
         priority: p.priority || 1,
         can_coordinate: p.can_coordinate === true,
       }));
@@ -231,7 +244,10 @@
     return data;
   }
 
-  async function listAdmins() {
+  // Por defecto solo los activos (así lo usan el shell y los avisos). Personal
+  // pide includeInactive: un jefe inactivo desaparecía de la lista y nadie podía
+  // reactivarlo.
+  async function listAdmins({ includeInactive = false } = {}) {
     const sel = (cols) => sb.from('profiles').select(cols)
       .eq('role', 'admin').is('deleted_at', null).order('full_name');
     // Cascada: 0063 (receives_ops_alerts) y 0011 (is_coordinator) pueden no
@@ -241,7 +257,7 @@
     if (error) ({ data, error } = await sel('id, full_name, email, role, is_active'));
     if (error) throw error;
     return (data || [])
-      .filter(p => p.is_active !== false)
+      .filter(p => includeInactive || p.is_active !== false)
       .map(p => ({ ...p, is_coordinator: p.is_coordinator !== false, receives_ops_alerts: p.receives_ops_alerts === true }));
   }
 
@@ -253,6 +269,73 @@
       .update({ receives_ops_alerts: !!on }).eq('id', profileId);
     if (error) throw error;
   }
+
+  // ==========================================================================
+  // Usuarios (0081): el jefe edita, restablece y suspende; cada quien cambia
+  // su contraseña. Todo pasa por funciones de la base porque tocan también la
+  // cuenta de acceso (auth.users) y dejan bitácora.
+  // ==========================================================================
+
+  // La ficha completa para el formulario "Editar datos".
+  async function getProfileForEdit(profileId) {
+    const { data: p, error } = await sb.from('profiles')
+      .select('id, full_name, email, phone, role, document_id, home_base, is_active, deleted_at')
+      .eq('id', profileId).single();
+    if (error) throw error;
+    let driver = null, aux = null;
+    if (p.role === 'driver') {
+      const r = await sb.from('driver_profiles')
+        .select('license_number, license_expires_at, eps_provider, eps_expires_at, arl_provider, arl_expires_at')
+        .eq('profile_id', profileId).maybeSingle();
+      driver = r.data || {};
+    } else if (p.role === 'auxiliar') {
+      const r = await sb.from('auxiliar_profiles').select('airline_id').eq('profile_id', profileId).maybeSingle();
+      aux = r.data || {};
+    }
+    return { ...p, driver, aux };
+  }
+
+  // Los eliminados, para poder restaurarlos (conductores y jefes).
+  async function listDeletedProfiles() {
+    const { data, error } = await sb.from('profiles')
+      .select('id, full_name, email, role, deleted_at')
+      .not('deleted_at', 'is', null).in('role', ['driver', 'admin'])
+      .order('deleted_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Usuarios (11-oct-2026): TODAS las cuentas de la organización —conductores,
+  // jefes y tripulantes, también suspendidos y eliminados— en una sola consulta,
+  // para la sección Usuarios del admin. La RLS ya limita a la organización.
+  async function listAllUsersForAdmin() {
+    const sel = (cols) => sb.from('profiles').select(cols)
+      .in('role', ['driver', 'admin', 'auxiliar']).order('full_name');
+    let { data, error } = await sel('id, full_name, email, phone, role, is_active, deleted_at, suspended_reason, must_change_password, created_at');
+    // Sin 0081 no hay motivo de suspensión ni «debe cambiar la clave».
+    if (error) ({ data, error } = await sel('id, full_name, email, phone, role, is_active, deleted_at, created_at'));
+    if (error) throw error;
+    return (data || []).map((p) => ({
+      id: p.id, name: p.full_name || '—', email: p.email || '', phone: p.phone || '',
+      role: p.role, active: p.is_active !== false, deleted: !!p.deleted_at, deletedAt: p.deleted_at || null,
+      suspendedReason: p.suspended_reason || '', mustChange: p.must_change_password === true,
+      createdAt: p.created_at || null,
+    }));
+  }
+
+  async function rpcOrThrow(fn, args) {
+    const { error } = await sb.rpc(fn, args);
+    if (error) throw new Error(error.message);
+  }
+  const adminUpdateProfile = (profileId, changes) => rpcOrThrow('admin_update_profile', { p_id: profileId, p_data: changes });
+  const adminSetEmail = (profileId, email) => rpcOrThrow('admin_set_email', { p_id: profileId, p_email: email });
+  const adminSetPassword = (profileId, password, forceChange = true) =>
+    rpcOrThrow('admin_set_password', { p_id: profileId, p_password: password, p_force_change: !!forceChange });
+  // status: 'active' | 'suspended' | 'deleted'
+  const adminSetStatus = (profileId, status, reason) =>
+    rpcOrThrow('admin_set_status', { p_id: profileId, p_status: status, p_reason: reason || null });
+  const adminSetRole = (profileId, role) => rpcOrThrow('admin_set_role', { p_id: profileId, p_role: role });
+  const changeMyPassword = (current, next) => rpcOrThrow('change_my_password', { p_current: current, p_new: next });
 
   async function setAdminCoordinator(profileId, value) {
     const { error } = await sb
@@ -266,13 +349,15 @@
   async function listAllDriversForAdmin() {
     const sel = cols => sb.from('profiles').select(cols)
       .eq('role', 'driver').is('deleted_at', null).order('full_name');
-    let { data, error } = await sel('id, full_name, email, role, is_active, can_coordinate');
+    let { data, error } = await sel('id, full_name, email, role, is_active, can_coordinate, suspended_reason');
+    if (error) ({ data, error } = await sel('id, full_name, email, role, is_active, can_coordinate')); // 0081 sin aplicar
     if (error) ({ data, error } = await sel('id, full_name, email, role, is_active')); // 0013 sin aplicar
     if (error) throw error;
     return (data || []).map(p => ({
       id: p.id, name: p.full_name, email: p.email,
       active: p.is_active !== false,
       can_coordinate: p.can_coordinate === true,
+      suspendedReason: p.suspended_reason || '',
     }));
   }
 
@@ -292,6 +377,12 @@
       .from('profiles')
       .update({ is_active: active })
       .eq('id', profileId);
+    if (error) throw error;
+  }
+
+  // Restaurar sin 0081: vuelve activo Y le quita la marca de eliminado.
+  async function undeleteProfile(profileId) {
+    const { error } = await sb.from('profiles').update({ deleted_at: null, is_active: true }).eq('id', profileId);
     if (error) throw error;
   }
 
@@ -392,6 +483,9 @@
     };
     let { error } = await sb.from('driver_availability')
       .upsert(base, { onConflict: 'profile_id,week_start_date,day_of_week' });
+    // «Puedo doblar» ('both') necesita 0082. Sin ella, el reintento de abajo lo
+    // botaría callado: mejor decirlo.
+    if (error && /shift_pref_check/.test(error.message || '')) throw new Error('«Puedo doblar» todavía no está activado en la base (falta la migración 0082).');
     if (error) {
       // Fallback si 0015 no aplicada: re-intentar sin shift_pref.
       const { shift_pref: _ignore, ...withoutPref } = base;
@@ -417,6 +511,14 @@
     });
     let { error } = await sb.from('driver_availability')
       .upsert(rows, { onConflict: 'profile_id,week_start_date,day_of_week' });
+    // Sin 0082 la base no acepta «Puedo doblar» ('both'): se guarda la semana
+    // igual, sin esa marca, y se le avisa al que llama para que lo diga.
+    let dobleSinGuardar = false;
+    if (error && /shift_pref_check/.test(error.message || '')) {
+      dobleSinGuardar = true;
+      ({ error } = await sb.from('driver_availability')
+        .upsert(rows.map(r => (r.shift_pref === 'both' ? { ...r, shift_pref: 'any' } : r)), { onConflict: 'profile_id,week_start_date,day_of_week' }));
+    }
     if (error) {
       // Fallback si 0015 no aplicada: re-intentar sin shift_pref.
       const rowsNoPref = rows.map(({ shift_pref, ...rest }) => rest);
@@ -424,6 +526,7 @@
         .upsert(rowsNoPref, { onConflict: 'profile_id,week_start_date,day_of_week' }));
     }
     if (error) throw error;
+    return { dobleSinGuardar };
   }
 
   // -------------------- Approval requests --------------------
@@ -830,7 +933,26 @@
       + ', route_sweep_tol_min, route_sweep_slack_pct, route_max_early_min';
     const BASE_COLS = 'morning_label, afternoon_label, morning_slots, afternoon_slots, reopen_week_start, reopen_until, coord_slots, shift_hours, auto_close_hours, reservation_idle_minutes, strike_limit, fast_start_enabled, fast_start_from_hour, fast_start_to_hour, inspection_grace_minutes, aux_wait_minutes, aux_min_lead_hours';
     const CONFIRMADO = BASE_COLS + ROUTE_COLS + DEPLANE_COLS + AIRPORT_COLS + WAIT_COLS + HOLIDAY_COLS;
-    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS);
+    // 0088/0091 (rediseño del tripulante): teléfono y horario de Coordinación, y
+    // el interruptor de Rendio Points. Escalón propio: sin esas migraciones se
+    // cae al de siempre y quedan undefined (Coordinación sin teléfono, Puntos apagado).
+    const AUX_RX_COLS = ', ops_contact_phone, ops_contact_hours, aux_points_enabled';
+    // 0082: el descanso después de una doble. Si no está, se asume 24 h.
+    // 0096: días que se guardan las fotos de inspección. Escalón propio ARRIBA de
+    // todo: sin la migración se cae exactamente al escalón de antes y la columna
+    // queda ausente — Ajustes lo nota (`'photo_retention_days' in S`) y apaga el campo.
+    const RET_COLS = ', photo_retention_days';
+    // 0105: plazo de la inspección diferida ('minutes' | 'shift_close'). Escalón
+    // propio arriba de todo, mismo criterio que 0096: sin la migración queda
+    // ausente, Ajustes apaga el campo y el conductor sigue con los minutos.
+    const DEADLINE_COLS = ', fast_start_deadline';
+    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS + RET_COLS + DEADLINE_COLS);
+    if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS + RET_COLS));
+    // Si ese escalón sí pasó, lo único que faltaba era el plazo: no hay 0105.
+    const bajoDelPlazo = !!error;
+    if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS));
+    if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours'));
+    if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + CUSHION_COLS));
@@ -857,6 +979,13 @@
     if (data && !('aux_private_enabled' in data)) {
       const { data: priv } = await sel(PRIV_COLS.replace(/^,\s*/, ''));
       if (priv) Object.assign(data, priv);
+    }
+    // Lo mismo con el plazo de la inspección (0105): que una columna ajena que
+    // falte no devuelva a los minutos a un jefe que eligió «al cerrar el turno».
+    // Solo si la cascada bajó más allá de 0096; si no, ya se sabe que no está.
+    if (data && bajoDelPlazo && !('fast_start_deadline' in data)) {
+      const { data: dl } = await sel(DEADLINE_COLS.replace(/^,\s*/, ''));
+      if (dl) Object.assign(data, dl);
     }
     const base = { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2, coord_slots: 1, shift_hours: 12, auto_close_hours: 14 };
     return {
@@ -935,7 +1064,11 @@
       route_car_priority: s.route_car_priority,
       route_sweep_tol_min: s.route_sweep_tol_min,
       route_max_early_min: s.route_max_early_min };
-    let { error } = await upd(conJulian);
+    // 0096: días que se guardan las fotos. Escalón propio arriba de todo, y solo
+    // si viene el número (Ajustes no lo manda cuando la base no tiene la columna).
+    let error = null;
+    if (s.photo_retention_days != null) ({ error } = await upd({ ...conJulian, photo_retention_days: s.photo_retention_days }));
+    if (s.photo_retention_days == null || error) ({ error } = await upd(conJulian));
     if (error) ({ error } = await upd({ ...conPrivado, route_zone_cushion_min: s.route_zone_cushion_min }));
     if (error) ({ error } = await upd(conPrivado));
     if (error) ({ error } = await upd({ ...conFestivo, route_zone_cushion_min: s.route_zone_cushion_min }));
@@ -951,6 +1084,12 @@
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours }));
     if (error) ({ error } = await upd(base));
     if (error) throw error;
+    // 0105: el plazo de la inspección diferida va aparte, para no sumarle otro
+    // escalón a la cascada. Solo viaja si Ajustes lo manda (con la columna).
+    if (s.fast_start_deadline) {
+      ({ error } = await upd({ fast_start_deadline: s.fast_start_deadline }));
+      if (error) throw error;
+    }
   }
 
   // Actualiza un vehículo (admin). RLS: p_vehicles_admin_mutate.
@@ -1603,6 +1742,71 @@
   }
 
   // ====================================================================
+  // Documentos del carro (0095) — SOAT, técnico-mecánica, seguro y demás
+  // ====================================================================
+  // Viven en Repuestos. SOAT / técnico-mecánica / seguro son la misma fecha que
+  // vehicles.*_expires_at (Flota): la base las mantiene iguales en las dos
+  // direcciones. Sin fila o sin fecha = sin dato. Vencido = aviso, no bloquea.
+
+  async function listVehicleDocuments() {
+    const { data, error } = await sb
+      .from('vehicle_documents')
+      .select('id, vehicle_id, kind, expires_on, number, issuer, notes, not_applicable, updated_at');
+    if (error) throw error;
+    return data || [];
+  }
+
+  // d = { expiresOn: 'AAAA-MM-DD' | null, number, issuer, notes, notApplicable }
+  async function saveVehicleDocument(vehicleId, kind, d) {
+    const o = d || {};
+    const { data, error } = await sb.rpc('save_vehicle_document', {
+      p_vehicle_id: vehicleId, p_kind: kind,
+      p_expires_on: o.expiresOn || null,
+      p_number: o.number || null, p_issuer: o.issuer || null, p_notes: o.notes || null,
+      p_not_applicable: !!o.notApplicable,
+    });
+    if (error) throw error;
+    return data;
+  }
+
+  // Con cuántos días de anticipación se avisa (app_settings, 30 por defecto).
+  async function getVehicleDocAlertDays() {
+    const { data, error } = await sb.from('app_settings')
+      .select('vehicle_doc_alert_days').eq('id', 'singleton').maybeSingle();
+    if (error) throw error;
+    return data && data.vehicle_doc_alert_days != null ? Number(data.vehicle_doc_alert_days) : null;
+  }
+
+  async function setVehicleDocAlertDays(days) {
+    const { error } = await sb.from('app_settings')
+      .update({ vehicle_doc_alert_days: days }).eq('id', 'singleton');
+    if (error) throw error;
+  }
+
+  // Última corrida del aviso diario (null = nunca corrió; no es «todo al día»).
+  async function getVehicleDocLastRun() {
+    const { data, error } = await sb.from('vehicle_document_job_runs')
+      .select('run_on, ran_at, alerts, pushes').order('run_on', { ascending: false }).limit(1);
+    if (error) throw error;
+    return (data && data[0]) || null;
+  }
+
+  // Lo que ve el CONDUCTOR (inicio de turno y perfil): los documentos de la vía
+  // —SOAT, técnico-mecánica, seguro, pólizas RC, extintor— de los carros de su
+  // organización, con el estado ya calculado en la base (fecha de Bogotá y la
+  // misma ventana del aviso a los jefes). Sin número, entidad ni nota. La tabla
+  // no se le abre: va por la RPC (0095). vehicleIds vacío o null = todos.
+  // Filas: { vehicle_id, kind, label, expires_on, days_left, status, not_applicable }
+  // status: no_aplica | sin_dato | vencido | hoy | por_vencer | al_dia.
+  async function driverVehicleDocuments(vehicleIds) {
+    const { data, error } = await sb.rpc('driver_vehicle_documents', {
+      p_vehicle_ids: Array.isArray(vehicleIds) && vehicleIds.length ? vehicleIds : null,
+    });
+    if (error) throw error;
+    return data || [];
+  }
+
+  // ====================================================================
   // Inspecciones — revisión/aprobación (admin) + checklist configurable
   // ====================================================================
 
@@ -1612,16 +1816,54 @@
   // aparecían en Admin→Inspecciones. Ahora trae TODAS las 'initial'; los filtros
   // de la UI (Pendientes/Aprobadas/Rechazadas/Todas) hacen el resto. Las que
   // requieren acción siguen siendo las 'pending' (solo las que tienen novedad).
-  async function listInspectionsForReview(status) {
+  //
+  // Filtros de la cola (29-sep-2026): fecha, conductor y carro van AL SERVIDOR.
+  // La consulta trae solo las `limite` más recientes (300), así que filtrar en el
+  // cliente buscaría únicamente dentro de esas: una fecha de julio saldría vacía
+  // sin estarlo. `filtros` (todo opcional):
+  //   desde / hasta  instantes ISO con huso (-05:00); `hasta` es EXCLUSIVO
+  //   vehicleId      vehicles.id
+  //   driverIds      driver_profiles.id[] — vacío = ningún conductor coincide → []
+  //   limite         tope de filas (300 si no viene)
+  async function listInspectionsForReview(status, filtros) {
+    const f = filtros || {};
+    if (Array.isArray(f.driverIds) && !f.driverIds.length) return [];
     let q = sb.from('inspections')
       .select('id,kind,has_damage,notes,odometer_km,review_status,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id,' +
               'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
               'driver_profiles(profiles(id,full_name,email))')
       .eq('kind', 'initial')
       .order('performed_at', { ascending: false })
-      .limit(300);
+      .limit(f.limite || 300);
     if (status) q = q.eq('review_status', status);
+    if (f.desde) q = q.gte('performed_at', f.desde);
+    if (f.hasta) q = q.lt('performed_at', f.hasta);
+    if (f.vehicleId) q = q.eq('vehicle_id', f.vehicleId);
+    if (Array.isArray(f.driverIds)) q = q.in('driver_id', f.driverIds);
     const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Conductores para el buscador por nombre de la cola de inspecciones:
+  // driver_profiles.id (a eso apunta inspections.driver_id, no a profiles) y su
+  // nombre. Van TODOS, también los inactivos o borrados: sus inspecciones viejas
+  // siguen en la cola y tienen que poder buscarse. El cruce por nombre —sin tildes
+  // ni mayúsculas— lo hace el admin; PostgREST no sabe ignorar tildes.
+  async function listInspectionDrivers() {
+    const { data, error } = await sb.from('driver_profiles').select('id, profiles(full_name)');
+    if (error) throw error;
+    return (data || []).map(d => ({ id: d.id, name: (d.profiles && d.profiles.full_name) || '' }));
+  }
+
+  // Carros para el filtro «Carro» de la cola de inspecciones: la flota de la org
+  // CON los dados de baja (deleted_at): sus inspecciones viejas siguen en la cola.
+  // listVehiclesForShift los esconde porque ahí se elige carro para salir. RLS:
+  // p_vehicles_select_admin (0004) deja al admin ver todos los de su org.
+  async function listInspectionVehicles() {
+    const { data, error } = await sb.from('vehicles')
+      .select('id, internal_code, license_plate, deleted_at')
+      .order('internal_code');
     if (error) throw error;
     return data || [];
   }
@@ -1639,14 +1881,19 @@
   }
 
   async function getInspectionDetail(id) {
-    const cols = extra =>
+    const cols = (extra, fotos) =>
       `id,kind,has_damage,checklist,notes,odometer_km,review_status,reviewed_by,reviewed_at,review_notes,performed_at,shift_id,vehicle_id,driver_id${extra},` +
       'vehicles(internal_code,license_plate,brand,model,status,current_km,last_maintenance_km,maintenance_interval_km),' +
       'driver_profiles(profiles(id,full_name,email)),' +
-      'inspection_photos(photo_type,storage_path,size_bytes)';
-    // Cascada: con is_apt/signed_name (0028) → sin ellos (legado).
-    let { data, error } = await sb.from('inspections').select(cols(',is_apt,signed_name')).eq('id', id).single();
-    if (error) ({ data, error } = await sb.from('inspections').select(cols('')).eq('id', id).single());
+      `inspection_photos(${fotos})`;
+    const FOTOS = 'photo_type,storage_path,size_bytes';
+    const leer = (extra, fotos) => sb.from('inspections').select(cols(extra, fotos)).eq('id', id).single();
+    // Cascada: con purged_at (las fotos de rutina de más de 60 días se borran del
+    // almacenamiento y quedan marcadas) → sin purged_at (base que aún no tiene la
+    // columna) → sin is_apt/signed_name (0028, legado).
+    let { data, error } = await leer(',is_apt,signed_name', FOTOS + ',purged_at');
+    if (error) ({ data, error } = await leer(',is_apt,signed_name', FOTOS));
+    if (error) ({ data, error } = await leer('', FOTOS));
     if (error) throw error;
     return data;
   }
@@ -1750,7 +1997,7 @@
     let dp = null;
     try {
       const r = await sb.from('driver_profiles')
-        .select('id, license_number, license_expires_at, eps_provider, arl_provider')
+        .select('id, license_number, license_expires_at, eps_provider, eps_expires_at, arl_provider, arl_expires_at')
         .eq('profile_id', session.user.id).limit(1);
       dp = (r.data && r.data[0]) || null;
     } catch (e) { /* sin driver_profile */ }
@@ -1791,6 +2038,18 @@
       .order('end_at', { ascending: false }).limit(90);
     if (error) throw error;
     return data || [];
+  }
+
+  // El último turno cerrado del conductor, para saber si el que arranca es su
+  // propio relevo (doble turno, D6): mismo carro y cierre reciente.
+  async function getMyLastClosedShift(driverId) {
+    const { data, error } = await sb.from('shifts')
+      .select('id, end_at, closing_km, vehicle_id')
+      .eq('driver_id', driverId).eq('status', 'closed')
+      .not('end_at', 'is', null).not('closing_km', 'is', null) // un NO APTO o una reserva vencida no traen km de cierre
+      .order('end_at', { ascending: false }).limit(1);
+    if (error) throw error;
+    return (data && data[0]) || null;
   }
 
   // Redención validada en servidor (km, recompensa activa, sin duplicado).
@@ -2032,31 +2291,61 @@
     return m ? (m[1] + m[2]).toUpperCase() : '';
   }
 
-  async function listRoutePlanning(tripType) {
+  // Lo que ESCRIBIÓ el tripulante en las notas, sin lo que les pega la app
+  // (rediseño 27-sep-2026, fase 0.10). createReservation antepone «Vuelo AV9412. »
+  // y el regreso del mismo día agrega « · Regreso del mismo día»: eso no es suyo,
+  // y repetirlo metía un vuelo viejo en el pedido nuevo.
+  // UN SOLO helper para todo el front («Repetir», la forma del viaje). Su gemelo
+  // en SQL es public.notes_without_flight(text) (0086): misma expresión, así el
+  // servidor y el teléfono quitan exactamente lo mismo.
+  function notesUser(n) {
+    return String(n || '')
+      .replace(/^\s*vuelo\s*:?\s*[A-Za-z]{0,3}\s*-?\s*\d{2,5}\.\s*/i, '')
+      .replace(/\s*·\s*Regreso del mismo día\s*$/i, '')
+      .trim();
+  }
+
+  // `day` (YYYY-MM-DD, opcional, 10-oct-2026): el día a planear. Sin él, como
+  // siempre, el próximo día con reservas desde hoy. Con él se piden SOLO las
+  // reservas de ese día de Colombia (00:00 a 24:00 -05:00) — pasado, hoy o
+  // mañana, aunque hoy todavía tenga traslados pendientes.
+  async function listRoutePlanning(tripType, day) {
     // Día en hora de COLOMBIA (no UTC): un viaje de las 21:10 Col NO debe rodar
     // al día siguiente (21:10 Col = 02:10 UTC). Agrupamos por America/Bogota.
     const bogDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    const pedido = (typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day)) ? day : null;
     let rows = null;
     try {
       // Ventana amplia en UTC (ayer→) para no perder madrugadas de Colombia;
       // el filtro fino por día operativo se hace abajo en hora local.
-      const floor = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+      const floor = pedido ? new Date(pedido + 'T00:00:00-05:00').toISOString()
+        : new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+      const ceil = pedido ? new Date(Date.parse(pedido + 'T00:00:00-05:00') + 86400000).toISOString() : null;
       // El tablero mostraba solo nombre y zona: para decidir un cambio de ruta el
       // admin tenía que abrir Reservas en otra pestaña. Se traen también vuelo,
       // teléfono, notas y pernocta. Defensivo igual que listMyReservations: si
       // 0050 no está aplicada, se reintenta sin las columnas nuevas.
       const COLS = 'id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)';
-      const q = cols => sb.from('reservations').select(cols)
-        .is('cancelled_at', null)
-        .gte('required_arrival_at', floor)
-        .order('required_arrival_at', { ascending: true });
+      const q = cols => {
+        let b = sb.from('reservations').select(cols)
+          .is('cancelled_at', null)
+          .gte('required_arrival_at', floor);
+        if (ceil) b = b.lt('required_arrival_at', ceil);
+        return b.order('required_arrival_at', { ascending: true });
+      };
       // La residencia (0055) es lo que permite tratar una portería como UNA
       // parada: dos tripulantes del mismo conjunto son un solo frenazo. Va en
       // su propio reintento porque main todavía no tiene la 0055.
       // 0062: la zona de Julián viaja pegada a la residencia. Escalón propio de
       // la cascada: sin la migración se cae al select de al lado y el tablero
       // programa con el modelo calculado, como antes.
-      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe)');
+      // 0092: trabajo en tierra, escalón propio encima de todo. Sin la migración
+      // se cae al de siempre y el tablero trata a todos como si vinieran en vuelo.
+      // El sector del conjunto (0055) es solo la etiqueta que se muestra en
+      // Asignación v2 («Olivar · Llanogrande»); va en su propio escalón.
+      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe, sector), ground_ops');
+      if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe), ground_ops');
+      if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe)');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name)');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm');
       if (res.error) res = await q(COLS);
@@ -2065,12 +2354,19 @@
     } catch (e) { return null; } // RLS / tabla ausente → demo
     if (!rows || !rows.length) return null;
 
-    // Día operativo más próximo (en hora de Colombia) con reservas.
-    const todayBog = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-    const upcoming = rows.filter(r => bogDay(r.required_arrival_at) >= todayBog);
-    if (!upcoming.length) return null;
-    const day0 = bogDay(upcoming[0].required_arrival_at);
-    rows = upcoming.filter(r => bogDay(r.required_arrival_at) === day0);
+    let day0;
+    if (pedido) {
+      day0 = pedido;
+      rows = rows.filter(r => bogDay(r.required_arrival_at) === pedido);
+      if (!rows.length) return null;
+    } else {
+      // Día operativo más próximo (en hora de Colombia) con reservas.
+      const todayBog = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+      const upcoming = rows.filter(r => bogDay(r.required_arrival_at) >= todayBog);
+      if (!upcoming.length) return null;
+      day0 = bogDay(upcoming[0].required_arrival_at);
+      rows = upcoming.filter(r => bogDay(r.required_arrival_at) === day0);
+    }
 
     const aux = {}, colors = {};
     rows.forEach((r, i) => {
@@ -2089,6 +2385,7 @@
         // Zona de la tabla de tiempos de Julián (0062). null = todavía no la
         // confirmó para ese conjunto → esa parada se programa como antes.
         zonaJefe: r.residences?.zona_jefe || null,
+        sector: r.residences?.sector || '',
         dir: r.pickup_address || '',
         lat: r.pickup_latitude, lng: r.pickup_longitude,
         dl: rtHHMM(r.required_arrival_at),
@@ -2100,7 +2397,11 @@
         // JA5116, P57433 o los dígitos pelados, y todos cuentan. La regex que
         // vivía aquí se mudó a _flightFromNotes, que ahora es la misma para los
         // tres lectores del vuelo (11-sep-2026).
-        vuelo: r.flights?.flight_number || _flightFromNotes(r.notes),
+        // En tierra (0092) no hay vuelo aunque las notas traigan uno viejo.
+        vuelo: r.ground_ops === true ? '' : (r.flights?.flight_number || _flightFromNotes(r.notes)),
+        // Trabajo en tierra (0092): en una llegada la hora es la de salir del
+        // terminal y NO se le suma desembarque (rtDeplaneOf, admin-rutas).
+        tierra: r.ground_ops === true,
         notas: r.notes || '',
         // 'hotel' es el flag que el tablero ya sabía pintar (chip "Hotel"), pero
         // nadie se lo llenaba: la pernocta se preguntaba y se perdía.
@@ -2132,7 +2433,7 @@
     let drivers = [];
     try {
       const ds = await listDrivers();
-      drivers = (ds || []).map((d, i) => ({ id: d.id, n: d.full_name || d.name || 'Conductor', turno: 'Mañana', c: RT_PALETTE[i % RT_PALETTE.length] }));
+      drivers = (ds || []).map((d, i) => ({ id: d.id, n: d.full_name || d.name || 'Conductor', turno: 'Mañana', c: RT_PALETTE[i % RT_PALETTE.length], tel: d.phone || '' }));
     } catch (_) {}
     return { aux, colors, cars, drivers, plan: {}, source: 'live', day: day0 };
   }
@@ -2174,7 +2475,17 @@
     // 0069: el nivel de servicio y el estado de la solicitud de privado.
     // 0075: residence_unit, para que «Repetir el de siempre» vuelva al mismo
     // apartamento y no solo al mismo conjunto.
-    let { data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, residence_unit, service_level, private_status, price_cop, private_reject_reason');
+    // 0085: calculated_pickup_at es la hora de recogida PUBLICADA (la escribe la
+    // base desde el plan con conductor). Va en el escalón de arriba: sin 0085 la
+    // columna existe pero siempre está NULL, así que el respaldo es el mismo.
+    const TOP = COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, residence_unit, service_level, private_status, price_cop, private_reject_reason';
+    // 0092: trabajo en tierra, en su propio escalón encima de todo (sin la
+    // migración se cae al de 0085 y el viaje se lee como uno con vuelo). created_at
+    // existe desde 0003: con él se sabe cuál fue el ÚLTIMO pedido (el interruptor
+    // de «en tierra» arranca como ese).
+    let { data, error } = await q(TOP + ', calculated_pickup_at, created_at, ground_ops');
+    if (error) ({ data, error } = await q(TOP + ', calculated_pickup_at'));
+    if (error) ({ data, error } = await q(TOP));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, service_level, private_status, price_cop, private_reject_reason'));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id'));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason'));
@@ -2189,13 +2500,22 @@
       price: r.price_cop != null ? r.price_cop : null,
       privateReason: r.private_reject_reason || '',
       flight: r.flights?.flight_number || _flightFromNotes(r.notes),
-      date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
+      // EN HORA DE BOGOTÁ (fase 0.8). Antes date era el día UTC (slice) y time
+      // la hora del reloj del teléfono: un traslado entre las 19:00 y las 23:59
+      // caía en el día siguiente («Mañana» en vez de «Hoy»).
+      date: _bogDay(r.required_arrival_at), time: _bogHM(r.required_arrival_at),
       address: r.pickup_address, lat: r.pickup_latitude, lng: r.pickup_longitude,
-      notes: r.notes || '', status: _auxTripStatus(r), driver: null,
+      notes: r.notes || '', notesUser: notesUser(r.notes),
+      // Hora de recogida publicada (0085) o null: nunca se inventa.
+      pickupAt: r.calculated_pickup_at || null,
+      status: _auxTripStatus(r), driver: null,
       cancelledAt: r.cancelled_at || null, cancelReason: r.cancellation_reason || '',
       isPernocta: !!r.is_overnight, isReserva: r.is_firm !== false,
       readyAt: r.ready_confirmed_at || null,
       rated: r.rating != null, rating: r.rating || 0,
+      // 0092. false también cuando la columna no llegó (escalón de abajo).
+      groundOps: r.ground_ops === true,
+      createdAt: r.created_at || null,
     }));
   }
   // ---- Catálogo de residencias para el auxiliar (0055) ----
@@ -2263,6 +2583,50 @@
     };
   }
 
+  // La cabecera del tripulante para el rediseño (27-sep-2026): lo que pintan el
+  // Perfil («Auxiliar · Avianca · desde mar 2026», Mi residencia) y el pedido
+  // (nivel preferido, punto de encuentro). Es `Auxiliar.header` (H en el plan).
+  //
+  // El teléfono NO viene aquí: ya llega en getCurrentProfile.
+  // Degrada por escalones: las columnas de 0086 (preferred_service_level,
+  // meeting_point) van arriba y, si no existen, se piden sin ellas; la
+  // aerolínea en su escalón, igual que en getMyAuxiliarPlace.
+  // Devuelve null sin sesión de auxiliar o si todo falla: nunca datos inventados.
+  async function getMyAuxHeader() {
+    const { data: u } = await sb.auth.getUser();
+    const uid = u?.user?.id; if (!uid) return null;
+    const q = (cols) => sb.from('auxiliar_profiles').select(cols).eq('profile_id', uid).maybeSingle();
+    const RES = 'residences!auxiliar_profiles_residence_id_fkey(id, name, sector)';
+    const RES2 = 'residencia2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector)';
+    const BASE = `id, joined_at, residence_id, residence_unit, residence_id_2, residence_unit_2, ${RES}, ${RES2}`;
+    const NUEVAS = ', preferred_service_level, meeting_point';
+    const AIR = ', airlines(id, name, iata_code)';
+    // 0106: personal de tierra, en su propio escalón encima de todo.
+    let { data, error } = await q(BASE + NUEVAS + ', ground_staff' + AIR);
+    if (error) ({ data, error } = await q(BASE + NUEVAS + AIR));
+    if (error) ({ data, error } = await q(BASE + AIR));
+    if (error) ({ data, error } = await q(BASE));
+    if (error) ({ data, error } = await q(`id, residence_id, residence_unit, ${RES}`));
+    if (error || !data) return null;
+    const lvl = data.preferred_service_level;
+    return {
+      auxProfileId: data.id,
+      joinedAt: data.joined_at || null,
+      airlineId: data.airlines?.id || null,
+      airlineName: data.airlines?.name || '',
+      airlineIata: (data.airlines?.iata_code || '').toUpperCase(),
+      groundStaff: data.ground_staff === true,
+      preferredLevel: lvl === 'private' || lvl === 'shared' ? lvl : null,
+      meetingPoint: data.meeting_point || '',
+      residenceId: data.residence_id || null,
+      residence: data.residences || null,
+      unit: data.residence_unit || '',
+      residenceId2: data.residence_id_2 || null,
+      residence2: data.residencia2 || null,
+      unit2: data.residence_unit_2 || '',
+    };
+  }
+
   // La sigla de la aerolínea del tripulante, sola y cacheada. La pide el pedido
   // de traslado para entrar con el prefijo puesto ("AV" + los dígitos que él
   // teclea) en vez de hacerlo escribir "AV-9412" entero, que es de donde salían
@@ -2306,7 +2670,10 @@
   async function createReservation(f) {
     const apId = await getMyAuxiliarProfileId(); if (!apId) throw new Error('Sin perfil de auxiliar');
     const isLle = f.type === 'lle';
-    const notes = (f.flight ? 'Vuelo ' + f.flight + '. ' : '') + (f.notes || '');
+    // En tierra (0092) no hay vuelo: aunque el formulario haya quedado con uno
+    // escrito de antes de encender el interruptor, no se pega a las notas.
+    const vuelo = f.groundOps === true ? '' : (f.flight || '');
+    const notes = (vuelo ? 'Vuelo ' + vuelo + '. ' : '') + (f.notes || '');
     const payload = {
       auxiliar_profile_id: apId, flight_id: null,
       direction: isLle ? 'airport_to_home' : 'home_to_airport',
@@ -2327,12 +2694,58 @@
     // 0069. Solo se manda el NIVEL: el estado 'requested' y el precio los pone el
     // servidor en guard_private_insert(), para que no se pueda pactar una tarifa
     // ni auto-aprobarse desde el teléfono.
-    const withLvl = f.level === 'private' ? { service_level: 'private' } : {};
-    let { data, error } = await sb.from('reservations').insert({ ...payload, ...extra, ...withRes, ...withLvl }).select('id').single();
-    if (error && f.level === 'private') ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra, ...withRes }).select('id').single());
-    if (error && f.residenceId && f.residenceUnit) ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra, residence_id: f.residenceId }).select('id').single());
-    if (error && f.residenceId) ({ data, error } = await sb.from('reservations').insert({ ...payload, ...extra }).select('id').single());
-    if (error) ({ data, error } = await sb.from('reservations').insert(payload).select('id').single());
+    //
+    // «Prefiero silencio» (quiet_ride, 0086) va DENTRO del nivel: solo existe en
+    // privado (CHECK reservations_quiet_only_private). Las maletas (bags, 0086)
+    // van en su propio escalón.
+    const isPriv = f.level === 'private';
+    const lvlMin = isPriv ? { service_level: 'private' } : {};
+    const withLvl = isPriv ? { ...lvlMin, ...(f.quietRide ? { quiet_ride: true } : {}) } : {};
+    const bagsN = Number(f.bags);
+    const withBags = (f.bags != null && f.bags !== '' && Number.isFinite(bagsN)) ? { bags: Math.max(0, Math.min(3, Math.round(bagsN))) } : {};
+    const withResId = f.residenceId ? { residence_id: f.residenceId } : {};
+
+    // LA ESCALERA DE DEGRADACIÓN SOLO BAJA POR COLUMNAS QUE FALTAN (fase 0.9).
+    // Antes cada escalón reintentaba ante CUALQUIER error, y un privado que el
+    // servidor rechazaba (guard_private_insert, la camioneta ocupada, lo que
+    // fuera) se creaba EN SILENCIO como compartido. Ahora:
+    //   · solo se reintenta si el error es «esa columna no existe»
+    //     (PGRST204 de PostgREST, 42703 de Postgres);
+    //   · el privado NUNCA pierde su service_level: si falla, se lanza;
+    //   · la suspensión (42501, guard_suspended_reservation) y cualquier otro
+    //     error salen tal cual, sin reintento.
+    const faltaCol = e => !!e && (e.code === 'PGRST204' || e.code === '42703');
+    const escalones = [
+      { ...payload, ...extra, ...withRes, ...withLvl, ...withBags },
+      { ...payload, ...extra, ...withRes, ...withLvl },               // sin maletas
+      { ...payload, ...extra, ...withRes, ...lvlMin },                // sin silencio
+      { ...payload, ...extra, ...withResId, ...lvlMin },              // sin apartamento
+      { ...payload, ...extra, ...lvlMin },                            // sin residencia
+      { ...payload, ...lvlMin },                                      // sin pernocta/firme
+    ];
+    // TRABAJO EN TIERRA (0092, 29-sep-2026). Solo se manda cuando es verdad: el
+    // traslado de siempre no lleva la columna y no cambia en nada. Viaja en TODOS
+    // los escalones —no es un detalle que se suelte primero— y solo se suelta si
+    // el error dice que ES ella la que falta (0092 sin aplicar): ahí la reserva
+    // igual se crea, porque dejar a alguien sin carro por una columna es peor.
+    // Lo que se pierde en ese caso lo dice el aviso de consola: el tablero no
+    // sabrá que no hay desembarque y en una llegada le sumará el de respaldo.
+    let conTierra = f.groundOps === true;
+    const vistos = new Set();
+    let data = null, error = null;
+    for (let i = 0; i < escalones.length; i++) {
+      const row = conTierra ? { ...escalones[i], ground_ops: true } : escalones[i];
+      const k = JSON.stringify(Object.keys(row).sort());
+      if (vistos.has(k)) continue;          // escalón idéntico al anterior: no se repite
+      vistos.add(k);
+      ({ data, error } = await sb.from('reservations').insert(row).select('id').single());
+      if (!error) break;
+      if (!faltaCol(error)) throw error;
+      if (conTierra && /ground_ops/i.test(String(error.message || '') + ' ' + String(error.details || ''))) {
+        console.warn('[createReservation] sin la columna ground_ops (0092): la reserva sale sin la marca de «en tierra»');
+        conTierra = false; i--;              // el MISMO escalón, sin la columna
+      }
+    }
     if (error) throw error;
     return data.id;
   }
@@ -2439,7 +2852,10 @@
     const q = cols => sb.from('reservations').select(cols)
       .gte('required_arrival_at', from).lte('required_arrival_at', to)
       .order('required_arrival_at', { ascending: true });
-    let { data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at');
+    // 0092 (trabajo en tierra) en su propio escalón encima: sin la migración se
+    // lee como antes.
+    let { data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at, ground_ops');
+    if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at'));
     if (error) ({ data, error } = await q(COLS));
     if (error) return null;
     return (data || []).map(r => ({
@@ -2449,7 +2865,8 @@
       phone: r.auxiliar_profiles?.profiles?.phone || '',
       address: r.pickup_address || '', when: r.required_arrival_at,
       date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
-      flight: _flightFromNotes(r.notes),
+      groundOps: r.ground_ops === true,
+      flight: r.ground_ops === true ? '' : _flightFromNotes(r.notes),
       notes: r.notes || '', raw: r.status_h2a || r.status_a2h || '',
       status: _auxTripStatus(r), cancelledAt: r.cancelled_at || null,
       cancelReason: r.cancellation_reason || '', createdAt: r.created_at,
@@ -2685,6 +3102,17 @@
 
   // ---- Persistir el plan del día (admin) y leerlo (conductor) ----
   const _bogDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+  // HH:MM en hora de Bogotá, sea cual sea la zona del teléfono (un tripulante que
+  // aterriza de un internacional trae el aparato en otra). hourCycle h23: nunca
+  // «24:05» a la medianoche.
+  const _bogHM = (iso) => {
+    try {
+      const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+        .formatToParts(new Date(iso));
+      const h = (p.find(x => x.type === 'hour') || {}).value, m = (p.find(x => x.type === 'minute') || {}).value;
+      return h && m ? h + ':' + m : '--:--';
+    } catch (_) { return '--:--'; }
+  };
 
   // Guarda TODAS las vueltas del día como route_assignments + route_stops.
   // lanes: [{ vehicleId, driverProfileId(=profile id|null), type('sal'|'lle'), startAt(ISO), stops:[reservationId] }]
@@ -2719,19 +3147,32 @@
     // Ahora el candado es POR PARADA: fija solo si ya se atendió (llegó, recogió
     // o no se presentó) o si su ruta terminó. Lo pendiente de una ruta en curso
     // se puede reasignar.
+    //
+    // UNA RUTA ARRANCADA = 'in_progress' O con alguna parada ya atendida. Nada en la
+    // app pasa una ruta a 'in_progress' (start_route de 0005 no lo llama nadie), así
+    // que la ruta que el conductor va haciendo sigue en 'planned'. Antes el borrado
+    // de abajo («todo lo draft/planned del día») se la llevaba entera, con sus
+    // paradas atendidas en cascada, y esas paradas no se volvían a crear porque
+    // estaban en `locked`: re-publicar a mitad de operación BORRABA de la base a
+    // quien ya iba a bordo o ya se había entregado (hallazgo 12-oct-2026).
     const prev = {}, locked = new Set();
     const movableInProgress = [];   // route_stops.id pendientes de rutas ya arrancadas
+    const arrancadas = new Set();   // route_assignments.id que NO se borran
     {
-      const { data } = await sb.from('route_assignments')
+      const { data, error } = await sb.from('route_assignments')
         .select('id, status, driver_profile_id, driver_profiles(profile_id), route_stops(id, reservation_id, status)')
         .gte('planned_start_at', d0).lte('planned_start_at', d1);
+      if (error) throw new Error('No se pudo leer el plan actual: ' + error.message);
       (data || []).forEach(ra => {
         const pid = ra.driver_profiles?.profile_id || null;
-        (ra.route_stops || []).forEach(s => {
+        const stops = ra.route_stops || [];
+        const arrancada = ra.status === 'in_progress' || stops.some(s => s.status && s.status !== 'pending');
+        if (arrancada || ra.status === 'completed') arrancadas.add(ra.id);
+        stops.forEach(s => {
           prev[s.reservation_id] = pid;
           const atendida = s.status && s.status !== 'pending';
           if (ra.status === 'completed' || atendida) locked.add(s.reservation_id);
-          else if (ra.status === 'in_progress') movableInProgress.push({ id: s.id, rid: s.reservation_id });
+          else if (arrancada) movableInProgress.push({ id: s.id, rid: s.reservation_id });
         });
       });
     }
@@ -2749,18 +3190,25 @@
       else locked.add(s.rid);   // se queda en su ruta: que no se duplique abajo
     });
 
-    // Borra lo que aún no arranca (draft/planned) entero…
-    await sb.from('route_assignments').delete()
-      .in('status', ['draft', 'planned'])
-      .gte('planned_start_at', d0).lte('planned_start_at', d1);
+    // Borra lo que aún no arranca (draft/planned SIN paradas atendidas) entero…
+    {
+      let del = sb.from('route_assignments').delete()
+        .in('status', ['draft', 'planned'])
+        .gte('planned_start_at', d0).lte('planned_start_at', d1);
+      if (arrancadas.size) del = del.not('id', 'in', `(${[...arrancadas].join(',')})`);
+      const { error } = await del;
+      if (error) throw new Error('No se pudo reemplazar el plan: ' + error.message);
+    }
     // …y de las rutas en curso, solo las paradas que cambian de carro. La ruta
     // sigue viva con lo que el conductor ya hizo: borrarla completa perdería el
     // avance real del viaje.
     if (aMover.length) {
-      await sb.from('route_stops').delete().in('id', aMover);
+      const { error } = await sb.from('route_stops').delete().in('id', aMover);
+      if (error) throw new Error('No se pudieron mover las paradas pendientes: ' + error.message);
     }
 
-    let saved = 0, skipped = 0, kept = 0;
+    // skipped = carril vacío o ya todo en curso (normal); failed = la base dijo que no.
+    let saved = 0, skipped = 0, kept = 0, failed = 0, failMsg = '';
     const notify = [];
     for (const lane of lanes) {
       if (!lane.vehicleId || !lane.stops || !lane.stops.length) { skipped++; continue; }
@@ -2774,7 +3222,7 @@
         direction: lane.type === 'lle' ? 'airport_to_home' : 'home_to_airport',
         status: dpid ? 'planned' : 'draft', planned_start_at: lane.startAt,
       }).select('id').single();
-      if (error) { skipped++; continue; }
+      if (error) { failed++; failMsg = failMsg || error.message; continue; }
       // La ETA por parada viaja desde el tablero (lane.etas: minutos desde
       // medianoche). Sin ella, `route_stops.estimated_arrival_at` quedaba NULL
       // siempre y el vigilante de 0053 caía a `required_arrival_at`, que en una
@@ -2796,26 +3244,40 @@
         r2 = await sb.from('route_stops').insert(
           stops.map(({ estimated_arrival_at, ...s }) => s));
       }
-      if (r2.error) { skipped++; continue; }
+      if (r2.error) {
+        // La vuelta quedó sin paradas: se quita para no dejarle al conductor una vuelta vacía.
+        await sb.from('route_assignments').delete().eq('id', ra.id);
+        failed++; failMsg = failMsg || r2.error.message; continue;
+      }
       // Novedad real para el auxiliar: pasó de sin conductor a con conductor, o se lo cambiaron.
       if (dpid) stopIds.forEach(rid => {
-        if (prev[rid] !== lane.driverProfileId) notify.push({ reservationId: rid, changed: !!prev[rid] });
+        if (prev[rid] !== lane.driverProfileId) notify.push({ reservationId: rid, changed: !!prev[rid], driverProfileId: lane.driverProfileId });
       });
       saved++;
     }
-    return { saved, skipped, kept, notify };
+    return { saved, skipped, kept, failed, failMsg, notify };
   }
 
   // El conductor lee SU ruta del día (route_assignments asignadas a él) → vueltas.
   async function listMyVueltasForDriver(profileId) {
     const dpid = await getMyDriverProfileId(profileId); if (!dpid) return null;
-    let { data, error } = await sb.from('route_assignments')
-      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, residence_unit, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
+    // Lo que el conductor ve del traslado (rediseño 27-sep-2026): maletas,
+    // «prefiere silencio», código y punto de encuentro (0086) y el nivel (0069).
+    // Cada grupo en su escalón: sin 0086 la ruta se pinta igual, sin esos datos.
+    // estimated_arrival_at (0003, la escribe saveRoutePlan al publicar) es la hora
+    // estimada de CADA parada: en una llegada, la entrega en cada casa («llega aprox.»).
+    const rv = (extra) => sb.from('route_assignments')
+      .select(`id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, status, actual_arrival_at, estimated_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, residence_unit${extra}, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))`)
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true });
+    // boarding_check (0097): si subió con código o «sin código», para pintarlo igual tras recargar.
+    let { data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status, boarding_check');
+    if (error) ({ data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status'));
+    if (error) ({ data, error } = await rv(', service_level, private_status'));
+    if (error) ({ data, error } = await rv(''));
     // 0075 puede no estar aplicada: sin el apartamento la ruta se pinta igual.
     if (error) ({ data, error } = await sb.from('route_assignments')
-      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
+      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, status, actual_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true }));
     if (error) return null;
@@ -2832,14 +3294,32 @@
         const r = s.reservations || {};
         return { name: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar', addr: r.pickup_address || '',
           unit: r.residence_unit || '',
-          lat: r.pickup_latitude, lng: r.pickup_longitude, flight: r.flights?.flight_number || '',
+          lat: r.pickup_latitude, lng: r.pickup_longitude, flight: r.flights?.flight_number || _flightFromNotes(r.notes),
           dl: rtHHMM(r.required_arrival_at), kind: type === 'lle' ? 'dropoff' : 'pickup',
           phone: r.auxiliar_profiles?.profiles?.phone || '', notes: r.notes || '',
+          // null/'' cuando la columna no existe o no hay dato: el conductor no
+          // ve nada en vez de un valor inventado.
+          bags: r.bags != null ? r.bags : null, quiet: r.quiet_ride === true,
+          meetCode: r.meet_code || '', meetingPoint: r.meeting_point || '',
+          level: r.service_level || 'shared', privateStatus: r.private_status || null,
+          // 0097: hora de recogida PUBLICADA de esta parada (no la presentación) y
+          // el avance que ya quedó en la base, para reanudar sin repetir avisos
+          // aunque se haya perdido el teléfono o el localStorage.
+          pickup: r.calculated_pickup_at ? rtHHMM(r.calculated_pickup_at) : '',
+          stopStatus: s.status || 'pending', arrivedAt: s.actual_arrival_at || null,
+          // Hora estimada de esta parada según el plan publicado (null si no la hay).
+          eta: s.estimated_arrival_at ? rtHHMM(s.estimated_arrival_at) : '', etaAt: s.estimated_arrival_at || null,
+          boardedNoCode: r.boarding_check === 'sin_codigo',
           reservationId: s.reservation_id, auxProfileId: r.auxiliar_profiles?.profiles?.id || null };
       });
+      // La ruta nunca pasa a 'completed' en la base (nadie la cierra), así que una
+      // vuelta con todas las paradas resueltas se da por hecha aquí: si no, al
+      // reabrir la app volvía a ofrecer «Iniciar ruta» sobre algo ya terminado.
+      const RESUELTA = ['delivered', 'no_show'];
+      const todasResueltas = stops.length > 0 && stops.every(x => RESUELTA.includes(x.stopStatus));
       const air = { name: MDE.name, addr: MDE.addr, lat: MDE.lat, lng: MDE.lng, kind: 'airport' };
       const legs = type === 'lle' ? [air, ...stops] : [...stops, air]; // llegada: sale de MDE; salida: termina en MDE
-      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), done: ra.status === 'completed', legs, assignmentId: ra.id, day: day0 };
+      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at, done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: day0 };
     });
   }
 
@@ -2851,6 +3331,43 @@
     if (!reservationId || !status) return;
     const { error } = await sb.rpc('driver_set_reservation_status', { p_reservation_id: reservationId, p_status: status });
     if (error) throw error;
+  }
+
+  // 0097 · Abordar con el código de encuentro que dice el tripulante. Devuelve
+  // { ok, verificado }. Si el código no coincide, el error trae hint
+  // 'codigo_incorrecto' (o 'codigo_vacio'). sinCodigo=true: sube sin código y
+  // queda registrado. Los avisos al tripulante los manda la base (0097).
+  async function driverBoardWithCode(reservationId, code, sinCodigo) {
+    const { data, error } = await sb.rpc('driver_board_with_code', {
+      p_reservation_id: reservationId, p_code: code == null ? null : String(code), p_sin_codigo: !!sinCodigo,
+    });
+    if (error) throw error;
+    return data || { ok: true };
+  }
+  // 0097 · Llegadas: «Llegué al aeropuerto» (marca la llegada en las paradas de
+  // la vuelta y le avisa a cada tripulante). Devuelve cuántas paradas marcó.
+  async function driverMarkAirportArrival(routeAssignmentId) {
+    const { data, error } = await sb.rpc('driver_mark_airport_arrival', { p_route_assignment_id: routeAssignmentId });
+    if (error) throw error;
+    return data;
+  }
+  // 0097 · Llegadas: el tripulante no apareció en el aeropuerto.
+  async function driverAirportNoShow(reservationId) {
+    const { error } = await sb.rpc('driver_airport_no_show', { p_reservation_id: reservationId });
+    if (error) throw error;
+  }
+  // 0102 · Llegadas: deshacer «a bordo» o «no llegó» mientras el carro sigue en MDE.
+  async function driverAirportUndo(reservationId) {
+    const { data, error } = await sb.rpc('driver_airport_undo', { p_reservation_id: reservationId });
+    if (error) throw error;
+    return data;
+  }
+  // 0097 · «Estoy cerca» (GPS del teléfono a menos de 300 m). Una vez por parada:
+  // la base no lo repite aunque se llame de nuevo.
+  async function driverNearStop(reservationId) {
+    const { data, error } = await sb.rpc('driver_near_stop', { p_reservation_id: reservationId });
+    if (error) throw error;
+    return data;
   }
 
   // ---------------------------------------------------------------------------
@@ -2892,11 +3409,16 @@
   // Gana la más reciente por recorded_at; el admin muestra la frescura para no
   // creerle ciegamente a un punto viejo.
   async function listLiveOperation() {
-    const { data, error } = await sb
+    // Las notas (donde vive el vuelo, ver _flightFromNotes) y ground_ops (0092,
+    // trabajo en tierra) van en el escalón de arriba: sin 0092 se cae al select
+    // de siempre, que solo sabe el vuelo si la reserva quedó ligada a flights.
+    const sel = (extra) => sb
       .from('route_assignments')
-      .select('id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profiles(full_name, phone)), route_stops(stop_order, status, reservation_id, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, auxiliar_profiles(profiles(full_name)), flights(flight_number)))')
+      .select(`id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profiles(full_name, phone)), route_stops(stop_order, status, reservation_id, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at${extra}, auxiliar_profiles(profiles(full_name)), flights(flight_number)))`)
       .in('status', ['planned', 'in_progress'])
       .order('planned_start_at');
+    let { data, error } = await sel(', notes, ground_ops');
+    if (error) ({ data, error } = await sel(''));
     if (error) throw error;
 
     const today = _bogDay(new Date().toISOString());
@@ -2962,7 +3484,11 @@
       // Presentación = el pasajero pendiente con la hora límite más temprana.
       const pend = stops.filter(s => s.status !== 'delivered' && s.status !== 'no_show');
       const presAt = pend.map(s => s.reservations?.required_arrival_at).filter(Boolean).sort()[0] || null;
-      const flight = (nextStop || stops[0])?.reservations?.flights?.flight_number || '—';
+      // En tierra (0092) no hay vuelo: se dice «Tierra» en vez de un «—» que
+      // parece dato faltante.
+      const rsv = (nextStop || stops[0])?.reservations || {};
+      const flight = rsv.ground_ops === true ? 'Tierra'
+        : (rsv.flights?.flight_number || _flightFromNotes(rsv.notes) || '—');
 
       const loc = posOf[activa.driver_profile_id];
 
@@ -3017,8 +3543,12 @@
   // Devuelve las vueltas VIVAS del día con sus paradas pendientes, el cupo del
   // carro, los deadlines de cada pasajero y la última posición del conductor.
   // ════════════════════════════════════════════════════════════════════
-  async function getPublishedPlan(day) {
+  // opts.estados (10-oct-2026): qué rutas traer. Por defecto las VIVAS
+  // (planned + in_progress), como siempre. Asignación v2 pide también
+  // draft (publicadas sin conductor) y completed, para mostrar el día entero.
+  async function getPublishedPlan(day, opts) {
     const d0 = day + 'T00:00:00-05:00', d1 = day + 'T23:59:59-05:00';
+    const estados = (opts && Array.isArray(opts.estados) && opts.estados.length) ? opts.estados : ['planned', 'in_progress'];
     const { data, error } = await sb.from('route_assignments')
       .select('id, direction, status, planned_start_at, driver_profile_id, vehicle_id, ' +
         'vehicles(license_plate, internal_code, capacity), ' +
@@ -3026,7 +3556,7 @@
         'route_stops(id, stop_order, status, estimated_arrival_at, reservation_id, ' +
         'reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, ' +
         'residence_id, cancelled_at, auxiliar_profiles(profiles(full_name))))')
-      .in('status', ['planned', 'in_progress'])
+      .in('status', estados)
       .gte('planned_start_at', d0).lte('planned_start_at', d1)
       .order('planned_start_at');
     if (error) throw error;
@@ -3113,7 +3643,8 @@
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile,
     listDrivers, listAdmins, setOpsAlerts,
-    listAllDriversForAdmin, setProfileActive, softDeleteProfile, setAdminCoordinator, setDriverPriority, setDriverCanCoordinate,
+    getProfileForEdit, listDeletedProfiles, listAllUsersForAdmin, adminUpdateProfile, adminSetEmail, adminSetPassword, adminSetStatus, adminSetRole, changeMyPassword,
+    listAllDriversForAdmin, setProfileActive, softDeleteProfile, undeleteProfile, setAdminCoordinator, setDriverPriority, setDriverCanCoordinate,
     createDriver,
     listSubmittedDriverIds,
     getWeeklyAvailability, getMyWeeklyAvailability,
@@ -3132,9 +3663,9 @@
     reportIncident, listEventualidades, countOpenEventualidades, acknowledgeIncident, opsAlertProfileIds, opsAlertHealth,
     startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listNoFuelReasons, getShiftFuelStatus,
-    listInspectionsForReview, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
+    listInspectionsForReview, listInspectionDrivers, listInspectionVehicles, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,
     listChecklistItems, listChecklistItemsForTiers, createChecklistItem, updateChecklistItem, deleteChecklistItem, reorderChecklistItems,
-    getMyFullProfile, uploadMyAvatar,
+    getMyFullProfile, uploadMyAvatar, getMyLastClosedShift,
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment, getRouteTables, saveRouteTables, listResidencesZones, saveResidenceZone,
@@ -3142,9 +3673,11 @@
     listAuxiliares, setAuxiliarJoinedAt, listAirlines, createAirline, setAirlineActive,
     getMyAuxiliarProfileId, listMyReservations, createReservation, trackReservation, rateReservation,
     listResidences, getMyAuxiliarPlace, getMyAirlineIata, saveMyResidence,
+    getMyAuxHeader, notesUser,
     privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
+    driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverAirportUndo, driverNearStop,
     sendDriverLocation, listLiveOperation,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
     chatUnreadFor,
@@ -3154,6 +3687,8 @@
     setVehiclePartBaseline, registerPartChange, confirmPartChange,
     correctVehicleOdometer, setPartInterval,
     listInspectionTiers, pendingInspectionTiers, markInspectionTiersDone,
+    listVehicleDocuments, saveVehicleDocument, getVehicleDocAlertDays, setVehicleDocAlertDays, getVehicleDocLastRun,
+    driverVehicleDocuments,
     listShiftsForBalance,
     lastVehicleKm, listShiftsForReview, listInspectionsForShifts, listFuelReceiptsForShifts,
   };

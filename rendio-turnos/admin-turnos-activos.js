@@ -22,11 +22,14 @@
     if (!s.start_at) return 0;
     return (Date.now() - new Date(s.start_at).getTime()) / 3600000;
   }
+  // «12 h 30 min», no «12.5 h» (pedido del jefe de operación, 11-oct-2026): el
+  // mismo formato del Balance (BalanceCore.hm). De dos días para arriba, días.
   function fmtShiftAgo(s) {
     const h = shiftHoursActive(s);
-    if (h < 1) return `${Math.max(0, Math.round(h * 60))} min`;
-    if (h < 48) return `${h.toFixed(1)} h`;
-    return `${Math.round(h / 24)} días`;
+    if (h >= 48) return `${Math.round(h / 24)} días`;
+    const min = Math.max(0, Math.round(h * 60));
+    if (window.BalanceCore && typeof BalanceCore.hm === 'function') return BalanceCore.hm(min);
+    return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''}`;
   }
   function shiftWhen(s) {
     try {

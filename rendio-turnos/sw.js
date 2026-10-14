@@ -1,4 +1,4 @@
-// Service Worker — Rendio Turnos
+// Service Worker — Rendio
 // Estrategia:
 //   - Assets estáticos (HTML/JS/CSS/SVG/PNG): stale-while-revalidate.
 //     La app sirve rápido desde caché, pero descarga la versión fresca en
@@ -6,7 +6,7 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v162';
+const CACHE_VERSION = 'rendio-turnos-v172';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
@@ -28,8 +28,19 @@ const APP_SHELL = [
   '/supabase-client.js',
   '/scheduler.js',
   '/api.js',
+  // Rediseño del auxiliar (27-sep-2026, P0): APIs nuevas. Si un archivo de esta
+  // lista falta en el servidor, cache.addAll falla y el SW no se instala: por
+  // eso P0 dejó todos los archivos creados (vacíos) antes de registrarlos.
+  '/api-aux.js',
+  '/api-cobro.js',
+  '/api-puntos.js',
+  // Estado de vuelos (0099).
+  '/api-vuelos.js',
+  '/vuelos-ui.js',
+  '/api-jefe.js',
   '/shift-flow.js',
   '/core.js',
+  '/usuarios.js',
   '/admin-turnos-activos.js',
   '/admin-inspecciones.js',
   '/admin-repuestos.js',
@@ -43,31 +54,76 @@ const APP_SHELL = [
   '/admin-revision.js',
   '/driver-home.js',
   '/admin-recompensas.js',
+  '/driver-horas.js',
   '/driver-perfil.js',
+  '/driver-celular.js',
   '/driver-disponibilidad.js',
   '/driver-tabs.js',
   '/admin-consola.js',
   '/admin-rutas.js',
+  '/admin-rutas-v2.js',
   '/admin-reservas.js',
   '/admin-tripulantes.js',
+  '/admin-usuarios.js',
   '/admin-privados.js',
   '/admin-operacion.js',
   '/admin-eventualidades.js',
+  '/aux-rx-ui.js',
+  '/aux-shell.js',
   '/aux-registro.js',
   '/aux-residencias.js',
   '/aux-privado.js',
   '/aux-celebracion.js',
   '/aux-presentacion.js',
+  '/aux-rx-inicio.js',
+  '/aux-rx-viajes.js',
+  '/aux-rx-avisos.js',
+  '/aux-rx-viaje.js',
+  '/aux-rx-pedir.js',
+  '/aux-rx-perfil.js',
+  '/aux-rx-pagos.js',
+  '/aux-rx-puntos.js',
+  '/aux-rx-coord.js',
+  '/aux-rx-vuelo.js',
   '/admin-chat.js',
+  '/admin-coordinacion.js',
+  '/admin-cobro.js',
+  '/admin-puntos.js',
   '/admin-acomodar.js',
+  '/admin-whatsapp.js',
   '/auxiliar.js',
   '/driver-rutas.js',
   '/ui-push.js',
   '/styles.css',
   '/rc-conductor.css',
   '/rc-auxiliar.css',
+  '/rx-auxiliar.css',
+  '/rx-aux-app.css',
+  '/rx-aux-shell.css',
+  '/rx-aux-inicio.css',
+  '/rx-aux-viaje.css',
+  '/rx-aux-pedir.css',
+  '/rx-aux-select.css',
+  '/rx-aux-perfil.css',
+  '/rx-aux-pagos.css',
+  '/rx-aux-puntos.css',
+  '/rx-aux-coord.css',
+  '/rx-aux-onboard.css',
+  '/rt-conductor.css',
+  '/rt-conductor-app.css',
+  '/login-rx.css',
+  '/admin-coordinacion.css',
+  '/admin-cobro.css',
+  '/admin-puntos.css',
+  '/admin-inspecciones.css',
+  '/admin-whatsapp.css',
+  '/vuelos.css',
+  '/admin-usuarios.css',
+  '/admin-rutas-v2.css',
   '/manifest.json',
-  '/assets/logo.png',
+  '/assets/rendio-r.svg',
+  '/assets/logo-enterprise.png',
+  '/assets/logo-icon.svg',
   '/assets/logo-icon.png',
   '/assets/icon-192.png',
   '/assets/icon-512.png',
@@ -95,7 +151,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) { data = { body: event.data && event.data.text() }; }
-  const title = data.title || 'Rendio Turnos';
+  const title = data.title || 'Rendio';
   const options = {
     body: data.body || '',
     icon: '/assets/icon-192.png',
@@ -103,7 +159,15 @@ self.addEventListener('push', (event) => {
     data: { url: data.url || '/' },
     tag: data.tag || undefined,
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  // Además de la notificación del sistema, avisa a las ventanas abiertas: el
+  // rediseño del tripulante pinta el aviso dentro de la app (banner de 4 s) y
+  // recarga sus viajes. Conductor y admin ignoran el mensaje.
+  const avisarVentanas = self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    .then((wins) => wins.forEach((w) => {
+      try { w.postMessage({ type: 'rendio-push', title, body: options.body, url: options.data.url }); } catch (_) {}
+    }))
+    .catch(() => {});
+  event.waitUntil(Promise.all([self.registration.showNotification(title, options), avisarVentanas]));
 });
 
 self.addEventListener('notificationclick', (event) => {

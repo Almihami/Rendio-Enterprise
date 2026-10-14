@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Rendio Turnos",
+  "name": "Rendio",
   "short_name": "Rendio",
-  "description": "Gestión semanal de turnos y disponibilidad para conductores.",
+  "description": "Traslados de tripulación entre casa y el aeropuerto José María Córdova.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -10,7 +10,10 @@
   "background_color": "#FFFFFF",
   "theme_color": "#0A0A0A",
   "lang": "es-CO",
-  "categories": ["productivity", "business"],
+  "categories": [
+    "productivity",
+    "business"
+  ],
   "icons": [
     {
       "src": "assets/icon-192.png",

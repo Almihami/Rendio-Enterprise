@@ -67,9 +67,10 @@
     const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
     if (min < 1) return 'ahora mismo';
     if (min < 60) return `hace ${min} min`;
-    const h = min / 60;
-    if (h < 48) return `hace ${h.toFixed(h < 10 ? 1 : 0)} h`;
-    return `hace ${Math.round(h / 24)} días`;
+    // Horas y minutos, no «2.5 h» (11-oct-2026); desde 10 h basta la hora.
+    if (min < 10 * 60) return `hace ${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''}`;
+    if (min < 48 * 60) return `hace ${Math.round(min / 60)} h`;
+    return `hace ${Math.round(min / 60 / 24)} días`;
   }
 
   const evtPax = (it) => {

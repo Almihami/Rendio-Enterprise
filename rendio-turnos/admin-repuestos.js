@@ -10,6 +10,13 @@
 //
 // Regla de producto: NINGÚN repuesto bloquea el carro. Todo es aviso.
 //
+// DOCUMENTOS DEL CARRO (0095, 29-sep-2026). SOAT, técnico-mecánica, seguro,
+// pólizas RCC/RCE, impuesto, extintor y tarjeta de propiedad viven también
+// aquí: un resumen de la flota arriba y un apartado en cada carro. Misma regla
+// que las piezas: un documento vencido AVISA, no bloquea. El código va al final
+// del archivo, en su propio ámbito (window.RepuestosDocs). La push diaria abre
+// #/repuestos?veh=<id>: ese enlace lo resuelve este archivo (core.js no lo conoce).
+//
 // TEXTO PLEGADO (septiembre 2026). Esta pantalla explicaba mucho y bien, pero
 // lo hacía toda junta: ocho párrafos de entre 115 y 326 caracteres, siempre
 // abiertos, en una pantalla que el jefe abre para mirar un semáforo. Se aplicó
@@ -75,6 +82,8 @@
   async function renderParts() {
     const root = $('#parts-ui');
     if (!root) return;
+    // Documentos del carro (0095): se piden a la par y nunca tumban la pantalla.
+    const docs = window.RepuestosDocs ? RepuestosDocs.load() : null;
     try {
       const [status, catalog, life, hist, tiers, vehicles] = await Promise.all([
         Api.listPartStatus(), Api.listPartCatalog(), Api.listPartRealLife(),
@@ -86,12 +95,17 @@
       $('#pt-list').innerHTML = `<div class="empty"><h3>No se pudo cargar</h3><p>${ptEsc(e.message || e)}</p></div>`;
       return;
     }
+    await docs;
     ptRenderAll();
     ptShowView('estado');
+    // El aviso de un documento trae #/repuestos?veh=…: abre ese carro.
+    const foco = window.RepuestosDocs ? RepuestosDocs.takeFocus() : null;
+    if (foco) RepuestosDocs.openVehicle(foco);
   }
 
   function ptRenderAll() {
     ptRenderPending();
+    if (window.RepuestosDocs) RepuestosDocs.renderFleet();
     ptRenderKpis();
     ptRenderVcards();
     ptRenderQueue();
@@ -214,6 +228,7 @@
           <span class="dot"><i style="background:var(--amber)"></i>${c.amber} por vencer</span>
           <span class="dot"><i style="background:var(--green)"></i>${c.green} al día</span>
           ${c.nodata ? `<span class="dot"><i style="background:var(--line2)"></i>${c.nodata} sin dato</span>` : ''}
+          ${window.RepuestosDocs ? RepuestosDocs.vcardDots(vid) : ''}
         </div>
         <div class="next">Lo más próximo: ${nx}</div>
         <div class="go">Ver los ${rows.length} repuestos<svg class="icon" style="width:13px;height:13px"><use href="#i-go"/></svg></div>
@@ -341,6 +356,7 @@
       </div>
       <div class="cols">
         <div>
+          ${window.RepuestosDocs ? RepuestosDocs.vehicleCard(vid) : ''}
           <div class="card">
             <h2><svg class="icon"><use href="#i-wrench"/></svg>Repuestos del vehículo</h2>
             <p class="csub" style="font-size:12.5px;color:var(--ink2);margin:4px 0 14px">Intervalo propio de la empresa · kilómetros restantes hasta el cambio.</p>
@@ -880,3 +896,490 @@
     }
     if (e.target.id === 'pt-f-veh' || e.target.id === 'pt-f-part') ptCalc();
   });
+
+  // ====================================================================
+  // Documentos del carro (0095) — SOAT, técnico-mecánica, seguro y demás
+  // ====================================================================
+  // Pedido de septiembre: «Repuestos también debe incluir los apartados de SOAT
+  // y demás». Mismo trato que las piezas: AVISA, NO BLOQUEA; lo que no se sabe
+  // queda «Sin dato» y se pide, nunca se asume una fecha. El aviso a los jefes
+  // lo manda la BASE todos los días a las 7:00 (vehicle_docs_run_daily, 0095):
+  // esta pantalla solo muestra el estado, guarda y ajusta con cuántos días de
+  // anticipación se avisa (mínimo 30: la dueña pidió «al menos un mes»).
+  //
+  // SOAT, técnico-mecánica y seguro son LA MISMA fecha que vehicles.*_expires_at
+  // (la que edita Flota): la base las copia en las dos direcciones.
+  //
+  // En su propio ámbito para no sumarle nombres al global que este archivo
+  // comparte con los demás; lo que usan las funciones de arriba sale por
+  // window.RepuestosDocs. Lee de arriba ptVehicles, ptCurVeh, ptEsc,
+  // ptCloseDrawer, ptRenderVcards y renderPartsVehicle, que son del mismo archivo.
+  (function () {
+    'use strict';
+
+    // dateLabel = rótulo del campo; when = cómo se dice en la lista («Vence el …»).
+    // flota = también se ve (y se edita) en Turnos › Revisión › Flota.
+    const KINDS = [
+      { code: 'soat', name: 'SOAT', expires: true, dateLabel: 'Vence', when: 'Vence', issuer: 'Aseguradora', numPh: 'Nº de la póliza', flota: true },
+      { code: 'tecnomecanica', name: 'Revisión técnico-mecánica', expires: true, dateLabel: 'Vence', when: 'Vence', issuer: 'Centro de diagnóstico (CDA)', numPh: 'Nº del certificado', flota: true },
+      { code: 'seguro', name: 'Seguro todo riesgo', expires: true, dateLabel: 'Vence', when: 'Vence', issuer: 'Aseguradora', numPh: 'Nº de la póliza' },
+      { code: 'polizas_rc', name: 'Pólizas RCC/RCE', expires: true, dateLabel: 'Vencen', when: 'Vencen', issuer: 'Aseguradora', numPh: 'Nº de las pólizas' },
+      { code: 'impuesto', name: 'Impuesto vehicular', expires: true, dateLabel: 'Fecha límite de pago', when: 'Se paga hasta', issuer: 'Secretaría / gobernación', numPh: 'Nº del recibo' },
+      { code: 'extintor', name: 'Recarga del extintor', expires: true, dateLabel: 'Vence la recarga', when: 'Vence', issuer: 'Empresa que lo recargó', numPh: 'Nº del certificado' },
+      { code: 'tarjeta_propiedad', name: 'Tarjeta de propiedad', expires: false, dateLabel: '', when: '', issuer: 'Organismo de tránsito', numPh: 'Nº de la licencia de tránsito' },
+    ];
+    const KIND_BY = {};
+    KINDS.forEach((k) => { KIND_BY[k.code] = k; });
+    const DEF_DAYS = 30;          // el default de app_settings.vehicle_doc_alert_days
+    const MIN_DAYS = 30, MAX_DAYS = 180;   // el CHECK de la base
+
+    const st = {
+      loaded: false,              // ¿ya se intentó leer?
+      err: null,                  // texto del error si no se pudo
+      docs: [],                   // filas de vehicle_documents
+      days: DEF_DAYS,             // días de anticipación del aviso
+      lastRun: undefined,         // undefined = no se sabe · null = nunca corrió
+      focus: null,                // carro a abrir (enlace del aviso)
+    };
+
+    const esc = (s) => ptEsc(s);
+    const pl = (n, s, p) => n + ' ' + (n === 1 ? s : p);
+
+    // Hoy en Bogotá, 'AAAA-MM-DD'.
+    function hoy() {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    }
+    const utc = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d); };
+    const diffDays = (a, b) => Math.round((utc(a) - utc(b)) / 864e5);
+    // Fecha sola ('AAAA-MM-DD'): se formatea en UTC para que no corra un día.
+    // fmt = en el texto («26 de sept de 2026»); corta = en la columna angosta.
+    function fmt(iso) {
+      if (!iso) return '—';
+      return new Date(utc(iso)).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    }
+    function corta(iso) {
+      if (!iso) return '—';
+      return new Date(utc(iso)).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+    }
+
+    // Estado de UN documento. hoyIso = 'AAAA-MM-DD'; n = días de aviso.
+    //   light: red (vencido o vence hoy) · amber (dentro de la ventana) ·
+    //          green (al día, o tarjeta con número) · nodata · na (No aplica)
+    function docState(doc, code, hoyIso, n) {
+      const k = KIND_BY[code];
+      const ventana = Math.max(MIN_DAYS, Number(n) || DEF_DAYS);
+      if (doc && doc.not_applicable) return { light: 'na', label: 'No aplica', days: null };
+      if (k && !k.expires) {
+        return doc && doc.number
+          ? { light: 'green', label: 'Registrada', days: null }
+          : { light: 'nodata', label: 'Sin dato', days: null };
+      }
+      if (!doc || !doc.expires_on) return { light: 'nodata', label: 'Sin dato', days: null };
+      const days = diffDays(doc.expires_on, hoyIso);
+      if (days < 0) return { light: 'red', label: 'Vencido hace ' + pl(-days, 'día', 'días'), days };
+      if (days === 0) return { light: 'red', label: 'Vence hoy', days };
+      if (days <= ventana) return { light: 'amber', label: 'Vence en ' + pl(days, 'día', 'días'), days };
+      return { light: 'green', label: 'Al día', days };
+    }
+    const COL = { red: 'var(--red)', amber: 'var(--amber)', green: 'var(--ink2)', nodata: 'var(--ink3)', na: 'var(--ink3)' };
+    const ICON = { red: 'i-warn', amber: 'i-clock', green: 'i-check', nodata: 'i-info', na: 'i-info' };
+    const pillCls = (light) => (light === 'na' ? 'nodata' : light);
+
+    const docOf = (vid, code) => st.docs.find((d) => d.vehicle_id === vid && d.kind === code) || null;
+    const vehOf = (vid) => (ptVehicles || []).find((v) => v.id === vid) || null;
+    const vehTag = (v) => (v && (v.internal_code || v.license_plate)) || '—';
+
+    // Todos los carro × documento con su estado.
+    function allRows() {
+      const h = hoy();
+      const out = [];
+      (ptVehicles || []).forEach((v) => KINDS.forEach((k) => {
+        const doc = docOf(v.id, k.code);
+        out.push({ v, k, doc, s: docState(doc, k.code, h, st.days) });
+      }));
+      return out;
+    }
+
+    // Lo que vence en la ventana y lo vencido, de la flota entera.
+    function fleetSummary() {
+      const rows = allRows();
+      const due = rows.filter((r) => r.s.light === 'red' || r.s.light === 'amber')
+        .sort((a, b) => (a.s.days - b.s.days) || String(vehTag(a.v)).localeCompare(String(vehTag(b.v))));
+      return {
+        rows, due,
+        vencidos: due.filter((r) => r.s.days < 0).length,
+        hoy: due.filter((r) => r.s.days === 0).length,
+        porVencer: due.filter((r) => r.s.days > 0).length,
+        sinDato: rows.filter((r) => r.s.light === 'nodata').length,
+      };
+    }
+
+    // ------------------------------------------------------------------
+    // Carga (nunca lanza: un error queda escrito y se dice en pantalla)
+    // ------------------------------------------------------------------
+    async function load() {
+      const A = window.Api || {};
+      if (typeof A.listVehicleDocuments !== 'function') {
+        st.loaded = true; st.err = 'la app no trae la lectura de documentos'; st.docs = [];
+        return;
+      }
+      const [docs, days, run] = await Promise.all([
+        A.listVehicleDocuments().then((d) => ({ ok: d || [] }), (e) => ({ err: e })),
+        typeof A.getVehicleDocAlertDays === 'function' ? A.getVehicleDocAlertDays().catch(() => null) : null,
+        typeof A.getVehicleDocLastRun === 'function' ? A.getVehicleDocLastRun().catch(() => undefined) : undefined,
+      ]);
+      st.loaded = true;
+      if (docs.err) { st.err = String((docs.err && docs.err.message) || docs.err); st.docs = []; }
+      else { st.err = null; st.docs = docs.ok; }
+      const n = Number(days);
+      st.days = n >= MIN_DAYS && n <= MAX_DAYS ? n : DEF_DAYS;
+      st.lastRun = run;
+    }
+
+    // ------------------------------------------------------------------
+    // Resumen de la flota (arriba, en la vista Estado)
+    // ------------------------------------------------------------------
+    function fleetBox() {
+      let box = document.getElementById('ptd-flota');
+      if (box) return box;
+      const kpis = document.getElementById('pt-kpis');
+      if (!kpis || !kpis.parentNode) return null;
+      // Después de los indicadores de repuestos y antes de «Flota»: con su
+      // propio título, para que no se lean como parte del mismo bloque.
+      box = document.createElement('div');
+      box.id = 'ptd-flota';
+      kpis.parentNode.insertBefore(box, kpis.nextSibling);
+      return box;
+    }
+
+    function runTxt() {
+      if (st.lastRun === undefined) return '';
+      if (st.lastRun === null) return 'El aviso diario todavía no ha corrido.';
+      const d = st.lastRun.run_on;
+      return 'Aviso diario: corrió ' + (d === hoy() ? 'hoy' : 'el ' + fmt(d)) + '.';
+    }
+
+    function renderFleet() {
+      const box = fleetBox();
+      if (!box) return;
+      if (!st.loaded) { box.innerHTML = ''; return; }
+      const head = `<div class="sech"><h2>Documentos del carro</h2><span class="rule"></span>
+        <span class="hint">Avisa, no bloquea el carro</span></div>`;
+      if (st.err) {
+        box.innerHTML = head + `<div class="note"><svg><use href="#i-info"/></svg><span>
+          <b>No se pudieron leer los documentos del carro.</b> ${esc(st.err)}. Puede faltar la migración 0095.</span></div>`;
+        return;
+      }
+      if (!(ptVehicles || []).length) { box.innerHTML = ''; return; }
+      const f = fleetSummary();
+      const partes = [];
+      if (f.vencidos) partes.push(pl(f.vencidos, 'vencido', 'vencidos'));
+      if (f.hoy) partes.push(f.hoy + (f.hoy === 1 ? ' vence hoy' : ' vencen hoy'));
+      if (f.porVencer) partes.push(f.porVencer + ' por vencer');
+      const tone = f.vencidos || f.hoy ? 'red' : f.porVencer ? 'amber' : 'green';
+      const titulo = partes.length
+        ? `<b>Documentos: ${partes.join(' · ')}</b>${f.porVencer ? ` en los próximos ${st.days} días` : ''}.`
+        : `<b>Ningún documento vence en los próximos ${st.days} días.</b>`;
+      const sinDato = f.sinDato ? ` ${pl(f.sinDato, 'documento', 'documentos')} sin dato: se cargan desde cada carro.` : '';
+      const run = runTxt();
+      box.innerHTML = head + `
+        <div class="rule1" style="border-left-color:var(--${tone})${f.due.length ? ';margin-bottom:10px' : ''}">
+          <span class="ri" style="background:var(--${tone}-soft);color:var(--${tone})"><svg class="icon"><use href="#i-shield"/></svg></span>
+          <div class="rt">${titulo}${sinDato}${run ? ` <span style="color:var(--ink3)">${esc(run)}</span>` : ''}</div>
+          <button class="rbtn" data-ptd-alert title="Con cuántos días de anticipación se avisa"><svg><use href="#i-clock"/></svg>Avisar ${st.days} días antes</button>
+        </div>
+        ${f.due.length ? `<div id="ptd-due">${f.due.map(dueRow).join('')}</div>` : ''}`;
+    }
+
+    function dueRow(r) {
+      const det = [r.doc && r.doc.expires_on ? r.k.when + ' el ' + fmt(r.doc.expires_on) : '',
+        r.doc && r.doc.number ? 'Nº ' + r.doc.number : '', r.doc && r.doc.issuer ? r.doc.issuer : '']
+        .filter(Boolean).map(esc).join(' · ');
+      return `<div class="qrow ${r.s.light}" style="grid-template-columns:74px 1.5fr auto" data-ptd-row="${r.v.id}|${r.k.code}">
+        <div class="qv"><span class="tag">${esc(vehTag(r.v))}</span>
+          <span class="om">${esc(r.v.internal_code ? (r.v.license_plate || '') : '')}</span></div>
+        <div class="qp"><b>${esc(r.k.name)}</b><div class="sys">${det}</div></div>
+        <div class="qa">
+          <span class="st ${pillCls(r.s.light)}"><svg><use href="#${ICON[r.s.light]}"/></svg>${esc(r.s.label)}</span>
+          <button class="rbtn pri" data-ptd-edit="${r.v.id}|${r.k.code}"><svg><use href="#i-edit"/></svg>Actualizar</button>
+        </div>
+      </div>`;
+    }
+
+    // Los puntos de la tarjeta de cada carro (solo si hay algo que avisar).
+    function vcardDots(vid) {
+      if (!st.loaded || st.err) return '';
+      const h = hoy();
+      let vencidos = 0, deHoy = 0, ambar = 0;
+      KINDS.forEach((k) => {
+        const s = docState(docOf(vid, k.code), k.code, h, st.days);
+        if (s.light === 'red' && s.days < 0) vencidos++;
+        if (s.light === 'red' && s.days === 0) deHoy++;
+        if (s.light === 'amber') ambar++;
+      });
+      const dot = (col, txt) => `<span class="dot"><i style="background:var(--${col})"></i>${txt}</span>`;
+      return (vencidos ? dot('red', pl(vencidos, 'documento vencido', 'documentos vencidos')) : '')
+        + (deHoy ? dot('red', pl(deHoy, 'documento', 'documentos') + (deHoy === 1 ? ' vence hoy' : ' vencen hoy')) : '')
+        + (ambar ? dot('amber', pl(ambar, 'documento', 'documentos') + ' por vencer') : '');
+    }
+
+    // ------------------------------------------------------------------
+    // El apartado «Documentos» del detalle de cada carro
+    // ------------------------------------------------------------------
+    function vehicleCard(vid) {
+      const head = `<h2><svg class="icon"><use href="#i-shield"/></svg>Documentos del vehículo</h2>`;
+      if (!st.loaded) return '';
+      if (st.err) {
+        return `<div class="card" id="ptd-veh-card" data-vid="${esc(vid)}">${head}
+          <div class="note" style="margin-top:10px"><svg><use href="#i-info"/></svg><span>
+            <b>No se pudieron leer los documentos.</b> ${esc(st.err)}. Puede faltar la migración 0095.</span></div></div>`;
+      }
+      const h = hoy();
+      const rows = KINDS.map((k) => {
+        const doc = docOf(vid, k.code);
+        const s = docState(doc, k.code, h, st.days);
+        const extra = [doc && doc.number ? 'Nº ' + doc.number : '', doc && doc.issuer ? doc.issuer : ''].filter(Boolean).map(esc).join(' · ');
+        const fecha = !k.expires ? 'no vence' : (doc && doc.expires_on && !doc.not_applicable ? corta(doc.expires_on) : '—');
+        return `<div class="prow" data-ptd-row="${vid}|${k.code}">
+          <span class="pn"><span>${esc(k.name)}</span></span>
+          <span class="pi">${esc(fecha)}</span>
+          <span class="pb" style="font-size:11.5px;color:var(--ink3);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${extra}</span>
+          <span class="pr" style="color:${COL[s.light]}">${esc(s.label)}</span>
+          <span class="pa"><button class="mini" data-ptd-edit="${vid}|${k.code}" title="Editar ${esc(k.name)}">
+            <svg class="icon" style="width:14px;height:14px"><use href="#i-edit"/></svg></button></span>
+        </div>`;
+      }).join('');
+      return `<div class="card" id="ptd-veh-card" data-vid="${esc(vid)}">${head}
+        <p class="csub" style="font-size:12.5px;color:var(--ink2);margin:4px 0 14px">Se avisa ${st.days} días antes de que venzan. Un documento vencido no bloquea el carro.</p>
+        ${rows}</div>`;
+    }
+
+    // Repinta lo que muestra documentos sin mover la pantalla.
+    function refresh() {
+      renderFleet();
+      const card = document.getElementById('ptd-veh-card');
+      if (card) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = vehicleCard(card.dataset.vid);
+        if (tmp.firstElementChild) card.replaceWith(tmp.firstElementChild);
+      }
+      if (typeof ptRenderVcards === 'function' && typeof ptStatus !== 'undefined' && ptStatus.length) ptRenderVcards();
+    }
+
+    // ------------------------------------------------------------------
+    // Cajón: editar un documento (el mismo cajón de «Registrar cambio»)
+    // ------------------------------------------------------------------
+    function openDrawer(vid, code) {
+      const v = vehOf(vid), k = KIND_BY[code];
+      if (!v || !k) return;
+      if (!st.loaded || st.err) { toast('Los documentos del carro no están disponibles todavía.'); return; }
+      const doc = docOf(vid, code) || {};
+      const root = document.getElementById('parts-drawer-root');
+      if (!root) return;
+      root.innerHTML = `
+        <div class="scrim show" data-pt-close></div>
+        <aside class="drawer show" data-ptd-drawer="${esc(vid)}|${esc(code)}">
+          <div class="dh"><svg class="icon" style="width:18px;height:18px;color:var(--ink3)"><use href="#i-shield"/></svg>
+            <b>${esc(k.name)} · ${esc(vehTag(v))}</b>
+            <button class="mini" data-pt-close><svg class="icon"><use href="#i-x"/></svg></button></div>
+          <div class="db">
+            ${k.expires
+              ? `<div class="fld"><label>${esc(k.dateLabel)}</label><input class="mono" id="ptd-f-date" type="date" value="${esc(doc.expires_on || '')}"></div>`
+              : `<div class="note"><svg><use href="#i-info"/></svg><span>La tarjeta de propiedad <b>no vence</b>: basta con el número.</span></div>`}
+            <div class="frow">
+              <div class="fld"><label>Número</label><input class="mono" id="ptd-f-num" maxlength="60" placeholder="${esc(k.numPh)}" value="${esc(doc.number || '')}"></div>
+              <div class="fld"><label>${esc(k.issuer)}</label><input id="ptd-f-iss" maxlength="80" placeholder="Opcional" value="${esc(doc.issuer || '')}"></div>
+            </div>
+            <div class="fld"><label>Nota</label><textarea id="ptd-f-note" maxlength="500" placeholder="Opcional">${esc(doc.notes || '')}</textarea></div>
+            <label style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700;color:var(--ink);cursor:pointer">
+              <input type="checkbox" id="ptd-f-na" ${doc.not_applicable ? 'checked' : ''}>No aplica para este carro</label>
+            <div class="calc" id="ptd-f-calc"></div>
+            ${k.flota ? `<div class="note"><svg><use href="#i-info"/></svg><span>Es la misma fecha que se ve en <b>Flota</b>: al guardar aquí, allá queda igual.</span></div>` : ''}
+          </div>
+          <div class="df"><button class="btn ghost" data-pt-close>Cancelar</button>
+            <button class="btn" id="ptd-f-save"><svg class="icon"><use href="#i-save"/></svg>Guardar documento</button></div>
+        </aside>`;
+      calc();
+    }
+
+    function formValues() {
+      const dr = document.querySelector('[data-ptd-drawer]');
+      if (!dr) return null;
+      const [vid, code] = dr.dataset.ptdDrawer.split('|');
+      const k = KIND_BY[code];
+      const val = (id) => { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+      const na = document.getElementById('ptd-f-na');
+      return {
+        vid, code, k,
+        data: {
+          expiresOn: k && k.expires ? (val('ptd-f-date') || null) : null,
+          number: val('ptd-f-num') || null,
+          issuer: val('ptd-f-iss') || null,
+          notes: val('ptd-f-note') || null,
+          notApplicable: !!(na && na.checked),
+        },
+      };
+    }
+
+    // Cómo queda con lo que está escrito, antes de guardar.
+    function calc() {
+      const f = formValues();
+      const box = document.getElementById('ptd-f-calc');
+      if (!f || !box) return;
+      const s = docState({ expires_on: f.data.expiresOn, number: f.data.number, not_applicable: f.data.notApplicable }, f.code, hoy(), st.days);
+      const msg = s.light === 'na'
+        ? 'No se calcula ni se avisa para este carro.'
+        : s.light === 'nodata'
+          ? (f.k.expires ? 'Sin fecha no se calcula ni se avisa: queda pidiendo el dato.' : 'Sin número queda pidiendo el dato.')
+          : !f.k.expires
+            ? 'No vence, así que no genera avisos.'
+            : `A los jefes se les avisa ${st.days} días antes, a los 15, 7 y 1 día, el día que vence y, ya vencido, una vez por semana. Nunca bloquea el carro.`;
+      box.innerHTML = `<div class="ct2">Así queda</div>
+        <div class="big"><b style="color:${COL[s.light]};font-size:19px">${esc(s.label)}</b></div>
+        <div class="msg">${msg}</div>`;
+    }
+
+    function errText(e) {
+      const m = String((e && e.message) || e || '');
+      if (m.includes('NOT_ADMIN')) return 'Solo el administrador puede editar los documentos del carro.';
+      if (m.includes('VEHICLE_NOT_FOUND')) return 'Ese carro ya no está en la flota.';
+      if (m.includes('BAD_DATE')) return 'Esa fecha de vencimiento no se ve bien. Revísala.';
+      if (m.includes('BAD_KIND')) return 'Ese documento no se reconoce.';
+      if (m.includes('vehicle_documents_len')) return 'Algún texto quedó muy largo.';
+      if (m.includes('app_settings_vehicle_doc_alert_days_range')) return 'Tiene que ser entre ' + MIN_DAYS + ' y ' + MAX_DAYS + ' días.';
+      if (/save_vehicle_document|vehicle_documents|vehicle_doc_alert_days/.test(m) && /not find|does not exist|schema cache/i.test(m)) {
+        return 'La base todavía no tiene los documentos del carro (falta la migración 0095).';
+      }
+      return m || 'No se pudo guardar.';
+    }
+
+    async function save() {
+      const f = formValues();
+      if (!f || !f.k) return;
+      const btn = document.getElementById('ptd-f-save');
+      if (btn) btn.disabled = true;
+      try {
+        await Api.saveVehicleDocument(f.vid, f.code, f.data);
+        ptCloseDrawer();
+        await load();
+        refresh();
+        const s = docState(docOf(f.vid, f.code), f.code, hoy(), st.days);
+        toast(`Guardado: ${f.k.name} de ${vehTag(vehOf(f.vid))} · ${s.label}.`);
+      } catch (e) {
+        if (btn) btn.disabled = false;
+        toast(errText(e));
+      }
+    }
+
+    async function editAlertDays() {
+      const cur = st.days;
+      const val = prompt(`¿Con cuántos días de anticipación avisar que vence un documento? Mínimo ${MIN_DAYS} (un mes), máximo ${MAX_DAYS}:`, cur);
+      if (val == null) return;
+      const n = parseInt(String(val).replace(/\D/g, ''), 10);
+      if (!n || n < MIN_DAYS || n > MAX_DAYS) {
+        toast(`Tiene que ser entre ${MIN_DAYS} y ${MAX_DAYS} días: la regla es avisar al menos con un mes.`);
+        return;
+      }
+      if (n === cur) return;
+      try {
+        await Api.setVehicleDocAlertDays(n);
+        // Se relee: si la base no lo tomó (sin permiso), no se finge que quedó.
+        const back = await Api.getVehicleDocAlertDays();
+        if (back !== n) { toast('No se guardó el cambio. Revisa que tu usuario sea administrador.'); return; }
+        st.days = n;
+        refresh();
+        toast(`Listo: se avisa ${n} días antes de que venza un documento.`);
+      } catch (e) {
+        toast(errText(e));
+      }
+    }
+
+    // Enlace del aviso: abre el carro y baja a sus documentos. Si el carro ya no
+    // está en la flota (lo borraron después del aviso), se dice y queda el
+    // resumen de documentos a la vista, que es de lo que hablaba el aviso.
+    function openVehicle(vid) {
+      if (typeof ptByVeh !== 'function' || !ptByVeh(vid).length) {
+        toast('Ese carro ya no está en la flota. Abajo, los documentos de los demás.');
+        const box = document.getElementById('ptd-flota');
+        if (box && typeof box.scrollIntoView === 'function') box.scrollIntoView({ block: 'start' });
+        return;
+      }
+      renderPartsVehicle(vid);
+      const card = document.getElementById('ptd-veh-card');
+      if (card && typeof card.scrollIntoView === 'function') card.scrollIntoView({ block: 'start' });
+    }
+    function takeFocus() { const f = st.focus; st.focus = null; return f; }
+    function focus(vid) { st.focus = vid || null; }
+
+    // ------------------------------------------------------------------
+    // Eventos (delegados). El cierre del cajón lo hace el [data-pt-close]
+    // de arriba, que es el mismo cajón.
+    // ------------------------------------------------------------------
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest || !e.target.closest('#parts-ui')) return;
+      const ed = e.target.closest('[data-ptd-edit]');
+      if (ed) { const [vid, code] = ed.dataset.ptdEdit.split('|'); openDrawer(vid, code); return; }
+      if (e.target.closest('[data-ptd-alert]')) { editAlertDays(); return; }
+      if (e.target.closest('#ptd-f-save')) { save(); }
+    });
+    document.addEventListener('input', (e) => { if (e.target.closest && e.target.closest('[data-ptd-drawer]')) calc(); });
+    document.addEventListener('change', (e) => { if (e.target.closest && e.target.closest('[data-ptd-drawer]')) calc(); });
+
+    // ── enlace profundo #/repuestos?veh=<vehicle_id> (solo el jefe) ─────────
+    // Es la URL de la push diaria (vehicle_docs_run_daily, 0095). core.js
+    // (applyDeepLink) no la conoce: devuelve false SIN tocar el hash y cae a la
+    // consola. Por eso este módulo la resuelve solo, igual que Cuentas de cobro
+    // y Coordinación: en hashchange (la app ya abierta: el service worker solo
+    // cambia el hash) y, en frío, cuando core termina de entrar.
+    const esJefe = () => {
+      try { return typeof state !== 'undefined' && !!state && !!state.profile && state.profile.role === 'admin'; }
+      catch (_) { return false; }
+    };
+    function leerHash() {
+      const m = String(location.hash || '').match(/^#\/repuestos(?:\?(.*))?$/i);
+      if (!m) return null;
+      return { veh: new URLSearchParams(m[1] || '').get('veh') || null };
+    }
+    // Consume el hash y abre Repuestos (con el carro, si viene). true = lo tomó.
+    function tomarHash() {
+      const d = leerHash(); if (!d || !esJefe()) return false;
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (_) { /* */ }
+      if (d.veh) st.focus = d.veh;           // renderParts lo toma al terminar de cargar
+      if (typeof setTab === 'function') setTab('parts');               // core.js (ámbito global)
+      else if (typeof renderParts === 'function') renderParts();
+      return true;
+    }
+    window.addEventListener('hashchange', () => { try { tomarHash(); } catch (_) { /* */ } });
+    // En frío: core.enterApp llama applyDeepLink (false) y hace setTab('consola').
+    // Se espera a ESE setTab —state.activeTab deja de ser el de arranque— y recién
+    // ahí se abre Repuestos; antes, enterApp la pisaría con la consola. Tope: 60 s.
+    // Si quien entra no es jefe, el hash no se toca.
+    (function ptdDeepLinkAlArrancar() {
+      if (!leerHash()) return;
+      let inicial;
+      try { inicial = (typeof state !== 'undefined' && state) ? state.activeTab : undefined; } catch (_) { /* */ }
+      let n = 0;
+      const iv = setInterval(() => {
+        n++;
+        let rol = null, entro = false;
+        try {
+          rol = (typeof state !== 'undefined' && state && state.profile) ? state.profile.role : null;
+          entro = !!rol && state.activeTab !== inicial;
+        } catch (_) { /* */ }
+        if (entro || (!!rol && rol !== 'admin') || n > 240 || !leerHash()) {
+          clearInterval(iv);
+          if (entro && rol === 'admin') { try { tomarHash(); } catch (_) { /* */ } }
+        }
+      }, 250);
+    })();
+
+    // Igual que window.renderCobro.focus: si algún día core.applyDeepLink conoce
+    // #/repuestos, puede pasar el carro con renderParts.focus(vid) antes de
+    // setTab('parts'). Mientras tanto lo usa tomarHash (arriba).
+    if (typeof renderParts === 'function') renderParts.focus = focus;
+
+    window.RepuestosDocs = {
+      KINDS, load, renderFleet, vehicleCard, vcardDots, openVehicle, takeFocus, focus,
+      docState, fleetSummary, _st: st,
+    };
+  })();

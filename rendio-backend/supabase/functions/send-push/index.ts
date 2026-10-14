@@ -65,7 +65,7 @@ Deno.serve(async (req: Request) => {
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch { return json({ error: "Invalid JSON body" }, 400); }
   const profileIds = Array.isArray(body.profileIds) ? (body.profileIds as string[]).filter(Boolean) : [];
-  const title = String(body.title ?? "Rendio Turnos").slice(0, 120);
+  const title = String(body.title ?? "Rendio").slice(0, 120);
   const text = String(body.body ?? "").slice(0, 300);
   const clickUrl = String(body.url ?? "/");
   if (!profileIds.length) return json({ sent: 0, failed: 0 });

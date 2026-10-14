@@ -51,6 +51,21 @@
   const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+  // ── Rediseño (P5, 27-sep-2026) ───────────────────────────────────────────
+  // Con el shell nuevo encendido, el paso se pinta con el aspecto rx (rx-opt,
+  // rx-input search, rx-lbl, rx-note) y el MISMO contrato: data-ax="res-*",
+  // #axr-q, .axr-list, .axr-hint, .axr-search. Apagado, todo como siempre.
+  const rxOn = () => {
+    try { return !!(window.AuxShell && typeof AuxShell.on === 'function' && AuxShell.on() && window.AuxRxUI); }
+    catch (_) { return false; }
+  };
+  const rxIc = (n, sz) => (window.AuxRxUI ? AuxRxUI.ic(n, sz) : '');
+  // El aviso: con el rediseño, el toast del shell; si no, el de siempre.
+  function say(msg, icon) {
+    try { if (rxOn() && typeof AuxShell.toast === 'function') { AuxShell.toast(msg, icon || 'Check'); return; } } catch (_) { /* */ }
+    if (typeof toast === 'function') toast(msg);
+  }
+
   // ---------- carga ----------
   // Se llama al entrar al rol y al arrancar un pedido. Si falla, no se bloquea
   // al auxiliar: cae al camino manual, que es el que existía antes de este archivo.
@@ -80,6 +95,7 @@
         && (A.stepKind ? A.stepKind() === 'donde' : A.state.step === 3);
       st.loading = false;
       if (enDonde) A.rerender();
+      else if (pickerOpen()) { try { AuxShell.render(); } catch (_) { /* */ } }
     }
   }
 
@@ -118,6 +134,7 @@
     const a = unitN(1), b = unitN(2);
     if (!a || !b) return '';
     const c = chosenN(f);
+    if (rxOn()) return rxUnitChooserHTML(a, b, c);
     return `
       <div class="axr-lbl">¿De cuál sales?</div>
       ${unitCardHTML(a, c === 1)}
@@ -195,6 +212,7 @@
   function html(f) {
     if (f.manualAddr) return null;
     if (st.loading || (!st.cat && !st.failed)) {
+      if (rxOn()) return `<div class="rx-pd-load rx-in"><span class="rx-spin dk"></span>Cargando los puntos de recogida…</div>`;
       return `<div class="axr-load"><span class="axr-spin"></span>Cargando los puntos de recogida…</div>`;
     }
     if (st.failed || !st.cat || !st.cat.length) return null;
@@ -209,6 +227,7 @@
   }
 
   function pickHTML(f) {
+    if (rxOn()) return rxPickHTML(f);
     const isLle = f.type === 'lle';
     const saved = savedRes();
     const q = st.q;
@@ -275,6 +294,7 @@
   function confirmHTML(f, compacto) {
     const r = byId(f.residenceId) || st.place?.residence;
     if (!r) return null;
+    if (rxOn()) return rxConfirmHTML(f, r, compacto);
     const isLle = f.type === 'lle';
     const yaEsSuPunto = compacto || st.place?.residenceId === r.id;
     return `
@@ -409,9 +429,9 @@
       if (!st.place) st.place = {};
       st.place.residenceId = f.residenceId;
       st.place.residence = byId(f.residenceId);
-      if (typeof toast === 'function') toast('Listo — la próxima vez lo tendrás de una.');
+      say('Listo — la próxima vez lo tendrás de una.');
     } catch (_) {
-      if (typeof toast === 'function') toast('No se pudo guardar tu punto. Puedes seguir con el traslado igual.');
+      say('No se pudo guardar tu punto. Puedes seguir con el traslado igual.', 'AlertTriangle');
     } finally {
       st.saving = false;
       if (window.Auxiliar?.rerender) window.Auxiliar.rerender();
@@ -422,6 +442,7 @@
   // remontar el input y perder el foco/cursor en cada tecla.
   function onQuery(v, f) {
     st.q = v;
+    if (rxOn()) return rxOnQuery(v, f);
     const cont = document.querySelector('.axr-list');
     if (!cont) { return false; }
     const tmp = document.createElement('div');
@@ -459,9 +480,281 @@
   // `dondeForced` del «Cambiar» vive en el form, que auxiliar.js crea nuevo.)
   function newTrip() { st.otro = false; st.q = ''; st.picking = false; }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // ASPECTO RX DEL PASO DEL PUNTO (P5, 27-sep-2026)
+  // Mismas acciones (res-*), mismo #axr-q y mismas clases de enganche
+  // (.axr-list, .axr-hint, .axr-search, .axr-clear), con el marcado del
+  // diseño: rx-opt (con radio), rx-input search, rx-lbl y rx-note.
+  // ════════════════════════════════════════════════════════════════════════
+  const matches = (q) => q ? (st.cat || []).filter(r => norm(r.name + ' ' + (r.sector || '')).includes(norm(q))) : [];
+
+  // Una opción del diseño (rx-book.jsx paso 2). `attrs` va tal cual.
+  function rxOptHTML(o) {
+    return `<button type="button" class="rx-opt rx-in${o.on ? ' on' : ''}${o.dashed ? ' dashed' : ''}" style="--d:${o.d || 0}" ${o.attrs || ''}>`
+      + `<span class="rx-opt-ic">${rxIc(o.icon, 18)}</span>`
+      + `<span class="rx-opt-tx"><b>${esc(o.title)}</b>${o.sub ? `<span>${esc(o.sub)}</span>` : ''}</span>`
+      + (o.radio === false ? '' : `<span class="rx-radio"><i></i></span>`)
+      + `</button>`;
+  }
+  function rxUnitChooserHTML(a, b, c) {
+    const u = (x, d) => rxOptHTML({
+      icon: 'Home', title: x.unit || ('Unidad ' + x.n),
+      sub: x.res.name + (x.res.sector ? ' · ' + x.res.sector : ''),
+      on: c === x.n, d,
+      attrs: `data-ax="res-unit" data-n="${x.n}" data-rx-key="unit:${x.n}"`,
+    });
+    return `<div class="rx-lbl">¿De cuál sales?</div>` + u(a, 0) + u(b, 1)
+      + rxOptHTML({ icon: 'MapPin', title: 'Hoy salgo de otro lado', sub: 'Busca otro conjunto del catálogo',
+        attrs: 'data-ax="res-otro" data-rx-key="res-otro"', d: 2, dashed: true, radio: false });
+  }
+  function rxRowHTML(r, i, attrs, on) {
+    return rxOptHTML({
+      icon: 'MapPin', title: r.name, sub: [r.sector, r.access_note].filter(Boolean).join(' · '),
+      on: !!on, d: i, attrs,
+    });
+  }
+  function rxNoneHTML(q, manual) {
+    return `<div class="rx-note" data-rx-key="none:${esc(q)}">${rxIc('Info', 15)}<span><b>No encontramos «${esc(q)}».</b> `
+      + `Puede que tu conjunto no esté en el catálogo todavía.${manual ? ' Abajo puedes escribir la dirección.' : ''}</span></div>`;
+  }
+  function rxListInner(q) {
+    if (!q) return '';
+    const list = matches(q);
+    return list.length
+      ? list.map((r, i) => rxRowHTML(r, i, `data-ax="res-pick" data-id="${esc(r.id)}" data-rx-key="res:${esc(r.id)}"`)).join('')
+      : rxNoneHTML(q, true);
+  }
+  const rxClearHTML = () => `<button type="button" class="rx-pd-search-clear axr-clear" data-ax="res-clear" aria-label="Limpiar">${rxIc('X', 16)}</button>`;
+
+  function rxPickHTML(f) {
+    const isLle = f.type === 'lle';
+    const saved = savedRes();
+    const q = st.q;
+    let h = `<div class="rx-note">${rxIc('Info', 15)}<span>${isLle
+      ? 'Elige dónde te dejamos. Ya tenemos ubicadas las porterías de Rionegro.'
+      : 'Elige el punto. Ya tenemos ubicadas las porterías de Rionegro.'}</span></div>`;
+    // «Tu punto» se esconde (no se quita) mientras hay texto: así la forma del
+    // paso no cambia al escribir y un repintado no rehace el buscador.
+    if (saved) {
+      h += `<div class="rx-lbl" data-rx-key="saved-lbl"${q ? ' hidden' : ''}>Tu punto</div>`
+        + rxOptHTML({ icon: 'Home', title: saved.name, sub: [saved.sector, 'Ubicación verificada'].filter(Boolean).join(' · '),
+          attrs: `data-ax="res-pick" data-id="${esc(saved.id)}" data-rx-key="saved"${q ? ' hidden' : ''}`, d: 0 });
+    }
+    h += `<div class="rx-lbl" data-rx-key="search-lbl">${saved && !q ? 'Otro punto' : 'Busca tu conjunto'}</div>`;
+    h += `<div class="rx-input search axr-search rx-in" style="--d:1" data-rx-key="search">${rxIc('Search', 18)}`
+      + `<input id="axr-q" type="text" value="${esc(q)}" placeholder="Busca tu conjunto o sector" autocomplete="off" />`
+      + (q ? rxClearHTML() : '') + `</div>`;
+    h += `<div class="rx-note axr-hint"${q ? ' hidden' : ''}>${rxIc('Info', 15)}<span>Escribe el nombre de tu conjunto o el sector.</span></div>`;
+    h += `<div class="rx-list axr-list">${rxListInner(q)}</div>`;
+    h += rxOptHTML({ icon: 'Plus', title: 'Mi punto no está en la lista', sub: 'Escribe la dirección y ubica el pin',
+      attrs: 'data-ax="res-manual" data-rx-key="manual"', d: 2, dashed: true, radio: false });
+    return h;
+  }
+
+  function rxConfirmHTML(f, r, compacto) {
+    const isLle = f.type === 'lle';
+    const yaEsSuPunto = compacto || st.place?.residenceId === r.id;
+    let h = '';
+    if (!compacto) {
+      h += `<div class="rx-opt on rx-in" style="--d:0" data-rx-key="picked:${esc(r.id)}">`
+        + `<span class="rx-opt-ic">${rxIc('Home', 18)}</span>`
+        + `<span class="rx-opt-tx"><b>${esc(r.name)}</b>${r.sector ? `<span>${esc(r.sector)}</span>` : ''}</span>`
+        + `<button type="button" class="rx-pd-link" data-ax="res-change">Cambiar</button></div>`;
+    }
+    if (f.placeAuto) {
+      h += `<div class="rx-note ok rx-in" style="--d:1">${rxIc('Check', 15)}<span>Es el punto que dejaste en tu registro. Si hoy sales de otro lado, toca «Cambiar».</span></div>`;
+    }
+    h += `<div id="axr-map" class="rx-pd-map rx-in" style="--d:2" data-rx-keep="1"></div>`;
+    h += `<div class="rx-note ok rx-in" style="--d:3">${rxIc('Check', 15)}<span><b>Ubicación verificada.</b> No necesitas mover el pin. ${isLle ? 'Ahí te dejamos.' : 'Ahí te recogemos.'}</span></div>`;
+    if (r.access_note) h += `<div class="rx-note">${rxIc('MapPin', 15)}<span>${esc(r.access_note)}</span></div>`;
+    if (!yaEsSuPunto && window.AuxRxUI) {
+      h += AuxRxUI.btn(st.saving ? 'Guardando…' : 'Guardar como mi punto',
+        { kind: 'sec', icon: 'Home', attrs: { 'data-ax': 'res-save' }, disabled: st.saving });
+    }
+    return h;
+  }
+
+  // Filas que siguen en la lista se QUEDAN (no vuelven a «entrar» en cada
+  // tecla); las nuevas entran con su rx-in. Como las filas con key de React.
+  function rxReconcile(cont, html) {
+    const t = document.createElement('template');
+    t.innerHTML = html;
+    const fresh = [...t.content.children];
+    const old = new Map([...cont.children].map(n => [n.getAttribute('data-rx-key'), n]));
+    const out = fresh.map(n => {
+      const k = n.getAttribute('data-rx-key');
+      const o = k != null ? old.get(k) : null;
+      if (o) { old.delete(k); return o; }
+      return n;
+    });
+    old.forEach(n => n.remove());
+    out.forEach((n, i) => { if (cont.children[i] !== n) cont.insertBefore(n, cont.children[i] || null); });
+  }
+  function rxOnQuery(v) {
+    const inp = document.getElementById('axr-q');
+    const box = (inp && inp.closest('[data-scr]')) || document;
+    const cont = box.querySelector('.axr-list');
+    if (!cont) return false;
+    rxReconcile(cont, rxListInner(v));
+    const hint = box.querySelector('.axr-hint');
+    if (hint) hint.hidden = !!v;
+    const sv = box.querySelectorAll('[data-rx-key="saved-lbl"], [data-rx-key="saved"]');
+    sv.forEach(n => { n.hidden = !!v; });
+    const lbl = box.querySelector('[data-rx-key="search-lbl"]');
+    if (lbl) lbl.textContent = (sv.length && !v) ? 'Otro punto' : 'Busca tu conjunto';
+    const search = box.querySelector('.axr-search');
+    if (search) {
+      const has = search.querySelector('.axr-clear');
+      if (v && !has) search.insertAdjacentHTML('beforeend', rxClearHTML());
+      else if (!v && has) has.remove();
+    }
+    return true;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // MI RESIDENCIA DESDE PERFIL (pila «residence», plan final §3.10 #27)
+  // Estado PROPIO: no lee ni escribe auxState.form, y no usa data-ax res-* ni
+  // data-field (auxiliar.js los ignora fuera del pedido). Acciones data-rx:
+  // res-p-pick, res-p-save, res-p-retry; buscador data-rx-field="res-q".
+  // Guarda con Api.saveMyResidence (solo el conjunto; el apartamento no).
+  // ════════════════════════════════════════════════════════════════════════
+  const pst = { q: '', sel: null, saving: false };
+  const hdr = () => (window.Auxiliar && window.Auxiliar.header) || null;
+  function pickerOpen() {
+    try { return !!(window.AuxShell && typeof AuxShell.current === 'function' && (AuxShell.current() || {}).id === 'residence'); }
+    catch (_) { return false; }
+  }
+  function curResId() {
+    const H = hdr();
+    return (H && H.residenceId) || (st.place && st.place.residenceId) || null;
+  }
+  function curRes() {
+    const id = curResId(); if (!id) return null;
+    const H = hdr();
+    return byId(id) || (H && H.residence && H.residence.id === id ? H.residence : null)
+      || (st.place && st.place.residence && st.place.residence.id === id ? st.place.residence : null);
+  }
+  function pickerReset() { pst.q = ''; pst.sel = null; pst.saving = false; }
+  function pOpt(r, on, d, key) {
+    return rxOptHTML({ icon: 'Home', title: r.name, sub: r.sector || '', on, d,
+      attrs: `data-rx="res-p-pick" data-id="${esc(r.id)}" data-rx-key="${key}"` });
+  }
+  function pListInner() {
+    const q = pst.q; if (!q) return '';
+    const list = matches(q);
+    return list.length
+      ? list.map((r, i) => rxRowHTML(r, i, `data-rx="res-p-pick" data-id="${esc(r.id)}" data-rx-key="pr:${esc(r.id)}"`, pst.sel === r.id)).join('')
+      : rxNoneHTML(q, false);
+  }
+  // El cuerpo del selector (sin cabecera ni pie): lo usa la pila «residence».
+  function pickerHTML(o) {
+    o = o || {};
+    bindPicker();
+    if (!st.cat && !st.loading && !st.failed) load();
+    if (st.loading || (!st.cat && !st.failed)) {
+      return `<div class="rx-pd-load"><span class="rx-spin dk"></span>Cargando el catálogo de conjuntos…</div>`;
+    }
+    if (!st.cat || !st.cat.length) {
+      return `<div class="rx-note bad">${rxIc('AlertTriangle', 15)}<span>No pudimos cargar el catálogo de conjuntos. Vuelve a intentarlo en un momento.</span></div>`
+        + (window.AuxRxUI ? AuxRxUI.btn('Reintentar', { kind: 'ghost', icon: 'Refresh', attrs: { 'data-rx': 'res-p-retry' } }) : '');
+    }
+    const cur = curRes();
+    const sel = pst.sel || (cur && cur.id) || null;
+    let h = `<div class="rx-lbl">Tu residencia</div>`;
+    h += cur ? pOpt(cur, sel === cur.id, 0, 'p:cur')
+      : `<div class="rx-note">${rxIc('Info', 15)}<span>Todavía no tienes una residencia guardada. Búscala abajo.</span></div>`;
+    const nueva = (pst.sel && (!cur || pst.sel !== cur.id)) ? byId(pst.sel) : null;
+    if (nueva) {
+      h += pOpt(nueva, true, 1, 'p:new:' + esc(nueva.id));
+      h += `<div class="rx-note">${rxIc('Info', 15)}<span>Aquí solo cambia el conjunto. Si también cambió tu apartamento, avísale a Coordinación.</span></div>`;
+    }
+    h += `<div class="rx-lbl">${cur ? 'Cambiarla por otra' : 'Busca tu conjunto'}</div>`;
+    h += `<div class="rx-input search rx-in" style="--d:2" data-rx-key="p-search">${rxIc('Search', 18)}`
+      + `<input type="text" data-rx-field="res-q" value="${esc(pst.q)}" placeholder="Busca tu conjunto o sector" autocomplete="off" aria-label="Buscar conjunto" /></div>`;
+    h += `<div class="rx-list" data-rx-res-list>${pListInner()}</div>`;
+    const H = hdr();
+    if (H && H.residenceId2) {
+      const r2 = byId(H.residenceId2) || H.residence2 || null;
+      const nom = r2 ? r2.name + (H.unit2 ? ' · ' + H.unit2 : '') : '';
+      h += `<div class="rx-note">${rxIc('Info', 15)}<span>Tu segunda unidad${nom ? ' (' + esc(nom) + ')' : ''} no se cambia aquí: para cambiarla, escríbele a Coordinación.</span></div>`;
+    }
+    return h;
+  }
+  function pickerFootHTML() {
+    const can = !!pst.sel && pst.sel !== curResId() && !pst.saving;
+    return window.AuxRxUI ? AuxRxUI.btn(pst.saving ? 'Guardando…' : 'Guardar',
+      { attrs: { 'data-rx': 'res-p-save', 'aria-disabled': can ? 'false' : 'true' }, disabled: !can }) : '';
+  }
+  function pickerScreenHTML() {
+    const head = window.AuxRxUI ? AuxRxUI.head({ title: 'Mi residencia', back: true }) : '';
+    return `<div class="rx-scr">${head}<div class="rx-body">${pickerHTML({ mode: 'perfil' })}</div>`
+      + `<div class="rx-foot">${pickerFootHTML()}</div></div>`;
+  }
+  function repaintPicker() {
+    if (pickerOpen()) { try { AuxShell.render(); } catch (_) { /* */ } }
+  }
+  function pickerPick(id) {
+    if (!id || pst.saving) return;
+    pst.sel = id === curResId() ? null : id;
+    pst.q = '';
+    repaintPicker();
+  }
+  async function pickerSave() {
+    if (pst.saving || !pst.sel || pst.sel === curResId()) return;
+    if (!window.Api || typeof Api.saveMyResidence !== 'function') { say('No se pudo guardar tu residencia. Intenta otra vez.', 'AlertTriangle'); return; }
+    const id = pst.sel;
+    pst.saving = true; repaintPicker();
+    try {
+      await Api.saveMyResidence(id);
+      const r = byId(id);
+      const H = hdr();
+      if (H) { H.residenceId = id; if (r) H.residence = { id: r.id, name: r.name, sector: r.sector || null }; }
+      if (!st.place) st.place = {};
+      st.place.residenceId = id; if (r) st.place.residence = r;
+      pickerReset();
+      say('Listo, tu residencia quedó guardada.');
+      if (pickerOpen() && typeof AuxShell.pop === 'function') AuxShell.pop(); else repaintPicker();
+    } catch (_) {
+      pst.saving = false; repaintPicker();
+      say('No se pudo guardar tu residencia. Intenta otra vez.', 'AlertTriangle');
+    }
+  }
+  // El buscador del selector: repinta SOLO su lista (el campo no se remonta).
+  function bindPicker() {
+    const r = document.getElementById('auxiliar-ui');
+    if (!r || r.__rxResPickerBound) return;
+    r.__rxResPickerBound = true;
+    r.addEventListener('input', (e) => {
+      const t = e.target;
+      if (!t || !t.matches || !t.matches('[data-rx-field="res-q"]')) return;
+      pst.q = t.value;
+      const box = t.closest('[data-scr]') || r;
+      const cont = box.querySelector('[data-rx-res-list]');
+      if (cont) rxReconcile(cont, pListInner());
+    });
+  }
+  (function registerPicker() {
+    const Sh = window.AuxShell;
+    if (!Sh || typeof Sh.action !== 'function') return;
+    Sh.action('res-p-pick', (el) => pickerPick(el.getAttribute('data-id')));
+    Sh.action('res-p-save', () => { pickerSave(); });
+    Sh.action('res-p-retry', () => { retry(); repaintPicker(); });
+    // Pantalla por defecto de la pila «residence». Si Perfil (P7) registra la
+    // suya después, esa manda (register reemplaza).
+    if (typeof Sh.register === 'function' && !(typeof Sh.registered === 'function' && Sh.registered('residence'))) {
+      Sh.register('residence', {
+        render(ctx) { if (ctx && ctx.reason === 'enter') pickerReset(); return pickerScreenHTML(); },
+        after() { bindPicker(); },
+      });
+    }
+  })();
+
   window.AuxResidencias = {
     load, html, handle, afterRender, ready, onQuery, destroyMap, newTrip,
     autofill, retry, forcePick,
+    // Mi residencia desde Perfil (estado propio, nunca auxState.form).
+    pickerHTML, pickerFootHTML, pickerScreenHTML, pickerReset,
+    pickerState: () => ({ q: pst.q, sel: pst.sel, saving: pst.saving }),
     hasCatalog: () => !!(st.cat && st.cat.length),
     // El catálogo no está disponible (falló o llegó vacío). No es lo mismo que
     // «no hay conjuntos»: hoy la causa más común es entrar sin sesión, y ahí la

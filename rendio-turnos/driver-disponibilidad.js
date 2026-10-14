@@ -84,6 +84,8 @@
     fileText: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
     messageCircle: '<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
     arrowRight: '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
+    // «Mi celular» del Perfil (driver-celular.js, 11-oct-2026).
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
   };
   function avIcon(name, size = 16, sw = 1.5) {
     return `<svg class="lucide" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
@@ -199,7 +201,9 @@
          <span class="rc-note-ic">${avIcon(icon, 17)}</span><span>${html}</span>
        </div>`;
     if (isSuspended()) {
-      return note('err', 'alert', '<b>Tu cuenta está suspendida.</b> No entras a la programación hasta que tu jefe te reactive.');
+      const motivo = state.profile && state.profile.suspended_reason;
+      return note('err', 'alert', '<b>Tu cuenta está suspendida.</b> No entras a la programación ni inicias turno hasta que tu jefe te reactive.'
+        + (motivo ? `<br><b>Motivo:</b> ${escapeHtml(motivo)}` : ''));
     }
     const reopen = reopenInfo(state.currentWeek);
     if (reopen.active) {
@@ -292,6 +296,8 @@
           style="flex:1;height:42px;font-size:13.5px;border-radius:12px">Volver todo a «Puedo»</button>
       </div>
 
+      ${avDoblarHtml(week)}
+
       <p style="font-size:12px;color:var(--r-text-3);line-height:1.5;margin:14px 2px 0">
         Cada toque cambia la jornada: Puedo → Prefiero no → No puedo → Puedo. Arrastra para
         aplicar lo mismo a varias seguidas, o toca el día para mañana y tarde a la vez.
@@ -314,6 +320,22 @@
     avBindScreen();
     avUpdateNavBadge(pend);
     updateDriverGreeting();
+  }
+
+  // «Puedo doblar» (27-sep-2026, D7): los días en que el conductor acepta una
+  // doble si hace falta (mañana y tarde, o tarde y la madrugada siguiente). No
+  // lo pone a doblar: solo le dice al jefe quién está dispuesto. Se guarda en
+  // shift_pref = 'both' de ese día, con el resto de la semana.
+  function avDoblarHtml(week) {
+    const on = (k) => (state.ownAvail && state.ownAvail[k] && state.ownAvail[k].shift_pref) === 'both';
+    return `
+      <div class="av-dbl-box rc-in d2">
+        <b>¿Qué días puedes doblar?</b>
+        <span>Si hace falta, tu jefe te puede poner mañana y tarde, o tarde y la madrugada siguiente. Marca solo los días en que te sirve.</span>
+        <div class="av-dbl-row">
+          ${week.map(d => `<button class="av-dbl" type="button" data-dbl="${d.key}" aria-pressed="${on(d.key)}">${d.label.slice(0, 3)}</button>`).join('')}
+        </div>
+      </div>`;
   }
 
   function avCellHtml(dayKey, shift) {
@@ -592,7 +614,8 @@
     const note = $('#av-save-note');
     if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
     try {
-      await Api.saveDriverWeekAvailability(state.profile.id, state.currentWeek, avPayloadConfirmado());
+      const res = await Api.saveDriverWeekAvailability(state.profile.id, state.currentWeek, avPayloadConfirmado());
+      if (res && res.dobleSinGuardar) toast('Tu semana quedó guardada, pero «Puedo doblar» todavía no se puede guardar. Avísale a tu jefe.');
       avUI.dirty = false;
       avUI.saved = true;
       await refreshDriverView();
@@ -617,6 +640,18 @@
       avPaint(avCells().map(c => c.id), 'puedo');
       avSetHint('puedo');
     });
+
+    document.querySelectorAll('[data-dbl]').forEach(b => b.addEventListener('click', () => {
+      if (!avEditable()) return;
+      const day = b.dataset.dbl;
+      state.ownAvail[day] = state.ownAvail[day] || { am: 'unset', pm: 'unset' };
+      const on = state.ownAvail[day].shift_pref !== 'both';
+      state.ownAvail[day].shift_pref = on ? 'both' : 'any';
+      b.setAttribute('aria-pressed', String(on));
+      avUI.dirty = true;
+      avUI.saved = false;
+      avRefreshStatus();
+    }));
 
     const grid = $('#av-grid');
     if (grid) avBindPainting(grid);

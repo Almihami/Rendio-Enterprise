@@ -1192,6 +1192,13 @@
 #tripulantes-ui .tp-filters { display: flex; gap: 6px; flex-wrap: wrap; }
 #tripulantes-ui .tp-filters button { border: 1px solid var(--line); background: #fff; color: var(--ink2); font-family: inherit; font-size: 12.5px; font-weight: 700; padding: 8px 12px; border-radius: 999px; cursor: pointer; }
 #tripulantes-ui .tp-filters button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+/* Filtro por aerolínea (12-oct-2026): del mismo tamaño que los chips; oscuro
+   cuando filtra, como el chip encendido. */
+#tripulantes-ui .tp-airf { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: var(--ink2); }
+#tripulantes-ui .tp-airf select { border: 1px solid var(--line); background: #fff; color: var(--ink); font-family: inherit; font-size: 12.5px; font-weight: 700; padding: 7px 10px; border-radius: 999px; cursor: pointer; max-width: 220px; }
+#tripulantes-ui .tp-airf select:focus { outline: none; border-color: var(--amber); }
+#tripulantes-ui .tp-airf.on select { background: var(--ink); color: #fff; border-color: var(--ink); }
+#tripulantes-ui .tp-airf select:disabled { opacity: .55; cursor: default; }
 
 #tripulantes-ui .tp-nota { display: flex; gap: 10px; align-items: flex-start; background: var(--amber-soft); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
 #tripulantes-ui .tp-nota .icon { width: 17px; height: 17px; color: var(--amber); flex: 0 0 auto; margin-top: 1px; }
@@ -1426,3 +1433,30 @@
 @media (prefers-reduced-motion: reduce) {
   #auxiliar-ui .axc *, #auxiliar-ui .axc-in { animation: none !important; }
 }
+
+/* Usuarios (0081): estado y acciones de cuenta del tripulante */
+#tripulantes-ui .tp-row.sus { background: #FFFBF3; }
+#tripulantes-ui .tp-tag.tp-sus { background: #FBEBCF; color: #7A4B06; margin-left: 6px; vertical-align: middle; }
+#tripulantes-ui .tp-cuenta { gap: 8px; }
+#tripulantes-ui .tp-cuenta .tp-motivo { flex: 1 1 100%; color: #7A4B06; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   13-oct-2026 · Cabecera de Privados y Tripulantes (jefe).
+   Ninguna de las dos declaraba .set-btn ni .icon (Coordinación, Cobro y Puntos
+   sí, cada una en su archivo): el <svg> de «Refrescar» salía de 300 px y
+   relleno de negro, «Aerolíneas» sin botón, la lupa del buscador como un punto,
+   y en Privados además el título sin formato. Son las mismas reglas de
+   admin-coordinacion.css, con el alcance de cada pantalla.
+   ───────────────────────────────────────────────────────────────────────────── */
+#privados-ui .icon, #tripulantes-ui .icon { width: 15px; height: 15px; flex: 0 0 auto; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+#privados-ui .set-btn, #tripulantes-ui .set-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 38px; padding: 0 16px; border-radius: 11px; border: 0; background: var(--orange); color: #fff; font-family: var(--font); font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 9px 22px rgba(242,101,34,.26); white-space: nowrap; }
+#privados-ui .set-btn.ghost, #tripulantes-ui .set-btn.ghost { background: var(--panel); color: var(--ink); border: 1px solid var(--line2); box-shadow: none; }
+#privados-ui .set-btn.danger { background: var(--red); color: #fff; box-shadow: none; }
+#privados-ui .set-btn:disabled, #tripulantes-ui .set-btn:disabled { opacity: .55; cursor: not-allowed; }
+/* El chevron del plegado conserva sus 13 px (styles.css .rd-why): el id le ganaría. */
+#privados-ui .rd-why > summary .details-chevron { width: 13px; height: 13px; }
+#privados-ui .sh-phead { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 16px; }
+#privados-ui .sh-phead h1 { font-size: 26px; font-weight: 800; letter-spacing: -.03em; line-height: 1; display: flex; align-items: center; gap: 11px; color: var(--ink); }
+#privados-ui .sh-phead h1 .sh-ct { font-size: 13px; font-weight: 800; font-family: var(--mono); background: var(--orange-soft); color: var(--orange); border-radius: 999px; padding: 3px 11px; }
+#privados-ui .sh-phead p { font-size: 13px; color: var(--ink2); margin-top: 8px; max-width: 660px; line-height: 1.5; }
+#privados-ui .sh-phead p b { color: var(--ink); font-weight: 700; }

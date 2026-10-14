@@ -24,6 +24,55 @@
   let vehiclesEditId = null;       // si está editando un vehículo existente
   let vehiclesCache = [];          // para poblar el form al editar
 
+  // --- Color del carro (vehicles.color, 0086; rediseño del auxiliar 27-sep-2026) ---
+  // El tripulante lo ve junto a la placa para reconocer el carro de madrugada.
+  // listVehiclesForShift (api.js) no lo trae y el formulario (index.html) no lo
+  // tiene, así que acá se lee aparte y el campo se agrega al formulario solo si
+  // la columna existe. Sin 0086: ni campo ni color en la lista (no se finge).
+  let vehColorOk = false;          // ¿la base tiene vehicles.color?
+  async function vehLoadColors(vehs) {
+    vehColorOk = false;
+    (vehs || []).forEach(v => { v.color = null; });
+    const cli = window.sb;
+    if (!cli || typeof cli.from !== 'function') return;
+    try {
+      const { data, error } = await cli.from('vehicles').select('id, color').is('deleted_at', null);
+      if (error || !Array.isArray(data)) return;
+      vehColorOk = true;
+      const by = new Map(data.map(x => [x.id, x.color]));
+      (vehs || []).forEach(v => { const c = by.get(v.id); v.color = c ? String(c) : null; });
+    } catch (_) { /* sin columna: sin color */ }
+  }
+  // Agrega (una vez) la fila «Color» después de Marca/Modelo, o la quita si la
+  // base no tiene la columna.
+  function vehColorField() {
+    const row = document.getElementById('new-veh-color-row');
+    if (!vehColorOk) { if (row) row.remove(); return; }
+    if (row) return;
+    const model = document.getElementById('new-veh-model');
+    const grid = model && model.closest('.set-grid2');
+    if (!grid) return;
+    grid.insertAdjacentHTML('afterend', `<div class="set-grid2" style="margin-top:14px" id="new-veh-color-row">
+      <div class="set-field"><label>Color</label><input class="set-input" id="new-veh-color" type="text" maxlength="30" placeholder="Ej: Blanco" autocomplete="off" /><div class="set-hint">Lo ve el tripulante junto a la placa para reconocer el carro. Déjalo vacío si no lo sabes.</div></div>
+    </div>`);
+  }
+  // Guarda el color aparte (ApiAux.setVehicleColor): si esa parte falla, el
+  // vehículo ya quedó guardado y se dice cuál de las dos cosas no entró.
+  async function vehSaveColor(id, prev) {
+    const el = document.getElementById('new-veh-color');
+    if (!vehColorOk || !el || !id || !window.ApiAux || typeof ApiAux.setVehicleColor !== 'function') return true;
+    const color = (el.value || '').trim();
+    if (color === (prev || '')) return true;
+    try {
+      const ok = await ApiAux.setVehicleColor(id, color);
+      if (ok === null) { toast('El vehículo quedó guardado, pero el color no: la base todavía no tiene ese campo.'); return false; }
+      return true;
+    } catch (e) {
+      toast('El vehículo quedó guardado, pero el color no: ' + ((e && e.message) || 'error'));
+      return false;
+    }
+  }
+
   async function renderVehiclesSettings() {
     const box = $('#vehicles-list');
     if (!box) return;
@@ -32,6 +81,14 @@
     try { vehs = await Api.listVehiclesForShift(); }
     catch (e) { console.error(e); box.innerHTML = '<p class="set-hint">No se pudieron cargar los vehículos.</p>'; return; }
     vehiclesCache = vehs;
+    await vehLoadColors(vehs);
+    vehColorField();
+    // 0095: SOAT y técnico-mecánica también se ven en Repuestos, con el resto de
+    // los documentos. Una línea debajo de las dos fechas, una sola vez.
+    const soatGrid = document.getElementById('new-veh-soat')?.closest('.set-grid2');
+    if (soatGrid && !document.getElementById('new-veh-docs-hint')) {
+      soatGrid.insertAdjacentHTML('afterend', '<p class="set-hint" id="new-veh-docs-hint" style="margin:8px 2px 0">Son las mismas fechas de Repuestos › Documentos del carro: lo que se cambie en un lado queda igual en el otro. Allá están también el seguro, las pólizas, el impuesto, el extintor y la tarjeta de propiedad.</p>');
+    }
     setOilBadge(vehs);   // refresca el "!" de Ajustes con la lista ya cargada
     if (!vehs.length) { box.innerHTML = '<p class="set-hint">Aún no hay vehículos. Agrega el primero abajo.</p>'; return; }
     box.innerHTML = vehs.map(v => {
@@ -51,7 +108,7 @@
         : '';
       const intv = v.maintenance_interval_km ? ` · aceite c/${(v.maintenance_interval_km).toLocaleString('es-CO')} km` : '';
       return `<div class="veh-row" data-veh="${v.id}">
-      <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km${intv}</span>${oilAlert}</div>
+      <div class="veh-info"><b>${escapeHtml(v.internal_code || v.license_plate || 'Auto')}</b><span>${escapeHtml(v.license_plate || '')} · ${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || '—')}${v.color ? ' · ' + escapeHtml(v.color) : ''} · ${v.capacity} pas · ${(v.current_km || 0).toLocaleString('es-CO')} km${intv}</span>${oilAlert}</div>
       <span class="veh-stat st-${v.status}">${VEH_STATUS_ES[v.status] || escapeHtml(v.status || '')}</span>
       ${oilBtn}${restoreBtn}
       <button class="set-btn ghost" data-veh-edit="${v.id}" title="Editar" style="height:34px">Editar</button>
@@ -68,13 +125,18 @@
     set('capacity', v.capacity || 4); set('km', v.current_km || 0);
     set('interval', v.maintenance_interval_km || 7000); set('lastmaint', v.last_maintenance_km != null ? v.last_maintenance_km : '');
     set('soat', v.soat_expires_at || ''); set('tecno', v.tecnomec_expires_at || '');
+    // 0095: SOAT y técnico-mecánica son las mismas fechas de Repuestos › Documentos.
+    // Se anota con qué valor abrió el formulario para mandarlas solo si se tocan acá.
+    ['soat', 'tecno'].forEach(f => { const el = $('#new-veh-' + f); if (el) el.dataset.orig = el.value || ''; });
+    set('color', v.color || '');
     const btn = $('#new-veh-create-btn'); if (btn) btn.innerHTML = '<svg class="icon"><use href="#i-check"/></svg>Guardar cambios';
     const st = $('#new-veh-state'); if (st) st.textContent = `Editando ${v.internal_code || v.license_plate || ''}…`;
     $('#new-veh-code')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   function resetVehicleForm() {
     vehiclesEditId = null;
-    ['code', 'plate', 'brand', 'model', 'soat', 'tecno', 'lastmaint'].forEach(f => { const el = $('#new-veh-' + f); if (el) el.value = ''; });
+    ['code', 'plate', 'brand', 'model', 'color', 'soat', 'tecno', 'lastmaint'].forEach(f => { const el = $('#new-veh-' + f); if (el) el.value = ''; });
+    ['soat', 'tecno'].forEach(f => { const el = $('#new-veh-' + f); if (el) delete el.dataset.orig; });
     if ($('#new-veh-capacity')) $('#new-veh-capacity').value = '4';
     if ($('#new-veh-km')) $('#new-veh-km').value = '0';
     if ($('#new-veh-interval')) $('#new-veh-interval').value = '7000';
@@ -110,11 +172,19 @@
     try {
       if (editing) {
         const { organization_id, ...patch } = veh;   // no se cambia la organización
+        // 0095: una fecha que no se tocó en este formulario no se manda. Si en
+        // el entretanto la cambiaron en Repuestos › Documentos, el formulario
+        // abierto desde antes la pisaría con la vieja (la base las espeja).
+        [['soat', 'soat_expires_at'], ['tecno', 'tecnomec_expires_at']].forEach(([f, col]) => {
+          const el = $('#new-veh-' + f);
+          if (el && el.dataset.orig !== undefined && (el.value || '') === el.dataset.orig) delete patch[col];
+        });
         await Api.updateVehicle(vehiclesEditId, patch);
-        toast('Vehículo actualizado.');
+        const prev = (vehiclesCache.find(x => x.id === vehiclesEditId) || {}).color || '';
+        if (await vehSaveColor(vehiclesEditId, prev)) toast('Vehículo actualizado.');
       } else {
-        await Api.createVehicle(veh);
-        toast('Vehículo agregado.');
+        const newId = await Api.createVehicle(veh);
+        if (await vehSaveColor(newId, '')) toast('Vehículo agregado.');
       }
       resetVehicleForm();
       renderVehiclesSettings();

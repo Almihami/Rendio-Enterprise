@@ -791,6 +791,11 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .set-ui .set-cstate{font-size:11.5px;font-weight:600}
 
 @media(max-width:860px){.set-ui .set-row2,.set-ui .set-grid2{grid-template-columns:1fr}}
+/* Prioridad por antigüedad en el celular (barrido responsive 12-oct-2026): el correo
+   (sin espacios) no se partía y la fila medía ~400 px en una pantalla de 360: Ajustes
+   entero se corría de lado. El correo va con «…» y los 4 botones bajan a su renglón. */
+.set-ui .set-pinfo span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:480px){.set-ui .set-prow{flex-wrap:wrap;row-gap:8px}.set-ui .set-seg3{margin-left:49px}}
 
 /* ---------------------------------------------------------------------
    ACORDEÓN de Ajustes (.set-sec) y texto plegado (.set-why).
@@ -902,6 +907,11 @@ details[open] .details-chevron { transform: rotate(180deg); }
    inferior (setTab esconde #driver-nav, core.js:413), así que el sticky
    inferior queda libre y no tapa nada. */
 .set-ui .set-savebar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px -18px -18px;padding:13px 18px;background:var(--panel);border-top:1px solid var(--line);border-radius:0 0 16px 16px;box-shadow:0 -6px 18px rgba(33,29,24,.05)}
+/* …pero el sticky SÍ respeta el padding del contenedor que desplaza: con pb-24 la barra
+   quedaba flotando 96 px arriba del borde, con campos asomando por debajo (barrido
+   responsive 12-oct-2026). Se compensa ese padding exacto: pb-24 en móvil, md:pb-6. */
+#app-main .set-ui .set-savebar{bottom:-96px}
+@media(min-width:768px){#app-main .set-ui .set-savebar{bottom:-24px}}
 .set-ui .set-savebar .set-savenote{font-size:11.5px;color:var(--ink3);line-height:1.35}
 .set-ui .set-savebar .set-savenote b{color:var(--orange)}
 
@@ -975,8 +985,8 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #balance-ui .bal-hrs{display:flex;align-items:center;gap:10px;justify-content:flex-end}
 #balance-ui .bal-hrs .bar{width:120px;height:7px;border-radius:99px;background:var(--line);overflow:hidden;flex:0 0 auto}
 #balance-ui .bal-hrs .bar i{display:block;height:100%;border-radius:99px;background:var(--orange)}
-#balance-ui .bal-hrs b{font-family:var(--mono);font-size:13px;font-weight:700;min-width:54px;text-align:right}
-#balance-ui .bal-pill{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:22px;padding:0 7px;border-radius:7px;font-family:var(--mono);font-size:11.5px;font-weight:700}
+#balance-ui .bal-hrs b{font-family:var(--mono);font-size:13px;font-weight:700;min-width:54px;text-align:right;white-space:nowrap}
+#balance-ui .bal-pill{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:22px;padding:0 7px;border-radius:7px;font-family:var(--mono);font-size:11.5px;font-weight:700;white-space:nowrap}
 #balance-ui .bal-pill.am{background:var(--amber-soft);color:var(--amber)}
 #balance-ui .bal-pill.pm{background:var(--rest-soft);color:var(--rest)}
 #balance-ui .bal-pill.co{background:var(--orange-soft);color:var(--orange)}
@@ -1519,7 +1529,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #schedule-mobile .dcell.today{border-color:var(--orange-soft)}#schedule-mobile .dcell.today .dnum{color:var(--orange)}
 #schedule-mobile .dcell.sel{border-color:var(--orange);background:var(--orange-soft);box-shadow:0 0 0 3px rgba(242,101,34,.12)}
 #schedule-mobile .dcell.sel .dnum{color:var(--orange)}
-#schedule-mobile .modebar{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+#schedule-mobile .modebar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;row-gap:8px}
 #schedule-mobile .seg{display:inline-flex;background:var(--panel);border:1px solid var(--line2);border-radius:11px;padding:3px;gap:2px}
 #schedule-mobile .seg button{height:32px;padding:0 15px;border:0;border-radius:8px;background:transparent;color:var(--ink2);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer}
 #schedule-mobile .seg button.on{background:var(--ink);color:var(--panel)}
@@ -2872,6 +2882,31 @@ html,body{overflow-x:hidden}
 #driver-ruta-ui .dr-notes .icon{width:15px;height:15px;flex:0 0 auto;margin-top:1px}
 #driver-ruta-ui .dr-eta{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:12px;background:var(--r-info-soft);color:var(--r-info);font-size:13px;margin-bottom:12px}
 #driver-ruta-ui .dr-eta .km{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums}
+/* 0097 · Código de encuentro: el conductor lo escribe (los dígitos grandes, teclado numérico) */
+#driver-ruta-ui .dr-code{border:1.5px solid var(--r-accent);border-radius:14px;padding:12px 14px;margin-bottom:12px;background:var(--r-card)}
+#driver-ruta-ui .dr-code label{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--r-text);margin-bottom:10px}
+#driver-ruta-ui .dr-code label .icon{width:16px;height:16px;color:var(--r-accent)}
+#driver-ruta-ui .dr-code-row{display:flex;align-items:center;gap:12px}
+#driver-ruta-ui .dr-code-in{width:112px;height:56px;border-radius:12px;border:1.5px solid var(--r-border-strong);font:700 28px/1 'Space Mono',ui-monospace,monospace;letter-spacing:10px;text-align:center;padding-left:10px;color:var(--r-text);background:var(--r-bg)}
+#driver-ruta-ui .dr-code-in:focus{outline:none;border-color:var(--r-accent);box-shadow:0 0 0 3px rgba(242,101,34,.18)}
+#driver-ruta-ui .dr-code-in.bad{border-color:var(--r-error);animation:dr-shake .32s}
+#driver-ruta-ui .dr-code-msg{font-size:12.5px;color:var(--r-text-2);flex:1;min-width:0}
+#driver-ruta-ui .dr-code-msg.bad{color:var(--r-error);font-weight:600}
+#driver-ruta-ui .dr-code-skip{margin-top:10px;background:none;border:none;padding:6px 0;font:inherit;font-size:13px;font-weight:600;color:var(--r-text-2);text-decoration:underline;cursor:pointer;min-height:36px}
+#driver-ruta-ui .dr-code-skip.armed,#driver-ruta-ui .dr-apt-row .acts button.armed{color:var(--r-error)}
+#driver-ruta-ui .dr-apt-row{display:grid;grid-template-columns:1fr auto;grid-template-areas:'nm in' 'acts acts';align-items:center;gap:6px 10px;padding:10px 0;border-top:1px solid var(--r-border)}
+#driver-ruta-ui .dr-apt-row:first-of-type{border-top:none}
+#driver-ruta-ui .dr-apt-row .nm{grid-area:nm;font-size:14.5px;font-weight:600;color:var(--r-text)}
+#driver-ruta-ui .dr-apt-row .dr-code-in{grid-area:in;width:96px;height:48px;font-size:24px}
+#driver-ruta-ui .dr-apt-row .acts{grid-area:acts;display:flex;gap:16px}
+#driver-ruta-ui .dr-apt-row .acts button{background:none;border:none;padding:4px 0;font:inherit;font-size:12.5px;font-weight:600;color:var(--r-text-2);text-decoration:underline;cursor:pointer;min-height:32px}
+#driver-ruta-ui .dr-apt-row.ok,#driver-ruta-ui .dr-apt-row.no{grid-template-areas:'nm st'}
+#driver-ruta-ui .dr-apt-row .st{grid-area:st;font-size:13px}
+#driver-ruta-ui .dr-apt-row.ok .st{color:var(--r-success)}
+#driver-ruta-ui .dr-apt-row.no .st{color:var(--r-text-3)}
+#driver-ruta-ui .dr-cta:disabled{opacity:.45;cursor:default}
+@keyframes dr-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@media (prefers-reduced-motion:reduce){#driver-ruta-ui .dr-code-in.bad{animation:none}}
 #driver-ruta-ui .dr-btnrow{display:flex;gap:10px}
 #driver-ruta-ui .dr-btnrow .nav{flex:0 0 auto;height:56px;padding:0 18px;border-radius:14px;border:1px solid var(--r-border-strong);background:var(--r-card);color:var(--r-text);font:inherit;font-size:15px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
 #driver-ruta-ui .dr-btnrow .nav .icon{color:var(--r-accent);width:18px;height:18px}
@@ -4003,3 +4038,27 @@ html,body{overflow-x:hidden}
   #parts-ui .sech { margin: 20px 0 10px; flex-wrap: wrap; }
   #parts-ui .sech .hint { flex: 1 1 100%; }
 }
+
+/* ---------- Usuarios (0081): modales de editar datos y contraseñas ---------- */
+.modal-card.usr-card { max-width: 560px; max-height: 90vh; }
+.usr-body { background: transparent; }
+.usr-err { margin-top: 12px; font-size: 13px; font-weight: 600; color: rgb(190 18 60); }
+.usr-reason { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #FBEBCF; color: #7A4B06; font-size: 13px; line-height: 1.35; }
+@media (max-width: 560px) { .usr-body .set-grid2 { grid-template-columns: 1fr; } }
+
+/* Doble turno autorizada (27-sep-2026): ámbar, como "pidió descanso" pero con borde sólido */
+#schedule-board .asg.dbl{background:var(--amber-soft);border-color:var(--amber);border-style:solid}
+#schedule-board .asg.dbl .nm span{color:var(--amber);font-weight:700}
+/* «Puedo doblar» en la consolidada del jefe */
+#avail-ui .av-dblmark{display:block;margin:4px auto 0;border:0;background:transparent;font-size:11px;line-height:1;padding:2px 6px;border-radius:6px;color:var(--ink3);opacity:.35;cursor:pointer}
+#avail-ui .av-dblmark.on{opacity:1;background:#FBEBCF;color:#7A4B06;font-weight:800}
+
+/* 11-oct-2026 · Marca «Rendio» (isotipo R con punto naranja + palabra). Reemplaza
+   el logo con el avión: con rendio.co entran también los tripulantes. */
+.rendio-word{display:inline-flex;align-items:center;gap:10px;font-family:'Hanken Grotesk',var(--font,system-ui),sans-serif;color:#1E1C19;line-height:1}
+.rendio-word b{font-size:24px;font-weight:800;letter-spacing:-.03em}
+.rendio-word-r{height:30px;width:auto}
+.rendio-word-lg b{font-size:34px}
+.rendio-word-lg .rendio-word-r{height:44px}
+.rendio-word-xl b{font-size:44px}
+.rendio-word-xl .rendio-word-r{height:58px}

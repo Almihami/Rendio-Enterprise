@@ -98,3 +98,4 @@ mockups/
 
 # Config MCP local: contiene un token de Supabase, no versionar
 .mcp.json
+rendio-backend/scripts/.seed-ruta-v2.json

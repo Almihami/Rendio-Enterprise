@@ -62,7 +62,12 @@
     zonasSinConfirmar: [],// conjuntos que Julián todavía no clasificó
     TURNAROUND: 8,       // min en MDE entre entregar y arrancar la siguiente vuelta
     DEPLANE: 20,         // min entre que el vuelo aterriza y el pasajero sale (migración+maletas)
-    CUSHION: 15,         // min extra de margen al programar la salida de cada vuelta
+    // Semáforo de una LLEGADA: hasta 5 min de espera es «A tiempo», hasta 15
+    // «Ajustado», más es «Espera larga» (fijo, no está en Ajustes). Con el mismo
+    // 5 se decide si alguien que trabaja en tierra (0092) puede ir en una vuelta
+    // con gente de vuelo: ver `juntableLle` en rtSolveDay.
+    LLE_A_TIEMPO: 5,
+    CUSHION: 15,        // min extra de margen al programar la salida de cada vuelta
     MERGE_WINDOW: 0,     // min de ventana para juntar oleadas cercanas (0 = no juntar)
     etaSource: null,     // 'tomtom' | 'osrm' | 'haversine' — de dónde salieron los tiempos
     M: null, // matriz de tiempos reales (min) entre depot/aeropuerto/paradas
@@ -147,22 +152,31 @@
     rt.MAX_EARLY = s.route_max_early_min != null ? Number(s.route_max_early_min) : 60;
   }
 
-  async function rtLoad() {
+  // `day` (YYYY-MM-DD, opcional): el día que se quiere planear. Sin él, como
+  // siempre, el próximo día con reservas — que con algo pendiente de hoy nunca
+  // dejaba planear mañana (la barra ‹ día › de Asignación v2 pasa el día).
+  async function rtLoad(day) {
     rtCfg();
     let loaded = null;
-    try { if (Api.listRoutePlanning) loaded = await Api.listRoutePlanning('all'); }
+    try { if (Api.listRoutePlanning) loaded = await Api.listRoutePlanning('all', day || undefined); }
     catch (e) { loaded = null; }
     if (loaded && loaded.aux && Object.keys(loaded.aux).length) {
       rt.aux = loaded.aux; rt.colors = loaded.colors || {}; rt.cars = loaded.cars || [];
       rt.drivers = loaded.drivers || []; rt.plan = loaded.plan || {}; rt.source = 'live';
-      rt.day = loaded.day || null; // día operativo real (para persistir el plan)
+      rt.day = loaded.day || day || null; // día operativo real (para persistir el plan)
     } else {
-      // Sin reservas reales para el próximo día operativo: tablero VACÍO.
+      // Sin reservas reales para ese día: tablero VACÍO.
       // `reason` explica qué falta (reservas o vehículos), no se inventa nada.
+      // Si se pidió un día, se queda ese día (para poder decir «sin traslados
+      // para el martes» y seguir navegando); publicar sigue exigiendo 'live'.
       rt.aux = {}; rt.colors = {}; rt.cars = []; rt.drivers = [];
-      rt.plan = {}; rt.source = 'empty'; rt.day = null;
+      rt.plan = {}; rt.source = 'empty'; rt.day = day || null;
       rt.emptyReason = (loaded && loaded.noVehicles) ? 'vehiculos' : 'reservas';
     }
+    // Lo publicado de ESTE día se vuelve a leer en cada carga (Asignación v2):
+    // la firma dice si lo que hay en pantalla es lo que ya tienen los conductores.
+    rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {};
+    rt.etaSource = null;
     // Estado inicial: una vuelta vacía por carro; todos los auxiliares en el pool.
     rt.lanes = rt.cars.map(c => ({ id: `${c.id}·V1`, car: c.id, vuelta: 1, start: c.avail0 || '02:00', origin: null }));
     rt.order = {}; rt.lanes.forEach(l => { rt.order[l.id] = []; });
@@ -197,6 +211,16 @@
         }
       } catch (e) { /* sin horario → fallback a todos */ }
     }
+    rt.cargadoEn = Date.now();
+  }
+  // Huella del plan EN MEMORIA tal como lo publicaría rtSavePlan: vueltas
+  // (carro, tipo, hora, paradas en orden) y conductores. Si es igual a la del
+  // último plan publicado/leído, lo que se ve es lo que tienen los conductores.
+  function rtFirmaPlan() {
+    const lanes = (rt.lanes || []).filter(l => rt.order[l.id] && rt.order[l.id].length)
+      .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(',')]);
+    const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null]);
+    return JSON.stringify([lanes, drv]);
   }
   const rtCarOf = (lane) => rt.cars.find(c => c.id === lane.car);
   const rtLaneOf = (laneId) => rt.lanes.find(l => l.id === laneId);
@@ -276,13 +300,35 @@
   // Desembarque de un GRUPO: manda el que más tarda. El carro no se puede ir con
   // medio grupo, y en una vuelta fusionada conviven vuelos de aerolíneas
   // distintas. Sin ningún vuelo clasificable, el respaldo de Ajustes.
-  function rtDeplaneOf(ids) {
+  //
+  // TRABAJO EN TIERRA (0092, 29-sep-2026). El personal de operaciones del
+  // aeropuerto no viene en un vuelo: su hora (dl) ya ES la de salir del
+  // terminal, así que no se le suma desembarque —ni el de la aerolínea ni el de
+  // respaldo—. Con `landingMin` (la hora de la vuelta: la del último que
+  // aterriza; ver horaVuelta en rtSolveDay), lo que devuelve son los minutos
+  // que hay que sumarle a esa hora para que salgan TODOS: los de vuelo a su
+  // aterrizaje + su desembarque, los de tierra a su hora, y manda el último.
+  // Sin nadie en tierra el resultado es exactamente el de siempre (y no se mira
+  // landingMin). Todos en tierra = 0.
+  function rtDeplaneOf(ids, landingMin) {
+    const todos = ids || [];
+    const tierra = todos.filter(id => rt.aux[id] && rt.aux[id].tierra);
+    const vuelo = tierra.length ? todos.filter(id => !tierra.includes(id)) : todos;
     let mx = null;
-    (ids || []).forEach(id => {
+    vuelo.forEach(id => {
       const d = rtDeplaneVuelo(rt.aux[id] && rt.aux[id].vuelo);
       if (d != null && (mx == null || d > mx)) mx = d;
     });
-    return mx == null ? rt.DEPLANE : mx;
+    const dep = mx == null ? rt.DEPLANE : mx;
+    if (!tierra.length) return dep;
+    if (landingMin == null || isNaN(landingMin)) return vuelo.length ? dep : 0;
+    // La salida del terminal de cada parte, y manda la más tarde.
+    let sale = -Infinity;
+    if (vuelo.length) sale = Math.max(...vuelo.map(id => rtToMin(rt.aux[id].dl))) + dep;
+    tierra.forEach(id => { sale = Math.max(sale, rtToMin(rt.aux[id].dl)); });
+    // Nunca antes de la hora de la vuelta: si el jefe arrastró a alguien de otra
+    // hora, la vuelta sigue anclada a la suya (como con los de vuelo).
+    return Math.max(0, Math.round(sale - landingMin));
   }
 
   // Coordenadas de un punto (depot / aeropuerto / parada).
@@ -372,11 +418,24 @@
       stops.push({ id, eta });
     });
     const arrival = rt.order[lane.id].length ? Math.round(t) : null; // termina en la última casa
-    const ideal = rtToMin(lane.landing) + rtDeplaneOf(rt.order[lane.id]); // cuándo sale la gente del terminal
-    const wait = Math.max(0, rtToMin(lane.start) - ideal);
+    const ideal = rtToMin(lane.landing) + rtDeplaneOf(rt.order[lane.id], rtToMin(lane.landing)); // cuándo sale la gente del terminal (en tierra, 0092: sin desembarque)
+    const inicio = rtToMin(lane.start);
+    let wait = Math.max(0, inicio - ideal);
+    // TRABAJO EN TIERRA (0092): `ideal` es cuándo sale el ÚLTIMO, y con eso el
+    // semáforo solo mide si el carro llegó tarde. Al de tierra se le prometió
+    // «te recogemos a esa hora»: si la vuelta lo recoge después —va con gente de
+    // un vuelo que sale más tarde, o el jefe lo arrastró a otra vuelta—, esa
+    // espera es suya y es la que se muestra. Sin nadie en tierra, lo de siempre.
+    rt.order[lane.id].forEach(id => {
+      const a = rt.aux[id];
+      if (a && a.tierra) wait = Math.max(wait, inicio - rtToMin(a.dl));
+    });
     let status = 'empty';
-    if (arrival != null) status = wait > 15 ? 'late' : (wait > 5 ? 'tight' : 'ontime');
-    return { stops, pax, arrival, hardDL: ideal, holg: -wait, status, depart: ideal, wait, lle: true };
+    if (arrival != null) status = wait > 15 ? 'late' : (wait > rt.LLE_A_TIEMPO ? 'tight' : 'ontime');
+    // tierra: todos los de la vuelta trabajan en tierra (0092) → nadie «aterriza»
+    // (lo usa el tablero para decir «sale del terminal» en vez de «aterriza»).
+    const tierra = stops.length > 0 && stops.every(x => rt.aux[x.id] && rt.aux[x.id].tierra);
+    return { stops, pax, arrival, hardDL: ideal, holg: -wait, status, depart: ideal, wait, lle: true, tierra };
   }
 
   function rtDayStats() {
@@ -413,7 +472,11 @@
   //   2) OSRM    → tiempos reales por carretera, pero de vía libre.
   //   3) haversine → línea recta ×1.4. Último recurso.
   // Los niveles 2 y 3 se corrigen con TRAFFIC_FACTOR; el 1 no (ver rtLegMin).
-  async function rtBuildMatrix() {
+  // opts.sinTrafico (Asignación v2, al LEER un plan ya publicado): no se le pide
+  // nada nuevo a TomTom —cobra por celda, ~400 transacciones en un día de 80
+  // traslados— solo por abrir la pantalla. Se usa su respuesta en caché si
+  // sigue fresca y, si no, OSRM. Optimizar sigue pidiendo TomTom como siempre.
+  async function rtBuildMatrix(opts = {}) {
     const keys = ['depot', 'airport', ...Object.keys(rt.aux)];
     const pts = keys.map(rtCoordsOf);
     rt.mHasTraffic = false; rt.trafficDelay = 0;
@@ -443,10 +506,9 @@
         const hit = rt._mCache;
         // El tráfico en vivo cambia solo: se cachea 3 minutos, no 10.
         const ttl = (mode === 'live' ? 3 : 10) * 60000;
-        const r = (hit && hit.key === ck && Date.now() - hit.at < ttl)
-          ? hit.data
-          : await Api.trafficMatrix(coords, departAt, mode);
-        rt.trafficMode = mode;
+        const fresco = hit && hit.key === ck && Date.now() - hit.at < ttl;
+        const r = fresco ? hit.data : (opts.sinTrafico ? null : await Api.trafficMatrix(coords, departAt, mode));
+        if (r) rt.trafficMode = mode;
         if (r && Array.isArray(r.durations)) {
           rt._mCache = { key: ck, at: (hit && hit.key === ck) ? hit.at : Date.now(), data: r };
           const M = {};
@@ -757,7 +819,12 @@
     // puerto ahí mismo recoge. 1) OLEADAS: agrupar por tipo + hora (salidas:
     // "deben estar"; llegadas: hora en que aterriza el vuelo), cronológico.
     const byKey = {};
-    Object.keys(rt.aux).forEach(id => { const a = rt.aux[id]; const k = a.type + '|' + a.dl; (byKey[k] = byKey[k] || []).push(id); });
+    // Una LLEGADA EN TIERRA (0092) tiene su propia oleada: su hora es la de salir
+    // del terminal, no la de aterrizar, y que los dos números coincidan no quiere
+    // decir que salgan juntos (el de vuelo sale un desembarque después). La
+    // fusión de oleadas cercanas puede juntarlas, pero midiendo cuándo SALE cada
+    // uno y no su hora escrita (ver `juntableLle`).
+    Object.keys(rt.aux).forEach(id => { const a = rt.aux[id]; const k = a.type + '|' + a.dl + (a.type === 'lle' && a.tierra ? '|tierra' : ''); (byKey[k] = byKey[k] || []).push(id); });
     const waves = Object.entries(byKey).map(([k, ids]) => ({ type: k.split('|')[0], dlMin: rtToMin(k.split('|')[1]), ids }))
       .sort((a, b) => a.dlMin - b.dlMin);
     const capMax = Math.max(...rt.cars.map(rtCapOf));
@@ -827,6 +894,46 @@
       return b.some(id => ka.has(rtStopKey(id)));
     };
     const W = rt.MERGE_WINDOW;
+    // En una LLEGADA el carro no puede recoger antes de que salgan TODOS, así que
+    // el que salió primero espera la diferencia. Se acota con el mismo margen que
+    // ya define "ajustado" en el resto del tablero.
+    const LIM_LLE = Math.min(W, rt.MARGIN_TIGHT);
+    // TRABAJO EN TIERRA (0092, 29-sep-2026). Entre gente de vuelo basta comparar
+    // horas de aterrizaje: todos le suman un desembarque parecido. Con alguien de
+    // tierra eso ya no vale —su hora es la de SALIR del terminal— y comparar el
+    // número crudo los pegaba: tierra 17:00 + JetSmart internacional 17:00 salía
+    // a las 17:30 y al de tierra lo dejaba media hora esperando, con el tablero
+    // diciendo «A tiempo». Si hay alguien de tierra se compara cuándo SALE cada
+    // parte (rtDeplaneOf ya sabe sumar eso) y la regla es asimétrica:
+    //   · al de tierra se le prometió «te recogemos a esa hora»: la vuelta no
+    //     puede recogerlo después de la banda «A tiempo» del semáforo
+    //     (rt.LLE_A_TIEMPO, 5 min), contada con la hora ya redondeada como la
+    //     pone el paso 3. En la práctica: va con gente de un vuelo que para su
+    //     hora ya está afuera, nunca con uno que todavía está desembarcando;
+    //   · los de vuelo pueden esperarlo a él lo mismo que ya esperan hoy a otro
+    //     vuelo del grupo (LIM_LLE).
+    // Sin nadie de tierra, la prueba de siempre, idéntica.
+    const hayTierra = (ids) => ids.some(id => rt.aux[id] && rt.aux[id].tierra);
+    const dlDe = (id) => rtToMin(rt.aux[id].dl);
+    const saleDe = (ids) => { const base = Math.max(...ids.map(dlDe)); return base + rtDeplaneOf(ids, base); };
+    const juntableLle = (g, w) => {
+      const cand = g.ids.concat(w.ids);
+      if (!hayTierra(cand)) return w.dlMin - g.dlMin <= LIM_LLE;
+      const tierra = cand.filter(id => rt.aux[id].tierra), vuelo = cand.filter(id => !rt.aux[id].tierra);
+      const sale = saleDe(cand);
+      if (rtRedondea5Arr(sale) - Math.min(...tierra.map(dlDe)) > rt.LLE_A_TIEMPO) return false;
+      if (vuelo.length && sale - (Math.min(...vuelo.map(dlDe)) + rtDeplaneOf(vuelo)) > LIM_LLE) return false;
+      return true;
+    };
+    // La hora de una vuelta de llegada (lane.landing): la del último que
+    // aterriza. Con alguien de tierra, la del último VUELO (si no, el tablero
+    // diría «aterriza» a la hora del de tierra); todos de tierra, la del último
+    // en salir. rtDeplaneOf suma desde ahí lo que falte. Sin tierra, `respaldo`.
+    const horaVuelta = (ids, respaldo) => {
+      if (!hayTierra(ids)) return respaldo;
+      const vuelo = ids.filter(id => !rt.aux[id].tierra);
+      return Math.max(...(vuelo.length ? vuelo : ids).map(dlDe));
+    };
     const pend = waves.slice();
     const oleadas = [];
     while (pend.length) {
@@ -844,10 +951,10 @@
           const w = pend[i];
           if (w.dlMin - ultimo > W) break;           // hueco: aquí corta el racimo
           if (w.type !== g.type) continue;
-          // En una LLEGADA el carro no puede recoger antes de que aterricen TODOS,
-          // así que el que aterrizó primero espera esa diferencia. Se acota con el
-          // mismo margen que ya define "ajustado" en el resto del tablero.
-          if (g.type === 'lle' && w.dlMin - g.dlMin > Math.min(W, rt.MARGIN_TIGHT)) continue;
+          // En una LLEGADA el carro no puede recoger antes de que salgan TODOS
+          // (LIM_LLE; con alguien de tierra, juntableLle). Va ANTES de la misma
+          // portería: vivir juntos no le quita a nadie la espera en el terminal.
+          if (g.type === 'lle' && !juntableLle(g, w)) continue;
           if (!mismaPorteria(g.ids, w.ids) && !fusionables(g.type, g.ids, w.ids, g.dlMin)) {
             // LA OLEADA VECINA NO SE TOMA ENTERA O NADA. Con la de las 3:55
             // (Ana Lucía sola) y la de las 4:00 con cinco personas, 1+5 pasa del
@@ -873,8 +980,9 @@
           g.ids = g.ids.concat(w.ids);
           ultimo = w.dlMin;                          // el racimo sigue desde aquí
           // La llegada se rige por el ÚLTIMO que aterriza; la salida, por el
-          // primero que debe presentarse (ya es dlMin, no cambia).
-          if (g.type === 'lle') g.dlMin = Math.max(g.dlMin, w.dlMin);
+          // primero que debe presentarse (ya es dlMin, no cambia). Con alguien
+          // de tierra (0092), ver horaVuelta.
+          if (g.type === 'lle') g.dlMin = horaVuelta(g.ids, Math.max(g.dlMin, w.dlMin));
           pend.splice(i, 1); i--;
         }
       }
@@ -893,16 +1001,21 @@
       const techo = rtTechoEspera(w.dlMin);
       const cabe = (ids) => rtPaxOf(ids) <= capMax && (!techo || rtEsperaDe(w.type, ids) <= techo)
         && (!rt.MAX_EARLY || rtAnticipa(w.type, ids) <= rt.MAX_EARLY);
-      if (cabe(w.ids)) { trips.push({ type: w.type, dlMin: w.dlMin, ids: w.ids.slice() }); return; }
+      // Al partir una llegada con gente de tierra (0092), cada viaje lleva SU
+      // hora (horaVuelta): el de tierra que quedó en otro carro se recoge a la
+      // suya y no a la del vuelo con el que venía en la oleada, ni el tablero le
+      // dice «aterriza». Sin nadie de tierra, la de la oleada, como siempre.
+      const viaje = (ids) => ({ type: w.type, dlMin: w.type === 'lle' ? horaVuelta(ids, w.dlMin) : w.dlMin, ids });
+      if (cabe(w.ids)) { trips.push(viaje(w.ids.slice())); return; }
       let actual = [];
       rtGroupByStop(w.ids).forEach(porteria => {
         let resto = porteria.slice();
-        if (actual.length && !cabe(actual.concat(resto))) { trips.push({ type: w.type, dlMin: w.dlMin, ids: actual }); actual = []; }
+        if (actual.length && !cabe(actual.concat(resto))) { trips.push(viaje(actual)); actual = []; }
         // Una portería con más gente que el cupo se parte igual (no cabe de otra forma).
-        while (rtPaxOf(resto) > capMax) { trips.push({ type: w.type, dlMin: w.dlMin, ids: resto.slice(0, capMax) }); resto = resto.slice(capMax); }
+        while (rtPaxOf(resto) > capMax) { trips.push(viaje(resto.slice(0, capMax))); resto = resto.slice(capMax); }
         actual = actual.concat(resto);
       });
-      if (actual.length) trips.push({ type: w.type, dlMin: w.dlMin, ids: actual });
+      if (actual.length) trips.push(viaje(actual));
     });
     // 3) ASIGNAR cada viaje (cronológico) al mejor carro. El carro tiene POSICIÓN
     //    (null = aún no sale; 'airport' = en MDE; id de parada = última casa de
@@ -920,8 +1033,9 @@
     trips.forEach(tr => {
       let best = null;
       if (tr.type === 'lle') {
-        // LLEGADA: hay que ESTAR en MDE cuando salgan (aterriza + desembarque).
-        const idealPickup = tr.dlMin + rtDeplaneOf(tr.ids);
+        // LLEGADA: hay que ESTAR en MDE cuando salgan (aterriza + desembarque;
+        // los de tierra, 0092, a su hora).
+        const idealPickup = tr.dlMin + rtDeplaneOf(tr.ids, tr.dlMin);
         cs.forEach(s => {
           const goLeg = (s.pos && s.pos !== 'airport') ? rtLegMin(s.pos, 'airport') : 0;
           const readyAtMDE = s.avail + goLeg;
@@ -1072,14 +1186,15 @@
     const a = rt.aux[id];
     const tt = a.hotel ? 'hotel' : a.type;
     const ttl = a.hotel ? 'Hotel' : (a.type === 'sal' ? 'Salida' : 'Llegada');
-    const tip = [a.dir || a.zona, a.vuelo && ('Vuelo ' + a.vuelo), a.tel, a.notas].filter(Boolean).join(' · ');
+    // En tierra (0092): sin vuelo, y se dice («Tierra») en vez de dejar el hueco.
+    const tip = [a.dir || a.zona, a.tierra ? 'Trabajo en tierra (sin vuelo)' : (a.vuelo && ('Vuelo ' + a.vuelo)), a.tel, a.notas].filter(Boolean).join(' · ');
     return `<div class="aux" draggable="true" data-aux="${id}" data-src="pool" title="${rtEsc(tip)}">
       <span class="pax">${a.pax > 1 ? '×' + a.pax : ''}</span>
       <div class="a-top"><span class="a-av" style="background:${rt.colors[id] || '#888'}">${rtIni(a.n)}</span>
         <div class="a-nm"><b>${a.n}</b><span>${rtEsc(a.dir || a.zona)}</span></div></div>
       <div class="a-meta">
         <span class="triptype ${tt}"><svg class="icon"><use href="#${a.hotel ? 'i-home' : (a.type === 'lle' ? 'i-down' : 'i-up')}"/></svg>${ttl}</span>
-        ${a.vuelo ? `<span class="a-flight">${rtEsc(a.vuelo)}</span>` : ''}
+        ${a.tierra ? '<span class="a-flight">Tierra</span>' : (a.vuelo ? `<span class="a-flight">${rtEsc(a.vuelo)}</span>` : '')}
         <span class="dl hard"><svg class="icon"><use href="#i-clock"/></svg>${a.dl}</span>
       </div>
       ${a.notas ? `<div class="a-note" title="${rtEsc(a.notas)}"><svg class="icon"><use href="#i-info"/></svg>${rtEsc(a.notas)}</div>` : ''}
@@ -1111,11 +1226,11 @@
     const p = a.n.split(' ');
     // El title carga el detalle completo: en una parada estrecha no cabe, pero el
     // admin necesita poder consultarlo sin abrir Reservas.
-    const tip = [a.n, a.dir || a.zona, a.vuelo && ('Vuelo ' + a.vuelo), a.tel, a.notas].filter(Boolean).join('\n');
+    const tip = [a.n, a.dir || a.zona, a.tierra ? 'Trabajo en tierra (sin vuelo)' : (a.vuelo && ('Vuelo ' + a.vuelo)), a.tel, a.notas].filter(Boolean).join('\n');
     return `<div class="stop ${overDL ? 'over-dl' : ''}" draggable="true" data-aux="${s.id}" data-src="${cid}" title="${rtEsc(tip)}">
       <div class="s-top"><span class="s-n">${idx + 1}</span><span class="s-av" style="background:${rt.colors[s.id] || '#888'}">${rtIni(a.n)}</span><span class="s-nm">${rtEsc(p[0] + ' ' + (p[1] ? p[1][0] + '.' : ''))}</span></div>
       <div class="s-meta"><span class="s-zona">${rtEsc(a.zona)}</span><span class="s-eta">${rtToHM(s.eta)}</span></div>
-      <div class="s-dl"><svg class="icon" style="width:10px;height:10px"><use href="#i-clock"/></svg>pres. ${a.dl}${a.vuelo ? ' · ' + rtEsc(a.vuelo) : ''}${a.hotel ? ' · hotel' : ''}${a.pax > 1 ? ' · ×' + a.pax : ''}</div>
+      <div class="s-dl"><svg class="icon" style="width:10px;height:10px"><use href="#i-clock"/></svg>pres. ${a.dl}${a.tierra ? ' · tierra' : (a.vuelo ? ' · ' + rtEsc(a.vuelo) : '')}${a.hotel ? ' · hotel' : ''}${a.pax > 1 ? ' · ×' + a.pax : ''}</div>
       ${a.notas ? `<div class="s-note"><svg class="icon" style="width:10px;height:10px"><use href="#i-info"/></svg>${rtEsc(a.notas)}</div>` : ''}
     </div>`;
   }
@@ -1133,8 +1248,8 @@
       : `<span class="drv none">${rtBandIcon(rtBandOf(lane))} <svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor ${rtBandOf(lane).toUpperCase()} (borrador)</span>`;
     const sema = r.lle
       ? (st === 'ontime'
-        ? `<div class="holg"><div class="big" style="color:var(--green)">al bajar</div><div class="sm">aterriza ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`
-        : `<div class="holg"><div class="big" style="color:${st === 'late' ? 'var(--red)' : 'var(--amber)'}">espera ${r.wait} min</div><div class="sm">aterriza ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ${st}"><svg class="icon"><use href="#${st === 'late' ? 'i-warn' : 'i-clock'}"/></svg>${st === 'late' ? 'Espera larga' : 'Ajustado'}</span>`)
+        ? `<div class="holg"><div class="big" style="color:var(--green)">al bajar</div><div class="sm">${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`
+        : `<div class="holg"><div class="big" style="color:${st === 'late' ? 'var(--red)' : 'var(--amber)'}">espera ${r.wait} min</div><div class="sm">${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ${st}"><svg class="icon"><use href="#${st === 'late' ? 'i-warn' : 'i-clock'}"/></svg>${st === 'late' ? 'Espera larga' : 'Ajustado'}</span>`)
       : st === 'empty'
       ? `<span class="spill empty">Vacío</span>`
       : st === 'late'
@@ -1265,7 +1380,10 @@
   function rtRenderAll() { rtRenderPool(); rtRenderLanes(); rtRenderStats(); rtRenderClock(); }
 
   const RT_STEPS = ['Leyendo sectores de Rionegro…', 'Calculando tiempos reales por carretera…', 'Agrupando por sector y cercanía…', 'Eligiendo el mejor orden de cada carro…'];
-  async function rtOptimize() {
+  // opts.toast: a dónde va el aviso final (Asignación v2 lo muestra en su
+  // propio aviso, con «Deshacer»). Sin opts, como siempre.
+  async function rtOptimize(opts = {}) {
+    const say = typeof opts.toast === 'function' ? opts.toast : toast;
     $('#rt-ovl').classList.add('show');
     let i = 0; $('#rt-ovlStep').textContent = RT_STEPS[0];
     const iv = setInterval(() => { i++; if (i < RT_STEPS.length) $('#rt-ovlStep').textContent = RT_STEPS[i]; }, 480);
@@ -1292,13 +1410,16 @@
     const dia = rt.diaLentoNombre
       ? ` · ${rt.diaLentoNombre}${rt.HOLIDAY_SHIFT ? `, se recoge ${rt.HOLIDAY_SHIFT} min más tarde` : ', tratado como día normal'}`
       : '';
-    toast((s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ajustada, revísala.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`) + dia);
+    say((s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ajustada, revísala.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`) + dia);
   }
 
   // Persiste el plan del día: cada vuelta → route_assignment + route_stops.
   // Las vueltas con conductor asignado quedan visibles para ese conductor.
-  async function rtSavePlan() {
-    if (rt.source !== 'live' || !rt.day) { toast('Solo se publica con reservas reales.'); return; }
+  // opts.toast: igual que en rtOptimize. Devuelve { ok, saved, … } para que
+  // quien llama sepa si quedó publicado (antes no devolvía nada).
+  async function rtSavePlan(opts = {}) {
+    const say = typeof opts.toast === 'function' ? opts.toast : toast;
+    if (rt.source !== 'live' || !rt.day) { say('Solo se publica con reservas reales.'); return { ok: false }; }
     const lanes = rt.lanes.filter(l => rt.order[l.id] && rt.order[l.id].length).map(l => {
       const car = rt.cars.find(c => c.id === l.car);
       // La hora a la que el carro llega a CADA parada ya está calculada: es la
@@ -1323,16 +1444,28 @@
       };
     });
     const withDriver = lanes.filter(l => l.driverProfileId).length;
-    $('#rt-saveBtn').innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicando…';
+    const saveBtn = $('#rt-saveBtn');
+    if (saveBtn) saveBtn.innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicando…';
+    let result = { ok: false };
     try {
+      const firma = rtFirmaPlan();
       const r = await Api.saveRoutePlan(rt.day, lanes);
-      toast(withDriver
-        ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado)${r.kept ? ` · ${r.kept} paradas ya en curso quedaron intactas` : ''}. Los conductores ya lo ven.`
-        : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.`);
+      // Si alguna vuelta no entró, el plan NO queda como publicado: el botón sigue
+      // pidiendo publicar y el jefe lo ve (antes se contaba en silencio como «skipped»).
+      if (!r.failed) rt.firmaPublicada = firma;
+      result = { ok: !r.failed, saved: r.saved, skipped: r.skipped, kept: r.kept, failed: r.failed, withDriver, lanes: lanes.length };
+      say(r.failed
+        ? `Ojo: ${r.failed} ${r.failed === 1 ? 'vuelta no se pudo guardar' : 'vueltas no se pudieron guardar'} (${r.failMsg || 'error de la base'}). Se publicaron ${r.saved}. Vuelve a publicar.`
+        : withDriver
+          ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado)${r.kept ? ` · ${r.kept} paradas ya en curso quedaron intactas` : ''}. Los conductores ya lo ven.`
+          : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.`);
       // Push a los auxiliares cuya asignación CAMBIÓ de verdad. Antes se le
       // avisaba a todos en cada republicación, así que quien ya tenía conductor
       // recibía "Conductor asignado 🚗" otra vez — y a quien SÍ le cambiaron el
       // conductor le llegaba el mismo texto, sin decirle que había cambiado.
+      // Aterrizan en «Viajes» (#/viajes, rediseño del auxiliar 27-sep-2026): un
+      // mismo push puede hablar de varios traslados del tripulante, así que no
+      // se abre uno en particular.
       try {
         const fresh = (r.notify || []).filter(n => !n.changed).map(n => n.reservationId);
         const moved = (r.notify || []).filter(n => n.changed).map(n => n.reservationId);
@@ -1340,29 +1473,32 @@
           const ids = await Api.auxiliarUserIdsForReservations(fresh);
           if (ids.length) await Api.sendPush({ profileIds: ids,
             title: 'Conductor asignado 🚗',
-            body: 'Ya tienes conductor para tu traslado. Ábrelo para seguirlo en vivo.', url: '/' });
+            body: 'Ya tienes conductor para tu traslado. Ábrelo para seguirlo en vivo.', url: '/#/viajes' });
         }
         if (moved.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
           const ids = await Api.auxiliarUserIdsForReservations(moved);
           if (ids.length) await Api.sendPush({ profileIds: ids,
             title: 'Te cambiamos el conductor 🔄',
-            body: 'Tu traslado sigue en pie, pero lo atiende otro conductor. Ábrelo para ver quién es.', url: '/' });
+            body: 'Tu traslado sigue en pie, pero lo atiende otro conductor. Ábrelo para ver quién es.', url: '/#/viajes' });
         }
       } catch (_) {}
       // Push "ruta asignada" al CONDUCTOR de cada vuelta con conductor. Su
       // driverProfileId aquí es el id de PERFIL (lo que indexa las suscripciones
       // push), no el de driver_profiles. Best-effort, igual que el de arriba.
+      // Solo a los conductores que reciben algo NUEVO (antes le llegaba a todos en cada
+      // republicación). La ruta se ve en Inicio con o sin turno iniciado.
       try {
-        const driverIds = [...new Set(lanes.map(l => l.driverProfileId).filter(Boolean))];
+        const driverIds = [...new Set((r.notify || []).map(n => n.driverProfileId).filter(Boolean))];
         if (driverIds.length && Api.sendPush) await Api.sendPush({
           profileIds: driverIds,
           title: 'Ruta asignada 🗺️',
-          body: 'Se te asignó una ruta de traslados para tu turno. La verás al iniciar tu turno.',
+          body: 'Tienes vueltas nuevas en tu ruta. Ábrela en Inicio › Tu día.',
           url: '/',
         });
       } catch (_) {}
-    } catch (e) { toast('No se pudo publicar: ' + (e.message || 'error')); }
-    $('#rt-saveBtn').innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicar plan';
+    } catch (e) { say('No se pudo publicar: ' + (e.message || 'error')); result = { ok: false, error: e }; }
+    if (saveBtn) saveBtn.innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicar plan';
+    return result;
   }
 
   function rtOpenDrawer(laneId) {
@@ -1505,7 +1641,7 @@
     const lane = rtLaneOf(laneId);
     $('#rt-mapTitle').textContent = `Trayecto ${lane.car} · Vuelta ${lane.vuelta}`;
     $('#rt-mapSub').textContent = lane.type === 'lle'
-      ? `aterriza ${lane.landing} · recoge en MDE ${lane.start} · ${r.stops.length} paradas · termina ${rtToHM(r.arrival)}`
+      ? `${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing} · recoge en MDE ${lane.start} · ${r.stops.length} paradas · termina ${rtToHM(r.arrival)}`
       : `${lane.origin === 'airport' ? 'sale de MDE ' + lane.start : '1ª recogida ' + lane.start} · ${r.stops.length} paradas · llega a MDE ${rtToHM(r.arrival)} (pres. ${rtToHM(r.hardDL)})`;
     ovl.classList.add('show');
     // Mapa una sola vez; capa de ruta se redibuja por carro.
@@ -1523,7 +1659,7 @@
     const pin = (bg, tx) => `<div style="width:26px;height:26px;border-radius:50%;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font:800 12px Inter,sans-serif;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)">${tx}</div>`;
     const stopColor = r.lle ? '#10B981' : '#E2551A';
     r.stops.forEach((s, i) => { const a = rt.aux[s.id]; mk(rtCoordsOf(s.id), pin(stopColor, String(i + 1)), `<b>${i + 1}. ${a.n}</b><br>${a.dir || a.zona}<br>${r.lle ? 'Lo dejan' : 'ETA'} ${rtToHM(s.eta)}${r.lle ? '' : ' · pres. ' + a.dl}`); });
-    mk(RT_AIRPORT, pin('#16936A', '✈'), r.lle ? `<b>MDE</b> · recoge ${lane.start} (aterriza ${lane.landing})` : `<b>MDE</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
+    mk(RT_AIRPORT, pin('#16936A', '✈'), r.lle ? `<b>MDE</b> · recoge ${lane.start} (${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing})` : `<b>MDE</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
     // Geometría real por carretera (OSRM route). Si falla → línea recta punteada.
     let drew = false;
     try {
@@ -1667,6 +1803,18 @@
         if (!car) { rtCloseDrawer(); return; }
         const bands = rtBandsOfCar(car.id);
         if (!bands.some(b => (b === 'am' ? rt.pendingAM : rt.pendingPM))) { toast('Elige al menos un conductor de una franja.'); return; }
+        // Una persona no maneja dos carros a la vez (27-sep-2026). Con las dobles
+        // la misma persona puede estar en AM y PM, pero no en dos carros de la
+        // misma franja.
+        for (const b of ['am', 'pm']) {
+          const id = b === 'am' ? rt.pendingAM : rt.pendingPM; if (!id) continue;
+          const otro = (rt.cars || []).find(c => c.id !== car.id && (b === 'am' ? c.driverAM : c.driverPM) === id);
+          if (otro) {
+            const d = rt.drivers.find(x => x.id === id);
+            toast(`${d ? d.n.split(' ')[0] : 'Ese conductor'} ya maneja ${otro.id} en la franja ${b.toUpperCase()}: no puede estar en dos carros a la vez.`);
+            return;
+          }
+        }
         car.driverAM = rt.pendingAM || null; car.driverPM = rt.pendingPM || null;
         const names = bands.map(b => { const id = b === 'am' ? car.driverAM : car.driverPM; const d = id && rt.drivers.find(x => x.id === id); return d ? `${b.toUpperCase()} ${d.n.split(' ')[0]}` : null; }).filter(Boolean).join(' · ');
         rtCloseDrawer(); rtRenderAll(); toast(`${car.id} confirmada (${names || 'sin conductor'}).`); return;
@@ -1676,12 +1824,24 @@
         if (bad) { rt.expandedLane = bad.id; rtRenderLanes(); const el = root.querySelector(`[data-lane="${bad.id}"]`); if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); toast(`${bad.id} no llega: sal más temprano (ver "sal máx") o mueve una parada a otra vuelta.`); }
         return;
       }
-      if (e.target.closest('#rt-dayprev') || e.target.closest('#rt-daynext')) { toast('Navegación de día disponible al conectar reservas reales.'); return; }
+      if (e.target.closest('#rt-dayprev') || e.target.closest('#rt-daynext')) {
+        // El cambio de día lo lleva Asignación v2 (rtLoad con el día pedido) y
+        // repinta la vista que esté abierta.
+        if (window.RendioRutasV2) window.RendioRutasV2.cambiarDia(e.target.closest('#rt-dayprev') ? -1 : 1);
+        else toast('Navegación de día disponible al conectar reservas reales.');
+        return;
+      }
     });
   }
 
   async function renderRoutes() {
+    // Asignación v2 es la vista por defecto (admin-rutas-v2.js). Esta función
+    // sigue siendo la puerta de la pestaña; la vista anterior queda entera y se
+    // usa si se elige «Vista anterior» o si el archivo nuevo no cargó.
+    if (window.RendioRutasV2 && window.RendioRutasV2.activa()) return window.RendioRutasV2.entrar();
+    if (window.RendioRutasV2) window.RendioRutasV2.ocultar();
     await rtLoad();
+    if (window.RendioRutasV2) window.RendioRutasV2.rotularVieja();
     $('#rt-optBtn').innerHTML = '<svg class="icon"><use href="#i-bolt"/></svg>Optimizar';
     $('#rt-h1').textContent = 'Rutas del día';
     rtRenderAll();

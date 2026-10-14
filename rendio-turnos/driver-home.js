@@ -61,9 +61,12 @@
     revealDriverNav();   // siempre: Inicio también es una pestaña de la barra
     $$('#driver-tabs-root .driver-panel').forEach(p => p.classList.toggle('hidden', p.dataset.dtab !== name));
     $$('#driver-nav .dnav-btn').forEach(b => b.classList.toggle('active', b.dataset.dtab === name));
-    // Barra de semana: solo en Mi horario. Disponibilidad trae la suya dentro
-    // de la cabecera pegajosa desde el rediseño 2026-08-16, junto al medidor.
-    $('#driver-week-bar')?.classList.toggle('hidden', name !== 'schedule');
+    // Barra de semana vieja: ya no sale en ninguna pestaña. Disponibilidad trae la
+    // suya en la cabecera pegajosa y Mi horario en su cabecera («Ya programada» con
+    // ‹ ›, renderDriverHorarioHead), las dos desde el rediseño del 16-ago-2026: en Mi
+    // horario quedaban DOS selectores de semana, uno encima del otro (revisión de UX
+    // y responsive del 12-oct-2026; en 320 px se comían media pantalla).
+    $('#driver-week-bar')?.classList.add('hidden');
     if (name === 'home') updateDriverHome();
     if (name === 'perfil') renderDriverProfile();
     window.scrollTo(0, 0);

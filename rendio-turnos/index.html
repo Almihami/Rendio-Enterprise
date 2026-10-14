@@ -4,11 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0A0A0A" />
-  <title>Rendio · Turnos</title>
-  <meta name="description" content="Gestión semanal de turnos y disponibilidad para conductores Rendio." />
+  <title>Rendio</title>
+  <meta name="description" content="Rendio: traslados de tripulación entre casa y el aeropuerto José María Córdova." />
 
   <!-- PWA -->
   <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="assets/logo-icon.svg" />
   <link rel="icon" type="image/png" href="assets/logo-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="assets/icon-512.png" />
@@ -76,20 +77,51 @@
   <link rel="stylesheet" href="rc-conductor.css" />
   <!-- Rol auxiliar: capa visual de la entrega 2026-08-17 (incluye el modo nocturno) -->
   <link rel="stylesheet" href="rc-auxiliar.css" />
+  <!-- Rediseño del auxiliar (entrega del 27-sep-2026). TODO acotado a
+       #auxiliar-ui.rx-phone (la clase la pone AuxShell solo con la bandera
+       encendida): cargado y apagado no cambia nada. Orden del plan final §5.
+       rx-auxiliar.css es GENERADO por rendio-backend/scripts/_portar-css-rediseno-aux.mjs. -->
+  <link rel="stylesheet" href="rx-auxiliar.css" />
+  <link rel="stylesheet" href="rx-aux-app.css" />
+  <link rel="stylesheet" href="rx-aux-shell.css" />
+  <link rel="stylesheet" href="rx-aux-inicio.css" />
+  <link rel="stylesheet" href="rx-aux-viaje.css" />
+  <link rel="stylesheet" href="rx-aux-pedir.css" />
+  <link rel="stylesheet" href="rx-aux-select.css" />
+  <link rel="stylesheet" href="rx-aux-perfil.css" />
+  <link rel="stylesheet" href="rx-aux-pagos.css" />
+  <link rel="stylesheet" href="rx-aux-puntos.css" />
+  <link rel="stylesheet" href="rx-aux-coord.css" />
+  <link rel="stylesheet" href="rx-aux-onboard.css" />
+  <link rel="stylesheet" href="login-rx.css" />
+  <!-- Ruta del conductor v2 (entrega del diseñador 12-oct-2026): CSS portado por
+       _portar-css-ruta-conductor.mjs (no editar) + ajustes de la app. -->
+  <link rel="stylesheet" href="rt-conductor.css" />
+  <link rel="stylesheet" href="rt-conductor-app.css" />
+  <!-- Admin del rediseño: Coordinación, Cuentas de cobro y Rendio Points -->
+  <link rel="stylesheet" href="admin-coordinacion.css" />
+  <link rel="stylesheet" href="admin-cobro.css" />
+  <link rel="stylesheet" href="admin-puntos.css" />
+  <link rel="stylesheet" href="admin-inspecciones.css" />
+  <link rel="stylesheet" href="admin-whatsapp.css" />
+  <!-- Estado de vuelos (0099): el chip de vuelos-ui.js -->
+  <link rel="stylesheet" href="vuelos.css" />
+  <link rel="stylesheet" href="admin-usuarios.css" />
+  <!-- Rutas › Asignación v2 (10-oct-2026): acotado a #routes-v2 y .rv2-* -->
+  <link rel="stylesheet" href="admin-rutas-v2.css" />
 </head>
 <body class="bg-[#F8FAFC] text-slate-900 min-h-screen font-sans antialiased">
 
   <!-- ===========================  SPLASH SCREEN  ========================== -->
   <section id="screen-splash" class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-white via-slate-50 to-brand-50">
-    <img src="assets/logo.png" alt="Rendio Enterprises" class="splash-logo h-16 md:h-20 w-auto" />
+    <img src="assets/logo-enterprise.png" alt="Rendio Enterprise" class="splash-logo h-16 md:h-20 w-auto" />
   </section>
 
   <!-- ===========================  LOGIN SCREEN  =========================== -->
   <section id="screen-login" class="min-h-screen flex items-center justify-center px-5 py-8 bg-gradient-to-br from-white via-slate-50 to-brand-50 hidden">
     <div class="w-full max-w-sm">
       <div class="text-center mb-8">
-        <img src="assets/logo.png" alt="Rendio Enterprises" class="mx-auto h-12 md:h-14 w-auto" />
-        <p class="text-xs text-slate-500 mt-2 tracking-wide">GESTIÓN DE TURNOS</p>
+        <img src="assets/logo-enterprise.png" alt="Rendio Enterprise" class="mx-auto h-12 md:h-14 w-auto" />
       </div>
       <div class="bg-white rounded-2xl shadow-card p-6">
         <h1 class="text-xl font-bold text-ink text-center">Iniciar sesión</h1>
@@ -250,8 +282,8 @@
     <header id="app-header" class="bg-white border-b border-[#E2E8F0] sticky top-0 z-20 shadow-sm">
       <div class="max-w-[1680px] mx-auto px-4 py-3 flex items-center justify-between gap-3">
         <a href="#" class="flex items-center gap-2 shrink-0">
-          <img src="assets/logo-icon.png" alt="Rendio" class="h-8 w-8 md:hidden" />
-          <img src="assets/logo.png" alt="Rendio" class="hidden md:block h-9 w-auto" />
+          <img src="assets/logo-icon.svg" alt="Rendio" class="h-8 w-8 md:hidden" />
+          <img src="assets/logo-enterprise.png" alt="Rendio Enterprise" class="hidden md:block h-9 w-auto" />
         </a>
         <div class="flex-1 text-center md:hidden">
           <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500" id="role-label-mobile"></p>
@@ -565,13 +597,18 @@
                 <!-- El teléfono no se pedía nunca, así que el botón "Llamar" de la
                      app del tripulante y el del jefe no marcaban a nadie. -->
                 <div class="set-field"><label>Teléfono <span style="font-weight:400;opacity:.65">(para que puedan llamarlo)</span></label><input class="set-input" id="new-driver-phone" type="tel" autocomplete="off" placeholder="3001234567" /></div>
-                <div class="set-field"><label>Contraseña</label><div class="set-pwwrap"><input class="set-input mono" id="new-driver-password" type="text" autocomplete="new-password" placeholder="Mín. 8 caracteres" /><button class="set-btn ghost" id="new-driver-gen-pw" type="button" title="Generar contraseña aleatoria">Generar</button></div></div>
+                <div class="set-field"><label>Contraseña</label><div class="set-pwwrap"><input class="set-input mono" id="new-driver-password" type="text" autocomplete="new-password" placeholder="Mín. 10, con letras y números" /><button class="set-btn ghost" id="new-driver-gen-pw" type="button" title="Generar contraseña aleatoria">Generar</button></div></div>
               </div>
               <div class="set-grid2" style="margin-top:14px">
                 <div class="set-field"><label>Prioridad</label><div class="set-selwrap"><select class="set-sel" id="new-driver-priority"><option value="1" selected>1 · Nuevo</option><option value="2">2 · Con tiempo</option><option value="3">3 · Antiguo</option><option value="4">4 · Máxima</option></select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
                 <div class="set-field"><label>&nbsp;</label>
                   <label class="set-checkrow"><input type="checkbox" id="new-driver-can-coord" class="set-chk-input" /><span class="set-chk"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span><span>¿Puede ser líder de turno? (entra al pool de líderes)</span></label>
                 </div>
+              </div>
+              <!-- U6 (27-sep-2026): un jefe nuevo se crea igual que un conductor y
+                   se promueve en el mismo paso. -->
+              <div class="set-grid2" style="margin-top:14px">
+                <div class="set-field"><label>Crear como</label><div class="set-selwrap"><select class="set-sel" id="new-driver-role"><option value="driver" selected>Conductor</option><option value="admin">Administrador (jefe)</option></select><span class="set-chev"><svg class="icon"><use href="#i-chev"/></svg></span></div></div>
               </div>
               <div class="set-foot"><button class="set-btn" id="new-driver-create-btn"><svg class="icon"><use href="#i-plus"/></svg>Crear conductor</button><span id="new-driver-state" class="set-cstate"></span></div>
             </div>
@@ -597,7 +634,7 @@
         <div id="settings-ui" class="set-ui" data-theme="light">
           <div class="set-head">
             <h1>Ajustes del turno</h1>
-            <p>Lo que necesita el generador de turnos: jornadas, cupos, strikes y el inicio rápido. Los números del optimizador se mudaron a <b>Rutas › Configuración › Calibración</b>, y los carros a <b>Turnos › Revisión › Flota</b>. La antigüedad y los descansos fijos se guardan al instante.</p>
+            <p>Lo que necesita el generador de turnos: jornadas, cupos, strikes, el inicio rápido y cuánto se guardan las fotos de inspección. Los números del optimizador se mudaron a <b>Rutas › Configuración › Calibración</b>, y los carros a <b>Turnos › Revisión › Flota</b>. La antigüedad y los descansos fijos se guardan al instante.</p>
           </div>
 
           <!-- 1 · Parámetros del turno -->
@@ -633,18 +670,36 @@
                 <div class="set-field"></div>
               </div>
 
-              <details class="set-sec" data-guarda="btn" data-secval="setting-fast-start-enabled,setting-fast-start-from,setting-fast-start-to,setting-inspection-grace">
+              <!-- 0105 (12-oct-2026): «que puedan hacer la inspección al finalizar el turno
+                   en la noche». El plazo puede ser el cierre del turno y la franja puede
+                   cruzar la medianoche. -->
+              <details class="set-sec" data-guarda="btn" data-secval="setting-fast-start-enabled,setting-fast-start-from,setting-fast-start-to,setting-fast-start-deadline,setting-inspection-grace">
                 <summary><span class="set-sec-dot"></span><span class="set-sec-t">Inicio rápido (inspección diferida)</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
                 <div class="set-sec-body">
-              <label class="set-field" style="flex-direction:row;align-items:center;gap:10px;cursor:pointer"><input id="setting-fast-start-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Permitir iniciar turno sin inspección (la hace dentro del plazo)</span></label>
+              <label class="set-field" style="flex-direction:row;align-items:center;gap:10px;cursor:pointer"><input id="setting-fast-start-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Permitir iniciar turno sin inspección (la hace después, en el plazo de abajo)</span></label>
               <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Franja: desde (hora)</label><input id="setting-fast-start-from" class="set-input" type="number" min="0" max="23" /><div class="set-hint">Hora de inicio de la franja (0–23). Default 12.</div></div>
-                <div class="set-field"><label>Franja: hasta (hora)</label><input id="setting-fast-start-to" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Fin de la franja (exclusivo). Default 16 (4 p.m.).</div></div>
+                <div class="set-field"><label>Franja: desde (hora)</label><input id="setting-fast-start-from" class="set-input" type="number" min="0" max="23" /><div class="set-hint">Hora de Colombia, de 0 a 23 (formato 24 h). Esa hora entra. Default 12.</div></div>
+                <div class="set-field"><label>Franja: hasta (hora)</label><input id="setting-fast-start-to" class="set-input" type="number" min="1" max="24" /><div class="set-hint">De 1 a 24. Esa hora ya no entra: con 16 se puede hasta las 3:59 p.m. Default 16.</div></div>
               </div>
+              <div class="set-hint" style="margin-top:8px">El botón de inicio rápido solo le sale al conductor dentro de la franja. Si «hasta» es menor que «desde», la franja cruza la medianoche: 14 a 2 = de 2:00 p.m. a 1:59 a.m. Todo el día: 0 a 24.</div>
               <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Plazo para la inspección (min)</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint">Si no la hace en este tiempo → strike automático. Default 90.</div></div>
+                <div class="set-field"><label>Plazo de la inspección</label><select id="setting-fast-start-deadline" class="set-input"><option value="minutes">En minutos</option><option value="shift_close">Al cerrar el turno</option></select><div class="set-hint" id="setting-fast-start-deadline-hint">«Al cerrar el turno»: la app se la pide antes del cierre. Si el turno se cierra sin ella (también por el auto-cierre), strike automático.</div></div>
+                <div class="set-field"><label>Minutos de plazo</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint" id="setting-inspection-grace-hint">Con «En minutos»: si no la hace en este tiempo → strike automático. Default 90.</div></div>
+              </div>
+                </div>
+              </details>
+
+              <!-- 0096 (11-oct-2026): el bucket de fotos iba en 873 MB de 1 GB y nada se
+                   borraba nunca. Cada noche se borra la RUTINA más vieja que esto; las
+                   excepciones las decide la base (photo_purge_candidates), no esta pantalla. -->
+              <details class="set-sec" data-guarda="btn" data-secval="setting-photo-retention">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Fotos de inspección</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+              <div class="set-row2">
+                <div class="set-field"><label>Días que se guardan las fotos de inspección</label><input id="setting-photo-retention" class="set-input" type="number" min="30" max="365" step="1" inputmode="numeric" /><div class="set-hint" id="setting-photo-retention-hint">Entre 30 y 365. Default 60. Cada noche (3:15 a. m.) se borran las fotos de <b>rutina</b> más viejas que esto.</div></div>
                 <div class="set-field"></div>
               </div>
+              <div class="set-hint" id="setting-photo-retention-rules" style="margin-top:12px"><b>Nunca se borran:</b> la foto del golpe o daño, las adicionales del conductor y las que sube el jefe; los comprobantes de tanqueo; ni ninguna foto de una inspección pendiente, rechazada, NO APTA, con alguna falla del checklist o de un turno con novedad. De esas fotos borradas queda la constancia en la inspección.</div>
                 </div>
               </details>
               <div class="set-savebar">
@@ -759,10 +814,10 @@
                 <div class="set-field"><label>Anticipación mínima (horas)</label><input id="setting-aux-lead" class="set-input" type="number" min="0" max="72" /><div class="set-hint">Por debajo de esto se le avisa al auxiliar y el traslado queda marcado como "pedido tarde" en Reservas. No se bloquea: la operación tiene urgencias. Default 6.</div></div>
                 <div class="set-field"><label>Traslado privado (la camioneta)</label>
                   <label class="set-checkrow"><input id="setting-priv-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Ofrecerlo a los auxiliares</span></label>
-                  <div class="set-hint">Mientras esté apagado, el auxiliar ni siquiera ve el paso: pide su traslado como siempre. Enciéndelo solo cuando la camioneta y la tarifa estén definidas.</div>
+                  <div class="set-hint">Mientras esté apagado, el auxiliar lo ve como «Pronto» y no lo puede pedir: pide su traslado como siempre. Enciéndelo solo cuando la camioneta y la tarifa estén definidas.</div>
                 </div>
                 <div class="set-field"><label>Vehículo del privado</label><select id="setting-priv-vehicle" class="set-input"></select><div class="set-hint">Cuál carro se aparta para los traslados privados. De aquí sale el cupo: hay uno, luego hay un privado a la vez. Si no está en la lista, regístralo primero en Vehículos.</div></div>
-                <div class="set-field"><label>Tarifa del privado (pesos)</label><input id="setting-priv-price" class="set-input" type="number" min="1" step="1000" /><div class="set-hint">Lo que se le muestra al auxiliar por trayecto. <b>No se cobra dentro de la app</b>: queda registrado en la reserva y se liquida por fuera. El precio se congela al pedir, así que subirlo no cambia lo ya pactado.</div></div>
+                <div class="set-field"><label>Tarifa del privado (pesos)</label><input id="setting-priv-price" class="set-input" type="number" min="1" step="1000" /><div class="set-hint">Lo que paga el tripulante por trayecto (default $50.000). Lo ve al pedir y, <b>cuando apruebas el privado, se suma a su cuenta de cobro</b> del mes del viaje (Cuentas de cobro). Si lo niegas o se cancela, ese cobro se quita solo. El precio se congela al pedir, así que cambiarlo no toca lo ya pedido.</div></div>
                 <div class="set-field"><label>La camioneta queda apartada (min)</label><input id="setting-priv-block" class="set-input" type="number" min="10" max="480" /><div class="set-hint">Cuánto tiempo antes y después de un privado NO se puede aprobar otro. De aquí sale el cupo: hay una sola camioneta. Default 90.</div></div>
               </div>
                 </div>
@@ -1087,9 +1142,41 @@
               <button class="on" data-tp="filtro" data-f="todos">Todos</button>
               <button data-tp="filtro" data-f="sin-fecha">Sin fecha de ingreso</button>
               <button data-tp="filtro" data-f="dos-unidades">Con dos unidades</button>
+              <button data-tp="filtro" data-f="suspendidos">Suspendidos</button>
             </div>
+            <label class="tp-airf">Aerolínea
+              <select id="tp-air-filter"><option value="">Todas</option></select>
+            </label>
           </div>
           <div id="tp-body"></div>
+        </div>
+      </section>
+
+      <!-- ADMIN: Usuarios (11-oct-2026). Todas las cuentas —conductores, jefes y
+           tripulantes— con buscador y las acciones de cada una. Las pinta
+           admin-usuarios.js con los modales de usuarios.js; las mismas acciones
+           siguen en Personal y Tripulantes. -->
+      <section data-panel="usuarios" class="hidden">
+        <div id="usuarios-ui" data-theme="light">
+          <div class="us-phead">
+            <div>
+              <h1>Usuarios <span class="us-ct" id="us-count">0</span></h1>
+              <p>Todas las cuentas: conductores, jefes y tripulantes. Acá se <b>restablece la contraseña</b>,
+                 se corrigen los datos y el correo, se suspende, se elimina o se restaura, y se hace jefe a un conductor.</p>
+            </div>
+            <div class="us-hacts">
+              <button class="us-btn primary" data-us="crear"><svg class="icon"><use href="#i-userplus"/></svg>Crear usuario</button>
+              <button class="us-btn ghost" data-us="reload"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+            </div>
+          </div>
+          <div class="us-tools">
+            <div class="us-search">
+              <svg class="icon"><use href="#i-search"/></svg>
+              <input id="us-search" type="search" placeholder="Busca por nombre, correo o teléfono" autocomplete="off" aria-label="Buscar usuario" />
+            </div>
+            <div class="us-filters" id="us-filters"></div>
+          </div>
+          <div id="us-body"></div>
         </div>
       </section>
 
@@ -1153,6 +1240,14 @@
         </div>
       </section>
 
+      <!-- ADMIN (rediseño del auxiliar, 27-sep-2026): Coordinación, Cuentas de cobro
+           y Rendio Points. Los pintan admin-coordinacion.js, admin-cobro.js y
+           admin-puntos.js (core.setTab → renderCoordinacion/renderCobro/renderPuntos).
+           Mientras esos módulos sean stub, la consola no muestra sus entradas. -->
+      <section data-panel="coordinacion" class="hidden"><div id="coordinacion-ui" data-theme="light"></div></section>
+      <section data-panel="cobro" class="hidden"><div id="cobro-ui" data-theme="light"></div></section>
+      <section data-panel="puntos" class="hidden"><div id="puntos-ui" data-theme="light"></div></section>
+
       <!-- ===================== RUTAS: CONSOLA (hub por capas) ===================== -->
       <section data-panel="consola" class="hidden">
         <div id="consola-ui" data-theme="light">
@@ -1177,9 +1272,60 @@
 
       <!-- ===================== RUTAS: ASIGNACIÓN (planeación) ===================== -->
       <section data-panel="routes" class="hidden">
+        <!-- ===== Asignación v2 (entrega del UX 10-oct-2026): vista por defecto =====
+             La pinta admin-rutas-v2.js con el estado de admin-rutas.js. Nace
+             escondida: si ese archivo no carga, se ve la vista anterior (#routes-ui). -->
+        <section id="routes-v2" aria-label="Asignación de rutas" hidden>
+          <div class="rv2-bar">
+            <h1 class="rv2-title">Rutas del día</h1>
+            <div class="rv2-day">
+              <button class="rv2-ic" data-act="nav" data-dir="-1" aria-label="Día anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+              <b id="rv2-dayLabel">—</b>
+              <button class="rv2-ic" data-act="nav" data-dir="1" aria-label="Día siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+            </div>
+            <span class="rv2-pub" id="rv2-pubChip" hidden></span>
+            <label class="rv2-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="rv2-q" type="search" placeholder="Buscar tripulante, carro o conductor" autocomplete="off" aria-label="Buscar tripulante, carro, conductor o conjunto"><kbd>/</kbd></label>
+            <div class="rv2-spacer"></div>
+            <div class="rv2-seg" role="tablist" aria-label="Vista">
+              <button role="tab" aria-selected="true" data-view="lista">Lista</button>
+              <button role="tab" aria-selected="false" data-view="carros">Carros</button>
+              <button role="tab" aria-selected="false" disabled title="Próximamente" aria-label="Mapa (próximamente)">Mapa</button>
+            </div>
+            <button class="rv2-ic rv2-wa" id="rv2-wa" type="button" title="Copiar plan para WhatsApp" aria-label="Copiar plan para WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg></button>
+            <button class="rv2-btn" id="rv2-reopt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg><span id="rv2-reoptLabel">Re-optimizar</span></button>
+            <button class="rv2-btn rv2-btn--cta" id="rv2-publish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg><span id="rv2-publishLabel">Publicar plan</span><span class="rv2-badge" id="rv2-pending">0</span></button>
+          </div>
+
+          <div class="rv2-status">
+            <div class="rv2-progress"><p><b id="rv2-readyN">0</b> de <span id="rv2-totalN">0</span> rutas listas</p><div class="rv2-track"><i id="rv2-fill"></i></div></div>
+            <div class="rv2-chips" id="rv2-chips" role="toolbar" aria-label="Filtrar por estado"></div>
+            <div class="rv2-spacer"></div>
+            <select id="rv2-type" class="rv2-select" aria-label="Tipo de vuelta">
+              <option value="">Tipo: todos</option><option value="salida">Salida</option><option value="llegada">Llegada</option><option value="hotel">Hotel</option>
+            </select>
+            <button class="rv2-old" type="button" data-act="vista" data-v="v1">Vista anterior</button>
+          </div>
+
+          <div class="rv2-hist" id="rv2-hist">
+            <div class="rv2-hist-cap">RUTAS POR HORA<br>Toca una franja<br>para ir a ella</div>
+            <div class="rv2-hist-bars" id="rv2-hist-bars"></div>
+          </div>
+
+          <div class="rv2-stage">
+            <div class="rv2-listwrap" id="rv2-listwrap">
+              <div class="rv2-cols" aria-hidden="true"><span>Estado</span><span>Recogida → MDE</span><span>Carro · tipo</span><span>Tripulantes</span><span>Margen</span><span>Conductor</span></div>
+              <div class="rv2-list" id="rv2-list"></div>
+            </div>
+            <div class="rv2-carros" id="rv2-carros" hidden></div>
+            <aside class="rv2-detail" id="rv2-detail" aria-label="Detalle de la ruta"></aside>
+          </div>
+
+          <div class="rv2-mbar"><button class="rv2-btn rv2-btn--cta rv2-btn--block" id="rv2-publishM">Publicar plan</button></div>
+        </section>
         <div id="routes-ui" data-theme="light">
           <div class="sub">
             <h1 id="rt-h1">Rutas del día</h1>
+            <button class="rv2-vista-nueva" id="rt-vistaNueva" type="button" hidden>Vista nueva</button>
             <div class="daypick">
               <button class="nav" id="rt-dayprev" title="Día anterior"><svg class="icon"><use href="#i-l"/></svg></button>
               <b id="rt-dayLabel">Hoy</b>
@@ -1192,6 +1338,8 @@
               <div class="ds ok" id="rt-dsTime"><b>—</b><span>A tiempo</span></div>
               <div class="ds" id="rt-dsEta" title="Pulsa Optimizar para calcular tiempos reales."><b>—</b><span>ETAs</span></div>
             </div>
+            <!-- Copiar el plan en el formato de WhatsApp del jefe (admin-whatsapp.js) -->
+            <button class="iconbtn rt-wabtn" id="rt-waBtn" type="button" title="Copiar plan para WhatsApp" aria-label="Copiar plan para WhatsApp"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5l1.2-4.3A8.4 8.4 0 1 1 8 19.4z"/><path fill="currentColor" stroke="none" d="M9.1 7.6c.3-.3.8-.3 1 .1l.9 1.6c.2.3.1.7-.1 1l-.6.6c.6 1.3 1.6 2.3 2.9 2.9l.6-.6c.3-.2.7-.3 1-.1l1.6.9c.4.2.4.7.1 1l-.7.7c-.6.6-1.5.8-2.3.5-2.4-.9-4.3-2.8-5.2-5.2-.3-.8-.1-1.7.5-2.3z"/></svg></button>
             <button class="btn" id="rt-optBtn"><svg class="icon"><use href="#i-bolt"/></svg>Optimizar</button>
             <button class="btn primary" id="rt-saveBtn" style="display:none"><svg class="icon"><use href="#i-save"/></svg>Publicar plan</button>
           </div>
@@ -1240,6 +1388,10 @@
           <div class="scrim" id="rt-scrim"></div>
           <aside class="drawer" id="rt-drawer"></aside>
         </div>
+        <!-- Overlays de Asignación v2 (fuera de #routes-v2 para que el fondo cubra todo). -->
+        <div class="rv2-scrim" id="rv2-scrim" hidden></div>
+        <div class="rv2-sheet" id="rv2-sheet" role="dialog" aria-modal="true" hidden></div>
+        <div class="rv2-toast" id="rv2-toast" role="status" aria-live="polite" hidden></div>
       </section>
 
       <!-- ===================== RUTAS: OPERACIÓN EN VIVO (mapa real OSM) ===================== -->
@@ -1403,11 +1555,21 @@
   <script src="supabase-client.js"></script>
   <script src="scheduler.js"></script>
   <script src="api.js"></script>
+  <!-- APIs del rediseño del auxiliar: después de api.js (usan window.sb) -->
+  <script src="api-aux.js"></script>
+  <script src="api-cobro.js"></script>
+  <script src="api-puntos.js"></script>
+  <!-- Estado de vuelos (0099): extiende window.Api (después de api.js) + el chip -->
+  <script src="api-vuelos.js"></script>
+  <script src="vuelos-ui.js"></script>
+  <!-- Pedidos del jefe de operación (11-oct-2026): horario del turno, mis horas, celular -->
+  <script src="api-jefe.js"></script>
   <script src="shift-flow.js"></script>
   <!-- app.js fue dividido en módulos por feature (split mecánico 2026-07-10).
        Comparten scope global; el ORDEN de carga importa: core.js primero
        (estado global + boot) y ui-push.js último (registra DOMContentLoaded). -->
   <script src="core.js"></script>
+  <script src="usuarios.js"></script>
   <script src="admin-turnos-activos.js"></script>
   <script src="admin-inspecciones.js"></script>
   <script src="admin-repuestos.js"></script>
@@ -1421,25 +1583,49 @@
   <script src="admin-revision.js"></script>
   <script src="driver-home.js"></script>
   <script src="admin-recompensas.js"></script>
+  <script src="driver-horas.js"></script>
   <script src="driver-perfil.js"></script>
+  <script src="driver-celular.js"></script>
   <script src="driver-disponibilidad.js"></script>
   <script src="driver-tabs.js"></script>
   <!-- Rutas de auxiliares (feat/rutas-modular): consola/sidebar + asignación + operación -->
   <script src="admin-consola.js"></script>
   <script src="admin-rutas.js"></script>
+  <script src="admin-rutas-v2.js"></script>
   <script src="admin-reservas.js"></script>
   <script src="admin-tripulantes.js"></script>
+  <script src="admin-usuarios.js"></script>
   <script src="admin-privados.js"></script>
   <script src="admin-operacion.js"></script>
   <script src="admin-eventualidades.js"></script>
   <script src="admin-chat.js"></script>
+  <script src="admin-coordinacion.js"></script>
+  <script src="admin-cobro.js"></script>
+  <script src="admin-puntos.js"></script>
   <script src="admin-acomodar.js"></script>
+  <script src="admin-whatsapp.js"></script>
   <!-- Rol auxiliar (pasajero) -->
+  <!-- Rediseño (27-sep-2026): el sistema visual y el shell ANTES de aux-registro:
+       aux-privado y aux-registro registran pantallas al evaluarse y AuxShell ya
+       tiene que existir (plan final §5, orden de carga). -->
+  <script src="aux-rx-ui.js"></script>
+  <script src="aux-shell.js"></script>
   <script src="aux-registro.js"></script>
   <script src="aux-residencias.js"></script>
   <script src="aux-privado.js"></script>
   <script src="aux-celebracion.js"></script>
   <script src="aux-presentacion.js"></script>
+  <!-- Pantallas del rediseño: después de aux-presentacion y antes de auxiliar.js -->
+  <script src="aux-rx-inicio.js"></script>
+  <script src="aux-rx-viajes.js"></script>
+  <script src="aux-rx-avisos.js"></script>
+  <script src="aux-rx-viaje.js"></script>
+  <script src="aux-rx-pedir.js"></script>
+  <script src="aux-rx-perfil.js"></script>
+  <script src="aux-rx-pagos.js"></script>
+  <script src="aux-rx-puntos.js"></script>
+  <script src="aux-rx-coord.js"></script>
+  <script src="aux-rx-vuelo.js"></script>
   <script src="auxiliar.js"></script>
   <!-- Conductor: rutas de auxiliares -->
   <script src="driver-rutas.js"></script>

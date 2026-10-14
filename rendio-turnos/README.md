@@ -78,7 +78,8 @@ Este módulo depende del proyecto Supabase `rendio-dev`. Antes de usarlo:
 ## Reglas del generador
 
 - 2 cupos Mañana + 2 cupos Tarde por día (configurables en *Ajustes*).
-- Cada conductor hace máximo un turno por día (no puede estar en Mañana **y** Tarde el mismo día).
+- El generador nunca dobla: cada conductor hace máximo un turno por día y no pasa de Tarde a la Mañana siguiente.
+- **Doble turno (0082, 27-sep-2026):** solo lo crea el jefe desde el Tablero («¿Mover o doblar?»), con un motivo. Hay dos: *doble día* (Mañana + Tarde) y *doble noche* (Tarde + la Mañana siguiente, dentro de la semana). Máximo 24 h seguidas y después `app_settings.double_rest_hours` (24 h) de descanso. Se guarda en `weekly_schedules.data._doubles`. Si se regenera la semana, el generador respeta las dobles marcadas y su descanso. El conductor marca los días en que «Puede doblar» (`shift_pref = 'both'`); si no lo marcó, el jefe puede doblarlo igual, con aviso. Quien dobla puede liderar las dos jornadas. La segunda mitad con el mismo carro lleva inspección corta.
 - Excluye a quien marca `unavailable` en esa jornada.
 - Prefiere a quien marca `available` sobre `prefer_rest`.
 - A igualdad, prioriza al de menor carga acumulada en la semana.
@@ -117,7 +118,7 @@ El `SUPABASE_ANON_KEY` y el `SUPABASE_URL` están en `config.js`. El anon key es
 Estas requieren aplicar las migrations **0018–0021** (`cd ../rendio-backend && supabase db push`):
 
 - **Strikes (0018):** amonestaciones con razón. Al 3er strike activo, el conductor queda **suspendido automáticamente la semana siguiente** (tabla `driver_suspensions`, trigger `apply_strike_suspension`). Gestión desde *Personal*.
-- **Cambio de turno entre conductores (0019):** un driver propone a otro intercambiar dos turnos del horario publicado; el otro acepta/rechaza, sin admin. El sistema **valida** que no genere indisponibilidad (doble turno, PM→AM, descansos fijos). Se aplica como *overlay* al mostrar el horario; no muta `weekly_schedules`.
+- **Cambio de turno entre conductores (0019):** un driver propone a otro intercambiar dos turnos del horario publicado; el otro acepta/rechaza, sin admin. El sistema **valida** que no genere indisponibilidad (doble turno o PM→AM sin autorizar, más de 24 h seguidas, el descanso después de una doble, descansos fijos). Una doble autorizada por el jefe no bloquea los cambios. Se aplica como *overlay* al mostrar el horario; no muta `weekly_schedules`.
 - **Reglas editables (0020):** los descansos fijos por conductor (antes hardcodeados por email en `scheduler.js`) se mueven a la tabla `driver_rules`, editable desde *Ajustes → Descansos fijos*. La migration siembra las reglas existentes (Juan Andrés, Cardona). El hardcode queda como fallback si la tabla no responde.
 - **Notificaciones push (0021):** ver abajo.
 

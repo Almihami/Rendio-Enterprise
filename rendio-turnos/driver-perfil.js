@@ -49,7 +49,7 @@
     try {
       if (!state.driverId) { try { state.driverId = await Api.getMyDriverProfileId(state.profile.id); } catch (e) { /* */ } }
       const did = state.driverId;
-      const [prof, strikes, closed, rewards, redemptions, openShift, susp] = await Promise.all([
+      const [prof, strikes, closed, rewards, redemptions, openShift, susp, docsCarros, horas] = await Promise.all([
         Api.getMyFullProfile().catch(() => state.profile),
         Api.listDriverStrikes(state.profile.id).catch(() => []),
         did ? Api.listMyClosedShifts(did).catch(() => []) : Promise.resolve([]),
@@ -57,6 +57,15 @@
         did ? Api.listMyRedemptions(did).catch(() => []) : Promise.resolve([]),
         did ? Api.getMyOpenShift(did).catch(() => null) : Promise.resolve(null),
         Api.getMyWeekSuspension(state.profile.id, nextWeekMondayISO()).catch(() => null),
+        // Documentos de la vía de los carros (0095), a la par del resto: el del
+        // turno se filtra abajo. null = la RPC no está o falló (queda lo de antes).
+        (did && typeof Api.driverVehicleDocuments === 'function')
+          ? Api.driverVehicleDocuments(null).catch(() => null) : Promise.resolve(null),
+        // Mis horas (driver-horas.js, 11-oct-2026): el corte en curso y el
+        // anterior con la cifra del Balance. null = no se puede decir (no sale
+        // la tarjeta); { error } = la base no respondió (lo dice).
+        (did && typeof dhCargarHoras === 'function')
+          ? dhCargarHoras(did).catch(e => { console.error(e); return { error: true }; }) : Promise.resolve(null),
       ]);
       // El número que ve el conductor es el de ESTE MES. Antes se contaba todo lo
       // que estuviera vivo desde que entró a la empresa: un strike de marzo seguía
@@ -74,7 +83,9 @@
       const activeStrikes = vivos.filter(s => (pfStrikePeriodOf(s) || period) === period);
       const oldStrikes = vivos.filter(s => (pfStrikePeriodOf(s) || period) !== period);
       const kmTotal = (closed || []).reduce((s, sh) => s + kmDrivenOf(sh), 0);
-      state.profileData = { prof: prof || state.profile, strikes: strikes || [], activeStrikes, oldStrikes, period, closed: closed || [], rewards: rewards || [], redemptions: redemptions || [], openShift, susp, kmTotal };
+      const carDocs = (Array.isArray(docsCarros) && openShift && openShift.vehicle_id)
+        ? docsCarros.filter(x => x && x.vehicle_id === openShift.vehicle_id) : null;
+      state.profileData = { prof: prof || state.profile, strikes: strikes || [], activeStrikes, oldStrikes, period, closed: closed || [], rewards: rewards || [], redemptions: redemptions || [], openShift, susp, kmTotal, carDocs, horas };
       drawProfileView();
     } catch (e) {
       console.error(e);
@@ -85,7 +96,10 @@
   function drawProfileView() {
     const box = $('#driver-profile-container'); if (!box) return;
     const v = state.profileView || 'main';
-    box.innerHTML = v === 'rewards' ? rewardsViewHtml() : v === 'strikes' ? strikesViewHtml() : profileMainHtml();
+    box.innerHTML = v === 'rewards' ? rewardsViewHtml()
+      : v === 'strikes' ? strikesViewHtml()
+      : (v === 'horas' && typeof dhVistaHtml === 'function') ? dhVistaHtml(state.profileData.horas)
+      : profileMainHtml();
     bindProfile();
     box.scrollTop = 0; window.scrollTo(0, 0);
   }
@@ -94,8 +108,11 @@
   // Se conservan dos cosas que el diseño no traía pero que ya están en producción
   // y el conductor usa: la tarjeta de recompensas por km y el detalle de strikes.
   // Los vencimientos que muestra "Documentos" salen de datos reales
-  // (driver_profiles.license/eps/arl_expires_at, vehicles.soat/tecnomec_expires_at);
-  // la fila que no tenga fecha en BD no se dibuja.
+  // (driver_profiles.license/eps/arl_expires_at); los del carro del turno, de
+  // driver_vehicle_documents (0095): SOAT, tecnomecánica, seguro, pólizas RC y
+  // extintor, con el estado que calcula la base. Si esa consulta no está, queda
+  // lo de antes (vehicles.soat/tecnomec_expires_at, si vinieran).
+  // La fila que no tenga fecha en BD, o que el jefe marcó «No aplica», no se dibuja.
   function profileMainHtml() {
     const d = state.profileData; const p = d.prof; const dp = p.driver || {};
     const av = p.avatar_url;
@@ -105,12 +122,28 @@
     const ov = d.openShift && d.openShift.vehicles ? d.openShift.vehicles : null;
     const tier = currentTier(d.kmTotal, d.rewards);
 
+    // [etiqueta, fecha, ícono, estado de la base]. Sin estado (los personales y
+    // el respaldo) se calcula aquí, como siempre se hizo.
+    const delCarroMeta = {
+      soat: ['SOAT del vehículo', 'shield'],
+      tecnomecanica: ['Tecnomecánica', 'fileText'],
+      seguro: ['Seguro todo riesgo', 'shield'],
+      polizas_rc: ['Pólizas RCC/RCE', 'shield'],
+      extintor: ['Recarga del extintor', 'shield'],
+    };
+    const delCarro = (Array.isArray(d.carDocs) && d.carDocs.length)
+      ? d.carDocs
+          .filter(x => delCarroMeta[x.kind] && x.expires_on && !x.not_applicable && x.status !== 'no_aplica' && x.status !== 'sin_dato')
+          .map(x => [delCarroMeta[x.kind][0], String(x.expires_on).slice(0, 10), delCarroMeta[x.kind][1], x.status])
+      : [
+          ['SOAT del vehículo', ov && ov.soat_expires_at, 'shield'],
+          ['Tecnomecánica', ov && ov.tecnomec_expires_at, 'fileText'],
+        ];
     const docs = [
       ['Licencia de conducción', dp.license_expires_at, 'fileText'],
       ['EPS', dp.eps_expires_at, 'shield'],
       ['ARL', dp.arl_expires_at, 'shield'],
-      ['SOAT del vehículo', ov && ov.soat_expires_at, 'shield'],
-      ['Tecnomecánica', ov && ov.tecnomec_expires_at, 'fileText'],
+      ...delCarro,
     ].filter(([, fecha]) => !!fecha);
 
     return `
@@ -126,6 +159,8 @@
       </div>
 
       <div style="margin-top:16px" class="rc-in d1">${profileStrikeNoteHtml(sc, d.susp, d.period)}</div>
+
+      ${typeof dhTarjetaHtml === 'function' ? dhTarjetaHtml(d.horas) : ''}
 
       <div class="rc-sechd">Recompensas por kilómetro</div>
       <button id="pf-rewards-btn" class="rc-pf-km rc-in d2" type="button">
@@ -148,11 +183,14 @@
       ${docs.length ? `
         <div class="rc-sechd">Documentos</div>
         <div class="rc-card tight rc-in d3">
-          ${docs.map(([label, fecha, ic], i) => {
+          ${docs.map(([label, fecha, ic, estadoBd], i) => {
             const dt = new Date(fecha + 'T00:00:00');
             const dias = Math.round((dt - new Date()) / 86400000);
-            const tono = dias < 0 ? 'var(--r-error)' : (dias <= 30 ? 'var(--r-warn)' : null);
-            const txt = dias < 0 ? 'Vencido' : `Vence ${dt.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+            const est = estadoBd || (dias < 0 ? 'vencido' : dias <= 30 ? 'por_vencer' : 'al_dia');
+            const tono = est === 'vencido' ? 'var(--r-error)' : (est === 'hoy' || est === 'por_vencer') ? 'var(--r-warn)' : null;
+            const txt = est === 'vencido' ? 'Vencido'
+              : est === 'hoy' ? 'Vence hoy'
+              : `Vence ${dt.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}`;
             return `<div class="rc-listrow"${i === docs.length - 1 ? ' style="border-bottom:0"' : ''}>
               <span class="ic"${tono ? ` style="color:${tono}"` : ''}>${avIcon(ic, 18)}</span>
               <span class="lbl">${escapeHtml(label)}</span>
@@ -174,10 +212,21 @@
       </div>
 
       <div class="rc-card tight" style="margin-top:10px">
+        ${typeof drvTelAbrir === 'function' ? `<button class="rc-listrow" id="pf-phone" type="button">
+          <span class="ic">${avIcon('phone', 18)}</span>
+          <span class="lbl">Mi celular</span>
+          <span class="val"${p.phone ? '' : ' style="color:var(--r-warn);font-weight:650"'}>${p.phone ? escapeHtml(drvTelFormato(p.phone)) : 'Agrégalo'}</span>
+          <span class="chev">${avIcon('chevronRight', 16)}</span>
+        </button>` : ''}
         <button class="rc-listrow" id="pf-strikes-btn" type="button">
           <span class="ic">${avIcon('alert', 18)}</span>
           <span class="lbl">Mis strikes</span>
           <span class="val">${sc === 0 ? 'Ninguno' : `${sc} de ${strikeLimit()}`}</span>
+          <span class="chev">${avIcon('chevronRight', 16)}</span>
+        </button>
+        <button class="rc-listrow" id="pf-mypw" type="button">
+          <span class="ic">${avIcon('lock', 18)}</span>
+          <span class="lbl">Cambiar mi contraseña</span>
           <span class="chev">${avIcon('chevronRight', 16)}</span>
         </button>
         <button class="rc-listrow" id="pf-logout" type="button" style="border-bottom:0">
@@ -317,12 +366,19 @@
           </div>
         </div>`;
     }).join('') : '<div class="px-1 text-sm text-slate-500">Aún no hay recompensas configuradas. Tu administrador las definirá pronto.</div>';
+    // Cada turno con su horario y su duración (11-oct-2026): «30 sep · 2:30 a. m.
+    // → 3:27 p. m. · 12 h 57 min» y los km a la derecha. La línea la arma
+    // driver-horas.js con BalanceCore, igual que en «Mis horas».
     const hist = d.closed.length ? d.closed.map(sh => {
       const k = kmDrivenOf(sh); const veh = sh.vehicles ? (sh.vehicles.internal_code || sh.vehicles.license_plate || '') : '';
-      const date = sh.end_at ? new Date(sh.end_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }) : '';
-      return `<div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 last:border-0">
-          <div class="flex items-center gap-3"><div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-sm">🚐</div><div><p class="text-sm font-semibold text-ink">${escapeHtml(date)}</p><p class="text-[11px] text-slate-400">${escapeHtml(veh || 'Turno')}</p></div></div>
-          <span class="text-sm font-bold tabular-nums text-emerald-600">+${k.toLocaleString('es-CO')} km</span>
+      const linea = typeof dhTurnoLinea === 'function' ? dhTurnoLinea(sh) : null;
+      // Los km ya van a la derecha: la línea va sin ellos.
+      const dateHtml = linea ? dhPartesHtml(linea.partes.filter(x => !/^\+[\d.,]+ km$/.test(x)))
+        : escapeHtml(sh.end_at ? new Date(sh.end_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }) : '');
+      const sub = [linea && linea.marca, veh || (linea ? '' : 'Turno')].filter(Boolean).join(' · ');
+      return `<div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 last:border-0">
+          <div class="flex items-center gap-3 min-w-0"><div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-sm shrink-0">🚐</div><div class="min-w-0"><p class="text-sm font-semibold text-ink">${dateHtml}</p>${sub ? `<p class="text-[11px] ${linea && linea.marca ? 'text-amber-600 font-semibold' : 'text-slate-400'}">${escapeHtml(sub)}</p>` : ''}</div></div>
+          <span class="text-sm font-bold tabular-nums text-emerald-600 shrink-0">+${k.toLocaleString('es-CO')} km</span>
         </div>`;
     }).join('') : '<div class="px-4 py-4 text-sm text-slate-500">Aún no has cerrado turnos.</div>';
     return `
@@ -348,10 +404,18 @@
     const box = $('#driver-profile-container'); if (!box) return;
     $('#pf-rewards-btn')?.addEventListener('click', () => { state.profileView = 'rewards'; drawProfileView(); });
     $('#pf-strikes-btn')?.addEventListener('click', () => { state.profileView = 'strikes'; drawProfileView(); });
+    $('#pf-horas-btn')?.addEventListener('click', () => { state.profileView = 'horas'; drawProfileView(); });
+    $('#pf-phone')?.addEventListener('click', async () => {
+      const nuevo = await drvTelAbrir({ forzado: false });
+      if (nuevo && state.profileView === 'main') drawProfileView();
+    });
     $('#pf-back')?.addEventListener('click', () => { state.profileView = 'main'; drawProfileView(); });
     $('#pf-logout')?.addEventListener('click', onLogout);
+    $('#pf-mypw')?.addEventListener('click', () => openCambiarMiClave());
     $('#pf-avatar-btn')?.addEventListener('click', () => $('#pf-avatar-input')?.click());
-    $('#pf-avatar-input')?.addEventListener('change', onPickAvatar);
+    // El listener recibe el EVENTO: hay que pasarle el campo (antes recibía el
+    // evento como si fuera el input, `files` venía undefined y no pasaba nada).
+    $('#pf-avatar-input')?.addEventListener('change', (e) => onPickAvatar(e.currentTarget || e.target));
     // Tema claro/oscuro de las pestañas del conductor (rediseño 2026-08-16).
     $('#pf-theme')?.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-t]');
@@ -513,8 +577,10 @@
       const day = sch.data[d.key] || {};
       const meId = state.profile.id;
       // El líder conduce su jornada: un solo turno (no se duplica ni las horas).
-      if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', lead: (day.coord_am || []).includes(meId) });
-      if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', lead: (day.coord_pm || []).includes(meId) });
+      // Doble (27-sep-2026): la jornada que es parte de una doble autorizada lo dice.
+      const dblAt = (sh) => Scheduler.doubleAt(sch.data, meId, d.key, sh);
+      if ((day.morning || []).includes(meId)) myShifts.push({ d, shift: 'AM', lead: (day.coord_am || []).includes(meId), dbl: dblAt('am') });
+      if ((day.afternoon || []).includes(meId)) myShifts.push({ d, shift: 'PM', lead: (day.coord_pm || []).includes(meId), dbl: dblAt('pm') });
     });
     renderDriverHorarioHead(myShifts.length);
     if (summaryBox) summaryBox.innerHTML = driverWeekListHtml(week, myShifts);
@@ -588,6 +654,7 @@
         <span class="k">${sh.toUpperCase()}</span>
         <span class="t">${escapeHtml(hora)}</span>
         ${s.lead ? '<span class="lead">★ Líder</span>' : ''}
+        ${s.dbl ? `<span class="lead dbl" title="${escapeAttr(s.dbl.nota || '')}">⇆ Doble</span>` : ''}
         ${placa ? `<span class="v">${escapeHtml(placa)}</span>` : ''}
       </div>`;
     };
@@ -715,7 +782,7 @@
           [sw.requester_id]: { id: sw.requester_id, name: (state.pubNames || {})[sw.requester_id] },
           [state.profile.id]: { id: state.profile.id, name: state.profile.full_name, email: state.profile.email },
         };
-        const v = Scheduler.validateSwap(fresh?.data || {}, sw, dById);
+        const v = Scheduler.validateSwap(fresh?.data || {}, sw, dById, Scheduler.restSlotsFor(state.settings));
         if (!v.ok) { alert('No se puede aceptar: ' + v.reason); btn.disabled = false; return; }
       }
       await Api.decideSwap(id, decision);
@@ -788,7 +855,7 @@
         [meId]: { id: meId, name: state.profile.full_name, email: state.profile.email },
         [theirs.id]: { id: theirs.id, name: names[theirs.id] },
       };
-      const v = Scheduler.validateSwap(data, swap, dById);
+      const v = Scheduler.validateSwap(data, swap, dById, Scheduler.restSlotsFor(state.settings));
       if (!v.ok) { alert('Ese cambio no es válido: ' + v.reason); return; }
       const btn = overlay.querySelector('#swap-send-btn');
       btn.disabled = true;
