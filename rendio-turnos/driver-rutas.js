@@ -35,7 +35,7 @@
   // ── Constantes ────────────────────────────────────────────────────────────────
   const MDE = { lat: 6.1715, lng: -75.4270 };
   const PING_MS = 6000;                       // cada cuánto se escribe la posición
-  const FAR_APT_KM = 1.5;                     // «Llegué al aeropuerto» lejos de MDE
+  const FAR_APT_KM = 1.5;                     // «Llegué al aeropuerto» lejos de JMC
   const FAR_HOME_KM = 0.6;                    // «Llegué» lejos de la casa
   const RT_ON = ['onboard', 'nocode', 'delivered'];
   const RT_NO = ['noshow', 'notarrived'];
@@ -212,8 +212,8 @@
         l.rid = l.reservationId || null;
         if (l.k !== 'apt') l.ini = initials(l.name);
       });
-      v.from = v.type === 'salida' ? 'Casas' : 'MDE';
-      v.to = v.type === 'salida' ? 'MDE' : 'Casas';
+      v.from = v.type === 'salida' ? 'Casas' : 'JMC';
+      v.to = v.type === 'salida' ? 'JMC' : 'Casas';
       return v;
     });
   }
@@ -523,8 +523,8 @@
       + '<div class="rt-hero-top"><span class="rt-hero-tag"><b>' + esc(v.n) + '</b>' + t.l + '</span>'
       + '<span class="rt-hero-st ' + (s.started ? 'live' : '') + '">' + (s.started ? '<i></i>' + esc(`En curso · parada ${s.idx + 1} de ${v.legs.length}`) : esc(soon(v))) + '</span></div>'
       + '<div class="rt-hero-time"><b>' + esc(v.start) + '</b><span>' + (v.type === 'salida'
-        ? 'sale hacia la 1.ª casa<br>' + (end ? 'llega a MDE ' + esc(end) : 'destino MDE')
-        : 'recoges en MDE<br>' + (end ? 'última casa ~' + esc(end) : 'reparte en las casas')) + '</span></div>'
+        ? 'sale hacia la 1.ª casa<br>' + (end ? 'llega a JMC ' + esc(end) : 'destino JMC')
+        : 'recoges en JMC<br>' + (end ? 'última casa ~' + esc(end) : 'reparte en las casas')) + '</span></div>'
       + '<div class="rt-hero-route"><span>' + v.from.toUpperCase() + '</span><i></i><span class="rt-hero-pl">' + ic(v.type === 'salida' ? 'Plane' : 'Home', 15) + '</span><i></i><span>' + v.to.toUpperCase() + '</span></div>'
       + '<button type="button" class="rt-crew" data-rt="detail" data-v="' + esc(v.id) + '">'
       + '<span class="rt-stack">' + c.map((l) => '<span>' + esc(l.ini) + '</span>').join('') + '</span>'
@@ -538,7 +538,7 @@
     const s = S(v), t = tone(v), c = crew(v), end = endOf(v);
     return '<button type="button" class="rt-vc rx-in ' + (s.done ? 'done' : '') + '" style="--tone:' + t.c + ';--d:' + i + '" data-rt="' + (s.done ? 'done' : 'detail') + '" data-v="' + esc(v.id) + '">'
       + '<span class="rt-vc-t"><em>' + esc(`${v.n} · ${t.l}`) + '</em><b>' + esc(v.start) + '</b></span>'
-      + '<span class="rt-vc-m"><b>' + esc(`${v.from} → ${v.to}`) + '</b><span>' + esc(`${c.length} auxiliares · ${v.type === 'salida' ? (end ? `llega ${end}` : 'destino MDE') : 'recoge en MDE'}`) + '</span></span>'
+      + '<span class="rt-vc-m"><b>' + esc(`${v.from} → ${v.to}`) + '</b><span>' + esc(`${c.length} auxiliares · ${v.type === 'salida' ? (end ? `llega ${end}` : 'destino JMC') : 'recoge en JMC'}`) + '</span></span>'
       + (s.done ? chip('Check', 'ok', 'Hecha') : ic('ChevronRight', 18, 'color: var(--r-text-3);'))
       + '</button>';
   }
@@ -566,7 +566,7 @@
     const done = list.filter((v) => S(v).done);
     const crewN = list.reduce((a, v) => a + crew(v).length, 0);
     return '<div class="rt-scr">' + head + '<div class="rt-body">'
-      + '<div class="rt-title"><span>' + esc(`Rutas · ${fmtDay(list[0].day)}`) + '</span><h1>Mi día</h1><p>' + esc(`${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'} · ${crewN} auxiliares · MDE`) + '</p></div>'
+      + '<div class="rt-title"><span>' + esc(`Rutas · ${fmtDay(list[0].day)}`) + '</span><h1>Mi día</h1><p>' + esc(`${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'} · ${crewN} auxiliares · JMC`) + '</p></div>'
       + '<div class="rt-dayprog"><div>' + list.map((v) => '<i class="' + (S(v).done ? 'on' : v === focus ? 'now' : '') + '"></i>').join('') + '</div><span>' + esc(`${done.length} de ${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'}`) + '</span></div>'
       + (focus ? '<div class="rx-lbl">' + (S(focus).started ? 'Ahora' : 'Tu siguiente vuelta') + '</div>' + heroHTML(focus)
         : '<div class="rt-alldone rx-in">' + check(64) + '<b>Terminaste tus rutas de hoy</b><span>' + esc(`Las ${list.length} ${list.length === 1 ? 'vuelta quedó entregada' : 'vueltas quedaron entregadas'}.`) + '</span></div>')
@@ -595,7 +595,7 @@
     const u = RT.unread[st.rid] || 0;
     const f = apt && v.type === 'llegada' ? flightOf(v) : null;
     const pinIn = apt ? ic('Plane', 16) : ps === 'done' ? ic('Check', 16) : ps === 'no' ? ic('X', 15) : legNum(v, i);
-    const aptName = 'Aeropuerto MDE';
+    const aptName = 'Aeropuerto JMC';
     const aptAddr = v.type === 'salida' ? 'José María Córdova · Salidas' : 'José María Córdova · Llegadas';
     return '<div class="rt-stop ' + ps + '">'
       + '<span class="rt-pin ' + (apt ? 'apt' : '') + ' ' + ps + '">' + pinIn + '</span>'
@@ -616,7 +616,7 @@
     const s = S(v), t = tone(v), c = crew(v), f = flightOf(v), end = endOf(v);
     return '<div class="rt-scr" style="--tone:' + t.c + ';--tone-s:' + t.s + '">'
       + '<div class="rt-head"><button type="button" class="rx-ib" data-rt="pop" aria-label="Volver">' + ic('ChevronLeft', 22) + '</button>'
-      + '<div class="rt-head-c"><span style="color:' + t.fg + '">' + esc(`${v.n} · ${t.l}`) + '</span><b>' + (v.type === 'salida' ? 'Recoges en casa · destino MDE' : 'Recoges en el aeropuerto') + '</b></div>'
+      + '<div class="rt-head-c"><span style="color:' + t.fg + '">' + esc(`${v.n} · ${t.l}`) + '</span><b>' + (v.type === 'salida' ? 'Recoges en casa · destino JMC' : 'Recoges en el aeropuerto') + '</b></div>'
       + '<button type="button" class="rx-ib" data-rt="bigmap" data-v="' + esc(v.id) + '" aria-label="Mapa grande">' + ic('Expand', 18) + '</button></div>'
       + '<div class="rt-body">'
       + '<div class="rt-sum"><div class="rt-sum-t"><b>' + esc(v.start) + '</b>' + (end ? '<i></i><b class="lt">' + esc(end) + '</b>' : '') + '</div>'
@@ -659,7 +659,7 @@
       + '<div class="rt-head"><button type="button" class="rx-ib" data-rt="popall" aria-label="Cerrar">' + ic('X', 20) + '</button></div>'
       + '<div class="rt-body rt-done">' + check(92)
       + '<h1 class="rx-c-h">¡Vuelta completa!</h1>'
-      + '<p class="rx-c-p">' + esc(`${v.n} · ${t.l} · ${v.type === 'salida' ? `${ok.length} auxiliares entregados en MDE` : `${ok.length} auxiliares en su casa`}`) + '</p>'
+      + '<p class="rx-c-p">' + esc(`${v.n} · ${t.l} · ${v.type === 'salida' ? `${ok.length} auxiliares entregados en JMC` : `${ok.length} auxiliares en su casa`}`) + '</p>'
       + '<div class="rt-stats"><div><b>' + ok.length + '</b><span>' + (v.type === 'salida' ? 'entregados' : 'en casa') + '</span></div><div><b>' + no.length + '</b><span>' + (v.type === 'salida' ? 'no se presentaron' : 'no llegaron') + '</span></div><div><b>' + mins + '</b><span>' + (mins === 1 ? 'minuto' : 'minutos') + '</span></div></div>'
       + '<div class="rx-group rt-done-list">' + c.map((l) => { const r = s.res[l.rid] || 'delivered'; return '<div class="rt-dl">' + av(l.ini, 'sm') + '<b>' + esc(l.name) + '</b>' + chip('', RT_RES[r][1], RT_NO.includes(r) ? RT_RES[r][0] : r === 'nocode' ? 'Sin código' : 'Entregado') + '</div>'; }).join('') + '</div>'
       + (next ? '<button type="button" class="rt-vc" style="--tone:' + nt.c + '" data-rt="nextv" data-v="' + esc(next.id) + '">'
@@ -756,7 +756,7 @@
     const pres = present(v);
     let h = '<div class="rt-eb">' + (at ? '<i class="ok"></i><span>' + esc(`En el punto · ${f} ya sabe que llegaste`) + '</span>'
       : '<i></i><span>' + esc(`Vas por ${f}`) + '</span><span class="dist">' + esc(liveDist(v)) + '</span>') + '</div>';
-    if (!at) h += '<div class="rt-big"><b>' + esc((st.pickup || st.eta) ? `Recoges ${st.pickup || st.eta}` : `Recoges a ${f}`) + '</b><span>' + esc(pres ? `Presentación en MDE ${pres}` : 'Destino MDE') + '</span></div>';
+    if (!at) h += '<div class="rt-big"><b>' + esc((st.pickup || st.eta) ? `Recoges ${st.pickup || st.eta}` : `Recoges a ${f}`) + '</b><span>' + esc(pres ? `Presentación en JMC ${pres}` : 'Destino JMC') + '</span></div>';
     h += personHTML(v, st, at);
     if (!at) h += tagsHTML(st) + infoHTML(st);
     if (at) {
@@ -814,11 +814,11 @@
     const s = S(v), at = s.phase === 'at', c = crew(v);
     const onb = c.filter((l) => RT_ON.includes(s.res[l.rid]));
     const pres = present(v), eta = etaApt(v), line = eta ? aptLine(v, eta) : null;
-    let h = '<div class="rt-eb">' + (at ? '<i class="ok"></i><span>En MDE · Salidas</span>'
+    let h = '<div class="rt-eb">' + (at ? '<i class="ok"></i><span>En JMC · Salidas</span>'
       : '<i></i><span>Vas al aeropuerto</span><span class="dist">' + esc(liveDist(v)) + '</span>') + '</div>';
     h += '<div class="rt-big">' + (at
       ? '<b>' + esc(`Entrega ${onb.length} auxiliares`) + '</b><span>' + esc([pres ? `Presentación ${pres}` : '', s.aptAt ? `llegaste ${bogHM(s.aptAt)}` : ''].filter(Boolean).join(' · ')) + '</span>'
-      : '<b>' + esc(pres ? `Presentación ${pres}` : 'Aeropuerto MDE') + '</b>' + (line ? '<span class="' + (line.ok ? 'ok' : '') + '">' + esc(line.txt) + '</span>' : '')) + '</div>';
+      : '<b>' + esc(pres ? `Presentación ${pres}` : 'Aeropuerto JMC') + '</b>' + (line ? '<span class="' + (line.ok ? 'ok' : '') + '">' + esc(line.txt) + '</span>' : '')) + '</div>';
     h += crewListHTML(v, !at);
     h += '<div class="rt-cta">'
       + (!at ? btn('Navegar', { kind: 'sec', cls: 'rt-nav', icon: 'Nav', attrs: { 'data-rt': 'nav', 'data-v': v.id, 'aria-label': 'Navegar con Waze' } }) : '')
@@ -860,8 +860,8 @@
     const s = S(v), at = s.phase === 'at', c = crew(v);
     const open = c.filter((l) => !s.res[l.rid]).length, onb = c.filter((l) => RT_ON.includes(s.res[l.rid])).length;
     const f = flightOf(v), meet = aptMeet(v);
-    let h = '<div class="rt-eb">' + (at ? '<i class="ok"></i><span>' + esc(`En MDE · les avisamos a los ${c.length}`) + '</span>'
-      : '<i></i><span>Vas a MDE</span><span class="dist">' + esc(liveDist(v)) + '</span>') + '</div>';
+    let h = '<div class="rt-eb">' + (at ? '<i class="ok"></i><span>' + esc(`En JMC · les avisamos a los ${c.length}`) + '</span>'
+      : '<i></i><span>Vas a JMC</span><span class="dist">' + esc(liveDist(v)) + '</span>') + '</div>';
     if (!at) h += '<div class="rt-big"><b>' + esc(`Recoges ${v.start}`) + '</b><span class="ok">' + esc([f ? `${f.code}${f.st ? ' ' + f.st : ''}` : '', meet].filter(Boolean).join(' · ')) + '</span></div>';
     if (at) h += '<div class="rt-big sm"><b>Pídele el código a cada uno</b><span>' + esc(`${meet} · cuando lo encuentres, escribe sus 2 dígitos.`) + '</span></div>';
     h += at ? '<div class="rx-group">' + c.map((l) => crewRowHTML(v, l)).join('') + '</div>' : crewListHTML(v, true);
@@ -1170,7 +1170,7 @@
   }
   function openGpsConfirm(v, st, km) {
     const n = crew(v).length, apt = st.k === 'apt', f = first(st.name);
-    const title = km == null ? (apt ? 'No vemos tu ubicación' : 'No vemos tu ubicación') : (apt ? 'Todavía no estás en MDE' : `Todavía no estás donde ${f}`);
+    const title = km == null ? (apt ? 'No vemos tu ubicación' : 'No vemos tu ubicación') : (apt ? 'Todavía no estás en JMC' : `Todavía no estás donde ${f}`);
     const body = km == null
       ? (apt ? `No pudimos confirmar que estés en el aeropuerto. Si avisas ahora, los ${n} auxiliares van a salir a buscarte.` : `No pudimos confirmar que estés en la casa de ${f}. Si avisas ahora, va a salir a buscarte.`)
       : (apt ? `Tu ubicación dice que estás a ${kmTxt(km)} del aeropuerto. Si avisas ahora, los ${n} auxiliares van a salir a buscarte.` : `Tu ubicación dice que estás a ${kmTxt(km)} de la casa de ${f}. Si avisas ahora, va a salir a buscarte.`);
@@ -1509,7 +1509,7 @@
       const ps = plan ? 'next' : pinState(v, i), apt = st.k === 'apt';
       const txt = apt ? '✈' : ps === 'done' ? '✓' : ps === 'no' ? '×' : String(legNum(v, i));
       // En un grupo, un solo letrero (en el último pin) con todos los nombres.
-      const label = mode !== 'big' ? '' : apt ? 'MDE'
+      const label = mode !== 'big' ? '' : apt ? 'JMC'
         : g.length > 1 ? (g.indexOf(i) === g.length - 1 ? g.map((k) => first(v.legs[k].name)).join(', ') : '') : first(st.name);
       h.layers.push(L.marker(pt, { icon: pinIcon(txt, ps, apt, label, dx), interactive: false, zIndexOffset: ps === 'cur' ? 500 : 0 }).addTo(map));
     });

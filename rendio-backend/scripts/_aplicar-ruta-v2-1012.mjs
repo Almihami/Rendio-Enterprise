@@ -35,6 +35,7 @@ const ARCHIVOS = [
   '0104_olvide_contrasena.sql',
   '0105_inspeccion_al_cerrar.sql',
   '0106_personal_de_tierra.sql',
+  '0107_madrugada_y_jmc.sql',
 ].filter(f => !SOLO.length || SOLO.some(n => f.startsWith(n)));
 
 const c = new pg.Client({ host: 'aws-1-us-east-1.pooler.supabase.com', port: 5432, user: 'postgres.' + ref,
@@ -56,6 +57,7 @@ if (estado) {
   console.log('  0104 password_reset_requests:', await tab('password_reset_requests'));
   console.log('  0105 app_settings.fast_start_deadline:', await col('app_settings', 'fast_start_deadline'));
   console.log('  0106 auxiliar_profiles.ground_staff:', await col('auxiliar_profiles', 'ground_staff'));
+  console.log('  0107 app_settings.route_night_cutoff_min:', await col('app_settings', 'route_night_cutoff_min'));
   const s = await one(`SELECT aux_private_price_cop FROM public.app_settings WHERE id = 'singleton'`).catch(() => null);
   console.log('  tarifa del privado hoy:', s ? s.aux_private_price_cop : '(sin fila)');
   await c.end();

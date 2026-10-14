@@ -57,7 +57,7 @@
   const conjunto = (t) => { const i = IN(); return i && i.conjunto ? i.conjunto(t) : (String((t && t.address) || '').split(/[,·]/)[0].trim() || 'Casa'); };
   const firstOf = (t) => { const d = t && t.driver; return (d && (d.first || String(d.name || '').trim().split(/\s+/)[0])) || ''; };
   const plateOf = (t) => (t && ((t.vehicle && t.vehicle.plate) || (t.driver && t.driver.plate))) || '';
-  const routeLine = (t) => (t.type === 'lle' ? 'Llegada · MDE → ' + conjunto(t) : 'Salida · ' + conjunto(t) + ' → MDE');
+  const routeLine = (t) => (t.type === 'lle' ? 'Llegada · JMC → ' + conjunto(t) : 'Salida · ' + conjunto(t) + ' → JMC');
 
   // ── Vistos ───────────────────────────────────────────────────────────────
   function seenList() {
@@ -146,7 +146,7 @@
         add('onway', 'onway', { rank: 1, icon: 'Car', tone: 'ok', title: first + ' va por ti', body: [plateOf(t), route].filter(Boolean).join(' · ') });
       } else if (up && t.status === 'assigned' && isPublished(t)) {
         const pk = t.pickupAt && hm(t.pickupAt);
-        const hora = pk ? (t.type === 'lle' ? 'Te esperamos en MDE a las ' + pk : 'Te recogemos a las ' + pk) : 'Hora de recogida por confirmar';
+        const hora = pk ? (t.type === 'lle' ? 'Te esperamos en JMC a las ' + pk : 'Te recogemos a las ' + pk) : 'Hora de recogida por confirmar';
         add('pub', 'assigned' + (pk ? '@' + t.pickupAt : ''), {
           icon: 'Car', tone: 'ok', title: 'Ya tienes conductor',
           body: [(t.driver && t.driver.name) || '', hora, route].filter(Boolean).join(' · '),

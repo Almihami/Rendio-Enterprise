@@ -10,7 +10,7 @@
 // Comprueba:
 //   A) la v2 es la vista por defecto, rearma el plan publicado (chip «Publicado»,
 //      vueltas, conductores por turno, sin rutear) y los conteos de los chips;
-//      franjas por hora de llegada a MDE / aterrizaje, abiertas solo si tienen
+//      franjas por hora de llegada a JMC / aterrizaje, abiertas solo si tienen
 //      excepciones, «Ver N rutas listas más»; filtros por estado y tipo;
 //      búsqueda sin tildes con <mark>; rutas por hora;
 //   B) el detalle: paradas en orden, tel:, mover desde la parada, la sugerencia
@@ -109,7 +109,7 @@ console.log('\n── A · lista, chips, franjas, filtros y búsqueda ──');
   t('rearma las 9 vueltas publicadas (número de vuelta por carro)', T().rt.lanes.length === 9 && T().rt.lanes.map((l) => l.id).join(',') === 'V-01·V1,V-02·V1,V-01·V2,V-02·V2,V-03·V1,V-03·V2,V-02·V3,V-01·V3,V-03·V3', T().rt.lanes.map((l) => l.id).join(','));
   t('conductor por carro y turno (V-01 AM Jorge, V-03 PM Diego, V-01 PM vacío)', T().rt.cars[0].driverAM === 'd1' && !T().rt.cars[0].driverPM && T().rt.cars[2].driverPM === 'd4');
   t('los no ruteados quedan en el pool (Manuela y Kevin)', T().rt.pool.slice().sort().join(',') === 'rN,rO', T().rt.pool.join(','));
-  t('origen encadenado: la 2ª salida de V-01 sale de MDE', T().rt.lanes.find((l) => l.id === 'V-01·V2').origin === 'airport' && T().rt.lanes.find((l) => l.id === 'V-01·V1').origin === null);
+  t('origen encadenado: la 2ª salida de V-01 sale de JMC', T().rt.lanes.find((l) => l.id === 'V-01·V2').origin === 'airport' && T().rt.lanes.find((l) => l.id === 'V-01·V1').origin === null);
   t('leer lo publicado NO le pide nada a TomTom (cobra por celda): tiempos por OSRM', log.tomtom === 0 && T().rt.etaSource === 'osrm', JSON.stringify([log.tomtom, T().rt.etaSource]));
   t('chip «Publicado» (lo que se ve es lo que tienen los conductores)', !q('#rv2-pubChip').hidden && txt(q('#rv2-pubChip')) === 'Publicado');
   t('el día en la barra: «Lun 12 oct»', txt(q('#rv2-dayLabel')) === 'Lun 12 oct', txt(q('#rv2-dayLabel')));
@@ -124,7 +124,7 @@ console.log('\n── A · lista, chips, franjas, filtros y búsqueda ──');
   t('turno por la hora de la vuelta (AM 02:30–14:00, PM después)', b.rutaDe('V-01·V2').shift === 'am' && b.rutaDe('V-01·V3').shift === 'pm');
   t('la vuelta terminada cuenta como Lista', b.rutaDe('V-01·V1').fija === 'completed' && b.rutaDe('V-01·V1').status === 'ok');
   const grupos = qa('#rv2-list .rv2-group');
-  t('franjas por hora de llegada a MDE / aterrizaje: 04,05,06,07,08,11,15,16', grupos.map((g) => g.dataset.group).join(',') === '4,5,6,7,8,11,15,16', grupos.map((g) => g.dataset.group).join(','));
+  t('franjas por hora de llegada a JMC / aterrizaje: 04,05,06,07,08,11,15,16', grupos.map((g) => g.dataset.group).join(',') === '4,5,6,7,8,11,15,16', grupos.map((g) => g.dataset.group).join(','));
   t('cada franja en su propio bloque con sus filas (el encabezado pegajoso no se apila)', qa('#rv2-list .rv2-gwrap').length === 8 && qa('#rv2-list .rv2-gwrap > .rv2-group').length === 8 && !!q('.rv2-gwrap .rv2-group[data-group="6"] ~ .rv2-row[data-id="V-01·V2"]'));
   t('abren solo las que tienen excepciones (06,07,08,15)', grupos.filter((g) => g.getAttribute('aria-expanded') === 'true').map((g) => g.dataset.group).join(',') === '6,7,8,15');
   t('las «todas listas» dicen «todas listas»', /todas listas/.test(txt(grupos.find((g) => g.dataset.group === '4'))));
@@ -143,7 +143,7 @@ console.log('\n── A · lista, chips, franjas, filtros y búsqueda ──');
     [row.querySelector('.st'), row.querySelector('.time'), row.querySelector('.car'), row.querySelector('.names'), row.querySelector('.mg'), row.querySelector('.drv')].map(txt).join(' | '));
   t('fila accesible: role=button, tabindex=0 y aria-label con carro, estado, horas y nombres', row.getAttribute('role') === 'button' && row.getAttribute('tabindex') === '0' && /V-02, Ajustada, 06:59 → 07:23, Daniela Cano, Sergio Molina/.test(row.getAttribute('aria-label')));
   const sinC = rows().find((x) => x.dataset.id === 'V-01·V3');
-  t('llegada: «MDE 15:00 → …», margen «—» y «+ Asignar» en vez de conductor', /^MDE 15:00 → /.test(txt(sinC.querySelector('.time'))) && txt(sinC.querySelector('.mg')) === '—' && !!sinC.querySelector('[data-act="assign"]'));
+  t('llegada: «JMC 15:00 → …», margen «—» y «+ Asignar» en vez de conductor', /^JMC 15:00 → /.test(txt(sinC.querySelector('.time'))) && txt(sinC.querySelector('.mg')) === '—' && !!sinC.querySelector('[data-act="assign"]'));
   // Más de 3 nombres → «+N»: se agrega gente a una vuelta solo para mirar el texto.
   T().rt.order['V-03·V2'] = ['rI', 'rJ', 'rN', 'rP']; V2().render();
   const r4 = rows().find((x) => x.dataset.id === 'V-03·V2');
@@ -199,7 +199,7 @@ console.log('\n── B · detalle, sugerencia, aplicar y deshacer ──');
   const alerta = txt(q('#rv2-detail .rv2-alert'));
   t('alerta: «En riesgo · llega 06:39; con 10 min de entrega no alcanza la presentación (06:30): 19 min tarde»', alerta === 'En riesgo · llega 06:39; con 10 min de entrega no alcanza la presentación (06:30): 19 min tarde', alerta);
   const li = qa('#rv2-detail .rv2-stops li');
-  t('paradas en orden de recogida: Camila 05:37, José 06:13 y la llegada a MDE 06:39', li.length === 3 && /^05:37 Camila Ortiz Ébano · Marinilla · pres. 06:30/.test(leer(li[0])) && /^06:13 José Ñáñez/.test(leer(li[1])) && /^06:39 Llegada MDE Presentación 06:30 · 10 min de entrega · 19 min tarde/.test(leer(li[2])), li.map(leer).join(' | '));
+  t('paradas en orden de recogida: Camila 05:37, José 06:13 y la llegada a JMC 06:39', li.length === 3 && /^05:37 Camila Ortiz Ébano · Marinilla · pres. 06:30/.test(leer(li[0])) && /^06:13 José Ñáñez/.test(leer(li[1])) && /^06:39 Llegada JMC Presentación 06:30 · 10 min de entrega · 19 min tarde/.test(leer(li[2])), li.map(leer).join(' | '));
   t('llamar: tel: con el número del tripulante', li[0].querySelector('a[href="tel:3001110004"]') && li[0].querySelector('a').getAttribute('aria-label') === 'Llamar a Camila Ortiz');
   t('conductor con teléfono → botón de llamar; «Cambiar»', /Jorge Pérez/.test(txt(q('#rv2-detail .rv2-drv'))) && q('#rv2-detail .rv2-drv a[href="tel:3015550101"]') && /Cambiar/.test(txt(q('#rv2-detail .rv2-drv'))));
   const sug = txt(q('#rv2-detail .rv2-sug p'));
@@ -268,8 +268,12 @@ console.log('\n── C · Mover a…, Rutear, Asignar conductor, Autoasignar �
   click(q('.rv2-row[data-id="V-01·V3"] [data-act="assign"]'));
   t('«+ Asignar» abre la hoja sin abrir el detalle', !sheet().hidden && /Conductor para V-01/.test(txt(sheet().querySelector('h2'))) && V2()._ui.sel === 'V-01·V2');
   t('…con los del turno PM del horario publicado', /En turno PM según el horario publicado/.test(txt(sheet())));
-  const dOpts = qa('#rv2-dopts .rv2-opt');
+  // 13-oct-2026: debajo de los del turno salen «Otros conductores» (fuera de turno),
+  // para que el jefe pueda cubrir con cualquiera.
+  const dTodas = qa('#rv2-dopts .rv2-opt');
+  const dOpts = dTodas.filter((o) => !/Fuera de turno/.test(txt(o)));
   t('Diego (ya maneja V-03 en PM) no se puede elegir; Rubén está libre y marcado', dOpts.length === 2 && dOpts[0].disabled && /Maneja V-03/.test(txt(dOpts[0])) && dOpts[1].getAttribute('aria-checked') === 'true' && /Libre/.test(txt(dOpts[1])));
+  t('…y debajo «Otros conductores», fuera de turno y elegibles', /Otros conductores/i.test(txt(sheet())) && dTodas.some((o) => /Fuera de turno/.test(txt(o)) && !o.disabled));
   click(q('#rv2-doAssign'));
   t('asignar: V-01 PM = Rubén y ya no hay rutas sin conductor', T().rt.cars[0].driverPM === 'd5' && chipN('nodriver') === '0');
   t('aviso «Rubén Díaz asignado a V-01 · turno PM» con Deshacer', /Rubén Díaz asignado a V-01 · turno PM/.test(b.toastV2()) && !!q('#rv2-toast [data-act="undo"]'));
@@ -386,7 +390,7 @@ console.log('\n── F · Carros, teclado, WhatsApp, mapa ──');
   t('línea del relevo AM/PM en las 14:00', qa('.rv2-tl-pm').length === 3 && /14 \* var/.test(q('.rv2-tl-pm').getAttribute('style')));
   click(q('.rv2-blk[data-id="V-03·V3"]'));
   t('tocar una barra abre su detalle', V2()._ui.sel === 'V-03·V3' && /V-03 · Vuelta 3/.test(txt(q('#rv2-detail h2'))) && q('.rv2-blk[data-id="V-03·V3"]').getAttribute('aria-current') === 'true');
-  t('detalle de una llegada: recogida en MDE primero, aterrizaje', /^16:30 Recogida en MDE Aterriza 16:10/.test(leer(q('#rv2-detail .rv2-stops li'))), leer(q('#rv2-detail .rv2-stops li')));
+  t('detalle de una llegada: recogida en JMC primero, aterrizaje', /^16:30 Recogida en JMC Aterriza 16:10/.test(leer(q('#rv2-detail .rv2-stops li'))), leer(q('#rv2-detail .rv2-stops li')));
   click(b.chip('unrouted'));
   t('«Sin rutear» desde Carros vuelve a la Lista', V2()._ui.view === 'lista' && !q('#rv2-listwrap').hidden);
   click(b.chip('all'));

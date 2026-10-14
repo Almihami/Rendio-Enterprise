@@ -88,9 +88,9 @@ await nuevo();
 if (RX) {
 const sal=scope().querySelector('.rx-type.t-h2a'), lle=scope().querySelector('.rx-type.t-a2h');
 t('la salida es .rx-type.t-h2a y dice Casa → Aeropuerto', !!sal && sal.querySelector('.rx-type-tx b').textContent==='Casa → Aeropuerto', sal?.textContent);
-t('con la flecha en svg (CASA → MDE)', !!sal.querySelector('.rx-type-code use[href="#rx-ArrowRight"]') && sal.querySelector('.rx-type-code').textContent.replace(/\s+/g,'')==='CASAMDE');
+t('con la flecha en svg (CASA → JMC)', !!sal.querySelector('.rx-type-code use[href="#rx-ArrowRight"]') && sal.querySelector('.rx-type-code').textContent.replace(/\s+/g,'')==='CASAJMC');
 t('el tile de la salida pinta a dónde va (avión)', !!sal.querySelector('.rx-type-ic use[href="#rx-Plane"]'));
-t('la llegada es .rx-type.t-a2h y dice Aeropuerto → Casa', !!lle && lle.querySelector('.rx-type-tx b').textContent==='Aeropuerto → Casa' && lle.querySelector('.rx-type-code').textContent.replace(/\s+/g,'')==='MDECASA');
+t('la llegada es .rx-type.t-a2h y dice Aeropuerto → Casa', !!lle && lle.querySelector('.rx-type-tx b').textContent==='Aeropuerto → Casa' && lle.querySelector('.rx-type-code').textContent.replace(/\s+/g,'')==='JMCCASA');
 t('y su tile pinta la casa', !!lle.querySelector('.rx-type-ic use[href="#rx-Home"]'));
 t('los subtítulos del diseño', /Te recogemos para tu vuelo/.test(txt()) && /Te esperamos al aterrizar/.test(txt()));
 t('sin Aeropuerto → Hotel (D22)', !/Hotel/.test(txt()) && scope().querySelectorAll('.rx-type').length===2);

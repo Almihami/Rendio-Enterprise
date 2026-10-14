@@ -11,7 +11,7 @@
   // 126 m al sur del que había; sigue siendo el acceso occidental (comprobado:
   // OSRM rutea igual de bien, Río Vivo→MDE 28.0 min vs 28.5 del punto anterior).
   // Mismo valor en la BD (airports, migración 0059).
-  const RT_AIRPORT = { lat: 6.170795254426601, lng: -75.42788741654356 }; // MDE · terminal de pasajeros
+  const RT_AIRPORT = { lat: 6.170795254426601, lng: -75.42788741654356 }; // JMC · terminal de pasajeros
   // 2026-07-25: se eliminaron RT_DEMO_AUX / RT_DEMO_CARS / RT_DEMO_DRIVERS
   // (25 auxiliares, 2 carros y 4 conductores inventados). Servían para enseñar
   // el tablero antes de que hubiera reservas reales, pero con la app en pruebas
@@ -60,7 +60,7 @@
     esDiaLento: false,   // el día operativo es domingo o festivo
     diaLentoNombre: null,// nombre del festivo, para poder decirlo en pantalla
     zonasSinConfirmar: [],// conjuntos que Julián todavía no clasificó
-    TURNAROUND: 8,       // min en MDE entre entregar y arrancar la siguiente vuelta
+    TURNAROUND: 8,       // min en JMC entre entregar y arrancar la siguiente vuelta
     DEPLANE: 20,         // min entre que el vuelo aterriza y el pasajero sale (migración+maletas)
     // Semáforo de una LLEGADA: hasta 5 min de espera es «A tiempo», hasta 15
     // «Ajustado», más es «Espera larga» (fijo, no está en Ajustes). Con el mismo
@@ -110,6 +110,9 @@
     // 0 = sin corrimiento; es el valor con el que nace, porque Julián dijo
     // "domingos y festivos no sacarlos tan temprano" pero no dio el número.
     rt.HOLIDAY_SHIFT = s.route_holiday_shift_min != null ? Number(s.route_holiday_shift_min) : 0;
+    // 0107: hasta qué hora (min desde medianoche) las vueltas son del turno PM del
+    // día anterior. Sin la columna, 02:00: los turnos van de 2 a 2.
+    rt.NIGHT_CUTOFF = s.route_night_cutoff_min != null ? Math.min(240, Math.max(0, Number(s.route_night_cutoff_min) || 0)) : 120;
     // Colchón que trae adentro su tabla de zona y que no es tiempo de manejo
     // (0071). Si la columna no existe todavía queda en 0 y el solver se comporta
     // como antes de esa migración.
@@ -177,8 +180,12 @@
     // la firma dice si lo que hay en pantalla es lo que ya tienen los conductores.
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {};
     rt.etaSource = null;
+    // 0107: el corte de la madrugada (lectura propia; sin la columna, 02:00).
+    if (Api.getRouteNightCutoff) {
+      try { const v = await Api.getRouteNightCutoff(); if (v != null) rt.NIGHT_CUTOFF = Math.min(240, Math.max(0, v)); } catch (e) { /* 02:00 */ }
+    }
     // Estado inicial: una vuelta vacía por carro; todos los auxiliares en el pool.
-    rt.lanes = rt.cars.map(c => ({ id: `${c.id}·V1`, car: c.id, vuelta: 1, start: c.avail0 || '02:00', origin: null }));
+    rt.lanes = rt.cars.map(c => ({ id: `${c.id}·V1`, car: c.id, vuelta: 1, start: rtToHM(rtCut()), origin: null }));
     rt.order = {}; rt.lanes.forEach(l => { rt.order[l.id] = []; });
     rt.pool = Object.keys(rt.aux);
     rt.optimized = false;
@@ -211,6 +218,20 @@
         }
       } catch (e) { /* sin horario → fallback a todos */ }
     }
+    // La madrugada (antes del corte) la hace el turno PM del DÍA ANTERIOR (0107).
+    rt.shiftPrev = null; rt.shiftPrevLoaded = false;
+    if (rt.source === 'live' && rt.day && Api.listDriversOnShift) {
+      try {
+        const d = new Date(rt.day + 'T12:00:00-05:00'); d.setUTCDate(d.getUTCDate() - 1);
+        const ayer = d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+        const sh = await Api.listDriversOnShift(ayer);
+        if (sh) {
+          const byId = {}; rt.drivers.forEach(x => { byId[x.id] = x; });
+          rt.shiftPrev = { pm: (sh.pm || []).map(x => ({ id: x.id, n: x.n, c: (byId[x.id] && byId[x.id].c) || '#8895a7' })) };
+          rt.shiftPrevLoaded = true;
+        }
+      } catch (e) { /* sin horario de ayer → todos */ }
+    }
     rt.cargadoEn = Date.now();
   }
   // Huella del plan EN MEMORIA tal como lo publicaría rtSavePlan: vueltas
@@ -219,7 +240,7 @@
   function rtFirmaPlan() {
     const lanes = (rt.lanes || []).filter(l => rt.order[l.id] && rt.order[l.id].length)
       .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(',')]);
-    const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null]);
+    const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null, c.driverMad || null]);
     return JSON.stringify([lanes, drv]);
   }
   const rtCarOf = (lane) => rt.cars.find(c => c.id === lane.car);
@@ -227,22 +248,40 @@
 
   const rtCapOf = (car) => (car && car.capacity) || rt.CAP;
 
-  // ---- Asignación por franja de turno (AM 02:30–14:00 / PM 14:00–01:30) ----
-  // Una vuelta pertenece a AM u PM según su hora de arranque. El relevo es ~14:00;
-  // las horas de 00:00–02:30 caen en el turno PM (que corre hasta 01:30).
-  function rtBandOf(lane) { const m = rtToMin((lane && lane.start) || '00:00'); return (m >= 150 && m < 840) ? 'am' : 'pm'; }
-  // Conductores EN TURNO de una franja ese día (horario publicado). Sin horario
-  // publicado (demo o semana sin publicar) → todos, como fallback.
+  // ---- Asignación por franja de turno (13-oct-2026: los turnos van de 2 a 2) ----
+  // Una vuelta pertenece a una franja según su hora de ARRANQUE:
+  //   'mad' (madrugada) → antes de rt.NIGHT_CUTOFF (02:00 por defecto, se cambia en
+  //          Calibración): la hace el turno PM del DÍA ANTERIOR con sus últimas
+  //          rutas (un vuelo que aterriza a las 00:40 del jueves es del PM del
+  //          miércoles). Antes el tablero arrancaba los carros a la 01:30 y le daba
+  //          esas vueltas al PM del mismo día: no las programaba nadie.
+  //   'am'  → del corte a las 14:00 · 'pm' → de las 14:00 a la medianoche.
+  const rtCut = () => (rt.NIGHT_CUTOFF != null ? rt.NIGHT_CUTOFF : 120);
+  function rtBandOf(lane) {
+    const m = rtToMin((lane && lane.start) || '00:00');
+    if (m < rtCut()) return 'mad';
+    return m < 840 ? 'am' : 'pm';
+  }
+  // El conductor de un carro en una franja (y ponerlo). Un solo lugar para las tres.
+  const rtCarDrv = (car, b) => (!car ? null : b === 'am' ? car.driverAM : b === 'mad' ? car.driverMad : car.driverPM) || null;
+  function rtSetCarDrv(car, b, id) { if (!car) return; if (b === 'am') car.driverAM = id || null; else if (b === 'mad') car.driverMad = id || null; else car.driverPM = id || null; }
+  // Conductores EN TURNO de una franja (horario publicado). La madrugada sale del
+  // PM del día anterior. Sin horario publicado (demo o semana sin publicar) → todos.
   function rtPoolFor(band) {
+    if (band === 'mad') return (rt.shiftPrevLoaded && rt.shiftPrev) ? (rt.shiftPrev.pm || []) : rt.drivers;
     if (rt.shiftLoaded && rt.shift) return (band === 'am' ? rt.shift.am : rt.shift.pm) || [];
     return rt.drivers;
   }
-  // Conductor asignado a una vuelta, según SU franja (driverAM o driverPM del carro).
-  function rtDriverOf(lane) { const car = rtCarOf(lane); if (!car) return null; return rtBandOf(lane) === 'am' ? car.driverAM : car.driverPM; }
-  // Franjas que realmente cubre un carro (por sus vueltas con paradas).
-  function rtBandsOfCar(carId) { return [...new Set(rt.lanes.filter(l => l.car === carId && rt.order[l.id] && rt.order[l.id].length).map(rtBandOf))].sort(); }
-  const rtBandLabel = (b) => b === 'am' ? '02:30–14:00' : '14:00–01:30';
+  // Conductor asignado a una vuelta, según SU franja.
+  function rtDriverOf(lane) { const car = rtCarOf(lane); if (!car) return null; return rtCarDrv(car, rtBandOf(lane)); }
+  // Franjas que realmente cubre un carro (por sus vueltas con paradas), en orden del día.
+  const RT_BANDS = ['mad', 'am', 'pm'];
+  function rtBandsOfCar(carId) { return [...new Set(rt.lanes.filter(l => l.car === carId && rt.order[l.id] && rt.order[l.id].length).map(rtBandOf))].sort((a, b) => RT_BANDS.indexOf(a) - RT_BANDS.indexOf(b)); }
+  const rtHHc = () => rtToHM(rtCut());
+  const rtBandLabel = (b) => b === 'am' ? `${rtHHc()}–14:00` : b === 'mad' ? `00:00–${rtHHc()} · PM del día anterior` : `14:00–${rtHHc()}`;
   const rtBandIcon = (b) => b === 'am' ? '☀' : '☾';
+  // Nombre corto de la franja para los textos («Conductor AM», «Sin conductor PM de ayer»).
+  const rtBandName = (b) => b === 'am' ? 'AM' : b === 'mad' ? 'PM de ayer' : 'PM';
 
   // ---- Desembarque: cuánto tarda el pasajero en salir del terminal ----
   // No es un número solo. La operación mide entre 15 y 35 minutos según la
@@ -1024,7 +1063,10 @@
     // trabajadores y el tercero es el del jefe o un Uber, o sea el último
     // recurso. `idx` permite preferir los primeros en vez de repartir parejo
     // (ver el desempate de la asignación).
-    const cs = rt.cars.map((c, idx) => ({ car: c, idx, avail: rtToMin(c.avail0 || '01:30'), vuelta: 0, pos: null }));
+    // Los carros están desde la medianoche: lo que arranca antes del corte lo hace
+    // el turno PM del día anterior (0107). Antes arrancaban a la 01:30 y una llegada
+    // de las 00:40 quedaba sin carro en todos los días.
+    const cs = rt.cars.map((c, idx) => ({ car: c, idx, avail: rtToMin(c.avail0 || '00:00'), vuelta: 0, pos: null }));
     const lanes = [], order = {}, unassigned = [];
     // rtCarCompute busca la vuelta en rt.lanes: se apunta al arreglo que se está
     // llenando para poder evaluar una vuelta apenas queda armada (ver el ajuste
@@ -1142,7 +1184,7 @@
           if (r.arrival != null && r.depart != null) {
             const prev = anteriorDelCarro(lane);
             const libre = prev ? (rtCarCompute(prev.id).arrival ?? rtToMin(prev.start)) + rt.TURNAROUND
-                               : rtToMin((rt.cars.find(c => c.id === lane.car) || {}).avail0 || '01:30');
+                               : rtToMin((rt.cars.find(c => c.id === lane.car) || {}).avail0 || '00:00');
             arranque = rtRedondea5(Math.max(libre, r.depart));
             lane.start = rtToHM(arranque);
             const r2 = rtCarCompute(lane.id);
@@ -1245,7 +1287,7 @@
     const drv = dId ? rt.drivers.find(d => d.id === dId) : null;
     const drvHTML = drv
       ? `<span class="drv set">${rtBandIcon(rtBandOf(lane))} <span class="av" style="background:${drv.c}">${rtIni(drv.n)}</span>${drv.n}</span>`
-      : `<span class="drv none">${rtBandIcon(rtBandOf(lane))} <svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor ${rtBandOf(lane).toUpperCase()} (borrador)</span>`;
+      : `<span class="drv none">${rtBandIcon(rtBandOf(lane))} <svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor ${rtBandName(rtBandOf(lane))} (borrador)</span>`;
     const sema = r.lle
       ? (st === 'ontime'
         ? `<div class="holg"><div class="big" style="color:var(--green)">al bajar</div><div class="sm">${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`
@@ -1264,8 +1306,8 @@
       const stops = r.stops.map((s, i) => rtStopHTML(lane.id, s, i)).join('<span class="arrow"><svg class="icon"><use href="#i-arrow"/></svg></span>');
       // Llegadas: el chip de MDE va AL INICIO (ahí recoge); salidas: al final (ahí entrega).
       const apt = r.lle
-        ? `<div class="airport lle ${st}"><svg class="icon"><use href="#i-plane"/></svg><b>MDE</b><span class="arr">${lane.start}</span></div><span class="arrow"><svg class="icon"><use href="#i-arrow"/></svg></span>`
-        : `<span class="arrow"><svg class="icon"><use href="#i-arrow"/></svg></span><div class="airport ${st}"><svg class="icon"><use href="#i-plane"/></svg><b>MDE</b><span class="arr">${rtToHM(r.arrival)}</span></div>`;
+        ? `<div class="airport lle ${st}"><svg class="icon"><use href="#i-plane"/></svg><b>JMC</b><span class="arr">${lane.start}</span></div><span class="arrow"><svg class="icon"><use href="#i-arrow"/></svg></span>`
+        : `<span class="arrow"><svg class="icon"><use href="#i-arrow"/></svg></span><div class="airport ${st}"><svg class="icon"><use href="#i-plane"/></svg><b>JMC</b><span class="arr">${rtToHM(r.arrival)}</span></div>`;
       body = r.lle
         ? `<div class="seq" data-drop="${lane.id}">${apt}${stops}</div>`
         : `<div class="seq" data-drop="${lane.id}">${stops}${apt}</div>`;
@@ -1275,7 +1317,7 @@
          <button class="mapbtn" data-expand="${lane.id}" title="Colapsar esta vuelta"><svg class="icon" style="width:14px;height:14px"><use href="#i-collapse"/></svg></button>`
       : '';
     // Etiqueta de la vuelta: carro · Vn · sale HH:MM (desde base o desde MDE).
-    const salida = lane.type === 'lle' ? `recoge en MDE ${lane.start}` : (lane.origin === 'airport' ? `sale ${lane.start} desde MDE` : `1ª recogida ${lane.start}`);
+    const salida = lane.type === 'lle' ? `recoge en JMC ${lane.start}` : (lane.origin === 'airport' ? `sale ${lane.start} desde JMC` : `1ª recogida ${lane.start}`);
     return `<div class="lane ${st}" data-lane="${lane.id}">
       <div class="lane-h">
         <div class="car"><span class="cav"><svg class="icon"><use href="#i-van"/></svg></span>
@@ -1293,8 +1335,8 @@
     const hotel = r.stops.some(x => rt.aux[x.id].hotel);
     const tipo = lane.type === 'lle' ? 'lle' : (hotel ? 'hotel' : 'sal');
     const ruta = lane.type === 'lle'
-      ? `MDE ${lane.start} → ${r.stops.length} casa${r.stops.length > 1 ? 's' : ''} (${rtToHM(r.arrival)})`
-      : `${lane.start} → MDE ${rtToHM(r.arrival)}`;
+      ? `JMC ${lane.start} → ${r.stops.length} casa${r.stops.length > 1 ? 's' : ''} (${rtToHM(r.arrival)})`
+      : `${lane.start} → JMC ${rtToHM(r.arrival)}`;
     const sema = r.status === 'late'
       ? `<span class="spill late"><svg class="icon"><use href="#i-warn"/></svg>${r.lle ? 'Espera larga' : 'No llega'}</span>`
       : r.status === 'tight'
@@ -1317,13 +1359,13 @@
       const lanes = rt.lanes.filter(l => l.car === car.id);
       const bands = rtBandsOfCar(car.id);
       const drvHTML = (bands.length ? bands : []).map(b => {
-        const id = b === 'am' ? car.driverAM : car.driverPM;
+        const id = rtCarDrv(car, b);
         const d = id ? rt.drivers.find(x => x.id === id) : null;
         return d
           ? `<span class="drv set">${rtBandIcon(b)} <span class="av" style="background:${d.c}">${rtIni(d.n)}</span>${d.n}</span>`
-          : `<span class="drv none">${rtBandIcon(b)} <svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor ${b.toUpperCase()}</span>`;
+          : `<span class="drv none">${rtBandIcon(b)} <svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor ${rtBandName(b)}</span>`;
       }).join('') || `<span class="drv none">Sin vueltas</span>`;
-      const allAssigned = bands.length && bands.every(b => (b === 'am' ? car.driverAM : car.driverPM));
+      const allAssigned = bands.length && bands.every(b => rtCarDrv(car, b));
       const paxTotal = lanes.reduce((t, l) => t + rtCarCompute(l.id).pax, 0);
       const rows = lanes.length
         ? lanes.map(l => rt.expandedLane === l.id ? rtLaneHTML(l) : rtTripRowHTML(l)).join('')
@@ -1507,21 +1549,23 @@
     const car = rtCarOf(lane);
     rt.pendingAM = car.driverAM || null;
     rt.pendingPM = car.driverPM || null;
-    const hasDrv = car.driverAM || car.driverPM;
+    rt.pendingMad = car.driverMad || null;
+    const hasDrv = car.driverAM || car.driverPM || car.driverMad;
     // Franjas que cubre este carro; el drawer muestra un selector por cada una.
     const bands = rtBandsOfCar(car.id); if (!bands.length) bands.push(rtBandOf(lane));
-    const pend = (b) => b === 'am' ? rt.pendingAM : rt.pendingPM;
+    const pend = (b) => b === 'am' ? rt.pendingAM : b === 'mad' ? rt.pendingMad : rt.pendingPM;
     const driverSecs = bands.map(b => {
       const pool = rtPoolFor(b);
-      const nota = rt.shiftLoaded ? `en turno ${b.toUpperCase()} (horario publicado)` : `turno ${b.toUpperCase()}`;
+      const cargado = b === 'mad' ? rt.shiftPrevLoaded : rt.shiftLoaded;
+      const nota = cargado ? `en turno ${rtBandName(b)} (horario publicado)` : `turno ${rtBandName(b)}`;
       const opts = pool.length
         ? pool.map(d => `<div class="drv-opt ${pend(b) === d.id ? 'sel' : ''}" data-rtdrv="${d.id}" data-rtband="${b}">
             <span class="av" style="background:${d.c || '#8895a7'}">${rtIni(d.n)}</span>
             <div class="info"><b>${d.n}</b><span>En ${nota}</span></div>
             <span class="tick"><svg class="icon" style="width:13px;height:13px"><use href="#i-check"/></svg></span>
           </div>`).join('')
-        : `<p style="font-size:12.5px;color:var(--ink2)">Nadie en turno ${b.toUpperCase()} ese día en el horario publicado. Publica/ajusta el horario o cambia la hora de la vuelta.</p>`;
-      return `<div class="dsec"><h3>${rtBandIcon(b)} Conductor ${b.toUpperCase()} · ${rtBandLabel(b)}</h3>${opts}</div>`;
+        : `<p style="font-size:12.5px;color:var(--ink2)">Nadie en turno ${rtBandName(b)} ese día en el horario publicado. Publica/ajusta el horario o cambia la hora de la vuelta.</p>`;
+      return `<div class="dsec"><h3>${rtBandIcon(b)} Conductor ${rtBandName(b)} · ${rtBandLabel(b)}</h3>${opts}</div>`;
     }).join('');
     const r = rtCarCompute(laneId);
     const semaPill = r.status === 'late' ? `<span class="spill late"><svg class="icon"><use href="#i-warn"/></svg>No llega</span>`
@@ -1535,8 +1579,8 @@
         <div class="dsec"><h3>Resumen de la ruta</h3>
           <div class="sumcard">
             <div class="sumrow"><span class="k">Paradas</span><span class="v">${r.stops.length} · ${r.pax}/${rtCapOf(car)} pax</span></div>
-            <div class="sumrow"><span class="k">${lane.origin === 'airport' ? 'Sale de MDE' : 'Primera recogida'}</span><span class="v mono">${lane.start}</span></div>
-            <div class="sumrow"><span class="k">Llegada a MDE</span><span class="v mono">${rtToHM(r.arrival)}</span></div>
+            <div class="sumrow"><span class="k">${lane.origin === 'airport' ? 'Sale de JMC' : 'Primera recogida'}</span><span class="v mono">${lane.start}</span></div>
+            <div class="sumrow"><span class="k">Llegada a JMC</span><span class="v mono">${rtToHM(r.arrival)}</span></div>
             <div class="sumrow"><span class="k">Presentación más temprana</span><span class="v mono">${rtToHM(r.hardDL)}</span></div>
             <div class="sumrow hl"><span class="k">Holgura</span><span class="v">${semaPill}</span></div>
           </div>
@@ -1603,7 +1647,7 @@
       const late = r.status === 'late';
       const activa = scrub == null || (scrub >= dep && scrub <= r.arrival);
       s += `<path d="${rtArcPath(cx, cy, ring.rO - 3, ring.rI + 3, a1, a2)}" fill="${color}" opacity="${activa ? 0.9 : 0.18}" data-arc="${l.id}" style="cursor:pointer;transition:opacity .15s">` +
-           `<title>${l.car} · Vuelta ${l.vuelta} · sale ${l.start} → MDE ${rtToHM(r.arrival)} · ${r.stops.length} parada${r.stops.length > 1 ? 's' : ''} · pres. ${rtToHM(r.hardDL)}${late ? ' · NO LLEGA' : ''}</title></path>`;
+           `<title>${l.car} · Vuelta ${l.vuelta} · sale ${l.start} → JMC ${rtToHM(r.arrival)} · ${r.stops.length} parada${r.stops.length > 1 ? 's' : ''} · pres. ${rtToHM(r.hardDL)}${late ? ' · NO LLEGA' : ''}</title></path>`;
       if (late) s += `<path d="${rtArcPath(cx, cy, ring.rO - 1, ring.rI + 1, a1, a2)}" fill="none" stroke="#EF4444" stroke-width="2" stroke-dasharray="4 3" pointer-events="none" transform-origin="center"/>`;
     });
     // AGUJA: por defecto marca AHORA; el admin puede ARRASTRARLA para recorrer
@@ -1641,8 +1685,8 @@
     const lane = rtLaneOf(laneId);
     $('#rt-mapTitle').textContent = `Trayecto ${lane.car} · Vuelta ${lane.vuelta}`;
     $('#rt-mapSub').textContent = lane.type === 'lle'
-      ? `${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing} · recoge en MDE ${lane.start} · ${r.stops.length} paradas · termina ${rtToHM(r.arrival)}`
-      : `${lane.origin === 'airport' ? 'sale de MDE ' + lane.start : '1ª recogida ' + lane.start} · ${r.stops.length} paradas · llega a MDE ${rtToHM(r.arrival)} (pres. ${rtToHM(r.hardDL)})`;
+      ? `${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing} · recoge en JMC ${lane.start} · ${r.stops.length} paradas · termina ${rtToHM(r.arrival)}`
+      : `${lane.origin === 'airport' ? 'sale de JMC ' + lane.start : '1ª recogida ' + lane.start} · ${r.stops.length} paradas · llega a JMC ${rtToHM(r.arrival)} (pres. ${rtToHM(r.hardDL)})`;
     ovl.classList.add('show');
     // Mapa una sola vez; capa de ruta se redibuja por carro.
     if (!rtMap.map) {
@@ -1659,7 +1703,7 @@
     const pin = (bg, tx) => `<div style="width:26px;height:26px;border-radius:50%;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font:800 12px Inter,sans-serif;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)">${tx}</div>`;
     const stopColor = r.lle ? '#10B981' : '#E2551A';
     r.stops.forEach((s, i) => { const a = rt.aux[s.id]; mk(rtCoordsOf(s.id), pin(stopColor, String(i + 1)), `<b>${i + 1}. ${a.n}</b><br>${a.dir || a.zona}<br>${r.lle ? 'Lo dejan' : 'ETA'} ${rtToHM(s.eta)}${r.lle ? '' : ' · pres. ' + a.dl}`); });
-    mk(RT_AIRPORT, pin('#16936A', '✈'), r.lle ? `<b>MDE</b> · recoge ${lane.start} (${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing})` : `<b>MDE</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
+    mk(RT_AIRPORT, pin('#16936A', '✈'), r.lle ? `<b>JMC</b> · recoge ${lane.start} (${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing})` : `<b>JMC</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
     // Geometría real por carretera (OSRM route). Si falla → línea recta punteada.
     let drew = false;
     try {
@@ -1792,9 +1836,9 @@
       const dv = e.target.closest('[data-rtdrv]'); if (dv) {
         const band = dv.dataset.rtband;
         // toca de nuevo al ya seleccionado → lo quita (deja esa franja sin conductor)
-        const cur = band === 'am' ? rt.pendingAM : rt.pendingPM;
+        const cur = band === 'am' ? rt.pendingAM : band === 'mad' ? rt.pendingMad : rt.pendingPM;
         const val = (cur === dv.dataset.rtdrv) ? null : dv.dataset.rtdrv;
-        if (band === 'am') rt.pendingAM = val; else rt.pendingPM = val;
+        if (band === 'am') rt.pendingAM = val; else if (band === 'mad') rt.pendingMad = val; else rt.pendingPM = val;
         $('#rt-drawer').querySelectorAll(`.drv-opt[data-rtband="${band}"]`).forEach(o => o.classList.toggle('sel', val && o === dv));
         return;
       }
@@ -1802,21 +1846,22 @@
         const lane = rtLaneOf(rt.drawerCar); const car = lane && rtCarOf(lane);
         if (!car) { rtCloseDrawer(); return; }
         const bands = rtBandsOfCar(car.id);
-        if (!bands.some(b => (b === 'am' ? rt.pendingAM : rt.pendingPM))) { toast('Elige al menos un conductor de una franja.'); return; }
+        const pendDe = (b) => b === 'am' ? rt.pendingAM : b === 'mad' ? rt.pendingMad : rt.pendingPM;
+        if (!bands.some(b => pendDe(b))) { toast('Elige al menos un conductor de una franja.'); return; }
         // Una persona no maneja dos carros a la vez (27-sep-2026). Con las dobles
         // la misma persona puede estar en AM y PM, pero no en dos carros de la
         // misma franja.
-        for (const b of ['am', 'pm']) {
-          const id = b === 'am' ? rt.pendingAM : rt.pendingPM; if (!id) continue;
-          const otro = (rt.cars || []).find(c => c.id !== car.id && (b === 'am' ? c.driverAM : c.driverPM) === id);
+        for (const b of RT_BANDS) {
+          const id = pendDe(b); if (!id) continue;
+          const otro = (rt.cars || []).find(c => c.id !== car.id && rtCarDrv(c, b) === id);
           if (otro) {
             const d = rt.drivers.find(x => x.id === id);
-            toast(`${d ? d.n.split(' ')[0] : 'Ese conductor'} ya maneja ${otro.id} en la franja ${b.toUpperCase()}: no puede estar en dos carros a la vez.`);
+            toast(`${d ? d.n.split(' ')[0] : 'Ese conductor'} ya maneja ${otro.id} en la franja ${rtBandName(b)}: no puede estar en dos carros a la vez.`);
             return;
           }
         }
-        car.driverAM = rt.pendingAM || null; car.driverPM = rt.pendingPM || null;
-        const names = bands.map(b => { const id = b === 'am' ? car.driverAM : car.driverPM; const d = id && rt.drivers.find(x => x.id === id); return d ? `${b.toUpperCase()} ${d.n.split(' ')[0]}` : null; }).filter(Boolean).join(' · ');
+        car.driverAM = rt.pendingAM || null; car.driverPM = rt.pendingPM || null; car.driverMad = rt.pendingMad || null;
+        const names = bands.map(b => { const id = rtCarDrv(car, b); const d = id && rt.drivers.find(x => x.id === id); return d ? `${rtBandName(b)} ${d.n.split(' ')[0]}` : null; }).filter(Boolean).join(' · ');
         rtCloseDrawer(); rtRenderAll(); toast(`${car.id} confirmada (${names || 'sin conductor'}).`); return;
       }
       if (e.target.closest('#rt-alertFix')) {

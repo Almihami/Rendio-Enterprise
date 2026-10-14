@@ -146,7 +146,7 @@
 
   function rvRow(r) {
     const st = RV_ST[r.status] || { cls: 'muted', label: r.status };
-    const dir = r.type === 'lle' ? 'MDE → casa' : 'casa → MDE';
+    const dir = r.type === 'lle' ? 'JMC → casa' : 'casa → JMC';
     const chips = [];
     // Trabajo en tierra (0092): operaciones del aeropuerto, sin vuelo. Se dice,
     // para que el hueco del vuelo no parezca un dato que falta.

@@ -245,7 +245,7 @@
     const newT = hmOnly(fv.time) || '--:--';
     const dayChanged = !!(fv.date && t.date && fv.date !== t.date);
     const moved = dayChanged || (!!hmOnly(fv.time) && hmOnly(fv.time) !== hmOnly(t.time));
-    const ahora = isLle(t) ? (isGround(t) ? 'Ahora sales' : 'Ahora aterrizas') : 'Ahora, en MDE';
+    const ahora = isLle(t) ? (isGround(t) ? 'Ahora sales' : 'Ahora aterrizas') : 'Ahora, en JMC';
     return `<div><span>Antes${dayChanged && shortDay(t.date) ? ' · ' + esc(shortDay(t.date)) : ''}</span><b${moved ? ' class="strike"' : ''}>${esc(oldT)}</b></div>`
       + ic('ArrowRight', 18)
       + `<div><span>${ahora}${dayChanged && shortDay(fv.date) ? ' · ' + esc(shortDay(fv.date)) : ''}</span><b>${esc(newT)}</b></div>`;
@@ -284,7 +284,7 @@
         + ` placeholder="${lle ? 'Número de vuelo' : 'Número de vuelo (opcional)'}" aria-label="Número de vuelo" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>`)
       + '<div class="rx-fv-when rx-in" style="--d:1">'
       + whenField('Día', 'fv-date', 'date', fv.date, ` min="${esc(today)}" max="${esc(maxDay)}"`, 'Calendar')
-      + whenField(lle ? (ground ? 'Sales del aeropuerto' : 'Aterrizas') : 'Estar en MDE', 'fv-time', 'time', fv.time, '', 'Clock')
+      + whenField(lle ? (ground ? 'Sales del aeropuerto' : 'Aterrizas') : 'Estar en JMC', 'fv-time', 'time', fv.time, '', 'Clock')
       + '</div>'
       + `<div class="rx-flight-new rx-in" style="--d:2">${flightNewInner(t)}</div>`
       + `<div class="rx-note rx-in" style="--d:3" data-fv="note">${noteInner(t)}</div>`;
@@ -296,7 +296,7 @@
     const chk = u && u.check ? u.check(ops ? 'info' : 'ok') : '';
     const day = elDay(r.date);
     const nueva = r.timeChanged
-      ? (r.type === 'lle' ? (r.ground ? 'Nueva hora de salida del aeropuerto: ' : 'Nueva hora de aterrizaje: ') : 'Nueva hora en MDE: ')
+      ? (r.type === 'lle' ? (r.ground ? 'Nueva hora de salida del aeropuerto: ' : 'Nueva hora de aterrizaje: ') : 'Nueva hora en JMC: ')
         + (day ? day + ' a las ' : '') + r.time
         + (r.flight && r.flightChanged ? ' · vuelo ' + r.flight : '')
       : 'Vuelo nuevo: ' + (r.flight || '') + '. La hora sigue igual';
@@ -374,7 +374,7 @@
     const lle = isLle(t);
     const title = (lle ? 'Llegada' : 'Salida') + (shortDay(t.date) ? ' · ' + shortDay(t.date) : '');
     const ground = isGround(t);
-    const sub = (lle ? (ground ? 'Sales del aeropuerto ' : 'Aterrizas ') : 'Estar en MDE ') + (hmOnly(t.time) || '--:--')
+    const sub = (lle ? (ground ? 'Sales del aeropuerto ' : 'Aterrizas ') : 'Estar en JMC ') + (hmOnly(t.time) || '--:--')
       + (t.flight && !ground ? ' · ' + normFlight(t.flight) : '');
     return `<button type="button" class="rx-opt rx-in${t.id === fv.tripId ? ' on' : ''}" style="--d:${i}" data-rx="fv-choose" data-id="${esc(t.id)}">`
       + `<span class="rx-opt-ic">${ic(lle ? 'Home' : 'Plane', 18)}</span>`

@@ -153,8 +153,8 @@ t('salida en camino: «En camino» es la actual', q('#ax-phase [data-ph="enroute
 t('salida: el texto «Llegó por ti» está', /Llegó por ti/.test(q('#ax-phase').textContent));
 await abrir('a-bordo-llegada');
 ph = qa('#ax-phase > .rx-tl-s[data-ph]').map(e => e.getAttribute('data-ph'));
-// 0097: la llegada suma «Te espera en MDE» (el conductor marcó «Llegué al aeropuerto»).
-t('llegada: 6 fases (Pedido · Conductor asignado · Te espera en MDE · A bordo · Rumbo a casa · En casa)', ph.join() === 'booked,assigned,arrived,onboard,homebound,done', ph.join());
+// 0097: la llegada suma «Te espera en JMC» (el conductor marcó «Llegué al aeropuerto»).
+t('llegada: 6 fases (Pedido · Conductor asignado · Te espera en JMC · A bordo · Rumbo a casa · En casa)', ph.join() === 'booked,assigned,arrived,onboard,homebound,done', ph.join());
 t('llegada: rejilla de 6 columnas', /repeat\(6/.test(q('#ax-phase').getAttribute('style') || ''));
 
 console.log('\n── Código de encuentro (meetVisible) y «llegó» sin repintar ──');
@@ -177,7 +177,7 @@ t('HUD con stop_status arrived: #ax-meet.is-arrived y data-arrived=1', q('#ax-me
 t('HUD: la fase «Llegó por ti» pasa a ser la actual', q('#ax-phase [data-ph="arrived"]').classList.contains('now'));
 t('sin repintar: el mismo nodo .rx-trip y el mismo mapa vivo', q('.rx-layer[data-scr="trip"] .rx-trip') === capa1 && L.__liveMaps()[0] === mapas1[0] && !mapas1[0]._removed);
 t('la espera en el punto se muestra (#ax-wait sin hidden)', !q('#ax-wait').classList.contains('hidden'));
-// Llegada con conductor el día del viaje: el código sí (en MDE es donde más se necesita).
+// Llegada con conductor el día del viaje: el código sí (en JMC es donde más se necesita).
 const P = E.piezas;
 d = await abrir('asignado-publicado', (dd) => {
   // HOY de verdad: después de las 23:20 de Bogotá, «dentro de 40 min» ya es
@@ -204,7 +204,7 @@ t('conductor: nombre, «Marca Modelo · Color» y placa', /Mauricio Arango Pére
 t('★ oculta con 6 calificaciones (< 10)', !q('.rx-drv-st'));
 t('acciones: Llamar (call), Mensaje (chat), Coordinación (open-coord con el id)', !!q('.rx-drv-acts [data-ax="call"]') && !!q('.rx-drv-acts [data-ax="chat"]')
   && q('.rx-drv-acts [data-rx="open-coord"]').getAttribute('data-id') === d.principal);
-t('datos: Vuelo · En MDE · Nivel · Maletas', qa('.rx-trip-info span').map(s => s.textContent).join() === 'Vuelo,En MDE,Nivel,Maletas');
+t('datos: Vuelo · En JMC · Nivel · Maletas', qa('.rx-trip-info span').map(s => s.textContent).join() === 'Vuelo,En JMC,Nivel,Maletas');
 t('hora grande = recogida publicada 03:48, «Mañana te recogemos»', q('#ax-eta-min').textContent === '03:48' && q('#ax-eta-label').textContent === 'Mañana te recogemos');
 t('pie: «Confirmar mi recogida» (confirm-pickup) + botón rojo (alarm)', /Confirmar mi recogida/.test(q('[data-ax="confirm-pickup"]').textContent) && !!q('.rx-trip-cta [data-ax="alarm"]'));
 d = await abrir('privado-aprobado');
@@ -436,7 +436,7 @@ d = await abrir('entregado-sin-calificar');
 t('entregado sin calificar: capa modal «rate» con «¿Cómo te fue con Mauricio?»', !!q('.rx-layer.modal[data-scr="rate"] .rx-rate-scr') && /¿Cómo te fue con Mauricio\?/.test(q('.rx-rate').textContent));
 t('5 estrellas (data-ax=star) con --k, «Toca una estrella», enviar deshabilitado', qa('.rx-stars [data-ax="star"]').length === 5
   && q('.rx-stars [data-n="3"]').getAttribute('style') === '--k:3' && q('.rx-rate-l').textContent === 'Toca una estrella' && q('[data-ax="rate-send"]').disabled);
-t('origen → destino y hora de entrega', /El Olivar → MDE · llegaste a las \d\d:\d\d/.test(q('.rx-rate p').textContent), q('.rx-rate p').textContent);
+t('origen → destino y hora de entrega', /El Olivar → JMC · llegaste a las \d\d:\d\d/.test(q('.rx-rate p').textContent), q('.rx-rate p').textContent);
 const scr = q('.rx-rate-scr');
 const l0 = q('.rx-rate-l');
 click(q('.rx-stars [data-n="4"]'));
@@ -482,7 +482,7 @@ const infoCells = () => qa('.rx-trip-info > div').map(c => c.querySelector('span
 d = await abrir('ruta-2-de-3');
 let ordEl = q('.rx-trip-info .rx-trip-ord');
 t('publicado con orden: «Recogida 2/3» como ÚLTIMA celda de la grilla', !!ordEl && ordEl === q('.rx-trip-info').lastElementChild && ordEl.querySelector('span').textContent === 'Recogida' && ordEl.querySelector('b').textContent === '2/3');
-t('cinco celdas: la grilla pasa a 3 columnas y el orden queda después de Maletas', infoCells().join('|') === 'Vuelo AV9412|En MDE 05:10|Nivel Compartido|Maletas 1|Recogida 2/3'
+t('cinco celdas: la grilla pasa a 3 columnas y el orden queda después de Maletas', infoCells().join('|') === 'Vuelo AV9412|En JMC 05:10|Nivel Compartido|Maletas 1|Recogida 2/3'
   && /repeat\(3,\s*1fr\)/.test(q('.rx-trip-info').getAttribute('style')), infoCells().join('|'));
 d = await abrir('ruta-sola');
 t('sola en el carro: «1/1»', (q('.rx-trip-info .rx-trip-ord b') || {}).textContent === '1/1');
@@ -491,7 +491,7 @@ t('llegada: «Parada 3/3», cuatro celdas en una fila', infoCells().join('|') ==
 d = await abrir('pendiente-sin-plan');
 t('sin publicar: sin celda de orden', !q('.rx-trip-ord') && !/\d\/\d/.test(q('.rx-trip-info').textContent));
 d = await abrir('asignado-publicado');
-t('publicado sin el dato: sin celda de orden y la grilla de siempre', !q('.rx-trip-ord') && qa('.rx-trip-info span').map(s => s.textContent).join() === 'Vuelo,En MDE,Nivel,Maletas');
+t('publicado sin el dato: sin celda de orden y la grilla de siempre', !q('.rx-trip-ord') && qa('.rx-trip-info span').map(s => s.textContent).join() === 'Vuelo,En JMC,Nivel,Maletas');
 d = await abrir('ruta-2-de-3', (dd) => { dd.trips[0].published = false; A.state.trips[0].published = false; });
 t('con el dato pero published ≠ true: no se pinta', !q('.rx-trip-ord'));
 d = await abrir('tierra-llegada');
@@ -540,7 +540,7 @@ const B2 = await boot({ conVuelo: true });
   click2(b); await new Promise(r => setTimeout(r, 80));
   let cur = AS2.current();
   t('tocarlo abre «flight» con ESE reservationId y el modo', cur && cur.id === 'flight' && cur.props.reservationId === dd.principal && cur.props.mode === 'presentacion', JSON.stringify(cur));
-  t('la pantalla dice «Cambio de presentación», con «Estar en MDE» y el vuelo opcional', flTitle() === 'Cambio de presentación' && /Estar en MDE/.test(layer2('flight').querySelector('.rx-fv-when').textContent)
+  t('la pantalla dice «Cambio de presentación», con «Estar en JMC» y el vuelo opcional', flTitle() === 'Cambio de presentación' && /Estar en JMC/.test(layer2('flight').querySelector('.rx-fv-when').textContent)
     && layer2('flight').querySelector('[data-rx-field="fv-flight"]').getAttribute('placeholder') === 'Número de vuelo (opcional)', flTitle());
   t('abierta desde el traslado: formulario de ESE traslado y sin «Es otro traslado»', /Tu salida de mañana/.test(layer2('flight').querySelector('.rx-ob-h p').textContent) && !layer2('flight').querySelector('.rx-fv-other'));
   click2(layer2('flight').querySelector('[data-rx="rx-pop"]')); await new Promise(r => setTimeout(r, 320));

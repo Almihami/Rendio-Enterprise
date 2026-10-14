@@ -38,6 +38,24 @@
     if ($('#setting-deplane-fallback')) $('#setting-deplane-fallback').value = S.route_deplane_min != null ? S.route_deplane_min : 20;
     // 0062: corrimiento de domingos y festivos. 0 es válido, así que no se usa `||`.
     if ($('#setting-holiday-shift')) $('#setting-holiday-shift').value = S.route_holiday_shift_min != null ? S.route_holiday_shift_min : 0;
+    // 0107: corte de la madrugada (vueltas del turno PM del día anterior). Sin la
+    // columna el campo se apaga: guardar no lo manda y el tablero usa 02:00.
+    const nc = $('#setting-night-cutoff');
+    if (nc) {
+      // Lectura propia (Api.getRouteNightCutoff): getSettings es una sola consulta.
+      // Mientras llega, el campo queda apagado con el valor de siempre.
+      nc.disabled = true; nc.value = '120';
+      const nota = $('#setting-night-cutoff-off'); if (nota) nota.hidden = true;
+      const pinta = (v) => {
+        const hay = v != null;
+        nc.disabled = !hay;
+        nc.value = String(hay ? v : 120);
+        if (nota) nota.hidden = hay;
+        if (typeof setRepintarValores === 'function') setRepintarValores('calib');
+      };
+      if (window.Api && typeof Api.getRouteNightCutoff === 'function') Api.getRouteNightCutoff().then(pinta).catch(() => pinta(null));
+      else pinta(null);
+    }
     // 0071: colchón de la tabla de zona. 0 = usar su tabla completa.
     if ($('#setting-zone-cushion')) $('#setting-zone-cushion').value = S.route_zone_cushion_min != null ? S.route_zone_cushion_min : 25;
     // 0074: cómo despacha él. Sin la migración los campos quedan con el default
@@ -249,6 +267,13 @@
       route_airport_buffer_min: (() => {
         const n = parseInt($('#setting-route-buffer') && $('#setting-route-buffer').value, 10);
         return isNaN(n) ? 10 : Math.min(45, Math.max(0, n));
+      })(),
+      // 0107: solo si la base tiene la columna (el campo queda apagado si no).
+      ...(() => {
+        const el = $('#setting-night-cutoff');
+        if (!el || el.disabled) return {};
+        const n = parseInt(el.value, 10);
+        return { route_night_cutoff_min: isNaN(n) ? 120 : Math.min(240, Math.max(0, n)) };
       })(),
     };
     // ENCENDIDO SIN CAMIONETA NO ES ENCENDIDO. La app ofrece el privado solo si

@@ -219,7 +219,7 @@ console.log('\n── compartir por fase (#19) ──');
   const f = at(26 * H);
   const asig = { id: 's1', type: 'sal', ...f, status: 'assigned', driver: { name: 'Pedro Pérez', plate: 'ABC123' } };
   const txt1 = A.shareText(asig);
-  t('asignado sin hora: «Tengo traslado a MDE … debo estar allá a las …»', /^Tengo traslado a MDE .+; debo estar allá a las \d\d:\d\d\.$/.test(txt1), txt1);
+  t('asignado sin hora: «Tengo traslado a JMC … debo estar allá a las …»', /^Tengo traslado a JMC .+; debo estar allá a las \d\d:\d\d\.$/.test(txt1), txt1);
   t('asignado NO dice «Voy en camino»', !/Voy en camino/.test(txt1));
   const pub = new Date(Date.now() + 25 * H);
   const txt2 = A.shareText({ ...asig, pickupAt: pub.toISOString(), vehicle: { plate: 'XYZ987' } });
@@ -233,7 +233,7 @@ console.log('\n── compartir por fase (#19) ──');
   t('en camino con su ETA: «…, llega sobre las HH:MM (estimado).»', /^Mi conductor va por mí, llega sobre las \d\d:\d\d \(estimado\)\.$/.test(txt4), txt4);
   S.etaKind = 'dest';
   const txt5 = A.shareText({ ...asig, status: 'onboard' });
-  t('a bordo: «Voy en camino al aeropuerto MDE, llego … Carro PLACA.»', /^Voy en camino al aeropuerto MDE, llego sobre las \d\d:\d\d \(estimado\)\. Carro ABC123\.$/.test(txt5), txt5);
+  t('a bordo: «Voy en camino al aeropuerto JMC, llego … Carro PLACA.»', /^Voy en camino al aeropuerto JMC, llego sobre las \d\d:\d\d \(estimado\)\. Carro ABC123\.$/.test(txt5), txt5);
   t('pendiente o cerrado: nada que compartir', A.shareText({ ...asig, status: 'pending' }) === null && A.shareText({ ...asig, status: 'done' }) === null);
   const lle = A.shareText({ ...asig, type: 'lle' });
   t('llegada asignada: habla de aterrizar, no de «estar allá»', /aterrizo a las/.test(lle), lle);
@@ -340,9 +340,9 @@ console.log('\n── rastreo: fusiona (#6), fases y código sin repintar (#5) �
   t('…y pide UN repintado al shell (patch)', shell.renders === r0 + 1);
   // fases de llegada
   const ph = A.phases({ type: 'lle', status: 'onboard' }, { remaining_before: 0 });
-  // 0097: la llegada suma «Te espera en MDE» (cuando el conductor marca «Llegué al aeropuerto»).
+  // 0097: la llegada suma «Te espera en JMC» (cuando el conductor marca «Llegué al aeropuerto»).
   t('llegada: 6 fases y «Rumbo a casa» sin paradas antes', ph.steps.length === 6 && ph.current === 'homebound');
-  t('llegada: «Te espera en MDE» cuando la parada quedó «arrived»', A.phases({ type: 'lle', status: 'assigned' }, { stop_status: 'arrived' }).current === 'arrived');
+  t('llegada: «Te espera en JMC» cuando la parada quedó «arrived»', A.phases({ type: 'lle', status: 'assigned' }, { stop_status: 'arrived' }).current === 'arrived');
   t('salida: 6 fases', A.phases({ type: 'sal', status: 'pending' }).steps.length === 6);
   window.eval('auxStopTrack')();
   S.view = 'home'; S.editingTrip = null;

@@ -54,7 +54,7 @@ try {
   const etiqueta = await p.evaluate(() => [...document.querySelectorAll('#auxiliar-ui .rx-lbl, #auxiliar-ui .ax-sec')].map((e) => e.textContent.trim()));
   check('el paso dice «Dónde trabajas»', etiqueta.includes('Dónde trabajas'), etiqueta.join(' | '));
   const ultima = await p.evaluate(() => { const l = [...document.querySelectorAll('[data-rg=airline]')]; const u = l[l.length - 1]; return u ? { id: u.dataset.id, txt: u.innerText.replace(/\s+/g, ' ') } : null; });
-  check('la última opción es «Trabajo en el aeropuerto» (MDE)', ultima && ultima.id === '__tierra__' && /Trabajo en el aeropuerto/.test(ultima.txt) && /MDE/.test(ultima.txt), JSON.stringify(ultima));
+  check('la última opción es «Trabajo en el aeropuerto» (JMC)', ultima && ultima.id === '__tierra__' && /Trabajo en el aeropuerto/.test(ultima.txt) && /JMC/.test(ultima.txt), JSON.stringify(ultima));
   await p.click('[data-rg=airline][data-id="__tierra__"]');
   await p.fill('[data-rg-q="1"]', 'Olivar');
   await p.click('[data-rg=res-pick]', { timeout: 8000 });

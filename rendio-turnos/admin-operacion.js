@@ -13,7 +13,7 @@
   // ====================================================================
   // Rotonda del TERMINAL DE PASAJEROS (acceso occidental) — la coord genérica
   // del aeropuerto ruteaba por la zona de carga/CACOM 5, que es prohibida.
-  const OP_MDE = { lat: 6.1715, lng: -75.4270 }; // MDE · terminal de pasajeros
+  const OP_MDE = { lat: 6.1715, lng: -75.4270 }; // JMC · terminal de pasajeros
   const OP_COLORS = { ontime: '#16936A', tight: '#C9810F', late: '#D6473B', done: '#9D998F' };
   // Color por carro (identidad en el mapa y en la tarjeta), en orden estable.
   const OP_CAR_COLORS = ['#2563A8', '#7C5CD6', '#16936A', '#0EA5E9', '#E2551A', '#8B5CF6'];
@@ -271,11 +271,11 @@
       return;
     }
     if (!opState.map) {
-      const map = L.map(el, { zoomControl: true, attributionControl: true, scrollWheelZoom: true }).setView([6.155, -75.39], 12); // Rionegro / Oriente → MDE
+      const map = L.map(el, { zoomControl: true, attributionControl: true, scrollWheelZoom: true }).setView([6.155, -75.39], 12); // Rionegro / Oriente → JMC
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
       L.marker([OP_MDE.lat, OP_MDE.lng], {
         icon: L.divIcon({ className: '', html: `<div class="op-mk-air"><svg viewBox="0 0 24 24"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg></div>`, iconSize: [30, 30], iconAnchor: [15, 15] }),
-      }).addTo(map).bindTooltip('Aeropuerto MDE · Rionegro');
+      }).addTo(map).bindTooltip('Aeropuerto JMC · Rionegro');
       opState.routeLayer = L.layerGroup().addTo(map);
       opState.markerLayer = L.layerGroup().addTo(map);
       opState.map = map;

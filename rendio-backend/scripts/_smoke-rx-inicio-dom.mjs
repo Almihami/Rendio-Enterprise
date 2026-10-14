@@ -16,7 +16,7 @@
 //   · segmentados: indicador sin repintar + cuerpo RECREADO con .rx-anim (key);
 //   · historial: «Sin realizar», estrellas, «Calificar» (abre con rate:true);
 //   · ids reservados de §2.4 fuera de la base; bandera APAGADA = UI de siempre.
-//   · pedido del 29-sep: MDE con «JMC» y «Rionegro» en dos líneas (Inicio y
+//   · pedido del 29-sep: JMC con «JMC» y «Rionegro» en dos líneas (Inicio y
 //     Viajes); «Recogida 2/3» / «Parada 3/3» / «1/1» SOLO publicado, como última
 //     celda en la fila de Maletas; sin publicar o sin el dato, nada; mapTrip de
 //     0093; tierra sin «Vuelo» y «Sales del aeropuerto»; la regla de «Cambió mi
@@ -29,7 +29,7 @@
 // entradas .rx-in se VEAN bien hay que revisarlo en el teléfono), Leaflet real
 // (tiles, tamaño), push real del sistema (el SW es falso), ni la hora de Bogotá
 // en los bordes del día (el saludo depende del reloj de la máquina). Tampoco que
-// las dos líneas de MDE queden alineadas con CASA ni que «Recogida 2/3» quepa en
+// las dos líneas de JMC queden alineadas con CASA ni que «Recogida 2/3» quepa en
 // un teléfono de 320 px (eso es layout), ni la SQL de 0093 contra una base: solo
 // se lee el archivo (que compile, que el cruce de tramos junte bien a Ana, Beto
 // y Carla y no la vuelta siguiente, y el down aplicado, hay que verlo en la base
@@ -134,9 +134,9 @@ t('error de carga: rx-empty-trip con Reintentar (data-ax="reload")', !!h.querySe
 await montar('pendiente-sin-plan');
 h = homeEl();
 t('sin plan: NUNCA /Te recogemos \\d/', !/Te recogemos\s*\d/.test(h.textContent));
-t('sin plan: «Estar en MDE» + 05:10 y la nota honesta', /Estar en MDE\s*05:10/.test(h.querySelector('.rx-pass-time').textContent) && /Hora de recogida: te avisamos cuando armemos tu ruta/.test(h.querySelector('.rx-pass-note').textContent));
-t('sin plan: pase con CASA → MDE, Compartido, «Asignando conductor»', h.querySelector('.rx-pass-main').textContent.replace(/\s+/g, ' ').includes('CASA') && /MDE/.test(h.querySelector('.rx-pass-main').textContent) && /Compartido/.test(h.querySelector('.rx-pass-lv').textContent) && /Asignando conductor/.test(h.querySelector('.rx-pass-bot').textContent));
-t('sin plan: grilla sin «En MDE» (la grande ya es esa), con Vuelo y Maletas', (() => { const g = h.querySelector('.rx-pass-grid').textContent; return !/En MDE/.test(g) && /Vuelo\s*AV9412/.test(g) && /Maletas\s*2/.test(g); })());
+t('sin plan: «Estar en JMC» + 05:10 y la nota honesta', /Estar en JMC\s*05:10/.test(h.querySelector('.rx-pass-time').textContent) && /Hora de recogida: te avisamos cuando armemos tu ruta/.test(h.querySelector('.rx-pass-note').textContent));
+t('sin plan: pase con CASA → JMC, Compartido, «Asignando conductor»', h.querySelector('.rx-pass-main').textContent.replace(/\s+/g, ' ').includes('CASA') && /JMC/.test(h.querySelector('.rx-pass-main').textContent) && /Compartido/.test(h.querySelector('.rx-pass-lv').textContent) && /Asignando conductor/.test(h.querySelector('.rx-pass-bot').textContent));
+t('sin plan: grilla sin «En JMC» (la grande ya es esa), con Vuelo y Maletas', (() => { const g = h.querySelector('.rx-pass-grid').textContent; return !/En JMC/.test(g) && /Vuelo\s*AV9412/.test(g) && /Maletas\s*2/.test(g); })());
 t('sin plan: «Cambió mi vuelo» → «Actualizamos tu traslado» (open-flight con id)', (() => { const b2 = h.querySelector('.rx-qa-b[data-rx="open-flight"]'); return !!b2 && b2.getAttribute('data-id') === A.state.trips[0].id && /Actualizamos tu traslado/.test(b2.textContent); })());
 t('sin plan: el pase abre el viaje (data-ax="trip")', h.querySelector('.rx-pass').getAttribute('data-ax') === 'trip');
 
@@ -148,7 +148,7 @@ t('publicado sin hora: conductor y carro reales en el pie', /Mauricio Arango Pé
 await montar('asignado-publicado');
 h = homeEl();
 t('publicado: «Te recogemos 03:48»', /Te recogemos\s*03:48/.test(h.querySelector('.rx-pass-time').textContent));
-t('publicado: grilla [En MDE 05:10][Vuelo][Maletas], sin nota', /En MDE\s*05:10/.test(h.querySelector('.rx-pass-grid').textContent) && !h.querySelector('.rx-pass-note'));
+t('publicado: grilla [En JMC 05:10][Vuelo][Maletas], sin nota', /En JMC\s*05:10/.test(h.querySelector('.rx-pass-grid').textContent) && !h.querySelector('.rx-pass-note'));
 t('publicado: sec-h «Tu próximo traslado · Confirmado»', /Tu próximo traslado\s*Confirmado/.test(h.querySelector('.rx-sec-h').textContent));
 t('publicado: el código NO sale antes de «en camino» (meetVisible)', !h.querySelector('.rx-pass-code'));
 t('publicado: sin viaje en curso NO hay RxLive y hay anzuelo', !h.querySelector('.rx-live') && !!h.querySelector('.rx-select-teaser'));
@@ -185,7 +185,7 @@ t('llegó: sin «Cambió mi vuelo» (ya llegó por ti)', !h.querySelector('[data
 await montar('a-bordo-salida');
 await wait(30);
 h = homeEl();
-t('a bordo salida: «A bordo · rumbo a MDE» + texto de auxLateness', h.querySelector('.rx-live-t').textContent === 'A bordo · rumbo a MDE' && h.querySelector('.rx-live-s').textContent === ((A.lateness(A.state.trips[0]) || {}).text || ''), h.querySelector('.rx-live-s') && h.querySelector('.rx-live-s').textContent);
+t('a bordo salida: «A bordo · rumbo a JMC» + texto de auxLateness', h.querySelector('.rx-live-t').textContent === 'A bordo · rumbo a JMC' && h.querySelector('.rx-live-s').textContent === ((A.lateness(A.state.trips[0]) || {}).text || ''), h.querySelector('.rx-live-s') && h.querySelector('.rx-live-s').textContent);
 await montar('a-bordo-llegada');
 await wait(30);
 t('a bordo llegada: «A bordo · rumbo a casa»', homeEl().querySelector('.rx-live-t').textContent === 'A bordo · rumbo a casa');
@@ -193,7 +193,7 @@ t('a bordo llegada: «A bordo · rumbo a casa»', homeEl().querySelector('.rx-li
 await montar('entregado-sin-calificar');
 h = homeEl();
 t('entregado < 24 h: tarjeta «¿Cómo te fue con Mauricio?»', /¿Cómo te fue con Mauricio\?/.test(h.querySelector('.rx-rate-card').textContent) && h.querySelectorAll('.rx-rate-card .rx-stars svg').length === 5);
-t('entregado: «Llegaste a MDE a las HH:MM · N min de margen» con la hora REAL de entrega', /Llegaste a MDE a las \d{2}:\d{2} · 10 min de margen/.test(h.querySelector('.rx-rate-card').textContent), h.querySelector('.rx-rate-card span').textContent);
+t('entregado: «Llegaste a JMC a las HH:MM · N min de margen» con la hora REAL de entrega', /Llegaste a JMC a las \d{2}:\d{2} · 10 min de margen/.test(h.querySelector('.rx-rate-card').textContent), h.querySelector('.rx-rate-card span').textContent);
 t('entregado: «Repetir último» → «Salida · El Olivar»', (h.querySelector('.rx-qa-b[data-ax="repeat"] em') || {}).textContent === 'Salida · El Olivar');
 const idCal = A.state.trips[0].id;
 click(h.querySelector('.rx-rate-card')); await wait(20);
@@ -230,19 +230,19 @@ h = homeEl();
 t('dos próximos: «Ver tus 2 traslados» lleva a Viajes', /Ver tus 2 traslados/.test(h.textContent) && h.querySelector('.rx-home-more').getAttribute('data-tab') === 'viajes');
 t('noche: la salida de las 20:30 es «Mañana» (día de Bogotá)', /^Mañana/.test(h.querySelector('.rx-pass-day').textContent), h.querySelector('.rx-pass-day').textContent);
 
-console.log('\n── Pedido 29-sep: MDE con «JMC» y «Rionegro» en dos líneas ──');
+console.log('\n── El aeropuerto: «JMC» grande y debajo «Rionegro» (13-oct-2026; antes «MDE» con «JMC» y «Rionegro») ──');
 const lineas = (pt) => (pt ? [...pt.querySelectorAll('span')].map(s => s.textContent).join('|') : '');
 await montar('asignado-publicado');
 h = homeEl();
-t('salida: a la derecha (.r) «MDE» grande y debajo «JMC» y «Rionegro»', h.querySelector('.rx-pass-pt.r b').textContent === 'MDE' && lineas(h.querySelector('.rx-pass-pt.r')) === 'JMC|Rionegro', lineas(h.querySelector('.rx-pass-pt.r')));
+t('salida: a la derecha (.r) «JMC» grande y debajo «Rionegro»', h.querySelector('.rx-pass-pt.r b').textContent === 'JMC' && lineas(h.querySelector('.rx-pass-pt.r')) === 'Rionegro', lineas(h.querySelector('.rx-pass-pt.r')));
 t('salida: a la izquierda «CASA» con una sola línea (el conjunto)', h.querySelector('.rx-pass-pt:not(.r) b').textContent === 'CASA' && lineas(h.querySelector('.rx-pass-pt:not(.r)')) === 'El Olivar');
 t('ya no queda «JMC · Rionegro» en una sola línea (Inicio)', !/JMC\s*·\s*Rionegro/.test(h.textContent));
 await montar('llegada-parada');
 h = homeEl();
-t('llegada: a la izquierda «MDE» con «JMC» y «Rionegro»; a la derecha «CASA»', h.querySelector('.rx-pass-pt:not(.r) b').textContent === 'MDE' && lineas(h.querySelector('.rx-pass-pt:not(.r)')) === 'JMC|Rionegro'
+t('llegada: a la izquierda «JMC» con «Rionegro»; a la derecha «CASA»', h.querySelector('.rx-pass-pt:not(.r) b').textContent === 'JMC' && lineas(h.querySelector('.rx-pass-pt:not(.r)')) === 'Rionegro'
   && h.querySelector('.rx-pass-pt.r b').textContent === 'CASA' && lineas(h.querySelector('.rx-pass-pt.r')) === 'El Olivar');
 AS.setTab('viajes'); await wait(20);
-t('Viajes pinta el mismo pase (dos líneas, sin «JMC · Rionegro»)', lineas(tripsEl().querySelector('.rx-pass-pt:not(.r)')) === 'JMC|Rionegro' && !/JMC\s*·\s*Rionegro/.test(tripsEl().textContent));
+t('Viajes pinta el mismo pase («JMC» con «Rionegro», sin «JMC · Rionegro» en una línea)', lineas(tripsEl().querySelector('.rx-pass-pt:not(.r)')) === 'Rionegro' && !/JMC\s*·\s*Rionegro/.test(tripsEl().textContent));
 AS.setTab('inicio'); await wait(10);
 
 console.log('\n── Pedido 29-sep: orden en el carro («Recogida 2/3») ──');
@@ -253,7 +253,7 @@ h = homeEl();
 let od = ordDe(h);
 t('publicado con orden: celda «Recogida» «2/3»', !!od && od.querySelector('span').textContent === 'Recogida' && od.querySelector('b').textContent === '2/3', od && od.textContent);
 t('…es la ÚLTIMA celda, en la misma fila que Maletas (4 celdas → 4 columnas)', od && od === h.querySelector('.rx-pass-grid').lastElementChild
-  && celdas(h).join('|') === 'En MDE 05:10|Vuelo AV9412|Maletas 1|Recogida 2/3' && /repeat\(4,\s*1fr\)/.test(h.querySelector('.rx-pass-grid').getAttribute('style') || ''), celdas(h).join('|'));
+  && celdas(h).join('|') === 'En JMC 05:10|Vuelo AV9412|Maletas 1|Recogida 2/3' && /repeat\(4,\s*1fr\)/.test(h.querySelector('.rx-pass-grid').getAttribute('style') || ''), celdas(h).join('|'));
 AS.setTab('viajes'); await wait(20);
 t('Viajes: el mismo «Recogida 2/3»', (ordDe(tripsEl()) || {}).textContent === 'Recogida2/3');
 AS.setTab('inicio'); await wait(10);
@@ -300,10 +300,10 @@ t('tierra: sin celda «Vuelo»', !/Vuelo/.test((h.querySelector('.rx-pass-grid')
 await montar('llegada-parada');
 Object.assign(A.state.trips[0], { groundOps: true }); A.rerender(); await wait(20);
 h = homeEl();
-t('tierra, llegada publicada: sin «Vuelo» aunque viniera y la celda dice «Sales», no «Aterriza»', celdas(h).join('|') === 'Sales 21:40|Parada 3/3' && /Te esperamos en MDE/.test(h.querySelector('.rx-pass-time').textContent), celdas(h).join('|'));
+t('tierra, llegada publicada: sin «Vuelo» aunque viniera y la celda dice «Sales», no «Aterriza»', celdas(h).join('|') === 'Sales 21:40|Parada 3/3' && /Te esperamos en JMC/.test(h.querySelector('.rx-pass-time').textContent), celdas(h).join('|'));
 await montar('asignado-publicado');
 Object.assign(A.state.trips[0], { groundOps: true }); A.rerender(); await wait(20);
-t('tierra, salida: sin «Vuelo»; «Estar en MDE» no cambia', !/Vuelo/.test(homeEl().querySelector('.rx-pass-grid').textContent) && /En MDE\s*05:10/.test(homeEl().querySelector('.rx-pass-grid').textContent));
+t('tierra, salida: sin «Vuelo»; «Estar en JMC» no cambia', !/Vuelo/.test(homeEl().querySelector('.rx-pass-grid').textContent) && /En JMC\s*05:10/.test(homeEl().querySelector('.rx-pass-grid').textContent));
 
 console.log('\n── Pedido 29-sep: la regla de «Cambió mi vuelo» es una sola ──');
 const CF = w.AuxRxInicio.canChangeFlight;
@@ -443,7 +443,7 @@ t('historial: vencido con chip «Sin realizar»', rows.some(r => /Sin realizar/.
 t('historial: ★5 y ★4 pintadas', rows.some(r => r.querySelectorAll('.rx-hist-s i.on').length === 5) && rows.some(r => r.querySelectorAll('.rx-hist-s i.on').length === 4));
 t('historial: el entregado sin calificar (3 días) dice «Calificar»', rows.filter(r => r.querySelector('.rx-hist-rate')).length === 1);
 t('historial: cancelado y no-show con su chip', rows.some(r => /Cancelado/.test(r.textContent)) && rows.some(r => /No te presentaste/.test(r.textContent)));
-t('historial: «El Olivar → MDE» y «MDE → El Olivar» con su fecha · vuelo', rows.some(r => /El Olivar → MDE/.test(r.textContent)) && rows.some(r => /MDE → El Olivar/.test(r.querySelector('b').textContent)) && rows.every(r => / · /.test(r.querySelector('.rx-row-tx span').textContent)));
+t('historial: «El Olivar → JMC» y «JMC → El Olivar» con su fecha · vuelo', rows.some(r => /El Olivar → JMC/.test(r.textContent)) && rows.some(r => /JMC → El Olivar/.test(r.querySelector('b').textContent)) && rows.every(r => / · /.test(r.querySelector('.rx-row-tx span').textContent)));
 const rowCal = rows.find(r => r.querySelector('.rx-hist-rate'));
 const idRow = rowCal.getAttribute('data-id');
 click(rowCal.querySelector('.rx-hist-rate')); await wait(20);

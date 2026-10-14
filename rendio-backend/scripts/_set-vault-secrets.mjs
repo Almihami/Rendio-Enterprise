@@ -6,11 +6,15 @@
 // commitean. Por eso viven en Vault y este script se corre UNA VEZ por ambiente.
 //
 //   set -a; source .env.dev; set +a; node scripts/_set-vault-secrets.mjs
+//   producción (13-oct-2026): set -a; source .env.main; set +a; SIN_PURGA=1 node scripts/_set-vault-secrets.mjs --produccion
+//   (en producción hay 1.388 fotos de más de 60 días: la purga se queda APAGADA)
 //
 // No imprime ningún secreto: solo dice si quedó guardado.
 import pg from 'pg';
 
 const DEV_REF = 'lxlphbafhtphulanhzlp';
+const PROD_REF = 'wvuurnfdrrdondrbbkhd';
+const PROD = process.argv.includes('--produccion');
 const ref = process.env.SUPABASE_PROJECT_REF || '';
 const url = process.env.SUPABASE_URL || '';
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -20,7 +24,11 @@ if (!ref || !url || !key) {
   console.error('Corre:  set -a; source .env.dev; set +a');
   process.exit(1);
 }
-if (ref !== DEV_REF) {
+if (PROD && ref === PROD_REF && process.env.SIN_PURGA !== '1') {
+  console.error('ABORT: en producción solo con SIN_PURGA=1 (la purga borraría fotos reales de inspecciones).');
+  process.exit(2);
+}
+if (ref !== DEV_REF && !(PROD && ref === PROD_REF)) {
   console.error(`ABORT: este script está apuntando a ${ref}, que no es dev.`);
   console.error('Para otro ambiente, cambia DEV_REF a conciencia.');
   process.exit(2);
@@ -33,7 +41,8 @@ const dispatchUrl = url.replace(/\/$/, '') + '/functions/v1/dispatch-notificatio
 const purgeUrl = url.replace(/\/$/, '') + '/functions/v1/purge-old-photos';
 
 const c = new pg.Client({
-  host: 'aws-1-us-east-1.pooler.supabase.com', port: 5432,
+  // El pooler de producción está en otra región que el de dev.
+  host: ref === PROD_REF ? 'aws-1-us-west-2.pooler.supabase.com' : 'aws-1-us-east-1.pooler.supabase.com', port: 5432,
   user: 'postgres.' + ref, password: process.env.SUPABASE_DB_PASSWORD,
   database: 'postgres', ssl: { rejectUnauthorized: false },
 });

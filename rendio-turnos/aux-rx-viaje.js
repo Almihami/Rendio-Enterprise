@@ -143,13 +143,13 @@
   function heroOf(t) {
     const lle = t.type === 'lle', s = t.status, first = drvFirst(t) || 'Tu conductor';
     if (s === 'pending') {
-      const cuando = lle ? (isGround(t) ? 'sales del aeropuerto a las ' : 'aterrizas a las ') : 'en MDE a las ';
+      const cuando = lle ? (isGround(t) ? 'sales del aeropuerto a las ' : 'aterrizas a las ') : 'en JMC a las ';
       return ['Pedido', joinDot(dayLabel(t.date), t.time ? cuando + hm(t.time) : '')];
     }
     if (s === 'assigned') {
       // 0097: en una llegada, el conductor ya marcó «Llegué al aeropuerto».
-      if (lle && arrivedNow(t)) return ['Te espera', `${first} ya está en MDE`];
-      if (t.pickupAt && hm(t.pickupAt)) return [hm(t.pickupAt), `${dayWord(t.pickupAt)} te recogemos${lle ? ' en MDE' : ''}`];
+      if (lle && arrivedNow(t)) return ['Te espera', `${first} ya está en JMC`];
+      if (t.pickupAt && hm(t.pickupAt)) return [hm(t.pickupAt), `${dayWord(t.pickupAt)} te recogemos${lle ? ' en JMC' : ''}`];
       return ['Por confirmar', 'Te avisamos cuando armemos tu ruta'];
     }
     if (s === 'onway') return arrivedNow(t) ? ['Llegó', `${first} te espera afuera`] : ['En camino', `${first} va por ti`];
@@ -259,7 +259,7 @@
   function infoHTML(t) {
     const lle = t.type === 'lle', ground = isGround(t), cells = [];
     if (t.flight && !ground) cells.push(['Vuelo', t.flight]);
-    if (t.time && hm(t.time)) cells.push([lle ? (ground ? 'Sales' : 'Aterriza') : 'En MDE', hm(t.time)]);
+    if (t.time && hm(t.time)) cells.push([lle ? (ground ? 'Sales' : 'Aterriza') : 'En JMC', hm(t.time)]);
     const lv = t.level === 'private' ? 'Privado' : t.level === 'shared' ? 'Compartido' : '';
     if (lv) cells.push(['Nivel', lv]);
     if (t.bags != null && t.bags !== '') cells.push(['Maletas', String(t.bags)]);
@@ -666,7 +666,7 @@
     const tags = Array.isArray(st.ratingTags) ? st.ratingTags : [];
     const lle = t.type === 'lle';
     const home = shortPlace(t.address);
-    const route = `${lle ? 'MDE' : home} → ${lle ? home : 'MDE'}${t.droppedAt && hm(t.droppedAt) ? ' · llegaste a las ' + hm(t.droppedAt) : ''}`;
+    const route = `${lle ? 'JMC' : home} → ${lle ? home : 'JMC'}${t.droppedAt && hm(t.droppedAt) ? ' · llegaste a las ' + hm(t.droppedAt) : ''}`;
     return `<div class="rx-scr rx-rate-scr" data-rx-trip="${esc(t.id)}" data-s="${s}">`
       + u.head({ back: false, right: '<button type="button" class="rx-link" data-ax="rate-skip">Ahora no</button>' })
       + '<div class="rx-body rx-rate">'

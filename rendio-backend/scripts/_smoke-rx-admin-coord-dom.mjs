@@ -11,7 +11,7 @@
 //     tripulante no se toca);
 //   · driver-rutas.js: chips de maletas (#rx-Briefcase), «Prefiere silencio»
 //     solo en privado aprobado, punto de encuentro, «Pídele el código» en la
-//     fase de llegada (y los códigos en MDE para una llegada), push de llegada
+//     fase de llegada (y los códigos en JMC para una llegada), push de llegada
 //     con «Tu código es …», URLs /#/viaje?r= en los avisos y en el chat;
 //   · admin-privados.js: «Pidió silencio» y push a /#/viaje?r=;
 //   · admin-reservas.js: maletas y silencio en la fila, push de cancelación del
@@ -301,9 +301,9 @@ async function driverRun(conSprite) {
     pickup({ name: 'Marta Ríos', reservationId: 'R1', auxProfileId: 'P1', bags: 2, quiet: true, level: 'private', privateStatus: 'approved', meetCode: '0613', meetingPoint: 'Portería 2 <b>' }),
     pickup({ name: 'Diego Toro', reservationId: 'R2', auxProfileId: 'P2', bags: 0, quiet: true, level: 'private', privateStatus: 'requested', meetCode: '77', lat: 6.152 }),
     pickup({ name: 'Ana <i>Paz</i>', reservationId: 'R3', auxProfileId: 'P3', notes: 'Timbre <b>2</b>', lat: 6.154 }),
-    { kind: 'airport', name: 'Aeropuerto MDE', addr: 'Terminal', lat: 6.17, lng: -75.42 },
+    { kind: 'airport', name: 'Aeropuerto JMC', addr: 'Terminal', lat: 6.17, lng: -75.42 },
   ] }, { id: 'V2', type: 'lle', start: '14:00', startAt: HOY + 'T14:00:00-05:00', done: false, assignmentId: 'RA2', day: HOY, legs: [
-    { kind: 'airport', name: 'Aeropuerto MDE', addr: 'Terminal', lat: 6.17, lng: -75.42 },
+    { kind: 'airport', name: 'Aeropuerto JMC', addr: 'Terminal', lat: 6.17, lng: -75.42 },
     Object.assign(pickup({ name: 'Luis Mora', reservationId: 'R4', auxProfileId: 'P4', meetCode: '3391', eta: '14:40' }), { kind: 'dropoff' }),
     Object.assign(pickup({ name: 'Eva Sol', reservationId: 'R5', auxProfileId: 'P5', meetCode: '', eta: '15:00', lat: 6.16 }), { kind: 'dropoff' }),
   ] }];
@@ -346,7 +346,7 @@ async function driverRun(conSprite) {
   const hoja = () => (root().querySelector('#rt-sheet-host .rx-sheet') || { textContent: '' }).textContent.replace(/\s+/g, ' ');
   const teclea = async (sel, val, ms = 80) => { const el = root().querySelector(sel); if (!el) return false; el.value = val; el.dispatchEvent(new w.Event('input', { bubbles: true })); await wait(ms); return true; };
   t('Mi día: título, «Tu siguiente vuelta» y la hora de V1', /Mi día/.test(root().textContent) && /Tu siguiente vuelta/.test(root().textContent) && /04:40/.test(root().textContent));
-  t('Detalle: 4 paradas en orden (3 tripulantes + MDE)', D.stopsEls.length === 4, D.stopsEls.length);
+  t('Detalle: 4 paradas en orden (3 tripulantes + JMC)', D.stopsEls.length === 4, D.stopsEls.length);
   t('Detalle: maletas (2) con el ícono de la ruta (#rx-Bag, sprite presente)', /\b2\b/.test(D.s1) && !!D.stopsEls[0].querySelector('use[href="#rx-Bag"]') && !!w.document.querySelector('symbol#rx-Bag'));
   t('«Silencio» solo en el privado APROBADO', /Silencio/.test(D.s1) && !/Silencio/.test(D.s2), D.s2);
   t('0 maletas o sin dato: no se inventa un chip', !D.stopsEls[1].querySelector('use[href="#rx-Bag"]') && !D.stopsEls[2].querySelector('use[href="#rx-Bag"]'));
@@ -411,9 +411,9 @@ async function driverRun(conSprite) {
   await click('#rt-sheet-host [data-rt="noshow-yes"]', 200);
   t('al confirmar: no_show (la base le avisa)', stops.some(s => s[0] === 'R3' && s[1] === 'no_show'));
 
-  // Salida en MDE: entrega a los que van a bordo, NO al que no se presentó.
+  // Salida en JMC: entrega a los que van a bordo, NO al que no se presentó.
   await click('.rt-exec [data-rt="arrive"]', 120);
-  t('salida, en MDE: «Entregué a los 2», sin códigos', /Entregué a los 2/.test(sheet()) && !top().querySelector('.rt-code'), sheet().slice(0, 160));
+  t('salida, en JMC: «Entregué a los 2», sin códigos', /Entregué a los 2/.test(sheet()) && !top().querySelector('.rt-code'), sheet().slice(0, 160));
   await click('.rt-exec [data-rt="finish"]', 200);
   t('entregados: Marta y Diego sí, Ana (no se presentó) NO', stops.some(s => s[0] === 'R1' && s[1] === 'delivered') && stops.some(s => s[0] === 'R2' && s[1] === 'delivered') && !stops.some(s => s[0] === 'R3' && s[1] === 'delivered'), JSON.stringify(stops));
   t('«¡Vuelta completa!» con el puente a V2 y sin «el admin ya fue notificado»', /¡Vuelta completa!/.test(top().textContent) && /Ver la vuelta V2/.test(top().textContent) && !/admin/i.test(top().textContent));
@@ -421,14 +421,14 @@ async function driverRun(conSprite) {
   // Llegada (V2).
   await click('.rt-exec ~ * [data-rt="nextv"], [data-rt="nextv"]', 200);
   await click('#rt-layers .rx-foot [data-rt="start"]', 200);
-  t('llegada, rumbo a MDE: sin códigos todavía', !top().querySelector('.rt-code-in, .rt-cr'));
+  t('llegada, rumbo a JMC: sin códigos todavía', !top().querySelector('.rt-code-in, .rt-cr'));
   await gps(6.15, -75.37);       // ~6 km del aeropuerto
   await click('.rt-exec [data-rt="arrive"]', 120);
-  t('«Llegué al aeropuerto» lejos de MDE: pide confirmar con la distancia y NO avisa', /Todavía no estás en MDE/.test(hoja()) && /km del aeropuerto/.test(hoja()) && apt.length === 0, hoja().slice(0, 200));
+  t('«Llegué al aeropuerto» lejos de JMC: pide confirmar con la distancia y NO avisa', /Todavía no estás en JMC/.test(hoja()) && /km del aeropuerto/.test(hoja()) && apt.length === 0, hoja().slice(0, 200));
   await click('#rt-sheet-host [data-rt="sheet-close"]', 300);
   await gps(6.1716, -75.4271);
   await click('.rt-exec [data-rt="arrive"]', 200);
-  t('ya en MDE: avisa por la base (driver_mark_airport_arrival)', apt.join(',') === 'RA2', apt.join(','));
+  t('ya en JMC: avisa por la base (driver_mark_airport_arrival)', apt.join(',') === 'RA2', apt.join(','));
   t('una fila por tripulante; casillas solo para quien tiene código', top().querySelectorAll('.rt-cr').length === 2 && !!top().querySelector('.rt-cr[data-row="R4"] input[data-code]') && !top().querySelector('.rt-cr[data-row="R5"] input[data-code]') && !/3391/.test(sheet()));
   t('«Salir del aeropuerto» espera a que todos queden resueltos', top().querySelector('[data-rt="leave"]').disabled === true && /Faltan 2 por resolver/.test(sheet()));
   await teclea('.rt-cr[data-row="R4"] input[data-code]', '3391', 900);

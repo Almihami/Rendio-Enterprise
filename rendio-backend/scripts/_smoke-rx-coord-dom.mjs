@@ -308,7 +308,7 @@ t('rx-input rx-in --d:1 con el avión y el campo propio del vuelo',
 const when = fl.querySelector('.rx-fv-when.rx-in');
 t('día y hora propios (data-rx-field), --d:1', !!when && when.style.getPropertyValue('--d') === '1'
   && when.querySelector('input[type="date"]').getAttribute('data-rx-field') === 'fv-date' && when.querySelector('input[type="time"]').getAttribute('data-rx-field') === 'fv-time');
-t('salida: la hora es la de estar en MDE', /Estar en MDE/.test(when.textContent));
+t('salida: la hora es la de estar en JMC', /Estar en JMC/.test(when.textContent));
 const fnw = fl.querySelector('.rx-flight-new.rx-in');
 t('rx-flight-new rx-in --d:2: Antes 05:10 → Ahora (flecha)', !!fnw && fnw.style.getPropertyValue('--d') === '2' && /Antes/.test(fnw.textContent) && fnw.querySelectorAll('b')[0].textContent === '05:10' && !!fnw.querySelector('use[href="#rx-ArrowRight"]'));
 const nt = fl.querySelector('.rx-note.rx-in');

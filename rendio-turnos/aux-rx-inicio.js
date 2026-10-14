@@ -156,7 +156,8 @@
   // passHTML(t, {scale, tag:'button'|'div'}) — scale para mostrarlo reducido
   // (p. ej. en «booked»); tag 'div' lo deja sin toque.
   // El aeropuerto va en tres líneas: «MDE» grande y debajo «JMC» y «Rionegro».
-  const APT_SUB = ['JMC', 'Rionegro'];
+  // 13-oct-2026: el grande ya dice «JMC» (así lo llama la operación); debajo, la ciudad.
+  const APT_SUB = ['Rionegro'];
   function ptHTML(p, right) {
     return '<div class="rx-pass-pt' + (right ? ' r' : '') + '"><b>' + esc(p[0]) + '</b>'
       + p[1].map(s => '<span>' + esc(s) + '</span>').join('') + '</div>';
@@ -171,18 +172,18 @@
     const pub = isPublished(t);
     const pk = pickupISO(t);
     const home = conjunto(t);
-    const from = lle ? ['MDE', APT_SUB] : ['CASA', [home]];
-    const to = lle ? ['CASA', [home]] : ['MDE', APT_SUB];
+    const from = lle ? ['JMC', APT_SUB] : ['CASA', [home]];
+    const to = lle ? ['CASA', [home]] : ['JMC', APT_SUB];
     let bigL, bigV;
-    if (pk) { bigL = lle ? 'Te esperamos en MDE' : 'Te recogemos'; bigV = hm(pk); }
-    else { bigL = lle ? (ground ? 'Sales del aeropuerto' : 'Aterrizas') : 'Estar en MDE'; bigV = t.time || '--:--'; }
+    if (pk) { bigL = lle ? 'Te esperamos en JMC' : 'Te recogemos'; bigV = hm(pk); }
+    else { bigL = lle ? (ground ? 'Sales del aeropuerto' : 'Aterrizas') : 'Estar en JMC'; bigV = t.time || '--:--'; }
     const note = !pub ? 'Hora de recogida: te avisamos cuando armemos tu ruta'
       : (!pk ? 'Conductor asignado · hora por confirmar' : '');
     // Grilla: nunca «Trayecto» ni «Presentación». La hora del vuelo solo si la
     // grande es la recogida (si no, ya es la grande). En tierra no hay vuelo.
     const cells = [];
     if (!lle) {
-      if (pk && t.time) cells.push(['En MDE', t.time]);
+      if (pk && t.time) cells.push(['En JMC', t.time]);
       if (t.flight && !ground) cells.push(['Vuelo', t.flight]);
     } else {
       if (t.flight && !ground) cells.push(['Vuelo', t.flight]);
@@ -255,7 +256,7 @@
     if (t.status === 'onboard') {
       const late = !lle ? safe(() => AX().lateness(t), null) : null;
       const sub = !lle ? ((late && late.text) || '') : [firstOf(t), plateOf(t)].filter(Boolean).join(' · ');
-      return { kind: 'onboard', title: 'A bordo · rumbo a ' + (lle ? 'casa' : 'MDE'), sub: esc(sub) };
+      return { kind: 'onboard', title: 'A bordo · rumbo a ' + (lle ? 'casa' : 'JMC'), sub: esc(sub) };
     }
     if (arrived(t)) {
       const code = codeOf(t);
@@ -428,7 +429,7 @@
     // con la hora REAL de entrega; el margen contra la hora en MDE, si sobró.
     let sub;
     if (t.droppedAt && hm(t.droppedAt)) {
-      sub = 'Llegaste ' + (lle ? 'a casa' : 'a MDE') + ' a las ' + hm(t.droppedAt);
+      sub = 'Llegaste ' + (lle ? 'a casa' : 'a JMC') + ' a las ' + hm(t.droppedAt);
       const req = whenTs(t), drop = Date.parse(t.droppedAt);
       // Al minuto que se muestra (HH:MM): con segundos, el mismo viaje daba 9 o 10 min.
       const m = !lle && req != null && !isNaN(drop) ? Math.round((req - Math.floor(drop / 60000) * 60000) / 60000) : 0;

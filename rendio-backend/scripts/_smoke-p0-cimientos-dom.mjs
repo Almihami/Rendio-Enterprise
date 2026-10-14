@@ -6,7 +6,7 @@
 //     nunca convierte un privado en compartido (0.9), getMyAuxHeader, y las
 //     columnas nuevas del conductor en listMyVueltasForDriver.
 //   · auxiliar.js: el gancho de la bandera, el contrato de window.Auxiliar
-//     (§2.9), la cabecera en auxInit, «en MDE» en vez de «pres.» y la demora
+//     (§2.9), la cabecera en auxInit, «en JMC» en vez de «pres.» y la demora
 //     medida contra la hora de recogida publicada.
 //   · index.html / sw.js: todos los stubs registrados, en orden, en APP_SHELL,
 //     v165, las tres secciones admin; los stubs no definen nada en window.
@@ -217,7 +217,7 @@ const ui = () => window.document.getElementById('auxiliar-ui');
 t('auxInit llena Auxiliar.header con Api.getMyAuxHeader', headerPedido === 1 && A.header && A.header.airlineName === 'Avianca', JSON.stringify(A.header));
 A.state.view = 'home'; A.rerender();
 t('sin AuxShell: pinta la UI de hoy (Mis viajes)', /Mis viajes/.test(ui().textContent));
-t('la tarjeta dice «en MDE», no «pres.»', /en MDE 05:10/.test(ui().textContent) && !/pres\./.test(ui().textContent), ui().querySelector('.ax-trip-bot')?.textContent);
+t('la tarjeta dice «en JMC», no «pres.»', /en JMC 05:10/.test(ui().textContent) && !/pres\./.test(ui().textContent), ui().querySelector('.ax-trip-bot')?.textContent);
 t('sin la clase rx-phone (nada del rediseño aplica)', !ui().classList.contains('rx-phone'));
 
 let renders = 0;
@@ -236,7 +236,7 @@ console.log('\n── auxiliar.js · la demora contra la hora de recogida public
 {
   const hhmm = (d) => new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
   const dia = (d) => d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-  const en = new Date(Date.now() + 90 * 60000);   // quiere estar en MDE en 90 min
+  const en = new Date(Date.now() + 90 * 60000);   // quiere estar en JMC en 90 min
   const trip = { id: 'z1', type: 'sal', date: dia(en), time: hhmm(en), status: 'assigned' };
   const sin = window.eval('auxLateness')(trip, null);
   t('sin hora publicada: regla de siempre (recogida ~1 h antes) → a tiempo', sin && sin.level === 'ok', JSON.stringify(sin));

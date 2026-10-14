@@ -692,7 +692,7 @@
     const m = MARCA_DE_REPUESTO;
     return `<button class="ax-opt rg-air rg-tierra${sel ? ' sel' : ''}" data-rg="airline" data-id="${TIERRA}"
         style="--air-1:${m.c1};--air-2:${m.c2};--air-ink:${m.tinta}" aria-pressed="${sel ? 'true' : 'false'}">
-      <span class="rg-air-sigla" aria-hidden="true">MDE</span>
+      <span class="rg-air-sigla" aria-hidden="true">JMC</span>
       <div><b>${esc(TIERRA_TX.name)}</b><span>${esc(sel ? TIERRA_TX.on : TIERRA_TX.off)}</span></div>
       <span class="ax-radio">${sel ? '<svg class="icon"><use href="#i-check"/></svg>' : ''}</span>
     </button>`;
@@ -1473,7 +1473,7 @@
     return `<button type="button" class="rx-opt rx-in rg-air-rx rg-tierra${on ? ' on' : ''}" data-rg="airline" data-id="${TIERRA}"
         data-on="${esc(TIERRA_TX.on)}" data-off="${esc(TIERRA_TX.off)}"
         style="--d:${Math.min(i, 8)};--air-1:${m.c1};--air-2:${m.c2};--air-ink:${m.tinta}" aria-pressed="${on ? 'true' : 'false'}">
-      <span class="rx-opt-ic rg-sigla" aria-hidden="true">MDE</span>
+      <span class="rx-opt-ic rg-sigla" aria-hidden="true">JMC</span>
       <span class="rx-opt-tx"><b>${esc(TIERRA_TX.name)}</b><span>${esc(on ? TIERRA_TX.on : TIERRA_TX.off)}</span></span>
       <span class="rx-radio"><i></i></span>
     </button>`;

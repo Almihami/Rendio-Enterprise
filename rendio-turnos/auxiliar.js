@@ -204,7 +204,7 @@
     // para el rediseño (AuxRxPedir).
     tierra: {
       label: 'Trabajo en tierra (sin vuelo)',
-      hint: 'Operaciones del aeropuerto: vas a MDE sin tomar un vuelo.',
+      hint: 'Operaciones del aeropuerto: vas a JMC sin tomar un vuelo.',
       salNote: 'Es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.',
       lleNote: 'Es la hora a la que sales del terminal. Como no vienes en un vuelo, no le sumamos tiempo de desembarque.',
     },
@@ -695,13 +695,13 @@
       </div>
       <div class="ax-trip-mid">
         <div class="ax-trip-route">
-          <b>${t.type === 'lle' ? 'MDE' : auxShortAddr(t.address)}</b>
+          <b>${t.type === 'lle' ? 'JMC' : auxShortAddr(t.address)}</b>
           <svg class="icon ax-arrow"><use href="#i-arrow"/></svg>
-          <b>${t.type === 'lle' ? auxShortAddr(t.address) : 'MDE'}</b>
+          <b>${t.type === 'lle' ? auxShortAddr(t.address) : 'JMC'}</b>
         </div>
       </div>
       <div class="ax-trip-bot">
-        <span><svg class="icon"><use href="#i-clock"/></svg>${auxDateES(t.date)} · ${t.type === 'lle' ? 'llega' : 'en MDE'} ${auxHM(t.time)}</span>
+        <span><svg class="icon"><use href="#i-clock"/></svg>${auxDateES(t.date)} · ${t.type === 'lle' ? 'llega' : 'en JMC'} ${auxHM(t.time)}</span>
         <span class="ax-flight">${window.Auxiliar.isGround(t) ? 'Tierra' : (t.flight || '')}</span>
       </div>
     </button>`;
@@ -1003,7 +1003,7 @@
       ${/* SOLO EL VUELO DE LLEGADA (Julián, 25-ago-2026): "omitir ese primer
            número de vuelo, realmente solo nos interesa saber el vuelo de
            llegada". En una salida el número de ida no se usa para nada — lo que
-           manda es a qué hora tiene que estar en MDE. En una llegada este mismo
+           manda es a qué hora tiene que estar en JMC. En una llegada este mismo
            campo SÍ es el vuelo que aterriza, y ahí es obligatorio: es el que se
            rastrea cuando el avión se retrasa. */ ''}
       ${isLle && !tierra ? auxFlightField('Número de vuelo', 'flight', '9412') : ''}
@@ -1056,7 +1056,7 @@
     const f = auxState.form, isLle = f.type === 'lle';
     const okText = isLle
       ? (f.groundOps ? 'Te recogemos en el aeropuerto a esa hora.' : 'Te esperamos al bajar del avión.')
-      : 'Te dejamos en MDE a la hora que pediste. La hora de recogida te la confirmamos cuando armemos la ruta del día.';
+      : 'Te dejamos en JMC a la hora que pediste. La hora de recogida te la confirmamos cuando armemos la ruta del día.';
     if (soloTexto) return okText;
     const lead = auxLeadCheck(f);
     if (lead) return `<div class="ax-hint ${lead.level === 'bad' ? 'bad' : ''}"><svg class="icon"><use href="#i-info"/></svg>${lead.text}</div>`;
@@ -1986,11 +1986,11 @@
         ${window.AuxPrivado ? AuxPrivado.statusHTML(t) : ''}
         ${!closed ? `<div id="ax-late-wrap">${auxLateHTML(t, t._info)}</div>` : ''}
         <div class="ax-sum">
-          <div class="ax-sum-row"><span>Te recogen en</span><b>${t.type === 'lle' ? 'MDE' : auxShortAddr(t.address)}</b></div>
-          <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Te dejan en' : 'Destino'}</span><b>${t.type === 'lle' ? auxShortAddr(t.address) : 'MDE'}</b></div>
+          <div class="ax-sum-row"><span>Te recogen en</span><b>${t.type === 'lle' ? 'JMC' : auxShortAddr(t.address)}</b></div>
+          <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Te dejan en' : 'Destino'}</span><b>${t.type === 'lle' ? auxShortAddr(t.address) : 'JMC'}</b></div>
           ${/* En tierra (0092) no hay vuelo: se dice, en vez de un «—». */ ''}
           <div class="ax-sum-row"><span>${window.Auxiliar.isGround(t) ? 'Trabajo' : 'Vuelo'}</span><b>${window.Auxiliar.isGround(t) ? 'En tierra (sin vuelo)' : (t.flight || '—')}</b></div>
-          <div class="ax-sum-row"><span>${t.type === 'lle' ? (window.Auxiliar.isGround(t) ? 'Sale del aeropuerto' : 'Aterriza') : 'Estar en MDE'}</span><b>${auxDateES(t.date)} · ${auxHM(t.time)}</b></div>
+          <div class="ax-sum-row"><span>${t.type === 'lle' ? (window.Auxiliar.isGround(t) ? 'Sale del aeropuerto' : 'Aterriza') : 'Estar en JMC'}</span><b>${auxDateES(t.date)} · ${auxHM(t.time)}</b></div>
           ${t.isPernocta ? `<div class="ax-sum-row"><span>Pernocta</span><b>Sí (hotel)</b></div>` : ''}
           ${t.isReserva === false ? `<div class="ax-sum-row"><span>Reserva</span><b>Tentativa</b></div>` : ''}
           ${t.notes ? `<div class="ax-sum-row"><span>Notas</span><b>${t.notes}</b></div>` : ''}
@@ -2132,7 +2132,7 @@
   // puede tener casas por delante. El badge lo dice en vez de darlo por hecho.
   function auxOnBoardBadge(t, info) {
     const falta = auxPendingAhead(t, info);
-    const dest = t.type === 'lle' ? auxShortAddr(t.address) : 'Aeropuerto MDE';
+    const dest = t.type === 'lle' ? auxShortAddr(t.address) : 'Aeropuerto JMC';
     if (falta > 0) {
       const quien = falta === 1 ? 'un compañero' : `${falta} compañeros`;
       const txt = t.type === 'lle'
@@ -2441,7 +2441,7 @@
     ['arrived', 'Llegó por ti'], ['onboard', 'A bordo'], ['done', 'En el aeropuerto']];
   // 0097: en una llegada, «Te espera en MDE» cuando el conductor marca «Llegué
   // al aeropuerto» (la parada queda 'arrived' y al tripulante le llega el aviso).
-  const AUX_PH_LLE = [['booked', 'Pedido'], ['assigned', 'Conductor asignado'], ['arrived', 'Te espera en MDE'], ['onboard', 'A bordo'],
+  const AUX_PH_LLE = [['booked', 'Pedido'], ['assigned', 'Conductor asignado'], ['arrived', 'Te espera en JMC'], ['onboard', 'A bordo'],
     ['homebound', 'Rumbo a casa'], ['done', 'En casa']];
   function auxPhaseKey(t, info) {
     if (!t) return null;
@@ -2620,7 +2620,7 @@
     if (finalPt[0] == null) return;
     const fIcon = rx ? auxLfIcon(isApt ? 'apt' : 'pin')
       : L.divIcon({ className: '', html: `<div class="ax-stop end">${isApt ? '✈' : '🏠'}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
-    L.marker(finalPt, { icon: fIcon }).addTo(layer).bindTooltip(isApt ? 'Aeropuerto MDE' : 'Tu casa', { direction: 'top', offset: [0, -14] });
+    L.marker(finalPt, { icon: fIcon }).addTo(layer).bindTooltip(isApt ? 'Aeropuerto JMC' : 'Tu casa', { direction: 'top', offset: [0, -14] });
   }
 
   // Marcadores Leaflet del rediseño (§1.5): L.divIcon con las clases rx-lf-*
@@ -2699,7 +2699,7 @@
     }
     pend.forEach(s => { pts.push([s.lat, s.lng]); if (s.mine) target = pts.length - 1; });
     if (t.type === 'sal') {
-      pts.push([AUX_MDE.lat, AUX_MDE.lng]);        // una salida siempre termina en MDE
+      pts.push([AUX_MDE.lat, AUX_MDE.lng]);        // una salida siempre termina en JMC
       if (target < 0) target = pts.length - 1;     // ya me recogieron → me importa el aeropuerto
     } else if (target < 0 && t.lat != null) {
       pts.push([t.lat, t.lng]); target = pts.length - 1;
@@ -2788,8 +2788,8 @@
     // Descuenta lo corrido desde el cálculo (se recalcula máximo cada minuto).
     const secs = auxState.etaSecs - (Date.now() - auxState.etaAt) / 1000;
     const dest = auxState.etaKind === 'dest'
-      ? (t.type === 'lle' ? 'Llegas a casa' : 'Llegas a MDE')
-      : (t.type === 'lle' ? 'Te recogemos en MDE' : 'Te recogemos');
+      ? (t.type === 'lle' ? 'Llegas a casa' : 'Llegas a JMC')
+      : (t.type === 'lle' ? 'Te recogemos en JMC' : 'Te recogemos');
     if (secs < 60) {
       el.textContent = `${dest} en menos de un minuto`;
       el.classList.remove('hidden');
@@ -2831,13 +2831,13 @@
       const pub = t.pickupAt ? new Date(t.pickupAt) : null;
       if (pub && !isNaN(pub.getTime())) {
         const dia = auxDiaTexto(pub.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }));
-        return `Me recogen${lle ? ' en MDE' : ''} ${dia} a las ${auxHMBog(pub)}${placa ? `, carro ${placa}` : ''}.`;
+        return `Me recogen${lle ? ' en JMC' : ''} ${dia} a las ${auxHMBog(pub)}${placa ? `, carro ${placa}` : ''}.`;
       }
       if (!t.date || !t.time) return null;
       const dia = auxDiaTexto(t.date);
       return lle
         ? `Tengo traslado del aeropuerto a casa ${dia}; aterrizo a las ${t.time}.`
-        : `Tengo traslado a MDE ${dia}; debo estar allá a las ${t.time}.`;
+        : `Tengo traslado a JMC ${dia}; debo estar allá a las ${t.time}.`;
     }
     if (t.status === 'onway') {
       const h = eta('pickup');
@@ -2845,7 +2845,7 @@
     }
     if (t.status === 'onboard') {
       const h = eta('dest');
-      return `Voy en camino ${lle ? 'a casa' : 'al aeropuerto MDE'}${h ? `, llego sobre las ${h} (estimado)` : ''}${placa ? `. Carro ${placa}` : ''}.`;
+      return `Voy en camino ${lle ? 'a casa' : 'al aeropuerto JMC'}${h ? `, llego sobre las ${h} (estimado)` : ''}${placa ? `. Carro ${placa}` : ''}.`;
     }
     return null;
   }
@@ -2917,7 +2917,7 @@
     let big, label;
     if (t.type === 'lle' && t.status === 'assigned' && info && info.stop_status === 'arrived') {
       // 0097: llegada con el conductor ya en MDE (aún no a bordo).
-      big = 'Te espera'; label = `${quien} ya está en MDE`;
+      big = 'Te espera'; label = `${quien} ya está en JMC`;
     } else if (t.status === 'onway') {
       if (s.arrived)                   { big = 'Llegó'; label = `${quien} te espera afuera`; }
       else if (s.near)                 { big = 'Ya casi'; label = `${quien} está por llegar`; }
@@ -2932,7 +2932,7 @@
         big = lle ? `Dejan a ${falta}` : `Recoge a ${falta}`;
         label = lle ? 'Antes de llegar a tu casa' : 'Antes de ir al aeropuerto';
       } else if (etaHM && auxState.etaKind === 'dest') {
-        big = etaHM; label = lle ? 'Llegada estimada a tu casa' : 'Llegada estimada a MDE';
+        big = etaHM; label = lle ? 'Llegada estimada a tu casa' : 'Llegada estimada a JMC';
       } else {
         big = 'En ruta'; label = lle ? 'Vas a casa' : 'Vas al aeropuerto';
       }
@@ -3361,7 +3361,7 @@
       if (t.status === 'onway') return { icon: 'Nav', title: first ? `${first} va en camino` : 'Tu conductor va en camino', body: placa ? `Carro ${placa}.` : '', go: abrir() };
       if (t.status === 'onboard') return null;   // el tripulante acaba de subirse: ya lo sabe
       if (t.status === 'done') {
-        return { icon: 'Star', title: t.type === 'lle' ? 'Llegaste a casa' : 'Llegaste a MDE',
+        return { icon: 'Star', title: t.type === 'lle' ? 'Llegaste a casa' : 'Llegaste a JMC',
           body: first ? `¿Cómo te fue con ${first}?` : '', go: abrir(!!t.driver) };
       }
       if (t.status === 'cancelled') return { icon: 'X', title: 'Tu traslado fue cancelado', body: t.cancelReason || '', go: abrir() };
