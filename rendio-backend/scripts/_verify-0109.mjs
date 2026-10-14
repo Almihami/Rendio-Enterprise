@@ -29,6 +29,9 @@ const CUADRO = JSON.stringify([[6.150, -75.380], [6.150, -75.376], [6.154, -75.3
 await c.query('BEGIN');
 try {
   console.log('0. Sin dibujos nadie cambia de sector (la base sembrada)');
+  // Los dibujos que haya en la base local (p. ej. uno de ejemplo) se quitan aquí
+  // dentro: la transacción se deshace al final y quedan como estaban.
+  await q(`UPDATE public.billing_sector_rates SET polygon = NULL WHERE polygon IS NOT NULL`);
   const todos = await q(`
     SELECT ap.id, rt.sector_name s, coalesce(nullif(btrim(ab.sector), ''), nullif(btrim(r.sector), '')) antes
       FROM public.auxiliar_profiles ap

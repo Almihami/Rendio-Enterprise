@@ -256,7 +256,7 @@
         : porMapa ? `por el mapa: ${porMapa}` : 'fuera de las zonas dibujadas';
       return `
       <div class="rz-row ${e.zona ? '' : 'sin'} ${e.origen === 'mano' ? 'mano' : ''}">
-        <div class="rz-name">${escapeHtml(r.name)}${e.origen === 'mano' ? '<span class="rz-tag">a mano</span>' : ''}<small>${escapeHtml(r.sector || 'sin sector')} · ${escapeHtml(nota)}</small></div>
+        <div class="rz-name">${escapeHtml(r.name)}${e.origen === 'mano' ? '<span class="rz-tag">a mano</span>' : ''}<small>${escapeHtml([r.sector, nota].filter(Boolean).join(' · '))}</small></div>
         <select data-id="${r.id}">
           <option value="">${porMapa ? 'Según el mapa (' + escapeHtml(porMapa) + ')' : 'Según el mapa (sin zona)'}</option>
           ${cols.map(z => `<option value="${escapeHtml(z)}" ${r.zona_jefe === z ? 'selected' : ''}>${escapeHtml(z)}</option>`).join('')}
