@@ -101,7 +101,7 @@ q('[data-ax="onb-next"]').click();
 t('la segunda escena es el pin', !!q('.axo-punto'));
 if (RX) {
   t('(rx) key={i}: la lámina es un nodo NUEVO con .rx-anim (su rxFade corre)', q('.rx-wel-art') !== art0 && q('.rx-wel-art').classList.contains('rx-anim') && q('.rx-wel-art').getAttribute('data-rx-key') === '1');
-  t('(rx) key={"t"+i}: el texto también se recrea', q('.rx-wel-tx') !== tx0 && q('.rx-wel-tx').classList.contains('rx-anim') && /Ya sabemos dónde queda tu portería/.test(q('.rx-wel-tx').textContent));
+  t('(rx) key={"t"+i}: el texto también se recrea', q('.rx-wel-tx') !== tx0 && q('.rx-wel-tx').classList.contains('rx-anim') && /Sabemos dónde recogerte/.test(q('.rx-wel-tx').textContent));
   t('(rx) los puntos son los MISMOS nodos y solo cambia .on (transición .35 s)', qa('.rx-dots button').every((b, k) => b === dots0[k]) && dots0[1].className === 'on' && !dots0[0].className);
   t('(rx) la fase no cambió: el .rx-ob y la capa son los mismos', q('.rx-ob') === ob0 && q('.rx-full') === full0);
 }
@@ -129,7 +129,7 @@ if (RX) {
 
 const obW = RX ? q('.rx-ob') : null;
 window.Auxiliar.state.onbStep = 3; window.Auxiliar.rerender();
-t('al final se pide el permiso, con el motivo delante', /Te avisamos/.test(txt()) && /Cuando te asignen conductor/.test(txt()));
+t('al final se pide el permiso, con el motivo delante', (RX ? /Siempre informado, en el momento justo/ : /Te avisamos/).test(txt()) && /te asign(en|emos un) conductor/i.test(txt()));
 if (RX) {
   console.log('\n── (rx) RxNotif ──');
   const obN = q('.rx-ob[data-ob="notif"]');

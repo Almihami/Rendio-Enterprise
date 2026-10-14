@@ -582,13 +582,19 @@
       const mv = (at || fija)
         ? `<button class="rv2-ic" disabled aria-label="${esc(a.n)} ya fue atendido" title="Ya atendido: no se puede mover">${IC.move}</button>`
         : `<button class="rv2-ic" data-act="move" data-crew="${esc(st.crewId)}" data-from="${esc(r.id)}" aria-label="Mover a ${esc(a.n)}">${IC.move}</button>`;
-      return `<li><span class="mono">${hhmm(st.time)}</span><div><b>${esc(a.n)}</b>${esc(lugar(st.crewId))}${extra}${at ? ' · ya atendido' : ''}</div>${tel}${mv}</li>`;
+      // En la llegada la hora de la izquierda es cuando lo deja en la casa; sin
+      // decirlo, los jefes la leían como la hora que había puesto el tripulante
+      // (audio del 14-oct-2026: «¿por qué salen dos horas?»).
+      const casa = r.type === 'llegada' ? 'Llega a casa · ' : '';
+      return `<li><span class="mono">${hhmm(st.time)}</span><div><b>${esc(a.n)}</b>${casa}${esc(lugar(st.crewId))}${extra}${at ? ' · ya atendido' : ''}</div>${tel}${mv}</li>`;
     }).join('');
     const m = r.margin;
     let end;
     if (r.type === 'llegada') {
       const tierra = r.stops.every((s) => aux(s.crewId) && aux(s.crewId).tierra);
-      end = `<li class="end"><span class="mono">${hhmm(r.pickup)}</span><div><b>Recogida en JMC</b>${tierra ? 'Salen del terminal' : 'Aterriza'} ${hhmm(r.arrival)}${r.wait ? ` · <span class="${r.wait > LLE_ESPERA_LARGA ? 't-adj' : ''}">espera ${r.wait} min</span>` : ''}</div></li>`;
+      // Lo que va de la hora de aterrizar a la de la izquierda (la recogida), dicho.
+      const salir = Math.round(r.pickup - r.arrival);
+      end = `<li class="end"><span class="mono">${hhmm(r.pickup)}</span><div><b>Recogida en JMC</b>${tierra ? 'Salen del terminal' : 'Aterriza'} ${hhmm(r.arrival)}${!tierra && salir > 0 ? ` · ${salir} min para salir del aeropuerto` : ''}${r.wait ? ` · <span class="${r.wait > LLE_ESPERA_LARGA ? 't-adj' : ''}">espera ${r.wait} min</span>` : ''}</div></li>`;
     } else {
       end = `<li class="end"><span class="mono${m < 0 ? ' neg' : ''}">${hhmm(r.arrival)}</span><div><b>Llegada JMC</b>Presentación ${hhmm(r.pres)} · ${BUF()} min de entrega · <span class="${m < 0 ? 't-risk' : m < ADJ_MIN ? 't-adj' : 't-ok'}">${m < 0 ? Math.abs(m) + ' min tarde' : m + ' min de margen'}</span></div></li>`;
     }
@@ -605,7 +611,9 @@
       if (r.type === 'llegada') return `Ajustada · el tripulante esperaría ${r.wait} min en JMC${choque}`;
       return `Ajustada · llega ${hhmm(r.arrival)}; con ${B} min de entrega le quedan ${m} min a la presentación (${hhmm(r.pres)})${choque}`;
     }
-    if (r.type === 'llegada') return `Lista · aterrizaje ${hhmm(r.arrival)}, última entrega ${hhmm(r.end)}`;
+    // La última entrega es la hora de la última parada (la misma que se ve
+    // abajo): r.end le suma el rato de bajarse y daba 10:52 contra un 10:50.
+    if (r.type === 'llegada') return `Lista · aterrizaje ${hhmm(r.arrival)}, última entrega ${hhmm(r.stops.length ? Math.max(...r.stops.map((s) => s.time)) : r.end)}`;
     return `Lista · llega ${hhmm(r.arrival)}; con ${B} min de entrega le sobran ${m} min para la presentación`;
   }
 

@@ -125,7 +125,8 @@ console.log('\n2 · Lo cableado');
   const html = read('index.html'), sw = read('sw.js'), core = read('core.js'), api = read('api.js');
   t('index.html sin el panel, el CSS ni el script de Usuarios', !/data-panel="usuarios"/.test(html) && !/admin-usuarios/.test(html));
   t('…pero con usuarios.js (los modales compartidos)', /<script src="usuarios\.js"><\/script>/.test(html));
-  t('sw.js: v176 y sin admin-usuarios en el APP_SHELL', /CACHE_VERSION = 'rendio-turnos-v176'/.test(sw) && !/admin-usuarios/.test(sw));
+  // v176 o posterior: la versión sigue subiendo con cada entrega (antes pedía v176 exacta).
+  t('sw.js: v176 o posterior y sin admin-usuarios en el APP_SHELL', Number((sw.match(/CACHE_VERSION = 'rendio-turnos-v(\d+)'/) || [])[1]) >= 176 && !/admin-usuarios/.test(sw));
   t('admin-usuarios.js y .css ya no existen', !existsSync(APP + 'admin-usuarios.js') && !existsSync(APP + 'admin-usuarios.css'));
   t('api.js sin listAllUsersForAdmin', !/listAllUsersForAdmin/.test(api));
   t('core.js sin renderUsuarios', !/renderUsuarios/.test(core));
