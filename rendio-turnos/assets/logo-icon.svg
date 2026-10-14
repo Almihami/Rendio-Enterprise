@@ -1,3 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Rendio">
-  <circle cx="50" cy="50" r="50" fill="#1E1C19"/>
-  <g transform="translate(50 50) scale(0.62) translate(-60.25 -50)"><path d="M22 18H52.5C67 18 77 27.2 77 40C77 49.2 71.8 55.6 63.6 58.4L80 82H59.4L45.4 60.6H40.4V82H22ZM40.4 33.4V45.6H51.6C56.4 45.6 59 43.2 59 39.5C59 35.8 56.4 33.4 51.6 33.4Z" fill="#FFFFFF" fill-rule="evenodd"/><circle cx="91" cy="75" r="7.5" fill="#E2551A"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Rendio">
+  <circle cx="24" cy="24" r="22" fill="#0A0A0A"/>
+  <circle cx="9" cy="24" r="4" fill="#F4791F"/>
+  <path d="M 9,22 L 38,18 L 41,14 L 43,15 L 42,21 L 44,22 L 44,26 L 42,27 L 43,33 L 41,34 L 38,30 L 9,26 Z"
+        fill="#FFFFFF" transform="rotate(-12, 24, 24)"/>
+</svg>

@@ -260,6 +260,40 @@ console.log('\n── Bandera ENCENDIDA: la pestaña Perfil ──');
   if (lvP6) w.AuxPrivado.levelsHTML = lvP6;
   t('tocar el fondo cierra la hoja sin guardar', !b.q('.rx-sheet-bg') && llamadas(b, 'ApiAux.saveMyPrefs').length === 0);
 
+  // Dónde trabajas (0106, 13-oct-2026): aerolínea o personal de tierra.
+  console.log('\n── Dónde trabajas (personal de tierra, 0106) ──');
+  t('fila «Dónde trabajas» con la aerolínea del perfil', sub(row(b, 'row-work')) === 'Avianca', sub(row(b, 'row-work')));
+  E.llamadas.length = 0;
+  b.click(row(b, 'row-work'));
+  await wait(60);
+  const wo = b.qa('.rx-sheet [data-rx="me-work-pick"]');
+  t('la hoja «Dónde trabajas» lista las 4 aerolíneas y, al final, «Trabajo en el aeropuerto» (MDE)', /Dónde trabajas/.test((b.q('.rx-sheet h3') || {}).textContent || '') && wo.length === 5 && wo[4].dataset.id === '__tierra__' && /MDE/.test(wo[4].textContent), wo.map(x => x.dataset.id).join(','));
+  t('Avianca sale elegida', wo[0] && wo[0].classList.contains('on') && wo.filter(x => x.classList.contains('on')).length === 1);
+  b.click(wo[4]);
+  await wait(60);
+  const pWork = llamadas(b, 'ApiAux.saveMyPrefs');
+  t('tocar tierra → saveMyPrefs({groundStaff:true})', pWork.length === 1 && JSON.stringify(pWork[0].args[0]) === '{"groundStaff":true}', JSON.stringify(pWork));
+  t('toast «Listo: personal de tierra», hoja cerrada', /Listo: personal de tierra/.test((b.q('.rx-toast') || {}).textContent || ''));
+  await wait(260);
+  t('H queda en tierra y sin aerolínea', A.header.groundStaff === true && !A.header.airlineId && !A.header.airlineName);
+  t('la fila dice «Personal de tierra · no vuelo»', sub(row(b, 'row-work')) === 'Personal de tierra · no vuelo', sub(row(b, 'row-work')));
+  t('el hero dice «Personal de tierra · desde mar 2026»', row(b, 'line').textContent === 'Personal de tierra · desde mar 2026', row(b, 'line').textContent);
+  t('el próximo pedido arranca en tierra (groundDefault)', A.groundDefault() === true);
+  E.llamadas.length = 0;
+  b.click(row(b, 'row-work'));
+  await wait(60);
+  const wo2 = b.qa('.rx-sheet [data-rx="me-work-pick"]');
+  t('al volver a abrir, tierra sale elegida', wo2[4] && wo2[4].classList.contains('on') && wo2.filter(x => x.classList.contains('on')).length === 1);
+  b.click(b.q('.rx-sheet [data-rx="me-work-pick"][data-id="esc-air-p5"]'));
+  await wait(60);
+  const pWork2 = llamadas(b, 'ApiAux.saveMyPrefs');
+  t('elegir Wingo → saveMyPrefs({airlineId}) (sale de tierra)', pWork2.length === 1 && JSON.stringify(pWork2[0].args[0]) === '{"airlineId":"esc-air-p5"}', JSON.stringify(pWork2));
+  await wait(260);
+  t('H vuelve a una aerolínea: Wingo, P5, sin tierra', A.header.groundStaff === false && A.header.airlineName === 'Wingo' && A.header.airlineIata === 'P5');
+  t('el hero vuelve a «Auxiliar · Wingo · desde mar 2026»', row(b, 'line').textContent === 'Auxiliar · Wingo · desde mar 2026', row(b, 'line').textContent);
+  t('el pedido sigue intacto', JSON.stringify(A.state.form) === form0);
+  Object.assign(A.header, { airlineId: 'esc-air-av', airlineName: 'Avianca', airlineIata: 'AV', groundStaff: false });
+
   // 12-oct-2026 (0103): con el privado ENCENDIDO, la tarifa real de Ajustes
   // ($ 50.000) en la hoja de nivel (P6 y respaldo) y en la fila «Rendio Select».
   w.state.settings = { aux_private_enabled: true, aux_private_vehicle_id: 'v1', aux_private_price_cop: 50000 };

@@ -48,6 +48,9 @@
   // cada fila (listAuxiliares) y es único en el catálogo; se suma (Y) al chip y
   // a la búsqueda. Vive solo en memoria: al recargar la página vuelve a «Todas».
   const SIN_AEROLINEA = '__sin';
+  // Personal de tierra (0106, 13-oct-2026): trabaja en el aeropuerto y no vuela.
+  // No tiene aerolínea, pero NO es «sin aerolínea» (eso es un dato que falta).
+  const TIERRA = '__tierra';
 
   // Cuánto lleva con nosotros, en palabras. El número exacto de días no le sirve
   // a nadie; «1 año y 2 meses» sí, porque es el lenguaje en que están escritos
@@ -100,13 +103,14 @@
     let l = st.items || [];
     if (st.q) {
       const q = norm(st.q);
-      l = l.filter(a => norm([a.name, a.email, a.phone, a.airline, a.res1?.name, a.res2?.name,
+      l = l.filter(a => norm([a.name, a.email, a.phone, a.airline, a.groundStaff ? 'personal de tierra aeropuerto' : '', a.res1?.name, a.res2?.name,
         a.unit1, a.unit2].filter(Boolean).join(' ')).includes(q));
     }
     if (st.filtro === 'sin-fecha') l = l.filter(a => !a.joinedAt);
     if (st.filtro === 'dos-unidades') l = l.filter(a => !!a.res2);
     if (st.filtro === 'suspendidos') l = l.filter(a => !a.active);
-    if (st.aerolinea === SIN_AEROLINEA) l = l.filter(a => !a.airline);
+    if (st.aerolinea === SIN_AEROLINEA) l = l.filter(a => !a.airline && !a.groundStaff);
+    else if (st.aerolinea === TIERRA) l = l.filter(a => a.groundStaff);
     else if (st.aerolinea) l = l.filter(a => a.airline === st.aerolinea);
     return l;
   }
@@ -120,10 +124,12 @@
     const n = new Map();
     items.forEach(a => { if (a.airline) n.set(a.airline, (n.get(a.airline) || 0) + 1); });
     (st.airlines || []).forEach(x => { if (x && x.name && x.is_active !== false && !n.has(x.name)) n.set(x.name, 0); });
-    if (st.aerolinea && st.aerolinea !== SIN_AEROLINEA && !n.has(st.aerolinea)) n.set(st.aerolinea, 0);
+    if (st.aerolinea && st.aerolinea !== SIN_AEROLINEA && st.aerolinea !== TIERRA && !n.has(st.aerolinea)) n.set(st.aerolinea, 0);
     const out = [['', 'Todas', items.length]];
     [...n.keys()].sort((x, y) => x.localeCompare(y, 'es')).forEach(k => out.push([k, k, n.get(k)]));
-    const sin = items.filter(a => !a.airline).length;
+    const tierra = items.filter(a => a.groundStaff).length;
+    if (tierra || st.aerolinea === TIERRA) out.push([TIERRA, 'Personal de tierra', tierra]);
+    const sin = items.filter(a => !a.airline && !a.groundStaff).length;
     if (sin || st.aerolinea === SIN_AEROLINEA) out.push([SIN_AEROLINEA, 'Sin aerolínea', sin]);
     return out;
   }
@@ -189,7 +195,7 @@
             <b>${esc(a.name)}${a.active ? '' : ' <span class="tp-tag tp-sus">Suspendida</span>'}</b>
             <span>${esc(a.email)}${a.phone ? ' · ' + esc(a.phone) : ' · <i>sin teléfono</i>'}</span>
           </div>
-          <div class="tp-air">${a.airline ? esc(a.airline) : '<i>sin aerolínea</i>'}</div>
+          <div class="tp-air">${a.groundStaff ? '<span class="tp-tag tp-tierra">Personal de tierra</span>' : a.airline ? esc(a.airline) : '<i>sin aerolínea</i>'}</div>
           <div class="tp-punto">
             <div>${punto}</div>
             ${punto2 ? `<div class="tp-punto2"><span class="tp-tag">2ª unidad</span>${punto2}</div>` : ''}

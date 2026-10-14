@@ -227,5 +227,27 @@ tui().querySelector('[data-tp="air"]').click(); await wait(30);
 t('abre el panel de aerolíneas', /Aerolíneas del desplegable/.test(ttxt()));
 t('avisa que solo Avianca y Wingo están medidas', /solo está medido para Avianca y Wingo/.test(ttxt()));
 
+// personal de tierra (0106, 13-oct-2026): no es «sin aerolínea»
+console.log('\n── personal de tierra en el padrón (0106) ──');
+{
+  const prev=await window.Api.listAuxiliares();
+  window.Api.listAuxiliares=async()=>prev.concat([{id:'a4',profileId:'p4',name:'Mateo Andrés Gil Rendón',email:'mateo@gmail.com',phone:'3001112233',active:true,
+    createdAt:'2026-09-01T10:00:00Z',joinedAt:'2026-09-01',airline:'',groundStaff:true,res1:{name:'Solare',sector:'Llanogrande'},unit1:'Casa 3',res2:null,unit2:'',homeAddress:''}]);
+  window.AdminTripulantes.state.items=null; window.AdminTripulantes.state.aerolinea='';
+  window.renderTripulantes(); await wait(60);
+  t('lista los cuatro', filas()===4, String(filas()));
+  t('Mateo dice «Personal de tierra», no «sin aerolínea»', (()=>{ const r=[...tui().querySelectorAll('.tp-row')].find(x=>/Mateo/.test(x.textContent)); return !!r && !!r.querySelector('.tp-tierra') && /Personal de tierra/.test(r.textContent) && !/sin aerolínea/.test(r.textContent); })());
+  t('el desplegable agrega «Personal de tierra» aparte de «Sin aerolínea»',
+    [...af.options].map(o=>o.textContent).join(' | ')==='Todas (4) | Avianca (1) | Wingo (1) | Personal de tierra (1) | Sin aerolínea (1)', [...af.options].map(o=>o.textContent).join(' | '));
+  elegir('__tierra');
+  t('«Personal de tierra» deja solo a Mateo', filas()===1 && /Mateo/.test(ttxt()));
+  elegir('__sin');
+  t('«Sin aerolínea» sigue dejando solo a Julián (tierra no cuenta como sin aerolínea)', filas()===1 && /Julián/.test(ttxt()));
+  elegir('');
+  q.value='tierra'; q.dispatchEvent(new window.Event('input',{bubbles:true}));
+  t('buscar «tierra» encuentra a Mateo', filas()===1 && /Mateo/.test(ttxt()));
+  q.value=''; q.dispatchEvent(new window.Event('input',{bubbles:true}));
+}
+
 console.log(`\n${ok}/${ok+bad} pasaron${bad?' · '+bad+' FALLARON':''}`);
 process.exit(bad?1:0);

@@ -37,7 +37,9 @@
 
 /* El logo de la empresa (no es un dato inventado: es la marca de la app). */
 #screen-login.rx-login .rxl-brand{ text-align:left; margin:0 0 30px; padding:0 4px; }
-#screen-login.rx-login .rxl-brand img{ height:34px; width:auto; margin:0; }
+/* 13-oct-2026: vuelve el logo completo de producción (con «ENTERPRISE»); a 48 px,
+   la altura del login de producción, para que la palabra de abajo se lea. */
+#screen-login.rx-login .rxl-brand img{ height:48px; width:auto; margin:0; }
 #screen-login.rx-login .rxl-brand p{ margin:8px 0 0; font-size:11.5px; font-weight:650; letter-spacing:.8px; color:var(--r-text-3); }
 
 /* La tarjeta blanca desaparece: la pantalla ES el contenido (RxLogin). */

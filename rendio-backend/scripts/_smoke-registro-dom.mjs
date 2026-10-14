@@ -185,8 +185,9 @@ function llenarPerfil(E) {
 
   console.log('\n── paso 2 · aerolínea, conjunto y unidades ──');
   await wait();
-  t('lista las 4 aerolíneas', qa('[data-rg="airline"]').length === 4);
-  if (RX) t('(rx) como .rx-opt con la sigla de color y el radio', qa('.rx-opt[data-rg="airline"] .rx-opt-ic.rg-sigla').length === 4 && qa('.rx-opt[data-rg="airline"] .rx-radio i').length === 4);
+  // 4 aerolíneas + «Trabajo en el aeropuerto» al final (0106).
+  t('lista las 4 aerolíneas y, al final, personal de tierra', qa('[data-rg="airline"]:not([data-id="__tierra__"])').length === 4 && qa('[data-rg="airline"]').length === 5);
+  if (RX) t('(rx) como .rx-opt con la sigla de color y el radio', qa('.rx-opt[data-rg="airline"] .rx-opt-ic.rg-sigla').length === 5 && qa('.rx-opt[data-rg="airline"] .rx-radio i').length === 5);
   // Buscador primero (15-sep): sin texto NO se pinta la lista; se escribe y se elige.
   t('sin texto no lista conjuntos: buscador primero', qa('[data-rg="res-pick"]').length === 0, String(qa('[data-rg="res-pick"]').length));
   t('la lista existe pero vacía (para llenarla sin repintar)', !!q('[data-rg-list="1"]') && q('[data-rg-list="1"]').innerHTML === '');
@@ -492,6 +493,56 @@ console.log('\n── el ingreso (#screen-login) con login-rx.css — lo ven tod
   const E = boot({ html: sin });
   const sec = E.w.document.getElementById('screen-login');
   t('quitar el <link> de login-rx.css revierte el ingreso (no se toca el DOM)', sin !== HTML && !sec.classList.contains('rx-login') && sec.querySelector('h1').textContent.trim() === 'Iniciar sesión' && !sec.querySelector('.rx-input'));
+}
+
+// ── Personal de tierra (0106, 13-oct-2026): trabaja en el aeropuerto, no vuela ──
+console.log('\n── personal de tierra (0106) ──');
+{
+  const E = boot();
+  const { q, qa, txt, w } = E;
+  await hastaPerfil(E); await wait();
+  const opciones = qa('[data-rg="airline"]');
+  const tierra = q('[data-rg="airline"][data-id="__tierra__"]');
+  t('la sección dice «Dónde trabajas»', /Dónde trabajas/.test(txt()));
+  t('«Trabajo en el aeropuerto» va de ÚLTIMA, después de las 4 aerolíneas', !!tierra && opciones.length === CAT.airlines.length + 1 && opciones[opciones.length - 1] === tierra, String(opciones.length));
+  t('con la sigla MDE y «Personal de tierra · no vuelo»', !!tierra && /MDE/.test(tierra.textContent) && /Personal de tierra · no vuelo/.test(tierra.textContent));
+  E.click(tierra); await wait();
+  const on = qa(AIR_ON);
+  t('al tocarla queda elegida, y solo ella', on.length === 1 && on[0].dataset.id === '__tierra__', on.map(b => b.dataset.id).join(','));
+  if (RX) t('(rx) el MISMO botón toma .on y su texto pasa a «Personal de tierra»', on[0] === tierra && /Personal de tierra/.test(tierra.textContent) && !/no vuelo/.test(tierra.textContent));
+  else t('el texto pasa a «Personal de tierra»', /Personal de tierra/.test(q(AIR_ON).textContent) && !/no vuelo/.test(q(AIR_ON).textContent));
+  E.type('[data-rg-q="1"]', 'solare');
+  E.click('[data-rg="res-pick"][data-id="r2"]');
+  E.set('unit', 'Torre 1 · 501');
+  t('tierra + conjunto: el paso queda listo', !q(CTA).disabled);
+  E.calls.length = 0;
+  E.click(CTA); await wait(); await wait();
+  t('registerAuxiliar va SIN aerolínea', !!w.__reg && w.__reg.airlineId === null, JSON.stringify(w.__reg && w.__reg.airlineId));
+  t('…y DESPUÉS saveMyPrefs marca groundStaff', E.calls.join(',') === 'register,saveMyPrefs' && !!w.__prefs && w.__prefs.groundStaff === true, E.calls.join(',') + ' ' + JSON.stringify(w.__prefs));
+  t('llega a la bienvenida', RX ? /Te damos la bienvenida/.test(txt()) : /Bienvenido/.test(txt()));
+  t('sin errores de consola', E.errors.length === 0, E.errors.join(' | '));
+}
+{
+  // Elegir tierra y después una aerolínea: gana la aerolínea y no se marca tierra.
+  const E = boot();
+  await hastaPerfil(E); await wait();
+  E.click('[data-rg="airline"][data-id="__tierra__"]'); await wait();
+  llenarPerfil(E);   // toca Wingo (a3)
+  const on = E.qa(AIR_ON);
+  t('cambiar de tierra a una aerolínea deja elegida solo la aerolínea', on.length === 1 && on[0].dataset.id === 'a3', on.map(b => b.dataset.id).join(','));
+  E.calls.length = 0;
+  E.click(CTA); await wait(); await wait();
+  t('…y se registra con esa aerolínea, sin marcar tierra', E.w.__reg && E.w.__reg.airlineId === 'a3' && !(E.w.__prefs && E.w.__prefs.groundStaff), JSON.stringify(E.w.__prefs || null));
+}
+if (RX) {
+  const E = boot({ prefsFail: true });
+  await hastaPerfil(E); await wait();
+  E.click('[data-rg="airline"][data-id="__tierra__"]'); await wait();
+  E.type('[data-rg-q="1"]', 'solare');
+  E.click('[data-rg="res-pick"][data-id="r2"]');
+  E.set('unit', 'Torre 1 · 501');
+  E.click(CTA); await wait(); await wait();
+  t('(rx) si no se pudo marcar tierra, la cuenta igual quedó y la bienvenida lo dice', !!E.q('.rx-ready') && /No pudimos guardar que trabajas en tierra/.test(E.txt()), E.txt().slice(0, 300));
 }
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);

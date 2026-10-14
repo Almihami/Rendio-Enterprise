@@ -66,7 +66,7 @@
     deleted_at: null, must_change_password: false, suspended_reason: null,
   };
   const HEADER = {
-    auxProfileId: 'esc-ap-laura', joinedAt: '2026-03-02', airlineName: 'Avianca', airlineIata: 'AV',
+    auxProfileId: 'esc-ap-laura', joinedAt: '2026-03-02', airlineId: 'esc-air-av', airlineName: 'Avianca', airlineIata: 'AV', groundStaff: false,
     preferredLevel: null, meetingPoint: '',
     residenceId: RES.olivar.id, residence: { id: RES.olivar.id, name: RES.olivar.name, sector: RES.olivar.sector },
     unit: 'Torre 2 · 504', residenceId2: null, residence2: null, unit2: '',

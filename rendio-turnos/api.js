@@ -105,7 +105,9 @@
       + 'residences!auxiliar_profiles_residence_id_fkey(id, name, sector), '
       + 'res2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector), '
       + 'profiles(id, full_name, email, phone, is_active, deleted_at, suspended_reason, created_at)';
-    let { data, error } = await sb.from('auxiliar_profiles').select(COLS);
+    // 0106: personal de tierra. Sin la migración, lo mismo sin esa columna.
+    let { data, error } = await sb.from('auxiliar_profiles').select(COLS.replace('airline_id, ', 'airline_id, ground_staff, '));
+    if (error) ({ data, error } = await sb.from('auxiliar_profiles').select(COLS));
     // Sin 0081 no hay motivo de suspensión: se pide lo mismo sin esa columna.
     if (error) ({ data, error } = await sb.from('auxiliar_profiles')
       .select(COLS.replace(', suspended_reason', '')));
@@ -127,6 +129,7 @@
         joinedAt: a.joined_at || null,
         airlineId: a.airline_id || null,
         airline: a.airlines?.name || '',
+        groundStaff: a.ground_staff === true,
         res1: a.residences ? { name: a.residences.name, sector: a.residences.sector } : null,
         unit1: a.residence_unit || '',
         res2: a.res2 ? { name: a.res2.name, sector: a.res2.sector } : null,
@@ -2597,8 +2600,10 @@
     const RES2 = 'residencia2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector)';
     const BASE = `id, joined_at, residence_id, residence_unit, residence_id_2, residence_unit_2, ${RES}, ${RES2}`;
     const NUEVAS = ', preferred_service_level, meeting_point';
-    const AIR = ', airlines(name, iata_code)';
-    let { data, error } = await q(BASE + NUEVAS + AIR);
+    const AIR = ', airlines(id, name, iata_code)';
+    // 0106: personal de tierra, en su propio escalón encima de todo.
+    let { data, error } = await q(BASE + NUEVAS + ', ground_staff' + AIR);
+    if (error) ({ data, error } = await q(BASE + NUEVAS + AIR));
     if (error) ({ data, error } = await q(BASE + AIR));
     if (error) ({ data, error } = await q(BASE));
     if (error) ({ data, error } = await q(`id, residence_id, residence_unit, ${RES}`));
@@ -2607,8 +2612,10 @@
     return {
       auxProfileId: data.id,
       joinedAt: data.joined_at || null,
+      airlineId: data.airlines?.id || null,
       airlineName: data.airlines?.name || '',
       airlineIata: (data.airlines?.iata_code || '').toUpperCase(),
+      groundStaff: data.ground_staff === true,
       preferredLevel: lvl === 'private' || lvl === 'shared' ? lvl : null,
       meetingPoint: data.meeting_point || '',
       residenceId: data.residence_id || null,

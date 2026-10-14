@@ -632,6 +632,13 @@
     P5: { c1: '#B02A9B', c2: '#6A1163', tinta: '#FFFFFF' },
     LA: { c1: '#3A34A8', c2: '#191668', tinta: '#FFFFFF' },
   };
+  // PERSONAL DE TIERRA (0106, 13-oct-2026): no todos vuelan. La opción va al
+  // final de la lista de aerolíneas con un id que no es de ninguna (TIERRA):
+  // así la elección, el «listo» del paso y el borde de elegida funcionan igual.
+  // Al registrar se manda SIN aerolínea y luego ground_staff (guardarPreferencias).
+  // La sigla es la del aeropuerto, MDE, en el gris de repuesto.
+  const TIERRA = '__tierra__';
+  const TIERRA_TX = { name: 'Trabajo en el aeropuerto', off: 'Personal de tierra · no vuelo', on: 'Personal de tierra' };
   const MARCA_DE_REPUESTO = { c1: '#54606E', c2: '#2E3742', tinta: '#FFFFFF' };
   // Rescate por nombre: signup_catalogs() puede no estar devolviendo iata_code
   // (la tabla airlines sí lo tiene). Sin esto, las cuatro de siempre saldrían
@@ -678,7 +685,17 @@
         <div><b>${esc(a.name)}</b><span>${sel ? 'Tu aerolínea' : 'Toca para elegirla'}</span></div>
         <span class="ax-radio">${sel ? '<svg class="icon"><use href="#i-check"/></svg>' : ''}</span>
       </button>`;
-    }).join('');
+    }).join('') + tierraHTML();
+  }
+  function tierraHTML() {
+    const sel = st.f.airlineId === TIERRA;
+    const m = MARCA_DE_REPUESTO;
+    return `<button class="ax-opt rg-air rg-tierra${sel ? ' sel' : ''}" data-rg="airline" data-id="${TIERRA}"
+        style="--air-1:${m.c1};--air-2:${m.c2};--air-ink:${m.tinta}" aria-pressed="${sel ? 'true' : 'false'}">
+      <span class="rg-air-sigla" aria-hidden="true">MDE</span>
+      <div><b>${esc(TIERRA_TX.name)}</b><span>${esc(sel ? TIERRA_TX.on : TIERRA_TX.off)}</span></div>
+      <span class="ax-radio">${sel ? '<svg class="icon"><use href="#i-check"/></svg>' : ''}</span>
+    </button>`;
   }
 
   const resById = (id) => (st.cat?.residences || []).find(r => r.id === id) || null;
@@ -762,7 +779,7 @@
         <h1 class="ax-form-title">Ya casi</h1>
         <p class="ax-lead">Esto queda guardado: no vas a tener que escribirlo otra vez.</p>
 
-        <div class="ax-sec">Tu aerolínea</div>
+        <div class="ax-sec">Dónde trabajas</div>
         ${airlineHTML()}
 
         <div class="ax-sec">Dónde te recogemos</div>
@@ -1227,7 +1244,7 @@
       await Api.registerAuxiliar({
         fullName: cleanName(st.f.name),
         phone: st.f.phone.trim(),
-        airlineId: st.f.airlineId,
+        airlineId: st.f.airlineId === TIERRA ? null : st.f.airlineId,
         residenceId: st.f.manual ? null : st.f.resId,
         unit: st.f.unit.trim() || null,
         residenceId2: st.f.hasSecond ? st.f.resId2 : null,
@@ -1255,6 +1272,7 @@
     const mp = String(st.f.meetingPoint || '').trim().slice(0, 120);
     if (mp) prefs.meetingPoint = mp;
     if (nivelActivo()) prefs.preferredLevel = st.f.level === 'private' ? 'private' : 'shared';
+    if (st.f.airlineId === TIERRA) prefs.groundStaff = true;
     if (!Object.keys(prefs).length) return;
     const X = window.ApiAux;
     let ok = null;
@@ -1263,9 +1281,12 @@
     if (ok === true) { st.meetSaved = !!mp; return; }
     // null = la base todavía no tiene la columna (o no hubo sesión); un error
     // del servidor, igual. No se inventa que quedó guardado.
-    st.prefsWarn = mp
-      ? 'No pudimos guardar tu punto de encuentro. Lo puedes poner en Perfil.'
-      : 'No pudimos guardar cómo prefieres viajar. Lo puedes elegir en Perfil.';
+    st.prefsWarn = prefs.groundStaff
+      ? (mp ? 'No pudimos guardar tu punto de encuentro ni que trabajas en tierra. Los puedes poner en Perfil.'
+            : 'No pudimos guardar que trabajas en tierra. Lo puedes cambiar en Perfil › Dónde trabajas.')
+      : mp
+        ? 'No pudimos guardar tu punto de encuentro. Lo puedes poner en Perfil.'
+        : 'No pudimos guardar cómo prefieres viajar. Lo puedes elegir en Perfil.';
   }
 
   // El código de quien lo invitó (Rendio Points, apagado por defecto). Solo
@@ -1421,7 +1442,7 @@
   // Paso 2 · aerolínea, dónde te recogemos, punto de encuentro, segunda unidad.
   function rxPerfilBody() {
     return `<div class="rx-ob-h"><h1>Ya casi</h1><p>Esto queda guardado: no vas a tener que escribirlo otra vez.</p></div>
-      <div class="rx-lbl">Tu aerolínea</div>
+      <div class="rx-lbl">Dónde trabajas</div>
       <div class="rx-list" data-rg-sec="air">${rxAirHTML()}</div>
       <div class="rx-lbl">Dónde te recogemos</div>
       <div class="rg-sec" data-rg-sec="home">${rxHomeHTML()}</div>
@@ -1444,7 +1465,18 @@
         <span class="rx-opt-tx"><b>${esc(a.name)}</b><span>${on ? 'Tu aerolínea' : 'Toca para elegirla'}</span></span>
         <span class="rx-radio"><i></i></span>
       </button>`;
-    }).join('');
+    }).join('') + rxTierraHTML(list.length);
+  }
+  function rxTierraHTML(i) {
+    const on = st.f.airlineId === TIERRA;
+    const m = MARCA_DE_REPUESTO;
+    return `<button type="button" class="rx-opt rx-in rg-air-rx rg-tierra${on ? ' on' : ''}" data-rg="airline" data-id="${TIERRA}"
+        data-on="${esc(TIERRA_TX.on)}" data-off="${esc(TIERRA_TX.off)}"
+        style="--d:${Math.min(i, 8)};--air-1:${m.c1};--air-2:${m.c2};--air-ink:${m.tinta}" aria-pressed="${on ? 'true' : 'false'}">
+      <span class="rx-opt-ic rg-sigla" aria-hidden="true">MDE</span>
+      <span class="rx-opt-tx"><b>${esc(TIERRA_TX.name)}</b><span>${esc(on ? TIERRA_TX.on : TIERRA_TX.off)}</span></span>
+      <span class="rx-radio"><i></i></span>
+    </button>`;
   }
   function rxAirSync() {
     root()?.querySelectorAll('[data-rg="airline"]').forEach(b => {
@@ -1452,7 +1484,7 @@
       b.classList.toggle('on', on);
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
       const s = b.querySelector('.rx-opt-tx span');
-      if (s) s.textContent = on ? 'Tu aerolínea' : 'Toca para elegirla';
+      if (s) s.textContent = on ? (b.dataset.on || 'Tu aerolínea') : (b.dataset.off || 'Toca para elegirla');
     });
   }
 

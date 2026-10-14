@@ -193,6 +193,11 @@
       if (mp.length > 120) throw new Error('El punto de encuentro es muy largo (máximo 120 caracteres)');
       patch.meeting_point = mp || null;
     }
+    // Dónde trabaja (0106): personal de tierra o una aerolínea. Van SIEMPRE
+    // juntos — la base exige «tierra ⇒ sin aerolínea» —: groundStaff true borra
+    // la aerolínea; con airlineId se sale de tierra.
+    if (p && p.groundStaff === true) { patch.ground_staff = true; patch.airline_id = null; }
+    else if (p && p.airlineId) { patch.ground_staff = false; patch.airline_id = p.airlineId; }
     if (!Object.keys(patch).length) return true;
     const { data, error } = await cli().from('auxiliar_profiles').update(patch).eq('profile_id', me).select('id');
     if (error) { if (falta(error)) return null; lanzar(error); }

@@ -74,10 +74,12 @@
     const mi = Number(m[2]) - 1;
     return MESES[mi] ? MESES[mi] + ' ' + m[1] : '';
   }
-  // «Auxiliar · Avianca · desde mar 2026» — lo vacío se omite.
+  // «Auxiliar · Avianca · desde mar 2026» — lo vacío se omite. Personal de
+  // tierra (0106): «Personal de tierra · desde mar 2026».
   function heroLine() {
     const h = HDR();
     const since = h ? sinceText(h.joinedAt) : '';
+    if (h && h.groundStaff) return ['Personal de tierra', since ? 'desde ' + since : ''].filter(Boolean).join(' · ');
     return ['Auxiliar', h && h.airlineName ? h.airlineName : '', since ? 'desde ' + since : ''].filter(Boolean).join(' · ');
   }
   function phoneText(p) {
@@ -283,6 +285,7 @@
     const pay = payRow();
     const viajes = [
       U.row({ icon: 'Home', tone: 'h2a', title: 'Mi residencia', sub: resSub, attrs: { 'data-rx': 'open-residence', 'data-me': 'row-res' } }),
+      U.row({ icon: h && h.groundStaff ? 'Briefcase' : 'Plane', tone: 'n', title: 'Dónde trabajas', sub: workSub(h), attrs: { 'data-rx': 'me-work', 'data-me': 'row-work' } }),
       U.row({ icon: lv.ic, tone: lv.tone, title: 'Nivel preferido', sub: lv.name, attrs: { 'data-rx': 'me-level', 'data-me': 'row-level' } }),
       U.row({ icon: 'MapPin', tone: 'n', title: 'Punto de encuentro', sub: meet || 'Opcional · dónde esperas al conductor', attrs: { 'data-rx': 'me-meet', 'data-me': 'row-meet' } }),
       // Editable desde el 11-oct-2026 (antes era solo lectura): hoja propia que
@@ -518,6 +521,91 @@
     } else {
       marcar(antes || 'shared');
       SH().toast(err || 'No pudimos guardar tu preferencia. Inténtalo de nuevo.', 'Info');
+    }
+  }
+
+  // ── Dónde trabajas (0106, 13-oct-2026) ────────────────────────────────────
+  // Una aerolínea o personal de tierra (trabaja en el aeropuerto, no vuela). Se
+  // elige en el registro; aquí se corrige. Mismas tarjetas que el registro: la
+  // sigla con el color de MarcasAerolinea y, al final, MDE en gris para tierra.
+  const TIERRA_ID = '__tierra__';
+  const W = { cat: undefined, busy: false };
+  function workSub(h) {
+    if (!h) return 'No pudimos cargarlo';
+    if (h.groundStaff) return 'Personal de tierra · no vuelo';
+    return h.airlineName || 'Sin elegir';
+  }
+  function workOpt(id, name, sigla, m, on, sub, i) {
+    return `<button type="button" class="rx-opt rx-in rg-air-rx${on ? ' on' : ''}" data-rx="me-work-pick" data-id="${esc(id)}"
+        style="--d:${Math.min(i, 8)};--air-1:${m.c1};--air-2:${m.c2};--air-ink:${m.tinta}" aria-pressed="${on ? 'true' : 'false'}">
+      <span class="rx-opt-ic rg-sigla" aria-hidden="true">${esc(sigla)}</span>
+      <span class="rx-opt-tx"><b>${esc(name)}</b><span>${esc(sub)}</span></span>
+      <span class="rx-radio"><i></i></span>
+    </button>`;
+  }
+  function workSheetHTML() {
+    const h = HDR();
+    const M = window.MarcasAerolinea;
+    const rep = (M && M.repuesto) || { c1: '#54606E', c2: '#2E3742', tinta: '#FFFFFF' };
+    let opts;
+    if (W.cat === undefined) opts = `<div class="rx-note"><span class="rx-spin dk"></span><span>Cargando aerolíneas…</span></div>`;
+    else if (W.cat === null) opts = `<div class="rx-note"><span>No pudimos cargar las aerolíneas. Revisa tu señal e inténtalo de nuevo.</span></div>`;
+    else {
+      const ground = !!(h && h.groundStaff);
+      opts = W.cat.map((a, i) => {
+        const on = !ground && !!h && (h.airlineId ? h.airlineId === a.id : h.airlineName === a.name);
+        const sig = M && typeof M.sigla === 'function' ? M.sigla(a) : String(a.iata_code || a.name || '').slice(0, 2).toUpperCase();
+        const m = M && typeof M.color === 'function' ? M.color(a) : rep;
+        return workOpt(a.id, a.name, sig, m, on, on ? 'Tu aerolínea' : 'Toca para elegirla', i);
+      }).join('') + workOpt(TIERRA_ID, 'Trabajo en el aeropuerto', 'MDE', rep, ground,
+        ground ? 'Personal de tierra' : 'Personal de tierra · no vuelo', W.cat.length);
+    }
+    return `<div class="rx-sh"><h3>Dónde trabajas</h3>
+      <p>Si trabajas en el aeropuerto y no vuelas, elige «Trabajo en el aeropuerto»: tus pedidos arrancan en tierra, sin número de vuelo.</p>
+      <div class="rx-list" data-me="work-list">${opts}</div></div>`;
+  }
+  async function openWork() {
+    if (!SH()) return;
+    const el = SH().sheet(workSheetHTML());
+    if (W.cat !== undefined && W.cat !== null) return;
+    W.cat = undefined;
+    let list = null;
+    try { list = (window.Api && typeof Api.listAirlines === 'function') ? await Api.listAirlines() : null; } catch (_) { list = null; }
+    W.cat = Array.isArray(list) ? list.filter(a => a && a.id && a.is_active !== false) : null;
+    const box = el && el.querySelector ? el.querySelector('[data-me="work-list"]') : null;
+    if (box && box.isConnected) {
+      const t = document.createElement('div'); t.innerHTML = workSheetHTML();
+      const nuevo = t.querySelector('[data-me="work-list"]');
+      if (nuevo) box.replaceWith(nuevo);
+    }
+  }
+  async function pickWork(el) {
+    const id = el.getAttribute('data-id');
+    if (!id || W.busy) return;
+    const h = HDR();
+    const X = window.ApiAux;
+    const ground = id === TIERRA_ID;
+    const cur = h && (h.airlineId || ((W.cat || []).find(x => x.name === h.airlineName) || {}).id);
+    const igual = h && (ground ? h.groundStaff : (!h.groundStaff && cur === id));
+    if (igual) { SH().closeSheet(); return; }
+    if (!X || typeof X.saveMyPrefs !== 'function') { SH().toast('No pudimos guardar dónde trabajas', 'Info'); return; }
+    W.busy = true;
+    let ok = null, err = '';
+    try { ok = await X.saveMyPrefs(ground ? { groundStaff: true } : { airlineId: id }); } catch (e) { err = (e && e.message) || ''; }
+    W.busy = false;
+    if (ok) {
+      if (h) {
+        const a = ground ? null : (W.cat || []).find(x => x.id === id) || null;
+        h.groundStaff = ground;
+        h.airlineId = ground ? null : id;
+        h.airlineName = a ? a.name : '';
+        h.airlineIata = a ? String(a.iata_code || '').toUpperCase() : '';
+      }
+      SH().closeSheet();
+      SH().toast(ground ? 'Listo: personal de tierra' : 'Listo: ' + ((h && h.airlineName) || 'aerolínea guardada'));
+      refreshMe();
+    } else {
+      SH().toast(err || 'No pudimos guardar dónde trabajas. Inténtalo de nuevo.', 'Info');
     }
   }
 
@@ -827,6 +915,8 @@
     S.action('me-level', () => openLevel());
     S.action('pref-level', (el) => { pickLevel(el); });
     S.action('me-meet', () => openMeet());
+    S.action('me-work', () => { openWork(); });
+    S.action('me-work-pick', (el) => { pickWork(el); });
     S.action('me-pwa', () => openPwa());
     S.action('me-meet-save', (el) => { saveMeet(el.closest('.rx-sheet')); });
     S.action('me-phone', () => openPhone());
@@ -840,9 +930,9 @@
   register();
 
   window.AuxRxPerfil = {
-    meHTML, residenceHTML, levelSheetHTML, meetSheetHTML, phoneSheetHTML,
+    meHTML, residenceHTML, levelSheetHTML, meetSheetHTML, phoneSheetHTML, workSheetHTML,
     refresh: refreshMe, reloadStats: loadStats, register,
     // Para las pruebas: estado propio (nunca es Auxiliar.state.form).
-    _st: st, _R: R,
+    _st: st, _R: R, _W: W,
   };
 })();

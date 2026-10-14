@@ -214,7 +214,11 @@
     // cuándo lo pidió; cancelados incluidos: lo que dice es a qué se dedica, no
     // si el viaje se hizo). Sin viajes, apagado. No se guarda en el teléfono: el
     // dato está en la base (reservations.ground_ops) y de ahí sale.
+    // 0106 (13-oct-2026): si su PERFIL dice personal de tierra, arranca encendido
+    // siempre (desde el primer pedido); lo puede apagar en ese pedido.
     groundDefault: () => {
+      const h = window.Auxiliar.header;
+      if (h && h.groundStaff === true) return true;
       let last = null, lastTs = -Infinity;
       auxState.trips.forEach(t => {
         const c = t && t.createdAt ? Date.parse(t.createdAt) : NaN;
