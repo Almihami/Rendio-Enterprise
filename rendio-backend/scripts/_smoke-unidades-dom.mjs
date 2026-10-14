@@ -1,6 +1,6 @@
 // Pintado de lo demás que cambió el 25-ago: el pedido de traslado (hora de
 // llegada al aeropuerto, regreso el mismo día, selector de unidad) y el padrón
-// de tripulantes del admin.
+// de tripulantes del admin (con el filtro por aerolínea del 12-oct-2026).
 // REQUIERE jsdom (no está en el repo, es solo para probar):
 //   cd rendio-backend && npm install --no-save jsdom
 //
@@ -194,6 +194,28 @@ tui().querySelector('[data-tp="filtro"][data-f="todos"]').click();
 const q=window.document.getElementById('tp-search'); q.value='cámbulo'; q.dispatchEvent(new window.Event('input',{bubbles:true}));
 t('la búsqueda encuentra por conjunto (con tilde)', tui().querySelectorAll('.tp-row').length===1);
 q.value=''; q.dispatchEvent(new window.Event('input',{bubbles:true}));
+// filtro por aerolínea (12-oct-2026): se suma al chip y a la búsqueda
+const af=window.document.getElementById('tp-air-filter');
+const elegir=(v)=>{ af.value=v; af.dispatchEvent(new window.Event('change',{bubbles:true})); };
+const filas=()=>tui().querySelectorAll('.tp-row').length;
+t('el desplegable de aerolínea trae Todas, cada una y «Sin aerolínea», con su conteo',
+  [...af.options].map(o=>o.textContent).join(' | ')==='Todas (3) | Avianca (1) | Wingo (1) | Sin aerolínea (1)', [...af.options].map(o=>o.textContent).join(' | '));
+elegir('Avianca');
+t('Avianca deja a Sofía', filas()===1 && /Sofía/.test(ttxt()));
+t('…y el filtro se marca encendido', af.closest('.tp-airf').classList.contains('on'));
+tui().querySelector('[data-tp="filtro"][data-f="dos-unidades"]').click();
+t('Avianca Y «dos unidades» no deja a nadie (y avisa del filtro de aerolínea)', filas()===0 && /Revisa también el filtro de aerolínea/.test(ttxt()));
+elegir('Wingo');
+t('Wingo Y «dos unidades» deja a Ana', filas()===1 && /Ana Lucía/.test(ttxt()));
+tui().querySelector('[data-tp="filtro"][data-f="todos"]').click();
+elegir('__sin');
+t('«Sin aerolínea» deja a Julián', filas()===1 && /Julián/.test(ttxt()));
+q.value='ana'; q.dispatchEvent(new window.Event('input',{bubbles:true}));
+t('«Sin aerolínea» Y buscar «ana» no deja a nadie', filas()===0);
+t('el desplegable conserva la elección mientras se escribe', af.value==='__sin');
+q.value=''; q.dispatchEvent(new window.Event('input',{bubbles:true}));
+elegir('');
+t('«Todas» vuelve a los tres y apaga el filtro', filas()===3 && !af.closest('.tp-airf').classList.contains('on'));
 // editar la fecha
 tui().querySelector('.tp-row [data-tp="edit"]').click();
 t('abre el editor de fecha', !!window.document.getElementById('tp-date'));

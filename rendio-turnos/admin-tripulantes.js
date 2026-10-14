@@ -31,6 +31,7 @@
   const st = {
     items: null, airlines: null, loading: false,
     q: '', filtro: 'todos',        // todos | sin-fecha | dos-unidades | suspendidos
+    aerolinea: '',                  // '' = todas · SIN_AEROLINEA · el nombre de una (12-oct-2026)
     editing: null,                  // id del tripulante con la fecha abierta
     busy: null,
     airOpen: false, airName: '', airCode: '', airBusy: false,
@@ -42,6 +43,11 @@
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
   const hoyISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+
+  // Filtro por aerolínea (12-oct-2026). Va por el NOMBRE, que es lo que trae
+  // cada fila (listAuxiliares) y es único en el catálogo; se suma (Y) al chip y
+  // a la búsqueda. Vive solo en memoria: al recargar la página vuelve a «Todas».
+  const SIN_AEROLINEA = '__sin';
 
   // Cuánto lleva con nosotros, en palabras. El número exacto de días no le sirve
   // a nadie; «1 año y 2 meses» sí, porque es el lenguaje en que están escritos
@@ -100,13 +106,44 @@
     if (st.filtro === 'sin-fecha') l = l.filter(a => !a.joinedAt);
     if (st.filtro === 'dos-unidades') l = l.filter(a => !!a.res2);
     if (st.filtro === 'suspendidos') l = l.filter(a => !a.active);
+    if (st.aerolinea === SIN_AEROLINEA) l = l.filter(a => !a.airline);
+    else if (st.aerolinea) l = l.filter(a => a.airline === st.aerolinea);
     return l;
+  }
+
+  // Las opciones del desplegable, con cuántos tripulantes hay en cada una (de
+  // todo el padrón: el número no baila mientras se escribe en el buscador).
+  // Salen las aerolíneas con gente y las encendidas del catálogo; una apagada
+  // y sin nadie no aporta. La elegida siempre está, aunque se quede en 0.
+  function opcionesAerolinea() {
+    const items = st.items || [];
+    const n = new Map();
+    items.forEach(a => { if (a.airline) n.set(a.airline, (n.get(a.airline) || 0) + 1); });
+    (st.airlines || []).forEach(x => { if (x && x.name && x.is_active !== false && !n.has(x.name)) n.set(x.name, 0); });
+    if (st.aerolinea && st.aerolinea !== SIN_AEROLINEA && !n.has(st.aerolinea)) n.set(st.aerolinea, 0);
+    const out = [['', 'Todas', items.length]];
+    [...n.keys()].sort((x, y) => x.localeCompare(y, 'es')).forEach(k => out.push([k, k, n.get(k)]));
+    const sin = items.filter(a => !a.airline).length;
+    if (sin || st.aerolinea === SIN_AEROLINEA) out.push([SIN_AEROLINEA, 'Sin aerolínea', sin]);
+    return out;
+  }
+
+  function paintAirFilter() {
+    const sel = document.getElementById('tp-air-filter'); if (!sel) return;
+    const html = opcionesAerolinea().map(([v, label, c]) =>
+      `<option value="${esc(v)}"${v === st.aerolinea ? ' selected' : ''}>${esc(label)} (${c})</option>`).join('');
+    // Solo si cambió: rehacerlo mientras alguien lo tiene abierto lo cerraría.
+    if (sel.__tpHtml !== html) { sel.innerHTML = html; sel.__tpHtml = html; }
+    if (sel.value !== st.aerolinea) sel.value = st.aerolinea;
+    sel.disabled = !st.items;
+    const lab = sel.closest('.tp-airf'); if (lab) lab.classList.toggle('on', !!st.aerolinea);
   }
 
   function paint() {
     const root = document.getElementById('tp-body'); if (!root) return;
     const total = (st.items || []).length;
     const cnt = document.getElementById('tp-count'); if (cnt) cnt.textContent = total;
+    paintAirFilter();
 
     if (st.loading && !st.items) {
       root.innerHTML = `<div class="tp-empty">Cargando el padrón…</div>`;
@@ -133,7 +170,7 @@
         <span>Sin ella no se les puede calcular la antigüedad para las promociones.</span></div>
       </div>` : ''}
       ${l.length ? `<div class="tp-list">${l.map(fila).join('')}</div>`
-        : `<div class="tp-empty"><b>Nadie coincide con la búsqueda.</b></div>`}`;
+        : `<div class="tp-empty"><b>Nadie coincide con la búsqueda.</b>${st.aerolinea ? '<span>Revisa también el filtro de aerolínea.</span>' : ''}</div>`}`;
   }
 
   function fila(a) {
@@ -190,6 +227,7 @@
 
   // ---- Aerolíneas del desplegable ----
   function paintAirlines() {
+    paintAirFilter();   // una aerolínea nueva o apagada cambia el desplegable
     const box = document.getElementById('tp-air-box'); if (!box) return;
     if (!st.airOpen) { box.innerHTML = ''; box.classList.add('hidden'); return; }
     box.classList.remove('hidden');
@@ -252,6 +290,10 @@
         } catch (err) { toast('No se pudo cambiar la aerolínea.'); }
         return;
       }
+    });
+
+    ui.addEventListener('change', (e) => {
+      if (e.target.id === 'tp-air-filter') { st.aerolinea = e.target.value; return paint(); }
     });
 
     ui.addEventListener('input', (e) => {

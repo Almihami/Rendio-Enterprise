@@ -12,9 +12,11 @@
 // false no aparece nada en Inicio y el Perfil dice «Pronto» (lo pinta P7).
 //
 // Datos: SOLO lo que devuelve ApiPuntos (0091). Nada inventado:
-//   · la vitrina es aux_points_rewards (Directo sale «Pronto»: no existe el nivel);
+//   · la vitrina es aux_points_rewards, SIN el canje de Directo (kind
+//     'direct_trip'): ese nivel no existe y la dueña lo quitó el 12-oct-2026 (la
+//     base lo dejó apagado en 0103; aquí además no se pinta aunque llegue);
 //   · el héroe apunta al canje más barato que aún no alcanzas (nextReward), no a
-//     un «traslado Directo» fijo;
+//     un canje fijo;
 //   · el bono «3 de 4 · te falta 1 colega para un privado» NO existe como regla:
 //     su tarjeta queda como la entrada a Invitar, con lo real (cuántos se
 //     registraron con tu código y cuántos ya viajaron);
@@ -286,8 +288,10 @@
   // ════════════════════════════════════════════════════════════════════════
   const PT = { tab: 'use', moves: undefined, reds: undefined, movesReq: 0, movesBusy: false, busy: null, party: null, lastBal: undefined, host: null, partyT: null };
   const TABS = [['use', 'Canjear'], ['earn', 'Ganar'], ['log', 'Movimientos']];
-  const RW_IC = { colega: 'Users', directo: 'ArrowRight', mensual: 'Wallet', privado: 'Sparkle' };
-  const KIND_IC = { guest_seat: 'Users', direct_trip: 'ArrowRight', billing_days: 'Wallet', private_trip: 'Sparkle' };
+  const RW_IC = { colega: 'Users', mensual: 'Wallet', privado: 'Sparkle' };
+  const KIND_IC = { guest_seat: 'Users', billing_days: 'Wallet', private_trip: 'Sparkle' };
+  // Directo no existe (12-oct-2026): su canje no se pinta nunca, ni como «Pronto».
+  const notDirect = (r) => !!r && r.kind !== 'direct_trip' && r.id !== 'directo';
   const rwIcon = (r) => RW_IC[r.id] || KIND_IC[r.kind] || 'Gift';
 
   function heroHTML(s) {
@@ -317,7 +321,7 @@
       + (retry ? '<button type="button" data-rx="' + retry + '">Reintentar</button>' : '') + '</div>';
   }
   function useRows(bal) {
-    const list = Array.isArray(C.rewards) ? C.rewards.filter(r => r && (r.enabled || r.soon)).sort((a, z) => (a.sort || 0) - (z.sort || 0)) : C.rewards;
+    const list = Array.isArray(C.rewards) ? C.rewards.filter(r => notDirect(r) && (r.enabled || r.soon)).sort((a, z) => (a.sort || 0) - (z.sort || 0)) : C.rewards;
     if (list === undefined) return waitRow('w-use', 'Cargando la vitrina…');
     if (!list) return waitRow('w-use', C.err ? 'No pudimos cargar la vitrina.' : 'La vitrina todavía no está disponible.', C.err ? 'pts-retry' : '');
     if (!list.length) return waitRow('w-use', 'Por ahora no hay canjes en la vitrina.');

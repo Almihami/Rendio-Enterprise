@@ -962,7 +962,10 @@
       const lane = { id: `${car.id}·V${n}`, car: car.id, vuelta: n, type: v.type === 'lle' ? 'lle' : 'sal', start: hm(v.startAt), origin: null };
       if (lane.type === 'lle') { lane.origin = 'airport'; lane.landing = rtToHM(horaVuelta(ids)); }
       lanes.push(lane); order[lane.id] = ids;
+      // Arrancada = 'in_progress' o con paradas ya atendidas (nada en la app pasa una
+      // ruta a 'in_progress'; la que el conductor va haciendo sigue en 'planned').
       if (v.status === 'in_progress' || v.status === 'completed') fijas[lane.id] = v.status;
+      else if ((v.atendidas || []).length) fijas[lane.id] = 'in_progress';
       if (v.driverProfileId) {
         if (!(rt.drivers || []).some((d) => d.id === v.driverProfileId)) rt.drivers.push({ id: v.driverProfileId, n: v.conductor || 'Conductor', c: '#8895a7' });
         if (rtBandOf(lane) === 'am') car.driverAM = car.driverAM || v.driverProfileId;

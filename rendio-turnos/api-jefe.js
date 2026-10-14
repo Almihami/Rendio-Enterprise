@@ -20,6 +20,21 @@
 //       profiles.phone (0081 deja al usuario cambiar su teléfono) con la MISMA
 //       validación de acá; así el front se puede desplegar antes que la
 //       migración sin que la ventana del celular deje a nadie encerrado.
+//
+// «Olvidé mi contraseña» (0104, 12-oct-2026): no hay correo, así que el pedido
+// le llega a Coordinación, que pone una temporal con admin_set_password.
+//   Api.contactoParaClave(texto)       → { tipo: 'correo'|'celular', valor } | null
+//       (pura, sin red) Lo que acepta el login: un correo o un celular de 10
+//       dígitos que empiece por 3 (la misma regla de la base).
+//   Api.requestPasswordReset(texto)    → true
+//       RPC request_password_reset, SIN sesión (anon). La base responde lo
+//       mismo exista o no la cuenta: aquí no se sabe ni se dice si existe.
+//   Api.listPasswordResetRequests()    → [{ id, profileId, name, email, phone,
+//                                            role, contact, createdAt }]
+//       Los pendientes de la organización, el más nuevo primero. RLS: solo
+//       jefes. Sin 0104 en la base devuelve [] (Usuarios funciona igual).
+//   Api.resolvePasswordResetRequest(id, status)  → status ('done' | 'dismissed')
+//       Quién y cuándo lo sella la base (trigger de 0104).
 (function () {
   'use strict';
   const sb = () => window.sb;
@@ -88,8 +103,59 @@
     return norm;
   }
 
+  // ── «Olvidé mi contraseña» (0104) ──
+  function contactoParaClave(texto) {
+    const raw = String(texto == null ? '' : texto).trim();
+    if (!raw || raw.length > 254) return null;
+    if (raw.includes('@')) {
+      const v = raw.toLowerCase();
+      return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? { tipo: 'correo', valor: v } : null;
+    }
+    const cel = normalizarCelular(raw);
+    return cel ? { tipo: 'celular', valor: cel } : null;
+  }
+
+  async function requestPasswordReset(texto) {
+    const c = contactoParaClave(texto);
+    if (!c) throw new Error('Escribe el correo de tu cuenta o tu celular de 10 dígitos.');
+    const { error } = await sb().rpc('request_password_reset', { p_contact: c.valor });
+    if (error) throw error;
+    return true;
+  }
+
+  async function listPasswordResetRequests() {
+    const { data, error } = await sb().from('password_reset_requests')
+      .select('id, profile_id, contact, created_at, '
+        + 'profiles!password_reset_requests_profile_id_fkey(id, full_name, email, phone, role)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) { if (faltaEnLaBase(error)) return []; throw error; }
+    return (data || []).map(r => ({
+      id: r.id,
+      profileId: r.profile_id || null,
+      name: (r.profiles && r.profiles.full_name) || '',
+      email: (r.profiles && r.profiles.email) || '',
+      phone: (r.profiles && r.profiles.phone) || '',
+      role: (r.profiles && r.profiles.role) || '',
+      contact: r.contact || '',
+      createdAt: r.created_at || null,
+    }));
+  }
+
+  async function resolvePasswordResetRequest(id, status) {
+    if (!id) throw new Error('Falta el pedido.');
+    if (!['done', 'dismissed'].includes(status)) throw new Error('Estado desconocido: ' + status);
+    const { data, error } = await sb().from('password_reset_requests')
+      .update({ status }).eq('id', id).select('id, status').maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('Ese pedido ya no está o no es de tu organización.');
+    return data.status;
+  }
+
   // Se cuelga del window.Api de api.js (no lo reemplaza: Object.assign).
   Object.assign(window.Api, {
     getShiftTimes, profileNames, listMyShiftsForHours, normalizarCelular, setMyPhone,
+    contactoParaClave, requestPasswordReset, listPasswordResetRequests, resolvePasswordResetRequest,
   });
 })();

@@ -16,6 +16,12 @@
 // acciones se QUEDAN donde estaban (Personal, Tripulantes): esto es un acceso
 // más, no un traslado. Tampoco crea tripulantes: se registran solos (0075).
 //
+// SOLICITUDES DE CONTRASEÑA (0104, 12-oct-2026): quien no puede entrar la pide
+// desde el login («¿Problemas para entrar?») y aquí sale arriba, con
+// «Restablecer» (el mismo modal de siempre; al poner la temporal el pedido
+// queda hecho) y «Descartar». La base también lo cierra si la contraseña se
+// restablece desde Personal o Tripulantes.
+//
 // Módulo IIFE: solo exporta window.renderUsuarios y window.AdminUsuarios.
 (function () {
   'use strict';
@@ -25,6 +31,8 @@
     q: '', rol: 'todos', estado: 'todos',      // rol: todos|driver|admin|auxiliar · estado: todos|activo|suspendido|eliminado
     open: null,                                // id con el panel de acciones abierto
     busy: null,                                // id con una acción en curso
+    pw: [],                                    // pedidos de contraseña pendientes (0104)
+    pwBusy: null,                              // id del pedido que se está descartando
   };
 
   const esc = (s) => String(s == null ? '' : s)
@@ -56,16 +64,27 @@
   // ---- datos ----
   async function load() {
     st.loading = true; st.error = null; paint();
+    const pw = loadPw();
     try { st.items = await Api.listAllUsersForAdmin(); }
     catch (e) { st.items = null; st.error = (e && e.message) || 'error'; console.error(e); }
-    finally { st.loading = false; paint(); }
+    finally { await pw; st.loading = false; paint(); }
+  }
+
+  // Los pedidos de «Olvidé mi contraseña». Si fallan, la lista de cuentas sale
+  // igual: es un aviso de más, no lo principal de la pantalla.
+  async function loadPw() {
+    if (typeof Api.listPasswordResetRequests !== 'function') { st.pw = []; return; }
+    try { st.pw = await Api.listPasswordResetRequests(); }
+    catch (e) { console.error(e); }
   }
 
   // Después de cambiar a alguien: la lista de aquí y lo que el resto de la app
   // tiene en memoria (el generador de turnos y los avisos leen state.drivers /
   // state.admins), igual que hace refreshPeople en Personal.
   async function recargar() {
+    const pw = loadPw();
     try { st.items = await Api.listAllUsersForAdmin(); } catch (e) { console.error(e); }
+    await pw;
     try {
       if (typeof state !== 'undefined') {
         state.drivers = await Api.listDrivers();
@@ -106,27 +125,64 @@
   }
 
   // ---- pintar ----
+  // «Hace 5 min», «hace 2 h», «hace 3 días»: para saber cuánto lleva esperando.
+  function haceCuanto(iso) {
+    const t = iso ? new Date(iso).getTime() : NaN;
+    if (!isFinite(t)) return '';
+    const min = Math.max(0, Math.round((Date.now() - t) / 60000));
+    if (min < 1) return 'hace un momento';
+    if (min < 60) return `hace ${min} min`;
+    const h = Math.round(min / 60);
+    if (h < 24) return `hace ${h} h`;
+    const d = Math.round(h / 24);
+    return d === 1 ? 'hace 1 día' : `hace ${d} días`;
+  }
+
+  function solicitudesHTML() {
+    const l = st.pw || [];
+    if (!l.length) return '';
+    return `<div class="us-pw" role="region" aria-label="Solicitudes de contraseña">
+      <div class="us-pw-head">
+        <svg class="icon"><use href="#i-lock"/></svg>
+        <div><b>Solicitudes de contraseña <span class="us-pw-n">${l.length}</span></b>
+          <span>Pidieron una contraseña nueva desde la pantalla de entrada. Ponle una temporal y pásasela por WhatsApp o llamada: al entrar, la cambia.</span></div>
+      </div>
+      <div class="us-pw-list">${l.map(r => {
+        const quien = r.name || r.contact || 'Sin nombre';
+        const ocupado = st.pwBusy === r.id;
+        return `<div class="us-pw-row" data-pw="${esc(r.id)}">
+          <div class="us-pw-who"><b>${esc(quien)}</b><span>${r.name && r.contact ? esc(r.contact) + ' · ' : ''}${esc(haceCuanto(r.createdAt))}</span></div>
+          <div class="us-pw-acts">
+            ${r.profileId ? `<button class="us-btn primary sm" data-us="pw-reset" data-id="${esc(r.id)}" ${ocupado ? 'disabled' : ''}>Restablecer</button>` : ''}
+            <button class="us-btn ghost sm" data-us="pw-dismiss" data-id="${esc(r.id)}" ${ocupado ? 'disabled' : ''}>Descartar</button>
+          </div>
+        </div>`;
+      }).join('')}</div>
+    </div>`;
+  }
+
   function paint() {
     const root = document.getElementById('us-body'); if (!root) return;
     const cnt = document.getElementById('us-count');
     const todos = st.items || [];
     if (cnt) cnt.textContent = todos.filter(u => !u.deleted).length;
     paintFiltros();
+    const pw = solicitudesHTML();
 
-    if (st.loading && !st.items) { root.innerHTML = '<div class="us-empty">Cargando las cuentas…</div>'; return; }
+    if (st.loading && !st.items) { root.innerHTML = pw + '<div class="us-empty">Cargando las cuentas…</div>'; return; }
     if (!st.items) {
-      root.innerHTML = `<div class="us-empty"><b>No pudimos cargar los usuarios.</b>
+      root.innerHTML = pw + `<div class="us-empty"><b>No pudimos cargar los usuarios.</b>
         <span>${esc(st.error || 'Revisa la conexión.')}</span>
         <button class="us-btn ghost" data-us="reload">Reintentar</button></div>`;
       return;
     }
     const l = visibles();
     if (!l.length) {
-      root.innerHTML = `<div class="us-empty"><b>${todos.length ? 'Nadie coincide con la búsqueda.' : 'Todavía no hay cuentas.'}</b>
+      root.innerHTML = pw + `<div class="us-empty"><b>${todos.length ? 'Nadie coincide con la búsqueda.' : 'Todavía no hay cuentas.'}</b>
         ${todos.length ? '<span>Prueba con otro nombre, correo o teléfono, o quita los filtros.</span>' : ''}</div>`;
       return;
     }
-    root.innerHTML = `<div class="us-list" role="list">
+    root.innerHTML = pw + `<div class="us-list" role="list">
       <div class="us-head" aria-hidden="true"><span>Persona</span><span>Contacto</span><span>Rol</span><span>Estado</span><span></span></div>
       ${l.map(fila).join('')}</div>`;
   }
@@ -242,6 +298,30 @@
     }
   }
 
+  // ---- solicitudes de contraseña (0104) ----
+  // Restablecer: el modal de siempre; cuando la temporal queda puesta, el pedido
+  // pasa a hecho (la base también lo cierra sola por la bitácora de 0081).
+  function pwRestablecer(id) {
+    const r = (st.pw || []).find(x => x.id === id); if (!r || !r.profileId) return;
+    openRestablecerClave(r.profileId, r.name || r.contact, async () => {
+      try { await Api.resolvePasswordResetRequest(r.id, 'done'); } catch (e) { console.error(e); }
+      st.pw = (st.pw || []).filter(x => x.id !== r.id);
+      paint();
+      await recargar();   // la fila sale con «Clave temporal»
+    });
+  }
+  async function pwDescartar(id) {
+    const r = (st.pw || []).find(x => x.id === id); if (!r) return;
+    st.pwBusy = id; paint();
+    try {
+      await Api.resolvePasswordResetRequest(id, 'dismissed');
+      st.pw = (st.pw || []).filter(x => x.id !== id);
+      toast('Pedido descartado.');
+    } catch (e) {
+      alert('Error: ' + ((e && e.message) || 'no se pudo'));
+    } finally { st.pwBusy = null; paint(); }
+  }
+
   // ---- eventos (una sola vez, delegados) ----
   let bound = false;
   function bind() {
@@ -257,6 +337,8 @@
       if (k === 'estado') { st.estado = b.dataset.v; return paint(); }
       if (k === 'toggle') { st.open = st.open === b.dataset.id ? null : b.dataset.id; return paint(); }
       if (k === 'act') return accion(b.dataset.act, b.dataset.id);
+      if (k === 'pw-reset') return pwRestablecer(b.dataset.id);
+      if (k === 'pw-dismiss') return pwDescartar(b.dataset.id);
     });
     ui.addEventListener('input', (ev) => {
       if (ev.target.id === 'us-search') { st.q = ev.target.value; paint(); }

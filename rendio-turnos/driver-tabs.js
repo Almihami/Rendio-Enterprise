@@ -88,6 +88,11 @@
       if (window.Api && Api.listMyVueltasForDriver) vueltas = await Api.listMyVueltasForDriver(state.profile.id);
     } catch (e) { /* sin ruta: la sección simplemente no aparece */ }
     if (!vueltas || !vueltas.length) return;
+    // Si quedó una vuelta en curso (la app se cerró o se recargó), la ubicación vuelve
+    // a compartirse sin tener que entrar a la ruta (ruta v2, cambio 1 de la entrega).
+    if (window.DriverRutas && DriverRutas.background) DriverRutas.background(state.profile, vueltas);
+    // Llegó desde el aviso de un mensaje (#/viaje?r=…): abre ese chat en la ruta.
+    if (window.DriverRutas && DriverRutas.deepLink) DriverRutas.deepLink(state.profile);
 
     // La primera vuelta sin terminar lleva su «Iniciar ruta» aquí mismo: un toque
     // abre la ruta en ejecución y la base le avisa al primer tripulante (0097).

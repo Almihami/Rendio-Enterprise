@@ -10,6 +10,11 @@
 //      clave, ofrece restaurar si el correo es de un eliminado. Y que «Crear
 //      conductor» de Personal sigue funcionando con la pieza compartida.
 //   5. Lo cableado: index.html, sw.js, core.js y el CSS responsive.
+//   6. Solicitudes de contraseña (0104): el banner arriba con el conteo, quién
+//      y hace cuánto; «Restablecer» abre el modal de siempre y al poner la
+//      temporal marca el pedido «done»; «Descartar» lo marca «dismissed»; sin
+//      persona solo se ofrece descartar; si la lista de pedidos falla, la de
+//      cuentas sale igual. Y el enlace del push (#/usuarios) en core.js.
 //
 //   cd rendio-backend/scripts && node _smoke-usuarios-seccion-dom.mjs
 import { JSDOM } from 'jsdom';
@@ -64,6 +69,10 @@ function montar({ conModulo = true } = {}) {
     listAdmins: async () => { reg('listAdmins', []); return []; },
     listDeletedProfiles: async () => { reg('listDeletedProfiles', []); return [{ id: 'u-carlos', full_name: 'Carlos Viejo', email: 'carlos@rendio.co', role: 'driver' }]; },
     createDriver: async (b) => { reg('createDriver', [b]); if (w.__dup) throw new Error('Ya existe un usuario con ese email'); return { id: 'u-nuevo', email: b.email }; },
+    // 0104: pedidos de «Olvidé mi contraseña» (w.__pw; vacío = no hay banner).
+    listPasswordResetRequests: async () => { reg('listPasswordResetRequests', []); if (w.__fallaPw) throw new Error('sin 0104'); return JSON.parse(JSON.stringify(w.__pw || [])); },
+    resolvePasswordResetRequest: async (...a) => { reg('resolvePasswordResetRequest', a); if (w.__fallaResolver) throw new Error('no se pudo');
+      w.__pw = (w.__pw || []).filter((r) => r.id !== a[0]); return a[1]; },
   };
   w.eval(read('usuarios.js'));
   if (conModulo) w.eval(read('admin-usuarios.js'));
@@ -302,6 +311,62 @@ t('core.js: setTab pinta Usuarios (con typeof)', /name === 'usuarios' && typeof 
 t('CSS: por debajo de 1180 px (menú lateral + tabla no caben) la fila se vuelve tarjeta', /@media \(max-width: 1180px\)[\s\S]*\.us-head \{ display: none; \}/.test(css));
 t('CSS: en celular, botones del tamaño de un dedo y buscador a 16 px (sin zoom en iPhone)', /@media \(max-width: 768px\)[\s\S]*min-height: 44px[\s\S]*font-size: 16px/.test(css));
 t('CSS: todo scopeado a #usuarios-ui', css.split('\n').filter((l) => /^[^\s/*@}].*\{/.test(l)).every((l) => l.startsWith('#usuarios-ui')));
+
+// ───────────────────────────────────────────────────────────────────────────
+console.log('\n6 · Solicitudes de contraseña (0104)');
+{
+  const t0 = Date.now();
+  const hace = (min) => new Date(t0 - min * 60000).toISOString();
+  const E = montar();
+  E.w.__pw = [
+    { id: 'pr-1', profileId: 'u-maria', name: 'María Ángel Gómez', email: 'maria@avianca.com', phone: '3159998877', role: 'auxiliar', contact: '3159998877', createdAt: hace(5) },
+    { id: 'pr-2', profileId: 'u-jose', name: 'José Pérez', email: 'jose@rendio.co', phone: '', role: 'driver', contact: 'jose@rendio.co', createdAt: hace(3 * 60) },
+    { id: 'pr-3', profileId: null, name: '', email: '', phone: '', role: '', contact: 'alguien@x.co', createdAt: hace(2 * 24 * 60) },
+  ];
+  E.w.renderUsuarios(); await esperaMucho();
+  const ban = () => E.d.querySelector('#us-body .us-pw');
+  const fila = (id) => E.d.querySelector(`#us-body .us-pw-row[data-pw="${id}"]`);
+  t('pide los pedidos al entrar', E.log.calls.some((c) => c[0] === 'listPasswordResetRequests'));
+  t('banner arriba de la lista: «Solicitudes de contraseña (3)»', !!ban() && E.d.querySelector('#us-body').firstElementChild === ban()
+    && /Solicitudes de contraseña/.test(ban().textContent) && ban().querySelector('.us-pw-n').textContent === '3');
+  t('cada pedido: el nombre, el contacto y hace cuánto', /María Ángel Gómez/.test(fila('pr-1').textContent) && /3159998877 · hace 5 min/.test(fila('pr-1').textContent)
+    && /hace 3 h/.test(fila('pr-2').textContent), fila('pr-1').textContent.replace(/\s+/g, ' '));
+  t('sin persona: el contacto, «hace 2 días» y solo «Descartar»', /alguien@x\.co/.test(fila('pr-3').textContent) && /hace 2 días/.test(fila('pr-3').textContent)
+    && !fila('pr-3').querySelector('[data-us="pw-reset"]') && !!fila('pr-3').querySelector('[data-us="pw-dismiss"]'));
+  t('la lista de cuentas sigue debajo (las 8)', E.d.querySelectorAll('#us-body .us-row').length === 8);
+  fila('pr-1').querySelector('[data-us="pw-reset"]').click();
+  await esperaMucho();
+  const modal = E.d.getElementById('usr-pw-modal');
+  t('«Restablecer» abre el modal de siempre con su nombre', modal && /María Ángel Gómez/.test(modal.textContent));
+  t('…y abrirlo todavía no marca nada', !E.log.calls.some((c) => c[0] === 'resolvePasswordResetRequest'));
+  modal.querySelector('[data-usr="save"]').click();
+  await esperaMucho(); await esperaMucho();
+  const setPw = E.log.calls.find((c) => c[0] === 'adminSetPassword');
+  const res1 = E.log.calls.find((c) => c[0] === 'resolvePasswordResetRequest');
+  t('al poner la temporal: adminSetPassword a ESA persona y el pedido «done»', setPw && setPw[1] === 'u-maria' && res1 && res1[1] === 'pr-1' && res1[2] === 'done', JSON.stringify([setPw, res1]));
+  t('…el modal muestra la contraseña (la de siempre) y el banner baja a 2', /No se vuelve a mostrar/.test(E.d.getElementById('usr-pw-modal').textContent)
+    && !fila('pr-1') && ban().querySelector('.us-pw-n').textContent === '2');
+  E.d.getElementById('usr-pw-modal')?.remove();
+  E.log.calls.length = 0;
+  fila('pr-3').querySelector('[data-us="pw-dismiss"]').click();
+  await esperaMucho();
+  const res3 = E.log.calls.find((c) => c[0] === 'resolvePasswordResetRequest');
+  t('«Descartar» lo marca «dismissed» y sale del banner', res3 && res3[1] === 'pr-3' && res3[2] === 'dismissed' && !fila('pr-3') && E.log.toasts.includes('Pedido descartado.'), JSON.stringify(res3));
+  E.w.__fallaResolver = true;
+  fila('pr-2').querySelector('[data-us="pw-dismiss"]').click();
+  await esperaMucho();
+  t('si descartar falla, lo dice y el pedido se queda', E.log.alerts.some((a) => /no se pudo/.test(a)) && !!fila('pr-2') && !fila('pr-2').querySelector('[disabled]'));
+  E.w.__fallaResolver = false;
+  fila('pr-2').querySelector('[data-us="pw-dismiss"]').click();
+  await esperaMucho();
+  t('sin pedidos, el banner desaparece', !ban());
+  const F = montar();
+  F.w.console.error = () => {};
+  F.w.__fallaPw = true;
+  F.w.renderUsuarios(); await esperaMucho();
+  t('si la lista de pedidos falla (p. ej. sin 0104), las cuentas salen igual y sin banner', F.d.querySelectorAll('#us-body .us-row').length === 8 && !F.d.querySelector('#us-body .us-pw'));
+  t('core.js: el push de 0104 (#/usuarios) abre Usuarios', /m\[1\] === 'usuarios' && typeof window\.renderUsuarios === 'function' \? 'usuarios'/.test(core));
+}
 
 console.log(`\n${ok} ✓ · ${bad} ✗`);
 console.log('NO cubre: el layout real (jsdom no hace layout: que la tarjeta no se desborde a 360 px o que los');

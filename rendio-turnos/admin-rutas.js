@@ -1450,11 +1450,15 @@
     try {
       const firma = rtFirmaPlan();
       const r = await Api.saveRoutePlan(rt.day, lanes);
-      rt.firmaPublicada = firma;
-      result = { ok: true, saved: r.saved, skipped: r.skipped, kept: r.kept, withDriver, lanes: lanes.length };
-      say(withDriver
-        ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado)${r.kept ? ` · ${r.kept} paradas ya en curso quedaron intactas` : ''}. Los conductores ya lo ven.`
-        : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.`);
+      // Si alguna vuelta no entró, el plan NO queda como publicado: el botón sigue
+      // pidiendo publicar y el jefe lo ve (antes se contaba en silencio como «skipped»).
+      if (!r.failed) rt.firmaPublicada = firma;
+      result = { ok: !r.failed, saved: r.saved, skipped: r.skipped, kept: r.kept, failed: r.failed, withDriver, lanes: lanes.length };
+      say(r.failed
+        ? `Ojo: ${r.failed} ${r.failed === 1 ? 'vuelta no se pudo guardar' : 'vueltas no se pudieron guardar'} (${r.failMsg || 'error de la base'}). Se publicaron ${r.saved}. Vuelve a publicar.`
+        : withDriver
+          ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado)${r.kept ? ` · ${r.kept} paradas ya en curso quedaron intactas` : ''}. Los conductores ya lo ven.`
+          : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.`);
       // Push a los auxiliares cuya asignación CAMBIÓ de verdad. Antes se le
       // avisaba a todos en cada republicación, así que quien ya tenía conductor
       // recibía "Conductor asignado 🚗" otra vez — y a quien SÍ le cambiaron el
@@ -1481,12 +1485,14 @@
       // Push "ruta asignada" al CONDUCTOR de cada vuelta con conductor. Su
       // driverProfileId aquí es el id de PERFIL (lo que indexa las suscripciones
       // push), no el de driver_profiles. Best-effort, igual que el de arriba.
+      // Solo a los conductores que reciben algo NUEVO (antes le llegaba a todos en cada
+      // republicación). La ruta se ve en Inicio con o sin turno iniciado.
       try {
-        const driverIds = [...new Set(lanes.map(l => l.driverProfileId).filter(Boolean))];
+        const driverIds = [...new Set((r.notify || []).map(n => n.driverProfileId).filter(Boolean))];
         if (driverIds.length && Api.sendPush) await Api.sendPush({
           profileIds: driverIds,
           title: 'Ruta asignada 🗺️',
-          body: 'Se te asignó una ruta de traslados para tu turno. La verás al iniciar tu turno.',
+          body: 'Tienes vueltas nuevas en tu ruta. Ábrela en Inicio › Tu día.',
           url: '/',
         });
       } catch (_) {}

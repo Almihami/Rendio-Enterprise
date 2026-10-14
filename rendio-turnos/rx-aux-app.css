@@ -618,3 +618,11 @@
 #auxiliar-ui.rx-phone .rx-noanim .rx-sheet-bg.out .rx-sheet,#auxiliar-ui.rx-phone .rx-sheet-bg.out.rx-noanim .rx-sheet,#auxiliar-ui.rx-phone .rx-sheet-bg.out .rx-sheet.rx-noanim{animation-duration:1ms;animation-delay:0s}
 }
 /* END noanim (generado) */
+
+/* El visto (rxDraw «forwards» desde stroke-dashoffset:151) quedaba INVISIBLE en una
+   pantalla repintada con .rx-noanim: bajo .rx-noanim va ya dibujado (su estado final).
+   Hallado al portar la ruta del conductor v2 (12-oct-2026; mismo arreglo allá). */
+#auxiliar-ui.rx-phone .rx-noanim .rx-check circle,
+#auxiliar-ui.rx-phone .rx-noanim .rx-check polyline{ stroke-dashoffset:0; }
+#auxiliar-ui.rx-phone .rx-noanim .rx-anim .rx-check circle{ stroke-dashoffset:151; }
+#auxiliar-ui.rx-phone .rx-noanim .rx-anim .rx-check polyline{ stroke-dashoffset:36; }

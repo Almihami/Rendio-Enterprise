@@ -61,6 +61,14 @@
 //     cuántos viajes cobró y cada línea de viajes extra que trajo de un cobro
 //     anterior (s.extras): una cuenta pagada ya no queda sin explicar.
 //
+// TRASLADO PRIVADO (0103, decisión de la dueña del 12-oct): un privado APROBADO
+// se cobra en la cuenta de cobro. La base lo trae como una línea más de
+// cur.extras con kind 'private' y su etiqueta («Traslado privado · 24 de oct ·
+// $50.000»), ya sumada al monto. Aquí: esa línea en «Este mes» (con el icono de
+// Select), los que todavía no entran en ninguna cuenta (acc.extrasPending.private:
+// «Se suma a una próxima cuenta de cobro») y, en el Historial, una fila por
+// privado cobrado. Sin calcular nada.
+//
 // Acciones data-rx propias (prefijo pg-): pg-view, pg-how, pg-copy, pg-hist,
 // pg-upload, pg-retry, pg-up-back, pg-up-close, pg-up-via, pg-up-cam, pg-up-gal,
 // pg-up-retake, pg-up-next, pg-up-send, pg-up-done, pg-vac, pg-vac-per,
@@ -429,11 +437,31 @@
       + '<div class="rx-group cb2-in" style="--d:' + d + '" data-pg="vac">' + row + '</div>'
       + (vacCountsHTML(vi) ? '<div class="cb2-in" style="--d:' + d + '" data-pg="vac">' + vacCountsHTML(vi) + '</div>' : '');
   }
-  // Las líneas «Viajes extra de vacaciones de octubre: 2 × $20.000 = $40.000»
-  // que trae la cuenta de cobro (ya van dentro del monto).
+  // Las líneas que trae la cuenta de cobro (ya van dentro del monto): «Viajes
+  // extra de vacaciones de octubre: 2 × $20.000 = $40.000» y, desde 0103, cada
+  // «Traslado privado · 24 de oct · $50.000» (kind 'private').
   function extrasLinesHTML(cur, d) {
     const xs = isObj(cur) && Array.isArray(cur.extras) ? cur.extras.filter(x => isObj(x) && x.label) : [];
-    return xs.map(x => '<div class="cb2-hint cb2-in" style="--d:' + d + '" data-pg="extras">' + ic('Sun', 15) + '<span>' + esc(x.label) + '. Va incluido en este cobro.</span></div>').join('');
+    return xs.map(x => {
+      const priv = x.kind === 'private';
+      return '<div class="cb2-hint cb2-in" style="--d:' + d + '" data-pg="extras"' + (priv ? ' data-pg-x="private"' : '') + '>'
+        + ic(priv ? 'Sparkle' : 'Sun', 15) + '<span>' + esc(x.label) + '. Va incluido en este cobro.</span></div>';
+    }).join('');
+  }
+  // Privados aprobados que todavía no entran en ninguna cuenta (viaje de un mes
+  // que no ha abierto, o aprobado con la cuenta de su mes ya pagada o vencida):
+  // aux_billing_my_account.extrasPending.private. null sin dato o sin nada.
+  function privPending() {
+    const acc = S.acc;
+    const x = isObj(acc) && isObj(acc.extrasPending) && isObj(acc.extrasPending.private) ? acc.extrasPending.private : null;
+    const amt = x ? num(x.amountCOP) : null;
+    if (!amt) return null;
+    return { amountCOP: amt, items: Array.isArray(x.items) ? x.items.filter(i => isObj(i) && i.label) : [] };
+  }
+  function privPendHTML(d) {
+    const pp = privPending(); if (!pp) return '';
+    return pp.items.map(x => '<div class="cb2-hint cb2-in" style="--d:' + d + '" data-pg="ppend" data-pg-x="private">' + ic('Sparkle', 15)
+      + '<span>' + esc(x.label) + '. Se suma a una próxima cuenta de cobro.</span></div>').join('');
   }
   // Sin vacaciones en este cobro pero con viajes de más pendientes (de un cobro
   // anterior): se dice cuánto entra en el próximo.
@@ -861,7 +889,8 @@
     if (f.next) h += '<div class="cb2-hint cb2-in" style="--d:1" data-pg="next">' + ic('Info', 15) + '<span>Desde ' + esc(monthName(m.dates.nextCut) || 'el próximo corte') + ' tu mensualidad será ' + esc(money(f.next)) + '.</span></div>';
     if (f.disc) h += '<div class="cb2-hint cb2-in" style="--d:1" data-pg="disc">' + ic('Info', 15) + '<span>Este mes tiene un descuento de ' + esc(money(f.disc.n)) + (f.disc.note ? ' · ' + esc(f.disc.note) : '') + '.</span></div>';
     // 30-sep: los viajes extra de vacaciones de un cobro anterior que trae, y lo que entra en el próximo.
-    h += extrasLinesHTML(m.cur, 1) + pendHintHTML(1);
+    // 0103: también los traslados privados (los de esta cuenta y los que esperan una).
+    h += extrasLinesHTML(m.cur, 1) + pendHintHTML(1) + privPendHTML(1);
     if (f.tracker) {
       h += '<div class="cb2-lbl cb2-in" style="--d:2" data-pg="trk">Tu comprobante</div>'
         + '<div class="cb2-card cb2-in" style="--d:2" data-pg="trk">' + trkHTML(trkOf(m))
@@ -889,6 +918,12 @@
     const vt = num(s.vacationTrips);
     if (s.modality === 'vacaciones' && vt != null) rows.push(['Vacaciones', pl(vt, 'viaje cobrado', 'viajes cobrados')]);
     (Array.isArray(s.extras) ? s.extras.filter(isObj) : []).forEach(x => {
+      // 0103: un traslado privado cobrado en esta cuenta.
+      if (x.kind === 'private') {
+        const pa = num(x.amountCOP);
+        rows.push(['Traslado privado', [fmtDay(x.tripOn), pa != null ? money(pa) : ''].filter(Boolean).join(' · ') || String(x.label || '—')]);
+        return;
+      }
       const tr = num(x.trips), per = num(x.perTripCOP), amt = num(x.amountCOP);
       const mes = monthName(x.sourcePeriodStart);
       if (mes && tr != null && per != null && amt != null) rows.push(['Viajes extra de vacaciones de ' + mes, tr + ' × ' + money(per) + ' = ' + money(amt)]);
@@ -952,7 +987,7 @@
       const amt = num(acc.amountCOP);
       const when = acc.nextCut ? 'Tu primera cuenta de cobro llega el ' + fmtDay(acc.nextCut) + '.' : 'Todavía no se abrió tu primera cuenta de cobro.';
       return '<div class="rx-empty">' + ic('FileText', 26) + '<b>' + esc(amt ? 'Tu mensualidad: ' + money(amt) : 'Tu mensualidad está registrada') + '</b><span>' + esc(when) + '</span></div>'
-        + vacSecHTML(1);
+        + privPendHTML(1) + vacSecHTML(1);
     }
     return '<div class="rx-empty">' + ic('Wallet', 26) + '<b>Todavía no tienes mensualidad registrada</b><span>Cuando Coordinación la cargue, aquí vas a ver tu cuenta del mes y cómo pagarla.</span></div>';
   }
@@ -976,7 +1011,7 @@
     const f = payFlags(m);
     return JSON.stringify(['mes', !!f.next && f.next, f.disc, f.tracker, m.sim.comp === 'rejected' && !m.sim.paid, !m.sim.paid && howHTML(m),
       f.fab, tlOf(m.sim, m.cfg, m.dates).nodes.map(n => n.l + n.date + n.left), monthLabel(m.dates.start), vacSecHTML(4),
-      extrasLinesHTML(m.cur, 1), pendHintHTML(1)]);
+      extrasLinesHTML(m.cur, 1), pendHintHTML(1), privPendHTML(1)]);
   }
 
   function payRoot(ctx) {
@@ -988,7 +1023,7 @@
   function secsOf(m) {
     if (m.kind !== 'ok' || P.view !== 'mes') return null;
     const f = payFlags(m);
-    return [f.next && 'next', f.disc && 'disc', !!extrasLinesHTML(m.cur, 1) && 'extras', !!pendHintHTML(1) && 'xpend',
+    return [f.next && 'next', f.disc && 'disc', !!extrasLinesHTML(m.cur, 1) && 'extras', !!pendHintHTML(1) && 'xpend', !!privPendHTML(1) && 'ppend',
       f.tracker && 'trk', !m.sim.paid && 'how', !!vacSecHTML(4) && 'vac'].filter(Boolean);
   }
   function remember() { const m = model(); P.kind = m.kind; P.last = payHTML(m); P.shape = shapeOf(m); P.secs = secsOf(m); return m; }

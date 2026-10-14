@@ -142,6 +142,9 @@
     settings: null,       // ajustes (ventana/plazo de inicio diferido)
     noFuelReasons: [],    // catálogo de motivos de "no pude tanquear" (0077)
     completing: false,    // completando la inspección diferida de un turno activo
+    luegoCerrar: false,   // …y al guardarla sigue el cierre del turno (plazo «al cerrar», 0105)
+    cierrePendiente: null, // el turno que se cierra después de esa inspección
+    fastAlCerrar: false,  // el inicio rápido que acaba de arrancar quedó con plazo «al cerrar»
   };
 
   function newCloseState() {
@@ -305,6 +308,23 @@
     if (sf._timer) { clearInterval(sf._timer); sf._timer = null; }
   }
 
+  // ¿Con qué regla arrancó ESTE turno? (0105) La guarda la base en el turno
+  // (shifts.inspection_at_close), no en Ajustes: si el jefe cambia el modo con
+  // gente en ruta, cada uno sigue con la regla que se le dijo al arrancar.
+  // getMyOpenShift no trae la columna, así que se pregunta aparte, y solo cuando
+  // hay una inspección pendiente. Base sin 0105 → minutos (lo de siempre). Si la
+  // pregunta no sale (sin señal), lo que diga Ajustes hoy es la mejor apuesta.
+  async function leerInspAlCerrar(shift) {
+    if (!shift || !shift.inspection_due_at) return false;
+    if (shift.inspection_at_close != null) return !!shift.inspection_at_close;
+    try {
+      const { data, error } = await window.sb.from('shifts').select('inspection_at_close').eq('id', shift.id).maybeSingle();
+      if (!error) return !!(data && data.inspection_at_close);
+      if (/inspection_at_close|42703|does not exist/i.test(`${error.code || ''} ${error.message || ''}`)) return false;
+    } catch (_) { /* sin cliente o sin red: abajo */ }
+    return plazoAlCerrar();
+  }
+
   // ====================================================================
   // Card en el home del conductor
   // ====================================================================
@@ -354,8 +374,21 @@
 
     if (open && (open.status === 'active' || open.status === 'closing')) {
       sf.activeShift = open;
+      open.inspection_at_close = await leerInspAlCerrar(open);
       const v = open.vehicles || {};
       const since = new Date(open.start_at).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
+      // Plazo «al cerrar» (0105): sin cuenta regresiva ni amenaza; un recordatorio.
+      const notaInsp = !open.inspection_due_at ? ''
+        : open.inspection_at_close ? `<div class="rc-hero-note">
+          <b>${avIcon('moon', 14)} Inspección pendiente: la haces al cerrar el turno</b>
+          <p>Cuando toques «Cerrar turno», la app te la pide primero. Si prefieres, hazla ya.</p>
+          <button id="sf-do-insp" type="button">Hacer inspección ahora</button>
+        </div>`
+        : `<div class="rc-hero-note">
+          <b>${avIcon('clock', 14)} Inspección pendiente <span id="sf-insp-left">${fmtInspLeft(open.inspection_due_at)}</span></b>
+          <p>Hazla antes de que se venza o será un strike.</p>
+          <button id="sf-do-insp" type="button">Hacer inspección ahora</button>
+        </div>`;
       // Tarjeta del rediseño 2026-08-16 (rc-tabs.jsx · TabInicio, estado "en curso").
       box.innerHTML = `<div class="rc-hero live rc-in d1">
         <div class="rc-hero-top">
@@ -364,17 +397,13 @@
         </div>
         <div class="rc-hero-t">Turno en curso</div>
         <div class="rc-hero-s">Inició ${since} · <span id="sf-elapsed">${fmtElapsed(open.start_at)}</span> en ruta${v.internal_code || v.license_plate ? ' · ' + esc(v.internal_code || v.license_plate) : ''}</div>
-        ${open.inspection_due_at ? `<div class="rc-hero-note">
-          <b>${avIcon('clock', 14)} Inspección pendiente <span id="sf-insp-left">${fmtInspLeft(open.inspection_due_at)}</span></b>
-          <p>Hazla antes de que se venza o será un strike.</p>
-          <button id="sf-do-insp" type="button">Hacer inspección ahora</button>
-        </div>` : ''}
+        ${notaInsp}
         <button id="sf-route-btn" class="rc-hero-btn" type="button"
           style="background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.32)">Ruta · Trayectos de hoy</button>
         <button id="sf-close-btn" class="rc-hero-btn" type="button">Cerrar turno</button>
       </div>`;
       startElapsedTimer(open.start_at);
-      $('#sf-close-btn').addEventListener('click', () => openClose(open));
+      $('#sf-close-btn').addEventListener('click', () => onCerrarTurno(open));
       $('#sf-do-insp')?.addEventListener('click', () => openCompletion(open));
       $('#sf-route-btn')?.addEventListener('click', () => { if (window.DriverRutas) DriverRutas.open(sf.profile); });
       return;
@@ -403,6 +432,7 @@
   async function openWizard() {
     sf.step = 0;
     sf.completing = false;   // inicio normal (no es completar una inspección diferida)
+    sf.luegoCerrar = false; sf.cierrePendiente = null;
     // Si el conductor retoma un draft, preselecciona el vehículo que ya reservó.
     sf.vehicleId = sf.myReservedVehicleId || null;
     sf.checklist = {};
@@ -472,13 +502,17 @@
     // Restaura la barra inferior si estaba visible antes de abrir el wizard.
     if (sf._navWasShown) document.getElementById('driver-nav')?.classList.add('show');
     sf._navWasShown = false;
+    sf.luegoCerrar = false; sf.cierrePendiente = null;   // 0105: la inspección «al cerrar» terminó o se dejó
   }
 
   function tryExit() {
     const hasProgress = sf.vehicleId || Object.keys(sf.checklist).length || Object.keys(sf.photos).length;
     // Ya no se pierde nada al salir: el avance queda guardado en el teléfono y lo
     // recupera al volver. Decirle "se pierde el avance" sería mentirle.
-    if (sf.done || !hasProgress || confirm('¿Salir del inicio de turno? Tu avance queda guardado y lo retomas al volver.')) {
+    const pregunta = sf.luegoCerrar
+      ? '¿Salir? Tu avance queda guardado; la inspección te la pedimos otra vez al tocar «Cerrar turno».'
+      : '¿Salir del inicio de turno? Tu avance queda guardado y lo retomas al volver.';
+    if (sf.done || !hasProgress || confirm(pregunta)) {
       closeWizard();
       renderCard();
     }
@@ -488,12 +522,17 @@
     if (sf.step === 0 || (sf.completing && sf.step === 1)) { tryExit(); return; }
     sf.step -= 1;
     if (sf.corta && (sf.step === 1 || sf.step === 2)) sf.step = 0; // la corta no tiene checklist ni fotos
+    if (sf.luegoCerrar && sf.step === 3) sf.step = 2;               // al cerrar no se pide el km (ver goNext)
     render();
   }
 
   function goNext() {
     sf.step += 1;
     if (sf.corta && (sf.step === 1 || sf.step === 2)) sf.step = 3;
+    // Inspección «al cerrar» (0105): el km de apertura ya quedó al arrancar y el
+    // de cierre se pide enseguida en el cierre. Preguntarle aquí «kilometraje
+    // inicial» a la 1 a. m. invita a teclear el de cierre en la inspección inicial.
+    if (sf.luegoCerrar && sf.step === 3) sf.step = 4;
     render();
   }
 
@@ -540,6 +579,8 @@
   // ---------- chrome compartido ----------
 
   function headerHtml(eyebrow, title, subtitle) {
+    // La inspección «al cerrar» (0105) usa los mismos pasos: que no diga «Inicio de turno».
+    if (sf.luegoCerrar) eyebrow = String(eyebrow).replace(/^Inicio de turno/, 'Antes de cerrar el turno');
     return `<div class="px-5 pt-4 pb-2" style="padding-top:calc(16px + env(safe-area-inset-top));">
       <div class="flex items-center justify-between mb-3">
         <button id="sf-back" class="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 active:scale-95 transition" aria-label="Atrás">
@@ -704,8 +745,11 @@
     if (!(Date.now() - meta.cuando < BD_VALIDO_H * 3600e3)) { bdBorrarBorrador(); return false; }
     if (!meta.vehicleId) return false;
     // openWizard es siempre el inicio normal; un borrador de "completar inspección
-    // diferida" es otro flujo (el turno ya está activo) y no se restaura acá.
-    if (meta.completing) return false;
+    // diferida" es otro flujo (el turno ya está activo) y no se restaura acá. Y
+    // si openWizard abrió, ese turno ya no está abierto: el borrador sobra. Se
+    // borra, para que sus fotos no se cuelen en el próximo borrador (0105: la
+    // inspección al cerrar el turno hace este camino mucho más común).
+    if (meta.completing) { bdBorrarBorrador(); return false; }
     // El vehículo del borrador tiene que seguir siendo suyo (o estar libre).
     const v = (sf.vehicles || []).find(x => x.id === meta.vehicleId);
     if (!v) { bdBorrarBorrador(); return false; }
@@ -734,6 +778,31 @@
     sf.step = 0;
     const tomadas = Object.keys(sf.photos).length;
     return tomadas > 0 || Object.keys(sf.checklist).length > 0;
+  }
+
+  // Lo mismo para completar una inspección diferida (0105): la de «al cerrar el
+  // turno» se hace de noche, con 11 fotos, y una recarga no puede botarla. Solo
+  // si el borrador es de ESTE turno y ESTE carro; uno de otro turno sobra. Solo
+  // las fotos que el borrador declara (meta.slots): ninguna de otro intento.
+  async function restaurarAvanceCompletar(shift) {
+    const { meta, fotos } = await bdLeerTodo();
+    if (!meta || !meta.completing || meta.driverId !== sf.driverId) return false;
+    if (meta.shiftId !== shift.id || meta.vehicleId !== shift.vehicle_id
+        || !(Date.now() - meta.cuando < BD_VALIDO_H * 3600e3)) { bdBorrarBorrador(); return false; }
+    sf.checklist = meta.checklist || {};
+    sf.note = meta.note || '';
+    sf.severity = meta.severity || null;
+    sf.isApt = meta.isApt !== false;
+    sf.photos = {};
+    for (const slot of (Array.isArray(meta.slots) ? meta.slots : [])) {
+      const blob = fotos[slot];
+      if (slot !== '__extras__' && blob) sf.photos[slot] = { blob, url: URL.createObjectURL(blob), size: blob.size };
+    }
+    const extras = fotos.__extras__;
+    sf.extraPhotos = Array.isArray(extras)
+      ? extras.filter(Boolean).slice(0, meta.extras || 0).map(b => ({ blob: b, url: URL.createObjectURL(b), size: b.size }))
+      : [];
+    return Object.keys(sf.photos).length > 0 || Object.keys(sf.checklist).length > 0;
   }
 
   function render() {
@@ -987,7 +1056,7 @@
         Continuar a inspección →
       </button>${fastStartEligible() ? `
       <button id="sf-fast" class="w-full mt-2 bg-white border-2 border-brand text-brand-700 text-sm font-bold py-3 rounded-xl active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none" ${sf.vehicleId ? '' : 'disabled'}>⚡ Iniciar ahora · inspección después</button>
-      <p class="text-[11px] text-slate-400 text-center mt-1.5">Cambio de turno apurado: arranca ya y haz la inspección dentro del plazo.</p>` : ''}`
+      <p class="text-[11px] text-slate-400 text-center mt-1.5">${plazoAlCerrar() ? 'Cambio de turno apurado: arranca ya y haz la inspección al cerrar el turno.' : 'Cambio de turno apurado: arranca ya y haz la inspección dentro del plazo.'}</p>` : ''}`
     );
     bindChrome();
     wiz.querySelectorAll('[data-vehicle]').forEach(btn => {
@@ -1501,8 +1570,10 @@
 
     wiz.innerHTML = shellHtml(
       `Inicio de turno · Paso 6 de ${TOTAL_STEPS}`,
-      'Confirma e inicia',
-      blocked ? 'Marcaste NO APTO: el turno no se inicia y el vehículo queda en revisión.' : 'Revisa el resumen, marca el estado y firma para arrancar.',
+      sf.luegoCerrar ? 'Confirma la inspección' : 'Confirma e inicia',
+      sf.luegoCerrar
+        ? (blocked ? 'Marcaste NO APTO: queda registrado para el administrador. Después sigue el cierre.' : 'Revisa el resumen, marca el estado y firma. Después sigue el cierre del turno.')
+        : blocked ? 'Marcaste NO APTO: el turno no se inicia y el vehículo queda en revisión.' : 'Revisa el resumen, marca el estado y firma para arrancar.',
       `<div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-card">
         ${row('🚗', 'Vehículo', `${esc(v.internal_code || v.license_plate)} · ${esc([v.brand, v.model].filter(Boolean).join(' '))}`, 'ok')}
         ${row('✓', 'Inspección', issues.length ? `${ckItems.length - issues.length} OK · ${issues.length} con novedad` : `${ckItems.length} de ${ckItems.length} OK`, issues.length ? 'warn' : 'ok')}
@@ -1520,7 +1591,7 @@
       <p id="sf-save-state" class="text-sm text-slate-500 mt-3 text-center"></p>`,
       blocked
         ? `<button id="sf-confirm" class="w-full bg-rose-600 text-white text-base font-bold py-3.5 rounded-xl hover:bg-rose-700 active:scale-[0.99] transition disabled:opacity-40 disabled:pointer-events-none" ${sf.signed ? '' : 'disabled'}>${sf.completing ? 'Registrar NO APTO' : 'Registrar NO APTO y suspender'}</button>`
-        : `<button id="sf-confirm" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${sf.signed ? '' : 'disabled'}>${sf.completing ? '✓ Guardar inspección' : '⚡ Iniciar turno'}</button>`
+        : `<button id="sf-confirm" class="w-full bg-brand text-white text-base font-bold py-3.5 rounded-xl hover:bg-brand-600 active:scale-[0.99] transition shadow-brand disabled:opacity-40 disabled:pointer-events-none" ${sf.signed ? '' : 'disabled'}>${sf.luegoCerrar ? '✓ Guardar y seguir al cierre' : sf.completing ? '✓ Guardar inspección' : '⚡ Iniciar turno'}</button>`
     );
     bindChrome();
     wiz.querySelectorAll('[data-apt]').forEach(btn => {
@@ -1558,6 +1629,9 @@
   function notasInspeccion() {
     const partes = [];
     if (sf.corta) partes.push(`Relevo propio (doble turno): mismo carro, cerró hace ${sf.corta.min} min. Inspección corta, sin checklist ni fotos.`);
+    // Para el que la revise: la foto del tablero va a mostrar el km de cierre, no
+    // el de apertura que lleva esta inspección (0105).
+    if (sf.luegoCerrar) partes.push('Inspección diferida, hecha al cerrar el turno: la foto del tablero muestra el km de cierre.');
     if (sf.note && sf.note.trim()) partes.push(sf.note.trim());
     if (sf.kmAviso) partes.push(sf.kmAviso);
     const docs = docsVencidosConstancia(sf.vehicleId);
@@ -1826,21 +1900,29 @@
     if (d === 'aborted') {
       icon = '⚠'; iconCls = 'bg-rose-100 text-rose-600'; title = 'Turno suspendido';
       body = 'La novedad quedó registrada y el vehículo pasó a revisión. El admin te indicará cómo proceder.'; btnCls = 'bg-ink text-white';
+    } else if (d === 'deferred' && sf.fastAlCerrar) {
+      // Plazo «al cerrar» (0105): sin hora límite ni amenaza; lo que va a pasar.
+      icon = '🌙'; iconCls = 'bg-brand-50 text-brand-600'; title = '¡En ruta! Inspección al cerrar';
+      body = `Iniciaste con el ${veh}. La inspección la haces al cerrar el turno: cuando toques «Cerrar turno», la app te la pide primero.`; btnCls = 'bg-brand text-white shadow-brand';
     } else if (d === 'deferred') {
       icon = '⚡'; iconCls = 'bg-amber-100 text-amber-600'; title = '¡En ruta! Inspección pendiente';
       body = `Iniciaste con el ${veh}.${dueTime ? ` Tienes hasta las ${dueTime} para hacer la inspección` : ' Haz la inspección dentro del plazo'} — hazla desde la tarjeta del turno. Si no, será un strike.`; btnCls = 'bg-brand text-white shadow-brand';
     } else if (d === 'completed') {
       icon = '✓'; iconCls = 'bg-emerald-100 text-emerald-600'; title = 'Inspección lista';
-      body = 'Tu inspección quedó registrada. Sigue tu turno con tranquilidad.'; btnCls = 'bg-brand text-white shadow-brand';
+      body = sf.luegoCerrar ? 'Tu inspección quedó registrada. Ahora sigue el cierre del turno.' : 'Tu inspección quedó registrada. Sigue tu turno con tranquilidad.'; btnCls = 'bg-brand text-white shadow-brand';
     } else if (d === 'completed-noapt') {
       icon = '⚠'; iconCls = 'bg-rose-100 text-rose-600'; title = 'Inspección registrada · NO APTO';
-      body = 'Registramos el vehículo como NO APTO. El administrador queda notificado; detén la operación según te indique.'; btnCls = 'bg-ink text-white';
+      body = sf.luegoCerrar
+        ? 'Registramos el vehículo como NO APTO y el administrador queda notificado. Ahora cierra el turno.'
+        : 'Registramos el vehículo como NO APTO. El administrador queda notificado; detén la operación según te indique.'; btnCls = 'bg-ink text-white';
     } else {
       icon = '✓'; iconCls = 'bg-brand-50 text-brand-600'; title = '¡Listo, en ruta!';
       body = `Turno activo con el ${veh} desde ${fmtKm(sf.km)} km. Maneja con calma.`; btnCls = 'bg-brand text-white shadow-brand';
     }
-    // Con el turno activo, el siguiente paso natural es VER LA RUTA DEL DÍA.
-    const activeTurno = !(d === 'aborted' || d === 'completed-noapt');
+    // Con el turno activo, el siguiente paso natural es VER LA RUTA DEL DÍA. Si la
+    // inspección venía de «Cerrar turno» (0105), el siguiente paso es el cierre.
+    const sigueCierre = !!(sf.luegoCerrar && sf.cierrePendiente && (d === 'completed' || d === 'completed-noapt'));
+    const activeTurno = !sigueCierre && !(d === 'aborted' || d === 'completed-noapt');
     // Aviso honesto: el turno quedó bien, pero alguna foto no subió. Antes esto no
     // podía pasar porque un fallo de foto tumbaba el turno entero; ahora el turno
     // se salva y lo que hay que decir es exactamente qué faltó.
@@ -1854,20 +1936,35 @@
       <h1 class="text-2xl font-extrabold text-ink">${title}</h1>
       <p class="text-[15px] text-slate-500 mt-2 leading-relaxed max-w-xs">${body}</p>
       ${avisoFotos}
-      ${activeTurno ? `<button id="sf-route-btn" class="mt-8 w-full max-w-xs px-6 py-3.5 rounded-xl bg-brand text-white font-extrabold shadow-brand active:scale-[0.98] transition flex items-center justify-center gap-2"><span>🧭</span>Ver mi ruta del día</button>
+      ${sigueCierre ? `<button id="sf-close-next" class="mt-8 w-full max-w-xs px-6 py-3.5 rounded-xl bg-brand text-white font-extrabold shadow-brand active:scale-[0.98] transition">Seguir con el cierre →</button>
+      <button id="sf-done-btn" class="mt-3 px-6 py-2.5 text-slate-500 font-semibold">Volver al inicio</button>`
+      : activeTurno ? `<button id="sf-route-btn" class="mt-8 w-full max-w-xs px-6 py-3.5 rounded-xl bg-brand text-white font-extrabold shadow-brand active:scale-[0.98] transition flex items-center justify-center gap-2"><span>🧭</span>Ver mi ruta del día</button>
       <button id="sf-done-btn" class="mt-3 px-6 py-2.5 text-slate-500 font-semibold">Volver al inicio</button>`
       : `<button id="sf-done-btn" class="mt-8 px-6 py-3 rounded-xl ${btnCls} font-bold active:scale-[0.98] transition">Volver al inicio</button>`}
     </div>`;
-    const cleanup = () => {
+    const soltarFotos = () => {
       Object.values(sf.photos).forEach(p => p && p.url && URL.revokeObjectURL(p.url));
       sf.photos = {};
       sf.extraPhotos.forEach(p => p && p.url && URL.revokeObjectURL(p.url));
       sf.extraPhotos = [];
       sf.completing = false;
+    };
+    const cleanup = () => {
+      soltarFotos();
       closeWizard();
       renderCard();
     };
     $('#sf-done-btn').addEventListener('click', cleanup);
+    // Del final de la inspección al cierre, sin pasar por la tarjeta. El turno ya
+    // no tiene la inspección pendiente: openClose sigue como siempre.
+    $('#sf-close-next')?.addEventListener('click', () => {
+      const turno = { ...sf.cierrePendiente, inspection_due_at: null };
+      const navEra = sf._navWasShown;   // openClose lo recalcula con la barra ya oculta
+      soltarFotos();
+      sf.luegoCerrar = false; sf.cierrePendiente = null; sf.done = null;
+      openClose(turno);
+      sf._navWasShown = navEra || sf._navWasShown;
+    });
     $('#sf-route-btn')?.addEventListener('click', () => {
       cleanup();
       if (window.DriverRutas) DriverRutas.open(sf.profile);
@@ -1877,6 +1974,30 @@
   // ====================================================================
   // Cierre de turno (Etapa 2)
   // ====================================================================
+
+  // «Cerrar turno» con la inspección diferida pendiente y plazo «al cerrar»
+  // (0105): primero la MISMA inspección de siempre (openCompletion) y, al
+  // guardarla, el cierre normal (renderDone → «Seguir con el cierre»). Si la app
+  // se recarga a mitad de camino, la tarjeta vuelve a decir «pendiente» y este
+  // botón vuelve a pedirla, con el avance guardado en el teléfono. Con plazo en
+  // minutos el cierre sigue como siempre.
+  let _abriendoCierre = false;
+  async function onCerrarTurno(shift) {
+    if (_abriendoCierre) return;
+    if (shift.inspection_due_at && shift.inspection_at_close) {
+      _abriendoCierre = true;
+      // ¿Ya la hizo y lo que faltó fue limpiar la marca (se cayó la señal justo
+      // después de guardarla)? Entonces no se le pide dos veces: directo al cierre.
+      let hecha = null;
+      try { hecha = await Api.getExistingInitialInspectionId(shift.id); } catch (_) { hecha = null; }
+      _abriendoCierre = false;
+      if (!hecha) { openCompletion(shift, { luegoCerrar: true }); return; }
+      try { await Api.clearInspectionDue(shift.id); } catch (_) { /* el cron igual la ve hecha */ }
+      shift.inspection_due_at = null;
+    }
+    openClose(shift);
+  }
+
   function openClose(shift) {
     stopElapsedTimer();
     sf.activeShift = shift;
@@ -2354,12 +2475,27 @@
     const m = Number(min) || 90;
     return m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}` : `${m} min`;
   }
+  // Plazo de la inspección diferida según Ajustes (0105): 'shift_close' = al
+  // cerrar el turno. Sin la migración no viene y es en minutos, como siempre.
+  function plazoAlCerrar() { return !!(sf.settings && sf.settings.fast_start_deadline === 'shift_close'); }
+  // La franja: «desde» entra, «hasta» no. Si «hasta» es menor, cruza la
+  // medianoche (14 a 2 = de 2 p.m. a 1:59 a.m.); iguales = vacía. La misma cuenta
+  // que fast_start_window_open (0105), que es la que manda.
+  function enFranja(h, from, to) {
+    if (from < to) return h >= from && h < to;
+    if (from > to) return h >= from || h < to;
+    return false;
+  }
   function fastStartEligible() {
     const s = sf.settings; if (!s || s.fast_start_enabled === false) return false;
-    const from = s.fast_start_from_hour != null ? s.fast_start_from_hour : 12;
-    const to = s.fast_start_to_hour != null ? s.fast_start_to_hour : 16;
-    const h = new Date().getHours();          // hora del dispositivo (el servidor revalida)
-    return h >= from && h < to;
+    const from = s.fast_start_from_hour != null ? Number(s.fast_start_from_hour) : 12;
+    const to = s.fast_start_to_hour != null ? Number(s.fast_start_to_hour) : 16;
+    // Hora de Colombia, la misma con que revalida el servidor (no la del teléfono,
+    // que puede tener otra zona horaria).
+    let h = new Date().getHours();
+    try { h = Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/Bogota' }).format(new Date())) % 24; }
+    catch (_) { /* sin Intl: la del dispositivo */ }
+    return enFranja(h, from, to);
   }
 
   async function onFastStart() {
@@ -2381,6 +2517,8 @@
   function renderFastKm() {
     const wiz = $('#shift-wizard'); const v = selectedVehicle() || {};
     const grace = fmtGrace(sf.settings && sf.settings.inspection_grace_minutes);
+    // Plazo «al cerrar» (0105): un recordatorio tranquilo en vez de la cuenta del plazo.
+    const alCerrar = plazoAlCerrar();
     // La nota de vencidos (0095). Su hueco queda aunque esté vacía (oculto, para
     // no sumar el espacio de space-y): si los documentos llegan tarde, entra ahí.
     const docsNota = docsNotaHtml(sf.vehicleId);
@@ -2391,14 +2529,16 @@
           <span class="text-[11px] font-bold uppercase tracking-wider text-brand-600">Inicio rápido</span><span class="w-9"></span>
         </div>
         <h1 class="text-2xl font-extrabold text-ink leading-tight">Iniciar ahora</h1>
-        <p class="text-sm text-slate-500 mt-1">${esc(v.internal_code || v.license_plate || 'Vehículo')} · la inspección la haces en ${esc(grace)}.</p>
+        <p class="text-sm text-slate-500 mt-1">${esc(v.internal_code || v.license_plate || 'Vehículo')} · la inspección la haces ${alCerrar ? 'al cerrar el turno' : `en ${esc(grace)}`}.</p>
       </div>
       <div class="flex-1 px-5 py-3 space-y-4">
         <div class="rounded-2xl bg-white border border-slate-200 p-4">
           <label class="block text-[13px] font-bold text-slate-500 mb-2">Kilometraje de salida</label>
           <div class="flex items-baseline gap-1"><input id="fk-km" type="tel" inputmode="numeric" placeholder="Ej: 128.450" value="${sf.km ? Number(sf.km).toLocaleString('es-CO') : ''}" class="w-full text-2xl font-extrabold text-ink bg-transparent focus:outline-none placeholder:text-slate-300 tabular-nums border-b-2 border-brand-200 focus:border-brand-500"><span class="text-sm font-bold text-slate-400">km</span></div>
         </div>
-        <div class="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-2.5 text-[12.5px] text-amber-800 flex gap-2"><span>⏳</span><span>Tendrás <b>${esc(grace)}</b> para hacer la inspección. Si no la haces a tiempo, será un strike.</span></div>
+        ${alCerrar
+          ? `<div id="fk-plazo" class="rounded-xl bg-brand-50 border border-brand-200 px-3.5 py-2.5 text-[12.5px] text-brand-800 flex gap-2"><span>🌙</span><span>La inspección la haces <b>al cerrar el turno</b>: cuando toques «Cerrar turno», la app te la pide primero. Si el turno se cierra sin ella, será un strike.</span></div>`
+          : `<div id="fk-plazo" class="rounded-xl bg-amber-50 border border-amber-300 px-3.5 py-2.5 text-[12.5px] text-amber-800 flex gap-2"><span>⏳</span><span>Tendrás <b>${esc(grace)}</b> para hacer la inspección. Si no la haces a tiempo, será un strike.</span></div>`}
         <div id="fk-docs-slot"${docsNota ? '' : ' hidden'}>${docsNota}</div>
       </div>
       <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-5 py-3 z-10" style="padding-bottom:calc(12px + env(safe-area-inset-bottom));">
@@ -2429,6 +2569,8 @@
       const res = await Api.startShiftDeferred(sf.reuseShiftId, km);
       sf.reuseShiftId = null; sf.saving = false;
       sf.fastDue = res && res.inspection_due_at;
+      // Lo que diga el servidor manda (0105): si no trae el campo, es en minutos.
+      sf.fastAlCerrar = !!(res && res.inspection_at_close);
       sf.done = 'deferred';
       render();
       // Con el turno ya en ruta: la constancia del aviso, para que el admin la vea
@@ -2458,15 +2600,34 @@
   }
 
   // Completar la inspección de un turno que arrancó diferido (turno ya activo).
-  async function openCompletion(shift) {
+  // opts.luegoCerrar: viene de «Cerrar turno» con plazo «al cerrar» (0105); al
+  // guardarla sigue el cierre.
+  async function openCompletion(shift, opts = {}) {
     stopElapsedTimer();
     sf.completing = true;
+    sf.luegoCerrar = !!opts.luegoCerrar;
+    sf.cierrePendiente = sf.luegoCerrar ? shift : null;
     sf.reuseShiftId = shift.id;
     sf.km = String(shift.opening_km || '');
     const vv = shift.vehicles || {};
-    sf.vehicles = [{ id: shift.vehicle_id, internal_code: vv.internal_code, license_plate: vv.license_plate, brand: vv.brand, model: vv.model }];
+    // current_km = el kilometraje con el que arrancó el turno: el paso del km lo usa de
+    // referencia. Sin él comparaba contra 0 y decía «⚠ +40.000 km… ¿Estás seguro?».
+    const kmRef = shift.opening_km != null ? Number(shift.opening_km) : (vv.current_km != null ? Number(vv.current_km) : null);
+    sf.vehicles = [{ id: shift.vehicle_id, internal_code: vv.internal_code, license_plate: vv.license_plate, brand: vv.brand, model: vv.model, current_km: kmRef }];
     sf.vehicleId = shift.vehicle_id;
     sf.checklist = {}; sf.photos = {}; sf.extraPhotos = []; sf.severity = null; sf.note = ''; sf.isApt = true; sf.signed = false; sf.saving = false; sf.done = null;
+    // Lo que pudo quedar de un inicio anterior en esta misma página: con secured
+    // en true el borrador no se guardaría, y una «corta» saltaría las fotos.
+    sf.secured = false; sf.fotosFallidas = []; sf.corta = null; _ultimoGuardado = '';
+    // ¿Se murió la app a mitad de ESTA inspección? Se le devuelve el avance.
+    try {
+      if (await restaurarAvanceCompletar(shift)) {
+        const n = Object.keys(sf.photos).length;
+        sfToast(n
+          ? `Recuperamos tu avance: ${n} foto${n === 1 ? '' : 's'} y el checklist. Sigue donde ibas.`
+          : 'Recuperamos tu avance. Sigue donde ibas.');
+      }
+    } catch (e) { /* sin borrador recuperable: arranca limpio */ }
     // El km de apertura ya pasó por el aviso cuando arrancó el turno: se da por
     // avisado ese número. Si acá lo cambia, el aviso vuelve a preguntar.
     sf.kmAvisado = Number(sf.km) || null; sf.kmAviso = null;

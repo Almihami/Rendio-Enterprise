@@ -530,7 +530,9 @@
       : m[1] === 'reservas' ? 'reservas'
       : m[1] === 'coordinacion' && typeof window.renderCoordinacion === 'function' ? 'coordinacion'
       : m[1] === 'cobro' && typeof window.renderCobro === 'function' ? 'cobro'
-      : m[1] === 'puntos' && typeof window.renderPuntos === 'function' ? 'puntos' : null;
+      : m[1] === 'puntos' && typeof window.renderPuntos === 'function' ? 'puntos'
+      // 0104: «Pidieron restablecer una contraseña» abre Usuarios (la solicitud sale arriba).
+      : m[1] === 'usuarios' && typeof window.renderUsuarios === 'function' ? 'usuarios' : null;
     if (!tab) return false;
     const params = new URLSearchParams(m[2] || '');
     const ev = params.get('ev');

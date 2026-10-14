@@ -6,9 +6,10 @@
 // vehículo dedicado — la camioneta —, no se agrupa con nadie, tiene tarifa y lo
 // aprueba un jefe antes de comprometerse.
 //
-// EL NIVEL "DIRECTO" NO ESTÁ, y no es un olvido: la operación no lo ha definido
-// (decisión de la profa, 2026-08-17). Cuando se defina, entra como una tarjeta
-// más en el paso y una etiqueta más en el enum de 0069.
+// EL NIVEL "DIRECTO" NO EXISTE. Hasta el 12-oct-2026 salía como tarjeta
+// apagada «Pronto»; la dueña lo quitó de todas partes (pedido, Perfil, Puntos).
+// Si algún día se define, entra como una tarjeta más en levelsHTML y una
+// etiqueta más en el enum de 0069.
 //
 // TRES REGLAS DEL BRIEF QUE ESTE ARCHIVO NO PUEDE ROMPER
 //  1. El compartido NUNCA se ve castigado. No es "el básico": es el servicio
@@ -38,17 +39,16 @@
 // como condicional. Cuando la operación logre que la gente instale la PWA, el
 // texto sigue siendo cierto — solo que además suena.
 //
-// LO QUE NO SE COBRA AQUÍ
-// No hay checkout, ni medio de pago, ni recibo. El cobro se liquida por fuera:
-// Rendio no tiene ninguna tabla de cobros y media pasarela no le sirve a nadie.
-// Decisión de la profa, 2026-08-17.
-//
-// Y DESDE EL 17-sep-2026 LA CIFRA TAMPOCO SE MUESTRA (profa). El número que
-// había en Ajustes nunca fue una tarifa acordada —era un valor provisional— y
-// una cifra en la pantalla del tripulante se lee como precio pactado. Lo que sí
-// se dice, porque callarlo sería peor, es que el privado TIENE COSTO y que la
-// tarifa se la confirma coordinación antes de aprobarlo. El número sigue en
-// Ajustes y en la cola del jefe: lo que se quitó es la vitrina, no el dato.
+// EL PRECIO Y EL COBRO (12-oct-2026, decisiones de la dueña · 0103)
+// Entre el 17-sep y el 12-oct la cifra estuvo escondida: el número de Ajustes
+// era provisional y en pantalla se leía como precio pactado. Ya no: la tarifa
+// quedó en $ 50.000 por trayecto y se MUESTRA donde se ofrece o se resume el
+// privado (tarjeta del nivel, portada, franja del resumen, estado del viaje),
+// siempre leída de Ajustes (price()), nunca escrita aquí. Y SE COBRA: al
+// aprobarlo Coordinación, la base suma la línea «Traslado privado» a la cuenta
+// de cobro del tripulante (la del mes del viaje); si se rechaza o se cancela,
+// sale sola. Sigue sin haber checkout ni pasarela en la app: se paga con la
+// cuenta de cobro de siempre (Pagos).
 
 (function () {
   'use strict';
@@ -104,6 +104,16 @@
   // tarjeta se enciende y se puede pedir, sin tocar una línea de código.
   const primicia = () => !enabled();
   const price = () => cfg().aux_private_price_cop || null;
+  // La tarifa vigente ya formateada («$ 50.000»), o null si Ajustes no trae.
+  const priceText = () => money(price());
+  // Lo que el tripulante tiene que saber del cobro (0103): cuánto y cuándo entra
+  // a su cuenta. `v` = un precio congelado (el de una reserva); sin él, la tarifa.
+  function chargeText(v) {
+    const m = money(v != null ? v : price());
+    return m ? m + ' · se suma a tu cuenta de cobro cuando Coordinación lo apruebe' : '';
+  }
+  // En primicia, si ya hay tarifa, se dice cuánto va a costar (se ve, no se pide).
+  const soonPriceText = () => (priceText() ? 'Costará ' + priceText() + ' por trayecto' : '');
 
   // ── Estado del cupo ───────────────────────────────────────────────────────
   // null = no se ha preguntado · 'libre' · 'ocupada' · 'error'
@@ -220,10 +230,12 @@
           <span class="axp-lvl-ic"><svg class="icon"><use href="#i-van"/></svg></span>
           <span class="axp-lvl-t">
             ${eyebrow('Rendio Select', 'lt')}
-            <span class="axp-lvl-row"><b class="axp-lvl-name">Privado</b><span class="axp-lvl-price">${prev ? 'Pronto' : 'Con costo'}</span></span>
+            <span class="axp-lvl-row"><b class="axp-lvl-name">Privado</b><span class="axp-lvl-price">${prev ? 'Pronto' : esc(priceText())}</span></span>
             <span class="axp-lvl-tag">La camioneta es solo tuya</span>
             ${lista(INCLUYE.map(x => x.t))}
-            <span class="axp-lvl-pnote">${prev ? 'Te lo mostramos antes de tenerlo listo' : 'Coordinación te confirma la tarifa'}</span>
+            <span class="axp-lvl-pnote">${prev
+              ? esc([soonPriceText(), 'Te lo mostramos antes de tenerlo listo'].filter(Boolean).join(' · '))
+              : 'Por trayecto · se suma a tu cuenta de cobro cuando Coordinación lo apruebe'}</span>
           </span>
           ${sel === 'private' ? `<span class="axp-lvl-chk">${chulo()}</span>` : ''}
         </span>
@@ -301,7 +313,8 @@
       <div class="axp-foot">
         <div class="axp-fare-note">${prev
           ? 'Todavía no se puede pedir: estamos terminando de montarlo. Cuando esté, aparece aquí mismo.'
-          : 'Tiene costo. Coordinación te confirma la tarifa antes de aprobarlo, y no se cobra en la app.'}</div>
+            + (soonPriceText() ? ' ' + esc(soonPriceText()) + '.' : '')
+          : esc(priceText()) + ' por trayecto. Se suma a tu cuenta de cobro cuando Coordinación lo apruebe; si no se puede, no se cobra nada.'}</div>
         <button class="axp-btn" data-ax="lvl-choose"${(ocupada || prev) ? ' disabled' : ''}>${
           prev ? 'Muy pronto' : ocupada ? 'Comprometida a esa hora' : 'Pedir en privado'}</button>
         <button class="axp-btn ghost" data-ax="lvl-close">Volver</button>
@@ -310,8 +323,8 @@
 
   // ── La franja del resumen ─────────────────────────────────────────────────
   // Debajo de la tarjeta «Revisa y confirma» cuando se eligió el privado. Dice
-  // las tres cosas que el tripulante tiene que saber antes de tocar el botón:
-  // cuánto, quién lo confirma y que aquí no se cobra. Vacío en compartido.
+  // lo que el tripulante tiene que saber antes de tocar el botón: cuánto, quién
+  // lo confirma y que entra a su cuenta de cobro al aprobarse. Vacío en compartido.
   function sumHTML(f) {
     if (!f || f.level !== 'private' || !enabled()) return '';
     if (shellOn()) return rxSumHTML(f);
@@ -319,13 +332,23 @@
       <div class="axp-sum-vip">
         ${eyebrow('Rendio Select', 'lt')}
         <b>La camioneta, solo para ti</b>
-        <span>Coordinación confirma la camioneta y la tarifa · no se cobra en la app</span>
+        <span>${esc(chargeText())}</span>
       </div>`;
   }
 
   // ── El estado de la solicitud, dentro del viaje ───────────────────────────
   // Se pinta en el detalle del traslado. Es lo que responde "¿me lo aprobaron?"
-  // sin que el auxiliar tenga que preguntarle a nadie.
+  // sin que el auxiliar tenga que preguntarle a nadie. Con el precio CONGELADO
+  // de esa reserva (t.price); sin él, la tarifa vigente.
+  function statusBody(t) {
+    const m = money(t && t.price != null ? t.price : price());
+    if (t.privateStatus === 'approved') {
+      return 'La camioneta es tuya para este trayecto.' + (m ? ' Se suman ' + m + ' a tu cuenta de cobro.' : '');
+    }
+    return 'Coordinación está revisando si la camioneta está libre a esa hora.'
+      + (m ? ' Si lo aprueba, se suman ' + m + ' a tu cuenta de cobro.' : '')
+      + ' Vuelve a esta pantalla para ver la respuesta.';
+  }
   function statusHTML(t) {
     if (!t || t.level !== 'private' || !t.privateStatus) return '';
     if (shellOn()) return rxStatusHTML(t);
@@ -333,14 +356,14 @@
       return `<div class="axp-st wait">
         <span class="axp-st-ic"><svg class="icon"><use href="#i-clock"/></svg></span>
         <div><b>Privado · esperando confirmación</b>
-        <span>Coordinación está revisando si la camioneta está libre a esa hora. Vuelve a esta pantalla para ver la respuesta.</span></div>
+        <span>${esc(statusBody(t))}</span></div>
       </div>`;
     }
     if (t.privateStatus === 'approved') {
       return `<div class="axp-st ok">
         <span class="axp-st-ic"><svg class="icon"><use href="#i-check"/></svg></span>
         <div><b>Privado confirmado</b>
-        <span>La camioneta es tuya para este trayecto.</span></div>
+        <span>${esc(statusBody(t))}</span></div>
       </div>`;
     }
     return `<div class="axp-st no">
@@ -368,8 +391,9 @@
   // `--d` de la entrada escalonada (.rx-in) y los mismos nodos que React
   // mantiene (el radio <i> transiciona al elegir; syncLevels lo respeta).
   // Lo que el diseño inventaba y aquí NO sale (plan §1.6):
-  //   · «$ XX.XXX» → Privado «Con costo» + «Coordinación te confirma la tarifa»;
-  //     Directo «Pronto», apagado (D1, D2). Ninguna cifra en pantalla.
+  //   · «$ XX.XXX» → desde el 12-oct-2026 la tarifa REAL de Ajustes ($ 50.000)
+  //     + «se suma a tu cuenta de cobro cuando Coordinación lo apruebe» (0103).
+  //     Directo ya no sale (la dueña lo quitó el 12-oct).
   //   · el kit de confort y el pilar de la temperatura → fuera; los pilares
   //     salen de INCLUYE (D3).
   //   · «En silencio» → interruptor «Prefiero silencio» (quietRide) (D4).
@@ -420,7 +444,8 @@
       + `</button>`;
   }
 
-  // Las tres tarjetas del nivel (RX_LEVELS del diseño, con los datos reales).
+  // Las tarjetas del nivel (RX_LEVELS del diseño, con los datos reales):
+  // Compartido y Privado · Select. Directo se quitó (12-oct-2026).
   //   mode 'book'  → el paso «nivel» del pedido: data-ax="lvl" (auxiliar.js),
   //                  «Ver qué incluye» (lvl-info), el interruptor «Prefiero
   //                  silencio» y las notas. `f` = auxState.form.
@@ -453,16 +478,6 @@
       inc: ['Ruta agrupada por sector', 'Paradas en el camino'],
       attrs: `${pick('shared')} ${pressed('shared')}`,
     });
-    // Directo: la operación no lo ha definido (D2). Se ve, apagado, «Pronto»,
-    // sin acción: tocarlo no hace nada. Sin reglas inventadas (el «máximo 1
-    // acompañante» del diseño no está decidido) ni cupos.
-    const directo = lvCard({
-      id: 'direct', d: 1, tone: 'h2a', ic: 'ArrowRight', off: true,
-      name: 'Directo', price: 'Pronto', tag: 'Sin desvíos: llegas antes',
-      inc: ['Va derecho a tu destino'],
-      cupo: 'Todavía no se puede pedir', cupoCls: 'off',
-      attrs: 'aria-disabled="true"',
-    });
     // Privado · Select. Comprometida: `.off` + aria-disabled, NUNCA el atributo
     // `disabled` (el navegador tampoco despacharía el clic de «Ver qué
     // incluye»); auxiliar.js ignora el toque sobre una tarjeta `.off`.
@@ -470,13 +485,16 @@
     let privAttrs;
     if (prev) privAttrs = book ? 'data-ax="lvl-info" data-v="private" aria-disabled="true"' : 'aria-disabled="true"';
     else privAttrs = `${pick('private')} ${pressed('private')}${ocupada ? ' aria-disabled="true"' : ''}`;
+    // El precio: la tarifa de Ajustes (price()); en primicia sigue diciendo
+    // «Pronto», pero la nota ya dice cuánto va a costar si hay tarifa.
     const privado = lvCard({
-      id: 'private', d: 2, tone: 'plus', ic: 'Sparkle', vip: true, on: sel === 'private',
+      id: 'private', d: 1, tone: 'plus', ic: 'Sparkle', vip: true, on: sel === 'private',
       off: ocupada, prim: prev,
-      name: 'Privado · Select', price: prev ? 'Pronto' : 'Con costo',
+      name: 'Privado · Select', price: prev ? 'Pronto' : (priceText() || ''),
       tag: 'La camioneta es solo tuya',
       inc: INCLUYE.map(x => x.t),
-      pn: prev ? 'Te lo mostramos antes de tenerlo listo' : 'Coordinación te confirma la tarifa',
+      pn: prev ? [soonPriceText(), 'Te lo mostramos antes de tenerlo listo'].filter(Boolean).join(' · ')
+        : 'Por trayecto · se suma a tu cuenta de cobro cuando Coordinación lo apruebe',
       cupo: prev ? 'Todavía no se puede pedir' : (book ? availText() : ''),
       cupoCls: cupoCls(),
       // En el pedido abre la portada SOBRE el pedido (lvl-info → vista
@@ -486,7 +504,7 @@
       attrs: privAttrs,
     });
 
-    const cards = compartido + directo + privado;
+    const cards = compartido + privado;
     if (!book) return `<div class="rx-lvls" data-mode="${esc(mode)}">${cards}</div>`;
     return `<div class="rx-lvls" data-mode="book">${cards}</div>`
       + `<div class="rx-lvls-x">${levelsExtraHTML(f || {}, { sel, prev, dudoso })}</div>`;
@@ -508,7 +526,7 @@
       // conductor lo ve en su ruta. Mismo contrato y mismo marcado que los
       // demás interruptores del pedido (AuxRxPedir.toggleHTML de P5):
       // data-ax="toggle" data-key="quietRide".
-      out.push(`<div class="rx-card rx-in rx-lv-quiet" style="--d:3" data-rx-key="quiet">${quietToggleHTML(!!f.quietRide)}</div>`);
+      out.push(`<div class="rx-card rx-in rx-lv-quiet" style="--d:2" data-rx-key="quiet">${quietToggleHTML(!!f.quietRide)}</div>`);
       out.push(`<div class="rx-note" data-rx-key="lv-aprob">${rxIc('Clock', 15)}<span><b>Lo tiene que aprobar coordinación.</b> Es un vehículo dedicado, así que un jefe lo confirma antes. La respuesta la ves aquí mismo, en tu traslado. Si no se puede, sales en compartido y no se cobra nada.</span></div>`);
     }
     if (k.prev) {
@@ -615,9 +633,10 @@
     // tiene que saber antes de pedirlo, con la misma entrada escalonada.
     const como = prev
       ? ['Todavía no se puede pedir: estamos terminando de montarlo. Cuando esté, aparece aquí mismo.',
-        'Hay una sola camioneta: cuando abra, un jefe confirma cada solicitud y, si no se puede, tu traslado sale en compartido.']
+        soonPriceText() ? soonPriceText() + ', y se sumará a tu cuenta de cobro cuando Coordinación lo apruebe.' : '',
+        'Hay una sola camioneta: cuando abra, un jefe confirma cada solicitud y, si no se puede, tu traslado sale en compartido.'].filter(Boolean)
       : ['Hay una sola camioneta: no siempre está disponible, depende de la hora que necesites.',
-        'Tiene costo. Coordinación te confirma la tarifa antes de aprobarlo, y no se cobra en la app.',
+        priceText() + ' por trayecto: se suma a tu cuenta de cobro cuando Coordinación lo apruebe.',
         'Si no se puede, tu traslado sale en compartido y no se cobra nada.'];
     const n = INCLUYE.length;
     const comoHTML = `<div class="rx-sel-how rx-in" style="--d:${n}"><span class="rx-sel-l">${prev ? 'Muy pronto' : 'Cómo funciona'}</span>`
@@ -673,7 +692,7 @@
     return `<div class="rx-sel-sum">`
       + `<span class="rx-sel-e">Rendio Select</span>`
       + `<b>La camioneta, solo para ti</b>`
-      + `<span>Coordinación confirma la camioneta y la tarifa · no se cobra en la app</span>`
+      + `<span>${esc(chargeText())}</span>`
       + (f && f.quietRide ? `<span>Pediste silencio: tu conductor lo ve en su ruta.</span>` : '')
       + `</div>`;
   }
@@ -683,11 +702,10 @@
       + `<span class="rx-sel-st-ic">${rxIc(icon, 19)}</span>`
       + `<span class="rx-sel-st-tx"><b>${esc(title)}</b><span>${esc(body)}</span></span></div>`;
     if (t.privateStatus === 'requested') {
-      return box('wait', 'Clock', 'Privado · esperando confirmación',
-        'Coordinación está revisando si la camioneta está libre a esa hora. Vuelve a esta pantalla para ver la respuesta.' + quiet);
+      return box('wait', 'Clock', 'Privado · esperando confirmación', statusBody(t) + quiet);
     }
     if (t.privateStatus === 'approved') {
-      return box('ok', 'Check', 'Privado confirmado', 'La camioneta es tuya para este trayecto.' + quiet);
+      return box('ok', 'Check', 'Privado confirmado', statusBody(t) + quiet);
     }
     return box('no', 'Info', 'No alcanzó la camioneta',
       (t.privateReason ? String(t.privateReason) + ' ' : '') + 'Tu traslado sigue en pie en compartido, y no se te cobra nada.');
@@ -786,7 +804,7 @@
   rxRegister();
 
   window.AuxPrivado = {
-    enabled, primicia, price, money, stepHTML, introHTML, sumHTML, statusHTML, chipHTML,
+    enabled, primicia, price, money, priceText, chargeText, stepHTML, introHTML, sumHTML, statusHTML, chipHTML,
     askCupo, resetCupo, cupo: () => st.cupo, INCLUYE,
     // rediseño (P6)
     levelsHTML, syncLevels, selectHTML, teaserHTML, availText, sharedNoteText,

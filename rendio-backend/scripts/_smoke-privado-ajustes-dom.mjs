@@ -224,7 +224,9 @@ console.log('\n── bandera encendida: el privado recién encendido también s
   const html = P.stepHTML({ level: 'shared' });
   t('el paso sale como RxLevelCard: el privado elegible (lvl) y sin .primicia',
     /rx-lv rx-in vip/.test(html) && /data-ax="lvl" data-v="private"/.test(html) && !/primicia/.test(html));
-  t('sin cifra en pantalla', !/\$\s?\d/.test(html + P.selectHTML({ from: 'home' })) && !/150/.test(html + P.selectHTML({ from: 'home' })));
+  // 12-oct-2026 (0103): la tarifa REAL de Ajustes se muestra (antes se escondía).
+  t('la tarifa real en pantalla ($ 150.000) y sin el viejo «Con costo»', /\$ 150\.000/.test(html) && /\$ 150\.000 por trayecto/.test(P.selectHTML({ from: 'home' }))
+    && !/Con costo|te confirma la tarifa/i.test(html + P.selectHTML({ from: 'home' })));
   t('Select quedó registrado en el shell', w.AuxShell.registered('select'));
   t('sin errores en consola', errs.length === 0, errs.join(' | '));
 }

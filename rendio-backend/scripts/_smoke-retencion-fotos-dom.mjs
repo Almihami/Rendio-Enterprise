@@ -55,7 +55,9 @@ console.log('\n1 · api.js: la cascada');
   t('sin 0096: la columna queda AUSENTE (no un 60 inventado)', !('photo_retention_days' in s));
   t('…y no se pierde nada más: teléfono de Coordinación y carros de Julián siguen', s.ops_contact_phone === '3001234567' && s.route_cars_count === 3,
     JSON.stringify({ tel: s.ops_contact_phone, carros: s.route_cars_count }));
-  t('…bajando un solo escalón', selects.length === 2, selects.length);
+  // 0105 puso su escalón (fast_start_deadline) encima del de 0096: sin 0096 se
+  // bajan dos, y como la cascada pasó de largo al plazo, se pide aparte (otra).
+  t('…bajando hasta el escalón sin la columna (el de 0105 encima, más el plazo aparte)', selects.length === 4 && !/photo_retention_days/.test(selects[2]) && selects[3] === 'fast_start_deadline', JSON.stringify(selects.length));
 
   FALTAN.clear(); updates.length = 0;
   await w.Api.saveSettings({ morning_label: 'AM', afternoon_label: 'PM', morning_slots: 2, afternoon_slots: 2, route_cars_count: 3, photo_retention_days: 45 });
@@ -106,7 +108,8 @@ t('explica las excepciones (golpe, comprobantes, pendiente/rechazada, fallas, no
 pintar({ photo_retention_days: 90 });
 t('se pinta desde los ajustes (90)', inp().value === '90' && !inp().disabled, inp().value);
 t('la pastilla de la sección plegada muestra el número', /90/.test(sec.querySelector('.set-sec-val').textContent), sec.querySelector('.set-sec-val').textContent);
-t('el pie cuenta el campo nuevo entre los que manda el botón', /Manda los 14 campos/.test(card.querySelector('.set-savenote').textContent), card.querySelector('.set-savenote').textContent);
+// 15 desde 0105 (el desplegable «Plazo de la inspección»).
+t('el pie cuenta el campo nuevo entre los que manda el botón', /Manda los 15 campos/.test(card.querySelector('.set-savenote').textContent), card.querySelector('.set-savenote').textContent);
 
 inp().value = '120'; guardado = null; preguntas = [];
 await window.onSaveSettings();

@@ -13,7 +13,9 @@
 // (opcional)» guardado con ApiAux.saveMyPrefs DESPUÉS de registerAuxiliar, el
 // paso «¿Cómo prefieres viajar?» solo si AuxPrivado.enabled(), el código de
 // invitación solo con Puntos, y AuxShell.skin(true). Los mismos data-rg*.
-// Además, en los dos modos, el ingreso (#screen-login) con login-rx.css.
+// Además, en los dos modos, el ingreso (#screen-login) con login-rx.css, y su
+// hoja «¿Problemas para entrar?», que desde 0104 pide una contraseña nueva a
+// Coordinación (validación, enviando, error, confirmación, RPC con api-jefe.js).
 //   RX=0 node scripts/_smoke-registro-dom.mjs
 //   RX=1 node scripts/_smoke-registro-dom.mjs
 //
@@ -328,7 +330,9 @@ if (RX) {
   const cards = qa('.rx-lv[data-rg="level"]');
   t('las tarjetas son RxLevelCard de P6 (.rx-lv.rx-in) con acciones del registro', cards.length >= 2 && !!q('.rx-lv.vip[data-rg="level"][data-v="private"]') && !q('[data-rx="pref-level"]'));
   t('Compartido elegido por defecto', q('.rx-lv[data-v="shared"]').classList.contains('on'));
-  t('sin cifra del privado', prohibidos(txt()).length === 0, prohibidos(txt()).join(', '));
+  // Desde el 12-oct-2026 el privado SÍ muestra su tarifa (la de Ajustes, nunca fija): la
+  // única cifra permitida en el paso es esa; nada más inventado.
+  { const otras = txt().replace(/\$\s?150\.000/g, ''); t('el privado muestra la tarifa de Ajustes ($ 150.000 en esta prueba) y ninguna otra cifra', /\$\s?150\.000/.test(txt()) && prohibidos(otras).length === 0, prohibidos(otras).join(', ')); }
   const vip = q('.rx-lv.vip[data-rg="level"]');
   click(vip);
   t('elegir Privado: la MISMA tarjeta toma .on', q('.rx-lv.vip[data-rg="level"]') === vip && vip.classList.contains('on') && !q('.rx-lv[data-v="shared"]').classList.contains('on'));
@@ -418,15 +422,70 @@ console.log('\n── el ingreso (#screen-login) con login-rx.css — lo ven tod
   t('sin código de 6 dígitos, sin chips de dominio, sin «Sin contraseñas»', prohibidos(sec.textContent).length === 0 && !sec.querySelector('.rx-chips, .rx-otp'), prohibidos(sec.textContent).join(','));
   const help = sec.querySelector('.rxl-help');
   t('«¿Problemas para entrar?» como .rx-btn.ghost (no envía el formulario)', !!help && help.type === 'button' && /Problemas para entrar/.test(help.textContent));
+  // «Olvidé mi contraseña» (0104): la hoja pide el correo o el celular y manda el
+  // pedido a Coordinación. El Api de mentiras anota y deja controlar la respuesta.
+  const pedidos = [];
+  let falla = false, suelta = null;
+  E.w.Api.requestPasswordReset = (c) => { pedidos.push(c); return new Promise((ok, ko) => { suelta = () => (falla ? ko(new Error('sin red')) : ok(true)); }); };
   help.click();
   const bg = sec.querySelector('.rx-sheet-bg');
-  t('abre la hoja (RxSheet) con «Escríbele a tu coordinador de tripulación»', !!bg && !!bg.querySelector('.rx-sheet .rx-grab') && /Escríbele a tu coordinador de tripulación/.test(bg.textContent));
+  const inp = () => bg.querySelector('#rxl-help-contact');
+  const pedir = () => bg.querySelector('[data-rxl="send"]');
+  const err = () => bg.querySelector('.rxl-help-err');
+  t('abre la hoja (RxSheet) con el campo «Tu correo o celular»', !!bg && !!bg.querySelector('.rx-sheet .rx-grab') && /Tu correo o celular/.test(bg.querySelector('.rx-field').textContent) && !!inp());
+  t('trae ya el correo que escribió en el login', inp().value === 'ana.restrepo@gmail.com', inp().value);
+  t('botón «Pedir una contraseña nueva» (.rx-btn.pri, no envía el login)', /Pedir una contraseña nueva/.test(pedir().textContent) && pedir().classList.contains('pri') && pedir().type === 'button');
+  t('se queda el consejo de siempre para quien no tiene señal', /escríbele a tu coordinador de tripulación/.test(bg.querySelector('.rxl-help-alt').textContent));
   t('y no promete un canal que no existe antes de entrar', !/Escribir a soporte/.test(bg.textContent) && enviado === 1);
-  bg.click();
-  t('tocar el fondo la cierra con .out', bg.classList.contains('out') && bg.isConnected);
+  inp().value = 'hola';
+  pedir().click(); await wait(10);
+  t('algo que no es correo ni celular: error claro y no se pide nada', !err().hidden && /correo de tu cuenta o tu celular de 10 dígitos/.test(err().textContent) && pedidos.length === 0);
+  inp().value = 'ana.restrepo@gmail.com'; inp().dispatchEvent(new E.w.Event('input', { bubbles: true }));
+  t('al volver a escribir el error se va', err().hidden);
+  falla = true;
+  pedir().click(); await wait(10);
+  t('mientras envía: botón deshabilitado con «Enviando…»', pedir().disabled && /Enviando…/.test(pedir().textContent) && inp().disabled && pedidos[0] === 'ana.restrepo@gmail.com', JSON.stringify(pedidos));
+  pedir().click(); await wait(10);
+  t('un segundo toque mientras envía no pide otra vez', pedidos.length === 1);
+  bg.click(); await wait(10);
+  t('tocar el fondo mientras envía no la cierra', !bg.classList.contains('out'));
+  suelta(); await wait(10);
+  t('si falla: error simple y se puede reintentar', !err().hidden && /No pudimos enviar el pedido/.test(err().textContent) && !pedir().disabled && /Pedir una contraseña nueva/.test(pedir().textContent));
+  falla = false;
+  inp().value = ' +57 300 123 4567 ';
+  inp().dispatchEvent(new E.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await wait(10);
+  t('Enter en el campo también envía, con el celular normalizado', pedidos[1] === '3001234567', JSON.stringify(pedidos));
+  suelta(); await wait(10);
+  t('listo: la confirmación de Coordinación (WhatsApp o llamada, la cambias al entrar)',
+    /Listo\. Coordinación ya sabe que no puedes entrar y te va a mandar una contraseña temporal por WhatsApp o llamada\. Al entrar, la cambias\./.test(bg.textContent) && !inp(), bg.textContent.replace(/\s+/g, ' ').slice(0, 200));
+  t('…con el consejo de escribirle al coordinador si nadie le escribe', /si nadie te escribe pronto: escríbele a tu coordinador de tripulación/.test(bg.textContent));
+  t('el login no se envió en ningún momento', enviado === 1);
+  bg.querySelector('[data-rxl="close"]').click();
+  t('«Entendido» la cierra con .out', bg.classList.contains('out') && bg.isConnected);
   await wait(240);
   t('y se desmonta a los 220 ms', !bg.isConnected);
+  help.click();
+  const bg2 = sec.querySelector('.rx-sheet-bg');
+  bg2.click();
+  t('abrirla otra vez arranca en el formulario; tocar el fondo la cierra', !!bg2.querySelector('#rxl-help-contact') && bg2.classList.contains('out'));
+  await wait(240);
   t('«Crear mi cuenta» (#login-signup) como .rx-btn.sec', d.getElementById('login-signup').classList.contains('sec'));
+}
+{
+  // Con api-jefe.js de verdad: el pedido sale como RPC request_password_reset
+  // con p_contact normalizado (la red es un sb de mentiras).
+  const E = boot();
+  const rpcs = [];
+  E.w.sb = { rpc: async (fn, args) => { rpcs.push([fn, args]); return { data: { ok: true }, error: null }; } };
+  E.w.eval(read('api-jefe.js'));
+  const sec = E.w.document.getElementById('screen-login');
+  sec.querySelector('.rxl-help').click();
+  const bg = sec.querySelector('.rx-sheet-bg');
+  bg.querySelector('#rxl-help-contact').value = '(+57) 310.555.1234';
+  bg.querySelector('[data-rxl="send"]').click(); await wait(20);
+  t('con api-jefe.js: sb.rpc(«request_password_reset», {p_contact: «3105551234»}) y la confirmación',
+    rpcs.length === 1 && rpcs[0][0] === 'request_password_reset' && rpcs[0][1].p_contact === '3105551234' && /Coordinación ya sabe/.test(bg.textContent), JSON.stringify(rpcs));
+  t('con api-jefe.js: sin errores de consola', E.errors.length === 0, E.errors.join(' | '));
 }
 {
   const sin = HTML.replace(/\s*<link rel="stylesheet" href="login-rx\.css"\s*\/?>/, '');

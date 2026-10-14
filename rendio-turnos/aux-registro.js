@@ -58,7 +58,8 @@
 //
 // INGRESO (login, todos los roles): loginRx() le pone al #screen-login el
 // aspecto de RxLogin (título «Entra con tu correo» y la hoja «¿Problemas para
-// entrar?») SIN cambiar ni recrear los nodos que usa core.js (#login-form,
+// entrar?», que desde 0104 pide una contraseña nueva a Coordinación) SIN
+// cambiar ni recrear los nodos que usa core.js (#login-form,
 // #login-email, #login-password, #login-submit, #login-error, #login-signup):
 // solo los mueve y les suma clases. Solo actúa si index.html trae
 // login-rx.css: quitar ese <link> revierte el ingreso entero.
@@ -1784,28 +1785,100 @@
   // .rx-grab + .rx-sh). Se cierra con .out y se desmonta a los 220 ms; tocar el
   // fondo también la cierra. Sin «Escribir a soporte»: antes de entrar no hay
   // canal en la app, y un botón que no lleva a nada sería mentira.
+  //
+  // «Olvidé mi contraseña» (0104, 12-oct-2026): no hay correo (plan gratuito de
+  // Supabase), así que el pedido le llega a Coordinación (Api.requestPasswordReset)
+  // y ellos mandan una temporal por WhatsApp o llamada. La base responde lo
+  // mismo exista o no la cuenta, así que la confirmación es una sola; por eso
+  // se queda el consejo de siempre (escribirle al coordinador) para quien no
+  // tiene señal o no recibe nada.
+  const HELP_ALT = 'Sin señal, o si nadie te escribe pronto: escríbele a tu coordinador de tripulación.';
+  // Correo, o celular de 10 dígitos que empieza por 3 (la regla de la base).
+  // Sin api-jefe.js cargado se valida aquí con la misma regla.
+  function helpContacto(texto) {
+    const A = window.Api;
+    if (A && typeof A.contactoParaClave === 'function') return A.contactoParaClave(texto);
+    const raw = String(texto == null ? '' : texto).trim();
+    if (raw.includes('@')) return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw) ? { tipo: 'correo', valor: raw.toLowerCase() } : null;
+    let d = raw.replace(/[\s().-]/g, '');
+    if (/[^0-9+]/.test(d)) return null;
+    if (/^\+57/.test(d)) d = d.slice(3); else if (/^57\d{10}$/.test(d)) d = d.slice(2);
+    return /^3\d{9}$/.test(d) ? { tipo: 'celular', valor: d } : null;
+  }
+  function helpFormHTML(pre) {
+    return `<h3 id="rxl-help-t">¿Problemas para entrar?</h3>
+        <p>Si olvidaste la contraseña, le avisamos a Coordinación para que te pongan una temporal.</p>
+        <label class="rx-field"><span>Tu correo o celular</span>
+          <div class="rx-input"><input id="rxl-help-contact" type="text" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="254" value="${esc(pre)}"></div>
+        </label>
+        <p class="rxl-help-err" role="alert" hidden></p>
+        <button type="button" class="rx-btn pri rxl-help-send" data-rxl="send">Pedir una contraseña nueva</button>
+        <p class="rxl-help-alt">${esc(HELP_ALT)}</p>
+        <button type="button" class="rx-btn ghost" data-rxl="close">Cerrar</button>`;
+  }
+  function helpDoneHTML() {
+    return `<span class="rx-ob-ic rxl-help-ok">${ic('Check', 24)}</span>
+        <h3 id="rxl-help-t">Pedido enviado</h3>
+        <p>Listo. Coordinación ya sabe que no puedes entrar y te va a mandar una contraseña temporal por WhatsApp o llamada. Al entrar, la cambias.</p>
+        <p class="rxl-help-alt">${esc(HELP_ALT)}</p>
+        <button type="button" class="rx-btn sec" data-rxl="close">Entendido</button>`;
+  }
   function loginHelp(sec) {
     let host = sec.querySelector('.rxl-sheet-host');
     if (!host) { host = document.createElement('div'); host.className = 'rxl-sheet-host'; sec.appendChild(host); }
+    // Lo que ya escribió en «correo» del login, para no hacerle escribirlo dos veces.
+    const pre = (document.getElementById('login-email') || {}).value || '';
     host.innerHTML = `<div class="rx-sheet-bg"><div class="rx-sheet" role="dialog" aria-modal="true" aria-labelledby="rxl-help-t"><div class="rx-grab"></div>
-      <div class="rx-sh">
-        <h3 id="rxl-help-t">¿Problemas para entrar?</h3>
-        <p>Escríbele a tu coordinador de tripulación.</p>
-        <p>Usa el correo con el que creaste tu cuenta. Si olvidaste la contraseña, pídele una temporal: la cambias al entrar.</p>
-        <button type="button" class="rx-btn sec" data-rxl="close">Entendido</button>
-      </div></div></div>`;
+      <div class="rx-sh">${helpFormHTML(String(pre).trim())}</div></div></div>`;
     const bg = host.firstElementChild;
+    const sh = bg.querySelector('.rx-sh');
+    let sending = false;
     const close = () => {
-      if (bg.__rxlClosing) return;
+      if (bg.__rxlClosing || sending) return;
       bg.__rxlClosing = true;
       bg.classList.add('out');
       setTimeout(() => { if (bg.parentNode) bg.parentNode.removeChild(bg); }, 220);
     };
+    const showErr = (msg) => {
+      const e = sh.querySelector('.rxl-help-err'); if (!e) return;
+      e.textContent = msg || '';
+      e.hidden = !msg;
+    };
+    async function send() {
+      if (sending) return;
+      const inp = sh.querySelector('#rxl-help-contact');
+      const btn = sh.querySelector('[data-rxl="send"]');
+      if (!inp || !btn) return;
+      const c = helpContacto(inp.value);
+      if (!c) { showErr('Escribe el correo de tu cuenta o tu celular de 10 dígitos.'); try { inp.focus({ preventScroll: true }); } catch (_) { /* */ } return; }
+      const A = window.Api;
+      if (!A || typeof A.requestPasswordReset !== 'function') { showErr('No pudimos enviar el pedido. Escríbele a tu coordinador de tripulación.'); return; }
+      sending = true; showErr('');
+      btn.disabled = true; inp.disabled = true; btn.textContent = 'Enviando…';
+      try {
+        await A.requestPasswordReset(c.valor);
+      } catch (e) {
+        console.warn('[AuxRegistro] requestPasswordReset falló:', e);
+        sending = false;
+        btn.disabled = false; inp.disabled = false; btn.textContent = 'Pedir una contraseña nueva';
+        showErr('No pudimos enviar el pedido. Revisa la señal e inténtalo otra vez.');
+        return;
+      }
+      sending = false;
+      sh.innerHTML = helpDoneHTML();
+      const ok = sh.querySelector('[data-rxl="close"]');
+      if (ok) { try { ok.focus({ preventScroll: true }); } catch (_) { /* */ } }
+    }
     bg.addEventListener('click', (e) => {
-      if (e.target === bg || (e.target.closest && e.target.closest('[data-rxl="close"]'))) close();
+      if (e.target === bg || (e.target.closest && e.target.closest('[data-rxl="close"]'))) { close(); return; }
+      if (e.target.closest && e.target.closest('[data-rxl="send"]')) send();
     });
-    const b = bg.querySelector('[data-rxl="close"]');
-    if (b) { try { b.focus({ preventScroll: true }); } catch (_) { /* */ } }
+    bg.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target && e.target.id === 'rxl-help-contact') { e.preventDefault(); send(); }
+    });
+    bg.addEventListener('input', (e) => { if (e.target && e.target.id === 'rxl-help-contact') showErr(''); });
+    const inp = sh.querySelector('#rxl-help-contact');
+    if (inp) { try { inp.focus({ preventScroll: true }); } catch (_) { /* */ } }
   }
   // Ya, si el login está en el DOM (este archivo se carga después de él en
   // index.html: así no hay un cuadro del login viejo); si no, al terminar de

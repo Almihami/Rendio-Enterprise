@@ -440,7 +440,10 @@
     rows += row('MapPin', lle ? 'Destino' : 'Recogida', place, (R && R.hasCatalog()) ? 'data-ax="donde-cambiar"' : '');
     if (kinds.indexOf('nivel') >= 0) {
       const priv = f.level === 'private';
-      rows += row(priv ? 'Sparkle' : 'Users', 'Nivel', priv ? 'Privado · Con costo' : 'Compartido · Incluido', 'data-rx="goto-step" data-step="nivel"');
+      // 12-oct-2026: el privado dice su tarifa real (Ajustes, vía AuxPrivado).
+      let pp = null;
+      try { pp = (window.AuxPrivado && typeof AuxPrivado.priceText === 'function' && AuxPrivado.priceText()) || null; } catch (_) { pp = null; }
+      rows += row(priv ? 'Sparkle' : 'Users', 'Nivel', priv ? 'Privado · ' + (pp || 'con costo') : 'Compartido · Incluido', 'data-rx="goto-step" data-step="nivel"');
     }
     if (!lle && f.sameDayBack && f.backTime) {
       rows += row('RotateCcw', 'Regreso', tierra ? 'Sales de MDE ' + hm(f.backTime)

@@ -159,9 +159,17 @@
       return { day, vueltas: vueltas(), publicado: true };
     };
     Api.trafficMatrix = async (coords) => { log.tomtom++; return matriz(coords); };
+    // Como el real (api.js · saveRoutePlan): «notify» trae solo las reservas que
+    // cambiaron de conductor desde la publicación anterior, con el conductor nuevo.
+    const antes = {};
     Api.saveRoutePlan = async (day, lanes) => {
       log.saved.push({ day, lanes: JSON.parse(JSON.stringify(lanes)) });
-      return { saved: lanes.length, skipped: 0, kept: 0, notify: [] };
+      const notify = [];
+      lanes.forEach((l) => (l.stops || []).forEach((rid) => {
+        if (l.driverProfileId && antes[rid] !== l.driverProfileId) notify.push({ reservationId: rid, changed: !!antes[rid], driverProfileId: l.driverProfileId });
+        antes[rid] = l.driverProfileId || null;
+      }));
+      return { saved: lanes.length, skipped: 0, kept: 0, failed: 0, failMsg: '', notify };
     };
     Api.auxiliarUserIdsForReservations = async () => [];
     Api.sendPush = async (p) => { log.push.push(p); };

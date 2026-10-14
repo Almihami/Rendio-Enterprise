@@ -293,7 +293,8 @@ try {
   r = await como(jefe, 'admin', `SELECT public.aux_points_admin_adjust($1, 100, 'Bono de bienvenida') AS x`, [laura.aux]);
   check('ajuste del jefe +100 → 245', r[0].x.balance === 245 && await saldo(laura.aux) === 245, JSON.stringify(r[0].x));
   err = await comoFalla(laura.uid, 'auxiliar', `SELECT public.aux_points_redeem('directo')`);
-  check('Directo («Pronto») no se canjea', err && /pronto/.test(err), err);
+  // 0103 (12-oct-2026): Directo se quitó: el canje quedó apagado («no está disponible»).
+  check('Directo no se canjea (0091: «Pronto»; desde 0103 apagado)', err && /(pronto|no está disponible)/.test(err), err);
   err = await comoFalla(laura.uid, 'auxiliar', `SELECT public.aux_points_redeem('no-existe')`);
   check('un canje que no existe → error', err && /no está disponible/.test(err), err);
   await q(`UPDATE public.profiles SET is_active = false WHERE id = $1`, [laura.uid]);
@@ -364,6 +365,11 @@ try {
   check('la jefa cambia el costo de la vitrina', r.length === 1 && r[0].cost === 200, JSON.stringify(r));
   err = await comoFalla(jefe, 'admin', `UPDATE public.aux_points_rewards SET soon = false WHERE id = 'directo'`);
   check('…pero no quita el «Pronto» de Directo (columna sin permiso)', err && /permission denied/.test(err), err);
+  // 0103: Directo no existe: ni la jefa puede volver a encenderlo.
+  if (await one(`SELECT 1 AS x FROM pg_constraint WHERE conname = 'aux_points_rewards_no_direct'`)) {
+    err = await comoFalla(jefe, 'admin', `UPDATE public.aux_points_rewards SET enabled = true WHERE id = 'directo'`);
+    check('(0103) la jefa no puede encender Directo', err && /aux_points_rewards_no_direct/.test(err), err);
+  }
 
   // ----------------------------------------------------------------------------
   console.log('\n12. Apagar de nuevo: se conserva lo ganado y deja de acreditar');

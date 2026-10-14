@@ -1192,6 +1192,13 @@
 #tripulantes-ui .tp-filters { display: flex; gap: 6px; flex-wrap: wrap; }
 #tripulantes-ui .tp-filters button { border: 1px solid var(--line); background: #fff; color: var(--ink2); font-family: inherit; font-size: 12.5px; font-weight: 700; padding: 8px 12px; border-radius: 999px; cursor: pointer; }
 #tripulantes-ui .tp-filters button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+/* Filtro por aerolínea (12-oct-2026): del mismo tamaño que los chips; oscuro
+   cuando filtra, como el chip encendido. */
+#tripulantes-ui .tp-airf { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: var(--ink2); }
+#tripulantes-ui .tp-airf select { border: 1px solid var(--line); background: #fff; color: var(--ink); font-family: inherit; font-size: 12.5px; font-weight: 700; padding: 7px 10px; border-radius: 999px; cursor: pointer; max-width: 220px; }
+#tripulantes-ui .tp-airf select:focus { outline: none; border-color: var(--amber); }
+#tripulantes-ui .tp-airf.on select { background: var(--ink); color: #fff; border-color: var(--ink); }
+#tripulantes-ui .tp-airf select:disabled { opacity: .55; cursor: default; }
 
 #tripulantes-ui .tp-nota { display: flex; gap: 10px; align-items: flex-start; background: var(--amber-soft); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; }
 #tripulantes-ui .tp-nota .icon { width: 17px; height: 17px; color: var(--amber); flex: 0 0 auto; margin-top: 1px; }

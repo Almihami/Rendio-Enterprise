@@ -138,8 +138,10 @@
   // ─────────────────────────────────────────────────────────────────────
   // Restablecer contraseña (U2). Temporal generada o una que escriba el jefe.
   // Se muestra UNA vez y no queda guardada en ningún lado de la app.
+  // onDone (opcional, 0104): se llama cuando la contraseña ya quedó puesta
+  // (Usuarios lo usa para cerrar el pedido de «Olvidé mi contraseña»).
   // ─────────────────────────────────────────────────────────────────────
-  function openRestablecerClave(profileId, name) {
+  function openRestablecerClave(profileId, name, onDone) {
     const temp = usrTempPassword();
     const body = `
       <div class="set-field"><label>Contraseña nueva</label>
@@ -172,6 +174,8 @@
         btn.disabled = false;
         return;
       }
+      // Sin esperarlo: la contraseña se muestra ya.
+      if (onDone) Promise.resolve().then(onDone).catch((e) => console.error(e));
       // Pantalla de resultado: la única vez que se ve.
       ov.querySelector('.usr-body').innerHTML = `
         <p style="font-size:13px;color:var(--ink2)">Pásale esta contraseña a <b>${escapeHtml(name || '')}</b>. No se vuelve a mostrar.</p>

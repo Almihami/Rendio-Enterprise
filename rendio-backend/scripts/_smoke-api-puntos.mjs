@@ -195,7 +195,9 @@ try {
   t('nextReward(500) → privado (Directo no cuenta)', P.nextReward(500, rw)?.id === 'privado');
   t('nextReward(9999) → null (ya alcanza todo)', P.nextReward(9999, rw) === null);
   t('redeem sin saldo → «Te faltan 140 pts»', await throwsLike(() => P.redeem('colega'), /Te faltan 140 pts/) === true);
-  t('redeem Directo → «pronto»', await throwsLike(() => P.redeem('directo'), /pronto/) === true);
+  // 0103 (12-oct-2026): Directo quedó apagado en la base → «no está disponible» (antes, «pronto»).
+  t('redeem Directo → no se canjea (apagado desde 0103)', await throwsLike(() => P.redeem('directo'), /(no está disponible|pronto)/) === true);
+  t('la vitrina trae a Directo APAGADO (enabled false): nadie lo puede pedir', rw[1].id === 'directo' && rw[1].enabled === false, JSON.stringify(rw[1]));
   who = JEFE;
   const adj = await P.adminAdjust(fx.aux, 200, 'Bono de bienvenida');
   t('adminAdjust(+200) → 240', adj.ok && adj.balance === 240, JSON.stringify(adj));

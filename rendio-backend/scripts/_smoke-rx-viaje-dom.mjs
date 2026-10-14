@@ -16,6 +16,11 @@
 //   · cancelar no menciona puntos ni «2 horas»; hoja en .rx-sheet-host por patch;
 //   · el admin en el hilo sale como «Coordinación»;
 //   · abrir la alarma no destruye el mapa falso (patch, sin stopTrack);
+//   · 12-oct: los motivos del botón rojo según la fase (salida en la casa,
+//     llegada en el avión/terminal, a bordo en las dos direcciones), sin botón
+//     en lo cerrado; lo enviado (eventualidad, 🚨 del chat y aviso a los jefes)
+//     lleva el texto elegido; subir al carro con la hoja abierta cambia la lista
+//     y suelta el motivo que ya no se ofrece; con la bandera apagada, igual;
 //   · compartir solo en asignado con hora, en camino y a bordo;
 //   · calificar: estrellas y etiquetas por patch, key={s} del texto, enviar →
 //     Api.rateReservation + «gracias» honesto; «Ahora no» → «Calificar a {first}»;
@@ -121,7 +126,10 @@ const TRIP_IDS = ['ax-track-map', 'ax-eta-label', 'ax-eta-min', 'ax-eta', 'ax-co
 const B = await boot();
 const { w, A, E, L, AS, q, qa, click, abrir, errores, red } = B;
 const uiText = () => (q('#auxiliar-ui') ? q('#auxiliar-ui').textContent : '');
-const prohibidos = (txt) => PROHIBIDOS.filter(p => txt.includes(p));
+// 12-oct-2026 (0103): el estado del privado dice cuánto se suma a la cuenta de
+// cobro («Se suman $ 150.000 a tu cuenta de cobro», el precio congelado de la
+// reserva). Esa frase es la ÚNICA cifra permitida; cualquier otro «$» sigue prohibido.
+const prohibidos = (txt) => PROHIBIDOS.filter(p => txt.replace(/se suman \$ [\d.]+ a tu cuenta de cobro/gi, '').includes(p));
 
 console.log('\n── Registro y contrato ──');
 t('AuxShell registra trip, rate y rate-sent', AS.registered('trip') && AS.registered('rate') && AS.registered('rate-sent'));
@@ -223,9 +231,9 @@ t('la hoja de la alarma sale en .rx-sheet-host con #ax-alarm-text', !!q('.rx-she
 t('abrir la alarma NO destruye el mapa falso ni la capa, ni llama stopTrack', !mapa._removed && L.__liveMaps()[0] === mapa && q('.rx-layer[data-scr="trip"] .rx-trip') === capa && stops === 0, `stops=${stops}`);
 t('la alarma dice «Coordinación» y el nombre del conductor', /a Coordinación y a Mauricio/.test(q('.rx-trip-alarm-sh').textContent));
 const hoja = q('.rx-sheet-bg[data-rx-own="alarm"]');
-click(q('[data-ax="alarm-pick"][data-v="desembarque"]'));
+click(q('[data-ax="alarm-pick"][data-v="demora_salir"]'));
 await wait(10);
-t('elegir un motivo: .on en su lugar (misma hoja)', q('.rx-sheet-bg[data-rx-own="alarm"]') === hoja && q('[data-ax="alarm-pick"][data-v="desembarque"]').classList.contains('on'));
+t('elegir un motivo: .on en su lugar (misma hoja)', q('.rx-sheet-bg[data-rx-own="alarm"]') === hoja && q('[data-ax="alarm-pick"][data-v="demora_salir"]').classList.contains('on'));
 click(q('[data-ax="alarm-close"]'));
 await wait(10);
 t('Volver: la hoja sale con .out', hoja.classList.contains('out'));
@@ -240,6 +248,85 @@ await wait(10);
 t('tocar el fondo: A.state.alarm = null y la hoja sale', A.state.alarm === null && hoja2.classList.contains('out'));
 A.stopTrack = origStop;
 await wait(240);
+
+console.log('\n── Alarma: los motivos cambian con la fase (12-oct) ──');
+const hojaAl = () => q('.rx-sheet-bg[data-rx-own="alarm"]:not(.out)');
+const motivos = () => (hojaAl() ? [...hojaAl().querySelectorAll('[data-ax="alarm-pick"]')].map(b => b.getAttribute('data-v')).join(',') : '');
+const textos = () => (hojaAl() ? [...hojaAl().querySelectorAll('[data-ax="alarm-pick"] .rx-opt-tx b')].map(b => b.textContent).join(' | ') : '');
+async function abrirAlarma() { click(q('.rx-trip-cta [data-ax="alarm"], .rx-trip-alarm-w')); await wait(20); }
+async function cerrarAlarma() { const h = hojaAl(); if (h) click(h.querySelector('[data-ax="alarm-close"]')); await wait(240); }
+const M_SAL = 'demora_salir,otro_punto,medica,otra', M_LLE = 'desembarque,equipaje,medica,otra', M_CAR = 'medica,carro,inseguro,otra';
+const T_SAL = 'Me voy a demorar en salir | Estoy en otro punto de encuentro | Emergencia médica | Otra cosa que me va a retrasar';
+const T_LLE = 'Se va a demorar el desembarque | Estoy esperando mi equipaje | Emergencia médica | Otra cosa que me va a retrasar';
+const T_CAR = 'Emergencia médica a bordo | Problema con el carro o el conductor | Me siento en riesgo | Otra cosa';
+for (const [esc, m, tx, nom] of [
+  ['asignado-publicado', M_SAL, T_SAL, 'salida, conductor asignado (en la casa)'],
+  ['en-camino', M_SAL, T_SAL, 'salida, en camino'],
+  ['llego', M_SAL, T_SAL, 'salida, llegó por ti'],
+  ['llegada-parada', M_LLE, T_LLE, 'llegada, conductor asignado (en el avión o el terminal)'],
+  ['a-bordo-salida', M_CAR, T_CAR, 'salida, a bordo'],
+  ['a-bordo-llegada', M_CAR, T_CAR, 'llegada, a bordo / rumbo a casa'],
+]) {
+  d = await abrir(esc);
+  await abrirAlarma();
+  t(`${nom}: ${tx}`, motivos() === m && textos() === tx, motivos() + ' · ' + textos());
+  await cerrarAlarma();
+}
+d = await abrir('llegada-parada');
+await abrirAlarma();
+t('llegada: el equipaje con su ícono (maleta) y el desembarque con el avión',
+  !!hojaAl().querySelector('[data-v="equipaje"] .rx-opt-ic svg') && !!hojaAl().querySelector('[data-v="desembarque"] .rx-opt-ic svg'));
+await cerrarAlarma();
+d = await abrir('entregado-sin-calificar');
+t('entregado (En el aeropuerto / En casa): sin botón rojo', !q('[data-ax="alarm"]'));
+d = await abrir('pendiente-sin-plan');
+t('pedido sin conductor: sin botón rojo (la regla de siempre)', !q('[data-ax="alarm"]'));
+
+// Lo que se envía lleva el texto elegido: eventualidad, chat y aviso a los jefes.
+const avisosOps = [];
+w.notifyOps = (title, body, id) => { avisosOps.push({ title, body, id }); };
+d = await abrir('a-bordo-salida');
+await abrirAlarma();
+click(q('[data-ax="alarm-pick"][data-v="inseguro"]')); await wait(10);
+q('#ax-alarm-text').value = 'Va muy rápido';
+click(q('[data-ax="alarm-send"]')); await wait(60);
+let inc = E.llamadas.filter(c => c.fn === 'Api.reportIncident').pop();
+let a0 = inc && inc.args[0];
+t('a bordo, «Me siento en riesgo»: la eventualidad lleva el texto, severidad high y el id',
+  !!a0 && a0.category === 'aux_emergency' && a0.description === 'Me siento en riesgo — Va muy rápido' && a0.severity === 'high'
+  && a0.details.motivo === 'inseguro' && a0.details.texto === 'Me siento en riesgo' && a0.details.fase === 'onboard' && a0.reservationId === d.principal, JSON.stringify(a0));
+t('…el 🚨 del chat dice lo mismo', E.llamadas.some(c => c.fn === 'Api.sendReservationMessage' && c.args[1] === '🚨 Me siento en riesgo — Va muy rápido'));
+t('…y el aviso a los jefes también («🚨 Emergencia de un tripulante»)', avisosOps.length === 1 && avisosOps[0].title === '🚨 Emergencia de un tripulante'
+  && avisosOps[0].body === 'Laura Gómez Ruiz: Me siento en riesgo — Va muy rápido', JSON.stringify(avisosOps));
+t('…la hoja se cierra al enviar', A.state.alarm === null);
+await wait(240);
+d = await abrir('llegada-parada');
+await abrirAlarma();
+click(q('[data-ax="alarm-pick"][data-v="equipaje"]')); await wait(10);
+click(q('[data-ax="alarm-send"]')); await wait(60);
+inc = E.llamadas.filter(c => c.fn === 'Api.reportIncident').pop(); a0 = inc && inc.args[0];
+t('llegada, «Estoy esperando mi equipaje»: severidad medium y «Novedad de un tripulante»', !!a0 && a0.description === 'Estoy esperando mi equipaje'
+  && a0.severity === 'medium' && avisosOps.length === 2 && avisosOps[1].title === 'Novedad de un tripulante', JSON.stringify(a0) + JSON.stringify(avisosOps[1]));
+await wait(240);
+d = await abrir('en-camino');
+await abrirAlarma();
+click(q('[data-ax="alarm-pick"][data-v="medica"]')); await wait(10);
+click(q('[data-ax="alarm-send"]')); await wait(60);
+inc = E.llamadas.filter(c => c.fn === 'Api.reportIncident').pop(); a0 = inc && inc.args[0];
+t('salida, en la casa, «Emergencia médica»: high y sin «a bordo»', !!a0 && a0.description === 'Emergencia médica' && a0.severity === 'high', JSON.stringify(a0));
+await wait(240);
+// Sube al carro con la hoja abierta: la MISMA hoja cambia a los motivos de a bordo.
+d = await abrir('en-camino');
+await abrirAlarma();
+click(q('[data-ax="alarm-pick"][data-v="demora_salir"]')); await wait(10);
+const hojaF = hojaAl();
+Object.assign(d.track[d.principal], { raw_status: 'on_board', stop_status: 'picked_up' });
+await wait(300);
+t('sube al carro con la hoja abierta: la misma hoja pasa a los motivos de a bordo', q('.rx-trip') && q('.rx-trip').getAttribute('data-st') === 'onboard'
+  && hojaAl() === hojaF && motivos() === M_CAR, motivos());
+t('…y el motivo de la casa se suelta (nada elegido, no se envía algo que ya no está a la vista)',
+  A.state.alarm && A.state.alarm.motivo === null && !hojaAl().querySelector('[data-ax="alarm-pick"].on'));
+await cerrarAlarma();
 
 console.log('\n── Cancelar ──');
 d = await abrir('asignado-publicado');
@@ -530,6 +617,19 @@ const B0 = await boot({ rx: false });
 await B0.abrir('en-camino');
 t('apagada: el viaje sale con el marcado de siempre (.ax-track-map), sin .rx-trip', !!B0.q('#auxiliar-ui .ax-track-map') && !B0.q('.rx-trip') && !B0.q('.rx-app'));
 t('apagada: el chat heredado (.ax-chat) y no el rediseñado', !!B0.q('#ax-chat.ax-chat') && !B0.q('.rx-trip-chat'));
+// La UI de siempre solo pinta el botón rojo en el detalle (asignado/pedido); en
+// camino y a bordo es la vista de rastreo, sin pie.
+await B0.abrir('asignado-publicado');
+B0.click(B0.q('[data-ax="alarm"]')); await wait(20);
+t('apagada: la hoja de siempre también trae los motivos de la fase (salida, en la casa)',
+  B0.qa('#ax-alarm [data-ax="alarm-pick"]').map(b => b.getAttribute('data-v')).join(',') === 'demora_salir,otro_punto,medica,otra',
+  B0.qa('#ax-alarm [data-ax="alarm-pick"]').map(b => b.getAttribute('data-v')).join(','));
+B0.click(B0.q('#ax-alarm [data-ax="alarm-close"]')); await wait(20);
+await B0.abrir('llegada-parada');
+B0.click(B0.q('[data-ax="alarm"]')); await wait(20);
+t('apagada: y en una llegada, los del avión', B0.qa('#ax-alarm [data-ax="alarm-pick"]').map(b => b.textContent).join(' | ') === 'Se va a demorar el desembarque | Estoy esperando mi equipaje | Emergencia médica | Otra cosa que me va a retrasar',
+  B0.qa('#ax-alarm [data-ax="alarm-pick"]').map(b => b.textContent).join(' | '));
+B0.click(B0.q('#ax-alarm [data-ax="alarm-close"]')); await wait(20);
 t('apagada: sin errores', B0.errores.length === 0, B0.errores.slice(0, 2).join(' | '));
 
 try { A.stopTrack(); } catch (_) {}

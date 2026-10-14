@@ -829,6 +829,51 @@ console.log('\n── 0094 · Vacaciones ──');
     b.click(payEl(b).querySelector('.cb2-seg [data-v="mes"]')); await wait(20);
   }
 
+  // 0103 (12-oct-2026): el traslado privado APROBADO se cobra en la cuenta de
+  // cobro. La base lo trae como una línea de `extras` con kind 'private' (ya
+  // sumada al monto) y los que esperan cuenta en extrasPending.private.
+  console.log('   · traslado privado aprobado (0103)');
+  {
+    const cp = cuenta({ dia: 3 });
+    const PRIV = 50000, TOTAL = MONTO + PRIV, TOTAL_TXT = '$' + String(TOTAL).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    cp.current.amountCOP = TOTAL; cp.current.amountDueCOP = TOTAL; cp.current.extrasCOP = PRIV; cp.current.baseAmountCOP = MONTO;
+    cp.current.extras = [{ id: 'xp-1', kind: 'private', reservationId: 'res-1', tripOn: '2026-10-24', sourcePeriodStart: cp.current.periodStart,
+      trips: 1, perTripCOP: PRIV, amountCOP: PRIV, pending: false, appliedStatementId: cp.current.id, label: 'Traslado privado · 24 de oct · $50.000' }];
+    const pendP = { trips: 0, amountCOP: 0, items: [], totalCOP: PRIV,
+      private: { count: 1, amountCOP: PRIV, items: [{ id: 'xp-2', kind: 'private', reservationId: 'res-2', tripOn: '2026-11-20', sourcePeriodStart: addD(cp.current.periodStart, 31),
+        trips: 1, perTripCOP: PRIV, amountCOP: PRIV, pending: true, label: 'Traslado privado · 20 de nov · $50.000' }] } };
+    await b.montar('historial', { acc: conVac(cp, { pending: pendP, cur: { st: cp.current.id } }) });
+    AS.setTab('inicio'); await wait(20); AS.setTab('pagos'); await wait(800);
+    const pp = payEl(b);
+    const lp = pp.querySelector('[data-pg="extras"][data-pg-x="private"]');
+    t('«Este mes»: la línea «Traslado privado · 24 de oct · $50.000. Va incluido en este cobro.» con el ícono de Select',
+      !!lp && txt(lp) === 'Traslado privado · 24 de oct · $50.000. Va incluido en este cobro.' && !!lp.querySelector('use[href="#rx-Sparkle"]') && lp.classList.contains('cb2-in'), lp && txt(lp));
+    t('…y el monto a pagar del mes la incluye (' + TOTAL_TXT + ')', txt(pp.querySelector('.cb2-hero-a')) === TOTAL_TXT, txt(pp.querySelector('.cb2-hero-a')));
+    const lpp = pp.querySelector('[data-pg="ppend"]');
+    t('el privado de un mes que no ha abierto: «Traslado privado · 20 de nov · $50.000. Se suma a una próxima cuenta de cobro.»',
+      !!lpp && txt(lpp) === 'Traslado privado · 20 de nov · $50.000. Se suma a una próxima cuenta de cobro.', lpp && txt(lpp));
+    t('…sin confundirlo con viajes extra de vacaciones (ni nota «Entra en tu próximo cobro», ni «Extra pendiente»)',
+      !pp.querySelector('[data-pg="xpend"]') && !pp.querySelector('[data-pg-vac-k="pendiente"]'));
+    // Sin cuenta de cobro abierta todavía: el pendiente también se dice.
+    await b.montar('historial', { acc: conVac(cuenta({ sinCorte: true }), { pending: pendP }) });
+    AS.setTab('inicio'); await wait(20); AS.setTab('pagos'); await wait(40);
+    t('sin cuenta abierta: la mensualidad registrada y el privado que entra en una próxima cuenta', /Tu mensualidad: \$185\.000/.test(payEl(b).textContent)
+      && !!payEl(b).querySelector('[data-pg="ppend"]'), payEl(b).textContent.slice(0, 160));
+    // Historial: la cuenta pagada que cobró un privado lo explica.
+    const hp = HIST();
+    hp[1] = { ...hp[1], amountCOP: TOTAL, amountDueCOP: TOTAL, modality: 'mensual', vacationTrips: null, extrasCOP: PRIV,
+      extras: [{ id: 'xp-9', kind: 'private', reservationId: 'res-9', tripOn: '2026-09-18', sourcePeriodStart: hp[1].periodStart, trips: 1, perTripCOP: PRIV, amountCOP: PRIV,
+        pending: false, appliedStatementId: 'st-0', label: 'Traslado privado · 18 de sept · $50.000' }] };
+    await b.montar('historial', { acc: conVac(cuenta({ dia: 3 })), hist: hp });
+    AS.setTab('inicio'); await wait(20); AS.setTab('pagos'); await wait(40);
+    b.click(payEl(b).querySelector('.cb2-seg [data-v="hist"]')); await wait(20);
+    const hh2 = [...payEl(b).querySelectorAll('.cb2-hist')];
+    const filas2 = (h) => (h ? [...h.querySelectorAll('.cb2-hist-x > div')].map(d => txt(d.querySelector('span')) + ' = ' + txt(d.querySelector('b'))) : []);
+    t('Historial: la pagada de ' + TOTAL_TXT + ' explica «Traslado privado = 18 de sept · $50.000»', txt(hh2[1].querySelector('em')) === TOTAL_TXT
+      && filas2(hh2[1]).slice(-1)[0] === 'Traslado privado = 18 de sept · $50.000', filas2(hh2[1]).join(' | '));
+    b.click(payEl(b).querySelector('.cb2-seg [data-v="mes"]')); await wait(20);
+  }
+
   console.log('   · aviso de vacaciones en Notificaciones');
   await b.montar('historial', { acc: conVac(cuenta({ dia: 2 })), alerts: [
     { id: 'al-v', statementId: null, key: 'vacaciones', day: HOY, dayIndex: 2, title: 'Coordinación marcó tus vacaciones', body: 'Tu cobro de este mes: 4 viajes × $25.000 = $100.000.', tone: 'info', payload: {}, createdAt: '3' },

@@ -939,7 +939,14 @@
     // todo: sin la migración se cae exactamente al escalón de antes y la columna
     // queda ausente — Ajustes lo nota (`'photo_retention_days' in S`) y apaga el campo.
     const RET_COLS = ', photo_retention_days';
-    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS + RET_COLS);
+    // 0105: plazo de la inspección diferida ('minutes' | 'shift_close'). Escalón
+    // propio arriba de todo, mismo criterio que 0096: sin la migración queda
+    // ausente, Ajustes apaga el campo y el conductor sigue con los minutos.
+    const DEADLINE_COLS = ', fast_start_deadline';
+    let { data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS + RET_COLS + DEADLINE_COLS);
+    if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS + RET_COLS));
+    // Si ese escalón sí pasó, lo único que faltaba era el plazo: no hay 0105.
+    const bajoDelPlazo = !!error;
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours' + AUX_RX_COLS));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS + ', double_rest_hours'));
     if (error) ({ data, error } = await sel(CONFIRMADO + PRIV_COLS + CUSHION_COLS + JULIAN_COLS));
@@ -969,6 +976,13 @@
     if (data && !('aux_private_enabled' in data)) {
       const { data: priv } = await sel(PRIV_COLS.replace(/^,\s*/, ''));
       if (priv) Object.assign(data, priv);
+    }
+    // Lo mismo con el plazo de la inspección (0105): que una columna ajena que
+    // falte no devuelva a los minutos a un jefe que eligió «al cerrar el turno».
+    // Solo si la cascada bajó más allá de 0096; si no, ya se sabe que no está.
+    if (data && bajoDelPlazo && !('fast_start_deadline' in data)) {
+      const { data: dl } = await sel(DEADLINE_COLS.replace(/^,\s*/, ''));
+      if (dl) Object.assign(data, dl);
     }
     const base = { morning_label: '02:30 AM - 02:00 PM', afternoon_label: '02:00 PM - 01:30 AM', morning_slots: 2, afternoon_slots: 2, coord_slots: 1, shift_hours: 12, auto_close_hours: 14 };
     return {
@@ -1067,6 +1081,12 @@
     if (error) ({ error } = await upd({ ...base, coord_slots: s.coord_slots, shift_hours: s.shift_hours }));
     if (error) ({ error } = await upd(base));
     if (error) throw error;
+    // 0105: el plazo de la inspección diferida va aparte, para no sumarle otro
+    // escalón a la cascada. Solo viaja si Ajustes lo manda (con la columna).
+    if (s.fast_start_deadline) {
+      ({ error } = await upd({ fast_start_deadline: s.fast_start_deadline }));
+      if (error) throw error;
+    }
   }
 
   // Actualiza un vehículo (admin). RLS: p_vehicles_admin_mutate.
@@ -3120,19 +3140,32 @@
     // Ahora el candado es POR PARADA: fija solo si ya se atendió (llegó, recogió
     // o no se presentó) o si su ruta terminó. Lo pendiente de una ruta en curso
     // se puede reasignar.
+    //
+    // UNA RUTA ARRANCADA = 'in_progress' O con alguna parada ya atendida. Nada en la
+    // app pasa una ruta a 'in_progress' (start_route de 0005 no lo llama nadie), así
+    // que la ruta que el conductor va haciendo sigue en 'planned'. Antes el borrado
+    // de abajo («todo lo draft/planned del día») se la llevaba entera, con sus
+    // paradas atendidas en cascada, y esas paradas no se volvían a crear porque
+    // estaban en `locked`: re-publicar a mitad de operación BORRABA de la base a
+    // quien ya iba a bordo o ya se había entregado (hallazgo 12-oct-2026).
     const prev = {}, locked = new Set();
     const movableInProgress = [];   // route_stops.id pendientes de rutas ya arrancadas
+    const arrancadas = new Set();   // route_assignments.id que NO se borran
     {
-      const { data } = await sb.from('route_assignments')
+      const { data, error } = await sb.from('route_assignments')
         .select('id, status, driver_profile_id, driver_profiles(profile_id), route_stops(id, reservation_id, status)')
         .gte('planned_start_at', d0).lte('planned_start_at', d1);
+      if (error) throw new Error('No se pudo leer el plan actual: ' + error.message);
       (data || []).forEach(ra => {
         const pid = ra.driver_profiles?.profile_id || null;
-        (ra.route_stops || []).forEach(s => {
+        const stops = ra.route_stops || [];
+        const arrancada = ra.status === 'in_progress' || stops.some(s => s.status && s.status !== 'pending');
+        if (arrancada || ra.status === 'completed') arrancadas.add(ra.id);
+        stops.forEach(s => {
           prev[s.reservation_id] = pid;
           const atendida = s.status && s.status !== 'pending';
           if (ra.status === 'completed' || atendida) locked.add(s.reservation_id);
-          else if (ra.status === 'in_progress') movableInProgress.push({ id: s.id, rid: s.reservation_id });
+          else if (arrancada) movableInProgress.push({ id: s.id, rid: s.reservation_id });
         });
       });
     }
@@ -3150,18 +3183,25 @@
       else locked.add(s.rid);   // se queda en su ruta: que no se duplique abajo
     });
 
-    // Borra lo que aún no arranca (draft/planned) entero…
-    await sb.from('route_assignments').delete()
-      .in('status', ['draft', 'planned'])
-      .gte('planned_start_at', d0).lte('planned_start_at', d1);
+    // Borra lo que aún no arranca (draft/planned SIN paradas atendidas) entero…
+    {
+      let del = sb.from('route_assignments').delete()
+        .in('status', ['draft', 'planned'])
+        .gte('planned_start_at', d0).lte('planned_start_at', d1);
+      if (arrancadas.size) del = del.not('id', 'in', `(${[...arrancadas].join(',')})`);
+      const { error } = await del;
+      if (error) throw new Error('No se pudo reemplazar el plan: ' + error.message);
+    }
     // …y de las rutas en curso, solo las paradas que cambian de carro. La ruta
     // sigue viva con lo que el conductor ya hizo: borrarla completa perdería el
     // avance real del viaje.
     if (aMover.length) {
-      await sb.from('route_stops').delete().in('id', aMover);
+      const { error } = await sb.from('route_stops').delete().in('id', aMover);
+      if (error) throw new Error('No se pudieron mover las paradas pendientes: ' + error.message);
     }
 
-    let saved = 0, skipped = 0, kept = 0;
+    // skipped = carril vacío o ya todo en curso (normal); failed = la base dijo que no.
+    let saved = 0, skipped = 0, kept = 0, failed = 0, failMsg = '';
     const notify = [];
     for (const lane of lanes) {
       if (!lane.vehicleId || !lane.stops || !lane.stops.length) { skipped++; continue; }
@@ -3175,7 +3215,7 @@
         direction: lane.type === 'lle' ? 'airport_to_home' : 'home_to_airport',
         status: dpid ? 'planned' : 'draft', planned_start_at: lane.startAt,
       }).select('id').single();
-      if (error) { skipped++; continue; }
+      if (error) { failed++; failMsg = failMsg || error.message; continue; }
       // La ETA por parada viaja desde el tablero (lane.etas: minutos desde
       // medianoche). Sin ella, `route_stops.estimated_arrival_at` quedaba NULL
       // siempre y el vigilante de 0053 caía a `required_arrival_at`, que en una
@@ -3197,14 +3237,18 @@
         r2 = await sb.from('route_stops').insert(
           stops.map(({ estimated_arrival_at, ...s }) => s));
       }
-      if (r2.error) { skipped++; continue; }
+      if (r2.error) {
+        // La vuelta quedó sin paradas: se quita para no dejarle al conductor una vuelta vacía.
+        await sb.from('route_assignments').delete().eq('id', ra.id);
+        failed++; failMsg = failMsg || r2.error.message; continue;
+      }
       // Novedad real para el auxiliar: pasó de sin conductor a con conductor, o se lo cambiaron.
       if (dpid) stopIds.forEach(rid => {
-        if (prev[rid] !== lane.driverProfileId) notify.push({ reservationId: rid, changed: !!prev[rid] });
+        if (prev[rid] !== lane.driverProfileId) notify.push({ reservationId: rid, changed: !!prev[rid], driverProfileId: lane.driverProfileId });
       });
       saved++;
     }
-    return { saved, skipped, kept, notify };
+    return { saved, skipped, kept, failed, failMsg, notify };
   }
 
   // El conductor lee SU ruta del día (route_assignments asignadas a él) → vueltas.
@@ -3213,11 +3257,15 @@
     // Lo que el conductor ve del traslado (rediseño 27-sep-2026): maletas,
     // «prefiere silencio», código y punto de encuentro (0086) y el nivel (0069).
     // Cada grupo en su escalón: sin 0086 la ruta se pinta igual, sin esos datos.
+    // estimated_arrival_at (0003, la escribe saveRoutePlan al publicar) es la hora
+    // estimada de CADA parada: en una llegada, la entrega en cada casa («llega aprox.»).
     const rv = (extra) => sb.from('route_assignments')
-      .select(`id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, status, actual_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, residence_unit${extra}, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))`)
+      .select(`id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, status, actual_arrival_at, estimated_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, residence_unit${extra}, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))`)
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true });
-    let { data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status');
+    // boarding_check (0097): si subió con código o «sin código», para pintarlo igual tras recargar.
+    let { data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status, boarding_check');
+    if (error) ({ data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status'));
     if (error) ({ data, error } = await rv(', service_level, private_status'));
     if (error) ({ data, error } = await rv(''));
     // 0075 puede no estar aplicada: sin el apartamento la ruta se pinta igual.
@@ -3252,6 +3300,9 @@
           // aunque se haya perdido el teléfono o el localStorage.
           pickup: r.calculated_pickup_at ? rtHHMM(r.calculated_pickup_at) : '',
           stopStatus: s.status || 'pending', arrivedAt: s.actual_arrival_at || null,
+          // Hora estimada de esta parada según el plan publicado (null si no la hay).
+          eta: s.estimated_arrival_at ? rtHHMM(s.estimated_arrival_at) : '', etaAt: s.estimated_arrival_at || null,
+          boardedNoCode: r.boarding_check === 'sin_codigo',
           reservationId: s.reservation_id, auxProfileId: r.auxiliar_profiles?.profiles?.id || null };
       });
       // La ruta nunca pasa a 'completed' en la base (nadie la cierra), así que una
@@ -3261,7 +3312,7 @@
       const todasResueltas = stops.length > 0 && stops.every(x => RESUELTA.includes(x.stopStatus));
       const air = { name: MDE.name, addr: MDE.addr, lat: MDE.lat, lng: MDE.lng, kind: 'airport' };
       const legs = type === 'lle' ? [air, ...stops] : [...stops, air]; // llegada: sale de MDE; salida: termina en MDE
-      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: day0 };
+      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at, done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: day0 };
     });
   }
 
@@ -3297,6 +3348,12 @@
   async function driverAirportNoShow(reservationId) {
     const { error } = await sb.rpc('driver_airport_no_show', { p_reservation_id: reservationId });
     if (error) throw error;
+  }
+  // 0102 · Llegadas: deshacer «a bordo» o «no llegó» mientras el carro sigue en MDE.
+  async function driverAirportUndo(reservationId) {
+    const { data, error } = await sb.rpc('driver_airport_undo', { p_reservation_id: reservationId });
+    if (error) throw error;
+    return data;
   }
   // 0097 · «Estoy cerca» (GPS del teléfono a menos de 300 m). Una vez por parada:
   // la base no lo repite aunque se llame de nuevo.
@@ -3613,7 +3670,7 @@
     privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
-    driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverNearStop,
+    driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverAirportUndo, driverNearStop,
     sendDriverLocation, listLiveOperation,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
     chatUnreadFor,

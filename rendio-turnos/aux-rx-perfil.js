@@ -23,7 +23,8 @@
 //   · Las cifras salen de ApiAux.getMyStats(); sin dato, «—» y «aún sin datos».
 //     La tercera cifra (puntos) solo existe con Puntos encendido: la cuadrícula
 //     es de 2.
-//   · Select sin «kit de confort» (D3).
+//   · Select sin «kit de confort» (D3), con la tarifa real de Ajustes
+//     (AuxPrivado.priceText, 12-oct-2026); el nivel «Directo» ya no existe.
 //   · Filas nuevas que el diseño no trae y el plan sí: Punto de encuentro,
 //     Teléfono, Notificaciones y app (su hoja lleva #ax-pwa-bar: la base no
 //     puede llevar ids de §2.4, regla #10), Ver la bienvenida, Algo no va bien
@@ -106,6 +107,11 @@
   function privEnabled() {
     try { return !!(window.AuxPrivado && typeof AuxPrivado.enabled === 'function' && AuxPrivado.enabled()); }
     catch (_) { return false; }
+  }
+  // La tarifa del privado («$ 50.000»), leída de Ajustes por AuxPrivado; null sin dato.
+  function privPrice() {
+    try { return (window.AuxPrivado && typeof AuxPrivado.priceText === 'function' && AuxPrivado.priceText()) || null; }
+    catch (_) { return null; }
   }
   function paySummary() {
     try { return window.AuxPagos && typeof AuxPagos.summary === 'function' ? (AuxPagos.summary() || null) : null; }
@@ -301,7 +307,9 @@
       beneficios = U.row({ tag: 'div', cls: 'static', icon: 'Gift', tone: 'pts', title: 'Puntos Rendio', sub: 'Todavía no disponible', right: soon, chevron: false, attrs: { 'data-me': 'row-points' } })
         + U.row({ tag: 'div', cls: 'static', icon: 'Users', tone: 'a2h', title: 'Invitar colegas', sub: 'Todavía no disponible', right: soon, chevron: false, attrs: { 'data-me': 'row-invite' } });
     }
-    beneficios += U.row({ icon: 'Sparkle', tone: 'plus', title: 'Rendio Select', sub: privEnabled() ? 'El carro es solo para ti · con costo' : 'El carro es solo para ti · pronto', attrs: { 'data-rx': 'open-select', 'data-from': 'me', 'data-me': 'row-select' } });
+    // 12-oct-2026: con el privado encendido, la tarifa real (Ajustes) por trayecto.
+    const selSub = privEnabled() && privPrice() ? 'El carro es solo para ti · ' + privPrice() + ' por trayecto' : 'El carro es solo para ti · pronto';
+    beneficios += U.row({ icon: 'Sparkle', tone: 'plus', title: 'Rendio Select', sub: selSub, attrs: { 'data-rx': 'open-select', 'data-from': 'me', 'data-me': 'row-select' } });
 
     // Ayuda y ajustes
     const mode = themePref();
@@ -440,8 +448,8 @@
   // ── Nivel preferido (hoja) ───────────────────────────────────────────────
   // Las tarjetas son de P6 (AuxPrivado.levelsHTML(null,{mode:'pref'})). Si aún no
   // existen, se pintan aquí con el marcado de RxLevelCard, honestas: Compartido
-  // «Incluido», Directo «Pronto» y apagado, Privado «Con costo» (o «Pronto» en
-  // primicia). Sin cupos (D5) y sin kit (D3).
+  // «Incluido» y Privado con su tarifa de Ajustes (o «Pronto» en primicia).
+  // Directo ya no existe (12-oct-2026). Sin cupos (D5) y sin kit (D3).
   function levelCardsFallback(cur) {
     const inc = (arr) => arr.filter(Boolean).map(x => `<span>${ic('Check', 13)}${esc(x)}</span>`).join('');
     const priv = privEnabled();
@@ -452,12 +460,14 @@
       + (o.off ? ' disabled aria-disabled="true"' : ` data-rx="pref-level" data-v="${o.v}"`) + '>'
       + `<span class="rx-lv-ic t-${o.tone}">${ic(o.ic, 20)}</span>`
       + `<span class="rx-lv-tx"><span class="rx-lv-h"><b>${esc(o.name)}</b><em>${esc(o.price)}</em></span>`
-      + `<span class="rx-lv-t">${esc(o.tag)}</span><span class="rx-lv-inc">${inc(o.inc)}</span></span>`
+      + `<span class="rx-lv-t">${esc(o.tag)}</span><span class="rx-lv-inc">${inc(o.inc)}</span>`
+      + (o.pn ? `<span class="rx-lv-pn">${esc(o.pn)}</span>` : '') + '</span>'
       + '<span class="rx-radio"><i></i></span></button>';
+    const pp = priv ? privPrice() : null;
     // Sin preferencia guardada, la elegida es Compartido (como en el pedido).
     return '<div class="rx-lvls" data-mode="pref">' + card({ v: 'shared', name: 'Compartido', price: 'Incluido', tag: 'Vas con tu tripulación', inc: ['Ruta agrupada por sector', 'Paradas en el camino'], ic: 'Users', tone: 'a2h', on: cur !== 'private' }, 0)
-      + card({ v: 'direct', name: 'Directo', price: 'Pronto', tag: 'Sin desvíos: llegas antes', inc: ['Va derecho a tu destino'], ic: 'ArrowRight', tone: 'h2a', off: true }, 1)
-      + card({ v: 'private', name: 'Privado · Select', price: priv ? 'Con costo' : 'Pronto', tag: 'El carro es solo tuyo', inc: privInc, ic: 'Sparkle', tone: 'plus', vip: true, on: cur === 'private', off: !priv }, 2)
+      + card({ v: 'private', name: 'Privado · Select', price: pp || 'Pronto', tag: 'El carro es solo tuyo', inc: privInc, ic: 'Sparkle', tone: 'plus', vip: true, on: cur === 'private', off: !priv,
+        pn: pp ? 'Por trayecto · se suma a tu cuenta de cobro cuando Coordinación lo apruebe' : '' }, 1)
       + '</div>';
   }
   function levelSheetHTML() {

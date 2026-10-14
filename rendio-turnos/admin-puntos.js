@@ -24,7 +24,6 @@
   const VIEWS = [['canjes', 'Canjes'], ['programa', 'Programa'], ['vitrina', 'Vitrina'], ['saldos', 'Saldos']];
   const KIND_HINT = {
     guest_seat: 'Súmale el colega en su traslado compartido y márcalo cumplido.',
-    direct_trip: 'El traslado Directo todavía no existe: recházalo con un motivo para devolverle los puntos.',
     billing_days: 'Aplícalo como descuento en su cuenta de cobro (Cuentas de cobro) y márcalo cumplido.',
     private_trip: 'Coordina el traslado privado con el tripulante y márcalo cumplido.',
   };
@@ -199,7 +198,8 @@
 
   // Vitrina
   function vitrinaHTML() {
-    const r = st.rewards;
+    // El canje de Directo no se lista (12-oct-2026: ese nivel no existe; 0103 lo dejó apagado).
+    const r = Array.isArray(st.rewards) ? st.rewards.filter(x => x && x.kind !== 'direct_trip' && x.id !== 'directo') : st.rewards;
     if (r === undefined) return loadingHTML();
     if (r === null) return emptyHTML('No se pudo cargar la vitrina', st.errs.rewards || 'Puede faltar la migración 0091 o la sesión.', 'refresh');
     if (!r.length) return emptyHTML('La vitrina está vacía', '');

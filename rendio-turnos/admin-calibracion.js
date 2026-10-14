@@ -20,7 +20,7 @@
     // (es una consulta), pero el valor se deja puesto para que al llegar la
     // lista quede seleccionado el que ya estaba.
     if ($('#setting-priv-enabled')) $('#setting-priv-enabled').checked = S.aux_private_enabled === true;
-    if ($('#setting-priv-price')) $('#setting-priv-price').value = S.aux_private_price_cop != null ? S.aux_private_price_cop : 150000;
+    if ($('#setting-priv-price')) $('#setting-priv-price').value = S.aux_private_price_cop != null ? S.aux_private_price_cop : 50000;   // 0103: default $50.000
     if ($('#setting-priv-block')) $('#setting-priv-block').value = S.aux_private_block_min != null ? S.aux_private_block_min : 90;
     if ($('#setting-route-merge')) $('#setting-route-merge').value = S.route_merge_window_min != null ? S.route_merge_window_min : 30;
     if ($('#setting-route-service')) $('#setting-route-service').value = S.route_service_min != null ? S.route_service_min : 3;
@@ -188,7 +188,7 @@
       // elegida" es un estado válido, y con él la app no ofrece el privado.
       aux_private_enabled: !!($('#setting-priv-enabled') && $('#setting-priv-enabled').checked),
       aux_private_vehicle_id: privVehiculoAGuardar(),
-      aux_private_price_cop: Math.max(1, parseInt($('#setting-priv-price') && $('#setting-priv-price').value, 10) || 150000),
+      aux_private_price_cop: Math.max(1, parseInt($('#setting-priv-price') && $('#setting-priv-price').value, 10) || 50000),
       aux_private_block_min: Math.min(480, Math.max(10, parseInt($('#setting-priv-block') && $('#setting-priv-block').value, 10) || 90)),
       // Optimizador. Igual que aux_min_lead_hours, 0 es un valor VÁLIDO
       // (0 = no juntar oleadas), así que `|| default` lo pisaría.

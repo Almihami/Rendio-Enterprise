@@ -178,6 +178,10 @@
     // Salida (6): booked · assigned · enroute · arrived · onboard · done.
     // Llegada (5): booked · assigned · onboard · homebound · done.
     phases: (t, info) => auxPhases(t, info || (t && t._info)),
+    // Los motivos del botón rojo para la fase de ESTE viaje (12-oct-2026):
+    // [{id, label, sev}] (copias). alarmSet(t) → 'lle' | 'sal' | 'car'.
+    alarmOptions: (t) => auxAlarmOptions(t).map(o => Object.assign({}, o)),
+    alarmSet: (t) => auxAlarmSet(t),
     // ¿Toca la pantalla de calificar para este viaje? (entregado, con
     // conductor, sin calificar y sin «Ahora no», salvo que lo pidiera).
     showRate: (t) => auxShowRate(t),
@@ -1133,7 +1137,7 @@
         ${f.residenceId ? `<div class="ax-sum-row"><span>Ubicación</span><b class="axr-ok">Verificada</b></div>` : ''}
         ${window.AuxPrivado && AuxPrivado.enabled()
           ? row('Servicio', f.level === 'private'
-              ? 'Privado · con costo'
+              ? 'Privado · ' + ((AuxPrivado.priceText && AuxPrivado.priceText()) || 'con costo')
               : 'Compartido · incluido')
           : ''}
         ${f.isPernocta && !tierra ? row('Pernocta', 'Sí (hotel)') : ''}
@@ -1942,7 +1946,9 @@
     auxState.chatMsgs = (auxState.chatMsgs || []).concat([temp]);
     auxChatBubbles();
     try {
-      const r = await Api.sendReservationMessage(t.id, body, { title: 'Mensaje de tu pasajero' });
+      // El aviso al conductor abre ESE chat en su ruta (driver-rutas.js resuelve
+      // #/viaje?r= para el rol conductor); antes caía en su Inicio, sin el mensaje.
+      const r = await Api.sendReservationMessage(t.id, body, { title: 'Mensaje de tu pasajero', url: '/#/viaje?r=' + encodeURIComponent(t.id) });
       // Si al conductor no le suena, hay que decirlo: si no, uno se queda
       // esperando una respuesta que no va a llegar hasta que él abra la app.
       if (r && r.notified === false && !auxState.chatWarned) {
@@ -2026,12 +2032,42 @@
     return `<div class="ax-cta-bar">${confirmar}${alarma}</div>`;
   }
 
-  // Hoja del botón rojo. Tres motivos y listo: quien lo aprieta está de afán.
-  const AUX_ALARM = [
-    { id: 'medica',      label: 'Emergencia médica a bordo', sev: 'high' },
-    { id: 'desembarque', label: 'Se va a demorar el desembarque', sev: 'medium' },
-    { id: 'otra',        label: 'Otra cosa que me va a retrasar', sev: 'medium' },
-  ];
+  // Hoja del botón rojo. Cuatro motivos y listo: quien lo aprieta está de afán.
+  // Cambian con la fase del viaje (pedido del 12-oct-2026: «cuando está a
+  // bordo del carro debe ser diferente a cuando está en el avión»):
+  //   · lle — llegada, todavía sin subir (en el avión o en el terminal);
+  //   · sal — salida, todavía sin subir (en la casa);
+  //   · car — a bordo, en las dos direcciones.
+  // Un id significa lo mismo en todas las fases (va en details.motivo) y el
+  // texto que se envía es el que la persona vio. 'high' solo para lo médico y
+  // la seguridad: es lo que pinta el aviso de los jefes con 🚨.
+  const AUX_ALARM_SETS = {
+    lle: [
+      { id: 'desembarque', label: 'Se va a demorar el desembarque', sev: 'medium' },
+      { id: 'equipaje',    label: 'Estoy esperando mi equipaje', sev: 'medium' },
+      { id: 'medica',      label: 'Emergencia médica', sev: 'high' },
+      { id: 'otra',        label: 'Otra cosa que me va a retrasar', sev: 'medium' },
+    ],
+    sal: [
+      { id: 'demora_salir', label: 'Me voy a demorar en salir', sev: 'medium' },
+      { id: 'otro_punto',   label: 'Estoy en otro punto de encuentro', sev: 'medium' },
+      { id: 'medica',       label: 'Emergencia médica', sev: 'high' },
+      { id: 'otra',         label: 'Otra cosa que me va a retrasar', sev: 'medium' },
+    ],
+    car: [
+      { id: 'medica',   label: 'Emergencia médica a bordo', sev: 'high' },
+      { id: 'carro',    label: 'Problema con el carro o el conductor', sev: 'medium' },
+      { id: 'inseguro', label: 'Me siento en riesgo', sev: 'high' },
+      { id: 'otra',     label: 'Otra cosa', sev: 'medium' },
+    ],
+  };
+  // A bordo = el estado del viaje (A bordo y Rumbo a casa son 'onboard'). 'done'
+  // solo llega aquí con la hoja ya abierta: se bajó hace un instante.
+  function auxAlarmSet(t) {
+    if (t && (t.status === 'onboard' || t.status === 'done')) return 'car';
+    return t && t.type === 'lle' ? 'lle' : 'sal';
+  }
+  function auxAlarmOptions(t) { return AUX_ALARM_SETS[auxAlarmSet(t)]; }
   function auxAlarmHTML(t) {
     if (auxShellOn() && window.AuxRxViaje && typeof AuxRxViaje.alarmHTML === 'function') return AuxRxViaje.alarmHTML(t);
     const a = auxState.alarm || {};
@@ -2043,7 +2079,7 @@
         </div>
         <p class="ax-alarm-lead">Esto le llega de una vez a coordinación${t.driver ? ' y a ' + t.driver.name.split(' ')[0] : ''}.</p>
         <div class="ax-alarm-opts">
-          ${AUX_ALARM.map(o => `<button class="ax-alarm-opt${a.motivo === o.id ? ' on' : ''}" data-ax="alarm-pick" data-v="${o.id}">${o.label}</button>`).join('')}
+          ${auxAlarmOptions(t).map(o => `<button class="ax-alarm-opt${a.motivo === o.id ? ' on' : ''}" data-ax="alarm-pick" data-v="${o.id}">${o.label}</button>`).join('')}
         </div>
         <textarea class="ax-input" id="ax-alarm-text" rows="2" maxlength="400" placeholder="¿Algo más que debamos saber? (opcional)">${a.text || ''}</textarea>
         <div class="ax-alarm-acts">
@@ -3063,7 +3099,12 @@
     if (!a.motivo) { auxToast('Dinos qué está pasando.'); return; }
     if (!window.Api?.reportIncident) { auxToast('No se pudo enviar. Intenta de nuevo.'); return; }
 
-    const opt = AUX_ALARM.find(o => o.id === a.motivo) || AUX_ALARM[2];
+    // El motivo con el texto de la fase de AHORA, que es la lista a la vista. Si
+    // la fase cambió con la hoja abierta (subió al carro) y ese motivo ya no se
+    // ofrece, se vuelve a preguntar. Ese texto es lo que leen los jefes: va en
+    // la descripción de la eventualidad, en su push y en el 🚨 del chat.
+    const opt = auxAlarmOptions(t).find(o => o.id === a.motivo);
+    if (!opt) { a.motivo = null; auxRender(); auxToast('Dinos qué está pasando.'); return; }
     const desc = `${opt.label}${a.text && a.text.trim() ? ' — ' + a.text.trim() : ''}`;
     a.sending = true; auxRender();
 
@@ -3073,7 +3114,7 @@
         description: desc,
         severity: opt.sev,
         reservationId: t.id,
-        details: { motivo: a.motivo },
+        details: { motivo: a.motivo, texto: opt.label, fase: auxPhaseKey(t, t._info) },
       });
       const quien = (auxState.profile?.full_name || 'Un tripulante');
       if (typeof notifyOps === 'function') {

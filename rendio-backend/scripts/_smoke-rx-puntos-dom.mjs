@@ -17,7 +17,7 @@
 //     entra con .rx-anim (se monta) y RxCount arranca desde 0;
 //   · RxPoints: héroe (Tu saldo, barra hacia el canje más barato que aún no
 //     alcanzas), segmentado de 3 (indicador sin repintar, lista RECREADA con
-//     .rx-anim, key={tab}), vitrina de 0091 con Directo «Pronto», Ganar con los
+//     .rx-anim, key={tab}), vitrina de 0091 SIN Directo (12-oct-2026), Ganar con los
 //     valores del jefe, Movimientos del libro con estado del canje;
 //   · canje: hoja rx-sh → ApiPuntos.redeem → la hoja se cierra, el saldo sale de
 //     la base (RxCount desde 0 sobre el MISMO nodo), la fila se apaga en su
@@ -71,6 +71,7 @@ const prohibidos = (html) => {
 // Datos de prueba con la forma de ApiPuntos (0091).
 const REWARDS = [
   { id: 'colega', title: 'Traer a un colega gratis', description: 'Un cupo en tu traslado compartido', cost: 180, kind: 'guest_seat', amount: 1, enabled: true, soon: false, sort: 1 },
+  // Directo con la forma de ANTES de 0103 (encendido y «Pronto»): la pantalla no lo pinta igual.
   { id: 'directo', title: 'Un traslado Directo', description: 'Sin paradas, derecho a tu destino', cost: 320, kind: 'direct_trip', amount: 1, enabled: true, soon: true, sort: 2 },
   { id: 'mensual', title: '3 días de tu mensualidad', description: 'Se descuentan de tu próximo cobro', cost: 400, kind: 'billing_days', amount: 3, enabled: true, soon: false, sort: 3 },
   { id: 'privado', title: 'Un traslado Privado', description: 'Carro solo para ti · lo confirma Coordinación', cost: 600, kind: 'private_trip', amount: 1, enabled: true, soon: false, sort: 4 },
@@ -298,13 +299,13 @@ t('«Te faltan 200 pts para 3 días de tu mensualidad» (no un Directo fijo)', h
 const seg = body().querySelector('.rx-seg');
 t('segmentado de 3: Canjear · Ganar · Movimientos (--n:3)', [...seg.querySelectorAll('button')].map(x => x.textContent).join('|') === 'Canjear|Ganar|Movimientos' && seg.style.getPropertyValue('--n') === '3');
 let rows = [...body().querySelectorAll('.rx-list .rx-shelf')];
-t('vitrina de la base: 4 filas .rx-shelf.rx-in con --d 0..3', rows.length === 4 && rows.map(r => r.style.getPropertyValue('--d')).join(',') === '0,1,2,3');
+t('vitrina de la base sin Directo: 3 filas .rx-shelf.rx-in con --d 0..2', rows.length === 3 && rows.map(r => r.style.getPropertyValue('--d')).join(',') === '0,1,2');
 t('colega (180) se puede: botón con RxPts 12 px (i de 6.6000000000000005px)', !rows[0].classList.contains('no') && !rows[0].querySelector('button').disabled
   && rows[0].querySelector('button .rx-pts').style.fontSize === '12px' && rows[0].querySelector('.rx-pts i').style.width === '6.6000000000000005px' && /180 pts/.test(rows[0].querySelector('button').textContent));
-t('Directo sale «Pronto», apagado (el nivel no existe)', rows[1].classList.contains('no') && rows[1].querySelector('button').disabled && /Pronto/.test(rows[1].querySelector('button').textContent));
-t('mensual (400) y privado (600) apagados con .no', rows[2].classList.contains('no') && rows[2].querySelector('button').disabled && rows[3].classList.contains('no') && rows[3].querySelector('button').disabled);
-t('íconos del diseño: Users · ArrowRight · Wallet · Sparkle', rows.map(r => r.querySelector('.rx-row-ic.t-pts use').getAttribute('href')).join(',') === '#rx-Users,#rx-ArrowRight,#rx-Wallet,#rx-Sparkle');
-t('privado sin «kit de confort»: «Carro solo para ti · lo confirma Coordinación»', /lo confirma Coordinación/.test(rows[3].textContent) && !/kit/i.test(rows[3].textContent));
+t('Directo NO sale (ni como «Pronto»): el nivel no existe, aunque la vitrina lo traiga', !body().querySelector('[data-k="rw-directo"]') && !/Directo/.test(body().querySelector('.rx-list').textContent));
+t('mensual (400) y privado (600) apagados con .no', rows[1].classList.contains('no') && rows[1].querySelector('button').disabled && rows[2].classList.contains('no') && rows[2].querySelector('button').disabled);
+t('íconos del diseño: Users · Wallet · Sparkle', rows.map(r => r.querySelector('.rx-row-ic.t-pts use').getAttribute('href')).join(',') === '#rx-Users,#rx-Wallet,#rx-Sparkle');
+t('privado sin «kit de confort»: «Carro solo para ti · lo confirma Coordinación»', /lo confirma Coordinación/.test(rows[2].textContent) && !/kit/i.test(rows[2].textContent));
 t('nota «Los puntos no son plata»', /Los puntos no son plata: no se retiran ni se transfieren\./.test(body().querySelector('.rx-note').textContent));
 const heroB = hero.querySelector('.rx-pts-n b');
 await wait(900);
@@ -567,7 +568,7 @@ console.log('\n── Admin (#puntos-ui) ──');
   clk(R().querySelector('.pt-tabs [data-v="vitrina"]'));
   await wait(10);
   const rw = [...R().querySelectorAll('.pt-card.rw')];
-  t('Vitrina: 4 canjes, Directo con «Pronto»', rw.length === 4 && /Pronto/.test(rw[1].querySelector('.pt-tag').textContent));
+  t('Vitrina del jefe: 3 canjes, sin Directo (12-oct-2026)', rw.length === 3 && !R().querySelector('.pt-card.rw[data-rw="directo"]') && !/Directo/.test(R().querySelector('.pt-card.rw').parentNode.textContent));
   rw[0].querySelector('[data-pt-f="cost"]').value = '200';
   clk(rw[0].querySelector('[data-pt="save-reward"]'));
   await wait(20);

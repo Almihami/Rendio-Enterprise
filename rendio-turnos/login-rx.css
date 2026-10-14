@@ -97,6 +97,20 @@
 #screen-login.rx-login .rx-sh h3{ font-size:22px; letter-spacing:-.5px; margin:4px 0 0; font-weight:700; color:var(--r-text); }
 #screen-login.rx-login .rx-sh p{ font-size:15px; line-height:1.55; color:var(--r-text-2); margin:0 0 8px; }
 
+/* «Olvidé mi contraseña» (0104, 12-oct-2026): la hoja pide el correo o el
+   celular y manda el pedido a Coordinación. Mismas piezas del login (.rx-field,
+   .rx-input, .rx-btn.pri con el spinner de «Entrando…»); el error, en el mismo
+   rojo que #login-error. */
+#screen-login.rx-login .rx-sh .rx-field{ margin:2px 0 2px; }
+#screen-login.rx-login .rx-sh .rx-input input:disabled{ color:var(--r-text-3); }
+#screen-login.rx-login .rx-sh p.rxl-help-err{ font-size:14px; font-weight:600; line-height:1.45; color:var(--rx-err); margin:0; padding:0 4px; }
+#screen-login.rx-login .rxl-help-err[hidden]{ display:none; }
+#screen-login.rx-login .rx-sh .rx-btn.pri{ background:var(--r-accent); color:#fff; box-shadow:0 10px 22px -10px rgba(242,101,34,.7); margin-top:4px; }
+#screen-login.rx-login .rx-sh .rx-btn.pri:disabled{ background:var(--r-border); color:var(--r-text-3); box-shadow:none; cursor:default; transform:none; }
+#screen-login.rx-login .rx-sh .rx-btn.pri:disabled::before{ content:""; width:18px; height:18px; border-radius:50%; border:2.5px solid rgba(113,113,122,.3); border-top-color:var(--r-text-2); animation:rxSpin .7s linear infinite; }
+#screen-login.rx-login .rx-sh p.rxl-help-alt{ font-size:13.5px; line-height:1.5; color:var(--r-text-3); margin:2px 4px 0; text-align:center; }
+#screen-login.rx-login .rx-sh .rxl-help-ok{ margin:6px 0 2px; }
+
 /* Movimiento reducido: el mismo criterio que rx-aux-app.css (todo termina ya). */
 @media (prefers-reduced-motion: reduce){
   #screen-login.rx-login .rx-in,

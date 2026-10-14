@@ -48,13 +48,13 @@
   const T_CHAIN = 280;
 
   const CLOSED = ['done', 'cancelled', 'noshow'];
-  // Los tres motivos del botón rojo: los mismos ids y textos de auxiliar.js
-  // (AUX_ALARM), que es quien los envía.
-  const ALARM = [
-    { id: 'medica', label: 'Emergencia médica a bordo', icon: 'AlertTriangle' },
-    { id: 'desembarque', label: 'Se va a demorar el desembarque', icon: 'Plane' },
-    { id: 'otra', label: 'Otra cosa que me va a retrasar', icon: 'Clock' },
-  ];
+  // Los motivos del botón rojo cambian con la fase (12-oct-2026): los da
+  // Auxiliar.alarmOptions(t) — auxiliar.js es quien los envía, así el texto que
+  // se ve y el que les llega a los jefes son uno solo. Aquí solo el ícono.
+  const ALARM_IC = {
+    medica: 'AlertTriangle', desembarque: 'Plane', equipaje: 'Briefcase', demora_salir: 'Clock',
+    otro_punto: 'MapPin', carro: 'Car', inseguro: 'Shield', otra: 'Clock',
+  };
   // RxRate: etiquetas por calificación y el texto bajo las estrellas.
   const TAGS_OK = ['Puntual', 'Manejo seguro', 'Carro limpio', 'Amable', 'Buena música'];
   const TAGS_BAD = ['Llegó tarde', 'Manejo brusco', 'Carro sucio', 'No encontré el carro', 'Otro'];
@@ -412,14 +412,29 @@
   }
 
   // ── Hojas: botón rojo y cancelar (en .rx-sheet-host, por patch) ─────────────
+  // Motivos de la fase de ESTE viaje: lle (sin subir, llegada), sal (sin subir,
+  // salida) o car (a bordo). Sin Auxiliar no hay quién envíe: lista vacía.
+  function alarmSetOf(t) {
+    const a = AX();
+    try { return a && typeof a.alarmSet === 'function' ? (a.alarmSet(t) || '') : ''; } catch (_) { return ''; }
+  }
+  function alarmOpts(t) {
+    const a = AX();
+    try { return a && typeof a.alarmOptions === 'function' ? (a.alarmOptions(t) || []) : []; } catch (_) { return []; }
+  }
+  function alarmOptsHTML(t, motivo) {
+    const car = alarmSetOf(t) === 'car';
+    return alarmOpts(t).map(o => `<button type="button" class="rx-opt${motivo === o.id ? ' on' : ''}" data-ax="alarm-pick" data-v="${esc(o.id)}">`
+      + `<span class="rx-opt-ic">${ic(o.id === 'otra' && car ? 'Info' : (ALARM_IC[o.id] || 'Info'), 18)}</span>`
+      + `<span class="rx-opt-tx"><b>${esc(o.label)}</b></span><span class="rx-radio"><i></i></span></button>`).join('');
+  }
   function alarmHTML(t) {
     const a = ST().alarm || {};
     const first = drvFirst(t);
     return '<div class="rx-sh rx-trip-alarm-sh">'
       + '<h3>¿Qué está pasando?</h3>'
       + `<p>Esto le llega de una vez a Coordinación${first ? ' y a ' + esc(first) : ''}.</p>`
-      + '<div class="rx-trip-opts">' + ALARM.map(o => `<button type="button" class="rx-opt${a.motivo === o.id ? ' on' : ''}" data-ax="alarm-pick" data-v="${o.id}">`
-        + `<span class="rx-opt-ic">${ic(o.icon, 18)}</span><span class="rx-opt-tx"><b>${esc(o.label)}</b></span><span class="rx-radio"><i></i></span></button>`).join('') + '</div>'
+      + `<div class="rx-trip-opts" data-rx-alarm-set="${esc(alarmSetOf(t))}">${alarmOptsHTML(t, a.motivo)}</div>`
       + `<div class="rx-input rx-trip-ta"><textarea id="ax-alarm-text" rows="2" maxlength="400" placeholder="¿Algo más que debamos saber? (opcional)">${esc(a.text || '')}</textarea></div>`
       + btn(a.sending ? 'Enviando…' : 'Avisar ahora', { kind: 'danger', disabled: !!a.sending, attrs: { 'data-ax': 'alarm-send' } })
       + btn('Volver', { kind: 'ghost', attrs: { 'data-ax': 'alarm-close' } })
@@ -469,8 +484,18 @@
     if (u && u.sheetClose) u.sheetClose(bg); else bg.remove();
   }
   const closeAllSheets = () => { closeSheet('alarm'); closeSheet('cancel'); };
-  function updAlarm(bg) {
+  function updAlarm(bg, t) {
     const a = ST().alarm || {};
+    // La fase cambió con la hoja abierta (p. ej. subió al carro): los motivos
+    // de la fase nueva. Un motivo elegido que ya no se ofrece se suelta, para
+    // no enviar algo que dejó de estar a la vista.
+    const box = bg.querySelector('.rx-trip-opts');
+    const set = alarmSetOf(t);
+    if (box && t && box.getAttribute('data-rx-alarm-set') !== set) {
+      if (ST().alarm && a.motivo && !alarmOpts(t).some(o => o.id === a.motivo)) a.motivo = null;
+      box.innerHTML = alarmOptsHTML(t, a.motivo);
+      box.setAttribute('data-rx-alarm-set', set);
+    }
     bg.querySelectorAll('[data-ax="alarm-pick"]').forEach(b => {
       const on = b.getAttribute('data-v') === a.motivo;
       if (b.classList.contains('on') !== on) b.classList.toggle('on', on);
@@ -490,7 +515,7 @@
       if (bg && (!bg.isConnected || bg.__rxClosing)) { M.sheets[kind] = bg = null; }
       if (!want[kind]) { if (bg) closeSheet(kind); return; }
       if (!bg) { M.sheets[kind] = mountSheet(kind, t); return; }
-      if (kind === 'alarm') updAlarm(bg);
+      if (kind === 'alarm') updAlarm(bg, t);
     });
   }
 

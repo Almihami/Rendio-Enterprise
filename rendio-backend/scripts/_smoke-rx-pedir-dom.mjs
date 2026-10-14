@@ -68,7 +68,10 @@ const DOS = { ...UNA, residenceId2: 'r2', residence2: RES[1], unit2: 'Casa 8' };
 const SIN_PRIVADO = { aux_min_lead_hours: 6, aux_wait_minutes: 5 };
 const CON_PRIVADO = { ...SIN_PRIVADO, aux_private_enabled: true, aux_private_vehicle_id: 'v1', aux_private_price_cop: 150000 };
 const PROHIBIDO = [/Carlos Mejía/, /\bLaura\b/, /AV9525/, /Juliana/, /Plan B/, /24\/7/, /en línea/i, /Último cupo/i, /Siempre hay cupo/i,
-  /\bkit\b/i, /Preparado/, /Esta noche te avisamos/i, /38 auxiliares/, /\$\s?\d/, /150[.,]000/];
+  /\bkit\b/i, /Preparado/, /Esta noche te avisamos/i, /38 auxiliares/,
+  // 12-oct-2026 (0103): la única cifra permitida es la tarifa REAL de Ajustes ($ 150.000 en CON_PRIVADO);
+  // lo prohibido ahora es el «Con costo / te confirma la tarifa» de cuando se escondía.
+  /\$\s?(?!150\.000)\d/, /con costo/i, /te confirma la tarifa/i, /no se cobra en la app/i];
 
 async function boot({ rx = true, settings = SIN_PRIVADO, place = UNA, catalogo = RES } = {}) {
   const dom = new JSDOM(read('index.html'), { runScripts: 'outside-only', pretendToBeVisual: true, url: 'http://localhost/' });
@@ -358,7 +361,7 @@ if (lvlPriv) { E.click(lvlPriv); await wait(); }
 t('con privado: «Prefiero silencio» (toggle quietRide)', !!E.$('[data-scr="book"]:not(.out) [data-ax="toggle"][data-key="quietRide"]'));
 E.click('[data-scr="book"]:not(.out) [data-ax="toggle"][data-key="quietRide"]'); await wait();
 E.click(cont(E)); await wait();
-t('fila Nivel «Privado · Con costo» sin cifra', /Privado · Con costo/.test(txt(E)) && !/\$\s?\d/.test(txt(E)));
+t('fila Nivel «Privado · $ 150.000» (la tarifa real de Ajustes)', /Privado · \$ 150\.000/.test(txt(E)), txt(E).slice(0, 200));
 t('el deslizador dice «Desliza para solicitar»', /Desliza para solicitar/.test(slide(E).textContent));
 prohibidos(E, 'revisar privado');
 E.inserts.length = 0;

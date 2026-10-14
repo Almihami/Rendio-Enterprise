@@ -1,0 +1,531 @@
+/* rt-conductor-app.css — ajustes PROPIOS DE LA APP sobre rt-conductor.css (ruta del
+   conductor v2, entrega del diseñador del 12-oct-2026). Se carga DESPUÉS de
+   rt-conductor.css (el CSS del diseñador, generado) y de styles.css.
+
+   Reglas de este archivo (las mismas de rx-aux-app.css para el auxiliar):
+   · Todo selector va bajo #driver-ruta-ui.rx-phone (o #driver-ruta-root.rt-v2). Sin la
+     clase rx-phone nada de esto aplica: el resto del conductor no cambia.
+   · Nunca se toca el CSS portado. Lo que el diseño resolvía con el marco del teléfono
+     falso (barra de estado de 44 px, indicador de inicio) aquí se resuelve con las
+     zonas seguras REALES del teléfono: valor del diseño − 44 arriba, − 16 abajo.
+   · El tramo entre BEGIN/END noanim lo escribe _portar-css-ruta-conductor.mjs. */
+
+/* ── 1. La app ES el teléfono ─────────────────────────────────────────────────
+   #driver-ruta-root es la capa fija de pantalla completa (styles.css). Con la v2 no
+   hace scroll: cada pantalla del diseño maneja el suyo (.rt-body, .rt-xs). */
+#driver-ruta-root.rt-v2{ overflow:hidden; background:#F8F8F6; }
+#driver-ruta-root.rt-v2.night{ background:#0B0A09; }
+#driver-ruta-ui.rx-phone{
+  width:100%; max-width:520px; height:100%; min-height:0; margin:0 auto;
+  --rx-top:env(safe-area-inset-top,0px);
+  --rx-bot:env(safe-area-inset-bottom,0px);
+}
+
+/* ── 2. El documento del diseño, no el de Tailwind ────────────────────────────
+   El prototipo corre sin Tailwind: lo que no tiene regla propia usa los valores del
+   navegador. La app carga el preflight de Tailwind (line-height 1.5, títulos sin
+   negrita, <p>/<h*> sin margen, botones sin relleno, <svg> en bloque). Peso (0,1,0)
+   con :where(): le gana al preflight y PIERDE contra cualquier regla del diseño.
+   No toca nada dentro de Leaflet. */
+#driver-ruta-ui.rx-phone{ line-height:normal; }
+:where(#driver-ruta-ui).rx-phone :where(h1):where(:not(.leaflet-container *)){ font-size:2em; margin-block:.67em; font-weight:bold; }
+:where(#driver-ruta-ui).rx-phone :where(h2):where(:not(.leaflet-container *)){ font-size:1.5em; margin-block:.83em; font-weight:bold; }
+:where(#driver-ruta-ui).rx-phone :where(h3):where(:not(.leaflet-container *)){ font-size:1.17em; margin-block:1em; font-weight:bold; }
+:where(#driver-ruta-ui).rx-phone :where(p):where(:not(.leaflet-container *)){ margin-block:1em; }
+:where(#driver-ruta-ui).rx-phone :where(b,strong):where(:not(.leaflet-container *)){ font-weight:bold; }
+:where(#driver-ruta-ui).rx-phone :where(button,input,textarea,select):where(:not(.leaflet-container *)){ font-size:13.3333px; line-height:normal; }
+:where(#driver-ruta-ui).rx-phone :where(button):where(:not(.leaflet-container *)){ padding:1px 6px; }
+:where(#driver-ruta-ui).rx-phone :where(input):where(:not(.leaflet-container *)){ padding:1px 2px; }
+:where(#driver-ruta-ui).rx-phone :where(svg,img):where(:not(.leaflet-container *)){ display:inline; vertical-align:baseline; }
+:where(#driver-ruta-ui).rx-phone :where(a):where(:not(.leaflet-container *)){ color:#F26522; }
+/* Íconos del sprite: su stroke-width efectivo en el diseño es 1,5 (svg.lucide de
+   tokens.css, que no se porta). Sin peso, para que cualquier regla del diseño gane. */
+:where(#driver-ruta-ui.rx-phone svg.rx-ic){ stroke-width:1.5; }
+/* Llamar es un <a href="tel:"> (en el diseño, un botón de demo): mismo aspecto. */
+#driver-ruta-ui.rx-phone a.rt-act{ color:var(--r-text); text-decoration:none; }
+#driver-ruta-ui.rx-phone .rt-act svg,
+#driver-ruta-ui.rx-phone .rx-btn svg,
+#driver-ruta-ui.rx-phone .rx-ib svg{ display:block; flex-shrink:0; }
+
+/* ── 3. Márgenes seguros ──────────────────────────────────────────────────────
+   Mismo peso que la regla portada, cargado después: gana. */
+#driver-ruta-ui.rx-phone .rt-head{ padding-top:calc(var(--rx-top) + 8px); }
+#driver-ruta-ui.rx-phone .rt-x-top{ top:calc(var(--rx-top) + 8px); }
+#driver-ruta-ui.rx-phone .rt-x-tools{ top:calc(var(--rx-top) + 62px); }
+#driver-ruta-ui.rx-phone .rt-xs{ padding-bottom:calc(12px + var(--rx-bot)); }
+#driver-ruta-ui.rx-phone .rt-nowbar{ bottom:calc(10px + var(--rx-bot)); }
+#driver-ruta-ui.rx-phone .rx-foot + .rt-nowbar{ bottom:calc(88px + var(--rx-bot)); }
+#driver-ruta-ui.rx-phone .rx-foot{ padding-bottom:calc(14px + var(--rx-bot)); }
+#driver-ruta-ui.rx-phone .rx-sheet{ padding-bottom:calc(16px + var(--rx-bot)); }
+#driver-ruta-ui.rx-phone .rx-push{ top:calc(var(--rx-top) + 8px); }
+#driver-ruta-ui.rx-phone .rx-toast{ bottom:calc(92px + var(--rx-bot)); }
+/* El cuerpo deja lugar a la barra «Ruta en curso» y al pie con su zona segura. */
+#driver-ruta-ui.rx-phone .rt-body{ padding-bottom:calc(120px + var(--rx-bot)); }
+
+/* ── 4. Mapa real (Leaflet) con el tono del diseño ────────────────────────────
+   El diseño dibuja un mapa abstracto (.rx-map: fondo, manzanas, calles). Aquí el
+   mapa es real: las teselas de OSM van en el gris del diseño de día y oscuras de
+   noche (el mismo filtro del mapa del tripulante, rx-aux-viaje.css), y encima los
+   pines y el carro del diseño como L.divIcon (driver-rutas.js · pinIcon/carIcon),
+   que toman sus colores de .rt-pg / .car (rt-conductor.css). */
+#driver-ruta-ui.rx-phone .rt-lf{ width:100%; height:100%; }
+/* Leaflet apila sus capas con z-index 200–1000: sin un contexto propio, el mapa de
+   Ejecución tapaba la hoja (.rt-xs, z 10) y la barra de arriba (.rt-x-top, z 5). */
+#driver-ruta-ui.rx-phone .rt-lf.leaflet-container{ position:relative; z-index:0; isolation:isolate; }
+#driver-ruta-ui.rx-phone .rt-lf.leaflet-container{ background:var(--rx-map-bg); font:inherit; }
+#driver-ruta-ui.rx-phone:not([data-ax-night="on"]) .rt-lf .leaflet-tile-pane{ filter:grayscale(.92) brightness(1.06) contrast(.9); }
+#driver-ruta-ui.rx-phone[data-ax-night="on"] .rt-lf .leaflet-tile-pane{ filter:grayscale(1) invert(.9) brightness(.82) contrast(.88) sepia(.08); }
+#driver-ruta-ui.rx-phone .rt-lf-pin,
+#driver-ruta-ui.rx-phone .rt-lf-car{ background:none; border:0; }
+#driver-ruta-ui.rx-phone .rt-lf-pin svg,
+#driver-ruta-ui.rx-phone .rt-lf-car svg{ display:block; width:100%; height:100%; overflow:visible; }
+/* El mapa del Detalle es una vista previa dentro de un botón: el toque abre el grande. */
+#driver-ruta-ui.rx-phone .rt-mapcard .rt-lf{ pointer-events:none; }
+/* El mapa grande no puede salirse de la hoja en un teléfono bajito (SE: 667 px). */
+#driver-ruta-ui.rx-phone .rt-bm-map{ height:min(520px, calc(100dvh - 250px)); min-height:260px; }
+@media (prefers-reduced-motion: reduce){
+  #driver-ruta-ui.rx-phone .rt-map .rt-halo,
+  #driver-ruta-ui.rx-phone .rx-map .car-halo{ animation:none; }
+}
+
+/* ── 5. Estados que el prototipo no tenía ─────────────────────────────────────
+   · Sin GPS: el indicador «En vivo» de la píldora se apaga (en el diseño siempre está
+     encendido porque la demo no tiene GPS que perder).
+   · Sin ruta asignada: el ícono de la tarjeta vacía. */
+#driver-ruta-ui.rx-phone .rt-x-live.off{ color:var(--r-text-3); }
+#driver-ruta-ui.rx-phone .rt-x-live.off i{ animation:none; opacity:.6; }
+#driver-ruta-ui.rx-phone .rt-empty-ic{ width:64px; height:64px; border-radius:20px; background:var(--r-surface-2); color:var(--r-text-2); display:flex; align-items:center; justify-content:center; }
+#driver-ruta-ui.rx-phone .rt-loading .rt-title p{ color:var(--r-text-3); }
+/* «Centrarme» aparece solo cuando el conductor arrastró el mapa. */
+#driver-ruta-ui.rx-phone .rt-recenter[hidden]{ display:none; }
+
+/* ── 6. Correcciones al diseño (reproducían igual en el prototipo) ────────────
+   · .rt-cta: el botón principal es .rx-btn (width:100%) al lado de «Navegar»
+     (width:auto) en una fila flex: el principal medía todo el ancho y se salía de la
+     pantalla («Llegué al aeropu…» cortado, también en el prototipo). Aquí ocupa lo
+     que queda.
+   · .rx-check bajo .rx-noanim: el visto se dibuja con rxDraw «forwards» desde
+     stroke-dashoffset:151; si la capa se repinta sin animación, el trazo quedaba en
+     su estado inicial, o sea INVISIBLE (la vuelta completa salía sin el visto).
+     Bajo .rx-noanim va ya dibujado: es el estado final de la animación. */
+#driver-ruta-ui.rx-phone .rt-cta .rx-btn:not(.rt-nav){ flex:1 1 auto; width:auto; min-width:0; }
+#driver-ruta-ui.rx-phone .rt-cta .rx-btn{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#driver-ruta-ui.rx-phone .rx-noanim .rx-check circle,
+#driver-ruta-ui.rx-phone .rx-noanim .rx-check polyline{ stroke-dashoffset:0; }
+#driver-ruta-ui.rx-phone .rx-noanim .rx-anim .rx-check circle{ stroke-dashoffset:151; }
+#driver-ruta-ui.rx-phone .rx-noanim .rx-anim .rx-check polyline{ stroke-dashoffset:36; }
+/* · Teléfonos de 320–360 px (iPhone SE): la píldora de arriba no recortaba su texto
+     y «EN VIVO» se montaba encima del botón SOS (lo tapaba: no se podía tocar). La
+     píldora recorta, el nombre de la vuelta lleva «…» y, si no cabe, «En vivo» queda
+     solo como el punto verde (sigue diciendo lo mismo: el punto late).
+   · Lista del aeropuerto: «Escribir · Sin código · No llegó» no cabía al lado de la
+     sangría de 45 px: «No llegó» se salía de la tarjeta y «Sin código» partía en dos.
+     Los botones no parten texto y, en angosto, la fila baja sin sangría y envuelve. */
+#driver-ruta-ui.rx-phone .rt-x-pill{ overflow:hidden; }
+#driver-ruta-ui.rx-phone .rt-x-pill > b{ min-width:0; overflow:hidden; text-overflow:ellipsis; }
+#driver-ruta-ui.rx-phone .rt-cr-acts button,
+#driver-ruta-ui.rx-phone .rt-cr-ask button{ white-space:nowrap; flex-shrink:0; }
+#driver-ruta-ui.rx-phone .rt-cr-acts{ flex-wrap:wrap; row-gap:6px; }
+@media (max-width:380px){
+  #driver-ruta-ui.rx-phone .rt-x-pill{ gap:5px; padding:0 11px; }
+  #driver-ruta-ui.rx-phone .rt-x-live{ font-size:0; gap:0; }
+  #driver-ruta-ui.rx-phone .rt-x-pill > .sep,
+  #driver-ruta-ui.rx-phone .rt-x-pill > svg{ display:none; }
+  /* «Navegar» queda solo con su ícono (aria-label lo nombra): así «Llegué al
+     aeropuerto» se lee entero al lado. */
+  #driver-ruta-ui.rx-phone .rt-cta .rt-nav{ font-size:0; gap:0; padding:0 17px; }
+  #driver-ruta-ui.rx-phone .rt-cr-acts,
+  #driver-ruta-ui.rx-phone .rt-cr-ask{ padding-left:0; }
+}
+
+/* BEGIN noanim (generado) */
+/* Generado por _portar-css-ruta-conductor.mjs — no editar este tramo a mano.
+
+   CONTRATO (para driver-rutas.js):
+   · .rx-noanim en un nodo (la capa, la pestaña, la hoja) = «esto es un repintado sin
+     cambio»: dentro de TODO su subárbol, y en el nodo mismo, no corren las animaciones
+     de una sola vez del diseño (48 selectores). Las infinitas siguen (punto «En vivo»,
+     typing, brillo del pase). La clase se deja puesta hasta que el nodo se reemplace:
+     quitarla haría arrancar las animaciones en ese momento.
+   · .rx-anim en un nodo = «este nodo SÍ anima aunque esté dentro de un .rx-noanim».
+     Es el re-montaje por key del diseño (hora grande del viaje, maletas, código de
+     encuentro, cifra del anillo, globo de la campana, paso del pedido…) y los
+     disparos por estado (.shake, .kick, .on de las estrellas, .ok del código).
+     AuxRxUI.remount(el) recrea el nodo y le pone .rx-anim.
+   · Las salidas (.out) corren siempre, con o sin .rx-noanim. */
+/* 1) .rx-noanim: se apagan las entradas. */
+#driver-ruta-ui.rx-phone .rx-noanim .rx-layer,
+#driver-ruta-ui.rx-phone .rx-layer.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-layer.modal,
+#driver-ruta-ui.rx-phone .rx-layer.modal.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-tabview,
+#driver-ruta-ui.rx-phone .rx-tabview.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-in,
+#driver-ruta-ui.rx-phone .rx-in.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-step.fwd,
+#driver-ruta-ui.rx-phone .rx-step.fwd.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-step.bwd,
+#driver-ruta-ui.rx-phone .rx-step.bwd.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-tabs>button.on .rx-tab-ic,
+#driver-ruta-ui.rx-phone .rx-tabs.rx-noanim>button.on .rx-tab-ic,
+#driver-ruta-ui.rx-phone .rx-tabs>button.on.rx-noanim .rx-tab-ic,
+#driver-ruta-ui.rx-phone .rx-tabs>button.on .rx-tab-ic.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-check circle,
+#driver-ruta-ui.rx-phone .rx-check.rx-noanim circle,
+#driver-ruta-ui.rx-phone .rx-check circle.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-check polyline,
+#driver-ruta-ui.rx-phone .rx-check.rx-noanim polyline,
+#driver-ruta-ui.rx-phone .rx-check polyline.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-check,
+#driver-ruta-ui.rx-phone .rx-check.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-confetti i,
+#driver-ruta-ui.rx-phone .rx-confetti.rx-noanim i,
+#driver-ruta-ui.rx-phone .rx-confetti i.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-sheet-bg,
+#driver-ruta-ui.rx-phone .rx-sheet-bg.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-sheet,
+#driver-ruta-ui.rx-phone .rx-sheet.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-toast,
+#driver-ruta-ui.rx-phone .rx-toast.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-push,
+#driver-ruta-ui.rx-phone .rx-push.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-ob,
+#driver-ruta-ui.rx-phone .rx-ob.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-splash-logo,
+#driver-ruta-ui.rx-phone .rx-splash-logo.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-splash-line i,
+#driver-ruta-ui.rx-phone .rx-splash-line.rx-noanim i,
+#driver-ruta-ui.rx-phone .rx-splash-line i.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-splash-t,
+#driver-ruta-ui.rx-phone .rx-splash-t.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-wel-art,
+#driver-ruta-ui.rx-phone .rx-wel-art.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-bub.pop,
+#driver-ruta-ui.rx-phone .rx-bub.pop.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-wel-tx,
+#driver-ruta-ui.rx-phone .rx-wel-tx.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-otp span.f,
+#driver-ruta-ui.rx-phone .rx-otp.rx-noanim span.f,
+#driver-ruta-ui.rx-phone .rx-otp span.f.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-otp.ok span,
+#driver-ruta-ui.rx-phone .rx-otp.ok.rx-noanim span,
+#driver-ruta-ui.rx-phone .rx-otp.ok span.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-bell-big,
+#driver-ruta-ui.rx-phone .rx-bell-big.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-bell-big svg,
+#driver-ruta-ui.rx-phone .rx-bell-big.rx-noanim svg,
+#driver-ruta-ui.rx-phone .rx-bell-big svg.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-bell span,
+#driver-ruta-ui.rx-phone .rx-bell.rx-noanim span,
+#driver-ruta-ui.rx-phone .rx-bell span.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-strip,
+#driver-ruta-ui.rx-phone .rx-strip.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-bono-dots.lg i,
+#driver-ruta-ui.rx-phone .rx-bono-dots.lg.rx-noanim i,
+#driver-ruta-ui.rx-phone .rx-bono-dots.lg i.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-calc-t,
+#driver-ruta-ui.rx-phone .rx-calc-t.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-step-ctl b,
+#driver-ruta-ui.rx-phone .rx-step-ctl.rx-noanim b,
+#driver-ruta-ui.rx-phone .rx-step-ctl b.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-booked-pass,
+#driver-ruta-ui.rx-phone .rx-booked-pass.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-trip-sheet,
+#driver-ruta-ui.rx-phone .rx-trip-sheet.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-trip-big,
+#driver-ruta-ui.rx-phone .rx-trip-big.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-meet-c b,
+#driver-ruta-ui.rx-phone .rx-meet-c.rx-noanim b,
+#driver-ruta-ui.rx-phone .rx-meet-c b.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-stars button.on,
+#driver-ruta-ui.rx-phone .rx-stars.rx-noanim button.on,
+#driver-ruta-ui.rx-phone .rx-stars button.on.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-rate-l,
+#driver-ruta-ui.rx-phone .rx-rate-l.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-pts-bar i,
+#driver-ruta-ui.rx-phone .rx-pts-bar.rx-noanim i,
+#driver-ruta-ui.rx-phone .rx-pts-bar i.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-over,
+#driver-ruta-ui.rx-phone .rx-over.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-sel-hero,
+#driver-ruta-ui.rx-phone .rx-sel-hero.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rt-live.off i,
+#driver-ruta-ui.rx-phone .rt-live.off.rx-noanim i,
+#driver-ruta-ui.rx-phone .rt-live.off i.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rt-nowbar,
+#driver-ruta-ui.rx-phone .rt-nowbar.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rt-badge,
+#driver-ruta-ui.rx-phone .rt-badge.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rt-xs,
+#driver-ruta-ui.rx-phone .rt-xs.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rt-eb>i.ok,
+#driver-ruta-ui.rx-phone .rt-eb.rx-noanim>i.ok,
+#driver-ruta-ui.rx-phone .rt-eb>i.ok.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rt-big,
+#driver-ruta-ui.rx-phone .rt-big.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rt-boxes.ok>span,
+#driver-ruta-ui.rx-phone .rt-boxes.ok.rx-noanim>span,
+#driver-ruta-ui.rx-phone .rt-boxes.ok>span.rx-noanim{animation:none}
+#driver-ruta-ui.rx-phone .rx-noanim .rt-boxes.err>span,
+#driver-ruta-ui.rx-phone .rt-boxes.err.rx-noanim>span,
+#driver-ruta-ui.rx-phone .rt-boxes.err>span.rx-noanim{animation:none}
+/* 2) .rx-anim: vuelven las entradas del diseño, copiadas tal cual. Mismo peso que (1),
+      escritas después: ganan. */
+#driver-ruta-ui.rx-phone .rx-anim .rx-layer,
+#driver-ruta-ui.rx-phone .rx-layer.rx-anim{animation:rxIn .34s cubic-bezier(.2,.8,.2,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-layer.modal,
+#driver-ruta-ui.rx-phone .rx-layer.modal.rx-anim{animation:rxUp .38s cubic-bezier(.2,.8,.2,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-tabview,
+#driver-ruta-ui.rx-phone .rx-tabview.rx-anim{animation:rxFade .3s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rx-in,
+#driver-ruta-ui.rx-phone .rx-in.rx-anim{animation:rxRise .5s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--d,0) * 60ms)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-step.fwd,
+#driver-ruta-ui.rx-phone .rx-step.fwd.rx-anim{animation:rxStepF .36s cubic-bezier(.2,.8,.2,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-step.bwd,
+#driver-ruta-ui.rx-phone .rx-step.bwd.rx-anim{animation:rxStepB .36s cubic-bezier(.2,.8,.2,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-tabs>button.on .rx-tab-ic,
+#driver-ruta-ui.rx-phone .rx-tabs.rx-anim>button.on .rx-tab-ic,
+#driver-ruta-ui.rx-phone .rx-tabs>button.on.rx-anim .rx-tab-ic,
+#driver-ruta-ui.rx-phone .rx-tabs>button.on .rx-tab-ic.rx-anim{animation:rxPop .35s cubic-bezier(.3,1.6,.5,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-check circle,
+#driver-ruta-ui.rx-phone .rx-check.rx-anim circle,
+#driver-ruta-ui.rx-phone .rx-check circle.rx-anim{animation:rxDraw .6s ease forwards}
+#driver-ruta-ui.rx-phone .rx-anim .rx-check polyline,
+#driver-ruta-ui.rx-phone .rx-check.rx-anim polyline,
+#driver-ruta-ui.rx-phone .rx-check polyline.rx-anim{animation:rxDraw .35s .5s ease forwards}
+#driver-ruta-ui.rx-phone .rx-anim .rx-check,
+#driver-ruta-ui.rx-phone .rx-check.rx-anim{animation:rxPop .5s cubic-bezier(.3,1.5,.5,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-confetti i,
+#driver-ruta-ui.rx-phone .rx-confetti.rx-anim i,
+#driver-ruta-ui.rx-phone .rx-confetti i.rx-anim{animation:rxFall 2.4s cubic-bezier(.25,.6,.4,1) forwards}
+#driver-ruta-ui.rx-phone .rx-anim .rx-sheet-bg,
+#driver-ruta-ui.rx-phone .rx-sheet-bg.rx-anim{animation:rxFadeO .22s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rx-sheet,
+#driver-ruta-ui.rx-phone .rx-sheet.rx-anim{animation:rxUp .34s cubic-bezier(.2,.8,.2,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-toast,
+#driver-ruta-ui.rx-phone .rx-toast.rx-anim{animation:rxToast 1.8s ease forwards}
+#driver-ruta-ui.rx-phone .rx-anim .rx-push,
+#driver-ruta-ui.rx-phone .rx-push.rx-anim{animation:rxDrop .45s cubic-bezier(.2,1.2,.3,1),rxLift .35s 3.6s ease forwards}
+#driver-ruta-ui.rx-phone .rx-anim .rx-ob,
+#driver-ruta-ui.rx-phone .rx-ob.rx-anim{animation:rxFade .35s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rx-splash-logo,
+#driver-ruta-ui.rx-phone .rx-splash-logo.rx-anim{animation:rxRise .7s .1s cubic-bezier(.2,.8,.2,1) both}
+#driver-ruta-ui.rx-phone .rx-anim .rx-splash-line i,
+#driver-ruta-ui.rx-phone .rx-splash-line.rx-anim i,
+#driver-ruta-ui.rx-phone .rx-splash-line i.rx-anim{animation:rxLoad 1.7s .3s cubic-bezier(.6,0,.3,1) forwards}
+#driver-ruta-ui.rx-phone .rx-anim .rx-splash-t,
+#driver-ruta-ui.rx-phone .rx-splash-t.rx-anim{animation:rxRise .6s .6s both}
+#driver-ruta-ui.rx-phone .rx-anim .rx-wel-art,
+#driver-ruta-ui.rx-phone .rx-wel-art.rx-anim{animation:rxFade .5s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rx-bub.pop,
+#driver-ruta-ui.rx-phone .rx-bub.pop.rx-anim{animation:rxBub .35s cubic-bezier(.3,1.4,.5,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-wel-tx,
+#driver-ruta-ui.rx-phone .rx-wel-tx.rx-anim{animation:rxRise .5s ease both}
+#driver-ruta-ui.rx-phone .rx-anim .rx-otp span.f,
+#driver-ruta-ui.rx-phone .rx-otp.rx-anim span.f,
+#driver-ruta-ui.rx-phone .rx-otp span.f.rx-anim{animation:rxPop .25s cubic-bezier(.3,1.6,.5,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-otp.ok span,
+#driver-ruta-ui.rx-phone .rx-otp.ok.rx-anim span,
+#driver-ruta-ui.rx-phone .rx-otp.ok span.rx-anim{animation:rxJump .4s calc(var(--k) * 50ms) ease}
+#driver-ruta-ui.rx-phone .rx-anim .rx-bell-big,
+#driver-ruta-ui.rx-phone .rx-bell-big.rx-anim{animation:rxPop .6s cubic-bezier(.3,1.4,.5,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-bell-big svg,
+#driver-ruta-ui.rx-phone .rx-bell-big.rx-anim svg,
+#driver-ruta-ui.rx-phone .rx-bell-big svg.rx-anim{animation:cb2Ring 1.2s .5s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rx-bell span,
+#driver-ruta-ui.rx-phone .rx-bell.rx-anim span,
+#driver-ruta-ui.rx-phone .rx-bell span.rx-anim{animation:rxPop .4s cubic-bezier(.3,1.6,.5,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-strip,
+#driver-ruta-ui.rx-phone .rx-strip.rx-anim{animation:rxRise .45s ease both}
+#driver-ruta-ui.rx-phone .rx-anim .rx-bono-dots.lg i,
+#driver-ruta-ui.rx-phone .rx-bono-dots.lg.rx-anim i,
+#driver-ruta-ui.rx-phone .rx-bono-dots.lg i.rx-anim{animation:rxGrow .6s calc(var(--k) * 120ms) both cubic-bezier(.2,.8,.2,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-calc-t,
+#driver-ruta-ui.rx-phone .rx-calc-t.rx-anim{animation:rxPop .45s cubic-bezier(.3,1.5,.5,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-step-ctl b,
+#driver-ruta-ui.rx-phone .rx-step-ctl.rx-anim b,
+#driver-ruta-ui.rx-phone .rx-step-ctl b.rx-anim{animation:rxPop .25s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rx-booked-pass,
+#driver-ruta-ui.rx-phone .rx-booked-pass.rx-anim{animation:rxRise .6s .5s both}
+#driver-ruta-ui.rx-phone .rx-anim .rx-trip-sheet,
+#driver-ruta-ui.rx-phone .rx-trip-sheet.rx-anim{animation:rxUp .5s cubic-bezier(.2,.8,.2,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-trip-big,
+#driver-ruta-ui.rx-phone .rx-trip-big.rx-anim{animation:rxRise .4s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rx-meet-c b,
+#driver-ruta-ui.rx-phone .rx-meet-c.rx-anim b,
+#driver-ruta-ui.rx-phone .rx-meet-c b.rx-anim{animation:rxFlip .5s calc(var(--k) * 90ms) both cubic-bezier(.3,1.4,.5,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-stars button.on,
+#driver-ruta-ui.rx-phone .rx-stars.rx-anim button.on,
+#driver-ruta-ui.rx-phone .rx-stars button.on.rx-anim{animation:rxStar .4s calc(var(--k) * 60ms) cubic-bezier(.3,1.8,.5,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-rate-l,
+#driver-ruta-ui.rx-phone .rx-rate-l.rx-anim{animation:rxRise .3s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rx-pts-bar i,
+#driver-ruta-ui.rx-phone .rx-pts-bar.rx-anim i,
+#driver-ruta-ui.rx-phone .rx-pts-bar i.rx-anim{animation:rxGrow 1s .3s both cubic-bezier(.2,.8,.2,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rx-over,
+#driver-ruta-ui.rx-phone .rx-over.rx-anim{animation:rxFadeO .3s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rx-sel-hero,
+#driver-ruta-ui.rx-phone .rx-sel-hero.rx-anim{animation:rxRise .7s ease both}
+#driver-ruta-ui.rx-phone .rx-anim .rt-live.off i,
+#driver-ruta-ui.rx-phone .rt-live.off.rx-anim i,
+#driver-ruta-ui.rx-phone .rt-live.off i.rx-anim{animation:none}
+#driver-ruta-ui.rx-phone .rx-anim .rt-nowbar,
+#driver-ruta-ui.rx-phone .rt-nowbar.rx-anim{animation:rxUp .45s cubic-bezier(.2,.8,.2,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rt-badge,
+#driver-ruta-ui.rx-phone .rt-badge.rx-anim{animation:rxPop .4s cubic-bezier(.3,1.6,.5,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rt-xs,
+#driver-ruta-ui.rx-phone .rt-xs.rx-anim{animation:rtSheet .42s cubic-bezier(.2,.8,.2,1)}
+#driver-ruta-ui.rx-phone .rx-anim .rt-eb>i.ok,
+#driver-ruta-ui.rx-phone .rt-eb.rx-anim>i.ok,
+#driver-ruta-ui.rx-phone .rt-eb>i.ok.rx-anim{animation:none}
+#driver-ruta-ui.rx-phone .rx-anim .rt-big,
+#driver-ruta-ui.rx-phone .rt-big.rx-anim{animation:rxRise .4s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rt-boxes.ok>span,
+#driver-ruta-ui.rx-phone .rt-boxes.ok.rx-anim>span,
+#driver-ruta-ui.rx-phone .rt-boxes.ok>span.rx-anim{animation:rxJump .4s ease}
+#driver-ruta-ui.rx-phone .rx-anim .rt-boxes.err>span,
+#driver-ruta-ui.rx-phone .rt-boxes.err.rx-anim>span,
+#driver-ruta-ui.rx-phone .rt-boxes.err>span.rx-anim{animation:rtShake .4s}
+/* 3) Las salidas (.out) vuelven a correr aunque la capa se haya repintado con .rx-noanim.
+      Mismas declaraciones que el diseño, copiadas tal cual. */
+#driver-ruta-ui.rx-phone .rx-noanim .rx-layer.out,
+#driver-ruta-ui.rx-phone .rx-layer.out.rx-noanim{animation:rxOut .27s ease forwards}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-layer.modal.out,
+#driver-ruta-ui.rx-phone .rx-layer.modal.out.rx-noanim{animation:rxDown .27s ease forwards}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-sheet-bg.out,
+#driver-ruta-ui.rx-phone .rx-sheet-bg.out.rx-noanim{animation:rxFadeOut .22s ease forwards}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-sheet-bg.out .rx-sheet,
+#driver-ruta-ui.rx-phone .rx-sheet-bg.out.rx-noanim .rx-sheet,
+#driver-ruta-ui.rx-phone .rx-sheet-bg.out .rx-sheet.rx-noanim{animation:rxDown .22s ease forwards}
+/* 4) prefers-reduced-motion (única adición permitida por ANIMACIONES): las entradas y
+      salidas saltan a su estado final (1 ms), los toasts no se animan (terminarían
+      invisibles), las infinitas decorativas se apagan y quedan los indicadores
+      funcionales (rxSpin, cb2Spin, rxPulseR, cb2Pulse, cb2PulseB, rxBlink). Sin esa preferencia del sistema no
+      cambia nada. */
+@media (prefers-reduced-motion: reduce){
+#driver-ruta-ui.rx-phone .rx-layer{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-layer.modal{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-layer.out{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-layer.modal.out{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-tabview{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-in{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-step.fwd{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-step.bwd{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-tabs>button.on .rx-tab-ic{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-check circle{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-check polyline{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-check{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-confetti i{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-map .route.flow{animation:none}
+#driver-ruta-ui.rx-phone .rx-map .pin-halo{animation:none}
+#driver-ruta-ui.rx-phone .rx-map .car-halo{animation:none}
+#driver-ruta-ui.rx-phone .rx-sheet-bg{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-sheet-bg.out{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-sheet{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-sheet-bg.out .rx-sheet{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-toast{animation:none}
+#driver-ruta-ui.rx-phone .rx-push{animation-duration:1ms}
+#driver-ruta-ui.rx-phone .rx-ob{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-splash-logo{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-splash-line i{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-splash-t{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-wel-art{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .fl1{animation:none}
+#driver-ruta-ui.rx-phone .fl2{animation:none}
+#driver-ruta-ui.rx-phone .fl3{animation:none}
+#driver-ruta-ui.rx-phone .rx-bub.pop{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-bub.typing i{animation:none}
+#driver-ruta-ui.rx-phone .rx-wel-tx{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-otp span.f{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-otp.ok span{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-bell-big{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-bell-big svg{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-bell-big i{animation:none}
+#driver-ruta-ui.rx-phone .rx-bell span{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-strip{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-pass::after{animation:none}
+#driver-ruta-ui.rx-phone .rx-pass-plane{animation:none}
+#driver-ruta-ui.rx-phone .rx-empty-ic{animation:none}
+#driver-ruta-ui.rx-phone .rx-pocket-ic i{animation:none}
+#driver-ruta-ui.rx-phone .rx-bono-dots.lg i{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-calc-t{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-step-ctl b{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-slide-l{animation:none}
+#driver-ruta-ui.rx-phone .rx-booked-pass{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-trip-sheet{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-trip-big{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-tl-s.now i::after{animation:none}
+#driver-ruta-ui.rx-phone .rx-meet-c b{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-stars button.on{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-rate-l{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-pts-bar i{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-over{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-sel-hero{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rt-live i{animation:none}
+#driver-ruta-ui.rx-phone .rt-live.off i{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rt-hero-st i{animation:none}
+#driver-ruta-ui.rx-phone .rt-nowbar{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rt-nb-tx>em i{animation:none}
+#driver-ruta-ui.rx-phone .rt-badge{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rt-map .rt-halo{animation:none}
+#driver-ruta-ui.rx-phone .rt-x-live i{animation:none}
+#driver-ruta-ui.rx-phone .rt-xs{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rt-eb>i{animation:none}
+#driver-ruta-ui.rx-phone .rt-eb>i.ok{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rt-big{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rt-boxes.ok>span{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rt-boxes.err>span{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-layer,#driver-ruta-ui.rx-phone .rx-layer.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-layer.modal,#driver-ruta-ui.rx-phone .rx-layer.modal.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-tabview,#driver-ruta-ui.rx-phone .rx-tabview.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-in,#driver-ruta-ui.rx-phone .rx-in.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-step.fwd,#driver-ruta-ui.rx-phone .rx-step.fwd.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-step.bwd,#driver-ruta-ui.rx-phone .rx-step.bwd.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-tabs>button.on .rx-tab-ic,#driver-ruta-ui.rx-phone .rx-tabs.rx-anim>button.on .rx-tab-ic,#driver-ruta-ui.rx-phone .rx-tabs>button.on.rx-anim .rx-tab-ic,#driver-ruta-ui.rx-phone .rx-tabs>button.on .rx-tab-ic.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-check circle,#driver-ruta-ui.rx-phone .rx-check.rx-anim circle,#driver-ruta-ui.rx-phone .rx-check circle.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-check polyline,#driver-ruta-ui.rx-phone .rx-check.rx-anim polyline,#driver-ruta-ui.rx-phone .rx-check polyline.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-check,#driver-ruta-ui.rx-phone .rx-check.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-confetti i,#driver-ruta-ui.rx-phone .rx-confetti.rx-anim i,#driver-ruta-ui.rx-phone .rx-confetti i.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-sheet-bg,#driver-ruta-ui.rx-phone .rx-sheet-bg.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-sheet,#driver-ruta-ui.rx-phone .rx-sheet.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-toast,#driver-ruta-ui.rx-phone .rx-toast.rx-anim{animation:none}
+#driver-ruta-ui.rx-phone .rx-anim .rx-push,#driver-ruta-ui.rx-phone .rx-push.rx-anim{animation-duration:1ms}
+#driver-ruta-ui.rx-phone .rx-anim .rx-ob,#driver-ruta-ui.rx-phone .rx-ob.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-splash-logo,#driver-ruta-ui.rx-phone .rx-splash-logo.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-splash-line i,#driver-ruta-ui.rx-phone .rx-splash-line.rx-anim i,#driver-ruta-ui.rx-phone .rx-splash-line i.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-splash-t,#driver-ruta-ui.rx-phone .rx-splash-t.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-wel-art,#driver-ruta-ui.rx-phone .rx-wel-art.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-bub.pop,#driver-ruta-ui.rx-phone .rx-bub.pop.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-wel-tx,#driver-ruta-ui.rx-phone .rx-wel-tx.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-otp span.f,#driver-ruta-ui.rx-phone .rx-otp.rx-anim span.f,#driver-ruta-ui.rx-phone .rx-otp span.f.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-otp.ok span,#driver-ruta-ui.rx-phone .rx-otp.ok.rx-anim span,#driver-ruta-ui.rx-phone .rx-otp.ok span.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-bell-big,#driver-ruta-ui.rx-phone .rx-bell-big.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-bell-big svg,#driver-ruta-ui.rx-phone .rx-bell-big.rx-anim svg,#driver-ruta-ui.rx-phone .rx-bell-big svg.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-bell span,#driver-ruta-ui.rx-phone .rx-bell.rx-anim span,#driver-ruta-ui.rx-phone .rx-bell span.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-strip,#driver-ruta-ui.rx-phone .rx-strip.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-bono-dots.lg i,#driver-ruta-ui.rx-phone .rx-bono-dots.lg.rx-anim i,#driver-ruta-ui.rx-phone .rx-bono-dots.lg i.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-calc-t,#driver-ruta-ui.rx-phone .rx-calc-t.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-step-ctl b,#driver-ruta-ui.rx-phone .rx-step-ctl.rx-anim b,#driver-ruta-ui.rx-phone .rx-step-ctl b.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-booked-pass,#driver-ruta-ui.rx-phone .rx-booked-pass.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-trip-sheet,#driver-ruta-ui.rx-phone .rx-trip-sheet.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-trip-big,#driver-ruta-ui.rx-phone .rx-trip-big.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-meet-c b,#driver-ruta-ui.rx-phone .rx-meet-c.rx-anim b,#driver-ruta-ui.rx-phone .rx-meet-c b.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-stars button.on,#driver-ruta-ui.rx-phone .rx-stars.rx-anim button.on,#driver-ruta-ui.rx-phone .rx-stars button.on.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-rate-l,#driver-ruta-ui.rx-phone .rx-rate-l.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-pts-bar i,#driver-ruta-ui.rx-phone .rx-pts-bar.rx-anim i,#driver-ruta-ui.rx-phone .rx-pts-bar i.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-over,#driver-ruta-ui.rx-phone .rx-over.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rx-sel-hero,#driver-ruta-ui.rx-phone .rx-sel-hero.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rt-live.off i,#driver-ruta-ui.rx-phone .rt-live.off.rx-anim i,#driver-ruta-ui.rx-phone .rt-live.off i.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rt-nowbar,#driver-ruta-ui.rx-phone .rt-nowbar.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rt-badge,#driver-ruta-ui.rx-phone .rt-badge.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rt-xs,#driver-ruta-ui.rx-phone .rt-xs.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rt-eb>i.ok,#driver-ruta-ui.rx-phone .rt-eb.rx-anim>i.ok,#driver-ruta-ui.rx-phone .rt-eb>i.ok.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rt-big,#driver-ruta-ui.rx-phone .rt-big.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rt-boxes.ok>span,#driver-ruta-ui.rx-phone .rt-boxes.ok.rx-anim>span,#driver-ruta-ui.rx-phone .rt-boxes.ok>span.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-anim .rt-boxes.err>span,#driver-ruta-ui.rx-phone .rt-boxes.err.rx-anim>span,#driver-ruta-ui.rx-phone .rt-boxes.err>span.rx-anim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-layer.out,#driver-ruta-ui.rx-phone .rx-layer.out.rx-noanim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-layer.modal.out,#driver-ruta-ui.rx-phone .rx-layer.modal.out.rx-noanim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-sheet-bg.out,#driver-ruta-ui.rx-phone .rx-sheet-bg.out.rx-noanim{animation-duration:1ms;animation-delay:0s}
+#driver-ruta-ui.rx-phone .rx-noanim .rx-sheet-bg.out .rx-sheet,#driver-ruta-ui.rx-phone .rx-sheet-bg.out.rx-noanim .rx-sheet,#driver-ruta-ui.rx-phone .rx-sheet-bg.out .rx-sheet.rx-noanim{animation-duration:1ms;animation-delay:0s}
+}
+/* END noanim (generado) */

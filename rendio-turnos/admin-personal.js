@@ -544,10 +544,49 @@
     if ($('#setting-fast-start-from')) $('#setting-fast-start-from').value = S.fast_start_from_hour != null ? S.fast_start_from_hour : 12;
     if ($('#setting-fast-start-to')) $('#setting-fast-start-to').value = S.fast_start_to_hour != null ? S.fast_start_to_hour : 16;
     if ($('#setting-inspection-grace')) $('#setting-inspection-grace').value = S.inspection_grace_minutes != null ? S.inspection_grace_minutes : 90;
+    setPintarPlazoInspeccion(S);
     setPintarRetencionFotos(S);
     renderPriorityList();
     renderRulesEditor();
     setPrepararBloque('turno');
+  }
+
+  // Plazo de la inspección diferida (0105): «En minutos» o «Al cerrar el turno».
+  // Mismo criterio que la retención de fotos: si la fila se leyó sin la columna,
+  // la base no tiene la migración y el desplegable se apaga diciéndolo. Con «Al
+  // cerrar el turno» los minutos no aplican: se apagan, pero conservan su número.
+  function setPlazoSinColumna(S) { return !!(S && S._loaded && !('fast_start_deadline' in S)); }
+  function setPintarPlazoInspeccion(S) {
+    const sel = $('#setting-fast-start-deadline');
+    if (!sel) return;
+    const sin = setPlazoSinColumna(S);
+    sel.value = S && S.fast_start_deadline === 'shift_close' ? 'shift_close' : 'minutes';
+    sel.disabled = sin;
+    const hint = $('#setting-fast-start-deadline-hint');
+    if (hint) hint.innerHTML = sin
+      ? '<b>Esta base todavía no tiene la migración 0105:</b> el plazo es siempre en minutos.'
+      : '«Al cerrar el turno»: la app se la pide antes del cierre. Si el turno se cierra sin ella (también por el auto-cierre), strike automático.';
+    setAjustarMinutosPlazo();
+    if (!sel.dataset.enganchado) {
+      sel.dataset.enganchado = '1';
+      sel.addEventListener('change', setAjustarMinutosPlazo);
+    }
+  }
+  function setAjustarMinutosPlazo() {
+    const sel = $('#setting-fast-start-deadline'), inp = $('#setting-inspection-grace');
+    if (!sel || !inp) return;
+    const alCerrar = !sel.disabled && sel.value === 'shift_close';
+    inp.disabled = alCerrar;
+    const hint = $('#setting-inspection-grace-hint');
+    if (hint) hint.textContent = alCerrar
+      ? 'No aplica con «Al cerrar el turno» (se guarda por si vuelve a «En minutos»).'
+      : 'Con «En minutos»: si no la hace en este tiempo → strike automático. Default 90.';
+  }
+  // Lo que se guarda: null si la base no tiene la columna (no se manda la llave).
+  function setLeerPlazoInspeccion() {
+    const sel = $('#setting-fast-start-deadline');
+    if (!sel || sel.disabled) return null;
+    return sel.value === 'shift_close' ? 'shift_close' : 'minutes';
   }
 
   // Días que se guardan las fotos de inspección (0096). Si la fila de ajustes se
@@ -913,6 +952,13 @@
     const retencion = setLeerRetencionFotos();
     const extra = retencion == null ? {} : { photo_retention_days: retencion };
     if (retencion != null && $('#setting-photo-retention')) $('#setting-photo-retention').value = retencion;
+    // Plazo de la inspección (0105): igual, solo con la columna en la base.
+    const plazo = setLeerPlazoInspeccion();
+    if (plazo != null) extra.fast_start_deadline = plazo;
+    // Las horas de la franja: el 0 es una hora válida (medianoche). Con `|| 12`
+    // un «desde 0» se guardaba como 12. «Hasta 0» es la medianoche, o sea 24.
+    const hora = (id, def) => { const n = parseInt($(id) && $(id).value, 10); return Number.isFinite(n) ? n : def; };
+    const hasta = hora('#setting-fast-start-to', 16);
     // Bajar el número es lo único de esta pantalla que borra algo (esa misma
     // noche, y no se deshace): se pregunta. Subirlo no borra nada.
     const antes = state.settings && state.settings.photo_retention_days;
@@ -931,8 +977,8 @@
       reservation_idle_minutes: Math.min(240, Math.max(5, parseInt($('#setting-reservation-idle') && $('#setting-reservation-idle').value, 10) || 60)),
       strike_limit: Math.min(10, Math.max(1, parseInt($('#setting-strike-limit') && $('#setting-strike-limit').value, 10) || 3)),
       fast_start_enabled: !!($('#setting-fast-start-enabled') && $('#setting-fast-start-enabled').checked),
-      fast_start_from_hour: Math.min(23, Math.max(0, parseInt($('#setting-fast-start-from') && $('#setting-fast-start-from').value, 10) || 12)),
-      fast_start_to_hour: Math.min(24, Math.max(1, parseInt($('#setting-fast-start-to') && $('#setting-fast-start-to').value, 10) || 16)),
+      fast_start_from_hour: Math.min(23, Math.max(0, hora('#setting-fast-start-from', 12))),
+      fast_start_to_hour: Math.min(24, Math.max(1, hasta === 0 ? 24 : hasta)),
       inspection_grace_minutes: Math.min(480, Math.max(15, parseInt($('#setting-inspection-grace') && $('#setting-inspection-grace').value, 10) || 90)),
     });
   }

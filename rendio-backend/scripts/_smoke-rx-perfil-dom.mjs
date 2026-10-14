@@ -251,13 +251,35 @@ console.log('\n── Bandera ENCENDIDA: la pestaña Perfil ──');
   b.click(row(b, 'row-level'));
   await wait(20);
   const cards = b.qa('.rx-sheet .rx-lv');
-  t('respaldo sin P6: 3 tarjetas .rx-lv.rx-in con --d 0·1·2, Compartido elegida', cards.length === 3 && cards.map(c => c.style.getPropertyValue('--d')).join(',') === '0,1,2' && cards[0].classList.contains('on'));
-  t('respaldo: Directo apagado «Pronto», Privado apagado en primicia, sin cifras', cards[1] && cards[1].disabled && /Pronto/.test(cards[1].textContent) && cards[2].disabled && prohibidos(b.q('.rx-sheet').innerHTML).length === 0);
+  // 12-oct-2026: Directo se quitó → 2 tarjetas.
+  t('respaldo sin P6: 2 tarjetas .rx-lv.rx-in con --d 0·1, Compartido elegida', cards.length === 2 && cards.map(c => c.style.getPropertyValue('--d')).join(',') === '0,1' && cards[0].classList.contains('on'));
+  t('respaldo: sin Directo, Privado apagado «Pronto» en primicia, sin cifras', cards[1] && cards[1].disabled && /Pronto/.test(cards[1].textContent) && !/Directo/.test(b.q('.rx-sheet').textContent) && prohibidos(b.q('.rx-sheet').innerHTML).length === 0);
   const pv = b.q('.rx-sheet [data-rx="pref-level"][data-v="private"]');
   t('respaldo: Privado no tiene acción en primicia', !pv);
   b.click(b.q('.rx-sheet-bg')); await wait(260);
   if (lvP6) w.AuxPrivado.levelsHTML = lvP6;
   t('tocar el fondo cierra la hoja sin guardar', !b.q('.rx-sheet-bg') && llamadas(b, 'ApiAux.saveMyPrefs').length === 0);
+
+  // 12-oct-2026 (0103): con el privado ENCENDIDO, la tarifa real de Ajustes
+  // ($ 50.000) en la hoja de nivel (P6 y respaldo) y en la fila «Rendio Select».
+  w.state.settings = { aux_private_enabled: true, aux_private_vehicle_id: 'v1', aux_private_price_cop: 50000 };
+  b.click(row(b, 'row-level')); await wait(20);
+  const pvOn = b.q('.rx-sheet .rx-lv.vip');
+  t('privado encendido: la hoja de nivel dice «$ 50.000» y que se suma a la cuenta de cobro, sin Directo',
+    !!pvOn && pvOn.querySelector('em').textContent === '$ 50.000' && /se suma a tu cuenta de cobro cuando Coordinación lo apruebe/.test(pvOn.textContent) && !/Directo/.test(b.q('.rx-sheet').textContent),
+    pvOn && pvOn.textContent);
+  b.click(b.q('.rx-sheet-bg')); await wait(260);
+  if (lvP6) delete w.AuxPrivado.levelsHTML;
+  b.click(row(b, 'row-level')); await wait(20);
+  const pvOn2 = b.q('.rx-sheet .rx-lv.vip');
+  t('…y el respaldo igual: «$ 50.000», elegible, con la nota del cobro', !!pvOn2 && pvOn2.querySelector('em').textContent === '$ 50.000'
+    && pvOn2.getAttribute('data-rx') === 'pref-level' && /se suma a tu cuenta de cobro/.test(pvOn2.textContent), pvOn2 && pvOn2.outerHTML.slice(0, 200));
+  b.click(b.q('.rx-sheet-bg')); await wait(260);
+  if (lvP6) w.AuxPrivado.levelsHTML = lvP6;
+  AS.setTab('inicio'); await wait(20);
+  AS.setTab('perfil'); await wait(40);
+  t('la fila «Rendio Select» dice la tarifa por trayecto', sub(row(b, 'row-select')) === 'El carro es solo para ti · $ 50.000 por trayecto', sub(row(b, 'row-select')));
+  w.state.settings = {};
 
   // Mi residencia: con la pantalla de P5 (si ya existe) y con la propia (P5 ausente).
   const AR = w.AuxResidencias;

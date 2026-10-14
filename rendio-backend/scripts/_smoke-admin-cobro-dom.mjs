@@ -888,6 +888,48 @@ console.log('\n── 0094 · Balance del mes y Excel ──');
     && /Desde Noviembre Prueba/.test(ms[1]) && !/Sin valor/.test(ms[1]) && /Su corte es el 28 de/.test(ms[1]), ms.join(' // '));
   b3.w.stopCobroTimer();
   t('sin errores de consola (sin cuenta este mes)', b3.errors.length === 0, b3.errors.slice(0, 3).join(' | '));
+
+  // 12-oct-2026 (0103): el TRASLADO PRIVADO aprobado se cobra en la cuenta de
+  // cobro. La base lo trae en `extras` con kind 'private' (ya dentro del monto);
+  // los que esperan cuenta, en extrasPending.private; el detalle, en extraCharges;
+  // el balance, en privateCOP / privateCount / privateIncluded.
+  console.log('\n── traslado privado (0103) ──');
+  const PL = { id: 'xp-1', kind: 'private', reservationId: 'res-1', tripOn: '2026-10-24', trips: 1, perTripCOP: 50000, amountCOP: 50000, pending: false, label: 'Traslado privado · 24 de oct · $50.000' };
+  const PP = { id: 'xp-2', kind: 'private', reservationId: 'res-2', tripOn: '2026-11-20', trips: 1, perTripCOP: 50000, amountCOP: 50000, pending: true, label: 'Traslado privado · 20 de nov · $50.000' };
+  const b5 = await boot({ lista: () => {
+    const L = LISTA94();
+    const r = L.find(x => x.auxiliarProfileId === 'b-rio');
+    r.current = { ...r.current, extrasCOP: 90000, extras: r.current.extras.concat([PL]) };
+    r.extrasPending = { trips: 0, amountCOP: 0, items: [], totalCOP: 50000, private: { count: 1, amountCOP: 50000, items: [PP] } };
+    return L;
+  } });
+  b5.w.ApiCobro.adminDetail = async () => ({ statements: [{ ...st({ id: 's-p', dia: 4, paid: true, amt: 210000 }), extrasCOP: 50000, extras: [PL] }],
+    proofs: [], payments: [], extraCharges: [{ ...PL, appliedStatementId: 's-p' }, PP] });
+  b5.D.bal = Object.assign(BAL(), {
+    totals: { ...BAL().totals, privateCOP: 50000, privateCount: 1, privateStatements: 1 },
+    rows: BAL().rows.map(x => (x.statementId === 's-rio' ? { ...x, privateCOP: 50000, privateCount: 1, privateIncluded: [PL] } : x)) });
+  b5.w.renderCobro(); await wait(30);
+  const rr = b5.row('b-rio');
+  t('lista: chip «Privado $50.000» con la línea en el título, aparte de «Incluye extra $40.000» (solo vacaciones)',
+    txt(rr.querySelector('[data-cb-chip="priv-inc"]')) === 'Privado $50.000' && /Traslado privado · 24 de oct · \$50\.000/.test(rr.querySelector('[data-cb-chip="priv-inc"]').getAttribute('title'))
+    && txt(rr.querySelector('[data-cb-chip="extra-inc"]')) === 'Incluye extra $40.000' && !/Traslado privado/.test(rr.querySelector('[data-cb-chip="extra-inc"]').getAttribute('title')),
+    [txt(rr.querySelector('[data-cb-chip="priv-inc"]')), txt(rr.querySelector('[data-cb-chip="extra-inc"]'))].join(' | '));
+  t('…y «Privado pendiente $50.000» (sin el chip de viajes extra pendientes)', txt(rr.querySelector('[data-cb-chip="priv-pend"]')) === 'Privado pendiente $50.000'
+    && !rr.querySelector('[data-cb-chip="extra-pend"]'), txt(rr.querySelector('[data-cb-chip="priv-pend"]')));
+  b5.click(rr.querySelector('[data-m="hist"]')); await wait(30);
+  const hr = b5.row('b-rio');
+  t('Historial: la cuenta que cobró el privado lo dice: «Incluye: Traslado privado · 24 de oct · $50.000»', txt(hr.querySelector('.cb-hist tbody tr [data-cb-hist-extra]')) === 'Incluye: Traslado privado · 24 de oct · $50.000',
+    txt(hr.querySelector('[data-cb-hist-extra]')));
+  t('…el privado pendiente va en su propia nota (no en la de viajes extra de vacaciones)', /^Privado pendiente para una próxima cuenta: \$50\.000/.test(txt(hr.querySelector('[data-cb-hist-ppend] b')))
+    && /Traslado privado · 20 de nov · \$50\.000/.test(txt(hr.querySelector('[data-cb-hist-ppend]'))) && !hr.querySelector('[data-cb-hist-pend]'), txt(hr.querySelector('[data-cb-hist-ppend]')));
+  b5.click(b5.q('.cb-views [data-v="balance"]')); await wait(40);
+  const tot5 = (l) => { const e = b5.q(`[data-cb-tot="${l}"]`); return e ? txt(e.querySelector('b')) + (e.querySelector('em') ? ' | ' + txt(e.querySelector('em')) : '') : null; };
+  t('Balance: «Traslados privados $50.000 | 1 privado cobrado · 1 cuenta», y «Extra de cobros anteriores» sigue siendo solo vacaciones ($40.000)',
+    tot5('Traslados privados') === '$50.000 | 1 privado cobrado · 1 cuenta' && tot5('Extra de cobros anteriores') === '$40.000 | 1 cuenta lo incluye', [tot5('Traslados privados'), tot5('Extra de cobros anteriores')].join(' // '));
+  const montoRio = txt(b5.q('.cb-bal-rows tr[data-cb-bal="s-rio"]').querySelectorAll('td')[8]);
+  t('…y en la fila, el Monto dice «Incluye $50.000 de 1 traslado privado»', /Incluye \$50\.000 de 1 traslado privado/.test(montoRio), montoRio);
+  b5.w.stopCobroTimer();
+  t('sin errores de consola (privado)', b5.errors.length === 0, b5.errors.slice(0, 3).join(' | '));
 }
 
 console.log(`\n${ok} ✓ · ${bad} ✗`);

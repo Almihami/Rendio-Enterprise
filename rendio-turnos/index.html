@@ -94,6 +94,10 @@
   <link rel="stylesheet" href="rx-aux-coord.css" />
   <link rel="stylesheet" href="rx-aux-onboard.css" />
   <link rel="stylesheet" href="login-rx.css" />
+  <!-- Ruta del conductor v2 (entrega del diseñador 12-oct-2026): CSS portado por
+       _portar-css-ruta-conductor.mjs (no editar) + ajustes de la app. -->
+  <link rel="stylesheet" href="rt-conductor.css" />
+  <link rel="stylesheet" href="rt-conductor-app.css" />
   <!-- Admin del rediseño: Coordinación, Cuentas de cobro y Rendio Points -->
   <link rel="stylesheet" href="admin-coordinacion.css" />
   <link rel="stylesheet" href="admin-cobro.css" />
@@ -666,17 +670,21 @@
                 <div class="set-field"></div>
               </div>
 
-              <details class="set-sec" data-guarda="btn" data-secval="setting-fast-start-enabled,setting-fast-start-from,setting-fast-start-to,setting-inspection-grace">
+              <!-- 0105 (12-oct-2026): «que puedan hacer la inspección al finalizar el turno
+                   en la noche». El plazo puede ser el cierre del turno y la franja puede
+                   cruzar la medianoche. -->
+              <details class="set-sec" data-guarda="btn" data-secval="setting-fast-start-enabled,setting-fast-start-from,setting-fast-start-to,setting-fast-start-deadline,setting-inspection-grace">
                 <summary><span class="set-sec-dot"></span><span class="set-sec-t">Inicio rápido (inspección diferida)</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
                 <div class="set-sec-body">
-              <label class="set-field" style="flex-direction:row;align-items:center;gap:10px;cursor:pointer"><input id="setting-fast-start-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Permitir iniciar turno sin inspección (la hace dentro del plazo)</span></label>
+              <label class="set-field" style="flex-direction:row;align-items:center;gap:10px;cursor:pointer"><input id="setting-fast-start-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Permitir iniciar turno sin inspección (la hace después, en el plazo de abajo)</span></label>
               <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Franja: desde (hora)</label><input id="setting-fast-start-from" class="set-input" type="number" min="0" max="23" /><div class="set-hint">Hora de inicio de la franja (0–23). Default 12.</div></div>
-                <div class="set-field"><label>Franja: hasta (hora)</label><input id="setting-fast-start-to" class="set-input" type="number" min="1" max="24" /><div class="set-hint">Fin de la franja (exclusivo). Default 16 (4 p.m.).</div></div>
+                <div class="set-field"><label>Franja: desde (hora)</label><input id="setting-fast-start-from" class="set-input" type="number" min="0" max="23" /><div class="set-hint">Hora de Colombia, de 0 a 23 (formato 24 h). Esa hora entra. Default 12.</div></div>
+                <div class="set-field"><label>Franja: hasta (hora)</label><input id="setting-fast-start-to" class="set-input" type="number" min="1" max="24" /><div class="set-hint">De 1 a 24. Esa hora ya no entra: con 16 se puede hasta las 3:59 p.m. Default 16.</div></div>
               </div>
+              <div class="set-hint" style="margin-top:8px">El botón de inicio rápido solo le sale al conductor dentro de la franja. Si «hasta» es menor que «desde», la franja cruza la medianoche: 14 a 2 = de 2:00 p.m. a 1:59 a.m. Todo el día: 0 a 24.</div>
               <div class="set-row2" style="margin-top:14px">
-                <div class="set-field"><label>Plazo para la inspección (min)</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint">Si no la hace en este tiempo → strike automático. Default 90.</div></div>
-                <div class="set-field"></div>
+                <div class="set-field"><label>Plazo de la inspección</label><select id="setting-fast-start-deadline" class="set-input"><option value="minutes">En minutos</option><option value="shift_close">Al cerrar el turno</option></select><div class="set-hint" id="setting-fast-start-deadline-hint">«Al cerrar el turno»: la app se la pide antes del cierre. Si el turno se cierra sin ella (también por el auto-cierre), strike automático.</div></div>
+                <div class="set-field"><label>Minutos de plazo</label><input id="setting-inspection-grace" class="set-input" type="number" min="15" max="480" /><div class="set-hint" id="setting-inspection-grace-hint">Con «En minutos»: si no la hace en este tiempo → strike automático. Default 90.</div></div>
               </div>
                 </div>
               </details>
@@ -806,10 +814,10 @@
                 <div class="set-field"><label>Anticipación mínima (horas)</label><input id="setting-aux-lead" class="set-input" type="number" min="0" max="72" /><div class="set-hint">Por debajo de esto se le avisa al auxiliar y el traslado queda marcado como "pedido tarde" en Reservas. No se bloquea: la operación tiene urgencias. Default 6.</div></div>
                 <div class="set-field"><label>Traslado privado (la camioneta)</label>
                   <label class="set-checkrow"><input id="setting-priv-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Ofrecerlo a los auxiliares</span></label>
-                  <div class="set-hint">Mientras esté apagado, el auxiliar ni siquiera ve el paso: pide su traslado como siempre. Enciéndelo solo cuando la camioneta y la tarifa estén definidas.</div>
+                  <div class="set-hint">Mientras esté apagado, el auxiliar lo ve como «Pronto» y no lo puede pedir: pide su traslado como siempre. Enciéndelo solo cuando la camioneta y la tarifa estén definidas.</div>
                 </div>
                 <div class="set-field"><label>Vehículo del privado</label><select id="setting-priv-vehicle" class="set-input"></select><div class="set-hint">Cuál carro se aparta para los traslados privados. De aquí sale el cupo: hay uno, luego hay un privado a la vez. Si no está en la lista, regístralo primero en Vehículos.</div></div>
-                <div class="set-field"><label>Tarifa del privado (pesos)</label><input id="setting-priv-price" class="set-input" type="number" min="1" step="1000" /><div class="set-hint">Lo que se le muestra al auxiliar por trayecto. <b>No se cobra dentro de la app</b>: queda registrado en la reserva y se liquida por fuera. El precio se congela al pedir, así que subirlo no cambia lo ya pactado.</div></div>
+                <div class="set-field"><label>Tarifa del privado (pesos)</label><input id="setting-priv-price" class="set-input" type="number" min="1" step="1000" /><div class="set-hint">Lo que paga el tripulante por trayecto (default $50.000). Lo ve al pedir y, <b>cuando apruebas el privado, se suma a su cuenta de cobro</b> del mes del viaje (Cuentas de cobro). Si lo niegas o se cancela, ese cobro se quita solo. El precio se congela al pedir, así que cambiarlo no toca lo ya pedido.</div></div>
                 <div class="set-field"><label>La camioneta queda apartada (min)</label><input id="setting-priv-block" class="set-input" type="number" min="10" max="480" /><div class="set-hint">Cuánto tiempo antes y después de un privado NO se puede aprobar otro. De aquí sale el cupo: hay una sola camioneta. Default 90.</div></div>
               </div>
                 </div>
@@ -1136,6 +1144,9 @@
               <button data-tp="filtro" data-f="dos-unidades">Con dos unidades</button>
               <button data-tp="filtro" data-f="suspendidos">Suspendidos</button>
             </div>
+            <label class="tp-airf">Aerolínea
+              <select id="tp-air-filter"><option value="">Todas</option></select>
+            </label>
           </div>
           <div id="tp-body"></div>
         </div>

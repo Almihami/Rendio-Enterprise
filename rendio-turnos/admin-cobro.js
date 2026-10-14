@@ -48,6 +48,14 @@
 //     Excel las columnas Declarados · Reservados · Cobrados · Extra cobrado ·
 //     Extra pendiente (la marca roja ahora es «tiene extra» y dice cuánto).
 //
+// 12-oct-2026 (0103): el TRASLADO PRIVADO aprobado se cobra en la cuenta de cobro.
+// La base lo trae como una línea más de `extras` (kind 'private', «Traslado
+// privado · 24 de oct · $50.000»), ya sumada al monto; lo que aún no entra en
+// ninguna cuenta viene en extrasPending.private. Aquí: chips «Privado» /
+// «Privado pendiente» en la lista, la línea en el Historial, el aviso de los
+// pendientes, y en el Balance y su Excel «Traslados privados» aparte de los
+// viajes extra de vacaciones.
+//
 // Contrato con core.js: window.renderCobro() al entrar a la pestaña y
 // window.stopCobroTimer() al salir (core.setTab los llama con typeof). La entrada
 // «Cuentas de cobro» de la consola aparece sola cuando renderCobro existe.
@@ -143,7 +151,16 @@
   // Viajes extra de vacaciones (30-sep): lo que entra en su próximo cobro y lo
   // que su cuenta abierta ya trae de un cobro anterior.
   const pendOf = (r) => (r && isObj(r.extrasPending) ? (num(r.extrasPending.amountCOP) || 0) : 0);
-  const incOf = (r) => (r && isObj(r.current) ? (num(r.current.extrasCOP) || 0) : 0);
+  // 0103: las líneas de la cuenta abierta separadas por tipo (vacaciones / privado).
+  const curExtras = (r) => (r && isObj(r.current) && Array.isArray(r.current.extras) ? r.current.extras.filter(isObj) : []);
+  const sumAmt = (xs) => xs.reduce((a, x) => a + (num(x.amountCOP) || 0), 0);
+  const incOf = (r) => {
+    if (!(r && isObj(r.current))) return 0;
+    const xs = curExtras(r);
+    return xs.length ? sumAmt(xs.filter(x => x.kind !== 'private')) : (num(r.current.extrasCOP) || 0);
+  };
+  const privIncOf = (r) => sumAmt(curExtras(r).filter(x => x.kind === 'private'));
+  const privPendOf = (r) => (r && isObj(r.extrasPending) && isObj(r.extrasPending.private) ? (num(r.extrasPending.private.amountCOP) || 0) : 0);
   function stateOf(r) {
     const acc = isObj(r.account) ? r.account : null;
     const cur = isObj(r.current) ? r.current : null;
@@ -412,7 +429,11 @@
     const pend = pendOf(r), inc = incOf(r);
     let h = '';
     if (pend) h += ' <span class="cb-tag t-warn" data-cb-chip="extra-pend" title="Viajes de vacaciones de más: entran en su próximo cobro">Extra pendiente ' + esc(money(pend)) + '</span>';
-    if (inc) h += ' <span class="cb-tag t-info" data-cb-chip="extra-inc" title="' + esc(((r.current.extras || []).filter(isObj).map(x => x.label).filter(Boolean)).join(' · ') || 'Viajes extra de un cobro anterior') + '">Incluye extra ' + esc(money(inc)) + '</span>';
+    if (inc) h += ' <span class="cb-tag t-info" data-cb-chip="extra-inc" title="' + esc((curExtras(r).filter(x => x.kind !== 'private').map(x => x.label).filter(Boolean)).join(' · ') || 'Viajes extra de un cobro anterior') + '">Incluye extra ' + esc(money(inc)) + '</span>';
+    // 0103: traslados privados aprobados (en su cuenta abierta, o esperando una).
+    const pInc = privIncOf(r), pPend = privPendOf(r);
+    if (pInc) h += ' <span class="cb-tag t-info" data-cb-chip="priv-inc" title="' + esc(curExtras(r).filter(x => x.kind === 'private').map(x => x.label).filter(Boolean).join(' · ')) + '">Privado ' + esc(money(pInc)) + '</span>';
+    if (pPend) h += ' <span class="cb-tag t-muted" data-cb-chip="priv-pend" title="' + esc(((r.extrasPending.private.items || []).filter(isObj).map(x => x.label).filter(Boolean)).join(' · ') + ' · entra en una próxima cuenta de cobro') + '">Privado pendiente ' + esc(money(pPend)) + '</span>';
     return h;
   }
   function rowHTML(r) {
@@ -585,7 +606,15 @@
           }).join('') + '</tbody></table>'
           : '<div class="cb-empty sm">Todavía no tiene cuentas de cobro.</div>';
         // Viajes extra de vacaciones que todavía no entran en ninguna cuenta.
-        const pend = (Array.isArray(d.extraCharges) ? d.extraCharges.filter(isObj) : []).filter(x => x.pending);
+        const pendAll = (Array.isArray(d.extraCharges) ? d.extraCharges.filter(isObj) : []).filter(x => x.pending);
+        const pend = pendAll.filter(x => x.kind !== 'private');
+        // 0103: privados aprobados que esperan cuenta (su mes no ha abierto, o la de su mes ya estaba pagada o vencida).
+        const pPend = pendAll.filter(x => x.kind === 'private');
+        if (pPend.length) {
+          body += '<div class="cb-note" data-cb-hist-ppend>' + icon('i-info') + '<div><b>Privado pendiente para una próxima cuenta: '
+            + esc(money(pPend.reduce((a, x) => a + (num(x.amountCOP) || 0), 0))) + '</b>'
+            + '<span>' + pPend.map(x => esc(x.label || '')).join(' · ') + '. Aprobado; entra en la cuenta del mes del viaje cuando abra, o en la siguiente si esa ya estaba pagada o vencida.</span></div></div>';
+        }
         if (pend.length) {
           body += '<div class="cb-note warn" data-cb-hist-pend>' + icon('i-warn') + '<div><b>Extra pendiente para su próximo cobro: '
             + esc(money(pend.reduce((a, x) => a + (num(x.amountCOP) || 0), 0))) + '</b>'
@@ -819,6 +848,8 @@
       + kv('Extra cobrado', money(n('extraBilledCOP')), 'Viajes de más que ya entraron en una cuenta')
       + kv('Extra pendiente', money(n('extraPendingCOP')), 'Entra en el próximo cobro', n('extraPendingCOP') ? 'bad' : '')
       + kv('Extra de cobros anteriores', money(n('extrasIncludedCOP')), pl(n('extrasIncludedCount'), 'cuenta lo incluye', 'cuentas lo incluyen'))
+      // 0103: los traslados privados aprobados (ya van dentro del monto).
+      + ('privateCOP' in T ? kv('Traslados privados', money(n('privateCOP')), pl(n('privateCount'), 'privado cobrado', 'privados cobrados') + ' · ' + pl(n('privateStatements'), 'cuenta', 'cuentas')) : '')
       + kv('Sin cuenta de cobro este mes', String(miss.length), num(b.withoutAccount) ? pl(num(b.withoutAccount), 'tripulante sin cuenta', 'tripulantes sin cuenta') : '')
       + ('withoutValue' in b ? kv('Sin valor cargado', String(num(b.withoutValue) || 0), num(b.withoutValue) ? pl(num(b.withoutValue), 'tripulante sin valor cargado', 'tripulantes sin valor cargado') + ': no se les abre cobro' : '', num(b.withoutValue) ? 'bad' : '') : '')
       + '</div></div>';
@@ -848,7 +879,8 @@
             + '<td>' + esc(vac && num(x.tripsBilled) != null ? String(num(x.tripsBilled)) : '—') + '</td>'
             + '<td' + (xb ? ' class="cb-bad"' : '') + '>' + esc(vac ? money(xb) : '—') + '</td>'
             + '<td' + (xp ? ' class="cb-bad"' : '') + '>' + esc(vac ? money(xp) : '—') + '</td>'
-            + '<td>' + esc(money(num(x.amountCOP))) + (inc ? '<em data-cb-bal-inc>Incluye ' + esc(money(inc)) + ' de viajes extra de un cobro anterior</em>' : '') + '</td>'
+            + '<td>' + esc(money(num(x.amountCOP))) + (inc ? '<em data-cb-bal-inc>Incluye ' + esc(money(inc)) + ' de viajes extra de un cobro anterior</em>' : '')
+            + (num(x.privateCOP) ? '<em data-cb-bal-priv title="' + esc((Array.isArray(x.privateIncluded) ? x.privateIncluded.filter(isObj).map(y => y.label).filter(Boolean) : []).join(' · ')) + '">Incluye ' + esc(money(num(x.privateCOP))) + ' de ' + esc(pl(num(x.privateCount) || 0, 'traslado privado', 'traslados privados')) + '</em>' : '') + '</td>'
             + '<td>' + (num(x.discountCOP) ? esc(money(num(x.discountCOP))) + (x.discountNote ? '<em>' + esc(x.discountNote) + '</em>' : '') : '—') + '</td>'
             + '<td><b>' + esc(money(num(x.netCOP))) + '</b></td>'
             + '<td>' + tag(BAL_STATE(x)) + '</td>'
@@ -954,6 +986,8 @@
       ['Viajes extra cobrados', n('extraBilledCOP'), null, 'Viajes de vacaciones de más que ya entraron en una cuenta'],
       ['Viajes extra pendientes', n('extraPendingCOP'), null, 'Entran en el próximo cobro de cada tripulante'],
       ['Viajes extra de cobros anteriores', n('extrasIncludedCOP'), n('extrasIncludedCount'), 'Ya incluidos en el monto de estas cuentas'],
+      // 0103: traslados privados aprobados.
+      ...('privateCOP' in T ? [['Traslados privados', n('privateCOP'), n('privateStatements'), pl(n('privateCount'), 'privado aprobado', 'privados aprobados') + ', ya incluidos en el monto de estas cuentas']] : []),
     ];
     let r = 4;
     R1.forEach(v => {

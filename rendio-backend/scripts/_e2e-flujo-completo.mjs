@@ -169,6 +169,10 @@ const CAT = [
     'driver_mark_airport_arrival marca la llegada en todas las paradas de la vuelta y encola «¡Tu conductor llegó al aeropuerto! ✈️» a cada uno; la fase del viaje pasa a «Te espera en MDE».',
     '1) El conductor de la llegada toca «Llegué al aeropuerto». 2) Bandeja de cada tripulante. 3) Pantalla del viaje del tripulante.',
     'Una fila por tripulante en la bandeja y la pantalla en «Te espera en MDE» con su código.'],
+  ['T12', 'tripulante', 'Tripulante', 'Servicio de puerto a casa: el tripulante pide una LLEGADA (Aeropuerto → Casa) desde la app (pedido del 12-oct).',
+    'Pedir (aux-rx-pedir.js): tipo «Aeropuerto → Casa», día, aerolínea + número de vuelo, hora de aterrizaje, nivel, revisar y deslizar. Se guarda como airport_to_home en estado «scheduled».',
+    '1) Con la tripulante de T01: Inicio › Pedir. 2) «Aeropuerto → Casa», mañana, AV 9412, aterriza 14:20. 3) Compartido. 4) Deslizar. 5) Revisar la base.',
+    'Queda una reserva de llegada de mañana con aterrizaje 14:20, el vuelo AV9412 y estado scheduled.'],
   ['C01', 'celular', 'Conductor', 'Si no tiene celular, la app le pide el celular y no lo deja seguir sin uno válido.',
     'driver-celular.js: al entrar, si profiles.phone está vacío, una ventana que no se cierra hasta guardar un celular válido (10 dígitos, empieza por 3) o cerrar sesión; guarda con set_my_phone (0098). Después queda «Mi celular» en su Perfil.',
     '1) Entrar como pedro.local (sin celular). 2) Guardar vacío, «12345» y «2001234567». 3) Tocar fuera de la ventana. 4) Guardar «300 765 4321». 5) Perfil › Mi celular.',
@@ -227,8 +231,32 @@ const CAT = [
     'Sale la tarjeta con el corte en curso y el turno de ayer con su duración en h y min.'],
   ['C15', 'salida', 'Conductor', 'El conductor ve su ruta en el mapa en cada parada (la línea y los puntos de las paradas).',
     'La pantalla de ejecución vuelve a crear el mapa en cada parada: puntos de cada parada, la vía de OSRM y su posición en vivo.',
-    '1) Al iniciar la ruta, al pasar de parada, al recargar y al iniciar la llegada: contar lo que pinta el mapa del conductor (#dr-ex-map). 2) Errores de JavaScript en ese momento.',
+    '1) Al iniciar la ruta, al pasar de parada, al recargar y al iniciar la llegada: contar lo que pinta el mapa del conductor (Ejecución: .rt-map-full, líneas y pines). 2) Errores de JavaScript en ese momento.',
     'En cada momento el mapa tiene la línea de la ruta y los puntos de las paradas, sin errores.'],
+  ['C16', 'llegada', 'Conductor', '«Llegué al aeropuerto» antes de llegar NO debe avisarles a los tripulantes (pedido del 12-oct: el conductor lo marcó sin haber llegado y a los tripulantes les apareció).',
+    'Ruta v2: driver-rutas.js · arrive() compara el GPS con MDE (1,5 km; 600 m en una casa) y abre la hoja «Todavía no estás en MDE» (rt-sheets.jsx · RtConfirmGps) antes de llamar a driver_mark_airport_arrival.',
+    '1) Iniciar la llegada con el carro a ~2 km de MDE. 2) «Llegué al aeropuerto». 3) «Avisar cuando llegue». 4) Contar los avisos «llegó al aeropuerto» en la bandeja. 5) Mover el GPS a MDE y volver a tocar.',
+    'Sale la hoja con la distancia real; con «Avisar cuando llegue» no sale ningún aviso y la pantalla sigue rumbo a MDE; ya en MDE sí avisa.'],
+  ['C17', 'llegada', 'Conductor', 'En la lista del aeropuerto, «Deshacer» un «a bordo» o un «No llegó» tocado por error (entrega del diseñador del 12-oct).',
+    'Mig 0102 · driver_airport_undo(reserva): devuelve la parada a «llegó» mientras el carro siga en MDE; al de «No llegó» le avisa una vez «Tu conductor todavía te espera».',
+    '1) Con A a bordo (código) y B «No llegó»: «Deshacer» en B y en A. 2) Revisar la base y la bandeja de B. 3) Volver a resolverlos.',
+    'Las dos filas vuelven a quedar por resolver; A pierde la marca de abordaje (status_a2h driver_assigned); B recibe «Tu conductor todavía te espera»; al resolverlos de nuevo todo queda como antes.'],
+  ['C18', 'llegada', 'Conductor', '¿Dónde se habla con el tripulante? Chat con cualquier tripulante de la vuelta (Detalle y lista del aeropuerto), y el aviso del mensaje lleva al chat.',
+    'Ruta v2: botón de chat en cada parada del Detalle y «Escribir» en cada fila del aeropuerto (RtChat con respuestas rápidas). Si el tripulante escribe con el chat cerrado, aparece el aviso de arriba (RxPushBanner) y al tocarlo abre ese chat. El push del tripulante al conductor ahora lleva #/viaje?r=<reserva>, que el conductor resuelve abriendo ese chat.',
+    '1) En MDE, «Escribir» en la fila de A y mandar una respuesta rápida. 2) A responde desde su app. 3) Ver el aviso en la ruta del conductor y tocarlo. 4) Volver al Detalle y contar los botones de chat. 5) Revisar la URL del push que mandó la app de A.',
+    'Los dos mensajes quedan guardados; el conductor ve el aviso con el texto de A y al tocarlo se abre el chat con el mensaje; cada parada del Detalle tiene su chat; el push de A apunta a #/viaje?r=<reserva>.'],
+  ['C19', 'salida', 'Conductor', 'La ubicación sigue compartiéndose al salir de la pantalla de ejecución, y se vuelve con un toque (entrega del diseñador del 12-oct).',
+    'Ruta v2: «Volver» desde Ejecución ya no apaga el GPS; Mi día y el Detalle muestran la barra «V1 en curso · ubicación activa» (RtNowBar) que lleva de vuelta a la parada.',
+    '1) Con la vuelta en curso, «Volver» desde Ejecución. 2) Mover el GPS y contar los puntos guardados. 3) Tocar la barra «en curso».',
+    'Aparece la barra; el carro sigue mandando su posición; un toque vuelve a la misma parada.'],
+  ['C20', 'salida', 'Conductor', '«No se presentó» pide confirmación (antes era un toque).',
+    'Ruta v2: hoja «¿X no se presentó?» (rt-sheets.jsx · RtConfirmNoShow) con «Sí, no se presentó» y «Seguir esperando».',
+    '1) Vencida la espera, tocar «No se presentó». 2) «Seguir esperando». 3) Revisar la base. 4) Volver a tocar y confirmar.',
+    'La hoja aparece; «Seguir esperando» no marca nada y sigue en la parada; al confirmar queda no_show.'],
+  ['A10', 'llegada', 'Admin', 'Re-publicar el plan a mitad de la operación no puede borrar a quien ya va a bordo o ya se entregó (hallazgo del 12-oct al revisar la asignación).',
+    'api.js · saveRoutePlan: una vuelta con paradas atendidas cuenta como arrancada aunque siga en «planned» (nadie la pasa a in_progress): no se borra, lo atendido queda fijo y lo pendiente solo se mueve si cambia de conductor. Los errores ya no se cuentan en silencio.',
+    '1) Dejar la salida a mitad (una parada atendida y otra pendiente). 2) Re-publicar el plan del día tal cual con Api.saveRoutePlan desde la sesión del jefe. 3) Comparar las paradas antes y después.',
+    'La vuelta sigue con el mismo id y con todas sus paradas en el mismo estado; no aparecen paradas duplicadas; saveRoutePlan no reporta fallas.'],
   ['S01', 'salida', 'Sistema', 'Aviso por hora: recordatorio 10 min antes de la recogida publicada.',
     'detect_trip_reminders() (pg_cron cada minuto) encola «Te recogen a las …» cuando faltan ≤ 10 min para la hora publicada (calculated_pickup_at) y la recogida no ha arrancado.',
     '1) Se adelanta por SQL la hora publicada de la 1ª parada a ahora + 9 min (equivale a que pase el tiempo; la base recalcula calculated_pickup_at). 2) SELECT detect_trip_reminders(). 3) Bandeja del tripulante.',
@@ -414,26 +442,37 @@ async function leerViaje(pg) {
 // captura del mapa se vuelve arriba para que se vea lo que ve el tripulante al abrir.
 const arriba = (pg) => pg.evaluate(() => document.querySelectorAll('#auxiliar-ui [data-rx-scroll], #auxiliar-ui .rx-trip-sheet').forEach(e => { e.scrollTop = 0; })).catch(() => {});
 const toastsDe = (pg) => pg.evaluate(() => window.__e2eToasts || []).catch(() => []);
+// Ruta del conductor v2 (entrega del 12-oct-2026): la Ejecución es la capa de arriba.
+const EX = '#driver-ruta-ui #rt-layers > .rx-layer:not(.out):last-child .rt-exec';
+const SH = '#driver-ruta-ui #rt-sheet-host';
 async function legActual(pg) {
-  return pg.evaluate(() => ({
-    nombre: (document.querySelector('#driver-ruta-ui .dr-aux-t .nm')?.innerText || '').trim(),
-    cta: (document.querySelector('#driver-ruta-ui .dr-cta')?.innerText || '').trim(),
-    ctaAct: document.querySelector('#driver-ruta-ui .dr-cta')?.getAttribute('data-dr') || '',
-    ctaOff: !!document.querySelector('#driver-ruta-ui .dr-cta[disabled]'),
-    exec: !!document.querySelector('#driver-ruta-ui.exec'),
-    chip: (document.querySelector('#driver-ruta-ui .dr-ex-chip')?.innerText || '').trim(),
-  })).catch(() => ({}));
+  return pg.evaluate(() => {
+    const x = [...document.querySelectorAll('#driver-ruta-ui #rt-layers > .rx-layer:not(.out)')].pop();
+    const ex = x && x.querySelector('.rt-exec');
+    const q = (s) => ex && ex.querySelector(s);
+    const eb = (q('.rt-eb')?.innerText || '').trim();
+    const apt = !q('.rt-person') && /aeropuerto|MDE/i.test(eb);
+    const cta = q('.rt-cta .rx-btn:not(.rt-nav)');
+    return {
+      nombre: apt ? 'Aeropuerto MDE' : (q('.rt-person-tx > b')?.innerText || '').trim(),
+      cta: (cta?.innerText || '').trim(), ctaAct: cta?.getAttribute('data-rt') || '', ctaOff: !!(cta && cta.disabled),
+      exec: !!ex, chip: (q('.rt-steps > span')?.innerText || '').trim(), eb,
+      pill: (q('.rt-x-pill')?.innerText || '').replace(/\s+/g, ' ').trim(),
+    };
+  }).catch(() => ({}));
 }
+const esExec = (pg) => pg.waitForSelector(EX + ' .rt-xs', { timeout: 15000 });
 
 // Lo que pinta el mapa del conductor en un momento dado (C15).
 const MAPA_CONDUCTOR = [];
 async function mapaConductor(pg, momento, cap) {
   await sleep(2500);   // OSRM responde y se dibuja la línea
-  const m = await pg.evaluate(() => {
-    const el = document.getElementById('dr-ex-map');
+  const m = await pg.evaluate((ex) => {
+    const el = document.querySelector(ex + ' .rt-map-full .rt-lf');
     if (!el) return null;
-    return { trazos: el.querySelectorAll('path.leaflet-interactive').length, yo: el.querySelectorAll('.dr-me').length };
-  }).catch(() => null);
+    // Las líneas van en un canvas (preferCanvas): el mapa deja escrito lo que dibujó.
+    return { trazos: +(el.dataset.trazos || 0), pines: el.querySelectorAll('.rt-lf-pin').length, yo: el.querySelectorAll('.rt-lf-car').length };
+  }, EX).catch(() => null);
   const errores = ERRORES.filter(e => e.tipo === 'pageerror' && /conductor/.test(e.quien) && e.paso === PASO).map(e => e.msg);
   MAPA_CONDUCTOR.push({ momento, ...(m || { trazos: null, yo: null }), errores, cap });
 }
@@ -978,6 +1017,49 @@ async function bloqueTripulante() {
     const ok = /06:30/.test(t) && /(armando tu ruta|te avisamos)/i.test(t);
     return { estado: ok ? 'OK' : 'PARCIAL', captura: cap, obtenido: `Detalle: «${t.slice(0, 330)}».`, nota: 'Solo lectura: no prueba cancelar ni cambiar la presentación.' };
   });
+
+  // --- T12 pedir una LLEGADA (Aeropuerto → Casa)
+  await prueba('T12', pg, 'tripulante', async () => {
+    if (!okRegistro) throw new NoProbado('El registro (T01) no terminó, no hay con quién pedir.');
+    const caps = [];
+    await pg.goto(BASE + '/');
+    await saltarPresentacion(pg);
+    await pg.click('[data-ax=new]:visible', { timeout: 15000 });
+    await pg.click('[data-ax=type][data-type=lle]', { timeout: 8000 });
+    await pg.click(`[data-ax=date][data-iso="${MANANA}"]`, { timeout: 8000 });
+    await pg.click('[data-ax=fl-pick][data-k=flight]', { timeout: 8000 });
+    await pg.click('[data-ax=fl-set][data-k=flight][data-iata=AV]', { timeout: 8000 });
+    await pg.fill('[data-field=flightNum]', '9412');
+    await pg.fill('[data-field=time]', '14:20');
+    await sleep(400);
+    caps.push(await foto(pg, 'tripulante', 'pedir-llegada-vuelo'));
+    await pg.click('[data-ax=next]:not([disabled])');
+    if (await pg.waitForSelector('[data-ax=lvl][data-v=shared]', { timeout: 5000 }).then(() => true, () => false)) {
+      await pg.click('[data-ax=lvl][data-v=shared]');
+      await pg.click('[data-ax=next]:not([disabled])');
+    }
+    await pg.waitForSelector('.rx-slide-k', { state: 'visible', timeout: 10000 });
+    await sleep(500);
+    caps.push(await foto(pg, 'tripulante', 'pedir-llegada-revisar'));
+    const k = await (await pg.$('.rx-slide-k')).boundingBox();
+    const sl = await (await pg.$('.rx-slide')).boundingBox();
+    await pg.mouse.move(k.x + k.width / 2, k.y + k.height / 2);
+    await pg.mouse.down();
+    for (let i = 1; i <= 14; i++) await pg.mouse.move(k.x + k.width / 2 + (sl.width - k.width) * i / 14, k.y + k.height / 2);
+    await pg.mouse.up();
+    const pedido = await esperarTexto(pg, /Traslado pedido/, 15000);
+    await sleep(900);
+    const cap = await foto(pg, 'tripulante', 'pedido-llegada-ok');
+    const r = await q1(`SELECT r.direction, r.required_arrival_at, r.status_a2h, r.notes, f.flight_number
+                          FROM public.reservations r JOIN public.auxiliar_profiles ap ON ap.id = r.auxiliar_profile_id
+                          JOIN public.profiles p ON p.id = ap.profile_id LEFT JOIN public.flights f ON f.id = r.flight_id
+                         WHERE p.email = $1 AND r.direction = 'airport_to_home' ORDER BY r.created_at DESC LIMIT 1`, [NUEVA && NUEVA.email]);
+    const vuelo = r && ((r.flight_number || '') + ' ' + (r.notes || ''));
+    const ok = pedido && r && r.status_a2h === 'scheduled' && diaBog(r.required_arrival_at) === MANANA && hhmm(r.required_arrival_at) === '14:20' && /AV\s?9412/i.test(vuelo);
+    return { estado: ok ? 'OK' : 'FALLA', captura: cap,
+      obtenido: `«¡Traslado pedido!»: ${pedido ? 'sí' : 'no'}. En la base: ${r ? `${r.direction}, aterriza ${hhmm(r.required_arrival_at)} del ${diaBog(r.required_arrival_at)}, estado ${r.status_a2h}, vuelo «${(vuelo || '').trim()}»` : 'NO hay reserva de llegada'}.`,
+      nota: `Otras capturas: ${caps.join(', ')}` };
+  });
   await ctx.close();
 }
 
@@ -1050,6 +1132,9 @@ async function bloqueSalida() {
   const S = (i) => stops[i];
   const nom1 = (s) => (s.full_name || '').split(' ')[0];
   const drv = ra.conductor;
+  // Si el plan le tocó al conductor sin celular (pedro.local), se le pone uno válido
+  // antes, como haría él en la ventana que se lo pide (eso ya lo prueba C01).
+  if (!soloDig(drv.phone)) { await q(`UPDATE public.profiles SET phone = '3009990011' WHERE id = $1`, [drv.id]); drv.phone = '3009990011'; }
   const tripIds = stops.map(s => s.profile_id);
   console.log(`  Vuelta ${hhmm(ra.planned_start_at)} · ${drv.full_name} · ${stops.map(s => `${s.orden}.${nom1(s)}`).join(', ')}`);
   const inicioGps = norte(S(0).lat, S(0).lng, -1200);
@@ -1108,7 +1193,7 @@ async function bloqueSalida() {
     if (!hay) { bloqueo = '«Tu día» no muestra «Iniciar ruta» para la vuelta publicada'; throw new Error(bloqueo); }
     const tuDia = (await pgD.evaluate(() => document.getElementById('driver-home-ruta')?.innerText || '')).replace(/\s+/g, ' ');
     await pgD.click(btn); toques++;
-    await pgD.waitForSelector('#driver-ruta-ui.exec', { timeout: 15000 });
+    await esExec(pgD);
     const a = await esperarAviso(S(0).profile_id, `trip:${S(0).id}:en_route`, 15000);
     // El GPS emulado solo avisa cuando la posición CAMBIA (un teléfono real manda
     // puntos solo): se mueve 10 m para que salga el primer punto del recorrido.
@@ -1173,15 +1258,15 @@ async function bloqueSalida() {
     const capA = await foto(pgA, 'tripulante', 'chat-escribe');
     await pgA.click('[data-ax=chat-close]').catch(() => {});
     // El conductor ve el globo de su parada, abre el chat y responde.
-    await pgD.click(`[data-dr=chat][data-rid="${S(0).id}"]`, { timeout: 15000 });
-    const visto = await pgD.waitForFunction((t) => (document.getElementById('dr-chat-body')?.innerText || '').includes(t), ida, { timeout: 12000 }).then(() => true, () => false);
-    await pgD.fill('#dr-chat-input', vuelta);
-    await pgD.click('[data-dr=chat-send]');
+    await pgD.click(`${EX} [data-rt=chat][data-rid="${S(0).id}"]`, { timeout: 15000 });
+    const visto = await pgD.waitForFunction((t) => (document.getElementById('rt-thread')?.innerText || '').includes(t), ida, { timeout: 12000 }).then(() => true, () => false);
+    await pgD.fill('#rt-chat-in', vuelta);
+    await pgD.click(`${SH} [data-rt=send]`);
     const m2 = await esperar(async () => q1(`SELECT sender_role, body FROM public.reservation_messages WHERE reservation_id = $1 AND body = $2`, [S(0).id, vuelta]), { timeout: 10000 });
     await sleep(600);
     const capD = await foto(pgD, 'conductor', 'chat-responde');
-    const telTrip = await pgD.$eval('#driver-ruta-ui a.dr-cbtn.tel', a => a.getAttribute('href')).catch(() => null);
-    await pgD.click('[data-dr=chat-close]').catch(() => {});
+    const telTrip = await pgD.$eval(`${EX} .rt-person a.rt-act[href^="tel:"]`, a => a.getAttribute('href')).catch(() => null);
+    await pgD.click(`${SH} .rx-sheet-bg`, { position: { x: 20, y: 20 } }).catch(() => {}); await sleep(500);
     await pgA.click('.rx-trip [data-ax=chat]');
     const leyo = await pgA.waitForFunction((t) => document.body.innerText.includes(t), vuelta, { timeout: 15000 }).then(() => true, () => false);
     const capA2 = await foto(pgA, 'tripulante', 'chat-respuesta');
@@ -1211,8 +1296,8 @@ async function bloqueSalida() {
   let codigoBueno = S(0).meet_code;
   await prueba('C03', pgD, 'conductor', async () => {
     await gps(norte(S(0).lat, S(0).lng, -20)); await sleep(1500);
-    await pgD.click('#driver-ruta-ui [data-dr=arrived]');
-    await pgD.waitForSelector('#dr-code-in', { state: 'visible', timeout: 10000 });
+    await pgD.click(`${EX} [data-rt=arrive]`);
+    await pgD.waitForSelector(`${EX} .rt-code .rt-boxes input`, { timeout: 10000 });
     const a = await esperarAviso(S(0).profile_id, `trip:${S(0).id}:at_pickup`, 15000);
     const cap = await foto(pgD, 'conductor', 'llegue-codigo');
     const leg = await legActual(pgD);
@@ -1232,9 +1317,10 @@ async function bloqueSalida() {
   // --- C04 código equivocado
   await prueba('C04', pgD, 'conductor', async () => {
     const malo = String((Number(codigoBueno) + 37) % 100).padStart(2, '0');
-    await pgD.fill('#dr-code-in', malo);
-    const msg = await pgD.waitForFunction(() => /no es el código/i.test(document.getElementById('dr-code-msg')?.innerText || ''), null, { timeout: 10000 }).then(() => true, () => false);
-    const texto = await pgD.$eval('#dr-code-msg', e => e.innerText).catch(() => '');
+    await pgD.fill(`${EX} .rt-code .rt-boxes input`, malo);
+    const msg = await pgD.waitForFunction((ex) => /no es el código/i.test(document.querySelector(ex + ' .rt-code-m')?.innerText || ''), EX, { timeout: 10000 }).then(() => true, () => false);
+    const texto = await pgD.$eval(`${EX} .rt-code-m`, e => e.innerText).catch(() => '');
+    await sleep(1600);   // el campo se limpia solo a los 1,3 s (useRtCode del diseño)
     const cap = await foto(pgD, 'conductor', 'codigo-equivocado');
     const r = await reserva(S(0).id);
     const leg = await legActual(pgD);
@@ -1245,11 +1331,14 @@ async function bloqueSalida() {
 
   // --- C05 código correcto → a bordo → siguiente
   await prueba('C05', pgD, 'conductor', async () => {
-    await pgD.fill('#dr-code-in', codigoBueno);
+    await pgD.fill(`${EX} .rt-code .rt-boxes input`, codigoBueno);
     const paso = stops.length > 1
-      ? await pgD.waitForFunction((n) => (document.querySelector('#driver-ruta-ui .dr-aux-t .nm')?.innerText || '').trim() === n, S(1).full_name, { timeout: 12000 }).then(() => true, () => false)
-      : await pgD.waitForFunction(() => /Aeropuerto/.test(document.querySelector('#driver-ruta-ui .dr-aux-t .nm')?.innerText || ''), null, { timeout: 12000 }).then(() => true, () => false);
-    const t = (await toastsDe(pgD)).find(x => /Código correcto/.test(x)) || '';
+      ? await pgD.waitForFunction(([ex, n]) => (document.querySelector(ex + ' .rt-person-tx > b')?.innerText || '').trim() === n, [EX, S(1).full_name], { timeout: 12000 }).then(() => true, () => false)
+      : await pgD.waitForFunction((ex) => /aeropuerto/i.test(document.querySelector(ex + ' .rt-eb')?.innerText || ''), EX, { timeout: 12000 }).then(() => true, () => false);
+    const todos = await toastsDe(pgD);
+    const t = todos.find(x => /Código correcto|a bordo/.test(x)) || '';
+    const cola = await pgD.evaluate(() => Object.keys(localStorage).filter(k => k.includes('rt-v2-cola')).map(k => localStorage.getItem(k)).join(' ')).catch(() => '');
+    await sleep(1500);   // la escritura sale antes de pasar de parada; margen por si va en la cola
     const r = await reserva(S(0).id);
     const sig = stops.length > 1 ? await esperarAviso(S(1).profile_id, `trip:${S(1).id}:en_route`, 12000) : null;
     await sleep(800);
@@ -1258,7 +1347,7 @@ async function bloqueSalida() {
     const leg = await legActual(pgD);
     const ok = paso && r.status_h2a === 'on_board' && r.boarding_check === 'codigo' && (stops.length < 2 || sig);
     return { estado: ok ? 'OK' : 'FALLA', captura: cap,
-      obtenido: `Toast «${t}». Base: ${nom1(S(0))} status_h2a = ${r.status_h2a}, boarding_check = ${r.boarding_check}, parada = ${r.stop_status}. Pantalla ahora: «${leg.chip}» ${leg.nombre}, botón «${leg.cta}».${stops.length > 1 ? ` Bandeja de ${nom1(S(1))}: ${fmtAviso(sig)}.` : ''}`, nota: '' };
+      obtenido: `Toast «${t}» (todos: ${todos.slice(-6).join(' | ')}; cola sin señal: ${cola || 'vacía'}). Base: ${nom1(S(0))} status_h2a = ${r.status_h2a}, boarding_check = ${r.boarding_check}, parada = ${r.stop_status}. Pantalla ahora: «${leg.chip}» ${leg.nombre}, botón «${leg.cta}».${stops.length > 1 ? ` Bandeja de ${nom1(S(1))}: ${fmtAviso(sig)}.` : ''}`, nota: '' };
   });
 
   // --- T10 (1/2) mapa a bordo con paradas por delante
@@ -1273,6 +1362,26 @@ async function bloqueSalida() {
     if (!v) mapa1.nota = 'no pasó a «A bordo» en 25 s';
   }
 
+  // --- C19 la ubicación sigue al salir de Ejecución (barra «en curso»)
+  if (stops.length > 1) {
+    await prueba('C19', pgD, 'conductor', async () => {
+      await pgD.click(`${EX} [data-rt=pop]`); await sleep(900);
+      const barra = await pgD.waitForSelector('#driver-ruta-ui .rt-nowbar', { state: 'visible', timeout: 8000 }).then(() => true, () => false);
+      const txt = barra ? await pgD.$eval('#driver-ruta-ui .rt-nowbar', e => e.innerText.replace(/\s+/g, ' ').trim()) : '';
+      const t0 = await ahoraDb();
+      await gps(norte(S(1).lat, S(1).lng, -900)); await sleep(7000);
+      await gps(norte(S(1).lat, S(1).lng, -870)); await sleep(3000);
+      const ping = await q1(`SELECT count(*)::int n FROM public.driver_locations WHERE driver_profile_id = $1 AND source = 'gps' AND recorded_at >= $2`, [ra.driver_profile_id, t0]);
+      const cap = await foto(pgD, 'conductor', 'ruta-en-curso-barra');
+      if (barra) await pgD.click('#driver-ruta-ui .rt-nowbar');
+      await esExec(pgD).catch(() => {});
+      const leg = await legActual(pgD);
+      const ok = barra && /en curso/i.test(txt) && ping.n >= 1 && leg.nombre === S(1).full_name;
+      return { estado: ok ? 'OK' : 'FALLA', captura: cap,
+        obtenido: `Tras «Volver»: barra ${barra ? `«${txt}»` : 'NO aparece'}. Puntos GPS guardados mientras estaba fuera de Ejecución: ${ping.n}. Al tocar la barra: «${leg.chip}» ${leg.nombre}, botón «${leg.cta}».`, nota: '' };
+    });
+  } else corta('C19', 'la vuelta tiene una sola parada');
+
   // --- C07 recargar a mitad de ruta
   if (stops.length > 1) {
     await prueba('C07', pgD, 'conductor', async () => {
@@ -1286,7 +1395,7 @@ async function bloqueSalida() {
       await pgD.reload();
       await pgD.waitForFunction(() => document.getElementById('screen-login')?.classList.contains('hidden') && document.getElementById('app-shell') && !document.getElementById('app-shell').classList.contains('hidden'), null, { timeout: 25000 });
       await sleep(3000);
-      const solo = await pgD.$('#driver-ruta-ui.exec');
+      const solo = await pgD.$(EX);
       const capRecarga = await foto(pgD, 'conductor', 'recarga-inicio');
       let como = solo ? 'la ruta se abrió sola' : '';
       if (!solo) {
@@ -1294,7 +1403,7 @@ async function bloqueSalida() {
         const etiqueta = b ? (await b.innerText()).trim() : '';
         if (!b) throw new Error('tras recargar no aparece la vuelta en «Tu día»');
         await b.click();
-        await pgD.waitForSelector('#driver-ruta-ui.exec', { timeout: 15000 });
+        await esExec(pgD);
         como = `quedó en el inicio; con 1 toque en «${etiqueta}» volvió a la ruta`;
       }
       // El GPS vuelve a arrancar: se mueve 10 m para que el teléfono vuelva a
@@ -1322,23 +1431,26 @@ async function bloqueSalida() {
   if (stops.length > 1) {
     await prueba('C06', pgD, 'conductor', async () => {
       await gps(norte(S(1).lat, S(1).lng, 15)); await sleep(1200);
-      await pgD.click('#driver-ruta-ui [data-dr=arrived]');
-      await pgD.waitForSelector('[data-dr=sincodigo]', { state: 'visible', timeout: 10000 });
+      await pgD.click(`${EX} [data-rt=arrive]`);
+      await pgD.waitForSelector(`${EX} .rt-code-m [data-rt=nc]`, { state: 'visible', timeout: 10000 });
       const llego = await esperarAviso(S(1).profile_id, `trip:${S(1).id}:at_pickup`, 12000);
-      await pgD.click('[data-dr=sincodigo]');
+      await pgD.click(`${EX} .rt-code-m [data-rt=nc]`);
       await sleep(400);
-      const armado = await pgD.$eval('[data-dr=sincodigo]', e => e.innerText.trim()).catch(() => '');
+      // Diseño v2: el 1er toque muestra la pista («Va a quedar registrado…») y el botón
+      // principal pasa a «Subir a X sin código»; el 2º toque es ese botón.
+      const armado = await pgD.$eval(`${EX} .rt-hint`, e => e.innerText.trim()).catch(() => '');
+      const boton = await pgD.$eval(`${EX} .rt-cta [data-rt=board]`, e => e.innerText.trim()).catch(() => '');
       const r0 = await reserva(S(1).id);
       const capArm = await foto(pgD, 'conductor', 'sin-codigo-primer-toque');
-      await pgD.click('[data-dr=sincodigo]');
+      await pgD.click(`${EX} .rt-cta [data-rt=board]`);
       const sigNom = stops.length > 2 ? S(2).full_name : null;
-      const paso = await pgD.waitForFunction((n) => { const t = (document.querySelector('#driver-ruta-ui .dr-aux-t .nm')?.innerText || '').trim(); return n ? t === n : /Aeropuerto/.test(t); }, sigNom, { timeout: 12000 }).then(() => true, () => false);
+      const paso = await pgD.waitForFunction(([ex, n]) => { const t = (document.querySelector(ex + ' .rt-person-tx > b')?.innerText || '').trim(); return n ? t === n : /aeropuerto/i.test(document.querySelector(ex + ' .rt-eb')?.innerText || ''); }, [EX, sigNom], { timeout: 12000 }).then(() => true, () => false);
       const r = await reserva(S(1).id);
       const t = (await toastsDe(pgD)).find(x => /sin código/.test(x)) || '';
       const cap = await foto(pgD, 'conductor', 'sin-codigo-a-bordo');
-      const ok = /otra vez/i.test(armado) && r0.status_h2a !== 'on_board' && paso && r.status_h2a === 'on_board' && r.boarding_check === 'sin_codigo';
+      const ok = /quedar registrado/i.test(armado) && /sin código/i.test(boton) && r0.status_h2a !== 'on_board' && paso && r.status_h2a === 'on_board' && r.boarding_check === 'sin_codigo';
       return { estado: ok ? 'OK' : 'FALLA', captura: cap,
-        obtenido: `«Llegué» → ${fmtAviso(llego)}. 1er toque: botón «${armado}», base ${r0.status_h2a}. 2º toque: toast «${t}», base status_h2a = ${r.status_h2a}, boarding_check = ${r.boarding_check}; avanzó: ${paso ? 'sí' : 'no'}.`,
+        obtenido: `«Llegué» → ${fmtAviso(llego)}. 1er toque: «${armado}», botón «${boton}», base ${r0.status_h2a}. 2º toque: toast «${t}», base status_h2a = ${r.status_h2a}, boarding_check = ${r.boarding_check}; avanzó: ${paso ? 'sí' : 'no'}.`,
         nota: `Otra captura: ${capArm}` };
     });
   } else corta('C06', 'la vuelta tiene una sola parada');
@@ -1367,18 +1479,29 @@ async function bloqueSalida() {
     await prueba('C08', pgD, 'conductor', async () => {
       const L = S(ultimo);
       await gps(norte(L.lat, L.lng, 15)); await sleep(1200);
-      await pgD.click('#driver-ruta-ui [data-dr=arrived]');
-      await pgD.waitForSelector('#dr-noshow', { state: 'visible', timeout: 10000 });
+      await pgD.click(`${EX} [data-rt=arrive]`);
+      const NS = `${EX} .rt-link.err[data-rt=noshow]`;
+      await pgD.waitForSelector(NS, { state: 'visible', timeout: 10000 });
       const llego = await esperarAviso(L.profile_id, `trip:${L.id}:at_pickup`, 12000);
       await sleep(2500);
-      const bloqueado = await pgD.$eval('#dr-noshow', b => ({ off: b.disabled, txt: b.innerText.trim() }));
+      const bloqueado = await pgD.$eval(NS, b => ({ off: b.disabled, txt: b.innerText.trim() }));
       const capEsp = await foto(pgD, 'conductor', 'espera-no-se-presento-bloqueado');
       let capTrip = '';
       if (pgL) { await sleep(1500); capTrip = await foto(pgL, 'tripulante', 'te-espera-cuenta'); }
       const espera = (await q1(`SELECT aux_wait_minutes FROM public.app_settings LIMIT 1`))?.aux_wait_minutes ?? 5;
       console.log(`    … esperando ${espera} min de espera pactada para «No se presentó»`);
-      await pgD.waitForSelector('#dr-noshow:not([disabled])', { timeout: (espera * 60 + 45) * 1000 });
-      await pgD.click('#dr-noshow');
+      await pgD.waitForSelector(NS + ':not([disabled])', { timeout: (espera * 60 + 45) * 1000 });
+      // C20: pide confirmación; «Seguir esperando» no marca nada.
+      await pgD.click(NS);
+      await pgD.waitForSelector(`${SH} [data-rt=noshow-yes]`, { timeout: 8000 });
+      const hoja = (await pgD.$eval(`${SH} .rx-sh`, e => e.innerText.replace(/\s+/g, ' ').trim()).catch(() => ''));
+      const capHoja = await foto(pgD, 'conductor', 'confirmar-no-se-presento');
+      await pgD.click(`${SH} [data-rt=sheet-close]`); await sleep(900);
+      const r20 = await reserva(L.id); const sigue = (await legActual(pgD)).nombre;
+      resultado('C20', /no se presentó\?/i.test(hoja) && r20.status_h2a !== 'no_show' && sigue === L.full_name ? 'OK' : 'FALLA',
+        `Al tocar «No se presentó» sale la hoja: «${hoja.slice(0, 200)}». «Seguir esperando» la cierra: base status_h2a = ${r20.status_h2a}, sigue en la parada de ${sigue}.`, capHoja, '');
+      await pgD.click(NS);
+      await pgD.click(`${SH} [data-rt=noshow-yes]`);
       const a = await esperarAviso(L.profile_id, `trip:${L.id}:no_show`, 12000);
       const r = await reserva(L.id);
       await sleep(800);
@@ -1418,11 +1541,11 @@ async function bloqueSalida() {
   await prueba('C09', pgD, 'conductor', async () => {
     await gps({ latitude: 6.1715, longitude: -75.4270 }); await sleep(1500);
     let leg = await legActual(pgD);
-    if (leg.ctaAct === 'arrived') { await pgD.click('#driver-ruta-ui [data-dr=arrived]'); await sleep(800); }
-    await pgD.waitForSelector('#driver-ruta-ui .dr-cta[data-dr=next]', { timeout: 10000 });
+    if (leg.ctaAct === 'arrive') { await pgD.click(`${EX} [data-rt=arrive]`); await sleep(800); }
+    await pgD.waitForSelector(`${EX} .rt-cta [data-rt=finish]`, { timeout: 10000 });
     leg = await legActual(pgD);
     const capE = await foto(pgD, 'conductor', 'auxiliares-entregados');
-    await pgD.click('#driver-ruta-ui .dr-cta[data-dr=next]');
+    await pgD.click(`${EX} .rt-cta [data-rt=finish]`);
     const fin = await esperarTexto(pgD, /Vuelta completa/i, 12000);
     await sleep(1500);
     const cap = await foto(pgD, 'conductor', 'vuelta-completa');
@@ -1463,6 +1586,9 @@ async function bloqueLlegada() {
   }
   const stops = ra.stops;
   const drv = ra.conductor;
+  // Si el plan le tocó al conductor sin celular (pedro.local), se le pone uno válido
+  // antes, como haría él en la ventana que se lo pide (eso ya lo prueba C01).
+  if (!soloDig(drv.phone)) { await q(`UPDATE public.profiles SET phone = '3009990011' WHERE id = $1`, [drv.id]); drv.phone = '3009990011'; }
   const nom1 = (s) => (s.full_name || '').split(' ')[0];
   const A = stops[0], B = stops[1] || null;
   console.log(`  Vuelta ${hhmm(ra.planned_start_at)} · ${drv.full_name} · ${stops.map(s => `${s.orden}.${nom1(s)}`).join(', ')}`);
@@ -1500,25 +1626,53 @@ async function bloqueLlegada() {
   await prueba('C10', null, 'conductor', async () => {
     pgD = await entrar(ctxD, drv.email, PASS, `conductor-${drv.clave}`);
     const btn = `[data-vuelta-start="${ra.id}"]`;
-    const hay = await pgD.waitForSelector(btn, { state: 'visible', timeout: 20000 }).then(() => true, () => false);
+    const hay = await pgD.waitForSelector(btn, { state: 'visible', timeout: 12000 }).then(() => true, () => false);
     const capDia = await foto(pgD, 'conductor', 'llegada-tu-dia');
-    if (!hay) { bloqueo = '«Tu día» no ofrece «Iniciar ruta» para la llegada'; throw new Error(bloqueo); }
-    await pgD.click(btn);
-    await pgD.waitForSelector('#driver-ruta-ui.exec', { timeout: 15000 });
+    let camino = 'atajo «Iniciar ruta» de Tu día';
+    if (hay) await pgD.click(btn);
+    else {
+      // Con otra vuelta antes sin terminar, el atajo es de esa: el conductor entra a
+      // «Mi día» y abre la llegada desde «Más tarde» (Detalle › Iniciar ruta).
+      const ver = await pgD.waitForSelector('[data-vuelta]', { state: 'visible', timeout: 10000 }).catch(() => null);
+      if (!ver) { bloqueo = '«Tu día» no muestra la llegada'; throw new Error(bloqueo); }
+      await ver.click();
+      // Las tarjetas (la pantalla de carga también tiene título).
+      await pgD.waitForSelector('#driver-ruta-ui .rt-hero, #driver-ruta-ui .rt-vc', { timeout: 15000 });
+      // La hora vigente (S03 la adelantó a ahora+9 min).
+      const ini = (await q1(`SELECT planned_start_at FROM public.route_assignments WHERE id = $1`, [ra.id])).planned_start_at;
+      const tarjeta = await pgD.$(`#driver-ruta-ui .rt-vc:has-text("Llegada"):has-text("${hhmm(ini)}"), #driver-ruta-ui .rt-hero:has-text("Llegada"):has-text("${hhmm(ini)}") .rt-crew`);
+      if (!tarjeta) { bloqueo = '«Mi día» no muestra la llegada publicada'; throw new Error(bloqueo); }
+      await tarjeta.click();
+      await pgD.waitForSelector('#driver-ruta-ui #rt-layers .rx-layer:last-child .rx-foot [data-rt=start]', { timeout: 10000 });
+      await pgD.click('#driver-ruta-ui #rt-layers .rx-layer:last-child .rx-foot [data-rt=start]');
+      camino = 'Mi día › Más tarde › Detalle › «Iniciar ruta» (el atajo de Tu día era de otra vuelta anterior sin terminar)';
+    }
+    await esExec(pgD);
     await sleep(1200);
     const leg0 = await legActual(pgD);
     const capIni = await foto(pgD, 'conductor', 'llegada-iniciada');
     await mapaConductor(pgD, 'al iniciar la llegada (aeropuerto)', capIni);
-    await gps(MDE); await sleep(1200);
-    await pgD.click('#driver-ruta-ui [data-dr=arrived]');
-    await pgD.waitForSelector('.dr-apt-row', { timeout: 10000 });
+    // C16: el carro está a ~2 km de MDE (contexto del conductor): «Llegué al aeropuerto»
+    // pide confirmar y «Avisar cuando llegue» NO le avisa a nadie.
+    await gps({ latitude: MDE.latitude, longitude: MDE.longitude + 0.02 }); await sleep(1500);
+    await pgD.click(`${EX} [data-rt=arrive]`);
+    const hojaGps = await pgD.waitForSelector(`${SH} .rx-sh`, { timeout: 8000 }).then(() => pgD.$eval(`${SH} .rx-sh`, e => e.innerText.replace(/\s+/g, ' ').trim()), () => '');
+    const capGps = await foto(pgD, 'conductor', 'llegue-aeropuerto-lejos');
+    await pgD.click(`${SH} [data-rt=sheet-close]`).catch(() => {}); await sleep(2500);
+    const avisosLejos = (await q(`SELECT count(*)::int n FROM public.notification_outbox WHERE dedupe_key LIKE 'trip:%:apt_arrived' AND created_at >= $1 AND profile_id = ANY($2)`, [INICIO, stops.map(s => s.profile_id)]))[0].n;
+    const sigueRumbo = (await legActual(pgD)).ctaAct === 'arrive';
+    resultado('C16', /todavía no estás en MDE/i.test(hojaGps) && avisosLejos === 0 && sigueRumbo ? 'OK' : 'FALLA',
+      `A ~2 km del aeropuerto, «Llegué al aeropuerto» abre: «${hojaGps.slice(0, 220)}». Tras «Avisar cuando llegue»: ${avisosLejos} avisos «llegó al aeropuerto» en la bandeja; la pantalla sigue rumbo a MDE: ${sigueRumbo ? 'sí' : 'no'}.`, capGps, '');
+    await gps(MDE); await sleep(1500);
+    await pgD.click(`${EX} [data-rt=arrive]`);
+    await pgD.waitForSelector(`${EX} .rt-cr`, { timeout: 10000 });
     await sleep(800);
-    const filas = await pgD.$$eval('.dr-apt-row', els => els.map(e => ({ nombre: e.querySelector('.nm')?.innerText.trim(), campo: !!e.querySelector('input.dr-apt-code'), rid: e.querySelector('input.dr-apt-code')?.dataset.rid })));
+    const filas = await pgD.$$eval(`${EX} .rt-cr`, els => els.map(e => ({ nombre: e.querySelector('.rt-cl-tx > b')?.innerText.trim(), campo: !!e.querySelector('input[data-code]'), rid: e.dataset.row })));
     const leg = await legActual(pgD);
     const cap = await foto(pgD, 'conductor', 'aeropuerto-filas');
     const ok = filas.length === stops.length && filas.every(f => f.campo);
     return { estado: ok ? 'OK' : 'FALLA', captura: cap,
-      obtenido: `Al iniciar: «${leg0.chip}», botón «${leg0.cta}». Tras «Llegué al aeropuerto»: ${filas.length} filas (${filas.map(f => `${f.nombre}${f.campo ? ' [campo de código]' : ' [SIN campo]'}`).join(', ')}); botón principal «${leg.cta}» ${leg.ctaOff ? 'deshabilitado' : 'habilitado'}.`,
+      obtenido: `Entró por: ${camino}. Al iniciar: «${leg0.chip}», botón «${leg0.cta}». Tras «Llegué al aeropuerto»: ${filas.length} filas (${filas.map(f => `${f.nombre}${f.campo ? ' [campo de código]' : ' [SIN campo]'}`).join(', ')}); botón principal «${leg.cta}» ${leg.ctaOff ? 'deshabilitado' : 'habilitado'}.`,
       nota: `Otras capturas: ${capDia}, ${capIni}` };
   });
   if (bloqueo || !pgD) { ['T11', 'C11', 'C12', 'C13'].forEach(id => resultado(id, 'NO PROBADO', `No se llegó a este paso: ${bloqueo || 'no se pudo iniciar la llegada'}`, '', '')); for (const c of [ctxD, ctxA]) await c.close(); return; }
@@ -1538,14 +1692,58 @@ async function bloqueLlegada() {
       nota: vv.carro ? '' : 'Observación: con el conductor ya en MDE (la base guarda su ancla en el aeropuerto) el mapa del tripulante sigue «Sin ubicación todavía» y la píldora de arriba sigue en «Conductor asignado»: en llegadas el rastreo solo pinta el carro desde «A bordo» (auxTrackTick, rendio-turnos/auxiliar.js ~2300).' };
   });
 
+  // --- C18 chat desde la lista del aeropuerto + aviso de mensaje + chat en el Detalle
+  await prueba('C18', pgD, 'conductor', async () => {
+    const urlsPush = [];
+    const oir = (r) => { if (/functions\/v1\/send-push/.test(r.url())) { try { urlsPush.push(JSON.parse(r.postData() || '{}').url || ''); } catch (_) { /* */ } } };
+    pgA.on('request', oir);
+    await pgD.click(`${EX} .rt-cr[data-row="${A.id}"] [data-rt=chat]`);
+    await pgD.waitForSelector('#rt-thread', { timeout: 8000 });
+    const rapida = await pgD.$eval(`${SH} [data-rt=qr]`, e => e.innerText.trim());
+    await pgD.click(`${SH} [data-rt=qr]`);
+    const m1 = await esperar(async () => q1(`SELECT sender_role FROM public.reservation_messages WHERE reservation_id = $1 AND body = $2`, [A.id, rapida]), { timeout: 10000 });
+    const capChat = await foto(pgD, 'conductor', 'chat-desde-aeropuerto');
+    await pgD.click(`${SH} .rx-sheet-bg`, { position: { x: 20, y: 20 } }); await sleep(600);
+    // A responde desde su app con el chat del conductor cerrado.
+    const resp = 'Ya salí, estoy en la puerta 3';
+    await pgA.click('.rx-trip [data-ax=chat]');
+    await pgA.waitForSelector('#ax-chat-input', { state: 'visible', timeout: 8000 });
+    await pgA.fill('#ax-chat-input', resp);
+    await pgA.click('[data-ax=chat-send]');
+    await sleep(1500);
+    await pgA.click('[data-ax=chat-close]').catch(() => {});
+    pgA.off('request', oir);
+    const banner = await pgD.waitForFunction((t) => (document.querySelector('#driver-ruta-ui .rx-push')?.innerText || '').includes(t), resp, { timeout: 25000 }).then(() => true, () => false);
+    const capBanner = await foto(pgD, 'conductor', 'aviso-mensaje');
+    let abre = false;
+    if (banner) {
+      await pgD.click('#driver-ruta-ui .rx-push');
+      abre = await pgD.waitForFunction((t) => (document.getElementById('rt-thread')?.innerText || '').includes(t), resp, { timeout: 10000 }).then(() => true, () => false);
+      await pgD.click(`${SH} .rx-sheet-bg`, { position: { x: 20, y: 20 } }).catch(() => {}); await sleep(600);
+    }
+    // El Detalle de la vuelta: un chat por tripulante.
+    await pgD.click(`${EX} [data-rt=pop]`); await sleep(900);
+    await pgD.click('#driver-ruta-ui .rt-hero .rt-crew, #driver-ruta-ui .rt-vc[data-rt=detail]').catch(() => {});
+    await pgD.waitForSelector('#driver-ruta-ui #rt-layers .rt-stops', { timeout: 8000 }).catch(() => {});
+    const chatsDetalle = await pgD.$$eval('#driver-ruta-ui #rt-layers .rx-layer:last-child .rt-stop [data-rt=chat]', els => els.length).catch(() => 0);
+    const capDet = await foto(pgD, 'conductor', 'detalle-chats');
+    await pgD.click('#driver-ruta-ui #rt-layers .rx-layer:last-child .rx-foot .rx-btn');   // «Seguir ruta»
+    await esExec(pgD);
+    const urlOk = urlsPush.some(u => u.includes(`#/viaje?r=${A.id}`));
+    const ok = m1 && m1.sender_role === 'driver' && banner && abre && chatsDetalle === stops.length && urlOk;
+    return { estado: ok ? 'OK' : 'FALLA', captura: capBanner,
+      obtenido: `Respuesta rápida «${rapida}» desde la fila de ${nom1(A)}: ${m1 ? `guardada (${m1.sender_role})` : 'NO guardada'}. ${nom1(A)} responde «${resp}»: aviso arriba en la ruta del conductor ${banner ? 'sí' : 'NO'}; al tocarlo abre el chat con el mensaje: ${abre ? 'sí' : 'no'}. Detalle: ${chatsDetalle} botones de chat para ${stops.length} tripulantes. URL del push de ${nom1(A)} al conductor: ${urlsPush.join(' | ') || '(no se vio la llamada a send-push)'}.`,
+      nota: `El push real no llega a un navegador headless (y en local send-push responde 401): se verifica la URL que manda la app. El aviso de arriba sale del sondeo de mensajes sin leer (cada 15 s). Otras capturas: ${capChat}, ${capDet}` };
+  });
+
   // --- C11 / C12 código correcto + «No llegó»; «Salir» solo con todos resueltos
   const estadosBoton = [];
   let capSalir = '';
   await prueba('C11', pgD, 'conductor', async () => {
     let leg = await legActual(pgD);
     estadosBoton.push(`${stops.length} pendientes: «${leg.cta}» ${leg.ctaOff ? 'deshabilitado' : 'HABILITADO'}`);
-    await pgD.fill(`.dr-apt-code[data-rid="${A.id}"]`, A.meet_code);
-    await pgD.waitForFunction((n) => [...document.querySelectorAll('.dr-apt-row.ok .nm')].some(e => e.innerText.trim() === n), A.full_name, { timeout: 12000 });
+    await pgD.fill(`${EX} .rt-cr[data-row="${A.id}"] input[data-code]`, A.meet_code);
+    await pgD.waitForSelector(`${EX} .rt-cr.done.ok[data-row="${A.id}"]`, { timeout: 12000 });
     await sleep(500);
     leg = await legActual(pgD);
     estadosBoton.push(`${stops.length - 1} pendiente: «${leg.cta}» ${leg.ctaOff ? 'deshabilitado' : 'HABILITADO'}`);
@@ -1553,11 +1751,10 @@ async function bloqueLlegada() {
     const rA = await reserva(A.id);
     let ns = null, rB = null, capNo = '';
     if (B) {
-      const btn = `[data-dr=apt-noshow][data-rid="${B.id}"]`;
-      await pgD.click(btn);
-      const armado = await pgD.$eval(btn, e => e.innerText.trim()).catch(() => '');
-      await pgD.click(btn);
-      await pgD.waitForFunction((n) => [...document.querySelectorAll('.dr-apt-row.no .nm')].some(e => e.innerText.trim() === n), B.full_name, { timeout: 12000 });
+      await pgD.click(`${EX} [data-rt=ask][data-ask=notarrived][data-rid="${B.id}"]`);
+      const armado = await pgD.$eval(`${EX} .rt-cr[data-row="${B.id}"] .rt-cr-ask`, e => e.innerText.replace(/\s+/g, ' ').trim()).catch(() => '');
+      await pgD.click(`${EX} [data-rt=ask-yes][data-rid="${B.id}"]`);
+      await pgD.waitForSelector(`${EX} .rt-cr.done.err[data-row="${B.id}"]`, { timeout: 12000 });
       ns = await esperarAviso(B.profile_id, `trip:${B.id}:apt_no_show`, 12000);
       rB = await reserva(B.id);
       if (ns) ns.armado = armado;
@@ -1565,7 +1762,7 @@ async function bloqueLlegada() {
       leg = await legActual(pgD);
       estadosBoton.push(`0 pendientes: «${leg.cta}» ${leg.ctaOff ? 'DESHABILITADO' : 'habilitado'}`);
       capNo = capSalir = await foto(pgD, 'conductor', 'aeropuerto-salir-habilitado');
-      ns && (ns.pill = (await pgD.$eval('#driver-ruta-ui .dr-ex-pill', e => e.innerText.replace(/\s+/g, ' ').trim()).catch(() => '')));
+      ns && (ns.pill = (await pgD.$eval(`${EX} .rt-x-pill`, e => e.innerText.replace(/\s+/g, ' ').trim()).catch(() => '')));
     }
     const ok = rA.status_a2h === 'picked_up' && rA.boarding_check === 'codigo' && (!B || (ns && rB.stop_status === 'no_show'));
     const pill = (ns && ns.pill) || '';
@@ -1574,6 +1771,27 @@ async function bloqueLlegada() {
       obtenido: `${nom1(A)} con su código ${A.meet_code}: «✓ A bordo», base status_a2h = ${rA.status_a2h}, boarding_check = ${rA.boarding_check}.${B ? ` ${nom1(B)} «No llegó» (1er toque: «${ns && ns.armado}»): parada = ${rB.stop_status}; bandeja: ${fmtAviso(ns)}.` : ''}${pill ? ` Píldora de arriba: «${pill}».` : ''}`,
       nota: `${contadorViejo ? 'Detalle visual: con 1 a bordo la píldora de arriba sigue en «0/2» (cuenta las paradas ANTERIORES a la actual: drExecHTML, rendio-turnos/driver-rutas.js ~686). ' : ''}Otra captura: ${capUno}` };
   });
+  // --- C17 «Deshacer» en la lista del aeropuerto (0102)
+  await prueba('C17', pgD, 'conductor', async () => {
+    if (!B) throw new NoProbado('la llegada tiene un solo tripulante');
+    await pgD.click(`${EX} .rt-cr[data-row="${B.id}"] [data-rt=undo]`);
+    await pgD.waitForSelector(`${EX} .rt-cr:not(.done)[data-row="${B.id}"]`, { timeout: 10000 });
+    const rb = await reserva(B.id);
+    const avUndo = await esperarAviso(B.profile_id, `trip:${B.id}:apt_undo`, 10000);
+    await pgD.click(`${EX} .rt-cr[data-row="${A.id}"] [data-rt=undo]`);
+    await pgD.waitForSelector(`${EX} .rt-cr:not(.done)[data-row="${A.id}"]`, { timeout: 10000 });
+    const ra1 = await reserva(A.id);
+    const cap = await foto(pgD, 'conductor', 'aeropuerto-deshacer');
+    await pgD.fill(`${EX} .rt-cr[data-row="${A.id}"] input[data-code]`, A.meet_code);
+    await pgD.waitForSelector(`${EX} .rt-cr.done.ok[data-row="${A.id}"]`, { timeout: 12000 });
+    await pgD.click(`${EX} [data-rt=ask][data-ask=notarrived][data-rid="${B.id}"]`);
+    await pgD.click(`${EX} [data-rt=ask-yes][data-rid="${B.id}"]`);
+    await pgD.waitForSelector(`${EX} .rt-cr.done.err[data-row="${B.id}"]`, { timeout: 12000 });
+    const ra2 = await reserva(A.id), rb2 = await reserva(B.id);
+    const ok = rb.stop_status === 'arrived' && avUndo && ra1.stop_status === 'arrived' && ra1.status_a2h === 'driver_assigned' && !ra1.boarding_check && ra2.status_a2h === 'picked_up' && rb2.stop_status === 'no_show';
+    return { estado: ok ? 'OK' : 'FALLA', captura: cap,
+      obtenido: `«Deshacer» en ${nom1(B)} (no llegó): parada ${rb.stop_status}; bandeja: ${fmtAviso(avUndo)}. «Deshacer» en ${nom1(A)} (a bordo): parada ${ra1.stop_status}, status_a2h ${ra1.status_a2h}, boarding_check ${ra1.boarding_check || 'NULL'}. Resueltos de nuevo: ${nom1(A)} ${ra2.status_a2h}, ${nom1(B)} ${rb2.stop_status}.`, nota: '' };
+  });
   await prueba('C12', pgD, 'conductor', async () => {
     const ok = estadosBoton.length >= 2 && estadosBoton.slice(0, -1).every(s => /deshabilitado/.test(s) && !/HABILITADO/.test(s)) && /habilitado/.test(estadosBoton[estadosBoton.length - 1]) && !/DESHABILITADO/.test(estadosBoton[estadosBoton.length - 1]);
     return { estado: ok ? 'OK' : 'FALLA', captura: capSalir, obtenido: estadosBoton.join(' → ') + '.', nota: '' };
@@ -1581,16 +1799,16 @@ async function bloqueLlegada() {
 
   // --- C13 entrega en casa
   await prueba('C13', pgD, 'conductor', async () => {
-    await pgD.click('#driver-ruta-ui .dr-cta[data-dr=next]:not([disabled])');
+    await pgD.click(`${EX} .rt-cta [data-rt=leave]:not([disabled])`);
     await sleep(1200);
     let leg = await legActual(pgD);
     const primera = `${leg.chip} · ${leg.nombre} · «${leg.cta}»`;
     await gps({ latitude: A.lat, longitude: A.lng }); await sleep(1000);
-    await pgD.click('#driver-ruta-ui [data-dr=arrived]');
-    await pgD.waitForSelector('#driver-ruta-ui .dr-cta[data-dr=next]', { timeout: 10000 });
+    await pgD.click(`${EX} [data-rt=arrive]`);
+    await pgD.waitForSelector(`${EX} .rt-cta [data-rt=drop]`, { timeout: 10000 });
     leg = await legActual(pgD);
     const capCasa = await foto(pgD, 'conductor', 'llegada-en-casa');
-    await pgD.click('#driver-ruta-ui .dr-cta[data-dr=next]');
+    await pgD.click(`${EX} .rt-cta [data-rt=drop]`);
     const fin = await esperarTexto(pgD, /Vuelta completa/i, 12000);
     const cap = await foto(pgD, 'conductor', 'llegada-completa');
     const rA = await reserva(A.id);
@@ -1602,6 +1820,39 @@ async function bloqueLlegada() {
   await sleep(6500);
   await foto(pgA, 'tripulante', 'llegada-en-casa');
   for (const c of [ctxD, ctxA]) await c.close();
+
+  // --- A10 re-publicar con una vuelta a mitad no borra lo atendido
+  await prueba('A10', null, 'admin', async () => {
+    // La salida si la hubo (de noche no hay salidas de hoy); si no, la llegada recorrida.
+    const sal = PLAN.find(r => r.direction === 'home_to_airport' && r.driver_profile_id && r.stops.length >= 2)
+      || PLAN.find(r => r.direction === 'airport_to_home' && r.driver_profile_id && r.stops.length >= 2);
+    if (!sal) throw new NoProbado('no hay una vuelta publicada con conductor y 2 o más paradas');
+    // Escenario «a mitad»: la vuelta ya recorrida queda con su ÚLTIMA parada otra vez
+    // pendiente (como si faltara atenderla); el resto sigue atendido.
+    const paradas = await q(`SELECT id, reservation_id, status FROM public.route_stops WHERE route_assignment_id = $1 ORDER BY stop_order`, [sal.id]);
+    if (paradas.length < 2) throw new NoProbado('la salida tiene una sola parada');
+    await q(`UPDATE public.route_stops SET status = 'pending' WHERE id = $1`, [paradas[paradas.length - 1].id]);
+    const antes = await q(`SELECT reservation_id, status FROM public.route_stops WHERE route_assignment_id = $1 ORDER BY stop_order`, [sal.id]);
+    const plan = await q(`SELECT ra.id, ra.direction, ra.planned_start_at, ra.vehicle_id, dp.profile_id, array_agg(rs.reservation_id ORDER BY rs.stop_order) AS stops
+                            FROM public.route_assignments ra JOIN public.driver_profiles dp ON dp.id = ra.driver_profile_id
+                            JOIN public.route_stops rs ON rs.route_assignment_id = ra.id
+                           WHERE (ra.planned_start_at AT TIME ZONE 'America/Bogota')::date = $1::date GROUP BY ra.id, dp.profile_id`, [DIA]);
+    const lanes = plan.map(p => ({ driverProfileId: p.profile_id, vehicleId: p.vehicle_id, type: p.direction === 'airport_to_home' ? 'lle' : 'sal', startAt: new Date(p.planned_start_at).toISOString(), stops: p.stops, etas: {} }));
+    const ctxJ = await contexto('admin');
+    const pgJ = await entrar(ctxJ, CUENTAS.jefe.email, PASS, 'jefe-republica');
+    await pgJ.waitForFunction(() => window.Api && Api.saveRoutePlan, null, { timeout: 15000 });
+    const r = await pgJ.evaluate(async ([d, l]) => { try { const x = await Api.saveRoutePlan(d, l); return { saved: x.saved, skipped: x.skipped, kept: x.kept, failed: x.failed, failMsg: x.failMsg }; } catch (e) { return { error: e.message }; } }, [DIA, lanes]);
+    await ctxJ.close();
+    const sigue = await q1(`SELECT id, status FROM public.route_assignments WHERE id = $1`, [sal.id]);
+    const despues = await q(`SELECT reservation_id, status FROM public.route_stops WHERE route_assignment_id = $1 ORDER BY stop_order`, [sal.id]);
+    const dup = await q(`SELECT reservation_id, count(*)::int n FROM public.route_stops rs JOIN public.route_assignments ra ON ra.id = rs.route_assignment_id
+                          WHERE (ra.planned_start_at AT TIME ZONE 'America/Bogota')::date = $1::date GROUP BY reservation_id HAVING count(*) > 1`, [DIA]);
+    const igual = antes.length === despues.length && antes.every((x, i) => despues[i] && despues[i].reservation_id === x.reservation_id && despues[i].status === x.status);
+    const ok = !r.error && !r.failed && sigue && igual && !dup.length;
+    return { estado: ok ? 'OK' : 'FALLA', captura: '',
+      obtenido: `saveRoutePlan → ${r.error ? `ERROR ${r.error}` : `guardadas ${r.saved}, intactas ${r.kept}, fallas ${r.failed || 0}`}. La vuelta (${sal.direction === 'home_to_airport' ? 'salida' : 'llegada'}) ${sigue ? `sigue (id igual, ${sigue.status})` : 'DESAPARECIÓ'}. Paradas antes: ${antes.map(x => x.status).join(', ')} · después: ${despues.map(x => x.status).join(', ') || '(ninguna)'}. Duplicadas: ${dup.length}.`,
+      nota: 'Escenario armado por SQL en la base local (la última parada de la salida vuelve a «pendiente»); la re-publicación es la misma llamada que hace Asignación al publicar.' };
+  });
 }
 
 // ================================================================= PEDIDOS DEL JEFE (11-oct)
