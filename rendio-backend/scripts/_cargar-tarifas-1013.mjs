@@ -46,7 +46,8 @@ const TARIFAS = [
   ['Llanogrande Sector 3', 450000],
 ];
 
-const c = new pg.Client({ host: 'aws-1-us-east-1.pooler.supabase.com', port: 5432, user: 'postgres.' + ref,
+// El pooler de producción está en otra región (us-west-2, como _migrar-produccion).
+const c = new pg.Client({ host: prod ? 'aws-1-us-west-2.pooler.supabase.com' : 'aws-1-us-east-1.pooler.supabase.com', port: 5432, user: 'postgres.' + ref,
   password: process.env.SUPABASE_DB_PASSWORD, database: 'postgres', ssl: { rejectUnauthorized: false } });
 await c.connect();
 const q = async (s, p) => (await c.query(s, p)).rows;
