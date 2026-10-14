@@ -407,7 +407,7 @@ console.log('\n── el ingreso (#screen-login) con login-rx.css — lo ven tod
   const d = E.w.document;
   const sec = d.getElementById('screen-login');
   t('#screen-login.rx-login', sec.classList.contains('rx-login'));
-  t('título «Entra con tu correo» dentro de .rx-ob-h.rx-in con el sobre', sec.querySelector('.rx-ob-h.rx-in h1')?.textContent === 'Entra con tu correo' && !!sec.querySelector('.rx-ob-h .rx-ob-ic'));
+  t('título «Entra con tu correo» dentro de .rx-ob-h.rx-in, sin el ícono del sobre (13-oct)', sec.querySelector('.rx-ob-h.rx-in h1')?.textContent === 'Entra con tu correo' && !sec.querySelector('.rx-ob-h .rx-ob-ic'));
   const ids = ['login-form', 'login-email', 'login-password', 'login-submit', 'login-error', 'login-signup'];
   t('los MISMOS ids que usa core.js, uno de cada uno', ids.every(id => d.querySelectorAll('#' + id).length === 1), ids.filter(id => d.querySelectorAll('#' + id).length !== 1).join(','));
   t('los campos siguen dentro del formulario, cada uno en su .rx-field .rx-input',

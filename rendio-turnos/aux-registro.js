@@ -1774,15 +1774,13 @@
     if (card) card.classList.add('rxl-card');
     const brand = sec.querySelector('img') && sec.querySelector('img').closest('div');
     if (brand && brand !== card) brand.classList.add('rxl-brand');
-    // Encabezado: .rx-ob-h.rx-in con el ícono del correo (RxLogin).
+    // Encabezado: .rx-ob-h.rx-in. Sin el ícono del sobre (13-oct-2026: a la profa
+    // no le gustó, ocupaba mucho espacio en la tarjeta).
     const lead = (h1.nextElementSibling && h1.nextElementSibling.tagName === 'P') ? h1.nextElementSibling : null;
     const head = document.createElement('div');
     head.className = 'rx-ob-h rx-in';
     h1.parentNode.insertBefore(head, h1);
-    const badge = document.createElement('span');
-    badge.className = 'rx-ob-ic';
-    badge.innerHTML = ic('Mail', 24);
-    head.appendChild(badge); head.appendChild(h1);
+    head.appendChild(h1);
     if (lead) head.appendChild(lead);
     h1.textContent = 'Entra con tu correo';
     if (lead) lead.textContent = 'Con el correo y la contraseña de tu cuenta.';
