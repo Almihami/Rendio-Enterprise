@@ -745,19 +745,21 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .set-ui .set-matrix input::placeholder{color:var(--ink3)}
 
 /* Zonas dibujadas (0108) — admin-zonas.js */
-.set-ui .zn-map{position:relative;z-index:0;height:440px;border:1px solid var(--line2);border-radius:12px;overflow:hidden;background:var(--panel2)}
-.set-ui .zn-map.editando{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft);cursor:crosshair}
-.set-ui .zn-map.editando .leaflet-container{cursor:crosshair}
-.set-ui .zn-mapa-falla{padding:24px;color:var(--ink2);font-size:13px}
+:is(.set-ui,#cobro-ui) .zn-map{position:relative;z-index:0;height:440px;border:1px solid var(--line2);border-radius:12px;overflow:hidden;background:var(--panel2)}
+:is(.set-ui,#cobro-ui) .zn-map.editando{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft);cursor:crosshair}
+:is(.set-ui,#cobro-ui) .zn-map.editando .leaflet-container{cursor:crosshair}
+:is(.set-ui,#cobro-ui) .zn-mapa-falla{padding:24px;color:var(--ink2);font-size:13px}
 .set-ui .zn-nueva{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px}
 .set-ui .zn-input{flex:1;min-width:200px;height:38px;border:1px solid var(--line2);border-radius:9px;background:var(--panel);padding:0 11px;font-family:var(--font);font-size:13.5px;color:var(--ink);outline:none}
 .set-ui .zn-input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
 .set-ui .zn-err{width:100%;font-size:12px;color:#B42318;margin-top:2px}
-.set-ui .zn-editbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;margin:0 0 10px;border:1px solid var(--orange);background:var(--orange-soft);border-radius:10px;font-size:13px;color:var(--ink)}
-.set-ui .zn-editbar-t{flex:1;min-width:220px}
+:is(.set-ui,#cobro-ui) .zn-editbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;margin:0 0 10px;border:1px solid var(--orange);background:var(--orange-soft);border-radius:10px;font-size:13px;color:var(--ink)}
+:is(.set-ui,#cobro-ui) .zn-editbar-t{flex:1;min-width:220px}
 /* .hidden pierde contra display:flex de arriba (más específico): se repite aquí */
 .set-ui .zn-nueva.hidden,.set-ui .zn-editbar.hidden,.set-ui .zn-map.hidden,.set-ui .set-btn.hidden,.set-ui .zn-err.hidden{display:none}
-.set-ui .zn-editbar-t small{display:block;margin-top:2px;font-size:11.5px;color:var(--ink2)}
+#cobro-ui .zn-editbar.hidden{display:none}
+:is(.set-ui,#cobro-ui) .zn-editbar-t small{display:block;margin-top:2px;font-size:11.5px;line-height:1.35;color:var(--ink2);min-height:2.7em}
+/* ↑ dos líneas reservadas: el texto cambia al tercer punto y el mapa no debe moverse mientras se marca */
 .set-ui .zn-lista{margin-top:10px}
 .set-ui .zn-row{display:flex;align-items:center;gap:12px;padding:9px 2px;border-bottom:1px solid var(--line2)}
 .set-ui .zn-row:last-child{border-bottom:0}
@@ -767,6 +769,18 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .set-ui .zn-info small{display:block;font-size:11px;color:var(--ink3)}
 .set-ui .zn-renombrar{display:flex;flex-wrap:wrap;gap:4px}
 .set-ui .zn-acc{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+/* Cuentas de cobro › Tarifas por sector: el mapa de sectores (0109) */
+#cobro-ui .cb-zonas{margin:12px 0 14px}
+#cobro-ui .cb-zonas .zn-map{height:400px}
+#cobro-ui .set-btn.sm{height:32px;padding:0 11px;font-size:12px;border-radius:9px}
+#cobro-ui .cb-zsw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:0}
+#cobro-ui .cb-zacts{display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:4px}
+#cobro-ui .cb-zacts button{white-space:nowrap;border:0;background:none;padding:0;font-family:var(--font);font-size:11.5px;font-weight:700;color:var(--ink2);cursor:pointer;text-decoration:underline;text-decoration-color:var(--line2);text-underline-offset:2px}
+#cobro-ui .cb-zacts button:hover{color:var(--orange);text-decoration-color:currentColor}
+#cobro-ui .cb-zacts button:disabled{opacity:.45;cursor:not-allowed}
+#cobro-ui .cb-zren{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#cobro-ui .cb-zren .set-input{height:34px;min-width:160px;flex:1}
+@media (max-width:640px){#cobro-ui .cb-zonas .zn-map{height:320px}}
 /* .ghost.sm porque .set-btn.ghost (más abajo) fija 42px con la misma especificidad */
 .set-ui .set-btn.sm,.set-ui .set-btn.ghost.sm{height:32px;padding:0 11px;font-size:12px;border-radius:9px;white-space:nowrap;flex:0 0 auto}
 .set-ui .set-btn.sm .icon{width:14px;height:14px}
@@ -776,7 +790,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .set-ui .zn-quitar:disabled,.set-ui .set-btn.sm:disabled{opacity:.45;cursor:not-allowed}
 .zn-vertice span{display:block;width:18px;height:18px;box-sizing:border-box;border-radius:50%;background:#fff;border:4px solid;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:grab}
 @media (max-width:640px){
-  .set-ui .zn-map{height:340px}
+  :is(.set-ui,#cobro-ui) .zn-map{height:340px}
   .set-ui .zn-row{flex-wrap:wrap}
   .set-ui .zn-acc{width:100%;padding-left:26px}
 }

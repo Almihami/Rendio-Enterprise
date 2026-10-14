@@ -51,6 +51,7 @@ const APP_SHELL = [
   '/admin-calibracion.js',
   '/admin-zonas.js',
   '/zonas-dibujo.js',
+  '/mapa-zonas.js',
   '/admin-flota.js',
   '/admin-balance.js',
   '/admin-revision.js',

@@ -91,6 +91,11 @@
     poll: null,
     bound: false,
     pendingAux: null,
+    // 0109: sectores de cobro dibujados (el mapa es el de mapa-zonas.js).
+    zmapa: null,              // crearMapaZonas; su elemento se vuelve a poner tras cada paint()
+    zres: undefined,          // conjuntos del catálogo, para pintarlos en el mapa
+    zren: null,               // llave del sector que se está renombrando
+    zrenVal: '',
     sig: '',
     // 0094
     view: 'cuentas',          // 'cuentas' | 'balance'
@@ -285,6 +290,12 @@
     if (!a || typeof a.adminSectorRates !== 'function') { cb.rates = null; return; }
     const r = await tryCall(() => a.adminSectorRates());
     cb.rates = r.e ? null : (isObj(r.v) ? r.v : null);
+    // 0109: los conjuntos, para el mapa. Sin ellos el mapa sale igual, sin puntos.
+    if (cb.zres === undefined) {
+      const z = window.Api && typeof window.Api.listResidencesZones === 'function'
+        ? await tryCall(() => window.Api.listResidencesZones()) : { e: true };
+      cb.zres = z.e || !Array.isArray(z.v) ? null : z.v;
+    }
     cb.rform = {};
     if (isObj(cb.rates) && Array.isArray(cb.rates.sectors)) {
       cb.rates.sectors.filter(isObj).forEach(s => {
@@ -525,6 +536,7 @@
       const amtPh = amtPhOf(r);
       const secHint = !conSector ? '' : r.residenceName
         ? 'Vive en ' + r.residenceName + (r.residenceSector ? ' (sector ' + r.residenceSector + ')' : ' (conjunto sin sector)') + '. Vacío = el de su residencia.'
+        : r.residenceSector ? 'Vive en casa: el mapa la pone en el sector ' + r.residenceSector + '. Vacío = ese.'
         : 'Vive en casa (sin conjunto): asígnale uno a mano.';
       const secs = conSector ? knownSectors() : [];
       const secM = acc ? num(acc.sectorMonthlyCOP) : null;
@@ -769,6 +781,117 @@
       + '</div>';
   }
 
+  // ── Sectores dibujados (0109) ────────────────────────────────────────────
+  // El mapa es la pieza compartida de mapa-zonas.js (la misma de Calibración ›
+  // Zonas). paint() reescribe todo el HTML, así que el elemento del mapa vive
+  // aparte y se vuelve a poner en su lugar ([data-cb-zmapa]) después de cada
+  // paint(): Leaflet sigue pegado a él y lo que se está dibujando no se pierde.
+  const zSectors = () => (isObj(cb.rates) && Array.isArray(cb.rates.sectors) ? cb.rates.sectors.filter(isObj) : []);
+  const zDrawn = () => zSectors().filter(s => Array.isArray(s.polygon) && s.polygon.length >= 3)
+    .map(s => ({ name: s.sector, polygon: s.polygon }));
+  function zColor(name) {
+    const i = zSectors().findIndex(x => skey(x.sector) === skey(name));
+    const pal = typeof MAPA_ZONAS_COLORES !== 'undefined' ? MAPA_ZONAS_COLORES : ['#E2551A'];
+    return i < 0 ? '#A39A8D' : pal[i % pal.length];
+  }
+  const zEditing = () => (cb.zmapa ? cb.zmapa.editando() : null);
+  function zMapaHTML() {
+    if (typeof crearMapaZonas !== 'function') return '';
+    return '<div class="cb-zonas">' + zBarHTML() + '<div data-cb-zmapa></div>'
+      + '<p class="cb-mini">Los puntos son los conjuntos, del color del sector donde caen; gris = fuera de los sectores dibujados. '
+      + 'Quien vive en casa con pin también es del sector que la contiene. El sector puesto a mano en la cuenta de un tripulante gana sobre el dibujo.</p></div>';
+  }
+  function zBarHTML() {
+    const ed = zEditing();
+    if (!ed) return '<div class="zn-editbar hidden" data-cb-zbar></div>';
+    const n = ed.puntos;
+    return '<div class="zn-editbar" data-cb-zbar><div class="zn-editbar-t">Marcando <b>' + esc(ed.name) + '</b> · ' + esc(pl(n, 'punto', 'puntos'))
+      + '<small>' + (n < 3 ? 'Toca el mapa para poner las esquinas del sector (mínimo 3).'
+        : 'Toca el mapa para agregar una esquina. Arrastra un punto para moverlo; tócalo para quitarlo.') + '</small></div>'
+      + '<button class="set-btn ghost sm" data-cb="z-deshacer"' + (ed.puedeDeshacer ? '' : ' disabled') + '>Deshacer</button>'
+      + '<button class="set-btn ghost sm" data-cb="z-cancelar">Cancelar</button>'
+      + '<button class="set-btn sm" data-cb="z-guardar"' + (ed.listo && !cb.busy ? '' : ' disabled') + '>Guardar dibujo</button></div>';
+  }
+  function zBar() {
+    const r = root(); const b = r && r.querySelector('[data-cb-zbar]');
+    if (b) b.outerHTML = zBarHTML();
+  }
+  function zMontar() {
+    const r = root(); const ph = r && r.querySelector('[data-cb-zmapa]');
+    if (!ph || typeof crearMapaZonas !== 'function') return;
+    if (!cb.zmapa) cb.zmapa = crearMapaZonas({ onCambio: zBar, aviso: say, sinAnimacion: true });
+    ph.replaceWith(cb.zmapa.el);
+    const dib = zDrawn();
+    cb.zmapa.pintar({
+      zonas: dib.map(z => ({ name: z.name, polygon: z.polygon, color: zColor(z.name) })),
+      puntos: (Array.isArray(cb.zres) ? cb.zres : []).map(x => {
+        const e = typeof zonaEfectiva === 'function' ? zonaEfectiva(null, dib, x.latitude, x.longitude) : { zona: null, en: [] };
+        const doble = !e.zona && e.en.length > 1;
+        return { lat: x.latitude, lng: x.longitude, color: e.zona ? zColor(e.zona) : '#A39A8D', doble,
+          texto: x.name + ' · ' + (e.zona || (doble ? 'en dos sectores: ' + e.en.join(', ') : 'fuera de los sectores dibujados')) };
+      }),
+    });
+    cb.zmapa.ajustar();
+  }
+  // Las acciones del mapa van debajo del nombre, como enlaces: la columna de
+  // botones (Guardar · Que paguen la del sector) queda como estaba.
+  function zActsHTML(s, k, drawn) {
+    if (typeof crearMapaZonas !== 'function') return '';
+    const off = cb.busy || zEditing() ? ' disabled' : '';
+    return '<span class="cb-zacts"><button data-cb="z-dibujar" data-k="' + esc(k) + '"' + off + '>' + (drawn ? 'Editar dibujo' : 'Dibujar') + '</button>'
+      + (s.rateId ? '<button data-cb="z-ren" data-k="' + esc(k) + '"' + off + '>Renombrar</button>'
+        + '<button data-cb="z-quitar" data-k="' + esc(k) + '"' + off + '>Quitar</button>' : '') + '</span>';
+  }
+  function zRenHTML(s) {
+    return '<div class="cb-zren"><input class="set-input" data-cbz="ren" value="' + esc(cb.zrenVal) + '" maxlength="80" aria-label="Nuevo nombre de ' + esc(s.sector) + '" autocomplete="off">'
+      + '<button class="set-btn sm" data-cb="z-ren-ok"' + (cb.busy ? ' disabled' : '') + '>Guardar</button>'
+      + '<button class="set-btn ghost sm" data-cb="z-ren-no">Cancelar</button></div>';
+  }
+  const zSector = (k) => zSectors().find(x => skey(x.sector) === k) || null;
+  function zDibujar(k) {
+    const s = zSector(k);
+    if (!s || !cb.zmapa) return;
+    cb.zren = null;
+    cb.zmapa.editar(s.sector, zColor(s.sector), Array.isArray(s.polygon) ? s.polygon : null);
+    paint();
+  }
+  async function zGuardar() {
+    const ed = zEditing();
+    if (!ed || !ed.listo) return;
+    const a = api(); if (!a || typeof a.adminSectorShape !== 'function') return;
+    const puntos = cb.zmapa.dibujo();
+    const ok = await run('z', () => a.adminSectorShape(ed.name, puntos), 'Dibujo de ' + ed.name + ' guardado');
+    if (!ok) return;
+    if (skey((cb.rnew || {}).sector) === skey(ed.name)) cb.rnew = { sector: '', monthlyCOP: '', perTripCOP: '' };
+    cb.zmapa.terminar();
+    await loadRates(); paint(); loadAll(true);
+  }
+  async function zRenombrar() {
+    const s = zSector(cb.zren);
+    if (!s) return;
+    const nuevo = String(cb.zrenVal || '').trim().replace(/\s+/g, ' ');
+    if (!nuevo) { say('Escribe el nombre del sector'); return; }
+    if (nuevo === s.sector) { cb.zren = null; paint(); return; }
+    if (zSectors().some(x => x !== s && skey(x.sector) === skey(nuevo))) { say('Ya hay un sector con ese nombre'); return; }
+    const a = api(); if (!a || typeof a.adminSectorRename !== 'function') return;
+    const ok = await run('z', () => a.adminSectorRename(s.sector, nuevo), s.sector + ' ahora se llama ' + nuevo);
+    if (!ok) return;
+    cb.zren = null;
+    await loadRates(); paint(); loadAll(true);
+  }
+  async function zQuitar(k) {
+    const s = zSector(k);
+    if (!s) return;
+    const a = api(); if (!a || typeof a.adminSectorDelete !== 'function') return;
+    const man = num(s.crewManual) || 0;
+    if (typeof window.confirm === 'function' && !window.confirm('¿Quitar el sector ' + s.sector + '?\n\nSe borran su dibujo y su tarifa.'
+      + (man ? '\n' + pl(man, 'tripulante que lo tenía', 'tripulantes que lo tenían') + ' a mano ' + (man === 1 ? 'vuelve' : 'vuelven') + ' al sector de donde vive.' : '')
+      + '\n\nRige desde el próximo corte: las cuentas de cobro ya abiertas no cambian.')) return;
+    const ok = await run('z', () => a.adminSectorDelete(s.sector), 'Sector ' + s.sector + ' quitado');
+    if (!ok) return;
+    await loadRates(); paint(); loadAll(true);
+  }
+
   // «Tarifas por sector» (0094).
   function ratesHTML() {
     if (cb.rates === undefined) return '<div class="cb-panel"><div class="cb-empty sm">Cargando…</div></div>';
@@ -780,7 +903,11 @@
     const rows = ss.map(s => {
       const k = skey(s.sector);
       const f = cb.rform[k] || { monthlyCOP: '', perTripCOP: '' };
-      const origin = [num(s.residences) ? pl(num(s.residences), 'conjunto', 'conjuntos') : (s.fromResidences ? '' : 'Puesto a mano'),
+      // 0109: «Dibujado» delante; lo demás, como en 0094 (cuántos conjuntos caen
+      // adentro o llevan ese rótulo, o «Puesto a mano» si no sale de ninguno).
+      const drawn = Array.isArray(s.polygon) && s.polygon.length >= 3;
+      const origin = [drawn ? 'Dibujado' : '',
+        num(s.residences) ? pl(num(s.residences), 'conjunto', 'conjuntos') : (drawn || s.fromResidences ? '' : 'Puesto a mano'),
         num(s.crewManual) ? pl(num(s.crewManual), 'asignado a mano', 'asignados a mano') : ''].filter(Boolean).join(' · ');
       // Con valor propio NO pagan esta mensualidad (0094): decirlo, y ofrecer
       // quitárselo a todos si el sector ya tiene mensualidad guardada.
@@ -788,7 +915,10 @@
       const ownTxt = own ? pl(own, 'con valor propio', 'con valor propio') + ' (no ' + (own === 1 ? 'usa' : 'usan') + ' esta mensualidad)' : '';
       const useBtn = own && num(s.monthlyCOP) != null
         ? '<button class="set-btn ghost" data-cb="rate-use" data-k="' + esc(k) + '"' + (cb.busy ? ' disabled' : '') + '>Que paguen la del sector</button>' : '';
-      return '<tr data-cb-sector="' + esc(k) + '"><td><b>' + esc(s.sector) + '</b>' + (origin ? '<em>' + esc(origin) + '</em>' : '') + '</td>'
+      const nameTd = cb.zren === k ? zRenHTML(s)
+        : '<b>' + (drawn ? '<i class="cb-zsw" style="background:' + zColor(s.sector) + '"></i>' : '') + esc(s.sector) + '</b>'
+          + (origin ? '<em>' + esc(origin) + '</em>' : '') + zActsHTML(s, k, drawn);
+      return '<tr data-cb-sector="' + esc(k) + '"><td>' + nameTd + '</td>'
         + '<td>' + esc(pl(num(s.crew) || 0, 'tripulante', 'tripulantes')) + (ownTxt ? '<em class="warn" data-cb-own>' + esc(ownTxt) + '</em>' : '') + '</td>'
         + '<td>' + inp(k, 'monthlyCOP', f.monthlyCOP) + '</td>'
         + '<td>' + inp(k, 'perTripCOP', f.perTripCOP) + '</td>'
@@ -800,11 +930,12 @@
       + '<td><input class="set-input" data-cbt-new="perTripCOP" inputmode="numeric" value="' + esc(nf.perTripCOP || '') + '" placeholder="Por viaje" autocomplete="off"></td>'
       + '<td><button class="set-btn ghost" data-cb="rate-add"' + (cb.busy ? ' disabled' : '') + '>' + icon('i-plus') + 'Agregar</button></td></tr>';
     return '<div class="cb-panel">'
-      + '<div class="cb-panel-h"><b>Tarifas por sector</b><span>La mensualidad del sector es la que paga quien vive ahí, salvo que su cuenta tenga un valor propio (las cuentas creadas antes de las tarifas casi todas lo tienen: el conteo lo dice). El valor por viaje es el de las vacaciones: ese cobro vale viajes × valor en vez de la mensualidad. Vacío = sin valor: nadie cobra con un valor inventado.</span></div>'
+      + '<div class="cb-panel-h"><b>Tarifas por sector</b><span>Cada sector se dibuja en el mapa: quien vive adentro (conjunto o casa con pin) es de ese sector. La mensualidad del sector es la que paga quien vive ahí, salvo que su cuenta tenga un valor propio (las cuentas creadas antes de las tarifas casi todas lo tienen: el conteo lo dice). El valor por viaje es el de las vacaciones: ese cobro vale viajes × valor en vez de la mensualidad. Vacío = sin valor: nadie cobra con un valor inventado.</span></div>'
       + '<p class="cb-mini' + (none ? ' warn' : '') + '" data-cb-rates-sum>' + esc(pl(total, 'tripulante', 'tripulantes') + ' · ' + pl(none, 'sin sector', 'sin sector')
         + (none ? ': asígnaselo en su cuenta (Editar cuenta › Sector).' : '.')) + '</p>'
+      + zMapaHTML()
       + '<table class="cb-hist cb-rates"><thead><tr><th>Sector</th><th>Tripulantes</th><th>Mensualidad (COP)</th><th>Valor por viaje (COP)</th><th></th></tr></thead><tbody>'
-      + (rows || '<tr><td colspan="5" class="cb-empty-td">Las residencias todavía no tienen sector. Agrega uno abajo o ponle sector a cada conjunto.</td></tr>')
+      + (rows || '<tr><td colspan="5" class="cb-empty-td">Todavía no hay sectores. Escribe uno abajo: con su valor, o solo el nombre para dibujarlo primero.</td></tr>')
       + newRow + '</tbody></table>'
       + '<p class="cb-mini">Cambiar una tarifa no mueve las cuentas de cobro ya abiertas: rige desde el próximo corte. Las vacaciones ya marcadas guardan el valor por viaje de cuando se marcaron.</p>'
       + '</div>';
@@ -1105,9 +1236,9 @@
     else if (cb.panel === 'settings') h += settingsHTML();
     if (!api()) {
       h += '<div class="cb-empty"><b>El facturario no está disponible en esta versión.</b></div></div>';
-      r.innerHTML = h; return;
+      r.innerHTML = h; zMontar(); return;
     }
-    if (cb.view === 'balance') { h += balHTML() + '</div>'; r.innerHTML = h; return; }
+    if (cb.view === 'balance') { h += balHTML() + '</div>'; r.innerHTML = h; zMontar(); return; }
     h += proofsHTML();
     if (list === undefined) h += '<div class="cb-empty">Cargando las cuentas…</div>';
     else if (list === null) h += '<div class="cb-empty"><b>No pudimos cargar las cuentas de cobro.</b><span>Puede que la base todavía no tenga el facturario (0090).</span><button class="set-btn ghost" data-cb="reload">Reintentar</button></div>';
@@ -1121,6 +1252,7 @@
     }
     h += '</div>';
     r.innerHTML = h;
+    zMontar();
   }
 
   // ── acciones ─────────────────────────────────────────────────────────────
@@ -1281,7 +1413,17 @@
     if (!name) { say('Escribe el nombre del sector'); return; }
     if (name.length > 80) { say('El nombre del sector es muy largo (máximo 80)'); return; }
     const v = rateVals(f); if (!v) return;
-    if (v.monthlyCOP == null && v.perTripCOP == null) { say('Escribe la mensualidad o el valor por viaje'); return; }
+    if (v.monthlyCOP == null && v.perTripCOP == null) {
+      // 0109: solo el nombre = dibujarlo primero (se crea al guardar el dibujo).
+      if (!cb.zmapa) { say('Escribe la mensualidad o el valor por viaje'); return; }
+      if (zSectors().some(x => skey(x.sector) === skey(name))) { say('Ese sector ya existe: usa «Dibujar» en su fila'); return; }
+      cb.zren = null;
+      const pal = typeof MAPA_ZONAS_COLORES !== 'undefined' ? MAPA_ZONAS_COLORES : ['#E2551A'];
+      cb.zmapa.editar(name, pal[zSectors().length % pal.length], null);
+      paint();
+      say('Marca en el mapa las esquinas de ' + name);
+      return;
+    }
     const a = api(); if (!a || typeof a.adminSaveSectorRate !== 'function') return;
     const ok = await run('r', () => a.adminSaveSectorRate(name, v), 'Tarifa de ' + name + ' guardada');
     if (ok) { cb.rnew = { sector: '', monthlyCOP: '', perTripCOP: '' }; await loadRates(); paint(); loadAll(true); }
@@ -1382,6 +1524,8 @@
         const v = el.getAttribute('data-v');
         cb.panel = cb.panel === v ? null : v;
         cb.mform = null; cb.sform = null;
+        if (cb.zmapa && zEditing()) cb.zmapa.terminar();   // cerrar el panel suelta el dibujo a medias
+        cb.zren = null;
         if (cb.panel === 'methods') cb.methods = undefined;
         if (cb.panel === 'settings') cb.settings = undefined;
         if (cb.panel === 'rates') cb.rates = undefined;
@@ -1403,6 +1547,14 @@
       case 'rate-save': saveRate(el.getAttribute('data-k')); break;
       case 'rate-add': addRate(); break;
       case 'rate-use': useRate(el.getAttribute('data-k')); break;
+      case 'z-dibujar': zDibujar(el.getAttribute('data-k')); break;
+      case 'z-deshacer': if (cb.zmapa) cb.zmapa.deshacer(); break;
+      case 'z-cancelar': if (cb.zmapa) cb.zmapa.terminar(); paint(); break;
+      case 'z-guardar': zGuardar(); break;
+      case 'z-ren': { const s = zSector(el.getAttribute('data-k')); if (s) { cb.zren = skey(s.sector); cb.zrenVal = s.sector; paint(); } break; }
+      case 'z-ren-ok': zRenombrar(); break;
+      case 'z-ren-no': cb.zren = null; paint(); break;
+      case 'z-quitar': zQuitar(el.getAttribute('data-k')); break;
       case 'mode': openMode(aux, el.getAttribute('data-m')); break;
       case 'close': cb.open = null; cb.mode = null; paint(); break;
       case 'save-acc': saveAcc(aux); break;
@@ -1452,6 +1604,7 @@
       cb.rform[k][t.getAttribute('data-cbt')] = t.value;
       return;
     }
+    if (t.hasAttribute('data-cbz')) { cb.zrenVal = t.value; return; }
     if (t.hasAttribute('data-cbt-new')) { cb.rnew = cb.rnew || {}; cb.rnew[t.getAttribute('data-cbt-new')] = t.value; return; }
     if (t.hasAttribute('data-cbb')) {
       // El mes del balance: se pide al confirmar el campo (change), no en cada tecla.

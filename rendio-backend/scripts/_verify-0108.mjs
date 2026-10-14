@@ -23,7 +23,7 @@ await c.query('BEGIN');
 try {
   console.log('Esquema');
   const zs = await all(`SELECT name, sort_order, polygon FROM public.route_zones ORDER BY sort_order, name`);
-  check('las 4 zonas de Julián, en su orden y sin dibujo', zs.slice(0, 4).map(z => z.name).join('|') === 'Fontibón|Porvenir|Sendai/San Antonio|Marinilla' && zs.slice(0, 4).every(z => z.polygon === null), JSON.stringify(zs));
+  check('las 4 zonas de Julián, en su orden', zs.slice(0, 4).map(z => z.name).join('|') === 'Fontibón|Porvenir|Sendai/San Antonio|Marinilla', JSON.stringify(zs.map(z => z.name)));
   check('menos de 3 puntos lo rechaza la base', await falla(`INSERT INTO public.route_zones (name, polygon) VALUES ('X', '[[6.1,-75.4],[6.2,-75.4]]')`, [], /check/i));
   check('nombre repetido lo rechaza la base (23505)', await falla(`INSERT INTO public.route_zones (name) VALUES ('Porvenir')`, [], /23505|duplicate/));
   check('nombre vacío lo rechaza la base', await falla(`INSERT INTO public.route_zones (name) VALUES ('  ')`, [], /check/i));
@@ -31,16 +31,17 @@ try {
   check('la tabla de tiempos tampoco', await falla(`INSERT INTO public.route_zone_times (zone, band_from, band_to, min_minutes, max_minutes) VALUES ('No existe', 2, 6, 10, 10)`, [], /foreign key|23503/));
 
   console.log('Renombrar y quitar');
-  await c.query(`INSERT INTO public.route_zones (name, polygon, sort_order) VALUES ('Barro Blanco', $1, 5)`, [JSON.stringify(BARRO_BLANCO)]);
+  // Nombre propio de la prueba: la base local puede tener ya una «Barro Blanco» de verdad.
+  await c.query(`INSERT INTO public.route_zones (name, polygon, sort_order) VALUES ('Prueba 0108', $1, 50)`, [JSON.stringify(BARRO_BLANCO)]);
   await c.query(`INSERT INTO public.route_zone_times (zone, band_from, band_to, min_minutes, max_minutes)
-    SELECT 'Barro Blanco', band_from, band_to, 30, 40 FROM public.route_leg_times`);
+    SELECT 'Prueba 0108', band_from, band_to, 30, 40 FROM public.route_leg_times`);
   const vallejo = await one(`SELECT id FROM public.residences WHERE name = 'Alto Vallejo / Loma Linda'`);
-  await c.query(`UPDATE public.residences SET zona_jefe = 'Barro Blanco' WHERE id = $1`, [vallejo.id]);
-  await c.query(`UPDATE public.route_zones SET name = 'Barroblanco' WHERE name = 'Barro Blanco'`);
-  check('renombrar arrastra la columna de minutos', (await one(`SELECT count(*)::int n FROM public.route_zone_times WHERE zone = 'Barroblanco'`)).n === 6);
-  check('renombrar arrastra el conjunto puesto a mano', (await one(`SELECT zona_jefe z FROM public.residences WHERE id = $1`, [vallejo.id])).z === 'Barroblanco');
-  await c.query(`DELETE FROM public.route_zones WHERE name = 'Barroblanco'`);
-  check('quitar la zona borra sus minutos', (await one(`SELECT count(*)::int n FROM public.route_zone_times WHERE zone = 'Barroblanco'`)).n === 0);
+  await c.query(`UPDATE public.residences SET zona_jefe = 'Prueba 0108' WHERE id = $1`, [vallejo.id]);
+  await c.query(`UPDATE public.route_zones SET name = 'Prueba 0108 bis' WHERE name = 'Prueba 0108'`);
+  check('renombrar arrastra la columna de minutos', (await one(`SELECT count(*)::int n FROM public.route_zone_times WHERE zone = 'Prueba 0108 bis'`)).n === 6);
+  check('renombrar arrastra el conjunto puesto a mano', (await one(`SELECT zona_jefe z FROM public.residences WHERE id = $1`, [vallejo.id])).z === 'Prueba 0108 bis');
+  await c.query(`DELETE FROM public.route_zones WHERE name = 'Prueba 0108 bis'`);
+  check('quitar la zona borra sus minutos', (await one(`SELECT count(*)::int n FROM public.route_zone_times WHERE zone = 'Prueba 0108 bis'`)).n === 0);
   check('quitar la zona deja el conjunto en «según el mapa»', (await one(`SELECT zona_jefe z FROM public.residences WHERE id = $1`, [vallejo.id])).z === null);
 
   console.log('Permisos');

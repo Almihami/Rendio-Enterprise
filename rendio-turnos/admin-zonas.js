@@ -8,34 +8,26 @@
 // se ponen a mano más abajo («Zona de cada conjunto», admin-calibracion.js) y
 // ganan siempre. La regla vive en zonas-dibujo.js.
 //
-// Dibujar: cada toque en el mapa pone una esquina. Con tres o más, la esquina
-// nueva entra en el lado más cercano (no al final), para que agregar un punto
-// nunca cruce la figura. Los puntos se arrastran para moverlos y se tocan para
-// quitarlos. «Deshacer» devuelve el paso anterior, sea cual sea.
+// El mapa y el dibujo son la pieza compartida de mapa-zonas.js (la misma de
+// Cuentas de cobro › Tarifas por sector); aquí van los datos y los botones.
 //
 // Comparte el ámbito global con los demás módulos (sin IIFE): zonasMapa,
 // zonasRecargar y renderZonasCard los usa admin-calibracion.js. Antes de
 // agregar un nombre, correr rendio-backend/scripts/_nombres-repetidos.mjs.
 
-  // Colores de la paleta del diseñador primero (naranja, verde, ámbar), después
-  // los del tablero de rutas. El color va por posición en la lista.
-  const ZONA_COLORES = ['#E2551A', '#16936A', '#2563A8', '#C9810F', '#7C5CD6', '#DB4B7A', '#0D9488', '#5B8A2B', '#9D174D', '#4F46E5'];
-  const ZONA_SIN_COLOR = '#A39A8D';
-
   const zonasMapa = {
     lista: null,          // route_zones [{ name, polygon, sort_order }] · null = la base no tiene 0108
     residencias: null,    // catálogo activo [{ id, name, sector, zona_jefe, latitude, longitude }]
     ordenFilas: null,     // orden fijo de la lista de excepciones (ver renderResidenceZones)
-    map: null, capaZonas: null, capaConjuntos: null, capaEdicion: null,
-    encuadrar: true,      // ajustar el mapa a los conjuntos la primera vez que hay datos
-    editando: null,       // { name, puntos: [[lat, lng]], historia: [[[lat, lng]]] }
+    mapa: null,           // crearMapaZonas (mapa-zonas.js)
     renombrando: null,    // nombre de la zona que se está renombrando
     bound: false,
   };
+  const zonaEditando = () => (zonasMapa.mapa ? zonasMapa.mapa.editando() : null);
 
   function zonaColor(name) {
     const i = (zonasMapa.lista || []).findIndex(z => z.name === name);
-    return i < 0 ? ZONA_SIN_COLOR : ZONA_COLORES[i % ZONA_COLORES.length];
+    return i < 0 ? MAPA_ZONAS_SIN_COLOR : MAPA_ZONAS_COLORES[i % MAPA_ZONAS_COLORES.length];
   }
 
   // Trae la lista de zonas y el catálogo UNA vez y pinta las tres tarjetas que
@@ -48,7 +40,8 @@
     zonasMapa.lista = lista;
     zonasMapa.residencias = res;
     zonasMapa.ordenFilas = null;
-    if (zonasMapa.editando && !(lista || []).some(z => z.name === zonasMapa.editando.name)) zonasMapa.editando = null;
+    const ed = zonaEditando();
+    if (ed && !(lista || []).some(z => z.name === ed.name)) zonasMapa.mapa.terminar();
     renderZonasCard();
     renderRouteTables();
     renderResidenceZones();
@@ -69,65 +62,27 @@
     }
     zonasPintarMapa();
     zonasPintarLista();
-    zonasPintarEdicion();
+    zonasPintarBarra();
   }
 
   // ---- EL MAPA ---------------------------------------------------------------
-  function zonasMapaInit() {
-    const el = $('#zonas-map');
-    if (!el) return false;
-    if (typeof L === 'undefined') {
-      el.innerHTML = '<div class="zn-mapa-falla">No se pudo cargar el mapa (sin conexión).</div>';
-      return false;
-    }
-    if (!zonasMapa.map) {
-      const map = L.map(el, { scrollWheelZoom: true }).setView([6.152, -75.39], 14);   // Rionegro
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-      zonasMapa.capaZonas = L.layerGroup().addTo(map);
-      zonasMapa.capaConjuntos = L.layerGroup().addTo(map);
-      zonasMapa.capaEdicion = L.layerGroup().addTo(map);
-      // Los puntos de los conjuntos dejan pasar el clic al mapa (las figuras de
-      // Leaflet burbujean): tocar encima de un conjunto también pone esquina.
-      map.on('click', (ev) => zonaEdicionClic(ev.latlng));
-      zonasMapa.map = map;
-    }
-    // La pestaña estaba oculta al crear el mapa → recalcular tamaño al mostrarse.
-    setTimeout(() => { try { zonasMapa.map && zonasMapa.map.invalidateSize(); } catch (e) {} }, 80);
-    return true;
-  }
-
   function zonasPintarMapa() {
-    if (!zonasMapaInit()) return;
-    const { map, capaZonas, capaConjuntos } = zonasMapa;
-    capaZonas.clearLayers();
-    capaConjuntos.clearLayers();
-    const dib = zonasMapa.lista || [];
-    const editNombre = zonasMapa.editando && zonasMapa.editando.name;
-    dib.forEach(z => {
-      // La que se está editando se pinta aparte (zonasPintarEdicion).
-      if (!z.polygon || z.name === editNombre) return;
-      const c = zonaColor(z.name);
-      L.polygon(z.polygon, { color: c, weight: 2, fillColor: c, fillOpacity: editNombre ? 0.06 : 0.14 })
-        .bindTooltip(z.name, { sticky: true }).addTo(capaZonas);
-    });
-    (zonasMapa.residencias || []).forEach(r => {
-      if (r.latitude == null || r.longitude == null) return;
-      const e = zonaEfectiva(r.zona_jefe, dib, r.latitude, r.longitude);
-      const doble = !e.zona && e.en.length > 1;
-      const como = e.origen === 'mano' ? `${e.zona} (a mano)`
-        : e.zona ? `${e.zona} (por el dibujo)`
-        : doble ? `en dos zonas: ${e.en.join(', ')}` : 'sin zona';
-      L.circleMarker([r.latitude, r.longitude], {
-        radius: 6, weight: doble ? 3 : 2, color: doble ? '#C9810F' : '#FFFFFF',
-        fillColor: e.zona ? zonaColor(e.zona) : ZONA_SIN_COLOR, fillOpacity: 1,
-      }).bindTooltip(`${r.name} · ${como}`).addTo(capaConjuntos);
-    });
-    if (zonasMapa.encuadrar) {
-      const pts = [];
-      (zonasMapa.residencias || []).forEach(r => { if (r.latitude != null && r.longitude != null) pts.push([r.latitude, r.longitude]); });
-      dib.forEach(z => (z.polygon || []).forEach(p => pts.push(p)));
-      if (pts.length) { map.fitBounds(pts, { padding: [24, 24], maxZoom: 15 }); zonasMapa.encuadrar = false; }
+    if (!zonasMapa.mapa) {
+      zonasMapa.mapa = crearMapaZonas({ el: $('#zonas-map'), onCambio: zonasPintarBarra, aviso: toast });
     }
+    const dib = zonasMapa.lista || [];
+    zonasMapa.mapa.pintar({
+      zonas: dib.map(z => ({ name: z.name, polygon: z.polygon, color: zonaColor(z.name) })),
+      puntos: (zonasMapa.residencias || []).map(r => {
+        const e = zonaEfectiva(r.zona_jefe, dib, r.latitude, r.longitude);
+        const doble = !e.zona && e.en.length > 1;
+        const como = e.origen === 'mano' ? `${e.zona} (a mano)`
+          : e.zona ? `${e.zona} (por el dibujo)`
+          : doble ? `en dos zonas: ${e.en.join(', ')}` : 'sin zona';
+        return { lat: r.latitude, lng: r.longitude, color: e.zona ? zonaColor(e.zona) : MAPA_ZONAS_SIN_COLOR, doble, texto: `${r.name} · ${como}` };
+      }),
+    });
+    zonasMapa.mapa.ajustar();
   }
 
   // ---- LA LISTA DE ZONAS -----------------------------------------------------
@@ -141,7 +96,7 @@
       if (e.zona) cuenta[e.zona] = (cuenta[e.zona] || 0) + 1;
       else if (e.en.length > 1) dobles++;
     });
-    const editando = !!zonasMapa.editando;
+    const editando = !!zonaEditando();
     const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
     el.innerHTML = dib.length ? dib.map(z => {
       const n = cuenta[z.name] || 0;
@@ -254,109 +209,41 @@
   }
 
   // ---- DIBUJAR ---------------------------------------------------------------
-  const zonaRedondo = (n) => Math.round(n * 1e6) / 1e6;   // ~10 cm
-
   function zonaEdicionEmpezar(name) {
     const z = (zonasMapa.lista || []).find(x => x.name === name);
-    if (!z) return;
+    if (!z || !zonasMapa.mapa) return;
     zonasMapa.renombrando = null;
-    zonasMapa.editando = { name, puntos: (z.polygon || []).map(p => [Number(p[0]), Number(p[1])]), historia: [] };
-    renderZonasCard();
-    if (z.polygon && zonasMapa.map) zonasMapa.map.fitBounds(z.polygon, { padding: [40, 40], maxZoom: 16 });
-    const el = $('#zonas-map');
-    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    zonasMapa.mapa.editar(name, zonaColor(name), z.polygon);
+    zonasPintarLista();
   }
 
-  function zonaEdicionPaso() {
-    const ed = zonasMapa.editando;
-    if (ed) ed.historia.push(ed.puntos.map(p => p.slice()));
-  }
-
-  // El lado donde agregar la esquina nueva cuesta menos perímetro: así un punto
-  // marcado afuera estira la figura hacia allá en vez de cruzarla.
-  function zonaMejorLado(puntos, p) {
-    const k = Math.cos(p[0] * Math.PI / 180);
-    const d = (a, b) => Math.hypot(a[0] - b[0], (a[1] - b[1]) * k);
-    let mejor = 0, costo = Infinity;
-    for (let i = 0; i < puntos.length; i++) {
-      const a = puntos[i], b = puntos[(i + 1) % puntos.length];
-      const c = d(a, p) + d(p, b) - d(a, b);
-      if (c < costo) { costo = c; mejor = i; }
-    }
-    return mejor;
-  }
-
-  function zonaEdicionClic(latlng) {
-    const ed = zonasMapa.editando;
-    if (!ed) return;
-    zonaEdicionPaso();
-    const p = [zonaRedondo(latlng.lat), zonaRedondo(latlng.lng)];
-    if (ed.puntos.length < 3) ed.puntos.push(p);
-    else ed.puntos.splice(zonaMejorLado(ed.puntos, p) + 1, 0, p);
-    zonasPintarEdicion();
-  }
-
-  function zonasPintarEdicion() {
-    const ed = zonasMapa.editando;
+  // La barra naranja de arriba del mapa: qué se está marcando y los botones.
+  function zonasPintarBarra() {
+    const ed = zonaEditando();
     $('#zona-editbar').classList.toggle('hidden', !ed);
-    $('#zonas-map').classList.toggle('editando', !!ed);
-    if (!zonasMapa.capaEdicion) return;
-    zonasMapa.capaEdicion.clearLayers();
     if (!ed) return;
-    const c = zonaColor(ed.name), n = ed.puntos.length;
+    const n = ed.puntos;
     $('#zona-editbar-t').innerHTML = `Marcando <b>${escapeHtml(ed.name)}</b> · ${n} ${n === 1 ? 'punto' : 'puntos'}`
       + `<small>${n < 3
         ? 'Toca el mapa para poner las esquinas de la zona (mínimo 3).'
         : 'Toca el mapa para agregar una esquina. Arrastra un punto para moverlo; tócalo para quitarlo.'}</small>`;
-    let forma = null;
-    if (n >= 3) forma = L.polygon(ed.puntos, { color: c, weight: 2, dashArray: '6 4', fillColor: c, fillOpacity: 0.2, interactive: false });
-    else if (n === 2) forma = L.polyline(ed.puntos, { color: c, weight: 2, dashArray: '6 4', interactive: false });
-    if (forma) forma.addTo(zonasMapa.capaEdicion);
-    ed.puntos.forEach((p, i) => {
-      const m = L.marker(p, {
-        draggable: true, keyboard: false,
-        icon: L.divIcon({ className: 'zn-vertice', html: `<span style="border-color:${c}"></span>`, iconSize: [18, 18], iconAnchor: [9, 9] }),
-      });
-      m.on('dragstart', () => zonaEdicionPaso());
-      m.on('drag', (ev) => {
-        const ll = ev.target.getLatLng();
-        ed.puntos[i] = [zonaRedondo(ll.lat), zonaRedondo(ll.lng)];
-        if (forma) forma.setLatLngs(ed.puntos);
-      });
-      m.on('dragend', () => zonasPintarEdicion());
-      // Leaflet no manda el clic después de arrastrar, así que mover no borra.
-      m.on('click', () => {
-        if (ed.puntos.length <= 3) { toast('Una zona necesita al menos 3 puntos.'); return; }
-        zonaEdicionPaso();
-        ed.puntos.splice(i, 1);
-        zonasPintarEdicion();
-      });
-      m.addTo(zonasMapa.capaEdicion);
-    });
-    $('#zona-deshacer-btn').disabled = !ed.historia.length;
-    $('#zona-guardar-dibujo-btn').disabled = n < 3;
-  }
-
-  function zonaEdicionDeshacer() {
-    const ed = zonasMapa.editando;
-    if (!ed || !ed.historia.length) return;
-    ed.puntos = ed.historia.pop();
-    zonasPintarEdicion();
+    $('#zona-deshacer-btn').disabled = !ed.puedeDeshacer;
+    $('#zona-guardar-dibujo-btn').disabled = !ed.listo;
   }
 
   function zonaEdicionCancelar() {
-    zonasMapa.editando = null;
-    renderZonasCard();
+    if (zonasMapa.mapa) zonasMapa.mapa.terminar();
+    zonasPintarLista();
   }
 
   async function zonaEdicionGuardar() {
-    const ed = zonasMapa.editando;
-    if (!ed || ed.puntos.length < 3) return;
+    const ed = zonaEditando();
+    if (!ed || !ed.listo) return;
     const btn = $('#zona-guardar-dibujo-btn');
     btn.disabled = true;
     try {
-      await Api.updateRouteZone(ed.name, { polygon: ed.puntos });
-      zonasMapa.editando = null;
+      await Api.updateRouteZone(ed.name, { polygon: zonasMapa.mapa.dibujo() });
+      zonasMapa.mapa.terminar();
       await zonasRecargar();
       toast(`Dibujo de «${ed.name}» guardado.`);
     } catch (e) {
@@ -375,7 +262,7 @@
       if (t.id === 'zona-agregar-btn') return zonaNuevaAbrir();
       if (t.id === 'zona-nueva-crear') return zonaNuevaCrear();
       if (t.id === 'zona-nueva-cancelar') return zonaNuevaCerrar();
-      if (t.id === 'zona-deshacer-btn') return zonaEdicionDeshacer();
+      if (t.id === 'zona-deshacer-btn') return zonasMapa.mapa && zonasMapa.mapa.deshacer();
       if (t.id === 'zona-cancelar-dibujo-btn') return zonaEdicionCancelar();
       if (t.id === 'zona-guardar-dibujo-btn') return zonaEdicionGuardar();
       const fila = t.closest('[data-zona]');
