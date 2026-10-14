@@ -19,7 +19,7 @@
 //                entregados», y el mapa del tripulante.
 //   llegada    → JMC → casa: «Llegué al aeropuerto», una fila por tripulante,
 //                código, «No llegó», «Salir del aeropuerto», entrega en casa.
-//   jefe       → pedidos del jefe del 11-oct: Usuarios (restablecer contraseña),
+//   jefe       → pedidos del jefe del 11-oct: restablecer contraseña (desde el 13-oct en Rutas › Tripulantes),
 //                «Horario del turno» en Inspecciones, horas en «h y min» (Balance y
 //                Turnos activos), Ajustes › días de fotos, y «Mis horas» del
 //                conductor (con turnos de prueba sembrados por SQL y borrados al final).
@@ -110,8 +110,8 @@ const CAT = [
     '1) Entrar como jefe.local en un iPhone 13 (390 px). 2) Menú › Rutas › Asignación. 3) Abrir una ruta. 4) Medir si algo se sale de la pantalla.',
     'Se lee la lista y el detalle sin scroll horizontal y el botón de publicar queda a mano.'],
   ['A06', 'jefe', 'Admin', 'Un apartado para administrar usuarios: poder resetear claves y ese tipo de cosas.',
-    'Turnos/Rutas › Equipo › Usuarios: todas las cuentas con buscador; «Restablecer contraseña» pone una nueva (generada o escrita), opcionalmente obliga a cambiarla al entrar y cierra sus sesiones (RPC admin_set_password).',
-    '1) Turnos › Equipo › Usuarios. 2) Buscar a la tripulante que se registró en T01. 3) «Restablecer contraseña» con «pedirle que la cambie». 4) Entrar con la nueva en otro teléfono.',
+    'Cada quien en su espacio (13-oct): conductores y jefes en Turnos › Personal, tripulantes en Rutas › Equipo › Tripulantes. «Restablecer contraseña» pone una nueva (generada o escrita), opcionalmente obliga a cambiarla al entrar y cierra sus sesiones (RPC admin_set_password).',
+    '1) Rutas › Equipo › Tripulantes. 2) Buscar a la tripulante que se registró en T01 › «Gestionar». 3) «Restablecer contraseña» con «pedirle que la cambie». 4) Entrar con la nueva en otro teléfono.',
     'La nueva contraseña funciona y al entrar la app le pide cambiarla.'],
   ['A07', 'jefe', 'Admin', 'En la inspección, ver el horario del turno (la revisión no es la hora de inicio del turno).',
     'El detalle de Inspecciones trae el bloque «Horario del turno»: inicio, inspección enviada, revisada por el jefe, fin y duración en h y min.',
@@ -1959,20 +1959,21 @@ async function bloqueJefe() {
       const nueva = NUEVA || await q1(`SELECT email FROM public.profiles WHERE email LIKE 'nueva.%@rendio.test' AND role = 'auxiliar' ORDER BY created_at DESC LIMIT 1`);
       if (!nueva) throw new NoProbado('No hay ninguna tripulante registrada por la prueba (T01) a la cual restablecerle la contraseña.');
       const perfil = await q1(`SELECT id, full_name FROM public.profiles WHERE email = $1`, [nueva.email]);
-      await irA('turnos', 'usuarios');
-      await pg.waitForSelector('#us-search', { state: 'visible', timeout: 15000 });
-      await pg.fill('#us-search', nueva.email);
-      const btn = `[data-us=act][data-act=clave][data-id="${perfil.id}"]`;
+      await irA('rutas', 'tripulantes');
+      await pg.waitForSelector('#tp-search', { state: 'visible', timeout: 15000 });
+      await pg.fill('#tp-search', nueva.email);
+      await pg.click('#tp-body [data-tp=edit]', { timeout: 10000 });
+      const btn = `[data-tp=clave][data-pid="${perfil.id}"]`;
       await pg.waitForSelector(btn, { state: 'visible', timeout: 10000 });
-      const capLista = await foto(pg, 'admin', 'usuarios-buscar');
+      const capLista = await foto(pg, 'admin', 'tripulantes-buscar');
       await pg.click(btn);
       await pg.waitForSelector('#usr-pw-modal [data-usr=pw]', { state: 'visible', timeout: 8000 });
       const nuevaClave = await pg.$eval('#usr-pw-modal [data-usr=pw]', e => e.value);
       const obliga = await pg.$eval('#usr-pw-modal [data-usr=force]', e => e.checked);
-      const capModal = await foto(pg, 'admin', 'usuarios-restablecer');
+      const capModal = await foto(pg, 'admin', 'tripulantes-restablecer');
       await pg.click('#usr-pw-modal [data-usr=save]');
       const listo = await esperarTexto(pg, /Pásale esta contraseña/, 10000);
-      const capRes = await foto(pg, 'admin', 'usuarios-clave-lista');
+      const capRes = await foto(pg, 'admin', 'tripulantes-clave-lista');
       await pg.click('#usr-pw-modal [data-usr=cancel]').catch(() => {});
       const db1 = await q1(`SELECT must_change_password FROM public.profiles WHERE id = $1`, [perfil.id]);
       // Entrar con la nueva en otro teléfono.
@@ -1999,7 +2000,7 @@ async function bloqueJefe() {
       await ctxT.close();
       const ok = listo && db1.must_change_password === true && entro && /temporal|Cambiar mi contraseña/i.test(pide);
       return { estado: ok ? 'OK' : 'FALLA', captura: capRes,
-        obtenido: `Usuarios › buscar ${nueva.email} › «Restablecer contraseña»: se generó una de ${nuevaClave.length} caracteres (no se copia aquí), «Pedirle que la cambie» ${obliga ? 'marcado' : 'sin marcar'}. Resultado: ${listo ? '«Pásale esta contraseña…»' : 'NO salió la pantalla de resultado'}; base must_change_password = ${db1.must_change_password}. Entrar con la nueva: ${entro ? 'entra' : 'NO entra'}; ${pide ? `la app pide cambiarla («${pide}»)` : 'NO pide cambiarla'}.`,
+        obtenido: `Tripulantes › buscar ${nueva.email} › «Gestionar» › «Restablecer contraseña»: se generó una de ${nuevaClave.length} caracteres (no se copia aquí), «Pedirle que la cambie» ${obliga ? 'marcado' : 'sin marcar'}. Resultado: ${listo ? '«Pásale esta contraseña…»' : 'NO salió la pantalla de resultado'}; base must_change_password = ${db1.must_change_password}. Entrar con la nueva: ${entro ? 'entra' : 'NO entra'}; ${pide ? `la app pide cambiarla («${pide}»)` : 'NO pide cambiarla'}.`,
         nota: `Cuenta de prueba creada por T01. Otras capturas: ${[capLista, capModal, capT].filter(Boolean).join(', ')}` };
     });
   } finally {

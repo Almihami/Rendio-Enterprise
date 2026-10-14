@@ -32,9 +32,9 @@
   async function renderWorkers() {
     const list = $('#workers-list');
     list.innerHTML = '<p class="text-sm text-slate-500">Cargando…</p>';
-    let admins, drivers, strikeCounts, weekSusp, rulesRows, sched, closedShifts, deleted;
+    let admins, drivers, strikeCounts, weekSusp, rulesRows, sched, closedShifts, deleted, pedidos;
     try {
-      [admins, drivers, strikeCounts, weekSusp, rulesRows, sched, closedShifts, deleted] = await Promise.all([
+      [admins, drivers, strikeCounts, weekSusp, rulesRows, sched, closedShifts, deleted, pedidos] = await Promise.all([
         Api.listAdmins({ includeInactive: true }), Api.listAllDriversForAdmin(),
         Api.getActiveStrikeCounts().catch(() => new Map()),
         Api.getWeekSuspensions(state.currentWeek).catch(() => new Map()),
@@ -42,6 +42,9 @@
         Api.getSchedule(state.currentWeek).catch(() => null),
         Api.listClosedShiftsAdmin().catch(() => []),
         Api.listDeletedProfiles().catch(() => []),
+        // Solicitudes de contraseña (0104) de conductores y jefes; las de los
+        // tripulantes salen en Rutas › Tripulantes (usuarios.js).
+        usrPedidosClave(['driver', 'admin', '']),
       ]);
     } catch (e) {
       list.innerHTML = `<p class="text-sm text-rose-600">Error cargando personal: ${escapeHtml(e.message)}</p>`;
@@ -120,7 +123,7 @@
     const SI = '<svg class="pc-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
 
     list.classList.add('pc');
-    list.innerHTML = `<div class="md">
+    list.innerHTML = `<div id="pc-pw"></div><div class="md">
       <div class="mdlist">
         <div class="lh"><div class="pc-search">${SI}<input id="pc-q" placeholder="Buscar persona…" autocomplete="off"></div></div>
         <div id="pc-rows"></div>
@@ -227,7 +230,8 @@
           <button class="pc-btn" data-act="${p.active ? 'suspend' : 'reactivate'}" data-id="${p.id}" data-name="${nm}">${p.active ? 'Suspender' : 'Reactivar'}</button>
           <button class="pc-btn danger" data-act="delete" data-id="${p.id}" data-name="${nm}">Eliminar</button>`}
           ${adm && !yo ? `<div class="spacer"></div>${p.active
-            ? `<button class="pc-btn danger" data-act="delete" data-id="${p.id}" data-name="${nm}" title="No podrá entrar a la app. Se puede restaurar.">Eliminar</button>`
+            ? `<button class="pc-btn" data-act="demote" data-id="${p.id}" data-name="${nm}" title="Deja la consola del jefe y vuelve a ser conductor">Pasar a conductor</button>
+               <button class="pc-btn danger" data-act="delete" data-id="${p.id}" data-name="${nm}" title="No podrá entrar a la app. Se puede restaurar.">Eliminar</button>`
             : `<button class="pc-btn on" data-act="reactivate" data-id="${p.id}" data-name="${nm}">Reactivar</button>`}` : ''}
         </div>
       </div>`;
@@ -252,6 +256,14 @@
       const r = e.target.closest('[data-sel]'); if (!r) return;
       state._pcSel = r.dataset.sel; paint();
     });
+    // El banner de solicitudes de contraseña, arriba de la lista.
+    const pwEl = list.querySelector('#pc-pw');
+    const paintPw = () => { pwEl.innerHTML = usrPedidosHTML(pedidos); };
+    pwEl.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-usr-pw]'); if (!b || b.disabled) return;
+      usrPedidoAccion(b, pedidos, (l) => { pedidos = l; paintPw(); }, refreshPeople);
+    });
+    paintPw();
     list.querySelector('#pc-q').addEventListener('input', paint);
     paint();
   }
@@ -343,12 +355,13 @@
       if (reason === null) return;
     }
     if (act === 'promote' && !confirm(`¿Hacer administrador a ${name}? Deja de ser conductor: sale de la generación de horarios y al volver a entrar verá la consola del jefe.`)) return;
+    if (act === 'demote' && !confirm(`¿Pasar a ${name} a conductor? Deja de ver la consola del jefe; al volver a entrar ve la app del conductor.`)) return;
     if (act === 'restore' && !confirm(`¿Restaurar a ${name}? Vuelve activo, con su mismo correo y contraseña.`)) return;
     btn.disabled = true;
     const msg = {
       suspend: `${name} quedó suspendido.`, reactivate: `${name} quedó activo.`,
       delete: `${name} quedó eliminado.`, restore: `${name} fue restaurado.`,
-      promote: `${name} ahora es administrador.`,
+      promote: `${name} ahora es administrador.`, demote: `${name} ahora es conductor.`,
       'coord-off': `${name} ya no entra como Líder de turno.`, 'coord-on': `${name} ahora entra como Líder de turno.`,
       'dcoord-off': `${name} ya no entra como Líder de turno.`, 'dcoord-on': `${name} ahora puede liderar.`,
       'alerts-on': `${name} recibirá las eventualidades en su celular.`,
@@ -360,6 +373,7 @@
       else if (act === 'restore') await usrSetStatus(id, 'active', null, { wasDeleted: true });
       else if (act === 'delete') await usrSetStatus(id, 'deleted', reason);
       else if (act === 'promote') await Api.adminSetRole(id, 'admin');
+      else if (act === 'demote') await Api.adminSetRole(id, 'driver');
       else if (act === 'coord-off') await Api.setAdminCoordinator(id, false);
       else if (act === 'coord-on') await Api.setAdminCoordinator(id, true);
       else if (act === 'dcoord-off') await Api.setDriverCanCoordinate(id, false);

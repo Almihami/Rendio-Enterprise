@@ -19,9 +19,17 @@
 // aerolínea, restablece la contraseña y suspende o reactiva. Suspendido = entra
 // a la app pero no pide traslados nuevos.
 //
+// 13-oct-2026: es LA pantalla de cuentas de los tripulantes. La sección
+// «Usuarios» (11-oct) los mezclaba con conductores y jefes —10 conductores y
+// 200 tripulantes en una sola lista— y se quitó. Lo que solo tenía ella para
+// los tripulantes se vino acá: las solicitudes de contraseña de los tripulantes
+// (0104, arriba) y el filtro «Eliminados» con «Restaurar». Los de conductores
+// y jefes están en Turnos › Personal.
+//
 // LO QUE NO HACE
-// No crea ni borra tripulantes: ese es justo el trabajo que el registro vino a
-// quitar. Tampoco edita la dirección de nadie — el punto de recogida es del
+// No crea ni elimina tripulantes: crearlos es justo el trabajo que el registro
+// vino a quitar, y eliminarlos no se puede (la base solo deja suspenderlos;
+// a los que se eliminaron por fuera, sí se les restaura). Tampoco edita la dirección de nadie — el punto de recogida es del
 // tripulante y él lo corrige desde su app; que el jefe pueda moverle la portería
 // a alguien sin que se entere es precisamente el problema que resolvió 0055.
 
@@ -30,11 +38,12 @@
 
   const st = {
     items: null, airlines: null, loading: false,
-    q: '', filtro: 'todos',        // todos | sin-fecha | dos-unidades | suspendidos
+    q: '', filtro: 'todos',        // todos | sin-fecha | dos-unidades | suspendidos | eliminados
     aerolinea: '',                  // '' = todas · SIN_AEROLINEA · el nombre de una (12-oct-2026)
     editing: null,                  // id del tripulante con la fecha abierta
     busy: null,
     airOpen: false, airName: '', airCode: '', airBusy: false,
+    pw: [],                         // solicitudes de contraseña de tripulantes (0104)
   };
 
   const esc = (s) => String(s == null ? '' : s)
@@ -79,28 +88,43 @@
     } catch (_) { return iso; }
   };
 
-  // Punto de entrada de la pestaña.
+  // Punto de entrada de la pestaña. Las solicitudes de contraseña se piden cada
+  // vez que se entra (el push trae al jefe justo acá); el padrón, solo la primera.
   function abrir() {
     if (!st.items && !st.loading) load();
+    else refrescarPedidos();
+    paint();
+  }
+  async function refrescarPedidos() {
+    st.pw = await pedidos();
     paint();
   }
 
   async function load() {
     st.loading = true; paint();
     try {
-      const [items, airlines] = await Promise.all([
+      const [items, airlines, pw] = await Promise.all([
         Api.listAuxiliares(),
         Api.listAirlines(true),
+        pedidos(),
       ]);
-      st.items = items; st.airlines = airlines;
+      st.items = items; st.airlines = airlines; st.pw = pw;
     } catch (e) {
       st.items = null;
       console.error(e);
     } finally { st.loading = false; paint(); }
   }
 
+  // El banner de solicitudes de contraseña es de usuarios.js (carga antes que
+  // este módulo). Sin él —pruebas que montan solo esta pantalla— sale sin banner.
+  const pedidos = () => (typeof usrPedidosClave === 'function' ? usrPedidosClave(['auxiliar']) : Promise.resolve([]));
+  const pedidosHTML = () => (typeof usrPedidosHTML === 'function' ? usrPedidosHTML(st.pw) : '');
+
+  // Los eliminados solo salen en su filtro: no cuentan ni se buscan en el resto.
+  const vivos = () => (st.items || []).filter(a => !a.deleted);
+
   function visibles() {
-    let l = st.items || [];
+    let l = st.filtro === 'eliminados' ? (st.items || []).filter(a => a.deleted) : vivos();
     if (st.q) {
       const q = norm(st.q);
       l = l.filter(a => norm([a.name, a.email, a.phone, a.airline, a.groundStaff ? 'personal de tierra aeropuerto' : '', a.res1?.name, a.res2?.name,
@@ -120,7 +144,7 @@
   // Salen las aerolíneas con gente y las encendidas del catálogo; una apagada
   // y sin nadie no aporta. La elegida siempre está, aunque se quede en 0.
   function opcionesAerolinea() {
-    const items = st.items || [];
+    const items = vivos();
     const n = new Map();
     items.forEach(a => { if (a.airline) n.set(a.airline, (n.get(a.airline) || 0) + 1); });
     (st.airlines || []).forEach(x => { if (x && x.name && x.is_active !== false && !n.has(x.name)) n.set(x.name, 0); });
@@ -147,35 +171,37 @@
 
   function paint() {
     const root = document.getElementById('tp-body'); if (!root) return;
-    const total = (st.items || []).length;
+    const total = vivos().length;
     const cnt = document.getElementById('tp-count'); if (cnt) cnt.textContent = total;
     paintAirFilter();
+    const pw = pedidosHTML();
 
     if (st.loading && !st.items) {
-      root.innerHTML = `<div class="tp-empty">Cargando el padrón…</div>`;
+      root.innerHTML = pw + `<div class="tp-empty">Cargando el padrón…</div>`;
       return;
     }
     if (!st.items) {
-      root.innerHTML = `<div class="tp-empty"><b>No pudimos cargar los tripulantes.</b>
+      root.innerHTML = pw + `<div class="tp-empty"><b>No pudimos cargar los tripulantes.</b>
         <span>Revisa la conexión.</span>
         <button class="set-btn ghost" data-tp="reload">Reintentar</button></div>`;
       return;
     }
-    if (!total) {
-      root.innerHTML = `<div class="tp-empty"><b>Todavía no hay tripulantes registrados.</b>
+    if (!st.items.length) {
+      root.innerHTML = pw + `<div class="tp-empty"><b>Todavía no hay tripulantes registrados.</b>
         <span>Aparecen solos acá cuando se crean su cuenta desde la app.</span></div>`;
       return;
     }
 
     const l = visibles();
-    const sinFecha = st.items.filter(a => !a.joinedAt).length;
-    root.innerHTML = `
-      ${sinFecha ? `<div class="tp-nota">
+    const sinFecha = vivos().filter(a => !a.joinedAt).length;
+    root.innerHTML = pw + `
+      ${sinFecha && st.filtro !== 'eliminados' ? `<div class="tp-nota">
         <svg class="icon"><use href="#i-info"/></svg>
         <div><b>${sinFecha} ${sinFecha === 1 ? 'tripulante no tiene' : 'tripulantes no tienen'} fecha de ingreso.</b>
         <span>Sin ella no se les puede calcular la antigüedad para las promociones.</span></div>
       </div>` : ''}
       ${l.length ? `<div class="tp-list">${l.map(fila).join('')}</div>`
+        : st.filtro === 'eliminados' && !st.q && !st.aerolinea ? `<div class="tp-empty"><b>No hay tripulantes eliminados.</b></div>`
         : `<div class="tp-empty"><b>Nadie coincide con la búsqueda.</b>${st.aerolinea ? '<span>Revisa también el filtro de aerolínea.</span>' : ''}</div>`}`;
   }
 
@@ -189,10 +215,10 @@
       ? esc(a.res2.name) + (a.unit2 ? ' · <b>' + esc(a.unit2) + '</b>' : '')
       : null;
     return `
-      <div class="tp-row${editando ? ' open' : ''}${a.active ? '' : ' sus'}">
+      <div class="tp-row${editando ? ' open' : ''}${a.active && !a.deleted ? '' : ' sus'}">
         <div class="tp-main">
           <div class="tp-who">
-            <b>${esc(a.name)}${a.active ? '' : ' <span class="tp-tag tp-sus">Suspendida</span>'}</b>
+            <b>${esc(a.name)}${a.deleted ? ' <span class="tp-tag tp-sus">Eliminada</span>' : a.active ? '' : ' <span class="tp-tag tp-sus">Suspendida</span>'}</b>
             <span>${esc(a.email)}${a.phone ? ' · ' + esc(a.phone) : ' · <i>sin teléfono</i>'}</span>
           </div>
           <div class="tp-air">${a.groundStaff ? '<span class="tp-tag tp-tierra">Personal de tierra</span>' : a.airline ? esc(a.airline) : '<i>sin aerolínea</i>'}</div>
@@ -209,7 +235,13 @@
             ${editando ? 'Cerrar' : 'Gestionar'}
           </button>
         </div>
-        ${editando ? `
+        ${editando && a.deleted ? `
+          <div class="tp-editor tp-cuenta">
+            ${a.suspendedReason ? `<p class="tp-motivo"><b>Motivo de la eliminación:</b> ${esc(a.suspendedReason)}</p>` : ''}
+            <p class="tp-motivo">No puede entrar a la app. Al restaurarla vuelve activa, con su mismo correo y contraseña.</p>
+            <button class="set-btn ghost" data-tp="datos" data-pid="${esc(a.profileId)}">Editar datos</button>
+            <button class="set-btn primary" data-tp="restaurar" data-pid="${esc(a.profileId)}" data-name="${esc(a.name)}" ${st.busy === a.profileId ? 'disabled' : ''}>Restaurar</button>
+          </div>` : editando ? `
           <div class="tp-editor">
             <label>Está con Rendio desde
               <input type="date" id="tp-date" value="${esc(a.joinedAt || '')}" max="${hoyISO()}" />
@@ -270,6 +302,8 @@
     const ui = document.getElementById('tripulantes-ui'); if (!ui) return;
 
     ui.addEventListener('click', async (e) => {
+      const pwb = e.target.closest('[data-usr-pw]');
+      if (pwb && !pwb.disabled) return usrPedidoAccion(pwb, st.pw, (l) => { st.pw = l; paint(); }, recargar);
       const b = e.target.closest('[data-tp]'); if (!b || b.disabled) return;
       const a = b.dataset.tp;
       if (a === 'reload') { st.items = null; return load(); }
@@ -286,6 +320,7 @@
       if (a === 'datos') return openEditarDatos(b.dataset.pid, recargar);
       if (a === 'clave') return openRestablecerClave(b.dataset.pid, b.dataset.name);
       if (a === 'suspender' || a === 'reactivar') return cambiarEstado(b.dataset.pid, b.dataset.name, a === 'suspender');
+      if (a === 'restaurar') return restaurar(b.dataset.pid, b.dataset.name);
       if (a === 'air') { st.airOpen = !st.airOpen; return paintAirlines(); }
       if (a === 'air-add') return agregarAerolinea();
       if (a === 'air-toggle') {
@@ -327,8 +362,25 @@
   }
 
   async function recargar() {
+    const pw = pedidos();
     try { st.items = await Api.listAuxiliares(); } catch (_) {}
+    st.pw = await pw;
     paint();
+  }
+
+  // Restaurar a quien se eliminó (0081): vuelve activa, con su correo y su
+  // contraseña de antes. Si el correo ya lo tomó otra cuenta, la base lo dice.
+  async function restaurar(pid, name) {
+    if (!confirm(`¿Restaurar a ${name}? Vuelve activa, con su mismo correo y contraseña.`)) return;
+    st.busy = pid; paint();
+    try {
+      await usrSetStatus(pid, 'active', null, { wasDeleted: true });
+      toast(`${name} fue restaurada.`);
+      st.items = await Api.listAuxiliares();
+      st.editing = null;
+    } catch (e) {
+      toast(e?.message || 'No se pudo restaurar.');
+    } finally { st.busy = null; paint(); }
   }
 
   // Suspender pide motivo: lo ve la tripulante en su app.
