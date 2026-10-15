@@ -636,3 +636,8 @@
 #auxiliar-ui.rx-phone .rx-me-photo:active{transform:scale(.97)}
 #auxiliar-ui.rx-phone .rx-me-photo:focus-visible{outline:2px solid var(--r-accent);outline-offset:3px}
 #auxiliar-ui.rx-phone .rx-me-cam{position:absolute;right:-2px;bottom:-2px;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--r-card);color:var(--r-text);border:1px solid var(--r-border);box-shadow:0 2px 6px rgba(0,0,0,.12)}
+
+/* ── 9. Pedidos en mantenimiento (14-oct-2026) ──────────────────────────────────
+   Ícono de la hoja «Estamos en mantenimiento» (auxLockNotice('maintenance')):
+   ámbar de aviso, no el rojo del candado de suspensión. */
+#auxiliar-ui.rx-phone .rx-sh-ic.mnt{background:rgba(201,129,15,.16);color:var(--rx-warn)}

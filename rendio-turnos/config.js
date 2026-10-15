@@ -8,4 +8,8 @@ window.RENDIO_CONFIG = {
   // SUPABASE_URL: 'http://127.0.0.1:54321',
   // SUPABASE_ANON_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
   VAPID_PUBLIC_KEY: 'BDbSeYdp1m3324kEA_t4naZMFm_T-iPMmjsSaMkrIcsnZ2jvXEhOarlP6sztOGTySex8gP1FQ0zMFwv96bpvUTE',
+  // Contingencia (14-oct-2026): los tripulantes aún no deben pedir traslados por
+  // la app. En true, «Pedir traslado» y «Repetir» muestran «Estamos en
+  // mantenimiento» y no abren el pedido. Para volver a recibir pedidos: false.
+  PEDIDOS_EN_MANTENIMIENTO: true,
 };
