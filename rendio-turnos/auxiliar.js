@@ -316,8 +316,13 @@
     try { return !!(window.AuxPagos && typeof AuxPagos.paused === 'function' && AuxPagos.paused()); }
     catch (_) { return false; }
   }
+  // Mantenimiento (14-oct-2026): lo prende config.js para todos los tripulantes.
+  function auxEnMantenimiento() {
+    return !!(window.RENDIO_CONFIG && window.RENDIO_CONFIG.PEDIDOS_EN_MANTENIMIENTO === true);
+  }
   const AUX_SUSP_TXT = 'Tu cuenta está suspendida: no puedes pedir traslados nuevos. Habla con tu jefe.';
   const AUX_PAUSA_TXT = 'Tus reservas están pausadas por un pago pendiente. Revisa Pagos.';
+  const AUX_MANT_TXT = 'Estamos en mantenimiento: por ahora no recibimos pedidos de traslado por la app.';
   // La hoja del candado. Con el shell es una hoja (RxSheet del diseño: .rx-sh
   // con su ícono, título, texto y botones) y no un toast que se va en dos
   // segundos: el tripulante tiene que entender por qué no puede pedir. Sin el
@@ -338,6 +343,13 @@
         <p>Tu cobro${esc(monto)}${esc(vence)}. Apenas aprobemos tu comprobante vuelves a reservar. Lo que ya pediste sigue en pie.</p>
         <button class="rx-btn pri" data-pl-lock="pay">Ir a pagos</button>
         <button class="rx-btn ghost" data-pl-lock="close">Ahora no</button>
+      </div>`;
+    } else if (kind === 'maintenance') {
+      html = `<div class="rx-sh">
+        <div class="rx-sh-ic mnt">${icono('Clock')}</div>
+        <h3>Estamos en mantenimiento</h3>
+        <p>Por ahora no estamos recibiendo pedidos de traslado por la app. Mientras tanto, coordina tu transporte como lo vienes haciendo. <b>Te avisaremos cuando ya puedas reservar aquí.</b></p>
+        <button class="rx-btn pri" data-pl-lock="close">Entendido</button>
       </div>`;
     } else {
       const m = auxState.profile && auxState.profile.suspended_reason;
@@ -362,6 +374,7 @@
         if (el) return;
       } catch (_) {}
     }
+    if (kind === 'maintenance') { auxToast(AUX_MANT_TXT, 'Clock'); return; }
     auxToast(kind === 'paused' ? AUX_PAUSA_TXT : AUX_SUSP_TXT, 'Lock');
   }
   function auxCloseSheet() {
@@ -369,6 +382,7 @@
   }
   // true = había candado (y ya se avisó): quien llama no abre el pedido.
   function auxLockCheck() {
+    if (auxEnMantenimiento()) { auxLockNotice('maintenance'); return true; }
     if (auxSuspendido()) { auxLockNotice('suspended'); return true; }
     if (auxPagosPausado()) { auxLockNotice('paused'); return true; }
     return false;
