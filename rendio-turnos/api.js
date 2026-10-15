@@ -2359,20 +2359,21 @@
     return e instanceof Error ? e : new Error(msg || 'No se pudo guardar.');
   }
 
-  async function createResidence({ name, latitude, longitude, accessNote }) {
+  async function createResidence({ name, latitude, longitude, accessNote, zonaJefe }) {
     let org = (typeof state !== 'undefined' && state.profile) ? state.profile.organization_id : null;
     if (!org) org = (await getCurrentProfile())?.organization_id;
     if (!org) throw new Error('No pudimos determinar la organización');
     const { data, error } = await sb.from('residences').insert({
       organization_id: org, name: String(name || '').trim(), latitude, longitude,
       access_note: String(accessNote || '').trim() || null,
+      zona_jefe: zonaJefe || null,   // null = «según el mapa» (0108)
     }).select('id').single();
     if (error) throw residenceError(error);
     _residencesCache = null;
     return data.id;
   }
 
-  // patch: { name, latitude, longitude, access_note, is_active } (lo que venga).
+  // patch: { name, latitude, longitude, access_note, zona_jefe, is_active } (lo que venga).
   async function updateResidence(id, patch) {
     const p = Object.assign({}, patch);
     if ('name' in p) p.name = String(p.name || '').trim();

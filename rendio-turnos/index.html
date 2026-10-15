@@ -822,27 +822,11 @@
                 <button class="set-btn dark sm" id="zona-guardar-dibujo-btn">Guardar dibujo</button>
               </div>
               <div class="zn-map" id="zonas-map"></div>
-              <p class="set-hint" style="margin:8px 0 0 2px">Los puntos son los conjuntos del catálogo, del color de su zona. Gris = sin zona. La gente que vive en casa con pin propio también toma la zona del dibujo, aunque no salga aquí.</p>
+              <p class="set-hint" style="margin:8px 0 0 2px">Los puntos son los conjuntos del catálogo, del color de su zona. Gris = sin zona. La gente que vive en casa con pin propio también toma la zona del dibujo, aunque no salga aquí. ¿Un conjunto va en otra zona que la de su dibujo? Se cambia en <button type="button" class="zn-ir" data-ir="conjuntos">Conjuntos</button>, junto a su pin.</p>
               <div class="zn-lista" id="zonas-lista"></div>
               <div class="set-hint" id="zonas-aviso" style="margin:10px 0 0 2px"></div>
             </div>
           </div>
-
-          <details class="set-card set-card-acc" data-acc="conjuntos">
-            <summary class="set-ch">
-              <div class="set-ci"><svg class="icon"><use href="#i-pin"/></svg></div>
-              <div>
-                <h2>Zona de cada conjunto</h2>
-                <p>Las excepciones al mapa. Lo puesto aquí a mano gana sobre el dibujo. Se guarda al instante.</p>
-              </div>
-              <span class="set-sec-ya">Se guarda solo</span>
-              <svg class="icon details-chevron set-card-chev"><use href="#i-chev"/></svg>
-            </summary>
-            <div class="set-cb">
-              <p class="set-hint" style="margin:0 0 12px 2px">Lo normal es <b>«Según el mapa»</b>: el conjunto toma la zona del dibujo que lo contiene. Se elige una zona a mano solo cuando el dibujo no basta, porque las zonas de Julián son de operación y no de geografía: Los Cerezos queda a 200 m de Olivar (Fontibón), pero él lo quiere en Porvenir. Un conjunto <b>sin zona</b> (fuera de los dibujos, o dentro de dos a la vez) se programa con el cálculo por carretera.</p>
-              <div id="residence-zones"></div>
-            </div>
-          </details>
 
           <details class="set-card set-card-acc" data-acc="tabla">
             <summary class="set-ch">

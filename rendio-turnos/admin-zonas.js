@@ -5,8 +5,8 @@
 // la profa Barro Blanco: una elipse sobre la vía al aeropuerto.
 //
 // Cada conjunto toma la zona del dibujo que contiene su punto. Las excepciones
-// se ponen a mano más abajo («Zona de cada conjunto», admin-calibracion.js) y
-// ganan siempre. La regla vive en zonas-dibujo.js.
+// se ponen a mano en Rutas › Configuración › Conjuntos (admin-conjuntos.js,
+// desde el 14-oct-2026; antes era una tarjeta de Calibración) y ganan siempre. La regla vive en zonas-dibujo.js.
 //
 // El mapa y el dibujo son la pieza compartida de mapa-zonas.js (la misma de
 // Cuentas de cobro › Tarifas por sector); aquí van los datos y los botones.
@@ -18,7 +18,6 @@
   const zonasMapa = {
     lista: null,          // route_zones [{ name, polygon, sort_order }] · null = la base no tiene 0108
     residencias: null,    // catálogo activo [{ id, name, sector, zona_jefe, latitude, longitude }]
-    ordenFilas: null,     // orden fijo de la lista de excepciones (ver renderResidenceZones)
     mapa: null,           // crearMapaZonas (mapa-zonas.js)
     renombrando: null,    // nombre de la zona que se está renombrando
     bound: false,
@@ -30,8 +29,8 @@
     return i < 0 ? MAPA_ZONAS_SIN_COLOR : MAPA_ZONAS_COLORES[i % MAPA_ZONAS_COLORES.length];
   }
 
-  // Trae la lista de zonas y el catálogo UNA vez y pinta las tres tarjetas que
-  // dependen de ellos: el mapa, la tabla de tiempos y las excepciones.
+  // Trae la lista de zonas y el catálogo UNA vez y pinta las dos tarjetas que
+  // dependen de ellos: el mapa y la tabla de tiempos.
   async function zonasRecargar() {
     const [lista, res] = await Promise.all([
       Api.listRouteZones ? Api.listRouteZones().catch(() => null) : null,
@@ -39,12 +38,10 @@
     ]);
     zonasMapa.lista = lista;
     zonasMapa.residencias = res;
-    zonasMapa.ordenFilas = null;
     const ed = zonaEditando();
     if (ed && !(lista || []).some(z => z.name === ed.name)) zonasMapa.mapa.terminar();
     renderZonasCard();
     renderRouteTables();
-    renderResidenceZones();
   }
 
   function renderZonasCard() {
@@ -259,6 +256,7 @@
     card.addEventListener('click', (ev) => {
       const t = ev.target.closest('button');
       if (!t || t.disabled) return;
+      if (t.dataset.ir === 'conjuntos') return setTab('conjuntos');
       if (t.id === 'zona-agregar-btn') return zonaNuevaAbrir();
       if (t.id === 'zona-nueva-crear') return zonaNuevaCrear();
       if (t.id === 'zona-nueva-cancelar') return zonaNuevaCerrar();
