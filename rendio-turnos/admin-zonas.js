@@ -118,7 +118,7 @@
       return `
         <div class="zn-row" data-zona="${escapeHtml(z.name)}">
           <span class="zn-sw" style="background:${zonaColor(z.name)}"></span>
-          <div class="zn-info"><b>${escapeHtml(z.name)}</b><small>${estado}</small></div>
+          <div class="zn-info"><button type="button" class="zn-ver" data-acc="ver" ${editando ? 'disabled' : ''} title="${z.polygon ? 'Ver en el mapa' : 'Todavía sin dibujo'}">${escapeHtml(z.name)}</button><small>${estado}</small></div>
           <div class="zn-acc">
             <button class="set-btn ghost sm" data-acc="dibujar" ${editando ? 'disabled' : ''}>${z.polygon ? 'Editar dibujo' : 'Dibujar'}</button>
             <button class="set-btn ghost sm" data-acc="renombrar" ${editando ? 'disabled' : ''}>Renombrar</button>
@@ -268,6 +268,7 @@
       const fila = t.closest('[data-zona]');
       if (!fila) return;
       const name = fila.dataset.zona;
+      if (t.dataset.acc === 'ver') return zonasMapa.mapa && zonasMapa.mapa.enfocar(name);
       if (t.dataset.acc === 'dibujar') return zonaEdicionEmpezar(name);
       if (t.dataset.acc === 'renombrar') { zonaNuevaCerrar(); zonasMapa.renombrando = name; return zonasPintarLista(); }
       if (t.dataset.acc === 'renombrar-ok') return zonaRenombrarGuardar(name);

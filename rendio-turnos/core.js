@@ -478,6 +478,8 @@
     // subir el límite de strikes ya no dispara la tabla de tiempos, las zonas ni la flota.
     if (name === 'flota') renderFlota();
     if (name === 'calibracion') renderCalibracion();
+    // Conjuntos (0112): módulo IIFE; el typeof por si el archivo no cargó.
+    if (name === 'conjuntos') { if (typeof window.renderConjuntos === 'function') window.renderConjuntos(); }
     if (name === 'balance') renderBalance();
     if (name === 'revision') renderRevision();
     if (name === 'inspections') renderInspections();

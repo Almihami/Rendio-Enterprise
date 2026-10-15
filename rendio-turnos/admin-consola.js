@@ -86,6 +86,7 @@
         // lado de las pantallas que calibran (2026-09-11).
         { id: 'cfg', name: 'Configuración', icon: 'g-cfg', desc: 'Parámetros', items: [
           { id: 'calib', name: 'Calibración', icon: 'i-sliders', desc: 'Tráfico, esperas, desembarque por aerolínea, la tabla de tiempos y la zona de cada conjunto.', tab: 'calibracion' },
+          { id: 'conjuntos', name: 'Conjuntos', icon: 'i-pin', desc: 'Los puntos de recogida del catálogo: agregar con pin en el mapa, renombrar, mover el pin de la portería y desactivar.', tab: 'conjuntos' },
         ] },
       ]
     }
