@@ -2312,6 +2312,77 @@
     return data || [];
   }
 
+  // ── Conjuntos (Rutas › Configuración › Conjuntos, 0112, 14-oct-2026) ─────────
+  // El catálogo se llenaba solo por script; desde aquí el jefe agrega, mueve el
+  // pin, renombra y desactiva. Escribir ya lo permitía p_residences_admin_all
+  // (0055, solo admin). Se desactiva en vez de borrar: quien vive ahí lo conserva.
+
+  // Activos Y desactivados (la pantalla del jefe filtra; el tripulante usa listResidences).
+  async function listResidencesAdmin() {
+    const { data, error } = await sb.from('residences')
+      .select('id, name, latitude, longitude, access_note, is_active, zona_jefe, updated_at').order('name');
+    if (error) throw error;
+    return data || [];
+  }
+
+  // { residence_id: n } — tripulantes con cuenta viva que viven ahí (primera o
+  // segunda unidad, 0075). Una persona con las dos unidades en el mismo conjunto cuenta una vez.
+  async function residenceMemberCounts() {
+    const { data, error } = await sb.from('auxiliar_profiles')
+      .select('residence_id, residence_id_2, profiles(deleted_at)');
+    if (error) throw error;
+    const n = {};
+    (data || []).forEach((a) => {
+      if (a.profiles && a.profiles.deleted_at) return;
+      new Set([a.residence_id, a.residence_id_2].filter(Boolean)).forEach((id) => { n[id] = (n[id] || 0) + 1; });
+    });
+    return n;
+  }
+
+  // Viajes ya pedidos a ese conjunto que todavía no pasan: son los que se van al
+  // punto nuevo si se mueve el pin (trigger de 0112).
+  async function countUpcomingTripsAt(residenceId) {
+    const { count, error } = await sb.from('reservations').select('id', { count: 'exact', head: true })
+      .eq('residence_id', residenceId).is('cancelled_at', null)
+      .gte('required_arrival_at', new Date().toISOString());
+    if (error) throw error;
+    return count || 0;
+  }
+
+  // Lo que la base contesta, dicho para el jefe.
+  function residenceError(e) {
+    const code = e && e.code, msg = String((e && e.message) || '');
+    if (code === '23505' || /duplicate|idx_residences_org_name_ci|residences_org_name_key/.test(msg)) return new Error('Ya hay un conjunto con ese nombre.');
+    if (/residences_coords_oriente/.test(msg)) return new Error('Ese punto queda fuera del Oriente antioqueño. Revisa el pin.');
+    if (/residences_name_len/.test(msg)) return new Error('Falta el nombre del conjunto.');
+    if (code === '42501' || /row-level security/.test(msg)) return new Error('Solo un jefe puede cambiar los conjuntos. Vuelve a entrar e inténtalo de nuevo.');
+    return e instanceof Error ? e : new Error(msg || 'No se pudo guardar.');
+  }
+
+  async function createResidence({ name, latitude, longitude, accessNote }) {
+    let org = (typeof state !== 'undefined' && state.profile) ? state.profile.organization_id : null;
+    if (!org) org = (await getCurrentProfile())?.organization_id;
+    if (!org) throw new Error('No pudimos determinar la organización');
+    const { data, error } = await sb.from('residences').insert({
+      organization_id: org, name: String(name || '').trim(), latitude, longitude,
+      access_note: String(accessNote || '').trim() || null,
+    }).select('id').single();
+    if (error) throw residenceError(error);
+    _residencesCache = null;
+    return data.id;
+  }
+
+  // patch: { name, latitude, longitude, access_note, is_active } (lo que venga).
+  async function updateResidence(id, patch) {
+    const p = Object.assign({}, patch);
+    if ('name' in p) p.name = String(p.name || '').trim();
+    if ('access_note' in p) p.access_note = String(p.access_note || '').trim() || null;
+    const { data, error } = await sb.from('residences').update(p).eq('id', id).select('id');
+    if (error) throw residenceError(error);
+    if (!data || !data.length) throw new Error('No se guardó. Vuelve a entrar e inténtalo de nuevo.');
+    _residencesCache = null;
+  }
+
   // zona = '' / null → «según el mapa» (0108): el conjunto toma la del dibujo.
   async function saveResidenceZone(id, zona) {
     const { data, error } = await sb.from('residences').update({ zona_jefe: zona || null }).eq('id', id).select('id');
@@ -3726,6 +3797,7 @@
     listRewards, listAllRewards, listMyClosedShifts, redeemReward, listMyRedemptions,
     createReward, updateReward, deleteReward, listRedemptionsAdmin, resolveRedemption, listClosedShiftsAdmin,
     listRoutePlanning, saveRouteAssignment, getRouteTables, saveRouteTables, listResidencesZones, saveResidenceZone,
+    listResidencesAdmin, residenceMemberCounts, countUpcomingTripsAt, createResidence, updateResidence,
     listRouteZones, createRouteZone, updateRouteZone, deleteRouteZone,
     signUpAuxiliar, signupCatalogs, registerAuxiliar,
     listAuxiliares, setAuxiliarJoinedAt, listAirlines, createAirline, setAirlineActive,

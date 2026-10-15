@@ -769,6 +769,14 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .set-ui .zn-info{flex:1;min-width:0;font-size:13.5px;color:var(--ink)}
 .set-ui .zn-info b{font-weight:700}
 .set-ui .zn-info small{display:block;font-size:11px;color:var(--ink3)}
+.set-ui .zn-ver{display:block;border:0;background:none;padding:0;font:inherit;font-weight:700;color:var(--ink);cursor:pointer;text-align:left}
+.set-ui .zn-ver:hover:not(:disabled){color:var(--orange);text-decoration:underline;text-underline-offset:2px}
+.set-ui .zn-ver:disabled{cursor:default}
+#cobro-ui .cb-zver{border:0;background:none;padding:0;font:inherit;font-weight:700;color:var(--ink);cursor:pointer;text-align:left}
+#cobro-ui .cb-zver:hover:not(:disabled){color:var(--orange);text-decoration:underline;text-underline-offset:2px}
+#cobro-ui .cb-zver:disabled{cursor:default}
+/* La zona que se está mostrando: su nombre fijo encima del dibujo. */
+.leaflet-tooltip.zn-tip-foco{font-weight:800;font-size:13px}
 .set-ui .zn-renombrar{display:flex;flex-wrap:wrap;gap:4px}
 .set-ui .zn-acc{display:flex;align-items:center;gap:6px;flex:0 0 auto}
 /* Cuentas de cobro › Tarifas por sector: el mapa de sectores (0109) */

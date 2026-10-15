@@ -104,6 +104,7 @@
   <link rel="stylesheet" href="admin-puntos.css" />
   <link rel="stylesheet" href="admin-inspecciones.css" />
   <link rel="stylesheet" href="admin-whatsapp.css" />
+  <link rel="stylesheet" href="admin-conjuntos.css" />
   <!-- Estado de vuelos (0099): el chip de vuelos-ui.js -->
   <link rel="stylesheet" href="vuelos.css" />
   <!-- Rutas › Asignación v2 (10-oct-2026): acotado a #routes-v2 y .rv2-* -->
@@ -1001,6 +1002,18 @@
         </div>
       </section>
 
+      <!-- Rutas › Configuración › Conjuntos (0112, 14-oct-2026): agregar con pin en el
+           mapa, editar nombre y pin, desactivar. Lo pinta admin-conjuntos.js en #cj-root. -->
+      <section data-panel="conjuntos" class="hidden">
+        <div id="conjuntos-ui" class="set-ui" data-theme="light">
+          <div class="set-head">
+            <h1>Conjuntos</h1>
+            <p>Los puntos de recogida que el tripulante elige de la lista. El pin va sobre la portería: es donde para el carro. Un conjunto no se borra: se desactiva, y quien ya vive ahí lo conserva.</p>
+          </div>
+          <div id="cj-root"></div>
+        </div>
+      </section>
+
 
       <!-- =============== ADMIN: BALANCE TAB (paleta limpia) =============== -->
       <!-- Rediseño visual scopeado bajo #balance-ui. Lógica intacta:
@@ -1596,6 +1609,7 @@
   <script src="admin-personal.js"></script>
   <script src="admin-calibracion.js"></script>
   <script src="admin-zonas.js"></script>
+  <script src="admin-conjuntos.js"></script>
   <script src="admin-flota.js"></script>
   <script src="admin-balance.js"></script>
   <script src="admin-revision.js"></script>

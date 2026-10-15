@@ -7,6 +7,9 @@
 // La pantalla pone los datos, los botones y la barra; esto pone el mapa, los
 // dibujos, los puntos de los conjuntos y la edición.
 //
+// Ver: tocar un dibujo (o el nombre de la zona en la lista, con enfocar) acerca
+// el mapa a esa zona y la resalta; tocar el fondo la suelta.
+//
 // Dibujar: cada toque en el mapa pone una esquina. Con tres o más, la esquina
 // nueva entra en el lado más cercano (no al final), para que agregar un punto
 // nunca cruce la figura. Los puntos se arrastran para moverlos y se tocan para
@@ -34,7 +37,7 @@ function crearMapaZonas(opts) {
   const o = opts || {};
   const el = o.el || document.createElement('div');
   el.classList.add('zn-map');
-  const st = { map: null, zonas: null, puntos: null, edicion: null, ed: null, ultimo: null, encuadrar: true };
+  const st = { map: null, zonas: null, puntos: null, edicion: null, ed: null, ultimo: null, encuadrar: true, foco: null };
   const avisar = () => { if (typeof o.onCambio === 'function') o.onCambio(); };
   const redondo = (n) => Math.round(n * 1e6) / 1e6;   // ~10 cm
 
@@ -52,7 +55,7 @@ function crearMapaZonas(opts) {
     st.edicion = L.layerGroup().addTo(map);
     // Los puntos de los conjuntos dejan pasar el clic al mapa (las figuras de
     // Leaflet burbujean): tocar encima de un conjunto también pone esquina.
-    map.on('click', (ev) => clic(ev.latlng));
+    map.on('click', (ev) => { if (st.ed) clic(ev.latlng); else if (st.foco) { st.foco = null; if (st.ultimo) pintar(st.ultimo); } });
     st.map = map;
     return true;
   }
@@ -127,10 +130,18 @@ function crearMapaZonas(opts) {
     st.zonas.clearLayers();
     st.puntos.clearLayers();
     const editNombre = st.ed && st.ed.name;
+    if (st.foco && !(st.ultimo.zonas || []).some(z => z.name === st.foco && z.polygon)) st.foco = null;
     (st.ultimo.zonas || []).forEach(z => {
       if (!z.polygon || z.name === editNombre) return;
-      L.polygon(z.polygon, { color: z.color, weight: 2, fillColor: z.color, fillOpacity: editNombre ? 0.06 : 0.14 })
-        .bindTooltip(z.name, { sticky: true }).addTo(st.zonas);
+      const foco = !editNombre && st.foco === z.name, apagada = !editNombre && st.foco && !foco;
+      // Mientras se dibuja, el toque pasa al mapa (pone esquina); si no, tocar
+      // la figura la muestra (pedido de la profa, 14-oct-2026).
+      const capa = L.polygon(z.polygon, {
+        color: z.color, weight: foco ? 4 : 2, fillColor: z.color,
+        fillOpacity: editNombre ? 0.06 : foco ? 0.32 : apagada ? 0.05 : 0.14, opacity: apagada ? 0.45 : 1,
+        bubblingMouseEvents: !!editNombre,
+      }).bindTooltip(z.name, { sticky: !foco, permanent: foco, direction: 'center', className: foco ? 'zn-tip-foco' : '' }).addTo(st.zonas);
+      if (!editNombre) capa.on('click', () => enfocar(z.name));
     });
     (st.ultimo.puntos || []).forEach(p => {
       if (p.lat == null || p.lng == null) return;
@@ -148,12 +159,31 @@ function crearMapaZonas(opts) {
     pintarEdicion();
   }
 
+  // Mostrar una zona: el mapa se acerca a su dibujo y la resalta (las demás se
+  // apagan) hasta que se toque otra o el fondo. Sin dibujo, se dice.
+  function enfocar(name) {
+    if (st.ed) return false;
+    const z = ((st.ultimo && st.ultimo.zonas) || []).find(x => x.name === name);
+    if (!z || !z.polygon || !z.polygon.length) {
+      if (typeof o.aviso === 'function') o.aviso(`«${name}» todavía no tiene dibujo. Toca «Dibujar» para hacerlo.`);
+      return false;
+    }
+    st.foco = name;
+    pintar(st.ultimo);
+    if (st.map) st.map.fitBounds(z.polygon, { padding: [40, 40], maxZoom: 16 });
+    if (el.scrollIntoView) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return true;
+  }
+
   return {
     el,
     pintar,
+    enfocar,
+    enfocada() { return st.foco; },
     // El contenedor estuvo oculto o se movió → recalcular tamaño.
     ajustar() { setTimeout(() => { try { st.map && st.map.invalidateSize(); } catch (e) {} }, 80); },
     editar(name, color, polygon) {
+      st.foco = null;
       st.ed = { name, color: color || MAPA_ZONAS_SIN_COLOR, puntos: (polygon || []).map(p => [Number(p[0]), Number(p[1])]), historia: [] };
       if (st.ultimo) pintar(st.ultimo); else pintarEdicion();
       if (polygon && polygon.length && st.map) st.map.fitBounds(polygon, { padding: [40, 40], maxZoom: 16 });

@@ -916,7 +916,9 @@
       const useBtn = own && num(s.monthlyCOP) != null
         ? '<button class="set-btn ghost" data-cb="rate-use" data-k="' + esc(k) + '"' + (cb.busy ? ' disabled' : '') + '>Que paguen la del sector</button>' : '';
       const nameTd = cb.zren === k ? zRenHTML(s)
-        : '<b>' + (drawn ? '<i class="cb-zsw" style="background:' + zColor(s.sector) + '"></i>' : '') + esc(s.sector) + '</b>'
+        : (drawn && typeof crearMapaZonas === 'function'
+          ? '<button type="button" class="cb-zver" data-cb="z-ver" data-k="' + esc(k) + '" title="Ver en el mapa"' + (zEditing() ? ' disabled' : '') + '><i class="cb-zsw" style="background:' + zColor(s.sector) + '"></i>' + esc(s.sector) + '</button>'
+          : '<b>' + (drawn ? '<i class="cb-zsw" style="background:' + zColor(s.sector) + '"></i>' : '') + esc(s.sector) + '</b>')
           + (origin ? '<em>' + esc(origin) + '</em>' : '') + zActsHTML(s, k, drawn);
       return '<tr data-cb-sector="' + esc(k) + '"><td>' + nameTd + '</td>'
         + '<td>' + esc(pl(num(s.crew) || 0, 'tripulante', 'tripulantes')) + (ownTxt ? '<em class="warn" data-cb-own>' + esc(ownTxt) + '</em>' : '') + '</td>'
@@ -1547,6 +1549,7 @@
       case 'rate-save': saveRate(el.getAttribute('data-k')); break;
       case 'rate-add': addRate(); break;
       case 'rate-use': useRate(el.getAttribute('data-k')); break;
+      case 'z-ver': { const s = zSector(el.getAttribute('data-k')); if (s && cb.zmapa) cb.zmapa.enfocar(s.sector); break; }
       case 'z-dibujar': zDibujar(el.getAttribute('data-k')); break;
       case 'z-deshacer': if (cb.zmapa) cb.zmapa.deshacer(); break;
       case 'z-cancelar': if (cb.zmapa) cb.zmapa.terminar(); paint(); break;
