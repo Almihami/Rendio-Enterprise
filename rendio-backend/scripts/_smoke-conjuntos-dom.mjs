@@ -14,6 +14,10 @@
 //      de la base se ve en el editor; Escape cierra.
 //   5. Desactivar con confirmación que nombra a quienes viven ahí; reactivar desde
 //      «Desactivados» sin preguntar.
+//   6. La zona de tiempos (se mudó aquí desde Calibración el 14-oct): la lista dice
+//      la de cada conjunto (a mano / del dibujo / sin zona); el editor la elige,
+//      «Según el mapa (…)» sigue al pin, y se guarda solo si cambió. Calibración ya
+//      no trae la tarjeta «Zona de cada conjunto»: deja un enlace a Conjuntos.
 //
 // NO cubre: el mapa real (Leaflet va simulado: aquí no hay calles ni arrastre de
 // verdad), el layout (jsdom no pinta) ni la base (eso es _verify-0112.mjs).
@@ -35,6 +39,8 @@ t('index.html: sección data-panel="conjuntos" con #conjuntos-ui.set-ui y #cj-ro
 t('index.html: carga admin-conjuntos.js y admin-conjuntos.css', /<script src="admin-conjuntos\.js"><\/script>/.test(html) && /href="admin-conjuntos\.css"/.test(html));
 t('sw.js: v180 o más y los dos archivos en el APP_SHELL', Number((sw.match(/CACHE_VERSION = 'rendio-turnos-v(\d+)'/) || [])[1]) >= 180 && /'\/admin-conjuntos\.js'/.test(sw) && /'\/admin-conjuntos\.css'/.test(sw));
 t('menú: «Conjuntos» en Rutas › Configuración, junto a Calibración', /id: 'cfg'[\s\S]*?id: 'calib'[\s\S]*?id: 'conjuntos', name: 'Conjuntos'[\s\S]*?tab: 'conjuntos'/.test(consola));
+t('Calibración ya no trae «Zona de cada conjunto»; deja un enlace a Conjuntos', !/id="residence-zones"/.test(html) && !/<h2>Zona de cada conjunto<\/h2>/.test(html) && /data-ir="conjuntos">Conjuntos<\/button>/.test(html)
+  && /t\.dataset\.ir === 'conjuntos'\) return setTab\('conjuntos'\)/.test(read('admin-zonas.js')) && !/function renderResidenceZones/.test(read('admin-calibracion.js')) && !/renderResidenceZones\(\)/.test(read('admin-zonas.js')));
 t('core.js: setTab(\'conjuntos\') llama a renderConjuntos (con guarda)', /name === 'conjuntos'\) \{ if \(typeof window\.renderConjuntos === 'function'\) window\.renderConjuntos\(\); \}/.test(core));
 
 // ── El montaje ──────────────────────────────────────────────────────────────
@@ -70,6 +76,8 @@ async function montar() {
   w.Api = {
     listResidencesAdmin: async () => { log.calls.push(['list']); return JSON.parse(JSON.stringify(w.__cat)); },
     residenceMemberCounts: async () => ({ 'r-olivar': 3, 'r-cambulo': 1, 'r-viejo': 2 }),
+    // Barro Blanco dibujada alrededor de El Olivar; Porvenir sin dibujo.
+    listRouteZones: async () => [{ name: 'Barro Blanco', polygon: [[6.155, -75.381], [6.149, -75.381], [6.149, -75.375], [6.155, -75.375]] }, { name: 'Porvenir', polygon: null }],
     countUpcomingTripsAt: async (id) => { log.calls.push(['count', id]); return id === 'r-olivar' ? 2 : 0; },
     createResidence: async (o) => {
       log.calls.push(['create', o]);
@@ -83,6 +91,7 @@ async function montar() {
       const r = w.__cat.find((x) => x.id === id); Object.assign(r, p);
     },
   };
+  w.eval(read('zonas-dibujo.js') + '\nwindow.zonaEfectiva = zonaEfectiva;');
   w.eval(read('admin-conjuntos.js'));
   await w.renderConjuntos();
   await esperaMucho();
@@ -98,7 +107,7 @@ console.log('Lista');
   const { w, q, qa, log } = await montar();
   t('el resumen cuenta activos y desactivados', /3 conjuntos activos · 1 desactivado/.test(txt(q('#cj-resumen'))), txt(q('#cj-resumen')));
   t('filtro «Activos 3 · Desactivados 1», Activos encendido', qa('#cj-filtro button').map(txt).join('|') === 'Activos 3|Desactivados 1' && q('#cj-filtro [data-v="activos"]').classList.contains('on'), qa('#cj-filtro button').map(txt).join('|'));
-  t('la lista muestra solo los activos, con sus tripulantes y la nota', qa('.cj-row').length === 3 && txt(q('.cj-row[data-id="r-olivar"] small')) === '3 tripulantes · Portería 2' && txt(q('.cj-row[data-id="r-forest"] small')) === '0 tripulantes', txt(q('.cj-row[data-id="r-olivar"] small')));
+  t('la lista muestra solo los activos, con sus tripulantes, su zona y la nota', qa('.cj-row').length === 3 && txt(q('.cj-row[data-id="r-olivar"] small')) === '3 tripulantes · Zona Barro Blanco · Portería 2' && txt(q('.cj-row[data-id="r-forest"] small')) === '0 tripulantes · Sin zona', txt(q('.cj-row[data-id="r-olivar"] small')));
   t('el mapa pinta un punto por conjunto activo y se encuadra', log.puntos.items.length === 3 && !!log.map.bounds);
   escribir(w, q('#cj-q'), 'CAMBULO');
   t('buscar sin tildes ni mayúsculas: «CAMBULO» encuentra «Cámbulo»', qa('.cj-row').length === 1 && !!q('.cj-row[data-id="r-cambulo"]'));
@@ -193,6 +202,42 @@ console.log('Editar');
   click(w, q('.cj-row[data-id="r-forest"] [data-cj="editar"]'));
   q('#cj-nombre').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   t('Escape cierra el editor sin guardar', !q('.cj-ed') && log.calls.filter((c) => c[0] === 'update').length === 3);
+}
+
+// ── 6. La zona de tiempos ───────────────────────────────────────────────────
+console.log('Zona');
+{
+  const { w, q, log } = await montar();
+  t('la lista dice la zona a mano', txt(q('.cj-row[data-id="r-cambulo"] small')) === '1 tripulante · Zona Porvenir (a mano)', txt(q('.cj-row[data-id="r-cambulo"] small')));
+  click(w, q('.cj-row[data-id="r-olivar"] [data-cj="editar"]'));
+  await esperaMucho();
+  const opciones = () => [...q('#cj-zona').options].map((o) => o.textContent);
+  t('el editor trae «Zona de tiempos»: «Según el mapa (Barro Blanco)» y cada zona a mano', !!q('#cj-zona') && opciones().join('|') === 'Según el mapa (Barro Blanco)|Barro Blanco (a mano)|Porvenir (a mano)' && q('#cj-zona').value === '', opciones().join('|'));
+  log.map.fire('click', { latlng: { lat: 6.1600, lng: -75.3700 } });
+  t('«Según el mapa (…)» sigue al pin: fuera del dibujo dice «sin zona»', opciones()[0] === 'Según el mapa (sin zona)');
+  log.map.fire('click', { latlng: { lat: 6.1523, lng: -75.3781 } });
+  t('…y si el pin vuelve adentro, otra vez Barro Blanco (y sin cambios, «Guardar» apagado)', opciones()[0] === 'Según el mapa (Barro Blanco)' && q('#cj-guardar').disabled);
+  q('#cj-zona').value = 'Porvenir'; q('#cj-zona').dispatchEvent(new w.Event('change', { bubbles: true }));
+  t('elegir una zona a mano enciende «Guardar cambios»', !q('#cj-guardar').disabled);
+  click(w, q('#cj-guardar'));
+  await esperaMucho();
+  t('guarda SOLO la zona', JSON.stringify(log.calls.filter((c) => c[0] === 'update').pop()) === JSON.stringify(['update', 'r-olivar', { zona_jefe: 'Porvenir' }]));
+  t('…y la lista la muestra a mano', txt(q('.cj-row[data-id="r-olivar"] small')) === '3 tripulantes · Zona Porvenir (a mano) · Portería 2', txt(q('.cj-row[data-id="r-olivar"] small')));
+  click(w, q('.cj-row[data-id="r-cambulo"] [data-cj="editar"]'));
+  await esperaMucho();
+  t('un conjunto con zona a mano abre con ella elegida', q('#cj-zona').value === 'Porvenir');
+  q('#cj-zona').value = ''; q('#cj-zona').dispatchEvent(new w.Event('input', { bubbles: true }));
+  click(w, q('#cj-guardar'));
+  await esperaMucho();
+  t('«Según el mapa» la devuelve al dibujo (zona_jefe = null)', JSON.stringify(log.calls.filter((c) => c[0] === 'update').pop()) === JSON.stringify(['update', 'r-cambulo', { zona_jefe: null }]));
+  click(w, q('#cj-agregar'));
+  escribir(w, q('#cj-nombre'), 'Los Cerezos');
+  log.map.fire('click', { latlng: { lat: 6.1530, lng: -75.3790 } });
+  q('#cj-zona').value = 'Porvenir'; q('#cj-zona').dispatchEvent(new w.Event('change', { bubbles: true }));
+  click(w, q('#cj-guardar'));
+  await esperaMucho();
+  const cr = log.calls.filter((c) => c[0] === 'create').pop();
+  t('un conjunto nuevo se crea con su zona a mano', cr && cr[1].name === 'Los Cerezos' && cr[1].zonaJefe === 'Porvenir', JSON.stringify(cr));
 }
 
 // ── 5. Desactivar y reactivar ───────────────────────────────────────────────

@@ -1,5 +1,6 @@
 // admin-calibracion.js — Rutas › Configuración › Calibración: los 26 tornillos del
-// optimizador, la tabla de tiempos de Julián y la zona de cada conjunto.
+// optimizador y la tabla de tiempos de Julián (la zona de cada conjunto se pone
+// en Conjuntos, admin-conjuntos.js).
 // Salió de admin-personal.js (mudanza 2026-09-12, sin cambios de lógica): la pantalla
 // ya se había partido en tres en septiembre, pero el código seguía todo junto y
 // Calibración era la mitad de un archivo que se llama "personal" y no habla de gente.
@@ -225,61 +226,10 @@
     } finally { if (btn) btn.disabled = false; }
   }
 
-  // ---- ZONA DE CADA CONJUNTO: LAS EXCEPCIONES (0108) -------------------------
-  // Lo normal es que la zona salga del dibujo. Aquí se pone a mano cuando el
-  // dibujo no basta (Los Cerezos: a 200 m de Olivar, pero Julián lo quiere en
-  // Porvenir). Lo puesto a mano gana siempre; «Según el mapa» lo devuelve al
-  // dibujo. Los datos los trae zonasRecargar() (admin-zonas.js).
-  //
-  // El orden se fija la primera vez y no se vuelve a ordenar al cambiar un
-  // desplegable: si la fila saltara de lugar, el jefe perdería por dónde iba.
-  async function renderResidenceZones() {
-    const box = $('#residence-zones');
-    if (!box) return;
-    const rows = zonasMapa.residencias;
-    if (!rows) { box.innerHTML = '<p class="set-hint">El catálogo de residencias no está disponible en esta base de datos.</p>'; return; }
-    const dib = zonasMapa.lista || [];
-    const cols = zonasMapa.lista ? dib.map(z => z.name) : rtZonasColumnas(rtTablas);
-    const info = rows.map(r => ({ r, e: zonaEfectiva(r.zona_jefe, dib, r.latitude, r.longitude) }));
-    if (!zonasMapa.ordenFilas) {
-      // Sin zona primero (es la lista de trabajo), luego las excepciones.
-      const peso = ({ e }) => !e.zona ? 0 : e.origen === 'mano' ? 1 : 2;
-      zonasMapa.ordenFilas = info.slice()
-        .sort((a, b) => peso(a) - peso(b) || a.r.name.localeCompare(b.r.name, 'es'))
-        .map(x => x.r.id);
-    }
-    const pos = (id) => { const i = zonasMapa.ordenFilas.indexOf(id); return i < 0 ? 1e6 : i; };
-    info.sort((a, b) => pos(a.r.id) - pos(b.r.id));
-    box.innerHTML = info.map(({ r, e }) => {
-      const porMapa = e.en.length === 1 ? e.en[0] : null;
-      const nota = e.en.length > 1 ? `en dos zonas del mapa (${e.en.join(', ')})`
-        : porMapa ? `por el mapa: ${porMapa}` : 'fuera de las zonas dibujadas';
-      return `
-      <div class="rz-row ${e.zona ? '' : 'sin'} ${e.origen === 'mano' ? 'mano' : ''}">
-        <div class="rz-name">${escapeHtml(r.name)}${e.origen === 'mano' ? '<span class="rz-tag">a mano</span>' : ''}<small>${escapeHtml([r.sector, nota].filter(Boolean).join(' · '))}</small></div>
-        <select data-id="${r.id}">
-          <option value="">${porMapa ? 'Según el mapa (' + escapeHtml(porMapa) + ')' : 'Según el mapa (sin zona)'}</option>
-          ${cols.map(z => `<option value="${escapeHtml(z)}" ${r.zona_jefe === z ? 'selected' : ''}>${escapeHtml(z)}</option>`).join('')}
-        </select>
-      </div>`;
-    }).join('');
-    box.querySelectorAll('select').forEach(sel => {
-      sel.addEventListener('change', async () => {
-        sel.disabled = true;
-        try {
-          await Api.saveResidenceZone(sel.dataset.id, sel.value);
-          const r = rows.find(x => x.id === sel.dataset.id);
-          if (r) r.zona_jefe = sel.value || null;
-          renderZonasCard();          // el color del punto y los conteos cambian
-          renderResidenceZones();
-          renderRouteTables();        // el contador de «sin zona» cambia
-        } catch (e) {
-          toast('No se pudo guardar la zona: ' + (e.message || e));
-          renderResidenceZones();     // el desplegable vuelve a lo que de verdad quedó
-        }
-      });
-    });
-  }
+  // ---- ZONA DE CADA CONJUNTO ---------------------------------------------------
+  // La tarjeta de excepciones que vivía aquí se mudó a Rutas › Configuración ›
+  // Conjuntos (admin-conjuntos.js, 14-oct-2026): la zona a mano va en el mismo
+  // editor que el nombre y el pin del conjunto, para no tener dos listas.
 
   // Rutas › Configuración › Calibración — los 26 del optimizador (27 columnas:
   // route_rescue_early sale de que la madrugada sea mayor que 0, no de un campo).

@@ -12,8 +12,12 @@
 //     pasan (trigger de 0112). La pantalla dice cuántos son antes de guardar.
 //   · Desactivar = sale de la lista para elegir (tripulante y registro); quien ya
 //     vive ahí lo conserva y sus viajes siguen igual. No se borra nunca.
-//   · La zona de tiempos y el sector de cobro de un conjunto nuevo salen solos
-//     del dibujo que lo contiene (0108/0109): aquí no se eligen.
+//   · La zona de tiempos sale sola del dibujo que contiene el pin (0108); aquí
+//     se le pone una zona A MANO cuando el dibujo no basta (Los Cerezos: a 200 m
+//     de Olivar, pero Julián lo programa en Porvenir). Antes eso era la tarjeta
+//     «Zona de cada conjunto» de Calibración: se mudó aquí el mismo 14-oct para
+//     que todo lo de un conjunto se edite en un solo lugar.
+//   · El sector de cobro también sale del dibujo (0109) y no se elige aquí.
 //
 // Módulo cerrado (IIFE): solo exporta window.renderConjuntos (core.js → setTab).
 (function () {
@@ -26,6 +30,7 @@
   const cj = {
     lista: null,        // residences (activos y desactivados) · null = no cargó
     miembros: {},       // { residence_id: n tripulantes }
+    zonas: null,        // route_zones [{ name, polygon }] · null = la base no tiene 0108
     error: '',
     filtro: 'activos',  // 'activos' | 'inactivos'
     q: '',
@@ -55,10 +60,12 @@
     const A = window.Api;
     if (!A || typeof A.listResidencesAdmin !== 'function') { cj.lista = null; cj.error = 'Esta versión de la app no trae la lista de conjuntos.'; return; }
     cj.cargando = true;
-    const [lista, miembros] = await Promise.all([
+    const [lista, miembros, zonas] = await Promise.all([
       A.listResidencesAdmin().catch((e) => { cj.error = (e && e.message) || 'No se pudo cargar la lista.'; return null; }),
       typeof A.residenceMemberCounts === 'function' ? A.residenceMemberCounts().catch(() => null) : null,
+      typeof A.listRouteZones === 'function' ? A.listRouteZones().catch(() => null) : null,
     ]);
+    cj.zonas = zonas;
     cj.cargando = false;
     cj.lista = lista;
     if (lista) cj.error = '';
@@ -66,6 +73,25 @@
     cj.sinMiembros = !miembros;
   }
   const porId = (id) => (cj.lista || []).find((r) => r.id === id) || null;
+
+  // La zona de tiempos de un punto: a mano gana; si no, la del dibujo que lo
+  // contiene (la misma regla de zonas-dibujo.js que usa el tablero).
+  function zonaDe(manual, lat, lng) {
+    if (typeof zonaEfectiva === 'function' && cj.zonas) return zonaEfectiva(manual || null, cj.zonas, lat, lng);
+    return { zona: manual || null, origen: manual ? 'mano' : null, en: [] };
+  }
+  function zonaTexto(e) {
+    if (!cj.zonas) return '';
+    if (e.origen === 'mano') return `Zona ${e.zona} (a mano)`;
+    if (e.zona) return `Zona ${e.zona}`;
+    return e.en.length > 1 ? `En dos zonas: ${e.en.join(', ')}` : 'Sin zona';
+  }
+  // «Según el mapa (…)» para el pin que se está editando.
+  function segunMapa(lat, lng) {
+    if (lat == null || lng == null) return 'Según el mapa (falta el pin)';
+    const e = zonaDe(null, lat, lng);
+    return e.zona ? `Según el mapa (${e.zona})` : e.en.length > 1 ? `Según el mapa (en dos zonas: ${e.en.join(', ')})` : 'Según el mapa (sin zona)';
+  }
   const visibles = () => {
     const q = cj.q.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     return (cj.lista || []).filter((r) => (cj.filtro === 'activos' ? r.is_active : !r.is_active))
@@ -166,9 +192,9 @@
     const r = id ? porId(id) : null;
     if (id && !r) return;
     cj.ed = r
-      ? { id: r.id, name: r.name, note: r.access_note || '', lat: r.latitude, lng: r.longitude, activo: r.is_active,
-          orig: { name: r.name, note: r.access_note || '', lat: r.latitude, lng: r.longitude }, viajes: null, busy: false, err: '' }
-      : { id: null, name: '', note: '', lat: null, lng: null, activo: true, orig: null, viajes: null, busy: false, err: '' };
+      ? { id: r.id, name: r.name, note: r.access_note || '', lat: r.latitude, lng: r.longitude, zona: r.zona_jefe || '', activo: r.is_active,
+          orig: { name: r.name, note: r.access_note || '', lat: r.latitude, lng: r.longitude, zona: r.zona_jefe || '' }, viajes: null, busy: false, err: '' }
+      : { id: null, name: '', note: '', lat: null, lng: null, zona: '', activo: true, orig: null, viajes: null, busy: false, err: '' };
     pintarEditor();
     pintarMapa();
     pintarLista();
@@ -191,6 +217,7 @@
   const cambio = (ed) => !ed.orig ? null : {
     nombre: ed.name.trim() !== ed.orig.name || ed.note.trim() !== (ed.orig.note || '').trim(),
     pin: ed.lat !== ed.orig.lat || ed.lng !== ed.orig.lng,
+    zona: ed.zona !== ed.orig.zona,
   };
 
   function pintarEditor() {
@@ -210,6 +237,13 @@
         </div>
         <div class="set-field cj-coordf"><label for="cj-coord">Pin de la portería</label>
           <input class="set-input mono" id="cj-coord" value="${esc(fmt(ed.lat, ed.lng))}" placeholder="Toca el mapa o pega la coordenada: 6.153123, -75.379012" autocomplete="off" inputmode="decimal" /></div>
+        ${cj.zonas ? `<div class="set-field cj-zonaf"><label for="cj-zona">Zona de tiempos</label>
+          <select class="set-input" id="cj-zona">
+            <option value="">${esc(segunMapa(ed.lat, ed.lng))}</option>
+            ${cj.zonas.map((z) => `<option value="${esc(z.name)}"${ed.zona === z.name ? ' selected' : ''}>${esc(z.name)} (a mano)</option>`).join('')}
+            ${ed.zona && !cj.zonas.some((z) => z.name === ed.zona) ? `<option value="${esc(ed.zona)}" selected>${esc(ed.zona)} (a mano)</option>` : ''}
+          </select>
+          <p class="set-hint cj-zonah">Lo normal es <b>«Según el mapa»</b>: toma la zona del dibujo que contiene el pin. Elige una a mano solo si el dibujo no basta (Los Cerezos queda junto a Olivar, pero Julián lo programa en Porvenir). Lo puesto a mano gana sobre el dibujo.</p></div>` : ''}
         <div class="cj-ed-msg" id="cj-ed-msg"></div>
         <div class="cj-ed-acts">
           <button class="set-btn ghost sm" data-cj="cancelar">Cancelar</button>
@@ -224,8 +258,10 @@
     const ed = cj.ed; if (!ed) return;
     const msg = document.getElementById('cj-ed-msg'), btn = document.getElementById('cj-guardar');
     const c = cambio(ed);
+    const op = document.querySelector('#cj-zona option[value=""]');
+    if (op) op.textContent = segunMapa(ed.lat, ed.lng);
     const listo = ed.name.trim() !== '' && ed.lat != null && ed.lng != null;
-    const algo = !c || c.nombre || c.pin;
+    const algo = !c || c.nombre || c.pin || c.zona;
     if (btn) { btn.disabled = ed.busy || !listo || !algo; btn.textContent = ed.busy ? 'Guardando…' : (ed.id ? 'Guardar cambios' : 'Agregar'); }
     if (!msg) return;
     if (ed.err) { msg.className = 'cj-ed-msg err'; msg.textContent = ed.err; return; }
@@ -233,7 +269,7 @@
     if (c && (c.pin || c.nombre) && ed.viajes) {
       msg.innerHTML = `<b>${plural(ed.viajes, 'viaje ya pedido', 'viajes ya pedidos')}</b> a este conjunto ${ed.viajes === 1 ? 'se actualiza' : 'se actualizan'} con el cambio${c.pin ? ' (el carro va al punto nuevo)' : ''}. Si la ruta de ese día ya está publicada, vuelve a optimizarla.`;
     } else if (!ed.id) {
-      msg.textContent = 'La zona de tiempos y el sector de cobro salen solos del dibujo que lo contenga.';
+      msg.textContent = 'El sector de cobro sale solo del dibujo que contenga el pin.';
     } else msg.textContent = '';
   }
 
@@ -250,10 +286,11 @@
         const c = cambio(ed), p = {};
         if (c.nombre) { p.name = name; p.access_note = ed.note; }
         if (c.pin) { p.latitude = ed.lat; p.longitude = ed.lng; }
+        if (c.zona) p.zona_jefe = ed.zona || null;
         await Api.updateResidence(ed.id, p);
         avisar(`«${name}» guardado`);
       } else {
-        await Api.createResidence({ name, latitude: ed.lat, longitude: ed.lng, accessNote: ed.note });
+        await Api.createResidence({ name, latitude: ed.lat, longitude: ed.lng, accessNote: ed.note, zonaJefe: ed.zona || null });
         avisar(`«${name}» agregado`);
         cj.filtro = 'activos';
       }
@@ -300,7 +337,7 @@
     const editando = !!cj.ed;
     el.innerHTML = vis.length ? vis.map((r) => {
       const n = cj.miembros[r.id] || 0;
-      const sub = [cj.sinMiembros ? '' : plural(n, 'tripulante', 'tripulantes'), r.access_note || ''].filter(Boolean).join(' · ');
+      const sub = [cj.sinMiembros ? '' : plural(n, 'tripulante', 'tripulantes'), zonaTexto(zonaDe(r.zona_jefe, r.latitude, r.longitude)), r.access_note || ''].filter(Boolean).join(' · ');
       const sel = cj.ed && cj.ed.id === r.id;
       return `
         <div class="zn-row cj-row${sel ? ' sel' : ''}${r.is_active ? '' : ' off'}" data-id="${esc(r.id)}">
@@ -341,10 +378,15 @@
       if (!ed) return;
       if (t.id === 'cj-nombre') { ed.name = t.value; ed.err = ''; pintarEditorEstado(); }
       else if (t.id === 'cj-nota') { ed.note = t.value; pintarEditorEstado(); }
+      else if (t.id === 'cj-zona') { ed.zona = t.value; pintarEditorEstado(); }
       else if (t.id === 'cj-coord') {
         const p = leerCoordenada(t.value);
         if (p) { ponerPin(p.lat, p.lng); if (cj.mapa && dentro(p.lat, p.lng)) cj.mapa.setView([p.lat, p.lng], Math.max(cj.mapa.getZoom(), 16)); }
       }
+    });
+    // Por si algún navegador no manda «input» al cambiar un desplegable.
+    root.addEventListener('change', (e) => {
+      if (e.target.id === 'cj-zona' && cj.ed && cj.ed.zona !== e.target.value) { cj.ed.zona = e.target.value; pintarEditorEstado(); }
     });
     root.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && cj.ed && /^cj-(nombre|nota|coord)$/.test(e.target.id)) { e.preventDefault(); guardar(); }
