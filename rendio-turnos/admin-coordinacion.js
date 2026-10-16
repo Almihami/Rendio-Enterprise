@@ -42,6 +42,7 @@
     poll: null,
     bound: false,
     pendingAux: null,        // del enlace profundo, se consume al pintar
+    vvOff: null,             // modo app: suelta el seguimiento del teclado
   };
 
   // ── utilidades ───────────────────────────────────────────────────────────
@@ -158,6 +159,7 @@
     const f = document.activeElement;
     if (f && el.contains(f) && (f.id === 'co-phone' || f.id === 'co-hours')) return;
     el.innerHTML = contactHTML();
+    ajustarAltoPc();
   }
   async function loadContact() {
     const a = api();
@@ -280,8 +282,8 @@
       <div class="co-msgs" id="co-msgs" aria-live="polite"></div>
       <div class="co-ctx" id="co-ctx"></div>
       <div class="co-foot">
-        <input id="co-input" type="text" maxlength="500" autocomplete="off" placeholder="Escríbele al tripulante…" />
-        <button class="set-btn" data-co="send" id="co-send"><svg class="icon"><use href="#i-send"/></svg>Enviar</button>
+        <textarea id="co-input" rows="1" maxlength="500" autocomplete="off" enterkeyhint="send" placeholder="Escríbele al tripulante…"></textarea>
+        <button class="co-sendb" data-co="send" id="co-send" aria-label="Enviar" title="Enviar"><svg class="icon"><use href="#i-send"/></svg></button>
       </div>`;
     co.msgSig = '';
     paintThreadHead();
@@ -293,12 +295,14 @@
     const r = m.reservation;
     const ctx = r && r.id ? `<a class="co-msg-ctx" href="${esc(resHref(r.id))}" data-co="res-chat" data-rid="${esc(r.id)}">
         <svg class="icon"><use href="#i-route"/></svg><span>${esc(resLabel(r))}</span><u>Abrir el chat del traslado</u></a>` : '';
-    const leido = mio && m.read ? ' · Leído' : '';
+    // Como en cualquier chat: lo del equipo a la derecha y lo del tripulante a
+    // la izquierda, sin rótulo en cada burbuja (antes decía «COORDINACIÓN» y
+    // «TRIPULANTE» en todas). La hora y el «Leído» van al pie de la burbuja.
+    const leido = mio && m.read ? ' · Leído' : (mio && m._tmp ? ' · Enviando…' : '');
     return `<div class="co-msg ${mio ? 'mine' : 'their'}${m._tmp ? ' tmp' : ''}">
-      <em>${mio ? 'Coordinación' : 'Tripulante'}</em>
       <p>${esc(m.body)}</p>
       ${ctx}
-      <span>${esc(hm(m.at))}${leido}</span>
+      <span class="co-meta">${esc(hm(m.at))}${leido}</span>
     </div>`;
   }
   function paintMsgs() {
@@ -377,14 +381,91 @@
     paintList(true);
     paintThread();
     loadMsgs(false);
+    // Modo app: «atrás» del teléfono tiene que cerrar el chat y no salir de la
+    // pantalla. Por eso el chat deja una entrada en el historial al abrirse.
+    if (modoApp() && !(history.state && history.state.coChat)) {
+      try { history.pushState({ coChat: auxId }, ''); } catch (_) { /* sin historial: queda «Volver» */ }
+    }
+    sincronizarModoApp();
     const i = $co('co-input');
     // En el celular el teclado taparía el hilo: solo se enfoca en escritorio.
-    if (i && window.matchMedia && window.matchMedia('(min-width: 1000px)').matches) { try { i.focus(); } catch (_) { /* */ } }
+    // preventScroll: el foco no puede arrastrar la página hacia abajo y dejar el
+    // título de la pantalla fuera de vista.
+    if (i && window.matchMedia && window.matchMedia('(min-width: 1000px)').matches) { try { i.focus({ preventScroll: true }); } catch (_) { /* */ } }
   }
-  function closeThread() {
+  // desdeHistorial: lo llama el popstate. Si el chat abrió una entrada en el
+  // historial, «Volver» la deshace con history.back() y el cierre de verdad lo
+  // hace ese popstate (así el «atrás» del teléfono y el botón hacen lo mismo).
+  function closeThread(desdeHistorial) {
+    if (!desdeHistorial && history.state && history.state.coChat) {
+      try { history.back(); return; } catch (_) { /* cae al cierre directo */ }
+    }
     co.openAux = null; co.msgs = undefined; co.seq++;
     paintList(true);
     paintThread();
+    sincronizarModoApp();
+  }
+
+  // ── modo app en el celular (15-oct-2026) ─────────────────────────────────
+  // Pedido de la profa: en el celular, entrar a un chat tiene que sentirse como
+  // una app de mensajes — pantalla completa, encima de todo, el campo pegado al
+  // teclado y «atrás» cerrándolo. En el computador es otra cosa: bandeja y
+  // conversación lado a lado (CSS). El corte es el de siempre, 1000 px.
+  const MQ_APP = '(max-width: 999px)';
+  const modoApp = () => !!(window.matchMedia && window.matchMedia(MQ_APP).matches);
+  function sincronizarModoApp() {
+    const on = !!co.openAux && modoApp() && visible();
+    document.documentElement.classList.toggle('co-chat-open', on);
+    if (on) seguirTeclado(); else soltarTeclado();
+  }
+  // El teclado del celular achica el «visual viewport», no la ventana: sin esto
+  // el campo para escribir queda debajo del teclado. El chat toma el alto y la
+  // posición del área visible, y si estaba al final del hilo se queda al final.
+  function seguirTeclado() {
+    if (co.vvOff || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const aplicar = () => {
+      const el = $co('co-thread'); if (!el) return;
+      const m = $co('co-msgs');
+      const abajo = m ? (m.scrollHeight - m.scrollTop - m.clientHeight < 40) : false;
+      el.style.height = vv.height + 'px';
+      el.style.top = vv.offsetTop + 'px';
+      if (abajo && m) m.scrollTop = m.scrollHeight;
+    };
+    vv.addEventListener('resize', aplicar);
+    vv.addEventListener('scroll', aplicar);
+    co.vvOff = () => {
+      vv.removeEventListener('resize', aplicar);
+      vv.removeEventListener('scroll', aplicar);
+      const el = $co('co-thread'); if (el) { el.style.height = ''; el.style.top = ''; }
+    };
+    aplicar();
+  }
+  function soltarTeclado() { if (co.vvOff) { co.vvOff(); co.vvOff = null; } }
+  // Computador: bandeja y conversación ocupan lo que queda de la ventana debajo
+  // del encabezado (con la tarjeta del teléfono abierta o cerrada), para que el
+  // campo de escribir se vea siempre sin bajar la página. Mínimo 480 px.
+  function ajustarAltoPc() {
+    const g = $co('co-grid'); if (!g) return;
+    if (modoApp() || !g.offsetParent) { g.style.height = ''; return; }
+    const top = g.getBoundingClientRect().top;
+    g.style.height = Math.max(480, Math.round(window.innerHeight - top - 20)) + 'px';
+  }
+  window.addEventListener('resize', () => { if (visible()) ajustarAltoPc(); });
+  window.addEventListener('popstate', () => {
+    if (co.openAux && !(history.state && history.state.coChat)) closeThread(true);
+  });
+  if (window.matchMedia) {
+    const mq = window.matchMedia(MQ_APP);
+    const alCambiar = () => sincronizarModoApp();
+    if (mq.addEventListener) mq.addEventListener('change', alCambiar);
+    else if (mq.addListener) mq.addListener(alCambiar);
+  }
+  // El campo crece con lo escrito (hasta ~5 renglones) y vuelve a uno al enviar.
+  function ajustarCampo() {
+    const i = $co('co-input'); if (!i || i.tagName !== 'TEXTAREA') return;
+    i.style.height = 'auto';
+    i.style.height = Math.min(i.scrollHeight, 132) + 'px';
   }
 
   async function send() {
@@ -397,6 +478,7 @@
     co.sending = true;
     const btn = $co('co-send'); if (btn) btn.disabled = true;
     i.value = '';
+    ajustarCampo();
     // Optimista: la burbuja aparece de una; si falla se quita y se devuelve el texto.
     const temp = { id: 'tmp' + Date.now(), role: 'admin', mine: true, body, at: new Date().toISOString(), read: false, _tmp: true,
       reservation: rid ? (ctxRes() || null) : null };
@@ -441,6 +523,10 @@
   }
   function stopCoordTimer() {
     if (co.poll) { clearInterval(co.poll); co.poll = null; }
+    // Si se sale de la pestaña con un chat abierto en modo app, la pantalla no
+    // puede quedar bloqueada: al volver, renderCoordinacion lo pone otra vez.
+    document.documentElement.classList.remove('co-chat-open');
+    soltarTeclado();
   }
 
   // ── eventos ──────────────────────────────────────────────────────────────
@@ -462,7 +548,11 @@
       // 'res-chat' es un <a href="#/reservas?chat=…">: el hashchange de core
       // abre Reservas con ese hilo. No se intercepta.
     });
-    // Enter manda: en el teclado del celular el botón queda tapado.
+    r.addEventListener('input', (e) => { if (e.target && e.target.id === 'co-input') ajustarCampo(); });
+    // Abrir o cerrar la tarjeta del teléfono cambia lo que queda para el chat
+    // ('toggle' no burbujea: se escucha en captura).
+    r.addEventListener('toggle', () => ajustarAltoPc(), true);
+    // Enter manda (Mayúscula + Enter = otro renglón en el computador).
     r.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target && e.target.id === 'co-input' && !e.shiftKey) { e.preventDefault(); send(); }
     });
@@ -483,6 +573,8 @@
     if (co.openAux && !pend) loadMsgs(true);
     stopCoordTimer();
     co.poll = setInterval(tick, CO_POLL_MS);
+    sincronizarModoApp();
+    ajustarAltoPc();
   }
 
   // ── enlace profundo #/coordinacion?aux=<id> (solo el jefe) ───────────────

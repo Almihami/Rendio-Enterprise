@@ -154,7 +154,10 @@ console.log('\n── admin-coordinacion.js · bandeja, hilo y respuesta ──'
   const tel = w.document.querySelector('#co-th-head a[href^="tel:"]');
   t('teléfono del tripulante como enlace tel:', tel && tel.getAttribute('href') === 'tel:3001112233', tel && tel.getAttribute('href'));
   const bubs = [...w.document.querySelectorAll('#co-msgs .co-msg')];
-  t('3 burbujas: tripulante a la izquierda, Coordinación a la derecha', bubs.length === 3 && bubs[0].classList.contains('their') && bubs[1].classList.contains('mine') && /Coordinación/.test(bubs[1].textContent));
+  // 15-oct-2026: como en cualquier chat, sin rótulo en cada burbuja; quién es
+  // quién lo dice el lado (clase) y el campo de escribir es un textarea.
+  t('3 burbujas: tripulante a la izquierda, Coordinación a la derecha, sin rótulo', bubs.length === 3 && bubs[0].classList.contains('their') && bubs[1].classList.contains('mine') && !bubs[1].querySelector('em') && !/TRIPULANTE|Tripulante/.test(bubs[0].textContent));
+  t('el campo de escribir es un textarea que crece (Enter envía)', w.document.getElementById('co-input').tagName === 'TEXTAREA');
   t('«Leído» solo en lo del jefe que el tripulante ya leyó', /Leído/.test(bubs[1].textContent) && !/Leído/.test(bubs[0].textContent));
   t('el texto del tripulante se escapa (sin <img> vivo)', !w.document.querySelector('#co-msgs img') && /<img src=x/.test(bubs[2].textContent));
   const ctxA = bubs[2].querySelector('a.co-msg-ctx');

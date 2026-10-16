@@ -48,10 +48,14 @@
 #coordinacion-ui .co-cstate{font-size:12px;font-weight:700;color:var(--ink2)}
 
 /* ── Bandeja + hilo ───────────────────────────────────────────────────────── */
+/* 15-oct-2026 (pedido de la profa): entrar a un chat tiene que sentirse como un
+   chat. En el CELULAR (< 1000 px) el hilo se abre a pantalla completa, encima de
+   todo, como una app de mensajes (admin-coordinacion.js: «atrás» del teléfono lo
+   cierra y el alto sigue al teclado). En el COMPUTADOR es otra cosa: bandeja y
+   conversación lado a lado, del alto de la ventana, como un chat de escritorio. */
 #coordinacion-ui .co-grid{display:grid;grid-template-columns:1fr;gap:14px}
 #coordinacion-ui .co-list{display:grid;gap:8px;align-content:start}
-#coordinacion-ui .co-thread{display:none;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;height:min(72vh,680px);min-height:420px}
-#coordinacion-ui .co-grid.has-open .co-list{display:none}
+#coordinacion-ui .co-thread{display:none;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 #coordinacion-ui .co-grid.has-open .co-thread{display:flex}
 
 #coordinacion-ui .co-empty{border:1px dashed var(--line2);border-radius:14px;padding:28px 20px;text-align:center;color:var(--ink2);display:flex;flex-direction:column;align-items:center;gap:6px}
@@ -79,21 +83,23 @@
 #coordinacion-ui .co-th-none b{font-size:15px;color:var(--ink)}
 #coordinacion-ui .co-th-none span{font-size:13px}
 
-#coordinacion-ui .co-th-head{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+/* Cabecera del chat: volver · foto · nombre y lugar · llamar. */
+#coordinacion-ui .co-th-head{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
 #coordinacion-ui .co-who{flex:1;min-width:0}
 #coordinacion-ui .co-who b{display:block;font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #coordinacion-ui .co-who span{display:block;font-size:12px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #coordinacion-ui .co-ic{flex:0 0 auto;width:40px;height:40px;border-radius:12px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);display:grid;place-items:center;cursor:pointer;text-decoration:none}
 #coordinacion-ui .co-ic .icon{width:17px;height:17px}
 
-#coordinacion-ui .co-msgs{flex:1;min-height:0;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:9px;background:var(--bg)}
+/* Mensajes: burbujas sin rótulo (lo del equipo a la derecha, lo del tripulante
+   a la izquierda); la hora y el «Leído» al pie de cada una. */
+#coordinacion-ui .co-msgs{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px;display:flex;flex-direction:column;gap:6px;background:var(--bg)}
 #coordinacion-ui .co-load{font-size:13px;color:var(--ink2)}
 #coordinacion-ui .co-msgs .co-empty{margin:auto;border:0}
-#coordinacion-ui .co-day{align-self:center;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);padding:4px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line)}
-#coordinacion-ui .co-msg{max-width:80%;padding:9px 12px;border-radius:15px}
-#coordinacion-ui .co-msg em{display:block;font-style:normal;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;opacity:.7;margin-bottom:3px}
-#coordinacion-ui .co-msg p{margin:0;font-size:14px;line-height:1.4;word-break:break-word;white-space:pre-wrap}
-#coordinacion-ui .co-msg > span{display:block;margin-top:3px;font-size:10.5px;opacity:.65;text-align:right}
+#coordinacion-ui .co-day{align-self:center;margin:8px 0 4px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);padding:4px 10px;border-radius:999px;background:var(--panel);border:1px solid var(--line)}
+#coordinacion-ui .co-msg{max-width:78%;padding:8px 12px 6px;border-radius:16px;box-shadow:0 1px 1.5px rgba(33,29,24,.07)}
+#coordinacion-ui .co-msg p{margin:0;font-size:14.5px;line-height:1.4;word-break:break-word;white-space:pre-wrap}
+#coordinacion-ui .co-msg .co-meta{display:block;margin-top:2px;font-size:10.5px;opacity:.62;text-align:right;font-variant-numeric:tabular-nums}
 #coordinacion-ui .co-msg.mine{align-self:flex-end;background:var(--ink);color:var(--panel);border-bottom-right-radius:5px}
 #coordinacion-ui .co-msg.their{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:5px}
 #coordinacion-ui .co-msg.tmp{opacity:.6}
@@ -104,23 +110,51 @@
 #coordinacion-ui .co-msg-ctx u{text-underline-offset:2px}
 #coordinacion-ui .co-msg.mine .co-msg-ctx{background:rgba(255,255,255,.14);color:var(--panel)}
 
-#coordinacion-ui .co-ctx{display:none;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink2);background:var(--info-soft)}
+#coordinacion-ui .co-ctx{flex:0 0 auto;display:none;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink2);background:var(--info-soft)}
 #coordinacion-ui .co-ctx.on{display:flex}
 #coordinacion-ui .co-ctx b{color:var(--info)}
 #coordinacion-ui .co-ctx button{margin-left:auto;background:none;border:0;font:inherit;font-size:12px;font-weight:700;color:var(--ink2);text-decoration:underline;cursor:pointer;min-height:32px}
-#coordinacion-ui .co-foot{display:flex;align-items:center;gap:9px;padding:11px 14px calc(11px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
-#coordinacion-ui .co-foot input{flex:1;min-width:0;height:44px;padding:0 15px;border-radius:12px;border:1px solid var(--line2);background:var(--bg);font-family:var(--font);font-size:14px;color:var(--ink)}
-#coordinacion-ui .co-foot input:focus{outline:none;border-color:var(--orange)}
-#coordinacion-ui .co-foot .set-btn{height:44px}
 
-/* Escritorio: bandeja y hilo lado a lado; «Volver» sobra. */
+/* Campo para escribir: crece con el texto; el botón de enviar, redondo. */
+#coordinacion-ui .co-foot{flex:0 0 auto;display:flex;align-items:flex-end;gap:9px;padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--panel)}
+#coordinacion-ui .co-foot textarea{flex:1;min-width:0;min-height:44px;max-height:132px;resize:none;padding:11px 16px;border-radius:22px;border:1px solid var(--line2);background:var(--bg);font-family:var(--font);font-size:15px;line-height:1.4;color:var(--ink);overflow-y:auto}
+#coordinacion-ui .co-foot textarea:focus{outline:none;border-color:var(--orange)}
+#coordinacion-ui .co-sendb{flex:0 0 auto;width:44px;height:44px;border-radius:999px;border:0;background:var(--orange);color:#fff;display:grid;place-items:center;cursor:pointer;box-shadow:0 6px 16px rgba(242,101,34,.28)}
+#coordinacion-ui .co-sendb .icon{width:19px;height:19px;margin-left:-2px}
+#coordinacion-ui .co-sendb:disabled{opacity:.55;cursor:not-allowed}
+
+/* ── COMPUTADOR: bandeja y conversación lado a lado, del alto de la ventana ── */
 @media (min-width:1000px){
-  #coordinacion-ui .co-grid{grid-template-columns:minmax(260px,340px) 1fr;align-items:start}
-  #coordinacion-ui .co-thread{display:flex}
-  #coordinacion-ui .co-grid.has-open .co-list{display:grid}
-  #coordinacion-ui .co-list{max-height:min(72vh,680px);overflow-y:auto;padding-right:2px}
+  #coordinacion-ui .co-grid{grid-template-columns:minmax(280px,360px) 1fr;gap:0;align-items:stretch;
+    height:max(520px,calc(100dvh - 300px));border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--panel)}
+  /* La bandeja es una lista de conversaciones, no tarjetas sueltas. */
+  #coordinacion-ui .co-list,#coordinacion-ui .co-grid.has-open .co-list{display:block;overflow-y:auto;border-right:1px solid var(--line);background:var(--panel)}
+  #coordinacion-ui .co-row{border:0;border-bottom:1px solid var(--line);border-left:3px solid transparent;border-radius:0;min-height:72px;padding:12px 16px}
+  #coordinacion-ui .co-row:hover{background:var(--panel2)}
+  #coordinacion-ui .co-row.unread{border-left-color:var(--orange)}
+  #coordinacion-ui .co-row.on{background:var(--orange-soft);border-left-color:var(--orange);box-shadow:none}
+  #coordinacion-ui .co-list > .co-empty{margin:16px;border-radius:12px}
+  #coordinacion-ui .co-thread{display:flex;border:0;border-radius:0}
   #coordinacion-ui .co-back{display:none}
+  #coordinacion-ui .co-msgs{padding:20px 6%}
+  #coordinacion-ui .co-msg{max-width:min(78%,560px)}
 }
+
+/* ── CELULAR: el chat a pantalla completa, como una app ────────────────────── */
+@media (max-width:999px){
+  #coordinacion-ui .co-grid.has-open .co-list{display:none}
+  #coordinacion-ui .co-grid.has-open .co-thread{position:fixed;left:0;right:0;top:0;height:100dvh;z-index:60;border:0;border-radius:0}
+  #coordinacion-ui .co-th-head{padding:calc(8px + env(safe-area-inset-top,0px)) 10px 8px;gap:10px;box-shadow:0 1px 0 var(--line)}
+  #coordinacion-ui .co-th-head .co-back{border:0;width:42px;height:42px}
+  #coordinacion-ui .co-th-head .co-back .icon{width:22px;height:22px}
+  #coordinacion-ui .co-msgs{padding:12px 12px 14px}
+  #coordinacion-ui .co-msg{max-width:84%}
+}
+/* Con el chat abierto en el celular, lo de atrás no se mueve y los avisos
+   (toast) salen encima del chat y por encima del campo de escribir. */
+html.co-chat-open,html.co-chat-open body,html.co-chat-open #app-main{overflow:hidden}
+html.co-chat-open #toast{z-index:70;bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+
 @media (max-width:720px){
   #coordinacion-ui .sh-phead{gap:12px}
   #coordinacion-ui .sh-phead h1{font-size:22px}
@@ -129,6 +163,4 @@
   #coordinacion-ui .co-card > summary{flex-wrap:wrap}
   #coordinacion-ui .co-card-b{grid-template-columns:1fr}
   #coordinacion-ui .co-f-foot .set-btn{width:100%;margin-left:0}
-  #coordinacion-ui .co-thread{height:calc(100dvh - 190px);min-height:380px}
-  #coordinacion-ui .co-msg{max-width:88%}
 }

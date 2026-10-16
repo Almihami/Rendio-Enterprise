@@ -400,10 +400,12 @@
     const v = safe(() => c.unread(), 0);
     return typeof v === 'number' && v > 0 ? v : 0;
   }
+  // Desde el 15-oct-2026 la campana cuenta SOLO los avisos: lo de Coordinación
+  // va en su propio botón de chat, al lado (pedido de la profa). Si se siguiera
+  // sumando aquí, el mismo mensaje encendería dos globos.
   function bellCount() {
     const av = window.AuxRxAvisos;
-    const n = av && typeof av.unseen === 'function' ? Number(safe(() => av.unseen(), 0)) || 0 : 0;
-    return n + coordUnread();
+    return av && typeof av.unseen === 'function' ? Number(safe(() => av.unseen(), 0)) || 0 : 0;
   }
   const badge = (n) => (n > 99 ? '99+' : String(n));
 
@@ -498,6 +500,7 @@
     const full = String(prof.full_name || '').trim();
     const first = full.split(/\s+/)[0] || 'Auxiliar';
     const n = o.sig ? 0 : bellCount();
+    const cn = o.sig ? 0 : coordUnread();
     const up = upcoming();
     const live = up.find(isLive) || null;
     const next = up.find(t => t !== live && (t.status === 'pending' || t.status === 'assigned')) || null;
@@ -509,6 +512,9 @@
       + '<div class="rx-home-h">'
       + '<button type="button" class="rx-home-av" data-rx="rx-tab" data-tab="perfil" aria-label="Perfil">' + (u && u.av ? u.av(initials(full, 'A')) : '') + '</button>'
       + '<div class="rx-home-g"><span>' + esc(greet()) + '</span><b>' + esc(first) + '</b></div>'
+      // Chat directo con Coordinación (15-oct-2026): mismo botón que la campana,
+      // con su propio globo de mensajes sin leer.
+      + '<button type="button" class="rx-bell rx-chatb" data-rx="open-coord" aria-label="Chat con Coordinación">' + ic('MessageCircle', 21) + (cn > 0 ? '<span>' + badge(cn) + '</span>' : '') + '</button>'
       + '<button type="button" class="rx-bell" data-rx="open-notifs" aria-label="Notificaciones">' + ic('Bell', 21) + (n > 0 ? '<span>' + badge(n) + '</span>' : '') + '</button>'
       + '</div>'
       + '<div class="rx-body home">';
@@ -573,20 +579,19 @@
     return h;
   }
 
-  // ── Globo de la campana ──────────────────────────────────────────────────
-  let lastBell = null;
-  function paintBell(root, animate) {
-    const bell = root && root.querySelector('.rx-bell');
-    if (!bell) return;
-    const n = bellCount();
-    const cur = bell.querySelector('span');
-    const changed = lastBell !== null && n !== lastBell;
+  // ── Globos de la campana y del chat ──────────────────────────────────────
+  // Los dos botones usan el mismo globo del diseño (rx-bell span + rxPop).
+  const lastGlobo = { bell: null, chat: null };
+  function paintGlobo(btn, n, key, animate) {
+    if (!btn) return;
+    const cur = btn.querySelector('span');
+    const changed = lastGlobo[key] !== null && n !== lastGlobo[key];
     if (n <= 0) { if (cur) cur.remove(); }
     else if (!cur) {
       const s = document.createElement('span');
       s.textContent = badge(n);
       if (changed || animate) s.classList.add('rx-anim');
-      bell.appendChild(s);
+      btn.appendChild(s);
     } else if (cur.textContent !== badge(n) || (changed && animate)) {
       // key={unread}: se RECREA para que rxPop corra otra vez.
       const s = document.createElement('span');
@@ -594,7 +599,12 @@
       s.classList.add('rx-anim');
       cur.replaceWith(s);
     }
-    lastBell = n;
+    lastGlobo[key] = n;
+  }
+  function paintBell(root, animate) {
+    if (!root) return;
+    paintGlobo(root.querySelector('.rx-bell[data-rx="open-notifs"]'), bellCount(), 'bell', animate);
+    paintGlobo(root.querySelector('.rx-chatb'), coordUnread(), 'chat', animate);
   }
   function homeRoot() {
     const ui = document.getElementById('auxiliar-ui');

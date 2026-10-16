@@ -296,8 +296,9 @@ t('a bordo, «Me siento en riesgo»: la eventualidad lleva el texto, severidad h
   !!a0 && a0.category === 'aux_emergency' && a0.description === 'Me siento en riesgo — Va muy rápido' && a0.severity === 'high'
   && a0.details.motivo === 'inseguro' && a0.details.texto === 'Me siento en riesgo' && a0.details.fase === 'onboard' && a0.reservationId === d.principal, JSON.stringify(a0));
 t('…el 🚨 del chat dice lo mismo', E.llamadas.some(c => c.fn === 'Api.sendReservationMessage' && c.args[1] === '🚨 Me siento en riesgo — Va muy rápido'));
-t('…y el aviso a los jefes también («🚨 Emergencia de un tripulante»)', avisosOps.length === 1 && avisosOps[0].title === '🚨 Emergencia de un tripulante'
-  && avisosOps[0].body === 'Laura Gómez Ruiz: Me siento en riesgo — Va muy rápido', JSON.stringify(avisosOps));
+// 15-oct-2026: el nombre (nombre y primer apellido) va en el título del aviso.
+t('…y el aviso a los jefes dice quién («🚨 Emergencia de Laura Gómez»)', avisosOps.length === 1 && avisosOps[0].title === '🚨 Emergencia de Laura Gómez'
+  && avisosOps[0].body === 'Me siento en riesgo — Va muy rápido', JSON.stringify(avisosOps));
 t('…la hoja se cierra al enviar', A.state.alarm === null);
 await wait(240);
 d = await abrir('llegada-parada');
@@ -305,8 +306,8 @@ await abrirAlarma();
 click(q('[data-ax="alarm-pick"][data-v="equipaje"]')); await wait(10);
 click(q('[data-ax="alarm-send"]')); await wait(60);
 inc = E.llamadas.filter(c => c.fn === 'Api.reportIncident').pop(); a0 = inc && inc.args[0];
-t('llegada, «Estoy esperando mi equipaje»: severidad medium y «Novedad de un tripulante»', !!a0 && a0.description === 'Estoy esperando mi equipaje'
-  && a0.severity === 'medium' && avisosOps.length === 2 && avisosOps[1].title === 'Novedad de un tripulante', JSON.stringify(a0) + JSON.stringify(avisosOps[1]));
+t('llegada, «Estoy esperando mi equipaje»: severidad medium y «Novedad de Laura Gómez»', !!a0 && a0.description === 'Estoy esperando mi equipaje'
+  && a0.severity === 'medium' && avisosOps.length === 2 && avisosOps[1].title === 'Novedad de Laura Gómez', JSON.stringify(a0) + JSON.stringify(avisosOps[1]));
 await wait(240);
 d = await abrir('en-camino');
 await abrirAlarma();

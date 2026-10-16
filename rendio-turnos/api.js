@@ -3136,6 +3136,16 @@
     return data || [];
   }
 
+  // «Laura Gómez»: nombre y primer apellido de quien escribe, para el título
+  // del aviso a los jefes (15-oct-2026: «Mensaje de un tripulante» no decía de
+  // quién). Sale del perfil de la sesión: quien escribe es este dispositivo.
+  function nombreCorto() {
+    try {
+      const p = (typeof state !== 'undefined' && state && state.profile) || null;
+      return String((p && p.full_name) || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ');
+    } catch (_) { return ''; }
+  }
+
   // Envía y avisa a quien corresponda. El RPC deduce el rol y devuelve los
   // destinatarios: el que escribe no tiene por qué conocer el profile_id del
   // otro. Desde 0067 pueden ser VARIOS (el jefe le escribe al tripulante y al
@@ -3160,7 +3170,7 @@
       // les diría que son el conductor de alguien. Se avisa además de dónde
       // aterrizar, porque el jefe lee esto desde la bandeja, no desde un viaje.
       const titulo = data && data.to_admins
-        ? 'Un tripulante escribió y no tiene carro asignado'
+        ? (nombreCorto() || 'Un tripulante') + ' escribió y no tiene carro asignado'
         : ((opts && opts.title) || 'Mensaje de tu traslado');
       try {
         const r = await sendPush({

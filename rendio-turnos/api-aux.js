@@ -259,6 +259,16 @@
     return Array.isArray(r.data) ? r.data.map(mapMsg) : null;
   }
 
+  // «Laura Gómez»: nombre y primer apellido de quien escribe, para el título
+  // del aviso a los jefes (15-oct-2026: «Mensaje de un tripulante» no decía de
+  // quién). Sale del perfil de la sesión: quien escribe es este dispositivo.
+  function nombreCorto() {
+    try {
+      const p = (typeof state !== 'undefined' && state && state.profile) || null;
+      return String((p && p.full_name) || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ');
+    } catch (_) { return ''; }
+  }
+
   // Envía y avisa. Tripulante: crewSend(texto, {reservationId}) → a los jefes.
   // Jefe: crewSend(texto, {auxId, reservationId}) → al tripulante.
   async function crewSend(body, opts) {
@@ -278,7 +288,7 @@
       try {
         const p = await Api.sendPush({
           profileIds: to,
-          title: deTripulante ? 'Mensaje de un tripulante' : 'Coordinación',
+          title: deTripulante ? (nombreCorto() ? 'Mensaje de ' + nombreCorto() : 'Mensaje de un tripulante') : 'Coordinación',
           body: String(body || '').trim().slice(0, 120),
           url: deTripulante ? '/#/coordinacion?aux=' + d.auxiliar_profile_id : '/#/coordinacion',
         });

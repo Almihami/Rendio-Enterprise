@@ -87,3 +87,8 @@
   font: inherit; font-size: 13px; font-weight: 650;
   background: var(--r-accent-soft); color: var(--rx-acc);
 }
+
+/* Chat directo con Coordinación junto a la campana (15-oct-2026, pedido de la
+   profa). Es el mismo botón .rx-bell del diseño (tamaño, borde, globo y rxPop);
+   entre los dos va un poco menos de aire que entre el saludo y ellos. */
+#auxiliar-ui.rx-phone .rx-home-h .rx-chatb { margin-right: -4px; }

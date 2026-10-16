@@ -463,12 +463,16 @@ t('Viajes: ningún id reservado de §2.4', !AS.FIXED_IDS.some(id => tripsEl().qu
 AS.setTab('inicio'); await wait(10);
 
 console.log('\n── Avisos y campana ──');
+// 15-oct-2026: junto a la campana va el botón de chat con Coordinación (también
+// .rx-bell, para verse igual). La campana es la de Notificaciones.
+const BELL = '.rx-bell[data-rx="open-notifs"]', CHATB = '.rx-chatb';
 w.localStorage.removeItem('rendio.aux.avisos.seen');
 await montar('asignado-publicado');
 h = homeEl();
-t('publicado: la campana muestra 1 (aviso «Ya tienes conductor» sin ver)', (h.querySelector('.rx-bell span') || {}).textContent === '1', h.querySelector('.rx-bell').textContent);
+t('encabezado: botón de chat con Coordinación ANTES de la campana', !!h.querySelector('.rx-home-h ' + CHATB + '[data-rx="open-coord"]') && h.querySelector('.rx-home-h ' + CHATB).nextElementSibling === h.querySelector(BELL));
+t('publicado: la campana muestra 1 (aviso «Ya tienes conductor» sin ver)', (h.querySelector(BELL + ' span') || {}).textContent === '1', h.querySelector(BELL).textContent);
 t('AuxRxAvisos.unseen() = 1', w.AuxRxAvisos.unseen() === 1);
-click(h.querySelector('.rx-bell')); await wait(30);
+click(h.querySelector(BELL)); await wait(30);
 let nt = notifsEl();
 t('la campana abre «Notificaciones» (pila del shell)', !!nt && AS.current().id === 'notifs');
 t('aviso «Ya tienes conductor» con conductor, hora y el día del viaje', /Ya tienes conductor/.test(nt.textContent) && /Mauricio Arango Pérez · Te recogemos a las 03:48/.test(nt.textContent) && /^Mañana/.test(nt.querySelector('.rx-nt em').textContent));
@@ -481,14 +485,18 @@ t('tocar el aviso: pop() primero (la capa sale con .out)', !!q('[data-scr="notif
 await wait(300);
 t('…y a los 280 ms abre ese viaje', A.state.view === 'trip' && A.state.editingTrip === idPub);
 AS.setTab('inicio'); await wait(20);
-t('de vuelta en Inicio la campana queda sin globo', !homeEl().querySelector('.rx-bell span'));
+t('de vuelta en Inicio la campana queda sin globo', !homeEl().querySelector(BELL + ' span'));
 w.AuxRxCoord = { unread: () => 2 };
 w.AuxRxInicio.refreshBell();
-const globo = homeEl().querySelector('.rx-bell span');
-t('cambia el conteo: el globo se RECREA con .rx-anim (key={unread}) sin repintar Inicio', !!globo && globo.textContent === '2' && globo.classList.contains('rx-anim'));
+const globo = homeEl().querySelector(CHATB + ' span');
+t('Coordinación sin leer: el globo va en el botón de chat y se RECREA con .rx-anim', !!globo && globo.textContent === '2' && globo.classList.contains('rx-anim'));
+t('…y la campana NO lo suma (un mensaje, un solo globo)', !homeEl().querySelector(BELL + ' span'));
 w.AuxRxCoord = { unread: () => 3 };
 w.AuxRxInicio.refreshBell();
-t('…y otra vez con el nuevo número', homeEl().querySelector('.rx-bell span') !== globo && homeEl().querySelector('.rx-bell span').textContent === '3');
+t('…y otra vez con el nuevo número', homeEl().querySelector(CHATB + ' span') !== globo && homeEl().querySelector(CHATB + ' span').textContent === '3');
+click(homeEl().querySelector(CHATB)); await wait(30);
+t('el botón de chat abre Coordinación (pila del shell)', AS.current() && AS.current().id === 'coord', AS.current() && AS.current().id);
+AS.setTab('inicio'); await wait(20);
 delete w.AuxRxCoord; w.AuxRxInicio.refreshBell();
 
 w.localStorage.removeItem('rendio.aux.avisos.seen');   // los ids del arnés se repiten entre escenarios
@@ -498,7 +506,7 @@ chat.counts = { [A.state.trips[0].id]: 2 };
 await w.AuxRxAvisos.refresh(true);
 A.rerender(); await wait(30);
 h = homeEl();
-t('campana = avisos no vistos + Coordinación (1 pub + 1 chat + 1 coord = 3)', (h.querySelector('.rx-bell span') || {}).textContent === '3', h.querySelector('.rx-bell').textContent);
+t('campana = avisos no vistos (1 pub + 1 chat = 2); Coordinación va en su botón (1)', (h.querySelector(BELL + ' span') || {}).textContent === '2' && (h.querySelector(CHATB + ' span') || {}).textContent === '1', h.querySelector(BELL).textContent + ' / ' + h.querySelector(CHATB).textContent);
 t('Coordinación en accesos rápidos: «1 sin leer»', /1 sin leer/.test(h.querySelector('.rx-qa-b[data-rx="open-coord"]').textContent));
 AS.push('notifs'); await wait(30);
 nt = notifsEl();
