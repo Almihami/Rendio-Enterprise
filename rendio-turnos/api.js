@@ -722,6 +722,26 @@
     if (error) throw error;
   }
 
+  // Cuántos dispositivos tiene cada persona con las notificaciones activas, y
+  // cuándo se tocó la última suscripción. Lo usa Personal: que un jefe esté
+  // marcado con 🔔 no sirve de nada si su celular nunca las activó. La RLS de
+  // 0021 ya le deja leerlas al admin; no hace falta migración.
+  async function pushDevicesByProfile(profileIds) {
+    const ids = (profileIds || []).filter(Boolean);
+    const out = new Map();
+    if (!ids.length) return out;
+    const { data, error } = await sb.from('push_subscriptions')
+      .select('profile_id, updated_at').in('profile_id', ids);
+    if (error) throw error;
+    (data || []).forEach(r => {
+      const cur = out.get(r.profile_id) || { n: 0, last: null };
+      cur.n += 1;
+      if (!cur.last || r.updated_at > cur.last) cur.last = r.updated_at;
+      out.set(r.profile_id, cur);
+    });
+    return out;
+  }
+
   // Dispara notificaciones vía Edge Function (best-effort: si no está desplegada,
   // el caller ignora el error). profileIds: array de destinatarios.
   async function sendPush({ profileIds, title, body, url }) {
@@ -3785,7 +3805,7 @@
     getWeekSuspensions, getMyWeekSuspension, addManualSuspension, liftSuspension,
     listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
-    savePushSubscription, deletePushSubscription, sendPush,
+    savePushSubscription, deletePushSubscription, sendPush, pushDevicesByProfile,
     getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, driverOverrideOilBlock, registerOilChange, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, listIncidents, countOpenIncidents, updateIncidentStatus,

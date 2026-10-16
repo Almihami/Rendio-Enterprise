@@ -906,6 +906,19 @@
   border: 1px solid var(--line); border-left: 3px solid var(--line);
   border-radius: 14px; background: #fff; padding: 15px 16px; margin-bottom: 10px;
 }
+/* Rejilla (14-oct-2026): en el computador cada privado se estiraba a todo el
+   ancho y los datos quedaban a un metro unos de otros. Ahora van como tarjetas
+   de 360 px o más, las que quepan (min() hace que en un celular angosto sea una
+   sola columna del ancho que haya). La tarjeta se estira a lo alto de su fila
+   y los botones se van al pie, para que «Aprobar» quede a la misma altura en
+   toda la fila. */
+#privados-ui .pv-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
+  gap: 12px; align-items: stretch;
+}
+#privados-ui .pv-grid .pv-card { margin-bottom: 0; display: flex; flex-direction: column; min-width: 0; }
+#privados-ui .pv-grid .pv-acts { margin-top: auto; padding-top: 14px; flex-wrap: wrap; }
+#privados-ui .pv-grid .pv-rej-acts { flex-wrap: wrap; }
 #privados-ui .pv-card.wait { border-left-color: #B7791F; }
 #privados-ui .pv-card.ok   { border-left-color: #0B7A5C; }
 #privados-ui .pv-card.no   { border-left-color: var(--ink3); opacity: .8; }

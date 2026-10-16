@@ -218,6 +218,12 @@
           <span class="val"${p.phone ? '' : ' style="color:var(--r-warn);font-weight:650"'}>${p.phone ? escapeHtml(drvTelFormato(p.phone)) : 'Agrégalo'}</span>
           <span class="chev">${avIcon('chevronRight', 16)}</span>
         </button>` : ''}
+        ${typeof pushStatus === 'function' ? `<button class="rc-listrow" id="pf-push" type="button">
+          <span class="ic">${avIcon('bell', 18)}</span>
+          <span class="lbl">Notificaciones</span>
+          <span class="val" id="pf-push-val">…</span>
+          <span class="chev">${avIcon('chevronRight', 16)}</span>
+        </button>` : ''}
         <button class="rc-listrow" id="pf-strikes-btn" type="button">
           <span class="ic">${avIcon('alert', 18)}</span>
           <span class="lbl">Mis strikes</span>
@@ -409,6 +415,12 @@
       const nuevo = await drvTelAbrir({ forzado: false });
       if (nuevo && state.profileView === 'main') drawProfileView();
     });
+    // Notificaciones (14-oct-2026): la barra de Inicio se va al activarlas; aquí
+    // queda siempre el estado, y si están activas, tocar manda una de prueba.
+    if ($('#pf-push')) {
+      pfPushPaint();
+      $('#pf-push').addEventListener('click', async () => { await pushRowTap(); pfPushPaint(); });
+    }
     $('#pf-back')?.addEventListener('click', () => { state.profileView = 'main'; drawProfileView(); });
     $('#pf-logout')?.addEventListener('click', onLogout);
     $('#pf-mypw')?.addEventListener('click', () => openCambiarMiClave());
@@ -424,6 +436,17 @@
       $('#pf-theme').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
     });
     box.querySelectorAll('[data-redeem]').forEach(b => b.addEventListener('click', () => onRedeem(b.dataset.redeem)));
+  }
+
+  // Apagadas o bloqueadas van en color: son las que hacen que un mensaje del
+  // pasajero no le suene al conductor.
+  async function pfPushPaint() {
+    const v = $('#pf-push-val'); if (!v) return;
+    const s = await pushStatus();
+    v.textContent = PUSH_STATUS_TXT[s];
+    const tono = s === 'on' ? 'var(--r-success)' : s === 'off' || s === 'install' ? 'var(--r-warn)' : s === 'blocked' ? 'var(--r-error)' : '';
+    v.style.color = tono;
+    v.style.fontWeight = tono ? '650' : '';
   }
 
   async function onPickAvatar(input) {

@@ -979,6 +979,16 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .rd-why.hereda .rd-why-body{color:inherit;background:color-mix(in srgb,currentColor 8%,transparent);border-left-color:currentColor}
 
 @media(prefers-reduced-motion:reduce){.rd-why > summary{transition:none}}
+/* Con MOUSE (computador) la pastilla pesaba más que el título: en Reservas era
+   lo primero que se veía y la profa lo sintió «feo» (14-oct-2026). Con mouse sí
+   hay hover, así que basta un enlace naranja con su flecha; el borde y los 44px
+   se quedan para el dedo (el teléfono no entra en esta media query). Se corre
+   10px a la izquierda para que el texto quede alineado con el párrafo. */
+@media (hover:hover) and (pointer:fine){
+  .rd-why:not(.hereda) > summary{min-height:30px;padding:0 10px;margin-left:-10px;border-color:transparent;background:transparent;border-radius:8px}
+  .rd-why:not(.hereda) > summary:hover{background:var(--orange-soft);border-color:transparent}
+  .rd-why:not(.hereda)[open] > summary{background:transparent;border-color:transparent}
+}
 
 /* Barra de guardado pegada al pie: dice CUÁNTO cubre, porque con secciones
    cerradas "Guardar" a secas no dice qué se está guardando.
@@ -1401,21 +1411,35 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #rv-ui .set-btn.danger{background:var(--red);color:#fff;box-shadow:none}
 #rv-ui .set-btn:disabled{opacity:.55;cursor:not-allowed}
 #rv-ui .set-input{width:100%;height:38px;padding:0 12px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);font-family:var(--font);font-size:13px}
-/* Filtros + días */
-#rv-ui .rv-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+/* Filtros + días (14-oct-2026). Antes eran dos filas de pastillas sueltas, una
+   con el elegido en negro y la otra en naranja: la profa lo vio «como feo» y
+   tenía razón, parecían de dos apps. Ahora son el mismo control con el mismo
+   elegido, y en el computador van en UNA franja como los segmentos de
+   Inspecciones y Repuestos (#inspections-ui .seg). En el celular siguen siendo
+   carriles que se deslizan (bloque C.1 de abajo). */
+#rv-ui .rv-tools{margin-bottom:16px}
+#rv-ui .rv-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 #rv-ui .rv-fbtn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);color:var(--ink2);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer}
 #rv-ui .rv-fbtn.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
-#rv-ui .rv-fbtn i{font-style:normal;font-family:var(--mono);font-size:11px;opacity:.7}
-#rv-ui .rv-days{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
-#rv-ui .rv-chip{height:30px;padding:0 12px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--ink2);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer;text-transform:capitalize}
-#rv-ui .rv-chip.on{background:var(--orange);color:#fff;border-color:var(--orange)}
+#rv-ui .rv-fbtn .n{font-family:var(--mono);font-size:11px;opacity:.7}
+#rv-ui .rv-fbtn .n.zero{opacity:.35}
+#rv-ui .rv-fbtn.on .n{opacity:.85}
+#rv-ui .rv-days{display:flex;gap:8px;flex-wrap:wrap}
+@media (min-width:769px){
+  #rv-ui .rv-tools{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
+  #rv-ui .rv-bar,#rv-ui .rv-days{display:inline-flex;flex-wrap:wrap;gap:2px;margin:0;padding:3px;background:var(--panel);border:1px solid var(--line2);border-radius:11px}
+  #rv-ui .rv-days{margin-left:auto}
+  #rv-ui .rv-days:empty{display:none}
+  #rv-ui .rv-fbtn{height:32px;padding:0 13px;border:0;border-radius:8px;background:transparent}
+  #rv-ui .rv-fbtn:not(.on):hover{background:var(--panel2);color:var(--ink)}
+}
 /* Filas */
 #rv-ui #rv-list{display:grid;gap:10px}
 #rv-ui .rv-row{display:flex;align-items:flex-start;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
 #rv-ui .rv-row.off{opacity:.62}
 #rv-ui .rv-when{flex:0 0 auto;text-align:center;min-width:64px;padding-top:2px}
 #rv-ui .rv-when b{display:block;font-size:17px;font-weight:800;font-family:var(--mono);color:var(--ink);letter-spacing:-.02em}
-#rv-ui .rv-when span{display:block;font-size:11px;color:var(--ink3);text-transform:capitalize;margin-top:2px}
+#rv-ui .rv-when span{display:block;font-size:11px;color:var(--ink3);margin-top:2px}
 #rv-ui .rv-main{flex:1 1 auto;min-width:0}
 #rv-ui .rv-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #rv-ui .rv-top b{font-size:15px;font-weight:800;color:var(--ink)}
@@ -2229,6 +2253,20 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #admin-side .sf-i .ni-tx{font-size:13px;font-weight:600;white-space:nowrap}
 .admin-shell.collapsed #admin-side .sf-i{justify-content:center;padding:10px 0}
 .admin-shell.collapsed #admin-side .sf-i .ni-tx{display:none}
+/* Notificaciones (14-oct-2026): debajo del nombre, el estado EN ESTE dispositivo;
+   el punto sobre la campana dice lo mismo cuando el menú está colapsado. Verde =
+   activas, naranja = falta activarlas, rojo = bloqueadas en el teléfono. */
+#admin-side #adm-push .ni-tx{display:flex;flex-direction:column;line-height:1.25}
+#admin-side #adm-push small{font-size:11px;font-weight:700;color:var(--ink3)}
+#admin-side #adm-push small:empty{display:none}
+#admin-side #adm-push .ni-ic{position:relative}
+#admin-side #adm-push[data-st] .ni-ic::after{content:"";position:absolute;top:0;right:-1px;width:7px;height:7px;border-radius:50%;background:var(--ink3);box-shadow:0 0 0 2px var(--panel)}
+#admin-side #adm-push[data-st="on"] .ni-ic::after{background:var(--green,#16936A)}
+#admin-side #adm-push[data-st="on"] small{color:var(--green,#16936A)}
+#admin-side #adm-push[data-st="off"] .ni-ic::after,#admin-side #adm-push[data-st="install"] .ni-ic::after{background:var(--orange)}
+#admin-side #adm-push[data-st="off"] small,#admin-side #adm-push[data-st="install"] small{color:var(--orange)}
+#admin-side #adm-push[data-st="blocked"] .ni-ic::after{background:var(--red)}
+#admin-side #adm-push[data-st="blocked"] small{color:var(--red)}
 
 /* ===== BREADCRUMB (barra superior del main) ===== */
 /* El padding superior baja la barra por debajo del reloj/isla del iPhone: con

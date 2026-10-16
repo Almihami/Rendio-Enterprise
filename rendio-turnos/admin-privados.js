@@ -103,9 +103,11 @@
         + '</div>';
       return;
     }
+    // Cada sección es una rejilla: en el computador las tarjetas van de a 2 o 3
+    // por fila en vez de estirarse de lado a lado (pedido de la profa, 14-oct).
     root.innerHTML =
-      (pend.length ? '<div class="pv-sec">Esperando tu respuesta</div>' + pend.map(card).join('') : '')
-      + (resto.length ? '<div class="pv-sec">Ya resueltas</div>' + resto.map(card).join('') : '');
+      (pend.length ? '<div class="pv-sec">Esperando tu respuesta</div><div class="pv-grid">' + pend.map(card).join('') + '</div>' : '')
+      + (resto.length ? '<div class="pv-sec">Ya resueltas</div><div class="pv-grid">' + resto.map(card).join('') + '</div>' : '');
   }
 
   function card(x) {
