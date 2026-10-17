@@ -31,6 +31,16 @@
 //     anima aunque la pantalla siga con .rx-noanim de un repintado);
 //   · repintar la misma pantalla no anima nada (el shell pone .rx-noanim).
 //
+// Conversaciones (0113, 16-oct-2026, pedido de la profa): el hilo ya no es uno
+// solo. Lo que se ve es la conversación ACTUAL (la abierta; si no hay, la última
+// solo si trae una respuesta sin leer; si no, un chat nuevo vacío). Una
+// conversación se cierra cuando un jefe la marca «Resuelta» o tras 12 h sin
+// mensajes, y el siguiente mensaje abre otra. Las anteriores se releen desde el
+// reloj de la cabecera («Conversaciones anteriores», hoja RxSheet), de solo
+// lectura. Y los mensajes del equipo dicen QUIÉN escribió: «Coordinación
+// (Julián)» en el <b> de la burbuja (el estilo ya venía en el diseño, rx-bub b).
+// Sin 0113 en la base todo se ve como antes (sin nombre ni historial).
+//
 // Contrato: window.AuxRxCoord = { unread(), refreshUnread(force), open(resId),
 //   html(), QR }. unread() es SÍNCRONO (lo leen Inicio y Avisos al pintar):
 //   devuelve lo último que se supo y, si tiene más de 30 s, pide
@@ -120,6 +130,10 @@
     ops: null,          // {phone, hours} de ApiAux.getOpsContact (null = sin leer)
     unread: 0, unreadAt: 0, unreadBusy: null,
     poll: null, tmp: 0, bound: false,
+    conv: null,         // conversación que se está viendo (0113; null = chat nuevo o sin 0113)
+    convOpen: null,     // ¿sigue abierta? (null = no se sabe: sin 0113)
+    viewing: null,      // id de una conversación ANTERIOR abierta desde el historial (solo lectura)
+    hist: null,         // ApiAux.crewConversations() (null = sin leer o sin 0113)
   };
   function ownerCheck() {
     const me = profileId();
@@ -127,6 +141,7 @@
     co.owner = me;
     co.msgs = []; co.loaded = false; co.err = false; co.draft = ''; co.resId = null;
     co.unread = 0; co.unreadAt = 0; co.ops = null;
+    co.conv = null; co.convOpen = null; co.viewing = null; co.hist = null;
   }
 
   // ── Teléfono y horario ───────────────────────────────────────────────────
@@ -149,7 +164,11 @@
   function headHTML() {
     const { phone, hours } = opsContact();
     const href = telHref(phone);
-    const right = href ? `<a class="rx-ib" href="${esc(href)}" data-co="call" aria-label="Llamar a Coordinación">${ic('Phone', 19)}</a>` : '';
+    const tel = href ? `<a class="rx-ib" href="${esc(href)}" data-co="call" aria-label="Llamar a Coordinación">${ic('Phone', 19)}</a>` : '';
+    // El reloj abre las conversaciones anteriores (solo si la base ya las tiene).
+    const hist = Array.isArray(co.hist) && co.hist.some(h => h.id !== co.conv || !h.open)
+      ? `<button type="button" class="rx-ib" data-rx="co-hist" aria-label="Conversaciones anteriores">${ic('Clock', 19)}</button>` : '';
+    const right = hist + tel;
     const u = UI();
     if (u && u.head) return u.head({ title: 'Coordinación', eyebrow: hours, right });
     return '<div class="rx-head"><div class="rx-head-row">'
@@ -167,16 +186,28 @@
     const about = r && r.id ? 'Sobre tu ' + aboutTrip(r.type, r.date) : '';
     return [about, when].filter(Boolean).join(' · ');
   }
-  function bubHTML(m, anim) {
+  // «Coordinación (Julián)» arriba del primer mensaje de cada racha de un jefe
+  // (si el mismo jefe manda tres seguidos, el nombre sale una vez).
+  function whoOf(m, prev) {
+    if (isMine(m) || !m.senderName) return '';
+    if (prev && !isMine(prev) && prev.senderName === m.senderName) return '';
+    return 'Coordinación (' + m.senderName + ')';
+  }
+  function bubHTML(m, anim, prev) {
     const meta = metaOf(m);
+    const who = whoOf(m, prev);
     return `<div class="rx-bub ${isMine(m) ? 'out' : 'in'} pop${anim ? ' rx-anim' : ''}${m.pending ? ' rx-co-sending' : ''}" data-co-id="${esc(m.id)}">`
+      + (who ? `<b>${esc(who)}</b>` : '')
       + `<span class="rx-bub-x">${esc(m.body)}</span>`
       + (meta ? `<em class="rx-bub-t">${esc(meta)}</em>` : '')
       + '</div>';
   }
   function emptyHTML() {
-    return `<div class="rx-empty rx-co-empty" data-co="empty">${ic('MessageCircle', 26)}<b>Todavía no hay mensajes</b>`
-      + '<span>Escribe abajo o toca una respuesta rápida para empezar el mensaje.</span></div>';
+    const antes = Array.isArray(co.hist) && co.hist.length;
+    return `<div class="rx-empty rx-co-empty" data-co="empty">${ic('MessageCircle', 26)}<b>${antes ? 'Chat nuevo' : 'Todavía no hay mensajes'}</b>`
+      + '<span>Escribe abajo o toca una respuesta rápida para empezar el mensaje.</span>'
+      + (antes ? `<button type="button" class="rx-link" data-rx="co-hist">Ver conversaciones anteriores (${co.hist.length})</button>` : '')
+      + '</div>';
   }
   function loadingHTML() {
     return '<div class="rx-empty rx-co-empty" data-co="loading"><span>Cargando mensajes…</span></div>';
@@ -191,7 +222,29 @@
   function threadInner(anim) {
     if (!co.loaded && !co.msgs.length) return co.err ? errorHTML() : loadingHTML();
     if (!co.msgs.length) return emptyHTML();
-    return co.msgs.map(m => bubHTML(m, anim)).join('');
+    return co.msgs.map((m, i) => bubHTML(m, anim, co.msgs[i - 1])).join('');
+  }
+  // Franja bajo la cabecera: lo de siempre, o en qué conversación se está.
+  function bandHTML() {
+    if (co.viewing) {
+      const h = Array.isArray(co.hist) ? co.hist.find(x => x.id === co.viewing) : null;
+      return `<div class="rx-planb rx-co-band old" data-co="band">${ic('Clock', 18)}<span>${esc(h ? convTitle(h) + ' · ' + convState(h) : 'Conversación anterior')}</span></div>`;
+    }
+    if (co.conv && co.convOpen === false) {
+      return `<div class="rx-planb rx-co-band closed" data-co="band">${ic('Info', 18)}<span>Esta conversación se cerró. Si escribes, empieza una nueva.</span></div>`;
+    }
+    return `<div class="rx-planb rx-in" data-co="band">${ic('Headset', 18)}<span>Le escribes a los jefes de la operación. Te responden por aquí.</span></div>`;
+  }
+  // «jue 15 oct · 21:53» / «hoy · 21:46»
+  function convTitle(h) {
+    const d = h.lastAt ? bogDay(h.lastAt) : '';
+    const s = d ? shortDay(d) : '';
+    return (s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Conversación') + (h.lastAt ? ' · ' + hm(h.lastAt) : '');
+  }
+  function convState(h) {
+    if (h.open) return 'Abierta';
+    if (h.closeReason === 'admin') return h.closedByName ? 'Resuelta por ' + h.closedByName : 'Resuelta';
+    return 'Se cerró sola';
   }
   function ctxTrip() {
     if (!co.resId) return null;
@@ -214,11 +267,14 @@
       + '</div></div>';
   }
   function html() {
+    // Una conversación anterior es de solo lectura: en vez del campo, volver.
+    const pie = co.viewing
+      ? `<div class="rx-co-foot rx-co-back">${UI() && UI().btn ? UI().btn('Volver al chat actual', { kind: 'sec', icon: 'MessageCircle', attrs: { 'data-rx': 'co-hist-back' } }) : '<button type="button" class="rx-btn sec" data-rx="co-hist-back">Volver al chat actual</button>'}</div>`
+      : `<div class="rx-qr">${QR.map((q, i) => `<button type="button" data-rx="co-qr" data-q="${i}">${esc(q[0])}</button>`).join('')}</div>` + footHTML();
     return '<div class="rx-scr rx-co">' + headHTML()
-      + `<div class="rx-planb rx-in">${ic('Headset', 18)}<span>Le escribes a los jefes de la operación. Te responden por aquí.</span></div>`
+      + bandHTML()
       + `<div class="rx-body rx-chat" data-co="thread">${threadInner(false)}</div>`
-      + `<div class="rx-qr">${QR.map((q, i) => `<button type="button" data-rx="co-qr" data-q="${i}">${esc(q[0])}</button>`).join('')}</div>`
-      + footHTML()
+      + pie
       + '</div>';
   }
 
@@ -240,7 +296,7 @@
     const b = thread(); if (!b || !list.length) return;
     const ph = b.querySelector('.rx-co-empty');
     if (ph) ph.remove();
-    const h = list.map(m => bubHTML(m, true)).join('');
+    const h = list.map((m) => { const i = co.msgs.indexOf(m); return bubHTML(m, true, i > 0 ? co.msgs[i - 1] : null); }).join('');
     // Lo que llega del servidor entra ANTES de lo que se está enviando.
     const firstPending = list.every(m => !m.pending) ? b.querySelector('.rx-bub.rx-co-sending') : null;
     if (firstPending) firstPending.insertAdjacentHTML('beforebegin', h);
@@ -280,8 +336,9 @@
       return Promise.resolve(null);
     }
     const owner = co.owner;
+    const ver = co.viewing;
     co.loading = Promise.resolve()
-      .then(() => X.crewList())
+      .then(() => X.crewList(null, ver || undefined))
       .catch(() => null)
       .then((list) => {
         co.loading = null;
@@ -292,7 +349,25 @@
           return null;
         }
         co.err = false;
+        if (ver !== co.viewing) return null;           // cambió de conversación mientras cargaba
+        // 0113: si el servidor ya está en OTRA conversación (se cerró y el
+        // mensaje abrió una nueva, o se pidió una del historial), lo que hay en
+        // pantalla no se fusiona: se pinta esa de cero (con lo que se esté enviando).
+        const conv = list.length ? (list[0].conversationId || null) : null;
+        // La que se está viendo se cerró y ya está leída (el servidor ahora diría
+        // «chat nuevo»): NO se borra de la pantalla mientras se lee; se queda,
+        // marcada cerrada, hasta que el próximo mensaje abra otra.
+        if (!list.length && co.loaded && co.conv && !co.viewing) {
+          if (co.convOpen !== false) { co.convOpen = false; repaintBand(); loadHist(); }
+          return list;
+        }
+        const abierta = list.length ? list[0].conversationOpen : null;
+        const cambio = co.loaded && !!conv && conv !== co.conv;
+        const antes = [co.conv, co.convOpen].join('|');
+        co.conv = conv; co.convOpen = abierta;
+        if (cambio) { co.msgs = co.msgs.filter(m => m.pending); co.loaded = false; }
         merge(list);
+        if ([co.conv, co.convOpen].join('|') !== antes) { repaintBand(); loadHist(); }
         return list;
       });
     return co.loading;
@@ -367,6 +442,9 @@
         if (!tmp.pending) return;                                   // ya la adoptó la consulta
         if (r.id && co.msgs.some(m => m !== tmp && m.id === r.id)) { drop(tmp); return; }
         adopt(tmp, { id: r.id || tmp.id, at: r.createdAt || tmp.at, read: false });
+        // El mensaje abrió una conversación nueva (la que se veía estaba
+        // cerrada): se pasa a esa.
+        if (r.conversationId && r.conversationId !== co.conv) load();
       })
       .catch((e) => { if (owner === co.owner) fail(tmp, (e && e.message) || 'No se pudo enviar'); });
   }
@@ -458,6 +536,73 @@
       });
   }
 
+  // ── Historial de conversaciones (0113) ───────────────────────────────────
+  function loadHist() {
+    const X = window.ApiAux;
+    if (!X || typeof X.crewConversations !== 'function') return;
+    const owner = co.owner;
+    Promise.resolve()
+      .then(() => X.crewConversations())
+      .catch(() => null)
+      .then((h) => {
+        if (owner !== co.owner || !Array.isArray(h)) return;
+        const antes = JSON.stringify((co.hist || []).map(x => [x.id, x.open]));
+        co.hist = h;
+        if (JSON.stringify(h.map(x => [x.id, x.open])) !== antes) {
+          repaintHead();
+          const ph = $('[data-co="empty"]');
+          if (ph && !co.msgs.length) paintThread(false);
+        }
+      });
+  }
+  function repaintBand() {
+    const b = $('[data-co="band"]');
+    if (!b) return;
+    const tpl = document.createElement('template');
+    tpl.innerHTML = bandHTML().trim();
+    if (tpl.content.firstChild) b.replaceWith(tpl.content.firstChild);
+  }
+  function histSheetHTML() {
+    const u = UI();
+    const lista = (co.hist || []).filter(h => h.id !== co.conv || !h.open);
+    const filas = lista.map(h => {
+      const sub = [convState(h), h.messages + (h.messages === 1 ? ' mensaje' : ' mensajes')].join(' · ');
+      const txt = (h.firstBody || '').slice(0, 70);
+      return u && u.row
+        ? u.row({ icon: h.open ? 'MessageCircle' : 'Clock', tone: h.open ? 'info' : 'n', title: convTitle(h), sub: (txt ? '«' + txt + '» · ' : '') + sub, attrs: { 'data-rx': 'co-hist-open', 'data-id': h.id } })
+        : `<button type="button" class="rx-row" data-rx="co-hist-open" data-id="${esc(h.id)}"><b>${esc(convTitle(h))}</b><span>${esc(sub)}</span></button>`;
+    }).join('');
+    return `<div class="rx-sh rx-co-hist"><h3>Conversaciones anteriores</h3>`
+      + (filas ? `<div class="rx-co-hist-l">${filas}</div>` : '<p>Todavía no hay conversaciones anteriores.</p>')
+      + (u && u.btn ? u.btn('Cerrar', { kind: 'ghost', attrs: { 'data-rx': 'sheet-close' } }) : '')
+      + '</div>';
+  }
+  function histAct() {
+    const s = SH(); if (!s || typeof s.sheet !== 'function') return;
+    s.sheet(histSheetHTML(), { tall: true });
+    loadHist();
+  }
+  function verConversacion(id) {
+    // La abierta (la actual) no es «anterior»: abrirla es volver al chat.
+    const h = (co.hist || []).find(x => x.id === id);
+    co.viewing = h && h.open ? null : (id || null);
+    co.msgs = []; co.loaded = false; co.err = false; co.conv = null; co.convOpen = null;
+    const r = root();
+    if (r) {
+      const scr = r.querySelector('.rx-co');
+      if (scr) {
+        const tpl = document.createElement('template');
+        tpl.innerHTML = html().trim();
+        if (tpl.content.firstChild) scr.replaceWith(tpl.content.firstChild);
+      }
+    }
+    load();
+  }
+  function histOpenAct(el) {
+    const s = SH(); if (s && typeof s.closeSheet === 'function') s.closeSheet();
+    verConversacion(el && el.getAttribute('data-id'));
+  }
+
   // ── Consulta cada 5 s ────────────────────────────────────────────────────
   function startPoll() {
     if (co.poll) return;
@@ -530,6 +675,7 @@
         const p = (ctx && ctx.props) || {};
         co.resId = p.reservationId || null;
         co.draft = '';
+        co.viewing = null; co.conv = null; co.convOpen = null;
         // Cada vez que se abre, el hilo sale del servidor (y entra con su .pop
         // una sola vez, como al montar en el diseño); nada de copias viejas.
         co.msgs = []; co.loaded = false; co.err = false;
@@ -543,6 +689,7 @@
         scrollEnd();
         load();
         loadOps();
+        loadHist();
         markRead();
       }
       startPoll();
@@ -570,5 +717,8 @@
     sh.action('co-send', () => send());
     sh.action('co-ctx-off', ctxOffAct);
     sh.action('co-retry', retryAct);
+    sh.action('co-hist', histAct);
+    sh.action('co-hist-open', histOpenAct);
+    sh.action('co-hist-back', () => verConversacion(null));
   }
 })();

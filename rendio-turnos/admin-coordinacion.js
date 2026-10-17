@@ -16,6 +16,13 @@
 // dice que no se pudo cargar; sin teléfono ni horario cargados el formulario
 // queda vacío y avisa que el tripulante no ve ninguno (nunca un horario inventado).
 //
+// Conversaciones (0113, 16-oct-2026): el hilo de cada tripulante se parte en
+// conversaciones. Arriba del chat va la franja de la conversación (abierta →
+// botón «Resuelta»; cerrada → quién la cerró o que se cerró sola) y el
+// «Historial» para releer las anteriores (de solo lectura). En las burbujas del
+// equipo sale el nombre del jefe que escribió, para que los dos sepan quién ya
+// respondió. Sin 0113 en la base todo se ve como antes.
+//
 // Enlace profundo #/coordinacion?aux=<auxiliar_profile_id>: es la URL del push
 // «Mensaje de un tripulante» (ApiAux.crewSend). core.applyDeepLink todavía no lo
 // conoce, así que este módulo lo resuelve para el jefe: en hashchange y, en
@@ -43,6 +50,12 @@
     bound: false,
     pendingAux: null,        // del enlace profundo, se consume al pintar
     vvOff: null,             // modo app: suelta el seguimiento del teclado
+    conv: null,              // 0113: conversación que se ve (null = sin 0113 o vacía)
+    convOpen: null,          // ¿sigue abierta? (null = no se sabe)
+    viewing: null,           // conversación ANTERIOR abierta desde el historial (solo lectura)
+    hist: null,              // ApiAux.crewConversations(aux) (null = sin leer o sin 0113)
+    histShow: false,         // la lista del historial a la vista
+    closing: false,
   };
 
   // ── utilidades ───────────────────────────────────────────────────────────
@@ -99,7 +112,7 @@
       <div class="sh-phead">
         <div>
           <h1>Coordinación <span class="sh-ct" id="co-count">0</span></h1>
-          <p>Lo que los tripulantes les escriben a los jefes: <b>un hilo por persona</b>, con el traslado como contexto cuando escriben desde un viaje.</p>
+          <p>Lo que los tripulantes les escriben a los jefes, <b>por conversaciones</b>: cuando una quede atendida, márcala «Resuelta»; el siguiente mensaje empieza otra. Si escriben desde un viaje, el traslado va como contexto.</p>
           <details class="rd-why"><summary aria-expanded="false">¿Y el chat del traslado?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Lo que es de un viaje puntual con su conductor sigue en <b>Reservas</b>. Aquí llega lo que el tripulante quiere decirle a la operación. Si el mensaje trae un traslado, el enlace abre ese chat.</div></details>
         </div>
         <button class="set-btn ghost" data-co="refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
@@ -197,12 +210,13 @@
   function rowHTML(t) {
     const on = t.auxId === co.openAux;
     const lugar = [t.residence, t.sector].filter(Boolean).join(' · ');
-    const quien = t.lastRole === 'admin' ? 'Coordinación: ' : '';
+    const quien = t.lastRole === 'admin' ? (t.lastSenderName ? t.lastSenderName + ': ' : 'Coordinación: ') : '';
+    const est = t.open === true ? '<span class="co-st on">Abierta</span>' : t.open === false ? '<span class="co-st">Cerrada</span>' : '';
     return `<button class="co-row${on ? ' on' : ''}${t.unread ? ' unread' : ''}" data-co="open" data-aux="${esc(t.auxId)}" role="listitem">
       <span class="co-av">${esc(ini(t.name))}</span>
       <span class="co-row-b">
         <span class="co-row-t"><b>${esc(t.name || 'Tripulante')}</b><time>${esc(when(t.lastAt))}</time></span>
-        ${lugar ? `<span class="co-row-s">${esc(lugar)}</span>` : ''}
+        ${lugar || est ? `<span class="co-row-s">${est}${esc(lugar)}</span>` : ''}
         <span class="co-row-p">${esc(quien + (t.lastBody || ''))}</span>
       </span>
       ${t.unread ? `<i class="co-badge" aria-label="${t.unread} sin leer">${t.unread > 9 ? '9+' : t.unread}</i>` : ''}
@@ -226,7 +240,7 @@
     }
     const unread = co.threads.reduce((n, t) => n + (t.unread || 0), 0);
     if (cnt) cnt.textContent = String(unread);
-    const sig = JSON.stringify([co.openAux, co.threads.map(t => [t.auxId, t.lastAt, t.unread, t.lastBody, t.name])]);
+    const sig = JSON.stringify([co.openAux, co.threads.map(t => [t.auxId, t.lastAt, t.unread, t.lastBody, t.name, t.open, t.lastSenderName])]);
     if (!force && sig === co.sig) return;
     co.sig = sig;
     if (!co.threads.length) {
@@ -266,8 +280,7 @@
   }
   function paintThreadHead() {
     const h = $co('co-th-head'); if (h) h.innerHTML = threadHeadHTML();
-    const i = $co('co-input');
-    if (i) { const t = threadOf(co.openAux); i.placeholder = `Escríbele a ${((t && t.name) || 'el tripulante').split(' ')[0]}…`; }
+    ponerPlaceholder();
   }
   function paintThread() {
     const el = $co('co-thread'); if (!el) return;
@@ -279,6 +292,8 @@
       return;
     }
     el.innerHTML = `<div class="co-th-head" id="co-th-head"></div>
+      <div class="co-convbar" id="co-convbar"></div>
+      <div class="co-hist" id="co-hist" hidden></div>
       <div class="co-msgs" id="co-msgs" aria-live="polite"></div>
       <div class="co-ctx" id="co-ctx"></div>
       <div class="co-foot">
@@ -287,10 +302,99 @@
       </div>`;
     co.msgSig = '';
     paintThreadHead();
+    paintConvBar();
     paintMsgs();
     paintCtx();
   }
-  function msgHTML(m) {
+
+  // ── Conversaciones (0113) ─────────────────────────────────────────────────
+  function convWhen(iso) { return iso ? dayLabel(bogDay(iso)) + ' ' + hm(iso) : ''; }   // «Hoy 22:07», «Ayer 20:19», «mar 13 oct 09:10»
+  function convState(h) {
+    if (h.open) return 'Abierta';
+    if (h.closeReason === 'admin') return h.closedByName ? 'Resuelta por ' + h.closedByName : 'Resuelta';
+    return 'Se cerró sola (sin mensajes)';
+  }
+  function paintConvBar() {
+    const el = $co('co-convbar'); if (!el) return;
+    const th = $co('co-thread');
+    if (th) th.classList.toggle('viewing', !!co.viewing);
+    const nHist = Array.isArray(co.hist) ? co.hist.length : 0;
+    const histBtn = nHist > 1 || (nHist === 1 && co.viewing)
+      ? `<button class="co-cb-btn" data-co="hist"${co.histShow ? ' aria-expanded="true"' : ''}><svg class="icon"><use href="#i-hist"/></svg>Historial (${nHist})</button>` : '';
+    let txt = '', act = '';
+    if (co.viewing) {
+      const h = (co.hist || []).find(x => x.id === co.viewing);
+      txt = `<b>Conversación anterior</b>${h ? ' · ' + esc(convWhen(h.lastAt)) + ' · ' + esc(convState(h)) : ''}`;
+      act = '<button class="co-cb-btn pri" data-co="hist-back">Volver a la actual</button>';
+    } else if (co.conv && co.convOpen) {
+      const h = (co.hist || []).find(x => x.id === co.conv);
+      txt = `<span class="co-dot on"></span><b>Conversación abierta</b>${h ? ' · desde ' + esc(convWhen(h.openedAt)) : ''}`;
+      act = `<button class="co-cb-btn ok" data-co="conv-close"${co.closing ? ' disabled' : ''}><svg class="icon"><use href="#i-check"/></svg>${co.closing ? 'Cerrando…' : 'Resuelta'}</button>`;
+    } else if (co.conv && co.convOpen === false) {
+      const h = (co.hist || []).find(x => x.id === co.conv);
+      txt = `<span class="co-dot"></span><b>${h ? esc(convState(h)) : 'Conversación cerrada'}</b> · Si escribes, empieza una nueva.`;
+    }
+    el.innerHTML = txt || histBtn ? `<span class="co-cb-t">${txt}</span><span class="co-cb-a">${histBtn}${act}</span>` : '';
+    el.classList.toggle('on', !!(txt || histBtn));
+    ponerPlaceholder();
+  }
+  function ponerPlaceholder() {
+    const i = $co('co-input'); if (!i) return;
+    const t = threadOf(co.openAux);
+    const n = ((t && t.name) || 'el tripulante').split(' ')[0];
+    i.placeholder = co.conv && co.convOpen === false ? `Escribirle a ${n} abre una conversación nueva…` : `Escríbele a ${n}…`;
+  }
+  function paintHist() {
+    const el = $co('co-hist'); if (!el) return;
+    el.hidden = !co.histShow;
+    if (!co.histShow) return;
+    const lista = co.hist || [];
+    el.innerHTML = lista.length ? lista.map(h => {
+      const on = (co.viewing || co.conv) === h.id;
+      return `<button class="co-hrow${on ? ' on' : ''}" data-co="hist-open" data-conv="${esc(h.id)}">
+        <span class="co-hrow-t"><b>${esc(convWhen(h.lastAt))}</b><em class="${h.open ? 'on' : ''}">${esc(convState(h))}</em></span>
+        <span class="co-hrow-p">${esc((h.firstBody || '').slice(0, 90))}</span>
+        <span class="co-hrow-n">${h.messages} ${h.messages === 1 ? 'mensaje' : 'mensajes'}</span>
+      </button>`;
+    }).join('') : '<p class="co-load">Sin conversaciones.</p>';
+  }
+  async function loadHist() {
+    const aux = co.openAux; const a = api();
+    if (!aux || !a || typeof a.crewConversations !== 'function') return;
+    let h = null;
+    try { h = await a.crewConversations(aux); } catch (_) { h = null; }
+    if (co.openAux !== aux || !Array.isArray(h)) return;
+    co.hist = h;
+    paintConvBar();
+    paintHist();
+  }
+  function verConversacion(id) {
+    // La «actual» es la abierta o, si no hay, la última: esa no es «anterior».
+    const lista = co.hist || [];
+    const actual = lista.find(x => x.open) || lista[0] || null;
+    co.viewing = !id || (actual && actual.id === id) ? null : id;
+    co.histShow = false;
+    co.msgs = undefined; co.msgSig = ''; co.ctxRid = null; co.ctxOff = false;
+    paintConvBar(); paintHist(); paintMsgs(); paintCtx();
+    loadMsgs(false);
+  }
+  async function cerrarConversacion() {
+    const a = api(); const id = co.conv; const aux = co.openAux;
+    if (!a || typeof a.crewClose !== 'function' || !id || co.closing) return;
+    co.closing = true; paintConvBar();
+    try {
+      const r = await a.crewClose(id);
+      if (r === null) { say('No se pudo: la base todavía no tiene conversaciones.'); return; }
+      if (co.openAux === aux && co.conv === id) co.convOpen = false;
+      say('Conversación resuelta. Si alguien vuelve a escribir, empieza una nueva.');
+      loadHist(); loadThreads(true);
+    } catch (e) {
+      say((e && e.message) || 'No se pudo cerrar la conversación.');
+    } finally {
+      co.closing = false; paintConvBar();
+    }
+  }
+  function msgHTML(m, prev) {
     const mio = m.role === 'admin';
     const r = m.reservation;
     const ctx = r && r.id ? `<a class="co-msg-ctx" href="${esc(resHref(r.id))}" data-co="res-chat" data-rid="${esc(r.id)}">
@@ -299,7 +403,10 @@
     // la izquierda, sin rótulo en cada burbuja (antes decía «COORDINACIÓN» y
     // «TRIPULANTE» en todas). La hora y el «Leído» van al pie de la burbuja.
     const leido = mio && m.read ? ' · Leído' : (mio && m._tmp ? ' · Enviando…' : '');
+    // 0113: el nombre del jefe que escribió, una vez por racha.
+    const quien = mio && m.senderName && !(prev && prev.role === 'admin' && prev.senderName === m.senderName) ? m.senderName : '';
     return `<div class="co-msg ${mio ? 'mine' : 'their'}${m._tmp ? ' tmp' : ''}">
+      ${quien ? `<em class="co-by">${esc(quien)}</em>` : ''}
       <p>${esc(m.body)}</p>
       ${ctx}
       <span class="co-meta">${esc(hm(m.at))}${leido}</span>
@@ -314,7 +421,7 @@
       co.msgSig = '';
       return;
     }
-    const sig = JSON.stringify(co.msgs.map(m => [m.id, m.read, m._tmp ? 1 : 0]));
+    const sig = JSON.stringify(co.msgs.map(m => [m.id, m.read, m._tmp ? 1 : 0, m.senderName || '']));
     if (sig === co.msgSig) return;
     const abajo = el.scrollHeight - el.scrollTop - el.clientHeight < 40 || !co.msgSig;
     co.msgSig = sig;
@@ -323,11 +430,11 @@
       return;
     }
     let dia = '';
-    el.innerHTML = co.msgs.map(m => {
+    el.innerHTML = co.msgs.map((m, i) => {
       const d = bogDay(m.at);
       const sep = d && d !== dia ? `<div class="co-day">${esc(dayLabel(d))}</div>` : '';
       dia = d || dia;
-      return sep + msgHTML(m);
+      return sep + msgHTML(m, sep ? null : co.msgs[i - 1]);
     }).join('');
     if (abajo) el.scrollTop = el.scrollHeight;
   }
@@ -357,9 +464,20 @@
     const aux = co.openAux; if (!aux) return;
     const a = api();
     const my = ++co.seq;
+    const ver = co.viewing;
     let r = null;
-    try { r = (a && typeof a.crewList === 'function') ? await a.crewList(aux) : null; } catch (_) { r = null; }
-    if (my !== co.seq || co.openAux !== aux) return;   // cerró o cambió de hilo
+    try { r = (a && typeof a.crewList === 'function') ? await a.crewList(aux, ver || undefined) : null; } catch (_) { r = null; }
+    if (my !== co.seq || co.openAux !== aux || ver !== co.viewing) return;   // cerró o cambió de hilo/conversación
+    if (Array.isArray(r) && !ver) {
+      const conv = r.length ? (r[0].conversationId || null) : null;
+      const abierta = r.length ? r[0].conversationOpen : null;
+      if (conv !== co.conv || abierta !== co.convOpen) {
+        const otra = conv !== co.conv;
+        co.conv = conv; co.convOpen = abierta;
+        paintConvBar();
+        if (otra) loadHist();
+      }
+    }
     if (r === null && silent && Array.isArray(co.msgs)) return;
     const tmp = Array.isArray(co.msgs) ? co.msgs.filter(m => m._tmp) : [];
     co.msgs = Array.isArray(r) ? r.concat(tmp) : null;
@@ -377,10 +495,12 @@
   function openThread(auxId) {
     if (!auxId) return;
     co.openAux = auxId; co.msgs = undefined; co.ctxRid = null; co.ctxOff = false; co.sending = false;
+    co.conv = null; co.convOpen = null; co.viewing = null; co.hist = null; co.histShow = false;
     const t = threadOf(auxId); if (t) t.unread = 0;
     paintList(true);
     paintThread();
     loadMsgs(false);
+    loadHist();
     // Modo app: «atrás» del teléfono tiene que cerrar el chat y no salir de la
     // pantalla. Por eso el chat deja una entrada en el historial al abrirse.
     if (modoApp() && !(history.state && history.state.coChat)) {
@@ -499,6 +619,7 @@
       if (co.openAux === aux) {
         co.msgs = (co.msgs || []).filter(m => m.id !== temp.id);
         await loadMsgs(false);
+        if (r.newConversation) { say('Mensaje enviado: empezó una conversación nueva.'); loadHist(); }
       }
       loadThreads(true);
     } catch (e) {
@@ -540,6 +661,10 @@
       if (act === 'close') { closeThread(); return; }
       if (act === 'send') { send(); return; }
       if (act === 'ctx-off') { co.ctxOff = true; paintCtx(); return; }
+      if (act === 'conv-close') { cerrarConversacion(); return; }
+      if (act === 'hist') { co.histShow = !co.histShow; paintHist(); paintConvBar(); if (co.histShow) loadHist(); return; }
+      if (act === 'hist-open') { verConversacion(el.getAttribute('data-conv')); return; }
+      if (act === 'hist-back') { verConversacion(null); return; }
       if (act === 'refresh') { loadThreads(false); loadContact(); if (co.openAux) loadMsgs(false); return; }
       if (act === 'reload') { co.threads = undefined; paintList(); loadThreads(false); return; }
       if (act === 'msgs-reload') { co.msgs = undefined; paintMsgs(); loadMsgs(false); return; }

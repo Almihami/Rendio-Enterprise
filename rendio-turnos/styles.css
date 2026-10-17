@@ -3151,7 +3151,9 @@ html,body{overflow-x:hidden}
 #jefe-chat .jc-msg.mine{align-self:flex-end;background:var(--jc-ink);color:var(--jc-panel);border-bottom-right-radius:5px}
 #jefe-chat .jc-msg.their{align-self:flex-start;background:var(--jc-panel);border:1px solid var(--jc-line);border-bottom-left-radius:5px}
 #jefe-chat .jc-foot{display:flex;align-items:center;gap:9px;padding:11px 16px calc(11px + env(safe-area-inset-bottom));border-top:1px solid var(--jc-line)}
-#jefe-chat .jc-foot input{flex:1;min-width:0;height:44px;padding:0 15px;border-radius:12px;border:1px solid var(--jc-line2);background:var(--jc-bg);font-family:var(--jc-font);font-size:14px;color:var(--jc-ink)}
+/* 16 px (16-oct-2026): con menos, el iPhone agranda la página al tocar el campo
+   y la hoja del chat queda cortada por la derecha. */
+#jefe-chat .jc-foot input{flex:1;min-width:0;height:44px;padding:0 15px;border-radius:12px;border:1px solid var(--jc-line2);background:var(--jc-bg);font-family:var(--jc-font);font-size:16px;color:var(--jc-ink)}
 #jefe-chat .jc-foot input:focus{outline:none;border-color:var(--jc-orange)}
 
 /* En escritorio se centra: ahí no se opera con el pulgar. */

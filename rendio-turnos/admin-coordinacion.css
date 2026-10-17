@@ -28,6 +28,9 @@
 #coordinacion-ui .set-btn:disabled{opacity:.55;cursor:not-allowed}
 #coordinacion-ui .set-input{width:100%;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);font-family:var(--font);font-size:13.5px;outline:none}
 #coordinacion-ui .set-input:focus{border-color:var(--orange)}
+/* Mismo motivo en el teléfono y el horario de Coordinación: en pantallas
+   táctiles, 16 px para que el iPhone no agrande la página al escribir. */
+@media (pointer:coarse),(max-width:999px){#coordinacion-ui .set-input{font-size:16px}}
 
 /* ── Lo que ve el tripulante: teléfono y horario ─────────────────────────── */
 #coordinacion-ui .co-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:14px}
@@ -115,13 +118,54 @@
 #coordinacion-ui .co-ctx b{color:var(--info)}
 #coordinacion-ui .co-ctx button{margin-left:auto;background:none;border:0;font:inherit;font-size:12px;font-weight:700;color:var(--ink2);text-decoration:underline;cursor:pointer;min-height:32px}
 
-/* Campo para escribir: crece con el texto; el botón de enviar, redondo. */
+/* Campo para escribir: crece con el texto; el botón de enviar, redondo.
+   16 px NO es estética (16-oct-2026): con menos, el iPhone agranda la página al
+   tocar el campo y no la devuelve; el chat a pantalla completa quedaba cortado
+   por la derecha (el botón de enviar, el de llamar y el «Leído»). */
 #coordinacion-ui .co-foot{flex:0 0 auto;display:flex;align-items:flex-end;gap:9px;padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--panel)}
-#coordinacion-ui .co-foot textarea{flex:1;min-width:0;min-height:44px;max-height:132px;resize:none;padding:11px 16px;border-radius:22px;border:1px solid var(--line2);background:var(--bg);font-family:var(--font);font-size:15px;line-height:1.4;color:var(--ink);overflow-y:auto}
+#coordinacion-ui .co-foot textarea{flex:1;min-width:0;min-height:44px;max-height:132px;resize:none;padding:11px 16px;border-radius:22px;border:1px solid var(--line2);background:var(--bg);font-family:var(--font);font-size:16px;line-height:1.4;color:var(--ink);overflow-y:auto}
 #coordinacion-ui .co-foot textarea:focus{outline:none;border-color:var(--orange)}
 #coordinacion-ui .co-sendb{flex:0 0 auto;width:44px;height:44px;border-radius:999px;border:0;background:var(--orange);color:#fff;display:grid;place-items:center;cursor:pointer;box-shadow:0 6px 16px rgba(242,101,34,.28)}
 #coordinacion-ui .co-sendb .icon{width:19px;height:19px;margin-left:-2px}
 #coordinacion-ui .co-sendb:disabled{opacity:.55;cursor:not-allowed}
+
+/* ── Conversaciones (0113, 16-oct-2026) ──────────────────────────────────────
+   Franja bajo la cabecera del chat: si la conversación está abierta, el botón
+   «Resuelta»; si se cerró, quién la cerró; y el «Historial» de las anteriores.
+   En la bandeja, «Abierta» / «Cerrada» antes del conjunto. */
+#coordinacion-ui .co-st{display:inline-block;margin-right:7px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.02em;background:var(--line);color:var(--ink2)}
+#coordinacion-ui .co-st.on{background:var(--green-soft);color:var(--green)}
+#coordinacion-ui .co-convbar{flex:0 0 auto;display:none;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel2);font-size:12.5px;color:var(--ink2)}
+#coordinacion-ui .co-convbar.on{display:flex}
+#coordinacion-ui .co-cb-t{flex:1;min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;line-height:1.35}
+#coordinacion-ui .co-cb-t b{color:var(--ink);font-weight:750}
+#coordinacion-ui .co-cb-a{flex:0 0 auto;display:flex;gap:8px}
+#coordinacion-ui .co-dot{width:8px;height:8px;border-radius:50%;background:var(--ink3);flex:0 0 auto}
+#coordinacion-ui .co-dot.on{background:var(--green)}
+#coordinacion-ui .co-cb-btn{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+#coordinacion-ui .co-cb-btn .icon{width:14px;height:14px}
+#coordinacion-ui .co-cb-btn.ok{border-color:var(--green);color:var(--green);background:var(--green-soft)}
+#coordinacion-ui .co-cb-btn.pri{border-color:var(--ink);background:var(--ink);color:var(--panel)}
+#coordinacion-ui .co-cb-btn:disabled{opacity:.55;cursor:not-allowed}
+#coordinacion-ui .co-hist{flex:0 1 auto;max-height:45%;overflow-y:auto;border-bottom:1px solid var(--line);background:var(--panel)}
+#coordinacion-ui .co-hrow{display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;padding:10px 16px;border:0;border-bottom:1px solid var(--line);background:none;font-family:var(--font);color:inherit;cursor:pointer}
+#coordinacion-ui .co-hrow:hover{background:var(--panel2)}
+#coordinacion-ui .co-hrow.on{background:var(--orange-soft)}
+#coordinacion-ui .co-hrow-t{display:flex;align-items:baseline;gap:10px}
+#coordinacion-ui .co-hrow-t b{font-size:13px}
+#coordinacion-ui .co-hrow-t em{margin-left:auto;font-style:normal;font-size:11.5px;font-weight:700;color:var(--ink3)}
+#coordinacion-ui .co-hrow-t em.on{color:var(--green)}
+#coordinacion-ui .co-hrow-p{font-size:12.5px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#coordinacion-ui .co-hrow-n{font-size:11px;color:var(--ink3)}
+/* Una conversación anterior es de solo lectura: sin campo ni contexto. */
+#coordinacion-ui .co-thread.viewing .co-foot,#coordinacion-ui .co-thread.viewing .co-ctx{display:none}
+/* Quién del equipo escribió (una vez por racha). */
+#coordinacion-ui .co-msg .co-by{display:block;font-style:normal;font-size:11px;font-weight:800;letter-spacing:.02em;opacity:.75;margin-bottom:2px}
+@media (max-width:999px){
+  #coordinacion-ui .co-convbar{flex-wrap:wrap;padding:8px 12px}
+  #coordinacion-ui .co-cb-a{width:100%;justify-content:flex-end}
+  #coordinacion-ui .co-cb-btn{min-height:40px}
+}
 
 /* ── COMPUTADOR: bandeja y conversación lado a lado, del alto de la ventana ── */
 @media (min-width:1000px){
