@@ -52,8 +52,10 @@
 //     AuxPrivado.enabled() — el paso «¿Cómo prefieres viajar?». Las dos cosas
 //     se guardan con ApiAux.saveMyPrefs DESPUÉS de registerAuxiliar (antes no
 //     existe el perfil de tripulante al que escribirlas).
-//   · «¿Te invitó alguien? Código», solo si AuxPuntos.enabled(); se reclama
-//     después de registrarse y un error ahí no frena el registro.
+//   · «¿Te invitó alguien? Código», solo con el interruptor de Rendio Points
+//     encendido (app_settings.aux_points_enabled); se reclama después de
+//     registrarse, un error ahí no frena el registro y la bienvenida dice si
+//     el código quedó o no.
 // Con la bandera apagada, todo sale exactamente como antes.
 //
 // INGRESO (login, todos los roles): loginRx() le pone al #screen-login el
@@ -81,6 +83,7 @@
     dir: 'fwd',         // hacia dónde entra el paso (rx-step fwd | bwd)
     prefsWarn: '',      // no se pudieron guardar las preferencias (la cuenta sí quedó)
     meetSaved: false,
+    refOk: '', refWarn: '',   // el código de invitación quedó (cuál) / no quedó (por qué)
     touched: {},        // qué campos ya perdieron el foco (para no pintar rojo mientras escribe)
     // Cada campo de contraseña tiene su propio ojo: si fuera uno solo, destapar
     // la de arriba destapa también la repetición, que es justo la que la persona
@@ -373,6 +376,7 @@
     st.cat = null; st.q = ''; st.q2 = ''; st.picking = 1;
     st.busy = false; st.err = ''; st.profile = null;
     st.dir = 'fwd'; st.prefsWarn = ''; st.meetSaved = false; st.ajustesOk = false;
+    st.refOk = ''; st.refWarn = '';
   }
 
   // El enlace de invitación es https://<origen>/?ref=CODIGO (P13a): se lee al
@@ -1290,13 +1294,26 @@
   }
 
   // El código de quien lo invitó (Rendio Points, apagado por defecto). Solo
-  // con el programa encendido, y un error aquí jamás frena el registro.
+  // con el programa encendido. Un error aquí jamás frena el registro, pero
+  // tampoco se calla: la bienvenida dice si el código quedó o no, y por qué
+  // (el motivo lo escribe la base, ya en español).
   async function reclamarCodigo() {
-    const code = String(st.f.refCode || '').trim();
-    if (!code || !puntosOn()) return;
+    st.refOk = ''; st.refWarn = '';
     const P = window.ApiPuntos;
-    if (!P || typeof P.claimReferral !== 'function') return;
-    try { await P.claimReferral(code); } catch (_) { /* no bloquea */ }
+    const raw = String(st.f.refCode || '').trim();
+    // Sin el rediseño no se pinta el campo: un ?ref= del enlace no se reclama
+    // a escondidas de la persona.
+    if (!raw || !rxOn() || !puntosOn()) return;
+    let code = raw.toUpperCase();
+    try { if (typeof P.normalizeCode === 'function') code = P.normalizeCode(raw) || code; } catch (_) {}
+    try {
+      await P.claimReferral(raw);
+      st.refOk = code;
+    } catch (e) {
+      const motivo = String(e?.message || '').trim().replace(/\.$/, '');
+      // La línea de arriba ya dice «Tu cuenta quedó lista»: aquí solo el código.
+      st.refWarn = `El código ${code} no quedó. ${motivo || 'No pudimos registrarlo'}.`;
+    }
   }
 
   // Entra a la app sin recargar: el rol auxiliar toma el mismo contenedor.
@@ -1324,9 +1341,20 @@
       return !!(P && typeof P.enabled === 'function' && typeof P.levelsHTML === 'function' && P.enabled());
     } catch (_) { return false; }
   }
+  // ¿Se pide el código de invitación? Manda el interruptor del programa
+  // (app_settings.aux_points_enabled, que cargarAjustes ya trajo con la sesión
+  // recién creada). NO AuxPuntos.enabled(): ese lee el resumen DEL TRIPULANTE
+  // (aux_points_my_summary), que mientras se registra todavía no existe; la
+  // base contesta null, la caché lo guarda un minuto como «apagado» y el
+  // código se saltaba en silencio justo al terminar (hallado el 13-oct).
   function puntosOn() {
-    try { return !!(window.AuxPuntos && typeof AuxPuntos.enabled === 'function' && AuxPuntos.enabled()); }
-    catch (_) { return false; }
+    try {
+      const P = window.ApiPuntos;
+      if (!P || typeof P.claimReferral !== 'function') return false;
+      // eslint-disable-next-line no-undef
+      const g = typeof state !== 'undefined' ? state : null;
+      return !!(g && g.settings && g.settings.aux_points_enabled === true);
+    } catch (_) { return false; }
   }
 
   // El botón principal del paso (los dos aspectos lo marcan con data-rg-cta).
@@ -1641,6 +1669,8 @@
       <h1 class="rx-c-h">Te damos la bienvenida${nombre ? ', ' + esc(nombre) : ''}</h1>
       <p class="rx-c-p">${p}</p>
       ${st.prefsWarn ? `<div class="rx-note rg-warn">${ic('Info', 15)}<span>${esc(st.prefsWarn)}</span></div>` : ''}
+      ${st.refOk ? `<div class="rx-note">${ic('Gift', 15)}<span>Quedó el código <b>${esc(st.refOk)}</b>: tu colega suma sus puntos cuando hagas tu primer viaje.</span></div>` : ''}
+      ${st.refWarn ? `<div class="rx-note rg-warn">${ic('Info', 15)}<span>${esc(st.refWarn)}</span></div>` : ''}
       <div class="rx-foot abs">${U.btn('Entrar a la app', { icon: 'ArrowRight', attrs: { 'data-rg': 'entrar', 'data-rg-cta': true, 'data-rg-k': 'e' } })}</div>
     </div></div>`;
   }

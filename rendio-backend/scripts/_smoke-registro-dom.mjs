@@ -79,9 +79,33 @@ function boot(o = {}) {
       claimReferral: async (c) => { calls.push('claim:' + c); if (o.claimFail) throw new Error('Código no válido'); return { ok: true }; },
     };
   }
+  if (o.puntosReal) {
+    // Los módulos DE VERDAD (api-puntos.js + aux-rx-puntos.js) sobre una base
+    // de mentiras que contesta como 0091: el resumen del tripulante es null y
+    // el código se rechaza mientras no exista su auxiliar_profiles, o sea,
+    // hasta registerAuxiliar. Con el doble de arriba (enabled: () => true)
+    // el código parecía reclamarse y en la app de verdad se saltaba (13-oct).
+    const lista = { select() { return this; }, order() { return this; }, eq() { return this; },
+      then(ok, ko) { return Promise.resolve({ data: [], error: null }).then(ok, ko); } };
+    w.sb = {
+      auth: { getSession: async () => ({ data: { session: { access_token: 'x' } } }) },
+      from: () => lista,
+      rpc: async (fn, args) => {
+        if (fn === 'aux_points_my_summary') return { data: w.__reg ? { enabled: true, balance: 0, values: {} } : null, error: null };
+        if (fn === 'aux_points_claim_referral') {
+          if (!w.__reg) return { data: null, error: { message: 'Solo un tripulante puede usar un código de invitación', code: '42501' } };
+          if (o.claimFail) return { data: null, error: { message: 'Ese código no existe. Revísalo con quien te invitó', code: 'P0001' } };
+          calls.push('claim:' + args.p_code);
+          return { data: { ok: true }, error: null };
+        }
+        return { data: null, error: null };
+      },
+    };
+  }
   w.localStorage.setItem('rendio.aux.rx', rx ? '1' : '0');
   if (o.night) w.localStorage.setItem('rendio.aux.night', 'night');
   const files = rx ? ['aux-rx-ui.js', 'aux-shell.js', 'aux-registro.js', 'aux-privado.js'] : ['aux-registro.js'];
+  if (o.puntosReal) files.unshift('api-puntos.js'), files.push('aux-rx-puntos.js');
   if (o.presentacion) files.push('aux-presentacion.js');
   for (const f of files) { try { w.eval(read(f)); } catch (e) { errors.push(f + ': ' + e.message); } }
   const ui = () => w.document.getElementById('auxiliar-ui');
@@ -375,7 +399,7 @@ if (RX) {
     t('con Puntos apagado (o sin módulo) no se pide el código', !E.q('[data-rg-field="refCode"]') && !/Te invitó/.test(E.txt()));
   }
   {
-    const E = boot({ puntos: true, claimFail: true });
+    const E = boot({ puntos: true, claimFail: true, settings: { ...SIN_PRIVADO, aux_points_enabled: true } });
     await hastaPerfil(E); await wait();
     llenarPerfil(E);
     const f = E.q('[data-rg-field="refCode"]');
@@ -385,6 +409,45 @@ if (RX) {
     E.click(CTA); await wait(); await wait();
     t('se reclama DESPUÉS de registrarse', E.calls[0] === 'register' && E.calls.includes('claim:MARIA-OLV'), E.calls.join(','));
     t('y un error del código no frena el registro', !!E.q('.rx-ready'));
+    t('pero tampoco se calla: la bienvenida dice que el código no quedó', /MARIA-OLV/.test(E.txt()) && /no quedó/.test(E.txt()), E.txt().slice(0, 300));
+  }
+
+  console.log('\n── (rx) código de invitación con api-puntos.js y aux-rx-puntos.js de verdad ──');
+  const ON = { ...SIN_PRIVADO, aux_points_enabled: true };
+  {
+    const E = boot({ puntosReal: true, settings: ON, url: 'http://localhost/?ref=maria-olv' });
+    await hastaPerfil(E); await wait();
+    llenarPerfil(E); await wait(); await wait();
+    const f = E.q('[data-rg-field="refCode"]');
+    t('el campo sale aunque el resumen del tripulante todavía sea null', !!f);
+    t('…lleno con el ?ref= del enlace, ya normalizado', f && f.value === 'MARIA-OLV', f && f.value);
+    E.set('unit', 'Torre 1 · 502'); await wait();
+    t('…y no desaparece al seguir escribiendo', !!E.q('[data-rg-field="refCode"]'));
+    E.calls.length = 0;
+    E.click(CTA); await wait(); await wait(); await wait();
+    t('el código SE RECLAMA después de registrarse', E.calls[0] === 'register' && E.calls.includes('claim:MARIA-OLV'), E.calls.join(','));
+    t('…y la bienvenida dice que quedó', !!E.q('.rx-ready') && /MARIA-OLV/.test(E.txt()) && !/no quedó/.test(E.txt()), E.txt().slice(0, 300));
+    t('…sin decir que el invitado gana puntos (solo gana quien invita)', !/ganas|ganaste/i.test(E.txt()), E.txt().slice(0, 300));
+    t('sin errores de consola', E.errors.length === 0, E.errors.join(' | '));
+  }
+  {
+    const E = boot({ puntosReal: true, settings: ON, claimFail: true });
+    await hastaPerfil(E); await wait();
+    llenarPerfil(E); await wait();
+    E.set('refCode', 'pedro-xx');
+    E.calls.length = 0;
+    E.click(CTA); await wait(); await wait(); await wait();
+    t('código que no existe: la cuenta queda igual', E.calls[0] === 'register' && !!E.q('.rx-ready'), E.calls.join(','));
+    t('…y la bienvenida dice que el código no quedó y por qué', /PEDRO-XX/.test(E.txt()) && /no quedó/.test(E.txt()) && /no existe/.test(E.txt()), E.txt().slice(0, 300));
+  }
+  {
+    const E = boot({ puntosReal: true, url: 'http://localhost/?ref=maria-olv' });
+    await hastaPerfil(E); await wait();
+    llenarPerfil(E); await wait();
+    t('con el programa apagado, aunque el enlace traiga ?ref=, no se pide el código', !E.q('[data-rg-field="refCode"]') && !/Te invitó/.test(E.txt()));
+    E.calls.length = 0;
+    E.click(CTA); await wait(); await wait(); await wait();
+    t('…ni se reclama, ni se menciona en la bienvenida', !E.calls.some(c => c.startsWith('claim:')) && !/MARIA-OLV/.test(E.txt()), E.calls.join(',') + ' · ' + E.txt().slice(0, 200));
   }
 }
 
