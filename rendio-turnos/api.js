@@ -292,7 +292,12 @@
         .eq('profile_id', profileId).maybeSingle();
       driver = r.data || {};
     } else if (p.role === 'auxiliar') {
-      const r = await sb.from('auxiliar_profiles').select('airline_id').eq('profile_id', profileId).maybeSingle();
+      // Con el punto de recogida (0114): el jefe cambia conjunto, apartamento y
+      // segunda unidad desde el mismo formulario. La dirección propia viene solo
+      // para saber si puede quedar sin conjunto.
+      const r = await sb.from('auxiliar_profiles')
+        .select('airline_id, residence_id, residence_unit, residence_id_2, residence_unit_2, home_address, home_latitude, home_longitude')
+        .eq('profile_id', profileId).maybeSingle();
       aux = r.data || {};
     }
     return { ...p, driver, aux };

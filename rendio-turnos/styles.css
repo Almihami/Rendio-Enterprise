@@ -715,6 +715,7 @@ details[open] .details-chevron { transform: rotate(180deg); }
 .set-ui .set-field > label:not(.set-checkrow){display:block;font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:7px}
 .set-ui .set-input{height:42px;width:100%;border:1px solid var(--line2);border-radius:10px;background:var(--panel);padding:0 13px;font-family:var(--font);font-size:14px;color:var(--ink);outline:none;transition:border-color .15s,box-shadow .15s}
 .set-ui .set-input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+.set-ui .set-input:disabled{opacity:.5;cursor:not-allowed}
 .set-ui .set-input.mono{font-family:var(--mono);font-size:13px}
 .set-ui .set-hint{font-size:11.5px;color:var(--ink3);margin-top:6px}
 .set-ui .set-foot{display:flex;align-items:center;gap:12px;margin-top:18px}
