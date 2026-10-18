@@ -64,8 +64,14 @@
     try { p = await Api.getProfileForEdit(profileId); }
     catch (e) { alert('No se pudo cargar la ficha: ' + e.message); return; }
     const d = p.driver || {};
-    let airlines = [];
-    if (p.role === 'auxiliar') { try { airlines = (await Api.listAirlines()) || []; } catch (_) {} }
+    const ax = p.aux || {};
+    let airlines = [], residences = null;
+    if (p.role === 'auxiliar') {
+      [airlines, residences] = await Promise.all([
+        Promise.resolve().then(() => Api.listAirlines()).then(l => l || [], () => []),
+        Promise.resolve().then(() => Api.listResidencesAdmin()).catch(() => null),
+      ]);
+    }
 
     const soyYo = state.profile && state.profile.id === p.id;
     let body = usrField('Nombre completo', 'full_name', p.full_name)
@@ -95,6 +101,7 @@
           <option value="">— Sin aerolínea —</option>
           ${airlines.filter(a => a.is_active !== false || a.id === cur).map(a => `<option value="${escapeAttr(a.id)}" ${a.id === cur ? 'selected' : ''}>${escapeHtml(a.name)}</option>`).join('')}
         </select></div></div>`;
+      body += usrPuntoHTML(ax, residences);
     }
     body += `<p class="set-hint" style="margin-top:12px">${soyYo
       ? 'Si cambias tu correo, desde ya entras con el nuevo.'
@@ -102,6 +109,12 @@
 
     const ov = usrModal('usr-edit-modal', 'Editar datos', escapeHtml(p.full_name || ''), body,
       `<button class="wk-btn wk-coord-off" data-usr="cancel">Cancelar</button><button class="wk-btn wk-coord-on" data-usr="save">Guardar</button>`);
+
+    // Sin segunda unidad no hay apartamento de segunda unidad: el campo se
+    // apaga (y la base lo borra al quitarla).
+    const sel2 = ov.querySelector('[data-f="residence_id_2"]');
+    const unit2 = ov.querySelector('[data-f="residence_unit_2"]');
+    if (sel2 && unit2) sel2.addEventListener('change', () => { unit2.disabled = !sel2.value; });
 
     ov.querySelector('[data-usr="save"]').addEventListener('click', async (ev) => {
       const btn = ev.currentTarget;
@@ -111,7 +124,9 @@
         license_number: d.license_number || '', license_expires_at: d.license_expires_at || '',
         eps_provider: d.eps_provider || '', eps_expires_at: d.eps_expires_at || '',
         arl_provider: d.arl_provider || '', arl_expires_at: d.arl_expires_at || '',
-        airline_id: (p.aux && p.aux.airline_id) || '',
+        airline_id: ax.airline_id || '',
+        residence_id: ax.residence_id || '', residence_unit: ax.residence_unit || '',
+        residence_id_2: ax.residence_id_2 || '', residence_unit_2: ax.residence_unit_2 || '',
       };
       const changes = {};
       let newEmail = null;
@@ -131,10 +146,40 @@
         toast('Datos guardados.');
         if (onDone) await onDone();
       } catch (e) {
-        usrShowErr(ov, e.message || 'No se pudo guardar.');
+        const m = e.message || '';
+        usrShowErr(ov, /Campo no editable: residence/.test(m)
+          ? 'Para cambiar el conjunto falta poner al día la base (migración 0114).'
+          : m || 'No se pudo guardar.');
         btn.disabled = false;
       }
     });
+  }
+
+  // Dónde se recoge al tripulante (0114): conjunto + apartamento y, si tiene,
+  // la segunda unidad. Se ofrecen los conjuntos activos y, aunque esté
+  // desactivado, el que ya tiene (guardar otro dato no lo obliga a moverse).
+  // «Sin conjunto» solo sale si tiene dirección propia con pin: es la regla de
+  // la base (auxiliar_profiles_pickup_known).
+  function usrPuntoHTML(ax, residences) {
+    if (!residences) {
+      return `<p class="set-hint" style="margin-top:14px">No se pudo cargar la lista de conjuntos: el punto de recogida no se puede cambiar ahora. Cierra y vuelve a abrir.</p>`;
+    }
+    const opts = (cur) => residences.filter(r => r.is_active !== false || r.id === cur)
+      .map(r => `<option value="${escapeAttr(r.id)}" ${r.id === cur ? 'selected' : ''}>${escapeHtml(r.name)}${r.is_active === false ? ' (desactivado)' : ''}</option>`).join('');
+    const casa = ax.home_latitude != null && ax.home_longitude != null;
+    const sinConj = casa
+      ? `<option value="" ${ax.residence_id ? '' : 'selected'}>Sin conjunto · dirección propia${ax.home_address ? ': ' + escapeHtml(ax.home_address) : ''}</option>`
+      : (ax.residence_id ? '' : `<option value="" selected>— Elige un conjunto —</option>`);
+    const sel = (key, first, cur) => `<div class="set-selwrap"><select class="set-sel" data-f="${key}">${first}${opts(cur)}</select></div>`;
+    return `<div class="set-grid2" style="margin-top:14px">
+        <div class="set-field"><label>Conjunto</label>${sel('residence_id', sinConj, ax.residence_id || '')}</div>
+        ${usrField('Apartamento / torre', 'residence_unit', ax.residence_unit)}
+      </div>
+      <div class="set-grid2" style="margin-top:14px">
+        <div class="set-field"><label>Segunda unidad</label>${sel('residence_id_2', `<option value="">— No tiene —</option>`, ax.residence_id_2 || '')}</div>
+        ${usrField('Apartamento de la 2ª unidad', 'residence_unit_2', ax.residence_unit_2, 'text', ax.residence_id_2 ? '' : 'disabled')}
+      </div>
+      <p class="set-hint" style="margin-top:8px">Los traslados que ya pidió no cambian: los próximos salen del punto nuevo.</p>`;
   }
 
   // ─────────────────────────────────────────────────────────────────────
