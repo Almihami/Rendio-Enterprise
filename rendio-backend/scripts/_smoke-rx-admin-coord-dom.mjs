@@ -188,6 +188,11 @@ console.log('\n── admin-coordinacion.js · bandeja, hilo y respuesta ──'
   const s2 = calls.filter(c => c[0] === 'send')[1];
   t('Enter también envía, y sin contexto no manda reserva', s2 && s2[1] === 'Otra cosa' && !s2[2].reservationId, JSON.stringify(s2));
   t('si no le sonó, lo dice (no finge «enviado» a secas)', toasts.some(x => /no tiene notificaciones activadas/.test(x)), toasts.join(' | '));
+  // 16-oct-2026: el aviso de que no tiene notificaciones sale UNA vez por tripulante.
+  const avisosAntes = toasts.filter(x => /no tiene notificaciones activadas/.test(x)).length;
+  input.value = 'Y otra más';
+  w.document.getElementById('co-send').click(); await wait(80);
+  t('la segunda vez sin notificaciones NO lo repite: «Mensaje enviado.»', toasts.filter(x => /no tiene notificaciones activadas/.test(x)).length === avisosAntes && toasts[toasts.length - 1] === 'Mensaje enviado.', toasts.slice(-2).join(' | '));
 
   // Fallo: devuelve el texto y quita la burbuja.
   sendResp = async () => { throw new Error('El mensaje es demasiado largo (máximo 500 caracteres)'); };

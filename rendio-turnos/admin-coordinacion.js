@@ -56,6 +56,7 @@
     hist: null,              // ApiAux.crewConversations(aux) (null = sin leer o sin 0113)
     histShow: false,         // la lista del historial a la vista
     closing: false,
+    sinAvisos: new Set(),    // tripulantes de los que ya se dijo que no tienen notificaciones
   };
 
   // ── utilidades ───────────────────────────────────────────────────────────
@@ -614,8 +615,16 @@
       }
       const n = Array.isArray(r.recipients) ? r.recipients.length : 0;
       if (!n) say('Guardado en el hilo, pero no había a quién avisarle.');
-      else if (r.notified === false) say('Enviado, pero no tiene notificaciones activadas: lo verá al abrir la app.');
-      else say('Mensaje enviado.');
+      // Que no tiene notificaciones se dice UNA vez por tripulante (16-oct-2026,
+      // pedido de la profa): repetirlo en cada mensaje es ruido. Si después le
+      // empiezan a llegar, se olvida, por si las vuelve a apagar.
+      else if (r.notified === false && !co.sinAvisos.has(aux)) {
+        co.sinAvisos.add(aux);
+        say('Enviado, pero no tiene notificaciones activadas: lo verá al abrir la app.');
+      } else {
+        if (r.notified === true) co.sinAvisos.delete(aux);
+        say('Mensaje enviado.');
+      }
       if (co.openAux === aux) {
         co.msgs = (co.msgs || []).filter(m => m.id !== temp.id);
         await loadMsgs(false);
