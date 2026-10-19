@@ -25,6 +25,27 @@
     catch (_) { return iso; }
   };
   const rvBogDay = (iso) => { try { return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }); } catch (_) { return ''; } };
+  // «Mar 13 oct», como se escribe en español. Antes el CSS le ponía mayúscula a
+  // CADA palabra (text-transform: capitalize) y salía «Mar, 13 De Oct.».
+  // rvDateES se queda como estaba porque va DENTRO de una frase (el aviso de
+  // cancelación: «Tu traslado del mar, 13 de oct. fue cancelado»).
+  const rvDayShort = (iso) => {
+    try {
+      const d = new Date(iso);
+      const part = (o) => d.toLocaleDateString('es-CO', Object.assign({ timeZone: 'America/Bogota' }, o)).replace(/\./g, '');
+      const wd = part({ weekday: 'short' });
+      return wd.charAt(0).toUpperCase() + wd.slice(1) + ' ' + part({ day: 'numeric' }) + ' ' + part({ month: 'short' });
+    } catch (_) { return iso; }
+  };
+  // En el filtro, los días cercanos con nombre: es lo que el jefe busca primero.
+  const rvDayChip = (ymd) => {
+    const hoy = rvBogDay(new Date().toISOString());
+    const mas = (n) => { const t = new Date(hoy + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+    if (ymd === hoy) return 'Hoy';
+    if (ymd === mas(1)) return 'Mañana';
+    if (ymd === mas(-1)) return 'Ayer';
+    return rvDayShort(ymd + 'T12:00:00-05:00');
+  };
 
   // ¿Se pidió con poca anticipación? Se calcula (created_at vs hora del vuelo)
   // contra el parámetro de Ajustes; no hace falta guardarlo en la BD.
@@ -103,37 +124,39 @@
   // «2 maletas», «1 maleta», «Sin maletas». null = el tripulante no lo dijo.
   const rvBagsLabel = (n) => n == null ? '' : n === 0 ? 'Sin maletas' : `${n} maleta${n === 1 ? '' : 's'}`;
 
+  const RV_F = {
+    all:       () => true,
+    active:    (r) => !['cancelled', 'done', 'noshow'].includes(r.status),
+    pending:   (r) => r.status === 'pending',
+    cancelled: (r) => r.status === 'cancelled',
+    rated:     (r) => r.rating > 0,
+  };
+  const rvOfDay = (items) => rvState.day === 'all' ? items : items.filter(r => rvBogDay(r.when) === rvState.day);
+
   function rvFiltered() {
-    let items = rvState.items;
-    if (rvState.day !== 'all') items = items.filter(r => rvBogDay(r.when) === rvState.day);
-    if (rvState.filter === 'active') items = items.filter(r => !['cancelled', 'done', 'noshow'].includes(r.status));
-    else if (rvState.filter === 'pending') items = items.filter(r => r.status === 'pending');
-    else if (rvState.filter === 'cancelled') items = items.filter(r => r.status === 'cancelled');
-    else if (rvState.filter === 'rated') items = items.filter(r => r.rating > 0);
-    return items;
+    return rvOfDay(rvState.items).filter(RV_F[rvState.filter] || RV_F.all);
   }
 
   function renderReservasList() {
     const list = $('#rv-list'); if (!list) return;
     const items = rvFiltered();
-    // Chips de día (los días que realmente tienen reservas).
+    // Los números se cruzan: los del estado cuentan SOLO el día elegido y los
+    // del día cuentan SOLO el estado elegido. Antes los del estado contaban
+    // todos los días, y con un día puesto la lista y los números no cuadraban.
+    const cuenta = (n) => `<span class="n${n ? '' : ' zero'}">${n}</span>`;
+    const delEstado = rvState.items.filter(RV_F[rvState.filter] || RV_F.all);
     const days = [...new Set(rvState.items.map(r => rvBogDay(r.when)))].sort();
     const dayBar = $('#rv-days');
     if (dayBar) {
-      dayBar.innerHTML = [`<button class="rv-chip ${rvState.day === 'all' ? 'on' : ''}" data-rv-day="all">Todos</button>`]
-        .concat(days.map(d => `<button class="rv-chip ${rvState.day === d ? 'on' : ''}" data-rv-day="${d}">${rvDateES(d + 'T12:00:00')}</button>`))
+      dayBar.innerHTML = [`<button class="rv-fbtn ${rvState.day === 'all' ? 'on' : ''}" data-rv-day="all">Todos los días ${cuenta(delEstado.length)}</button>`]
+        .concat(days.map(d => `<button class="rv-fbtn ${rvState.day === d ? 'on' : ''}" data-rv-day="${d}" title="${escapeHtml(rvDateES(d + 'T12:00:00-05:00'))}">${escapeHtml(rvDayChip(d))} ${cuenta(delEstado.filter(r => rvBogDay(r.when) === d).length)}</button>`))
         .join('');
     }
-    const counts = {
-      all: rvState.items.length,
-      active: rvState.items.filter(r => !['cancelled', 'done', 'noshow'].includes(r.status)).length,
-      pending: rvState.items.filter(r => r.status === 'pending').length,
-      cancelled: rvState.items.filter(r => r.status === 'cancelled').length,
-      rated: rvState.items.filter(r => r.rating > 0).length,
-    };
+    const delDia = rvOfDay(rvState.items);
     $$('#rv-ui [data-rv-f]').forEach(b => {
       b.classList.toggle('on', b.dataset.rvF === rvState.filter);
-      const n = b.querySelector('i'); if (n) n.textContent = counts[b.dataset.rvF] != null ? counts[b.dataset.rvF] : '';
+      const n = b.querySelector('.n');
+      if (n) { const c = delDia.filter(RV_F[b.dataset.rvF] || RV_F.all).length; n.textContent = c; n.classList.toggle('zero', !c); }
     });
     if ($('#rv-count')) $('#rv-count').textContent = items.length;
 
@@ -162,7 +185,7 @@
     return `<div class="rv-row ${r.status === 'cancelled' ? 'off' : ''}" data-rv-row="${r.id}">
       <div class="rv-when">
         <b>${escapeHtml(r.time)}</b>
-        <span>${escapeHtml(rvDateES(r.when))}</span>
+        <span>${escapeHtml(rvDayShort(r.when))}</span>
       </div>
       <div class="rv-main">
         <div class="rv-top">

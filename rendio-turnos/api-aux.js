@@ -6,6 +6,7 @@
 //   window.ApiAux = {
 //     listMyTrips, getMyStats, saveMyPrefs, changeFlight,
 //     crewList, crewSend, crewMarkRead, crewUnread, crewThreadsAdmin,
+//     crewConversations, crewClose,          // 0113: conversaciones e historial
 //     getOpsContact, setOpsContact, setVehicleColor,
 //     mapTrip,            // fila de auxiliar_my_trips → viaje T (lo usan las pruebas y el arnés)
 //   }
@@ -243,6 +244,11 @@
       at: m.created_at || null,
       read: m.read === true,
       readAt: m.read_at || null,
+      // 0113: quién del equipo escribió (primer nombre) y en qué conversación.
+      // Sin 0113 vienen vacíos y la pantalla se comporta como antes.
+      senderName: m.sender_name || '',
+      conversationId: m.conversation_id || null,
+      conversationOpen: m.conversation_open === undefined ? null : m.conversation_open === true,
       reservation: res ? {
         id: res.id, type: res.direction === 'airport_to_home' ? 'lle' : 'sal',
         date: res.date || null, time: res.time || null,
@@ -252,11 +258,26 @@
 
   // El hilo, en orden de llegada. Tripulante: sin argumento (el suyo).
   // Jefe: el id del perfil de tripulante (auxiliar_profiles.id).
-  async function crewList(auxId) {
-    const r = await rpc('crew_list_messages', { p_auxiliar_profile_id: auxId || null, p_limit: 100 });
+  // 0113: sin conversationId trae la conversación ACTUAL (tripulante: la abierta,
+  // o [] = chat nuevo; jefe: la abierta o la última); con él, esa del historial.
+  // El parámetro solo se manda si hace falta: sin 0113 la función no lo conoce.
+  async function crewList(auxId, conversationId) {
+    const args = { p_auxiliar_profile_id: auxId || null, p_limit: 100 };
+    if (conversationId) args.p_conversation_id = conversationId;
+    const r = await rpc('crew_list_messages', args);
     if (r.missing) return null;
     if (r.error) { console.warn('[ApiAux.crewList]', r.error.message || r.error); return null; }
     return Array.isArray(r.data) ? r.data.map(mapMsg) : null;
+  }
+
+  // «Laura Gómez»: nombre y primer apellido de quien escribe, para el título
+  // del aviso a los jefes (15-oct-2026: «Mensaje de un tripulante» no decía de
+  // quién). Sale del perfil de la sesión: quien escribe es este dispositivo.
+  function nombreCorto() {
+    try {
+      const p = (typeof state !== 'undefined' && state && state.profile) || null;
+      return String((p && p.full_name) || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ');
+    } catch (_) { return ''; }
   }
 
   // Envía y avisa. Tripulante: crewSend(texto, {reservationId}) → a los jefes.
@@ -275,10 +296,14 @@
     let notified = null;
     if (to.length && window.Api && typeof Api.sendPush === 'function') {
       const deTripulante = d.sender_role === 'auxiliar';
+      // Del jefe al tripulante: «Coordinación (Julián)» (16-oct-2026: el
+      // tripulante tiene que saber qué jefe le escribe).
+      const jefe = d.sender_name || nombreCorto().split(' ')[0] || '';
       try {
         const p = await Api.sendPush({
           profileIds: to,
-          title: deTripulante ? 'Mensaje de un tripulante' : 'Coordinación',
+          title: deTripulante ? (nombreCorto() ? 'Mensaje de ' + nombreCorto() : 'Mensaje de un tripulante')
+            : (jefe ? 'Coordinación (' + jefe + ')' : 'Coordinación'),
           body: String(body || '').trim().slice(0, 120),
           url: deTripulante ? '/#/coordinacion?aux=' + d.auxiliar_profile_id : '/#/coordinacion',
         });
@@ -288,6 +313,8 @@
     return {
       id: d.id || null, createdAt: d.created_at || null, senderRole: d.sender_role || null,
       auxId: d.auxiliar_profile_id || null, reservationId: d.reservation_id || null,
+      conversationId: d.conversation_id || null, newConversation: d.new_conversation === true,
+      senderName: d.sender_name || '',
       recipients: to, notified,
     };
   }
@@ -319,7 +346,36 @@
       lastBody: t.last_body || '', lastRole: t.last_role || null, lastAt: t.last_at || null,
       lastReservationId: t.last_reservation_id || null,
       unread: num(t.unread) || 0, total: num(t.total) || 0,
+      // 0113 (sin ella: null y la bandeja no dice nada de conversaciones).
+      lastSenderName: t.last_sender_name || '',
+      conversationId: t.conversation_id || null,
+      open: t.open === undefined ? null : t.open === true,
+      conversations: t.conversations == null ? null : (num(t.conversations) || 0),
     }));
+  }
+
+  // ── Conversaciones (0113) ─────────────────────────────────────────────────
+  // Historial de un tripulante (el suyo, sin argumento), la más reciente primero.
+  async function crewConversations(auxId) {
+    const r = await rpc('crew_conversations_list', { p_auxiliar_profile_id: auxId || null });
+    if (r.missing) return null;
+    if (r.error) { console.warn('[ApiAux.crewConversations]', r.error.message || r.error); return null; }
+    if (!Array.isArray(r.data)) return null;
+    return r.data.map(c => ({
+      id: c.id, openedAt: c.opened_at || null, lastAt: c.last_at || null,
+      open: c.open === true, closedAt: c.closed_at || null, closeReason: c.close_reason || null,
+      closedByName: c.closed_by_name || '', messages: num(c.messages) || 0, unread: num(c.unread) || 0,
+      firstBody: c.first_body || '', lastBody: c.last_body || '',
+    }));
+  }
+  // «Resuelta»: un jefe cierra la conversación. El siguiente mensaje abre otra.
+  async function crewClose(conversationId) {
+    const r = await rpc('crew_close_conversation', { p_conversation_id: conversationId });
+    if (r.missing) return null;
+    if (r.error) lanzar(r.error, 'No se pudo cerrar la conversación');
+    const d = r.data || {};
+    return { id: d.id || conversationId, closedAt: d.closed_at || null, alreadyClosed: d.already_closed === true,
+      closedByName: d.closed_by_name || '' };
   }
 
   // ── Teléfono y horario de Coordinación (app_settings, 0088) ───────────────
@@ -368,6 +424,7 @@
   window.ApiAux = {
     listMyTrips, getMyStats, saveMyPrefs, changeFlight,
     crewList, crewSend, crewMarkRead, crewUnread, crewThreadsAdmin,
+    crewConversations, crewClose,
     getOpsContact, setOpsContact, setVehicleColor,
     mapTrip,
   };

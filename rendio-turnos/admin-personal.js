@@ -51,6 +51,14 @@
       return;
     }
     state._strikeCounts = strikeCounts;
+    // Avisos de la operación (14-oct-2026). Les llegan a los jefes marcados con
+    // 🔔 o, si no hay ninguno marcado, a TODOS los activos (ops_alert_recipients,
+    // 0063). Y solo suenan si ese jefe activó las notificaciones en algún
+    // dispositivo. null = no se pudo leer: no se dice nada en vez de adivinar.
+    const pushDev = typeof Api.pushDevicesByProfile === 'function'
+      ? await Api.pushDevicesByProfile((admins || []).map(a => a.id)).catch(() => null)
+      : null;
+    const algunoMarcado = (admins || []).some(a => a.is_active !== false && a.receives_ops_alerts === true);
     // Km acumulado por persona (profile_id) desde los turnos cerrados.
     const kmByProfile = new Map();
     (closedShifts || []).forEach(s => {
@@ -90,6 +98,8 @@
       ...admins.map(a => ({ id: a.id, name: a.full_name, email: a.email, role: 'admin',
         coord: a.is_coordinator !== false, active: a.is_active !== false, strikes: 0, suspWeek: false, rest: '',
         alerts: a.receives_ops_alerts === true,
+        getsAlerts: a.is_active !== false && (algunoMarcado ? a.receives_ops_alerts === true : true),
+        devices: pushDev ? (pushDev.get(a.id) || { n: 0, last: null }) : null,
         load: { am: 0, pm: 0, co: 0, total: 0 } })),
       ...drivers.map(d => ({ id: d.id, name: d.name, email: d.email, role: 'driver',
         coord: d.can_coordinate === true, active: d.active !== false, reason: d.suspendedReason || '',
@@ -133,11 +143,29 @@
     const rowsEl = list.querySelector('#pc-rows');
     const detEl = list.querySelector('#pc-detail');
 
+    const avisosCorto = (p) => !p.active || !p.devices ? ''
+      : !p.getsAlerts ? ' · no recibe avisos'
+      : p.devices.n ? ' · 🔔 avisos activos'
+      : ' · ⚠ sin celular con avisos';
+    // Lo que decide si a un jefe le suena el celular: que le lleguen y que
+    // tenga al menos un dispositivo con las notificaciones activas.
+    const avisosHtml = (p) => {
+      const dev = p.devices;
+      const nota = (txt, tono) => `<p style="font-size:12.5px;line-height:1.5;margin-top:10px;color:${tono || 'var(--pc-ink2)'}">${txt}</p>`;
+      return `<div class="ruleitem"><span class="t">Eventualidades y mensajes a Coordinación</span><span class="v">${p.getsAlerts ? 'Le llegan' : 'No le llegan'}</span></div>
+        ${dev ? `<div class="ruleitem"><span class="t">Dispositivos con avisos activos</span><span class="v">${dev.n || 'Ninguno'}</span></div>` : ''}
+        ${!p.active ? nota('Sin acceso a la app: no le llega nada.')
+          : !p.getsAlerts ? nota('Solo les llegan a los jefes marcados con <b>🔔 Recibe alertas</b>. Márcalo abajo si también las debe recibir.')
+          : dev && !dev.n ? nota('<b>No le va a sonar nada:</b> no ha activado las notificaciones en ningún celular. Que abra Rendio en su celular, toque el menú ☰ y luego «Notificaciones» (en iPhone, con la app instalada en la pantalla de inicio).', 'var(--pc-red)')
+          : dev ? nota('Listo. Desde el menú ☰ → «Notificaciones» puede mandarse una de prueba.' + (algunoMarcado ? '' : ' Como nadie está marcado con 🔔, les llegan a todos los jefes.'))
+          : ''}`;
+    };
+
     const rowHtml = (p) => {
       const si = statusInfo(p);
       return `<div class="mrow ${p.id === state._pcSel ? 'on' : ''} ${!p.active ? 'sus' : ''}" data-sel="${p.id}">
         <span class="av" style="background:${colorOf(p)}">${initials(p.name)}</span>
-        <div class="nm"><b>${escapeHtml(p.name)}</b><span>${p.deleted ? (p.role === 'admin' ? 'Administrador' : 'Conductor') + ' · eliminado' : p.role === 'admin' ? 'Administrador' : (p.rest ? 'Descanso: ' + escapeHtml(p.rest) : 'Conductor')}</span></div>
+        <div class="nm"><b>${escapeHtml(p.name)}</b><span>${p.deleted ? (p.role === 'admin' ? 'Administrador' : 'Conductor') + ' · eliminado' : p.role === 'admin' ? 'Administrador' + avisosCorto(p) : (p.rest ? 'Descanso: ' + escapeHtml(p.rest) : 'Conductor')}</span></div>
         ${p.role === 'admin' || p.deleted
           ? `<span class="sdot ${si.dot}"></span>`
           : `<span class="mini ${loadCls(p.load.total)}"><i style="width:${Math.min(p.load.total / 5 * 100, 100)}%"></i></span>`}
@@ -189,8 +217,8 @@
         </div>
         <div class="dbody">
           <div class="dblock">
-            <h3>Carga de la semana</h3>
-            ${adm ? '<p style="font-size:13px;color:var(--pc-ink2)">Los administradores no entran al reparto de turnos.</p>'
+            <h3>${adm ? 'Avisos de la operación' : 'Carga de la semana'}</h3>
+            ${adm ? avisosHtml(p)
               : `<div class="bigload ${loadCls(L.total)}"><span class="num">${L.total}<s>/5</s></span><span class="bar"><i style="width:${Math.min(L.total / 5 * 100, 100)}%"></i></span></div>
                  <div class="breakdown"><div><b>${L.am}</b>AM</div><div><b>${L.pm}</b>PM</div><div><b>${L.co}</b>Coord</div></div>
                  ${!sched ? '<p style="font-size:11px;color:var(--pc-ink3);margin-top:10px">Sin horario guardado esta semana.</p>' : ''}`}

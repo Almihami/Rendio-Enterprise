@@ -16,7 +16,8 @@
   // Reservas sin perder el filtro ni el polling de la pantalla de abajo. Por eso
   // vive suelta en el DOM (#jefe-chat) y no dentro de un panel.
   // ====================================================================
-  const jcState = { rid: null, msgs: [], sending: false, poll: null, bound: false };
+  const jcState = { rid: null, msgs: [], sending: false, poll: null, bound: false,
+    sinAvisos: new Set() };   // traslados de los que ya se dijo que no les suena el aviso
 
   const JC_POLL_MS = 5000;  // igual que el chat del conductor: no hay Realtime
   const JC_WHO = { auxiliar: 'Tripulante', driver: 'Conductor', admin: '' };
@@ -109,9 +110,13 @@
       // mensaje se queda ahí hasta que abra la app, y eso hay que saberlo.
       const n = (r && r.recipients) ? r.recipients.length : 0;
       if (!n) toast('Guardado, pero todavía no había a quién avisarle.');
-      else if (r.notified === false) {
+      // Una vez por traslado (16-oct-2026): después de la primera, «enviado» a
+      // secas. Si luego sí les suena, se olvida, por si las vuelven a apagar.
+      else if (r.notified === false && !jcState.sinAvisos.has(rid)) {
+        jcState.sinAvisos.add(rid);
         toast(`Enviado a ${n === 1 ? '1 persona' : n + ' personas'}, pero no tienen notificaciones activadas: lo verán al abrir la app.`);
       } else {
+        if (r.notified === true) jcState.sinAvisos.delete(rid);
         toast(n === 1 ? 'Mensaje enviado.' : `Mensaje enviado a ${n} personas.`);
       }
       await jcSync();

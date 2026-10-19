@@ -154,7 +154,10 @@ console.log('\n── admin-coordinacion.js · bandeja, hilo y respuesta ──'
   const tel = w.document.querySelector('#co-th-head a[href^="tel:"]');
   t('teléfono del tripulante como enlace tel:', tel && tel.getAttribute('href') === 'tel:3001112233', tel && tel.getAttribute('href'));
   const bubs = [...w.document.querySelectorAll('#co-msgs .co-msg')];
-  t('3 burbujas: tripulante a la izquierda, Coordinación a la derecha', bubs.length === 3 && bubs[0].classList.contains('their') && bubs[1].classList.contains('mine') && /Coordinación/.test(bubs[1].textContent));
+  // 15-oct-2026: como en cualquier chat, sin rótulo en cada burbuja; quién es
+  // quién lo dice el lado (clase) y el campo de escribir es un textarea.
+  t('3 burbujas: tripulante a la izquierda, Coordinación a la derecha, sin rótulo', bubs.length === 3 && bubs[0].classList.contains('their') && bubs[1].classList.contains('mine') && !bubs[1].querySelector('em') && !/TRIPULANTE|Tripulante/.test(bubs[0].textContent));
+  t('el campo de escribir es un textarea que crece (Enter envía)', w.document.getElementById('co-input').tagName === 'TEXTAREA');
   t('«Leído» solo en lo del jefe que el tripulante ya leyó', /Leído/.test(bubs[1].textContent) && !/Leído/.test(bubs[0].textContent));
   t('el texto del tripulante se escapa (sin <img> vivo)', !w.document.querySelector('#co-msgs img') && /<img src=x/.test(bubs[2].textContent));
   const ctxA = bubs[2].querySelector('a.co-msg-ctx');
@@ -185,6 +188,11 @@ console.log('\n── admin-coordinacion.js · bandeja, hilo y respuesta ──'
   const s2 = calls.filter(c => c[0] === 'send')[1];
   t('Enter también envía, y sin contexto no manda reserva', s2 && s2[1] === 'Otra cosa' && !s2[2].reservationId, JSON.stringify(s2));
   t('si no le sonó, lo dice (no finge «enviado» a secas)', toasts.some(x => /no tiene notificaciones activadas/.test(x)), toasts.join(' | '));
+  // 16-oct-2026: el aviso de que no tiene notificaciones sale UNA vez por tripulante.
+  const avisosAntes = toasts.filter(x => /no tiene notificaciones activadas/.test(x)).length;
+  input.value = 'Y otra más';
+  w.document.getElementById('co-send').click(); await wait(80);
+  t('la segunda vez sin notificaciones NO lo repite: «Mensaje enviado.»', toasts.filter(x => /no tiene notificaciones activadas/.test(x)).length === avisosAntes && toasts[toasts.length - 1] === 'Mensaje enviado.', toasts.slice(-2).join(' | '));
 
   // Fallo: devuelve el texto y quita la burbuja.
   sendResp = async () => { throw new Error('El mensaje es demasiado largo (máximo 500 caracteres)'); };

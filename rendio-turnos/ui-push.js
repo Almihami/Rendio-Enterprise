@@ -69,12 +69,14 @@
     });
   }
 
-  function toast(msg) {
+  // ms opcional: los avisos que dicen QUÉ HACER (ir a los ajustes del teléfono)
+  // no se alcanzan a leer en 2,5 s.
+  function toast(msg, ms) {
     const t = $('#toast');
     t.textContent = msg;
     t.classList.remove('hidden');
     clearTimeout(toast._t);
-    toast._t = setTimeout(() => t.classList.add('hidden'), 2500);
+    toast._t = setTimeout(() => t.classList.add('hidden'), ms || 2500);
   }
 
   // ====================================================================
@@ -142,6 +144,7 @@
   async function setupPushUI() {
     // El vigilante de abajo puede dispararlo antes de que alguien entre.
     if (!state || !state.profile) return;
+    if (state.profile.role === 'admin') refreshAdminPushItem();
     const existing = document.getElementById('enable-push-bar');
     // El admin en el COMPUTADOR sigue sin barra: es un módulo de escritorio y la
     // barra se quitó a propósito en junio para no ensuciar la consola. En el
@@ -201,6 +204,93 @@
     else if (mq.addListener) mq.addListener(alCambiar);   // Safari viejo
   }
   watchAdminPhone();
+
+  // ====================================================================
+  // Un lugar FIJO para las notificaciones (pedido de la profa, 14-oct-2026)
+  // ====================================================================
+  // La barra de arriba desaparece apenas se activan, y después no quedaba
+  // dónde ver si seguían activas ni cómo comprobar que suenan. Ahora:
+  //   · conductor → una fila en su Perfil (driver-perfil.js);
+  //   · jefe      → «Notificaciones» al pie del menú (#adm-push); en el celular
+  //                 es el menú ☰, que es donde la profa pidió encontrarlo;
+  //   · tripulante → ya lo tenía en su Perfil («Notificaciones y app»).
+
+  // Estado en ESTE dispositivo: 'on' | 'off' | 'blocked' | 'install' (iPhone
+  // sin la app en la pantalla de inicio) | 'na' (el navegador no las soporta).
+  async function pushStatus() {
+    if (!pushSupported()) return pushNeedsInstall() ? 'install' : 'na';
+    if (Notification.permission === 'denied') return 'blocked';
+    try {
+      // serviceWorker.ready no resuelve NUNCA si el SW no se registró: tope de 3 s.
+      const reg = await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(() => r(null), 3000))]);
+      if (!reg || !reg.pushManager) return 'na';
+      return (await reg.pushManager.getSubscription()) ? 'on' : 'off';
+    } catch (_) { return 'na'; }
+  }
+  const PUSH_STATUS_TXT = { on: 'Activas · probar', off: 'Actívalas', blocked: 'Bloqueadas', install: 'Instala la app', na: 'No disponibles' };
+
+  // Al tocar la fila. Apagadas → se activan. Activas → se manda UNA DE PRUEBA:
+  // es la única forma de saber que de verdad suenan en este celular. Las demás
+  // → se dice qué hacer, no un «no disponible» a secas.
+  async function pushRowTap() {
+    const s = await pushStatus();
+    if (s === 'off') { await enablePush(); return; }
+    if (s === 'on') { await pushSendTest(); return; }
+    toast(s === 'blocked'
+      ? 'Están bloqueadas para Rendio. Actívalas en los ajustes del teléfono (Notificaciones) y vuelve a abrir la app.'
+      : s === 'install' ? IOS_PUSH_MSG
+      : 'Este navegador no permite notificaciones. Abre Rendio en Chrome o Safari actualizado.', 6000);
+  }
+
+  // La prueba vuelve a guardar la suscripción antes de enviar: si la base la
+  // borró (send-push limpia las que el servicio de avisos da por vencidas), el
+  // celular cree que están activas y no le llega nada. Así se arregla sola.
+  async function pushSendTest() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        const json = sub.toJSON();
+        await Api.savePushSubscription({
+          profileId: state.profile.id, endpoint: sub.endpoint,
+          p256dh: json.keys.p256dh, auth: json.keys.auth, userAgent: navigator.userAgent,
+        });
+      }
+      const r = await Api.sendPush({
+        profileIds: [state.profile.id],
+        title: '🔔 Prueba de Rendio',
+        body: 'Si ves esto, los avisos sí te llegan.',
+        url: '/',
+      });
+      toast(r && r.sent > 0
+        ? 'Te enviamos una de prueba: debe llegarte en unos segundos.'
+        : 'La prueba no salió. Vuelve a intentarlo en un rato.', 5000);
+    } catch (e) {
+      toast(navigator.onLine === false
+        ? 'Sin conexión: no se pudo enviar la prueba.'
+        : 'No se pudo enviar la prueba. Intenta de nuevo en un rato.', 4000);
+    }
+  }
+
+  // Menú del jefe: el texto chico dice el estado sin abrir nada, y el punto de
+  // color (CSS, por data-st) se ve aunque el menú esté colapsado.
+  async function refreshAdminPushItem() {
+    const it = document.getElementById('adm-push'); if (!it) return;
+    const s = await pushStatus();
+    it.dataset.st = s;
+    const tx = document.getElementById('adm-push-st');
+    if (tx) tx.textContent = PUSH_STATUS_TXT[s];
+    it.title = 'Notificaciones: ' + PUSH_STATUS_TXT[s].toLowerCase();
+  }
+  // Delegado: el sidebar ya existe en el HTML, pero así no depende del orden de carga.
+  const onAdmPush = async (e) => {
+    if (!e.target.closest || !e.target.closest('#adm-push')) return;
+    if (e.type === 'keydown') { if (e.key !== 'Enter' && e.key !== ' ') return; e.preventDefault(); }
+    await pushRowTap();
+    refreshAdminPushItem();
+  };
+  document.addEventListener('click', onAdmPush);
+  document.addEventListener('keydown', onAdmPush);
 
   // Aviso a los jefes de operación por una eventualidad.
   //

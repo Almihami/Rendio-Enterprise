@@ -727,6 +727,26 @@
     if (error) throw error;
   }
 
+  // Cuántos dispositivos tiene cada persona con las notificaciones activas, y
+  // cuándo se tocó la última suscripción. Lo usa Personal: que un jefe esté
+  // marcado con 🔔 no sirve de nada si su celular nunca las activó. La RLS de
+  // 0021 ya le deja leerlas al admin; no hace falta migración.
+  async function pushDevicesByProfile(profileIds) {
+    const ids = (profileIds || []).filter(Boolean);
+    const out = new Map();
+    if (!ids.length) return out;
+    const { data, error } = await sb.from('push_subscriptions')
+      .select('profile_id, updated_at').in('profile_id', ids);
+    if (error) throw error;
+    (data || []).forEach(r => {
+      const cur = out.get(r.profile_id) || { n: 0, last: null };
+      cur.n += 1;
+      if (!cur.last || r.updated_at > cur.last) cur.last = r.updated_at;
+      out.set(r.profile_id, cur);
+    });
+    return out;
+  }
+
   // Dispara notificaciones vía Edge Function (best-effort: si no está desplegada,
   // el caller ignora el error). profileIds: array de destinatarios.
   async function sendPush({ profileIds, title, body, url }) {
@@ -3121,6 +3141,16 @@
     return data || [];
   }
 
+  // «Laura Gómez»: nombre y primer apellido de quien escribe, para el título
+  // del aviso a los jefes (15-oct-2026: «Mensaje de un tripulante» no decía de
+  // quién). Sale del perfil de la sesión: quien escribe es este dispositivo.
+  function nombreCorto() {
+    try {
+      const p = (typeof state !== 'undefined' && state && state.profile) || null;
+      return String((p && p.full_name) || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ');
+    } catch (_) { return ''; }
+  }
+
   // Envía y avisa a quien corresponda. El RPC deduce el rol y devuelve los
   // destinatarios: el que escribe no tiene por qué conocer el profile_id del
   // otro. Desde 0067 pueden ser VARIOS (el jefe le escribe al tripulante y al
@@ -3145,7 +3175,7 @@
       // les diría que son el conductor de alguien. Se avisa además de dónde
       // aterrizar, porque el jefe lee esto desde la bandeja, no desde un viaje.
       const titulo = data && data.to_admins
-        ? 'Un tripulante escribió y no tiene carro asignado'
+        ? (nombreCorto() || 'Un tripulante') + ' escribió y no tiene carro asignado'
         : ((opts && opts.title) || 'Mensaje de tu traslado');
       try {
         const r = await sendPush({
@@ -3790,7 +3820,7 @@
     getWeekSuspensions, getMyWeekSuspension, addManualSuspension, liftSuspension,
     listAcceptedSwaps, listMySwaps, createSwap, decideSwap,
     listDriverRules, rulesToMap, addDriverRule, deleteDriverRule,
-    savePushSubscription, deletePushSubscription, sendPush,
+    savePushSubscription, deletePushSubscription, sendPush, pushDevicesByProfile,
     getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, driverOverrideOilBlock, registerOilChange, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, listIncidents, countOpenIncidents, updateIncidentStatus,

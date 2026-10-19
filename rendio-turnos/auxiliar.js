@@ -3134,10 +3134,12 @@
         reservationId: t.id,
         details: { motivo: a.motivo, texto: opt.label, fase: auxPhaseKey(t, t._info) },
       });
-      const quien = (auxState.profile?.full_name || 'Un tripulante');
+      // El nombre va en el TÍTULO (15-oct-2026): es lo primero que lee el jefe
+      // en la pantalla bloqueada, y «de un tripulante» no le decía de quién.
+      const quien = String(auxState.profile?.full_name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ');
       if (typeof notifyOps === 'function') {
-        notifyOps(opt.sev === 'high' ? '🚨 Emergencia de un tripulante' : 'Novedad de un tripulante',
-          `${quien}: ${desc}`.slice(0, 200), id);
+        notifyOps(opt.sev === 'high' ? `🚨 Emergencia de ${quien || 'un tripulante'}` : `Novedad de ${quien || 'un tripulante'}`,
+          desc.slice(0, 200), id);
       }
       if (window.Api?.sendReservationMessage) {
         try { await Api.sendReservationMessage(t.id, `🚨 ${desc}`); } catch (_) { /* el aviso principal ya salió */ }

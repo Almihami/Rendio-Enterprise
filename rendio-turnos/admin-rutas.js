@@ -1452,7 +1452,7 @@
     const dia = rt.diaLentoNombre
       ? ` · ${rt.diaLentoNombre}${rt.HOLIDAY_SHIFT ? `, se recoge ${rt.HOLIDAY_SHIFT} min más tarde` : ', tratado como día normal'}`
       : '';
-    say((s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ajustada, revísala.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`) + dia);
+    say((s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ${s.late === 1 ? 'llega tarde, revísala' : 'llegan tarde, revísalas'}.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`) + dia);
   }
 
   // Persiste el plan del día: cada vuelta → route_assignment + route_stops.

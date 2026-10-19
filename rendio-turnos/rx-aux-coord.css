@@ -64,3 +64,17 @@
   margin-top: 8px; padding: 0; border: 0; background: none; cursor: pointer;
   font-size: 14px; font-weight: 600; color: var(--rx-acc); text-decoration: underline; text-underline-offset: 3px;
 }
+
+/* ── Conversaciones (0113, 16-oct-2026) ──────────────────────────────────────── */
+/* Reloj del historial al lado del teléfono, en la cabecera. */
+#auxiliar-ui.rx-phone .rx-co .rx-head-r { gap: 8px; }
+/* La franja dice en qué conversación se está: cerrada (ámbar) o una anterior (gris). */
+#auxiliar-ui.rx-phone .rx-co .rx-co-band.closed { background: var(--r-warn-soft); color: var(--r-text); }
+#auxiliar-ui.rx-phone .rx-co .rx-co-band.closed svg { color: var(--r-warn); }
+#auxiliar-ui.rx-phone .rx-co .rx-co-band.old { background: var(--r-surface-2); color: var(--r-text-2); }
+/* Chat nuevo: el enlace a las anteriores, debajo del texto. */
+#auxiliar-ui.rx-phone .rx-co .rx-co-empty .rx-link { margin-top: 10px; }
+/* Una anterior es de solo lectura: en vez del campo, «Volver al chat actual». */
+#auxiliar-ui.rx-phone .rx-co .rx-co-back { padding-top: 10px; }
+#auxiliar-ui.rx-phone .rx-co-hist-l { display: flex; flex-direction: column; margin: 4px -14px 6px; }
+#auxiliar-ui.rx-phone .rx-co-hist p { color: var(--r-text-2); font-size: 14px; }
