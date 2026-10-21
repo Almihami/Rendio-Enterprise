@@ -2146,7 +2146,15 @@
   // RUTAS DE AUXILIARES — planeación (tablero de Asignación)
   // ════════════════════════════════════════════════════════════════════
   const RT_PALETTE = ['#3B82F6', '#0EA5A0', '#8B5CF6', '#2563A8', '#16936A', '#7C5CD6', '#D98A12', '#0EA5E9', '#E2551A', '#DB4B7A', '#5B8A2B'];
-  function rtHHMM(iso) { try { const d = new Date(iso); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); } catch (_) { return '05:00'; } }
+  // HH:MM en hora de BOGOTÁ (antes usaba el reloj del aparato: un computador en
+  // otra zona horaria corría todas las horas del tablero). h23: nunca «24:05».
+  function rtHHMM(iso) {
+    try {
+      const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(iso));
+      const h = (p.find(x => x.type === 'hour') || {}).value, m = (p.find(x => x.type === 'minute') || {}).value;
+      return h && m ? h + ':' + m : '05:00';
+    } catch (_) { return '05:00'; }
+  }
 
   // Arma el tablero del día a partir de reservas reales. Devuelve
   // {aux, colors, cars, drivers, plan} o NULL si no hay reservas/vehículos
@@ -3278,6 +3286,45 @@
     } catch (_) { return '--:--'; }
   };
 
+  // Día OPERATIVO (20-oct-2026). El turno PM pasa la medianoche: lo que arranca
+  // antes del corte de la madrugada (0107, 02:00 por defecto) es de la NOCHE
+  // ANTERIOR. Antes se agrupaba por fecha de calendario y la vuelta de la 1 a. m.
+  // del martes le salía al conductor del PM del lunes solo pasada la medianoche,
+  // como «la ruta de mañana» (y Operación en vivo no la mostraba el lunes).
+  // Los planes se siguen guardando por fecha de calendario: esto es solo cómo
+  // se agrupan para mostrarlos.
+  let _corteCache = null;
+  async function _corteMadrugada() {
+    if (_corteCache && Date.now() - _corteCache.at < 10 * 60000) return _corteCache.v;
+    let v = 120;
+    try { const n = await getRouteNightCutoff(); if (n != null && isFinite(n)) v = Math.min(240, Math.max(0, n)); } catch (_) { /* 02:00 */ }
+    _corteCache = { v, at: Date.now() };
+    return v;
+  }
+  const _opDay = (iso, corte) => _bogDay(new Date(Date.parse(iso) - corte * 60000).toISOString());
+
+  // La madrugada del día SIGUIENTE a `day` (de 00:00 al corte): es del turno PM
+  // de `day`, pero vive en el plan del día siguiente. Asignación la anuncia al
+  // final del día. Dos conteos livianos; null si la base no responde.
+  //   { dia, vueltas (publicadas que arrancan antes del corte), sinConductor,
+  //     reservas (tripulantes con hora antes del corte) }
+  async function getMadrugadaSiguiente(day, corte) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day || '')) return null;
+    const c = corte != null && isFinite(corte) ? corte : 120;
+    const dia = _bogDay(new Date(Date.parse(day + 'T12:00:00-05:00') + 86400000).toISOString());
+    const desde = new Date(dia + 'T00:00:00-05:00'), hasta = new Date(desde.getTime() + c * 60000);
+    const [res, rutas] = await Promise.all([
+      sb.from('reservations').select('id').is('cancelled_at', null)
+        .gte('required_arrival_at', desde.toISOString()).lt('required_arrival_at', hasta.toISOString()),
+      sb.from('route_assignments').select('id, driver_profile_id')
+        .in('status', ['draft', 'planned', 'in_progress', 'completed'])
+        .gte('planned_start_at', desde.toISOString()).lt('planned_start_at', hasta.toISOString()),
+    ]);
+    if (res.error && rutas.error) return null;
+    const vs = rutas.error ? [] : (rutas.data || []);
+    return { dia, vueltas: vs.length, sinConductor: vs.filter(v => !v.driver_profile_id).length, reservas: res.error ? 0 : (res.data || []).length };
+  }
+
   // Guarda TODAS las vueltas del día como route_assignments + route_stops.
   // lanes: [{ vehicleId, driverProfileId(=profile id|null), type('sal'|'lle'), startAt(ISO), stops:[reservationId] }]
   //
@@ -3445,13 +3492,16 @@
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true }));
     if (error) return null;
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    // Día operativo MÁS PRÓXIMO con ruta (hoy si la hay; si no, el siguiente).
+    // Operativo: la madrugada (antes del corte) cuenta como la noche anterior,
+    // así la vuelta de la 1 a. m. es la última del turno PM, no la primera de mañana.
+    const corte = await _corteMadrugada();
+    const today = _opDay(new Date().toISOString(), corte);
     const MDE = { name: 'Aeropuerto JMC', addr: 'Terminal de pasajeros · José María Córdova', lat: 6.1715, lng: -75.4270 };
-    // Día operativo MÁS PRÓXIMO con ruta (hoy si la hay; si no, la siguiente).
-    const active = (data || []).filter(ra => ra.planned_start_at && ra.status !== 'completed' && _bogDay(ra.planned_start_at) >= today);
+    const active = (data || []).filter(ra => ra.planned_start_at && ra.status !== 'completed' && _opDay(ra.planned_start_at, corte) >= today);
     if (!active.length) return [];
-    const day0 = _bogDay(active[0].planned_start_at); // vienen ordenadas por planned_start_at
-    const rows = active.filter(ra => _bogDay(ra.planned_start_at) === day0);
+    const day0 = _opDay(active[0].planned_start_at, corte); // vienen ordenadas por planned_start_at
+    const rows = active.filter(ra => _opDay(ra.planned_start_at, corte) === day0);
     return rows.map((ra, i) => {
       const type = ra.direction === 'airport_to_home' ? 'lle' : 'sal';
       const stops = (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order).map(s => {
@@ -3483,7 +3533,10 @@
       const todasResueltas = stops.length > 0 && stops.every(x => RESUELTA.includes(x.stopStatus));
       const air = { name: MDE.name, addr: MDE.addr, lat: MDE.lat, lng: MDE.lng, kind: 'airport' };
       const legs = type === 'lle' ? [air, ...stops] : [...stops, air]; // llegada: sale de JMC; salida: termina en JMC
-      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at, done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: day0 };
+      // day = fecha de CALENDARIO de la vuelta (la presentación y el vuelo se leen
+      // con ella); opDay = el día de turno al que pertenece. Si difieren, es la
+      // madrugada después de medianoche.
+      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at, done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: _bogDay(ra.planned_start_at), opDay: day0 };
     });
   }
 
@@ -3585,11 +3638,14 @@
     if (error) ({ data, error } = await sel(''));
     if (error) throw error;
 
-    const today = _bogDay(new Date().toISOString());
-    const active = (data || []).filter(ra => ra.planned_start_at && _bogDay(ra.planned_start_at) >= today);
+    // Día de turno, no de calendario: a las 11 p. m. del lunes ya se ve la vuelta
+    // de la 1 a. m. del martes (es del turno PM del lunes). Ver _opDay.
+    const corte = await _corteMadrugada();
+    const today = _opDay(new Date().toISOString(), corte);
+    const active = (data || []).filter(ra => ra.planned_start_at && _opDay(ra.planned_start_at, corte) >= today);
     if (!active.length) return { source: 'empty', day: null, cars: [], feed: [] };
-    const day0 = _bogDay(active[0].planned_start_at);
-    const rows = active.filter(ra => _bogDay(ra.planned_start_at) === day0);
+    const day0 = _opDay(active[0].planned_start_at, corte);
+    const rows = active.filter(ra => _opDay(ra.planned_start_at, corte) === day0);
 
     // Última posición por conductor (una sola consulta para todos).
     const driverIds = [...new Set(rows.map(r => r.driver_profile_id).filter(Boolean))];
@@ -3842,7 +3898,7 @@
     getMyAuxHeader, notesUser,
     privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
-    saveRoutePlan, listMyVueltasForDriver, driverSetStopStatus, auxiliarUserIdsForReservations,
+    saveRoutePlan, listMyVueltasForDriver, getMadrugadaSiguiente, driverSetStopStatus, auxiliarUserIdsForReservations,
     driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverAirportUndo, driverNearStop,
     sendDriverLocation, listLiveOperation,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,

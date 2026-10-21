@@ -113,7 +113,7 @@
           </span>
           <span style="display:block;font-size:16px;font-weight:650;letter-spacing:-.3px">${salida ? 'Casas → Aeropuerto JMC' : 'Aeropuerto JMC → Casas'}</span>
           <span style="display:block;font-size:13px;color:var(--r-text-2);margin-top:3px">
-            ${n} auxiliar${n === 1 ? '' : 'es'}${v.start ? ` · sale ${escapeHtml(v.start)}` : ''}
+            ${n} auxiliar${n === 1 ? '' : 'es'}${v.start ? ` · sale ${escapeHtml(v.start)}` : ''}${v.opDay && v.day && v.day !== v.opDay ? ' · madrugada del día siguiente' : ''}
           </span>
           <span style="display:flex;align-items:center;gap:6px;margin-top:11px;font-size:13px;font-weight:600;color:var(--r-accent)">
             Ver la vuelta ${avIcon('chevronRight', 15)}

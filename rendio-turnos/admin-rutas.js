@@ -278,10 +278,20 @@
   const RT_BANDS = ['mad', 'am', 'pm'];
   function rtBandsOfCar(carId) { return [...new Set(rt.lanes.filter(l => l.car === carId && rt.order[l.id] && rt.order[l.id].length).map(rtBandOf))].sort((a, b) => RT_BANDS.indexOf(a) - RT_BANDS.indexOf(b)); }
   const rtHHc = () => rtToHM(rtCut());
-  const rtBandLabel = (b) => b === 'am' ? `${rtHHc()}–14:00` : b === 'mad' ? `00:00–${rtHHc()} · PM del día anterior` : `14:00–${rtHHc()}`;
+  // La franja PM de ESTE día termina a la medianoche: su madrugada (00:00 al
+  // corte) vive en el plan del día siguiente, como franja 'mad'.
+  const rtBandLabel = (b) => b === 'am' ? `${rtHHc()}–14:00` : b === 'mad' ? `00:00–${rtHHc()} · turno PM del ${rtDiaAnterior()}` : `14:00–24:00`;
   const rtBandIcon = (b) => b === 'am' ? '☀' : '☾';
-  // Nombre corto de la franja para los textos («Conductor AM», «Sin conductor PM de ayer»).
-  const rtBandName = (b) => b === 'am' ? 'AM' : b === 'mad' ? 'PM de ayer' : 'PM';
+  // Nombre corto de la franja para los textos («Conductor AM», «Sin conductor PM
+  // del lunes»). Antes decía «PM de ayer», que mirando el día de mañana no es ayer.
+  const rtBandName = (b) => b === 'am' ? 'AM' : b === 'mad' ? `PM del ${rtDiaAnterior()}` : 'PM';
+  // Nombre del día anterior al que se está planeando («lunes»), o «día anterior».
+  function rtDiaAnterior() {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rt.day || '');
+    if (!m) return 'día anterior';
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] - 1));
+    return ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][d.getUTCDay()];
+  }
 
   // ---- Desembarque: cuánto tarda el pasajero en salir del terminal ----
   // No es un número solo. La operación mide entre 15 y 35 minutos según la
@@ -443,7 +453,11 @@
   // Vuelta de LLEGADA: recoge en MDE cuando el vuelo suelta a la gente y
   // reparte a las casas. El semáforo mide cuánto ESPERARÍA el pasajero.
   function rtCarComputeLle(lane) {
-    let t = rtToMin(lane.start), prev = 'airport', stops = [], pax = 0;
+    const ideal = rtToMin(lane.landing) + rtDeplaneOf(rt.order[lane.id], rtToMin(lane.landing)); // cuándo sale la gente del terminal (en tierra, 0092: sin desembarque)
+    const inicio = rtToMin(lane.start);
+    // El carro sale de JMC cuando la gente ya salió: si está antes (la vuelta
+    // de las 23:59 de un vuelo que suelta a la gente a las 00:05), espera.
+    let t = Math.max(inicio, ideal), prev = 'airport', stops = [], pax = 0;
     let prevKey = null, eta = Math.round(t);
     rt.order[lane.id].forEach(id => {
       const k = rtStopKey(id);
@@ -457,8 +471,6 @@
       stops.push({ id, eta });
     });
     const arrival = rt.order[lane.id].length ? Math.round(t) : null; // termina en la última casa
-    const ideal = rtToMin(lane.landing) + rtDeplaneOf(rt.order[lane.id], rtToMin(lane.landing)); // cuándo sale la gente del terminal (en tierra, 0092: sin desembarque)
-    const inicio = rtToMin(lane.start);
     let wait = Math.max(0, inicio - ideal);
     // TRABAJO EN TIERRA (0092): `ideal` es cuándo sale el ÚLTIMO, y con eso el
     // semáforo solo mide si el carro llegó tarde. Al de tierra se le prometió
@@ -753,6 +765,13 @@
   // de que el pasajero salga, así que va hacia arriba.
   const rtRedondea5 = (m) => Math.floor(m / 5) * 5;
   const rtRedondea5Arr = (m) => Math.ceil(m / 5) * 5;
+  // Hora de una vuelta de LLEGADA. Si el carro tendría que estar en JMC pasada la
+  // medianoche (vuelo de las 23:45 + desembarque), se queda en las 23:59 de ESTE
+  // día: rtToHM da la vuelta al reloj y «24:05» salía «00:05», así que la vuelta
+  // se guardaba 24 h ANTES (a las 00:05 del mismo día, en la madrugada del turno
+  // PM de ayer y «a tiempo»). El carro espera unos minutos en JMC; las entregas
+  // se calculan desde que sale la gente (rtCarComputeLle). 20-oct-2026.
+  const rtInicioLle = (m) => rtToHM(Math.min(rtRedondea5Arr(m), 1439));
   // Coherencia geográfica: cuántas veces la ruta SALE de un sector y luego
   // VUELVE a él (San Antonio → Abreo → San Antonio = 1 reentrada). A igualdad
   // práctica de tiempo, la ruta que no zigzaguea es más clara para el
@@ -1088,7 +1107,7 @@
         if (!best || best.wait > 15) { unassigned.push(...tr.ids); return; }
         const s = best.s; s.vuelta++;
         const plan = rtHomesPlan(tr.ids);
-        const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'lle', start: rtToHM(rtRedondea5Arr(best.pickup)), origin: 'airport', landing: rtToHM(tr.dlMin) };
+        const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'lle', start: rtInicioLle(best.pickup), origin: 'airport', landing: rtToHM(tr.dlMin) };
         lanes.push(lane);
         order[lane.id] = plan.ord;
         s.avail = best.pickup + plan.dur + 2; // termina en la última casa

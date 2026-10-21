@@ -154,6 +154,13 @@
 #routes-v2 .rv2-gwrap { display: flex; flex-direction: column; gap: 8px; }
 #routes-v2 .rv2-hour { font-family: var(--mono); font-size: 12px; color: var(--ink2); padding: 2px 2px 0; }
 #routes-v2 .rv2-hour strong { color: var(--ink); }
+/* Madrugada = cierre del turno PM del día anterior (20-oct-2026) */
+#routes-v2 .rv2-mad { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px dashed var(--line2); border-radius: 12px; background: var(--panel2); }
+#routes-v2 .rv2-madh b, #routes-v2 .rv2-madsig b { display: block; font-size: 13.5px; color: var(--ink); }
+#routes-v2 .rv2-madh small, #routes-v2 .rv2-madsig small { display: block; font-size: 12.5px; line-height: 1.4; color: var(--ink2); margin-top: 2px; }
+#routes-v2 .rv2-dayh { font-size: 13px; font-weight: 700; color: var(--ink); padding: 6px 2px 0; border-top: 1px solid var(--line); }
+#routes-v2 .rv2-madsig { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px; border: 1px dashed var(--line2); border-radius: 12px; background: var(--panel2); }
+#routes-v2 .rv2-madsig > div { flex: 1 1 220px; min-width: 0; }
 #routes-v2 .t-risk, .rv2-sheet .t-risk { color: var(--red-ink); }
 #routes-v2 .t-nod { color: var(--orange-ink); }
 #routes-v2 .t-adj, .rv2-sheet .t-adj { color: var(--amber-ink); }

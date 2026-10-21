@@ -111,6 +111,9 @@
     const dt = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12));
     return `${DOW[dt.getUTCDay()]} ${+m[3]} ${MON[+m[2] - 1]}`;
   }
+  // La vuelta de después de medianoche que es del turno de esta noche (opDay ≠ day,
+  // ver listMyVueltasForDriver): «Madrugada del MAR 21 OCT». 20-oct-2026.
+  const madrugadaDe = (v) => (v && v.opDay && v.day && v.day !== v.opDay ? `Madrugada del ${fmtDay(v.day)}` : '');
   function hmToMin(hm) { const m = /^(\d{1,2}):(\d{2})/.exec(hm || ''); return m ? (+m[1]) * 60 + (+m[2]) : null; }
 
   // Sprite: los íconos del auxiliar (AuxRxUI) + los de la ruta.
@@ -522,7 +525,7 @@
     return '<div class="rt-hero rx-in" style="--tone:' + t.c + '">'
       + '<div class="rt-hero-top"><span class="rt-hero-tag"><b>' + esc(v.n) + '</b>' + t.l + '</span>'
       + '<span class="rt-hero-st ' + (s.started ? 'live' : '') + '">' + (s.started ? '<i></i>' + esc(`En curso · parada ${s.idx + 1} de ${v.legs.length}`) : esc(soon(v))) + '</span></div>'
-      + '<div class="rt-hero-time"><b>' + esc(v.start) + '</b><span>' + (v.type === 'salida'
+      + '<div class="rt-hero-time"><b>' + esc(v.start) + '</b><span>' + (madrugadaDe(v) ? esc(madrugadaDe(v)) + '<br>' : '') + (v.type === 'salida'
         ? 'sale hacia la 1.ª casa<br>' + (end ? 'llega a JMC ' + esc(end) : 'destino JMC')
         : 'recoges en JMC<br>' + (end ? 'última casa ~' + esc(end) : 'reparte en las casas')) + '</span></div>'
       + '<div class="rt-hero-route"><span>' + v.from.toUpperCase() + '</span><i></i><span class="rt-hero-pl">' + ic(v.type === 'salida' ? 'Plane' : 'Home', 15) + '</span><i></i><span>' + v.to.toUpperCase() + '</span></div>'
@@ -537,7 +540,7 @@
   function vcardHTML(v, i) {
     const s = S(v), t = tone(v), c = crew(v), end = endOf(v);
     return '<button type="button" class="rt-vc rx-in ' + (s.done ? 'done' : '') + '" style="--tone:' + t.c + ';--d:' + i + '" data-rt="' + (s.done ? 'done' : 'detail') + '" data-v="' + esc(v.id) + '">'
-      + '<span class="rt-vc-t"><em>' + esc(`${v.n} · ${t.l}`) + '</em><b>' + esc(v.start) + '</b></span>'
+      + '<span class="rt-vc-t"><em>' + esc(`${v.n} · ${t.l}`) + '</em><b>' + esc(v.start) + '</b>' + (madrugadaDe(v) ? '<em title="' + esc(madrugadaDe(v)) + '">Madrugada</em>' : '') + '</span>'
       + '<span class="rt-vc-m"><b>' + esc(`${v.from} → ${v.to}`) + '</b><span>' + esc(`${c.length} auxiliares · ${v.type === 'salida' ? (end ? `llega ${end}` : 'destino JMC') : 'recoge en JMC'}`) + '</span></span>'
       + (s.done ? chip('Check', 'ok', 'Hecha') : ic('ChevronRight', 18, 'color: var(--r-text-3);'))
       + '</button>';
@@ -566,7 +569,7 @@
     const done = list.filter((v) => S(v).done);
     const crewN = list.reduce((a, v) => a + crew(v).length, 0);
     return '<div class="rt-scr">' + head + '<div class="rt-body">'
-      + '<div class="rt-title"><span>' + esc(`Rutas · ${fmtDay(list[0].day)}`) + '</span><h1>Mi día</h1><p>' + esc(`${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'} · ${crewN} auxiliares · JMC`) + '</p></div>'
+      + '<div class="rt-title"><span>' + esc(`Rutas · ${fmtDay(list[0].opDay || list[0].day)}`) + '</span><h1>Mi día</h1><p>' + esc(`${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'} · ${crewN} auxiliares · JMC`) + '</p></div>'
       + '<div class="rt-dayprog"><div>' + list.map((v) => '<i class="' + (S(v).done ? 'on' : v === focus ? 'now' : '') + '"></i>').join('') + '</div><span>' + esc(`${done.length} de ${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'}`) + '</span></div>'
       + (focus ? '<div class="rx-lbl">' + (S(focus).started ? 'Ahora' : 'Tu siguiente vuelta') + '</div>' + heroHTML(focus)
         : '<div class="rt-alldone rx-in">' + check(64) + '<b>Terminaste tus rutas de hoy</b><span>' + esc(`Las ${list.length} ${list.length === 1 ? 'vuelta quedó entregada' : 'vueltas quedaron entregadas'}.`) + '</span></div>')

@@ -960,6 +960,11 @@
     if (lead > 0 && hrs < lead) return { level: 'warn', text: `Estás pidiendo con menos de ${lead} h de anticipación. Lo recibimos, pero puede que no alcance a entrar en la planeación — avisa también al coordinador.` };
     return null;
   }
+  function auxSumarDia(iso) {
+    const [y, m, d] = String(iso || '').split('-').map(Number);
+    if (!y) return iso;
+    return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+  }
   function auxTodayISO() {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
   }
@@ -1055,7 +1060,22 @@
     const lead = auxLeadCheck(f);
     if (lead) return { level: lead.level, text: lead.text };
     if (!f.time) return null;
+    const mad = auxMadrugadaHint(f);
+    if (mad) return { level: 'warn', text: mad };
     return { level: 'ok', text: auxTimeHints(true) };
+  }
+  // Pasada la medianoche la fecha ya es la del día SIGUIENTE, y quien aterriza
+  // «el lunes a las 12:40 de la noche» tiende a poner lunes: el traslado quedaba
+  // 24 h antes (20-oct-2026). Antes de las 2:00 se le dice qué noche es esa.
+  function auxMadrugadaHint(f) {
+    if (!f || !f.date || !/^0[01]:\d{2}$/.test(f.time || '')) return null;
+    const dia = (iso, n) => {
+      const [y, m, d] = iso.split('-').map(Number);
+      const t = new Date(Date.UTC(y, m - 1, d + n));
+      return `${['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][t.getUTCDay()]} ${t.getUTCDate()}`;
+    };
+    return `Ojo con la fecha: las ${auxHM(f.time)} del ${dia(f.date, 0)} es la madrugada, justo después de la noche del ${dia(f.date, -1)}. `
+      + `Si ${f.type === 'lle' ? 'aterrizas' : 'vas al aeropuerto'} la noche del ${dia(f.date, 0)}, elige el ${dia(f.date, 1)}.`;
   }
   // Repinta #ax-time-hints sin remontar los campos. Con el rediseño lo pinta
   // AuxRxPedir.timeHintsHTML(dato) si existe.
@@ -1075,6 +1095,8 @@
     const lead = auxLeadCheck(f);
     if (lead) return `<div class="ax-hint ${lead.level === 'bad' ? 'bad' : ''}"><svg class="icon"><use href="#i-info"/></svg>${lead.text}</div>`;
     if (!f.time) return '';
+    const mad = auxMadrugadaHint(f);
+    if (mad) return `<div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>${mad}</div>`;
     // NO SE DA HORA DE RECOGIDA AQUÍ (Julián, 25-ago-2026). Antes decía
     // "Recogida estimada 09:30", sacada de presentación − 1 h clavada. Esa hora
     // se pinta ANTES de que exista ruta, así que la app comprometía algo que
@@ -1731,6 +1753,9 @@
       const back = {
         ...f, type: 'lle',
         time: f.backTime,
+        // Si el regreso es a una hora MENOR que la ida, es pasada la medianoche:
+        // la fecha es la del día siguiente (antes quedaba ANTES de la ida).
+        date: f.backTime <= f.time ? auxSumarDia(f.date) : f.date,
         // En tierra (f ya viene sin vuelos) el regreso tampoco lleva: es la
         // hora a la que sale del aeropuerto, sin desembarque.
         flight: f.backFlight || f.flight,

@@ -126,7 +126,7 @@
       const landing = horaVuelta(ids);
       lane.landing = rtToHM(landing);
       const ideal = landing + rtDeplaneOf(ids, landing);
-      lane.start = rtToHM(rtRedondea5Arr(Math.max(ideal, piso)));
+      lane.start = rtInicioLle(Math.max(ideal, piso));
     } else {
       const r = rtCarCompute(lane.id);
       if (r.depart == null) return;
@@ -178,7 +178,9 @@
     else if (!driverId) status = 'nodriver';
     else if ((margin != null && margin < ADJ_MIN) || (wait != null && wait > LLE_ESPERA_LARGA)) status = 'adj';
     else status = 'ok';
-    const pickup = lle ? start + retraso : stops[0].time;
+    // En una llegada recoge cuando la gente ya salió: la vuelta de las 23:59 de
+    // un vuelo que suelta a las 00:05 recoge a las 00:05 (rtInicioLle).
+    const pickup = lle ? Math.max(start + retraso, c.depart != null ? c.depart : start) : stops[0].time;
     return {
       id: lane.id, lane, vuelta: lane.vuelta, vehicle: car.id, cap: rtCapOf(car), type,
       depart: start + retraso, pickup, arrival, end, pres, margin, wait, retraso,
@@ -425,7 +427,7 @@
   // suma el rato de bajarse: daba 10:52 contra un 10:50 en la lista).
   const ultima = (r) => (r.stops.length ? Math.max(...r.stops.map((s) => s.time)) : r.end);
   const horas = (r) => (r.type === 'llegada' ? `${hhmm(r.arrival)} → ${hhmm(ultima(r))}` : `${hhmm(r.pickup)} → ${hhmm(r.arrival)}`);
-  const turnoTxt = (b) => (b === 'mad' ? 'PM de ayer' : 'Turno ' + rtBandName(b));
+  const turnoTxt = (b) => 'Turno ' + rtBandName(b);   // «Turno AM», «Turno PM del lunes»
 
   function renderBar() {
     const day = rt.day || ui.dia;
@@ -451,7 +453,8 @@
     const out = [];
     (rt.pool || []).slice().sort((a, b) => rtToMin((aux(a) || {}).dl) - rtToMin((aux(b) || {}).dl)).forEach((id) => {
       const a = aux(id); if (!a) return;
-      const cuando = a.type === 'lle' ? `${a.tierra ? 'Sale del terminal' : 'Aterriza'} ${a.dl}` : `Presentación ${a.dl}`;
+      const cuando = (a.type === 'lle' ? `${a.tierra ? 'Sale del terminal' : 'Aterriza'} ${a.dl}` : `Presentación ${a.dl}`)
+        + (rtToMin(a.dl) < rtCut() ? ` (madrugada, turno PM del ${rtDiaAnterior()})` : '');
       out.push({ k: 'unrouted', html: `<b>${esc(a.n)}</b> no tiene carro<small>${a.type === 'lle' ? 'Llegada' : 'Salida'} · ${esc(cuando)} · ${esc(lugar(id))}</small>`, btn: 'Ubicar', act: `data-act="route" data-crew="${esc(id)}"` });
     });
     D.routes.filter((r) => r.status === 'risk').sort((a, b) => a.arrival - b.arrival).forEach((r) => {
@@ -559,11 +562,12 @@
     return null;
   }
 
-  function renderList() {
-    const vacio = emptyHTML();
-    if (vacio) { el.list.innerHTML = vacio; return; }
-    const rows = D.routes.filter(matchesQ);
-    if (!rows.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
+  // El turno PM pasa la medianoche (20-oct-2026). Lo que arranca antes del corte
+  // (0107, 02:00) es el CIERRE del turno PM del día anterior: antes salía como la
+  // primera hora del día, igual a las demás, y parecía la primera ruta de este
+  // día. Ahora va aparte y con su nombre; y al final del día se avisa de la
+  // madrugada siguiente, que es de este turno PM pero vive en el plan de mañana.
+  function horasHTML(rows) {
     const groups = new Map();
     rows.forEach((r) => { if (!groups.has(r.hora)) groups.set(r.hora, []); groups.get(r.hora).push(r); });
     let html = '';
@@ -574,7 +578,32 @@
       g.forEach((r) => { html += rowHTML(r); });
       html += '</div>';
     });
-    el.list.innerHTML = html;
+    return html;
+  }
+  function madSigHTML() {
+    const m = ui.madSig;
+    if (!m || m.dia !== sumarDias(rt.day || ui.dia, 1) || !(m.vueltas || m.reservas)) return '';
+    const que = m.vueltas
+      ? `${plural(m.vueltas, 'vuelta', 'vueltas')}${m.sinConductor ? ` (${m.sinConductor} sin conductor)` : ''}`
+      : `${plural(m.reservas, 'tripulante', 'tripulantes')}, todavía sin plan publicado`;
+    return `<div class="rv2-madsig"><div><b>☾ Sigue después de medianoche · madrugada del ${esc(dayLabel(m.dia).toLowerCase())}</b>` +
+      `<small>${esc(que)}. De 00:00 a ${rtHHc()} también son de este turno PM, pero se planean y publican en el día siguiente.</small></div>` +
+      `<button class="rv2-btn rv2-btn--sm" data-act="nav" data-dir="1">Ver la madrugada</button></div>`;
+  }
+  function renderList() {
+    const vacio = emptyHTML();
+    if (vacio) { el.list.innerHTML = vacio + (ui.cargando ? '' : madSigHTML()); return; }
+    const rows = D.routes.filter(matchesQ);
+    if (!rows.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
+    const mad = rows.filter((r) => r.shift === 'mad'), resto = rows.filter((r) => r.shift !== 'mad');
+    let html = '';
+    if (mad.length) {
+      html += `<section class="rv2-mad" aria-label="Madrugada, turno PM del ${esc(rtDiaAnterior())}"><div class="rv2-madh"><b>☾ Madrugada · cierre del turno PM del ${esc(rtDiaAnterior())}</b>` +
+        `<small>De 00:00 a ${rtHHc()} las hace el conductor de la tarde del ${esc(rtDiaAnterior())}. El día ${esc(dayLabel(rt.day || ui.dia).toLowerCase())} arranca a las ${rtHHc()}.</small></div>` +
+        horasHTML(mad) + '</section>';
+      if (resto.length) html += `<div class="rv2-dayh">${esc(dayLabel(rt.day || ui.dia))} · desde las ${rtHHc()}</div>`;
+    }
+    el.list.innerHTML = html + horasHTML(resto) + madSigHTML();
   }
 
   // Estado del vuelo (0099). Apagado o sin dato → nada (sin inventar).
@@ -950,7 +979,7 @@
     const slots = slotsSinConductor();
     const cargado = shift === 'mad' ? rt.shiftPrevLoaded : rt.shiftLoaded;
     const nota = cargado
-      ? (shift === 'mad' ? `En turno PM del día anterior según el horario publicado (las vueltas antes de las ${rtHHc()})` : `En turno ${rtBandName(shift)} según el horario publicado`)
+      ? (shift === 'mad' ? `En turno PM del ${rtDiaAnterior()} según el horario publicado (las vueltas antes de las ${rtHHc()})` : `En turno ${rtBandName(shift)} según el horario publicado`)
       : 'Sin horario publicado para ese día: se muestran todos los conductores';
     const curName = cur ? conductor(cur).name : null;
     const auto = cur && rt.rv2Auto && rt.rv2Auto[carId + '|' + shift] === cur;
@@ -1170,6 +1199,13 @@
       toast('No se pudo cargar el día: ' + ((e && e.message) || 'error'));
     } finally { ui.cargando = false; }
     rotularVieja();
+    // La madrugada del día siguiente (es de este turno PM): llega después, como los vuelos.
+    const diaPedido = ui.dia;
+    if (window.Api && Api.getMadrugadaSiguiente) {
+      Api.getMadrugadaSiguiente(diaPedido, rtCut())
+        .then((m) => { if (ui.dia !== diaPedido) return; ui.madSig = m; if (root() && !root().hidden) render(); })
+        .catch(() => {});
+    }
     // Los vuelos del día (si la integración está encendida) llegan después y
     // solo agregan el chip en el detalle.
     if (window.RendioVuelos) window.RendioVuelos.cargar(ui.dia).then(() => { if (root() && !root().hidden) render(); }).catch(() => {});

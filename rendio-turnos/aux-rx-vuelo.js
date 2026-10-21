@@ -261,7 +261,10 @@
     } else {
       txt = ch.flightChanged && !ch.timeChanged ? 'Actualizamos el vuelo de tu traslado.' : 'Actualizamos tu traslado con la hora nueva.';
     }
-    return ic('Clock', 15) + txt;
+    // Pasada la medianoche la fecha es la del día siguiente (20-oct-2026): el
+    // mismo aviso que al pedir el traslado (auxMadrugadaHint, auxiliar.js).
+    const mad = typeof auxMadrugadaHint === 'function' ? auxMadrugadaHint({ date: fv.date, time: fv.time, type: isLle(t) ? 'lle' : 'sal' }) : null;
+    return ic('Clock', 15) + txt + (mad ? ' ' + esc(mad) : '');
   }
   function whenField(label, key, type, value, extra, icon) {
     return `<label class="rx-field"><span>${esc(label)}</span><span class="rx-input">${ic(icon, 18)}`

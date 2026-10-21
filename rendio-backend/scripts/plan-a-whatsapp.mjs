@@ -118,7 +118,20 @@ if (plan.diaLento) console.log(plan.diaLentoShift
   : `${plan.diaLento} — programado como día normal (falta definir cuánto más tarde sacarlos)`);
 console.log('');
 
+// Madrugada (20-oct-2026), igual que admin-whatsapp.js: si el plan viene de la
+// app trae `corteMadrugada`, y lo que arranca antes va rotulado como cierre del
+// turno PM del día anterior. Los planes del formulario no lo traen (ahí la
+// madrugada ya va al final como 24:xx): para ellos no cambia nada.
+const corte = plan.corteMadrugada;
+const esMad = (v) => corte != null && (v.sinCarro ? orden(v) : min(v.sale)) < corte;
+const hayMad = bloques.some(esMad), hayDia = bloques.some((v) => !esMad(v));
+if (hayMad) console.log(`— Madrugada: cierre del turno PM del ${plan.diaAnterior || 'día anterior'} —\n`);
+let rotuloDia = !hayMad || !hayDia;
 for (const v of bloques) {
+  if (!rotuloDia && !esMad(v)) {
+    console.log(`— ${plan.diaNombre || 'El día'} desde las ${Math.floor(corte / 60)}:${String(corte % 60).padStart(2, '0')} —\n`);
+    rotuloDia = true;
+  }
   const etiqueta = CON_CARRO ? `[${v.carro}] ` : '';
 
   if (v.sinCarro) {
