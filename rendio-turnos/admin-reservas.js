@@ -37,6 +37,15 @@
       return wd.charAt(0).toUpperCase() + wd.slice(1) + ' ' + part({ day: 'numeric' }) + ' ' + part({ month: 'short' });
     } catch (_) { return iso; }
   };
+  // «lun 19» si la hora cae entre las 00:00 y el corte de la madrugada (0107).
+  const rvMadrugada = (iso) => {
+    try {
+      const corte = (typeof rt !== 'undefined' && rt && rt.NIGHT_CUTOFF != null) ? rt.NIGHT_CUTOFF : 120;
+      const [h, m] = new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).split(':').map(Number);
+      if (!(h * 60 + m < corte)) return '';
+      return rvDayShort(new Date(new Date(iso).getTime() - 86400000).toISOString()).split(' ').slice(0, 2).join(' ').toLowerCase();
+    } catch (_) { return ''; }
+  };
   // En el filtro, los días cercanos con nombre: es lo que el jefe busca primero.
   const rvDayChip = (ymd) => {
     const hoy = rvBogDay(new Date().toISOString());
@@ -180,6 +189,10 @@
     if (r.readyAt) chips.push('<span class="rv-tag ready">✓ Confirmó recogida</span>');
     if (r.bags != null) chips.push(`<span class="rv-tag bags">🧳 ${escapeHtml(rvBagsLabel(r.bags))}</span>`);
     if (r.quiet === true) chips.push('<span class="rv-tag quiet">Pidió silencio</span>');
+    // Pasada la medianoche y antes del corte (0107): es del turno PM de la noche
+    // anterior, aunque la fecha sea la del día siguiente (20-oct-2026).
+    const mad = rvMadrugada(r.when);
+    if (mad) chips.push(`<span class="rv-tag" title="Lo hace el turno PM de la noche anterior">☾ Madrugada · PM del ${escapeHtml(mad)}</span>`);
     if (r.rating) chips.push(`<span class="rv-tag star">★ ${r.rating}${(r.ratingTags || []).length ? ' · ' + escapeHtml(r.ratingTags.join(', ')) : ''}</span>`);
     const cancelling = rvState.cancelId === r.id;
     return `<div class="rv-row ${r.status === 'cancelled' ? 'off' : ''}" data-rv-row="${r.id}">

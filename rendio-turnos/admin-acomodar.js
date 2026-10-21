@@ -223,7 +223,10 @@
       if (res.cancelled) throw new Error('Esa reserva está cancelada.');
       if (res.lat == null) throw new Error('Esa reserva no tiene punto en el mapa, así que no se puede calcular dónde cabe.');
       acState.res = res;
-      const day = (res.dueAt || '').slice(0, 10)
+      // El día del plan es el de BOGOTÁ. Antes se cortaba el texto de la base, que
+      // viene en UTC: una reserva de las 19:00–23:59 buscaba el plan del día
+      // siguiente (20-oct-2026).
+      const day = (res.dueAt ? new Date(res.dueAt).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }) : '')
         || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
       const plan = await Api.getPublishedPlan(day);
       acState.plan = plan;

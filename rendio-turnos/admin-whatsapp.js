@@ -113,7 +113,17 @@
       : `${plan.diaLento} — programado como día normal (falta definir cuánto más tarde sacarlos)`);
     L.push('');
 
+    // Madrugada (20-oct-2026): lo que arranca antes del corte (02:00) es el cierre
+    // del turno PM del día anterior; él lo escribe al final de ESE día. Aquí vive
+    // en el plan de hoy, así que va primero pero con su rótulo, para que no se
+    // lea como la primera vuelta del día. Sin corte en el plan, como siempre.
+    const corte = plan.corteMadrugada;
+    const esMad = (v) => corte != null && (v.sinCarro ? rwaOrden(v) : rwaMin(v.sale)) < corte;
+    const hayMad = bloques.some(esMad), hayDia = bloques.some((v) => !esMad(v));
+    if (hayMad) L.push(`— Madrugada: cierre del turno PM del ${plan.diaAnterior || 'día anterior'} —`, '');
+    let rotuloDia = !hayMad || !hayDia;
     for (const v of bloques) {
+      if (!rotuloDia && !esMad(v)) { L.push(`— ${plan.diaNombre || 'El día'} desde las ${rwaCrudo(rtToHM(corte))} —`, ''); rotuloDia = true; }
       const etiqueta = conCarro ? `[${v.carro}] ` : '';
       if (v.sinCarro) {
         // Salida: la hora de RECOGIDA estimada (eta), no la presentación.
@@ -244,6 +254,10 @@
       const salidas = ids.filter((id) => aux[id].type !== 'lle').length;
       const plan = {
         dia: rt.day || '',
+        // Para rotular la madrugada (cierre del turno PM del día anterior).
+        corteMadrugada: typeof rtCut === 'function' ? rtCut() : null,
+        diaAnterior: typeof rtDiaAnterior === 'function' ? rtDiaAnterior() : null,
+        diaNombre: rwaDiaNombre(rt.day),
         traslados: ids.length, salidas, llegadas: ids.length - salidas,
         carros: (rt.cars || []).map((c) => ({ id: c.id, cupo: c.capacity || rt.CAP })),
         ajustes: { colchonAeropuerto: rt.AIRPORT_BUFFER != null ? Number(rt.AIRPORT_BUFFER) : 10 },
@@ -257,6 +271,11 @@
     }
   }
 
+  function rwaDiaNombre(day) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || '');
+    if (!m) return null;
+    return ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()];
+  }
   const rwaTexto = (opts) => { const r = rwaLeer(); return r.plan ? rwaFormatear(r.plan, opts) : ''; };
 
   // ════════════════════════════════════════════════════════════════════

@@ -157,10 +157,17 @@ function cargarDia(rt, rtCfg) {
   rt.diaLentoNombre = null; rt.esDiaLento = false; rt.HOLIDAY_SHIFT = 0;
 }
 
+// La madrugada (antes de las 2:00) va rotulada como cierre del turno PM del
+// día anterior, y luego el día (20-oct-2026): la 0:43 ya no parece la primera
+// vuelta del viernes.
 const ESPERADO = [
   'Programación 2026-10-09 · 14 traslados (7 salidas + 7 llegadas) · 2 carros',
   '',
+  '— Madrugada: cierre del turno PM del jueves —',
+  '',
   '0:43 Andrés Muñoz (AV43)',
+  '',
+  '— Viernes desde las 2:00 —',
   '',
   '2:55 María Camila Vélez (Marinilla centro)',
   '3:20 Sofía Ñañez y José Pérez (Edificio Cámbulo)',
