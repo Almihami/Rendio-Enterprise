@@ -538,7 +538,8 @@
 
   // ¿El jefe le publicó una doble cuya segunda mitad cae ahora? Doble día o
   // doble noche que arrancó hoy, o doble noche que arrancó ayer (la madrugada
-  // de hoy es su segunda mitad). Si no se puede leer el horario, no hay corta.
+  // de hoy es su segunda mitad), o doble día de ayer con la madrugada de hoy
+  // sumada por el jefe. Si no se puede leer el horario, no hay corta.
   async function tengoDobleAhora() {
     const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
     const ayer = Scheduler.addDays(hoy, -1);
@@ -550,7 +551,7 @@
     const deHoy = await pide(hoy);
     if (deHoy.some(x => x.day === dia(hoy))) return true;
     const deAyer = Scheduler.startOfWeekISO(ayer) === Scheduler.startOfWeekISO(hoy) ? deHoy : await pide(ayer);
-    return deAyer.some(x => x.tipo === 'noche' && x.day === dia(ayer));
+    return deAyer.some(x => (x.tipo === 'noche' || (x.tipo === 'dia' && x.madruga)) && x.day === dia(ayer));
   }
 
   // ¿El turno que arranca es el relevo propio de una doble? Mismo carro y cierre

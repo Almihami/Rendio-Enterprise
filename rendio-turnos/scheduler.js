@@ -277,14 +277,17 @@
     const warnings = [];
     // Dobles que el jefe ya marcó (D1: el generador nunca dobla por su cuenta,
     // pero si se regenera con dobles marcadas, las respeta): esas dos jornadas
-    // quedan fijas y las del descanso posterior (y la anterior), bloqueadas.
+    // (y la madrugada que el jefe les sumó) quedan fijas y las del descanso
+    // posterior (y la anterior), bloqueadas.
     const fixedKeys = new Set(), blockedKeys = new Set();
     const keepDoubles = doubles.filter(x => drivers.some(d => d.id === x.id) && doubleStartSlot(x) >= 0 && doubleStartSlot(x) + 1 < DAYS.length * 2);
     keepDoubles.forEach(x => {
       const k = doubleStartSlot(x);
+      const m = madrugaSlot(x) >= 0 ? 1 : 0;
       fixedKeys.add(x.id + '|' + k); fixedKeys.add(x.id + '|' + (k + 1));
+      if (m) fixedKeys.add(x.id + '|' + (k + 2));
       blockedKeys.add(x.id + '|' + (k - 1));
-      for (let j = 2; j < 2 + restSlots; j++) blockedKeys.add(x.id + '|' + (k + j));
+      for (let j = 2 + m; j < 2 + restSlots; j++) blockedKeys.add(x.id + '|' + (k + j));
     });
     const fixedFor = (day, shift) => drivers.filter(d => fixedKeys.has(d.id + '|' + slotOf(day, shift)));
     const isBlocked = (id, day, shift) => blockedKeys.has(id + '|' + slotOf(day, shift));
@@ -415,11 +418,19 @@
   //   tipo 'noche' → tarde de `day` + madrugada del día siguiente (misma semana)
   // Cada jornada es un "slot" de ~12 h: k = índiceDía*2 (+1 si es la tarde). Dos
   // slots seguidos son 24 h, el máximo (D3), y después van restSlots de descanso.
+  // Excepción (20-oct-2026, pedido del jefe): a una doble de día el jefe le puede
+  // sumar la madrugada del día siguiente (x.madruga = true). Esas tres jornadas
+  // seguidas no son error; la madrugada sale del descanso y el resto sigue igual.
   function slotOf(day, shift) { const i = DAYS.indexOf(day); return i < 0 ? -99 : i * 2 + (shift === 'pm' ? 1 : 0); }
   function slotDay(k) { return DAYS[Math.floor(k / 2)]; }
   function slotShift(k) { return k % 2 ? 'pm' : 'am'; }
   function doublesOf(data) { return (data && Array.isArray(data._doubles)) ? data._doubles : []; }
   function doubleStartSlot(x) { return slotOf(x.day, x.tipo === 'noche' ? 'pm' : 'am'); }
+  // La madrugada que el jefe le sumó a una doble de día, o -99 si no tiene.
+  function madrugaSlot(x) {
+    const k = doubleStartSlot(x);
+    return (x.tipo === 'dia' && x.madruga && k >= 0 && k + 2 < DAYS.length * 2) ? k + 2 : -99;
+  }
   function workedSlots(data, id) {
     const out = new Set();
     DAYS.forEach(day => {
@@ -439,11 +450,12 @@
   function doubleAt(data, id, day, shift) {
     const k = slotOf(day, shift);
     const w = workedSlots(data, id);
-    return doublesOf(data).find(x => x.id === id && (doubleStartSlot(x) === k || doubleStartSlot(x) + 1 === k)
+    return doublesOf(data).find(x => x.id === id
+      && (doubleStartSlot(x) === k || doubleStartSlot(x) + 1 === k || (madrugaSlot(x) === k && w.has(k)))
       && w.has(doubleStartSlot(x)) && w.has(doubleStartSlot(x) + 1)) || null;
   }
   // Problemas de `id` por jornada: Map(slot -> código)
-  //   'triple'  más de 24 h seguidas
+  //   'triple'  más de 24 h seguidas (salvo doble + madrugada autorizada)
   //   'double'  mañana + tarde del mismo día sin autorizar
   //   'pmam'    tarde + madrugada del día siguiente sin autorizar
   //   'rest'    trabaja dentro del descanso obligatorio después de una doble
@@ -451,16 +463,28 @@
     const w = workedSlots(data, id);
     const out = new Map();
     const put = (k, code) => { if (!out.has(k)) out.set(k, code); };
-    const auth = new Set(doublesOf(data).filter(x => x.id === id).map(doubleStartSlot));
-    w.forEach(k => { if (w.has(k + 1) && w.has(k + 2)) { put(k, 'triple'); put(k + 1, 'triple'); put(k + 2, 'triple'); } });
+    const mine = doublesOf(data).filter(x => x.id === id);
+    const auth = new Set(mine.map(doubleStartSlot));
+    // Arranques de las dobles de día con madrugada autorizada y completa.
+    const conMadruga = new Set(mine.filter(x => {
+      const m = madrugaSlot(x);
+      return m >= 0 && w.has(m - 2) && w.has(m - 1) && w.has(m);
+    }).map(doubleStartSlot));
     w.forEach(k => {
-      if (!w.has(k + 1) || auth.has(k)) return;
+      if (!w.has(k + 1) || !w.has(k + 2) || conMadruga.has(k)) return;
+      put(k, 'triple'); put(k + 1, 'triple'); put(k + 2, 'triple');
+    });
+    w.forEach(k => {
+      if (!w.has(k + 1) || auth.has(k) || conMadruga.has(k - 1)) return;
       const code = k % 2 === 0 ? 'double' : 'pmam';
       put(k, code); put(k + 1, code);
     });
     auth.forEach(k => {
       if (!(w.has(k) && w.has(k + 1))) return;   // doble a medias: no aplica
-      for (let j = 2; j < 2 + restSlots; j++) if (w.has(k + j)) put(k + j, 'rest');
+      for (let j = 2; j < 2 + restSlots; j++) {
+        if (j === 2 && conMadruga.has(k)) continue;   // la madrugada autorizada
+        if (w.has(k + j)) put(k + j, 'rest');
+      }
     });
     return out;
   }
@@ -471,6 +495,11 @@
     data._doubles = data._doubles.filter(x => {
       const w = workedSlots(data, x.id), k = doubleStartSlot(x);
       return k >= 0 && w.has(k) && w.has(k + 1);
+    });
+    // Si ya no está en la madrugada, se cae la marca: no puede quedar autorizada
+    // en blanco para la próxima vez que lo pongan ahí (se vuelve a preguntar).
+    data._doubles.forEach(x => {
+      if (x.madruga && !workedSlots(data, x.id).has(madrugaSlot(x))) delete x.madruga;
     });
   }
 

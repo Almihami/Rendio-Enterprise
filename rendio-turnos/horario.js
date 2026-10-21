@@ -552,8 +552,13 @@
     const di = Scheduler.DAYS.indexOf(day);
     const other = kind === 'morning' ? 'afternoon' : 'morning';
     if (tiene(day, other)) return preguntarDoble({ day, kind, index, id, src, tipo: 'dia', startDay: day });
-    if (kind === 'morning' && di > 0 && tiene(Scheduler.DAYS[di - 1], 'afternoon'))
-      return preguntarDoble({ day, kind, index, id, src, tipo: 'noche', startDay: Scheduler.DAYS[di - 1] });
+    if (kind === 'morning' && di > 0 && tiene(Scheduler.DAYS[di - 1], 'afternoon')) {
+      // Si el día anterior ya es una doble de día, esto es la madrugada que le sigue.
+      const prev = Scheduler.DAYS[di - 1];
+      const dbl = tiene(prev, 'morning') && Scheduler.doublesOf(state.schedule).find(x => x.id === id && x.tipo === 'dia' && x.day === prev);
+      if (dbl) return preguntarMadrugada({ day, kind, index, id, src, dbl });
+      return preguntarDoble({ day, kind, index, id, src, tipo: 'noche', startDay: prev });
+    }
     if (kind === 'afternoon' && di < 6 && tiene(Scheduler.DAYS[di + 1], 'morning'))
       return preguntarDoble({ day, kind, index, id, src, tipo: 'noche', startDay: day });
     colocar(state.schedule, day, kind, index, id, src, true);
@@ -595,8 +600,16 @@
     const next = Scheduler.DAYS[Scheduler.DAYS.indexOf(startDay) + 1];
     const restH = Number(state.settings && state.settings.double_rest_hours) || 24;
     const puede = state.availability?.[id]?.[startDay]?.shift_pref === 'both';
+    const k0 = Scheduler.slotOf(startDay, tipo === 'noche' ? 'pm' : 'am');
+    // ¿Ya está en la madrugada siguiente? Entonces la doble de día la incluye
+    // (20-oct-2026, pedido del jefe): mañana, tarde y madrugada.
+    const pre = JSON.parse(JSON.stringify(state.schedule));
+    colocar(pre, day, kind, index, id, src, false);
+    const madruga = tipo === 'dia' && !!next && Scheduler.workedSlots(pre, id).has(k0 + 2);
     const desc = tipo === 'dia'
-      ? `${escapeHtml(fn)} ya tiene la ${kind === 'morning' ? 'tarde' : 'mañana'} del ${dia(day)}. Si lo doblas, hace mañana y tarde: 24 h seguidas.`
+      ? (madruga
+        ? `${escapeHtml(fn)} ya tiene la ${kind === 'morning' ? 'tarde' : 'mañana'} del ${dia(day)} y la madrugada del ${dia(next)}. Si lo doblas, hace mañana, tarde y madrugada: 36 h seguidas.`
+        : `${escapeHtml(fn)} ya tiene la ${kind === 'morning' ? 'tarde' : 'mañana'} del ${dia(day)}. Si lo doblas, hace mañana y tarde: 24 h seguidas.`)
       : `${escapeHtml(fn)} quedaría con la tarde del ${dia(startDay)} y la madrugada del ${dia(next)}: 24 h seguidas.`;
     const body = `
       <p style="font-size:13.5px;color:var(--ink2);line-height:1.45">${desc}</p>
@@ -605,7 +618,8 @@
       <div class="set-field" style="margin-top:14px"><label>Motivo de la doble</label>
         <input class="set-input" data-f="nota" type="text" maxlength="140" placeholder="Ej: Juan se incapacitó, cubre su tarde">
       </div>
-      <p class="set-hint">Después de la doble van ${restH} h de descanso: no puede quedar en las jornadas siguientes.</p>`;
+      <p class="set-hint">${madruga ? escapeHtml(descansoTrasMadrugada(k0))
+        : `Después de la doble van ${restH} h de descanso: no puede quedar en las jornadas siguientes.`}</p>`;
     const ov = usrModal('dbl-modal', tipo === 'dia' ? '¿Mover o doblar?' : 'Doble noche', escapeHtml(nameOf(id) || ''), body,
       `<button class="wk-btn wk-coord-off" data-usr="cancel">Cancelar</button>
        ${tipo === 'dia' ? `<button class="wk-btn wk-coord-off" data-usr="move">Mover a la ${kind === 'morning' ? 'mañana' : 'tarde'}</button>` : ''}
@@ -628,23 +642,80 @@
       const prueba = JSON.parse(JSON.stringify(state.schedule));
       colocar(prueba, day, kind, index, id, src, false);
       const dbl = { day: startDay, id, tipo, nota, por: (state.profile && state.profile.full_name) || null, at: new Date().toISOString() };
-      prueba._doubles = [...Scheduler.doublesOf(prueba).filter(x => !(x.id === id && x.day === startDay && x.tipo === tipo)), dbl];
-      const iss = [...Scheduler.doubleIssues(prueba, id, Scheduler.restSlotsFor(state.settings)).entries()]
-        .filter(([, c]) => c === 'triple' || c === 'rest').sort((a, b) => a[0] - b[0]);
-      if (iss.length) {
-        const [k, c] = iss[0];
-        const donde = `${dia(Scheduler.DAYS[Math.floor(k / 2)])} ${k % 2 ? 'tarde' : 'mañana'}`;
-        usrShowErr(ov, c === 'triple'
-          ? `Serían más de 24 h seguidas: ${fn} también está el ${donde}. Quítalo de ahí primero.`
-          : `Después de la doble van ${restH} h de descanso y ${fn} está el ${donde}. Quítalo de ahí primero.`);
-        return;
-      }
+      const conMadruga = tipo === 'dia' && Scheduler.workedSlots(prueba, id).has(k0 + 2);
+      if (conMadruga) dbl.madruga = true;
+      // Con la madrugada, una doble noche de esa misma tarde queda adentro de esta.
+      prueba._doubles = [...Scheduler.doublesOf(prueba).filter(x => !(x.id === id && x.day === startDay
+        && (x.tipo === tipo || (conMadruga && x.tipo === 'noche')))), dbl];
+      const choque = choqueDoble(prueba, id, conMadruga ? [k0, k0 + 1, k0 + 2] : [k0, k0 + 1]);
+      if (choque) { usrShowErr(ov, choque); return; }
       ov.remove();
       state.schedule._doubles = prueba._doubles;
       colocar(state.schedule, day, kind, index, id, src, false);
       despuesDeColocar(day, kind, index, id);
       flashBoard(`Doble autorizada: ${fn}. Se le avisa al publicar.`);
     });
+  }
+
+  // Madrugada después de una doble de día ya autorizada (20-oct-2026, pedido del
+  // jefe: «que al otro día madrugue se pueda doblar»). Es la excepción a las
+  // 24 h y solo la da el jefe; queda en la misma doble (madruga: true), con su
+  // motivo. Los cambios de turno entre conductores siguen sin poder hacerlo.
+  function preguntarMadrugada({ day, kind, index, id, src, dbl }) {
+    const fn = (nameOf(id) || 'Conductor').split(' ')[0];
+    const dia = (k) => (Scheduler.DAY_LABELS_ES[k] || k).toLowerCase();
+    const k0 = Scheduler.slotOf(dbl.day, 'am');
+    const body = `
+      <p style="font-size:13.5px;color:var(--ink2);line-height:1.45">${escapeHtml(fn)} dobla el ${dia(dbl.day)} (mañana y tarde). Si también madruga el ${dia(day)}, hace mañana, tarde y madrugada: 36 h seguidas.</p>
+      ${dbl.nota ? `<p class="set-hint" style="margin-top:8px">Motivo de la doble: ${escapeHtml(dbl.nota)}</p>` : ''}
+      <p class="set-hint">${escapeHtml(descansoTrasMadrugada(k0))}</p>`;
+    const ov = usrModal('dbl-modal', '¿Madruga después de la doble?', escapeHtml(nameOf(id) || ''), body,
+      `<button class="wk-btn wk-coord-off" data-usr="cancel">Cancelar</button>
+       <button class="wk-btn wk-coord-on" data-usr="madruga">Que madrugue</button>`);
+    const sch0 = state.schedule;
+    const vigente = () => !!(state.schedule && state.schedule === sch0 && state.schedule[day] && state.schedule[dbl.day]);
+    ov.querySelector('[data-usr="madruga"]').addEventListener('click', () => {
+      if (!vigente()) { ov.remove(); return; }
+      const prueba = JSON.parse(JSON.stringify(state.schedule));
+      colocar(prueba, day, kind, index, id, src, true);
+      const esta = (x) => x.id === id && x.tipo === 'dia' && x.day === dbl.day;
+      prueba._doubles = Scheduler.doublesOf(prueba).map(x => (esta(x) ? { ...x, madruga: true } : x));
+      const choque = choqueDoble(prueba, id, [k0, k0 + 1, k0 + 2]);
+      if (choque) { usrShowErr(ov, choque); return; }
+      ov.remove();
+      state.schedule._doubles = prueba._doubles;
+      colocar(state.schedule, day, kind, index, id, src, true);
+      despuesDeColocar(day, kind, index, id);
+      flashBoard(`Madrugada autorizada: ${fn}. Se le avisa al publicar.`);
+    });
+  }
+  // Qué queda de descanso después de doble + madrugada (k0 = mañana de la doble):
+  // la tarde de ese día siempre (serían 4 jornadas seguidas) y lo que falte del
+  // descanso de la doble (double_rest_hours) si es más largo.
+  function descansoTrasMadrugada(k0) {
+    const nombres = [];
+    for (let j = 3; j < Math.max(4, 2 + Scheduler.restSlotsFor(state.settings)); j++) {
+      if (k0 + j < Scheduler.DAYS.length * 2) nombres.push(nombreJornada(k0 + j));
+    }
+    return nombres.length ? `Después de la madrugada no puede quedar el ${nombres.join(' ni el ')}.` : '';
+  }
+  function nombreJornada(k) {
+    return `${(Scheduler.DAY_LABELS_ES[Scheduler.DAYS[Math.floor(k / 2)]] || '').toLowerCase()} ${k % 2 ? 'tarde' : 'mañana'}`;
+  }
+  // Primer choque de `id` (más de las jornadas seguidas permitidas, o el descanso)
+  // que NO sea una jornada de su propia doble. Antes se señalaba la primera de la
+  // cadena, que es la misma doble, y no se entendía cuál había que quitar.
+  function choqueDoble(sch, id, propias) {
+    const iss = [...Scheduler.doubleIssues(sch, id, Scheduler.restSlotsFor(state.settings)).entries()]
+      .filter(([, c]) => c === 'triple' || c === 'rest').sort((a, b) => a[0] - b[0]);
+    if (!iss.length) return null;
+    const [k, c] = iss.find(([s]) => !propias.includes(s)) || iss[0];
+    const fn = (nameOf(id) || 'Conductor').split(' ')[0];
+    const restH = Number(state.settings && state.settings.double_rest_hours) || 24;
+    const tope = propias.length > 2 ? '36 h' : '24 h';
+    return c === 'triple'
+      ? `Serían más de ${tope} seguidas: ${fn} también está el ${nombreJornada(k)}. Quítalo de ahí primero.`
+      : `Después de la doble van ${restH} h de descanso y ${fn} está el ${nombreJornada(k)}. Quítalo de ahí primero.`;
   }
 
   function flashBoard(msg) {
@@ -952,14 +1023,20 @@
     const kA = new Set(antes.map(key)), kN = new Set(ahora.map(key));
     const dia = (k) => (Scheduler.DAY_LABELS_ES[k] || k).toLowerCase();
     const next = (k) => dia(Scheduler.DAYS[Scheduler.DAYS.indexOf(k) + 1] || k);
-    const txt = x => x.tipo === 'dia' ? `mañana y tarde del ${dia(x.day)}` : `tarde del ${dia(x.day)} y madrugada del ${next(x.day)}`;
+    const txt = x => x.tipo === 'dia'
+      ? `mañana y tarde del ${dia(x.day)}${x.madruga ? ` y madrugada del ${next(x.day)}` : ''}`
+      : `tarde del ${dia(x.day)} y madrugada del ${next(x.day)}`;
+    const madA = new Map(antes.map(x => [key(x), !!x.madruga]));
     const out = [
       ...ahora.filter(x => !kA.has(key(x))).map(x =>
         ({ id: x.id, title: 'Te asignaron una doble', body: `Doblas ${txt(x)}.${x.nota ? ' Motivo: ' + x.nota : ''}` })),
       ...antes.filter(x => !kN.has(key(x))).map(x =>
         ({ id: x.id, title: 'Se quitó tu doble', body: `Ya no doblas ${txt(x)}. Revisa tu horario.` })),
+      // Misma doble, pero le sumaron o le quitaron la madrugada siguiente.
+      ...ahora.filter(x => kA.has(key(x)) && madA.get(key(x)) !== !!x.madruga).map(x =>
+        ({ id: x.id, title: 'Cambió tu doble', body: x.madruga ? `Ahora doblas ${txt(x)}.` : `Ya no madrugas el ${next(x.day)} después de tu doble. Revisa tu horario.` })),
     ];
-    state.schedule._doublesAvisadas = ahora.map(x => ({ id: x.id, day: x.day, tipo: x.tipo }));
+    state.schedule._doublesAvisadas = ahora.map(x => ({ id: x.id, day: x.day, tipo: x.tipo, ...(x.madruga ? { madruga: true } : {}) }));
     return out;
   }
 
