@@ -56,6 +56,19 @@
 // pendientes, y en el Balance y su Excel «Traslados privados» aparte de los
 // viajes extra de vacaciones.
 //
+// 22-oct-2026 (0115, notas de voz de la dueña): en producción el reloj diario no
+// corría y las cuentas de octubre no se abrieron solas.
+//   · «Abrir varias»: casillas por fila, filtro por día de corte, «marcar todos los
+//     de esta lista», días para pagar desde hoy o desde su corte (avisa cuántas
+//     quedarían vencidas/pausadas con la fecha del corte) y si avisar por push. La
+//     base dice a quién no se le abrió y por qué.
+//   · «Abrir cuenta de cobro» de una fila: si con la fecha de su corte quedaría
+//     vencida, pregunta y la abre con los días desde hoy (antes la dejaba pausada).
+//     También sale cuando ya pagó la anterior y la de su corte no se abrió.
+//   · «Plazo desde hoy» en una vencida o pausada: misma cuenta, vuelve a contar.
+//   · «Marcar pagado» con «Comprobante (opcional)»: el archivo va a la carpeta del
+//     tripulante y en su app sale enviado → revisado → aprobado.
+//
 // Contrato con core.js: window.renderCobro() al entrar a la pestaña y
 // window.stopCobroTimer() al salir (core.setTab los llama con typeof). La entrada
 // «Cuentas de cobro» de la consola aparece sola cuando renderCobro existe.
@@ -106,6 +119,10 @@
     balMonth: null,           // 'AAAA-MM' (null = el de hoy)
     balLoading: false,
     xlsx: null,               // último Excel generado {file, buf} (para pruebas)
+    // 0115
+    sel: null,                // «Abrir varias»: null = apagado · {ids:Set, cut:'todos'|n, fromToday, notify}
+    selRes: null,             // lo que respondió la base al abrir varias ({opened, skipped})
+    file: null,               // comprobante que adjunta el jefe en «Marcar pagado» (File)
   };
 
   // ── utilidades ───────────────────────────────────────────────────────────
@@ -246,6 +263,43 @@
     return out.join(' · ');
   }
 
+  // ── 0115: abrir varias y «plazo desde hoy» ───────────────────────────────
+  const addDays = (iso, n) => {
+    const p = parts(iso); if (!p) return null;
+    return new Date(Date.UTC(p.y, p.mo - 1, p.d + n)).toISOString().slice(0, 10);
+  };
+  // ¿Se le puede abrir la cuenta de cobro de su corte vigente? (la base lo vuelve
+  // a revisar y dice por qué no). «Ya la tiene» = su cuenta más reciente es de
+  // ese corte o posterior.
+  function whyNotOpen(r) {
+    const acc = isObj(r.account) ? r.account : null;
+    if (!acc) return 'Sin cuenta';
+    if (acc.active === false) return 'Cuenta apagada';
+    if (noValue(r)) return 'Sin valor';
+    const cur = isObj(r.current) ? r.current : null;
+    // Sin el corte vigente (base vieja): como antes, solo a quien no tiene ninguna.
+    if (cur && !acc.currentCut) return 'Ya tiene cuenta de cobro';
+    if (cur && String(cur.periodStart) >= String(acc.currentCut)) return 'Ya tiene la del ' + fmtDay(acc.currentCut);
+    return null;
+  }
+  const canOpen = (r) => !whyNotOpen(r);
+  // Con la fecha de su corte, ¿cómo quedaría hoy? (mismas cuentas que la base:
+  // vence = corte + días para pagar; pausa = vence + gracia + 1).
+  function lateOf(r) {
+    const acc = isObj(r.account) ? r.account : {};
+    const cut = acc.currentCut, hoy = hoyISO();
+    const due = addDays(cut, num(acc.effectiveDueDays) != null ? num(acc.effectiveDueDays) : 5);
+    const block = addDays(due, (num(acc.effectiveGraceDays) != null ? num(acc.effectiveGraceDays) : 3) + 1);
+    return { cut, due, block, vencida: !!due && due < hoy, pausada: !!block && block <= hoy,
+      dueFromToday: addDays(hoy, num(acc.effectiveDueDays) != null ? num(acc.effectiveDueDays) : 5) };
+  }
+  function selRows() {
+    const rows = rowsFiltered();
+    if (!cb.sel || cb.sel.cut === 'todos') return rows;
+    return rows.filter(r => isObj(r.account) && Number(r.account.cutDay) === Number(cb.sel.cut));
+  }
+  const selPicked = () => (cb.list || []).filter(r => cb.sel && cb.sel.ids.has(r.auxiliarProfileId) && canOpen(r));
+
   // ── datos ────────────────────────────────────────────────────────────────
   async function tryCall(fn) { try { return { v: await fn() }; } catch (e) { return { e }; } }
   async function loadAll(quiet) {
@@ -258,6 +312,10 @@
     cb.loading = false;
     if (l.e) { if (!quiet || cb.list === undefined) cb.list = null; }
     else cb.list = Array.isArray(l.v) ? l.v.filter(isObj) : [];
+    // 0115: de lo marcado en «Abrir varias», fuera a quien ya no se le puede abrir.
+    if (cb.sel && Array.isArray(cb.list)) {
+      [...cb.sel.ids].forEach(id => { const r = cb.list.find(x => x.auxiliarProfileId === id); if (!r || !canOpen(r)) cb.sel.ids.delete(id); });
+    }
     if (p.e) { if (!quiet || cb.proofs === undefined) cb.proofs = null; }
     else cb.proofs = Array.isArray(p.v) ? p.v.filter(isObj) : [];
     cb.lastRun = r.e ? undefined : (isObj(r.v) ? r.v : null);
@@ -456,6 +514,8 @@
     let when = '';
     if (!acc) when = 'Sin mensualidad';
     else if (!cur && noValue(r)) when = 'Sin valor: no se le abre cobro';
+    // 0115: su corte de este mes ya debía estar abierto (el reloj no lo abrió) ≠ todavía no le toca.
+    else if (!cur && acc.currentCut && acc.active !== false && (!acc.startsOn || String(acc.startsOn) <= String(acc.currentCut))) when = 'Su corte del ' + fmtDay(acc.currentCut) + ' no se abrió';
     else if (!cur) when = acc.nextCut ? 'Primer corte el ' + fmtDay(acc.nextCut) : 'Sin cuenta de cobro abierta';
     else if (cur.paid) when = 'Pagó el ' + fmtDay(cur.paidOn);
     else if (cur.blocked) when = 'Pausado desde el ' + fmtDay(cur.blockedOn || cur.blockDate);
@@ -465,12 +525,34 @@
     if (cur && !cur.paid) {
       acts.push('<button class="set-btn ghost" data-cb="mode" data-m="paid" data-aux="' + esc(r.auxiliarProfileId) + '">Marcar pagado</button>');
       acts.push('<button class="set-btn ghost" data-cb="mode" data-m="adjust" data-aux="' + esc(r.auxiliarProfileId) + '">Ajustar</button>');
+      // 0115: vencida o pausada (p. ej. abierta tarde): los días para pagar vuelven a contar desde hoy.
+      if (cur.blocked || (cur.dueDate && String(cur.dueDate) < hoyISO())) {
+        acts.push('<button class="set-btn ghost" data-cb="restart" data-aux="' + esc(r.auxiliarProfileId) + '"' + (cb.busy ? ' disabled' : '') + '>Plazo desde hoy</button>');
+      }
     }
-    if (acc && acc.active !== false && !cur && acc.effectiveAmountCOP != null) acts.push('<button class="set-btn ghost" data-cb="open-st" data-aux="' + esc(r.auxiliarProfileId) + '"' + (cb.busy ? ' disabled' : '') + '>Abrir cuenta de cobro</button>');
+    // 0115: también cuando ya pagó la anterior y la de su corte no se abrió.
+    if (canOpen(r)) acts.push('<button class="set-btn ghost" data-cb="open-st" data-aux="' + esc(r.auxiliarProfileId) + '"' + (cb.busy ? ' disabled' : '') + '>Abrir cuenta de cobro</button>');
     if (acc && acc.active !== false && isObj(r.vacation)) acts.push('<button class="set-btn ghost" data-cb="mode" data-m="vac" data-aux="' + esc(r.auxiliarProfileId) + '">Vacaciones</button>');
     if (acc) acts.push('<button class="set-btn ghost" data-cb="mode" data-m="hist" data-aux="' + esc(r.auxiliarProfileId) + '">Historial</button>');
     // Sector: solo si la base ya lo trae (0094); sin él, «Sin sector» sería un invento.
     const sec = 'sector' in r ? (r.sector || 'Sin sector') : null;
+    // 0115: eligiendo a quiénes abrirles la cuenta: la casilla (o por qué no) en
+    // lugar de los botones, y sin editor abierto.
+    if (cb.sel) {
+      const no = whyNotOpen(r);
+      const on = !no && cb.sel.ids.has(r.auxiliarProfileId);
+      const pick = no
+        ? '<div class="cb-rowacts cb-pick off"><span>' + esc(no) + '</span></div>'
+        : '<div class="cb-rowacts cb-pick"><label><input type="checkbox" data-cbpick="' + esc(r.auxiliarProfileId) + '"' + (on ? ' checked' : '') + '><span>Abrir</span></label></div>';
+      return '<div class="cb-row' + (on ? ' picked' : '') + (no ? ' nope' : '') + '" data-aux="' + esc(r.auxiliarProfileId) + '">'
+        + '<div class="cb-main">'
+        + '<div class="cb-who"><b>' + esc(r.name || 'Sin nombre') + (r.isActive === false ? ' <span class="cb-tag t-muted">Suspendida</span>' : '') + '</b>'
+        + '<span>' + esc([acc && acc.reference, acc && acc.cutDay != null ? 'Corte día ' + acc.cutDay : null, sec].filter(Boolean).join(' · ')) + '</span></div>'
+        + '<div class="cb-st">' + tag(st) + noValChip(r) + '</div>'
+        + '<div class="cb-amt"><b>' + esc(amount != null ? money(amount) : '—') + '</b><span>' + esc(when) + '</span></div>'
+        + pick
+        + '</div></div>';
+    }
     return '<div class="cb-row' + (open ? ' open' : '') + '" data-aux="' + esc(r.auxiliarProfileId) + '">'
       + '<div class="cb-main">'
       + '<div class="cb-who"><b>' + esc(r.name || 'Sin nombre') + (r.isActive === false ? ' <span class="cb-tag t-muted">Suspendida</span>' : '') + '</b>'
@@ -484,6 +566,10 @@
   }
 
   // ── editores de una fila ─────────────────────────────────────────────────
+  // 0115: lo que dice debajo del campo del comprobante (el input se vacía al repintar).
+  const fileHint = () => (cb.file
+    ? 'Adjunto: ' + (cb.file.name || 'archivo') + '. El tripulante lo ve en su app como enviado, revisado y aprobado.'
+    : 'Foto o PDF. Si lo adjuntas, el tripulante lo ve en su app como enviado, revisado y aprobado.');
   const field = (label, key, o) => {
     o = o || {};
     const v = cb.form[key];
@@ -575,6 +661,11 @@
         + field('Monto recibido (COP)', 'amountCOP', { inputmode: 'numeric' })
         + field('Fecha del pago', 'paidOn', { type: 'date', max: hoyISO() })
         + field('Nota (opcional)', 'note', { wide: true })
+        // 0115: el comprobante que adjunta el jefe (no si ya hay uno del tripulante en revisión).
+        + (r.proofInReview || cur.comp === 'review' ? ''
+          : '<label class="cb-f wide"><span>Comprobante (opcional)</span>'
+            + '<input class="set-input" type="file" accept="image/*,application/pdf" data-cbfile>'
+            + '<em data-cbfile-hint>' + esc(fileHint()) + '</em></label>')
         + '</div>'
         + '<p class="cb-mini">Queda al día' + (cur.blocked ? ' y sus reservas se reactivan' : '') + '. Si tenía un comprobante en revisión, queda aprobado con este pago. Al tripulante le llega el aviso.</p>'
         + foot('Marcar pagado', 'save-paid')
@@ -1217,6 +1308,71 @@
     return cb.xlsx;
   }
 
+  // ── 0115: el panel «Abrir varias» ────────────────────────────────────────
+  function selHTML() {
+    const s = cb.sel; if (!s) return '';
+    // Los días de corte de la lista (con el buscador y el filtro), con cuántos se pueden abrir.
+    const base = rowsFiltered();
+    const cuts = new Map();
+    base.forEach(r => {
+      const d = isObj(r.account) && r.account.cutDay != null ? Number(r.account.cutDay) : null;
+      if (d == null) return;
+      cuts.set(d, (cuts.get(d) || 0) + (canOpen(r) ? 1 : 0));
+    });
+    const totalOpen = base.filter(canOpen).length;
+    const chips = '<button class="' + (s.cut === 'todos' ? 'on' : '') + '" data-cb="sel-cut" data-v="todos">Todos <i>' + totalOpen + '</i></button>'
+      + [...cuts.keys()].sort((a, b) => a - b).map(d => '<button class="' + (Number(s.cut) === d ? 'on' : '') + '" data-cb="sel-cut" data-v="' + d + '">Día ' + d + ' <i>' + cuts.get(d) + '</i></button>').join('');
+    const vis = selRows().filter(canOpen);
+    const allOn = vis.length > 0 && vis.every(r => s.ids.has(r.auxiliarProfileId));
+    const picked = selPicked();
+    const n = picked.length;
+    const lates = picked.map(lateOf);
+    const venc = lates.filter(x => x.vencida && !x.pausada).length, paus = lates.filter(x => x.pausada).length;
+    const dues = lates.map(x => x.dueFromToday).filter(Boolean).sort();
+    let terms = '';
+    if (n) {
+      if (s.fromToday) {
+        terms = dues[0] === dues[dues.length - 1] ? 'Vencen el ' + fmtDay(dues[0]) + '.' : 'Vencen entre el ' + fmtDay(dues[0]) + ' y el ' + fmtDay(dues[dues.length - 1]) + '.';
+      } else if (venc || paus) {
+        terms = 'Ojo: su corte ya pasó. ' + [venc ? pl(venc, 'quedaría vencida', 'quedarían vencidas') : '', paus ? pl(paus, 'quedaría con las reservas pausadas', 'quedarían con las reservas pausadas') : ''].filter(Boolean).join(' y ')
+          + ' de una vez. Con «desde hoy» tienen sus días para pagar completos.';
+      } else terms = 'Vencen según su día de corte.';
+    }
+    return '<div class="cb-panel cb-sel">'
+      + '<div class="cb-panel-h"><b>Abrir cuentas de cobro</b><span>Marca a quiénes. Se abre la cuenta de su corte de este mes; solo se puede marcar a quien todavía no la tiene.</span></div>'
+      + '<div class="cb-sel-row"><span class="cb-sel-l">Día de corte</span><div class="cb-filters">' + chips + '</div></div>'
+      + '<label class="cb-f cb-chk"><input type="checkbox" data-cbsel="all"' + (allOn ? ' checked' : '') + (vis.length ? '' : ' disabled') + '><span>Marcar ' + (vis.length === 1 ? 'el que se puede' : 'los ' + vis.length + ' que se pueden') + ' abrir en esta lista</span></label>'
+      + '<div class="cb-sel-terms"><span class="cb-sel-l">Días para pagar</span>'
+      + '<label><input type="radio" name="cb-sel-terms" data-cbsel="today"' + (s.fromToday ? ' checked' : '') + '><span>Desde hoy</span></label>'
+      + '<label><input type="radio" name="cb-sel-terms" data-cbsel="cut"' + (!s.fromToday ? ' checked' : '') + '><span>Desde su día de corte (como el reloj)</span></label></div>'
+      + '<label class="cb-f cb-chk"><input type="checkbox" data-cbsel="notify"' + (s.notify ? ' checked' : '') + '><span>Avisarles con una notificación («Tu cuenta de cobro está lista»)</span></label>'
+      + (terms ? '<p class="cb-mini' + (!s.fromToday && (venc || paus) ? ' warn' : '') + '" data-cbsel-terms>' + esc(terms) + '</p>' : '')
+      + '<div class="cb-ed-foot"><button class="set-btn ghost" data-cb="sel-off">Cancelar</button>'
+      + '<button class="set-btn" data-cb="sel-go"' + (n && !cb.busy ? '' : ' disabled') + '>' + esc(n ? 'Abrir ' + pl(n, 'cuenta de cobro', 'cuentas de cobro') : 'Marca a quiénes abrir') + '</button></div>'
+      + '</div>';
+  }
+  // Repinta solo el panel (no la lista): marcar casillas no salta la pantalla.
+  function paintSel() {
+    const rt = root(); const el = rt && rt.querySelector('.cb-sel');
+    if (el) el.outerHTML = selHTML();
+    if (rt) rt.querySelectorAll('[data-cbpick]').forEach(i => {
+      const on = !!(cb.sel && cb.sel.ids.has(i.getAttribute('data-cbpick')));
+      i.checked = on;
+      const row = i.closest('.cb-row'); if (row) row.classList.toggle('picked', on);
+    });
+  }
+  function selResHTML() {
+    const x = cb.selRes; if (!isObj(x)) return '';
+    const op = Array.isArray(x.opened) ? x.opened : [], sk = Array.isArray(x.skipped) ? x.skipped : [];
+    const paus = op.filter(o => o && o.blocked).length;
+    return '<div class="cb-note' + (sk.length || paus ? ' warn' : '') + ' cb-selres">' + icon(sk.length || paus ? 'i-warn' : 'i-check') + '<div>'
+      + '<b>' + esc(op.length ? (op.length === 1 ? 'Se abrió 1 cuenta de cobro.' : 'Se abrieron ' + op.length + ' cuentas de cobro.') : 'No se abrió ninguna cuenta de cobro.') + '</b>'
+      + (paus ? '<span>' + esc(pl(paus, 'quedó', 'quedaron') + ' con las reservas pausadas por la fecha de su corte: usa «Plazo desde hoy» en su fila.') + '</span>' : '')
+      + (sk.length ? '<span>' + esc('No se ' + (sk.length === 1 ? 'abrió 1' : 'abrieron ' + sk.length) + ':') + '</span><ul class="cb-selres-l">'
+        + sk.map(s => '<li>' + esc((s && s.name) || 'Tripulante') + ' — ' + esc((s && s.reason) || 'sin motivo') + '</li>').join('') + '</ul>' : '')
+      + '</div><button class="set-btn ghost" data-cb="selres-off">Listo</button></div>';
+  }
+
   function paint() {
     const r = root(); if (!r) return;
     bind();
@@ -1247,9 +1403,13 @@
     else if (!list.length) h += '<div class="cb-empty"><b>Todavía no hay tripulantes en la organización.</b></div>';
     else {
       const counts = FILTERS.map(f => list.filter(x => f[2](stateOf(x), x)).length);
-      const rows = rowsFiltered();
-      h += '<div class="cb-tools"><div class="cb-search">' + icon('i-search') + '<input id="cb-search" type="text" placeholder="Busca por nombre, correo, teléfono o referencia" value="' + esc(cb.q) + '" autocomplete="off"></div>'
+      const rows = cb.sel ? selRows() : rowsFiltered();
+      const nOpen = list.filter(canOpen).length;
+      h += selResHTML()
+        + '<div class="cb-tools"><div class="cb-search">' + icon('i-search') + '<input id="cb-search" type="text" placeholder="Busca por nombre, correo, teléfono o referencia" value="' + esc(cb.q) + '" autocomplete="off"></div>'
+        + (cb.sel ? '' : '<button class="set-btn ghost cb-sel-on" data-cb="sel-on"' + (nOpen ? '' : ' disabled title="Nadie tiene pendiente abrir la cuenta de su corte"') + '>Abrir varias <i>' + nOpen + '</i></button>')
         + '<div class="cb-filters">' + FILTERS.map((f, i) => '<button class="' + (cb.filter === f[0] ? 'on' : '') + '" data-cb="filter" data-v="' + f[0] + '">' + esc(f[1]) + ' <i>' + counts[i] + '</i></button>').join('') + '</div></div>'
+        + selHTML()
         + (rows.length ? '<div class="cb-list">' + rows.map(rowHTML).join('') + '</div>' : '<div class="cb-empty"><b>Nadie en este filtro.</b></div>');
     }
     h += '</div>';
@@ -1289,6 +1449,7 @@
       cb.form = vacForm(r, k);
     } else if (mode === 'paid') {
       cb.form = { viaLabel: '', amountCOP: cur && cur.amountDueCOP != null ? String(cur.amountDueCOP) : '', paidOn: hoyISO(), note: '' };
+      cb.file = null;
     } else if (mode === 'adjust') {
       cb.form = { amountCOP: cur && cur.amountCOP != null ? String(cur.amountCOP) : '', discountCOP: cur && num(cur.discountCOP) ? String(cur.discountCOP) : '', discountNote: (cur && cur.discountNote) || '' };
     } else if (mode === 'hist') {
@@ -1445,9 +1606,50 @@
     const f = cb.form;
     if (f.paidOn && f.paidOn > hoyISO()) { say('La fecha del pago no puede ser futura'); return; }
     const a = api(); if (!a) return;
-    const ok = await run(aux, () => a.adminMarkPaid(cur.id, { viaLabel: String(f.viaLabel || '').trim() || null, amountCOP: digits(f.amountCOP), paidOn: f.paidOn || null, note: String(f.note || '').trim() || null }),
-      (r.name ? r.name + ' quedó al día' : 'Quedó al día'));
-    if (ok) { cb.open = null; cb.mode = null; loadAll(false); }
+    const vals = { viaLabel: String(f.viaLabel || '').trim() || null, amountCOP: digits(f.amountCOP), paidOn: f.paidOn || null, note: String(f.note || '').trim() || null };
+    // 0115: con el comprobante adjunto, se sube a su carpeta y queda aprobado con el pago.
+    const file = cb.file;
+    if (file && typeof a.adminMarkPaidWithProof !== 'function') { say('Esta versión no adjunta comprobantes: quita el archivo'); return; }
+    const ok = await run(aux, () => (file ? a.adminMarkPaidWithProof(cur.id, r.profileId, file, vals) : a.adminMarkPaid(cur.id, vals)),
+      (r.name ? r.name + ' quedó al día' : 'Quedó al día') + (file ? ' · con su comprobante' : ''));
+    if (ok) { cb.open = null; cb.mode = null; cb.file = null; loadAll(false); }
+  }
+  // 0115: «Plazo desde hoy»: misma cuenta de cobro, los días para pagar vuelven a
+  // contar desde hoy y se le quita la pausa.
+  async function restartTerms(aux) {
+    const r = rowOf(aux); const cur = r && isObj(r.current) ? r.current : null;
+    if (!cur || cur.paid) return;
+    const a = api(); if (!a || typeof a.adminRestartTerms !== 'function') return;
+    const nueva = lateOf(r).dueFromToday;
+    const mesDe = MES[((parts(cur.periodStart) || { mo: 1 }).mo) - 1];
+    if (typeof window.confirm === 'function' && !window.confirm('¿Darle a ' + (r.name || 'este tripulante') + ' plazo desde hoy? Su cuenta de '
+      + mesDe + ' vencería el ' + fmtDay(nueva) + (cur.blocked ? ', se le quita la pausa' : '') + ' y le llega la notificación.')) return;
+    const res = await run(aux, () => a.adminRestartTerms(cur.id));
+    if (!res) return;
+    say((r.name ? r.name + ': ' : '') + 'vence el ' + fmtDay(isObj(res) && res.dueDate ? res.dueDate : nueva));
+    loadAll(false);
+  }
+  // 0115: abrir varias a la vez (el panel «Abrir varias»).
+  function selOn() {
+    cb.sel = { ids: new Set(), cut: 'todos', fromToday: true, notify: true };
+    cb.selRes = null; cb.open = null; cb.mode = null;
+    paint();
+  }
+  async function selGo() {
+    const s = cb.sel; if (!s) return;
+    const picked = selPicked();
+    if (!picked.length) { say('Marca a quiénes abrirles la cuenta'); return; }
+    const a = api(); if (!a || typeof a.adminOpenMany !== 'function') { say('Esta versión no abre varias a la vez'); return; }
+    if (typeof window.confirm === 'function' && !window.confirm('¿Abrir ' + pl(picked.length, 'cuenta de cobro', 'cuentas de cobro') + '? '
+      + (s.fromToday ? 'Los días para pagar cuentan desde hoy. ' : 'Los días para pagar cuentan desde su día de corte. ')
+      + (s.notify ? 'A cada uno le llega la notificación.' : 'Sin notificación: lo ven al entrar a Pagos.'))) return;
+    const res = await run('sel', () => a.adminOpenMany(picked.map(r => r.auxiliarProfileId), { fromToday: s.fromToday, notify: s.notify }));
+    if (!res) return;
+    cb.sel = null;
+    cb.selRes = isObj(res) ? res : { opened: [], skipped: [] };
+    const n = Array.isArray(cb.selRes.opened) ? cb.selRes.opened.length : 0;
+    say(n === 1 ? 'Se abrió 1 cuenta de cobro' : 'Se abrieron ' + n + ' cuentas de cobro');
+    loadAll(false);
   }
   async function saveAdjust(aux) {
     const r = rowOf(aux); const cur = r && isObj(r.current) ? r.current : null;
@@ -1463,6 +1665,21 @@
   }
   async function openStatement(aux) {
     const a = api(); if (!a) return;
+    // 0115: si su corte ya pasó tanto que con esa fecha quedaría vencida (o
+    // pausada), se abre con los días para pagar desde hoy (preguntando antes).
+    const r = rowOf(aux);
+    const late = r ? lateOf(r) : null;
+    if (late && late.vencida && typeof a.adminOpenMany === 'function') {
+      if (typeof window.confirm === 'function' && !window.confirm('Su corte fue el ' + fmtDay(late.cut) + ': con esa fecha '
+        + (late.pausada ? 'quedaría vencida y con las reservas pausadas' : 'quedaría vencida') + ' de una vez. Se abre con los días para pagar desde hoy: vence el '
+        + fmtDay(late.dueFromToday) + ' y le llega la notificación. ¿Abrir?')) return;
+      const res = await run(aux, () => a.adminOpenMany([aux], { fromToday: true, notify: true }));
+      if (!res) return;
+      const sk = isObj(res) && Array.isArray(res.skipped) ? res.skipped : [];
+      say(sk.length ? 'No se abrió: ' + ((sk[0] && sk[0].reason) || 'sin motivo') : 'Cuenta de cobro abierta: vence el ' + fmtDay(late.dueFromToday));
+      loadAll(false);
+      return;
+    }
     const ok = await run(aux, () => a.adminOpenStatement(aux), 'Cuenta de cobro abierta');
     if (ok) loadAll(false);
   }
@@ -1559,7 +1776,14 @@
       case 'z-ren-no': cb.zren = null; paint(); break;
       case 'z-quitar': zQuitar(el.getAttribute('data-k')); break;
       case 'mode': openMode(aux, el.getAttribute('data-m')); break;
-      case 'close': cb.open = null; cb.mode = null; paint(); break;
+      case 'close': cb.open = null; cb.mode = null; cb.file = null; paint(); break;
+      // 0115
+      case 'restart': restartTerms(aux); break;
+      case 'sel-on': selOn(); break;
+      case 'sel-off': cb.sel = null; paint(); break;
+      case 'sel-cut': if (cb.sel) { const v = el.getAttribute('data-v'); cb.sel.cut = v === 'todos' ? 'todos' : Number(v); paint(); } break;
+      case 'sel-go': selGo(); break;
+      case 'selres-off': cb.selRes = null; paint(); break;
       case 'save-acc': saveAcc(aux); break;
       case 'save-paid': savePaid(aux); break;
       case 'save-adjust': saveAdjust(aux); break;
@@ -1582,10 +1806,36 @@
     const t = e.target; if (!t) return;
     if (t.id === 'cb-search') {
       cb.q = t.value;
-      const r = root(); const list = r && r.querySelector('.cb-list, .cb-tools + .cb-empty');
-      const rows = rowsFiltered();
+      const r = root(); const list = r && r.querySelector('.cb-list, .cb-tools + .cb-empty, .cb-sel + .cb-empty');
+      const rows = cb.sel ? selRows() : rowsFiltered();
       const html = rows.length ? '<div class="cb-list">' + rows.map(rowHTML).join('') + '</div>' : '<div class="cb-empty"><b>Nadie en este filtro.</b></div>';
       if (list) list.outerHTML = html;
+      if (cb.sel) paintSel();
+      return;
+    }
+    // 0115: las casillas de «Abrir varias» (se lee checked: input y change llegan los dos).
+    if (t.hasAttribute('data-cbpick')) {
+      if (!cb.sel) return;
+      const id = t.getAttribute('data-cbpick');
+      if (t.checked) cb.sel.ids.add(id); else cb.sel.ids.delete(id);
+      paintSel();
+      return;
+    }
+    if (t.hasAttribute('data-cbsel')) {
+      if (!cb.sel) return;
+      const k = t.getAttribute('data-cbsel');
+      if (k === 'all') selRows().filter(canOpen).forEach(r => { if (t.checked) cb.sel.ids.add(r.auxiliarProfileId); else cb.sel.ids.delete(r.auxiliarProfileId); });
+      else if (k === 'today' && t.checked) cb.sel.fromToday = true;
+      else if (k === 'cut' && t.checked) cb.sel.fromToday = false;
+      else if (k === 'notify') cb.sel.notify = !!t.checked;
+      paintSel();
+      return;
+    }
+    // 0115: el comprobante que adjunta el jefe en «Marcar pagado».
+    if (t.hasAttribute('data-cbfile')) {
+      cb.file = t.files && t.files[0] ? t.files[0] : null;
+      const hint = t.closest('.cb-f') && t.closest('.cb-f').querySelector('[data-cbfile-hint]');
+      if (hint) hint.textContent = fileHint();
       return;
     }
     if (t.hasAttribute('data-cbf')) {

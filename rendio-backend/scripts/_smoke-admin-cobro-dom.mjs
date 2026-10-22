@@ -598,7 +598,9 @@ console.log('\n── 0094 · Sector y valor propio en la cuenta, chip y filtro 
   // (propio → sector → por defecto) solo lo prueba _verify-0094.mjs contra una base.
   t('con cuenta de cobro abierta, la fila muestra SU monto (vacaciones: 3 × $25.000 = $75.000), no la mensualidad del sector', txt(b.row('b-vac').querySelector('.cb-amt b')) === '$75.000', txt(b.row('b-vac').querySelector('.cb-amt b')));
   t('sin cuenta de cobro abierta, la fila muestra la mensualidad efectiva que da la base (effectiveAmountCOP; aquí, la del sector: $180.000)', txt(b.row('b-sec').querySelector('.cb-amt b')) === '$180.000'
-    && /^Primer corte el /.test(txt(b.row('b-sec').querySelector('.cb-amt span'))) && txt(b.row('b-sin').querySelector('.cb-amt b')) === '—');
+    // 0115: cobra desde hace 40 días y su corte fue hace 3 → ya debía estar abierta: lo dice.
+    && txt(b.row('b-sec').querySelector('.cb-amt span')) === 'Su corte del ' + fd(START) + ' no se abrió' && txt(b.row('b-sin').querySelector('.cb-amt b')) === '—',
+    txt(b.row('b-sec').querySelector('.cb-amt span')));
   t('saldada sola en $0: «$0 · Pagó el …» con el chip «Vacaciones»', txt(b.row('b-zero').querySelector('.cb-amt b')) === '$0' && /^Pagó el /.test(txt(b.row('b-zero').querySelector('.cb-amt span')))
     && txt(b.row('b-zero').querySelector('[data-cb-chip="vac"]')) === 'Vacaciones');
   t('«Valor propio» solo en quien tiene monto propio distinto del sector (Iván: $160.000 vs Rionegro $170.000), con la razón', txt(b.row('b-rio').querySelector('[data-cb-chip="own"]')) === 'Valor propio'
@@ -930,6 +932,123 @@ console.log('\n── 0094 · Balance del mes y Excel ──');
   t('…y en la fila, el Monto dice «Incluye $50.000 de 1 traslado privado»', /Incluye \$50\.000 de 1 traslado privado/.test(montoRio), montoRio);
   b5.w.stopCobroTimer();
   t('sin errores de consola (privado)', b5.errors.length === 0, b5.errors.slice(0, 3).join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 22-oct-2026 (0115): «Abrir varias» (por día de corte, con casillas), «Plazo
+// desde hoy», abrir una sola sin dejarla vencida, y «Marcar pagado» con el
+// comprobante que adjunta el jefe.
+console.log('\n── 0115 · Abrir varias, plazo desde hoy y comprobante del jefe ──');
+{
+  const C1 = addD(HOY, -21), C21 = addD(HOY, -1);            // corte día 1 (hace 3 semanas) y día 21 (ayer)
+  const acc = (o) => ({ ...cuenta(o), cutDay: o.cut, currentCut: o.cc, noValue: !!o.nv, effectiveAmountCOP: o.nv ? null : 470000, amountCOP: null });
+  const L115 = () => [
+    { auxiliarProfileId: 'c-21', profileId: 'u21', name: 'Corte Veintiuno', isActive: true, account: acc({ ref: 'AUX-0401', cut: 21, cc: C21 }), current: null, proofInReview: null },
+    { auxiliarProfileId: 'c-1', profileId: 'u1', name: 'Corte Uno', isActive: true, account: acc({ ref: 'AUX-0402', cut: 1, cc: C1 }), current: null, proofInReview: null },
+    { auxiliarProfileId: 'c-pp', profileId: 'upp', name: 'Pagó La Anterior', isActive: true, account: acc({ ref: 'AUX-0403', cut: 21, cc: C21 }),
+      current: st({ id: 's-pp', dia: 31, paid: true }), proofInReview: null },
+    { auxiliarProfileId: 'c-has', profileId: 'uhas', name: 'Ya La Tiene', isActive: true, account: acc({ ref: 'AUX-0404', cut: 21, cc: C21 }),
+      current: st({ id: 's-has', dia: 1 }), proofInReview: null },
+    { auxiliarProfileId: 'c-blk', profileId: 'ublk', name: 'Pausada Por Abrir Tarde', isActive: true, account: acc({ ref: 'AUX-0405', cut: 1, cc: C1, paused: true }),
+      current: st({ id: 's-blk1', dia: 21, blocked: true }), proofInReview: null },
+    { auxiliarProfileId: 'c-rev', profileId: 'urev', name: 'Con Comprobante', isActive: true, account: acc({ ref: 'AUX-0406', cut: 21, cc: C21 }),
+      current: st({ id: 's-crev', dia: 1, comp: 'review' }),
+      proofInReview: { id: 'pf-9', statementId: 's-crev', path: 'org/urev/s-crev/a.jpg', contentType: 'image/jpeg', viaLabel: 'Nequi', declaredAmountCOP: 470000, submittedOn: HOY } },
+    { auxiliarProfileId: 'c-nv', profileId: 'unv', name: 'Sin Valor Aún', isActive: true, account: acc({ ref: 'AUX-0407', cut: 21, cc: C21, nv: true }), current: null, proofInReview: null },
+    { auxiliarProfileId: 'c-none', profileId: 'unone', name: 'Sin Cuenta Aún', isActive: true, account: null, current: null, proofInReview: null },
+  ];
+  const b = await boot({ lista: L115 });
+  const { w } = b;
+  const conf = [];
+  w.confirm = (m) => { conf.push(m); return true; };
+  w.ApiCobro.adminOpenMany = async (ids, o) => {
+    b.calls.push(['adminOpenMany', ids.slice(), { ...o }]);
+    return { today: HOY, opened: ids.map(id => ({ auxiliarProfileId: id, name: id, blocked: id === 'c-1' && !o.fromToday })),
+      skipped: [{ auxiliarProfileId: 'x', name: 'Otra Persona', reason: 'Sin valor: ni propio ni de su sector' }] };
+  };
+  w.ApiCobro.adminRestartTerms = async (id) => { b.calls.push(['adminRestartTerms', id]); return { id, dueDate: addD(HOY, 5), blocked: false }; };
+  w.ApiCobro.adminMarkPaidWithProof = async (id, prof, file, f) => { b.calls.push(['adminMarkPaidWithProof', id, prof, file && file.name, { ...f }]); return { id, paid: true }; };
+  w.renderCobro(); await wait(30);
+
+  const btnOpen = b.q('[data-cb="sel-on"]');
+  t('«Abrir varias 3»: cuenta a los que se les puede abrir (corte 21, corte 1 y quien pagó la anterior)', txt(btnOpen) === 'Abrir varias 3', txt(btnOpen));
+  t('fila: «Abrir cuenta de cobro» también a quien ya pagó la anterior; no a quien ya tiene la de su corte',
+    !!b.row('c-pp').querySelector('[data-cb="open-st"]') && !b.row('c-has').querySelector('[data-cb="open-st"]') && !b.row('c-nv').querySelector('[data-cb="open-st"]'));
+  t('fila: «Plazo desde hoy» en la pausada (y en ninguna al día)', !!b.row('c-blk').querySelector('[data-cb="restart"]') && !b.row('c-has').querySelector('[data-cb="restart"]') && !b.row('c-pp').querySelector('[data-cb="restart"]'));
+
+  // Abrir una sola: con su corte de hace 3 semanas quedaría vencida → desde hoy (preguntando).
+  b.click(b.row('c-1').querySelector('[data-cb="open-st"]')); await wait(30);
+  const om1 = b.calls.find(c => c[0] === 'adminOpenMany');
+  t('abrir una sola con el corte ya vencido: pregunta y abre «desde hoy» (no la deja pausada)',
+    om1 && om1[1].join() === 'c-1' && om1[2].fromToday === true && om1[2].notify === true && !b.calls.some(c => c[0] === 'adminOpenStatement')
+    && /quedaría vencida y con las reservas pausadas/.test(conf.at(-1)) && new RegExp('vence el ' + fd(addD(HOY, 5))).test(conf.at(-1)), JSON.stringify([om1, conf.at(-1)]));
+  b.click(b.row('c-21').querySelector('[data-cb="open-st"]')); await wait(30);
+  t('abrir una sola a tiempo (corte de ayer): adminOpenStatement como siempre', b.calls.some(c => c[0] === 'adminOpenStatement' && c[1] === 'c-21'));
+  b.calls.length = 0;
+
+  // «Plazo desde hoy»
+  b.click(b.row('c-blk').querySelector('[data-cb="restart"]')); await wait(30);
+  t('«Plazo desde hoy» → pregunta (vence en 5 días, se le quita la pausa) y adminRestartTerms(cuenta)',
+    b.calls.some(c => c[0] === 'adminRestartTerms' && c[1] === 's-blk1') && /se le quita la pausa/.test(conf.at(-1))
+    && b.toasts.at(-1) === 'Pausada Por Abrir Tarde: vence el ' + fd(addD(HOY, 5)), b.toasts.at(-1));
+
+  // El panel
+  b.click(b.q('[data-cb="sel-on"]')); await wait(20);
+  t('panel «Abrir cuentas de cobro» y la lista con casillas en lugar de botones', !!b.q('.cb-sel') && b.qa('[data-cbpick]').length === 3 && !b.q('.cb-row [data-cb="mode"]'));
+  t('a quien no se le puede abrir dice por qué', txt(b.row('c-has').querySelector('.cb-pick')) === 'Ya tiene la del ' + fd(C21)
+    && txt(b.row('c-nv').querySelector('.cb-pick')) === 'Sin valor' && txt(b.row('c-none').querySelector('.cb-pick')) === 'Sin cuenta', [txt(b.row('c-has').querySelector('.cb-pick')), txt(b.row('c-nv').querySelector('.cb-pick'))].join(' | '));
+  const chips = b.qa('.cb-sel [data-cb="sel-cut"]').map(txt).join(' | ');
+  t('días de corte con cuántos se pueden abrir: Todos 3 · Día 1 1 · Día 21 2', chips === 'Todos 3 | Día 1 1 | Día 21 2', chips);
+  const go = () => b.q('[data-cb="sel-go"]');
+  t('sin marcar a nadie el botón no abre', go().disabled && txt(go()) === 'Marca a quiénes abrir');
+  const pick = (id) => { const i = b.row(id).querySelector('[data-cbpick]'); i.checked = true; i.dispatchEvent(new w.Event('change', { bubbles: true })); };
+  pick('c-21'); await wait(10);
+  t('marcar uno: «Abrir 1 cuenta de cobro» y, desde hoy, «Vencen el …»', txt(go()) === 'Abrir 1 cuenta de cobro' && !go().disabled
+    && txt(b.q('[data-cbsel-terms]')) === 'Vencen el ' + fd(addD(HOY, 5)) + '.', txt(b.q('[data-cbsel-terms]')));
+  b.click(b.q('.cb-sel [data-cb="sel-cut"][data-v="1"]')); await wait(20);
+  t('filtrar Día 1: solo los de corte 1', b.qa('.cb-list .cb-row').map(r => r.getAttribute('data-aux')).join() === 'c-1,c-blk');
+  const all = b.q('[data-cbsel="all"]'); all.checked = true; all.dispatchEvent(new w.Event('change', { bubbles: true })); await wait(10);
+  t('«Marcar el que se puede abrir en esta lista» marca a Corte Uno (y lo de antes sigue marcado)', txt(go()) === 'Abrir 2 cuentas de cobro' && b.row('c-1').querySelector('[data-cbpick]').checked);
+  const cut = b.q('[data-cbsel="cut"]'); cut.checked = true; cut.dispatchEvent(new w.Event('change', { bubbles: true })); await wait(10);
+  t('«desde su día de corte»: avisa que 1 quedaría pausada de una vez', /Ojo: su corte ya pasó\. 1 quedaría con las reservas pausadas de una vez/.test(txt(b.q('[data-cbsel-terms]')))
+    && b.q('[data-cbsel-terms]').classList.contains('warn'), txt(b.q('[data-cbsel-terms]')));
+  const nt = b.q('[data-cbsel="notify"]'); nt.checked = false; nt.dispatchEvent(new w.Event('change', { bubbles: true })); await wait(10);
+  b.click(go()); await wait(40);
+  const om = b.calls.find(c => c[0] === 'adminOpenMany');
+  t('Abrir → pregunta y adminOpenMany([c-21, c-1], {fromToday:false, notify:false})', om && om[1].slice().sort().join() === 'c-1,c-21' && om[2].fromToday === false && om[2].notify === false
+    && /¿Abrir 2 cuentas de cobro\?/.test(conf.at(-1)) && /Sin notificación/.test(conf.at(-1)), JSON.stringify([om, conf.at(-1)]));
+  const res = b.q('.cb-selres');
+  t('resumen: «Se abrieron 2…», la que quedó pausada (con qué hacer) y a quién no se le abrió con el motivo',
+    !b.q('.cb-sel') && /Se abrieron 2 cuentas de cobro\./.test(txt(res)) && /1 quedó con las reservas pausadas por la fecha de su corte: usa «Plazo desde hoy» en su fila/.test(txt(res))
+    && txt(res.querySelector('.cb-selres-l li')) === 'Otra Persona — Sin valor: ni propio ni de su sector' && b.toasts.at(-1) === 'Se abrieron 2 cuentas de cobro', txt(res));
+  t('…y vuelve a pedir la lista', b.calls.filter(c => c[0] === 'adminList').length >= 1);
+  b.click(b.q('[data-cb="selres-off"]')); await wait(20);
+  t('«Listo» cierra el resumen', !b.q('.cb-selres'));
+  b.click(b.q('[data-cb="sel-on"]')); await wait(10);
+  b.click(b.q('[data-cb="sel-off"]')); await wait(10);
+  t('«Cancelar» cierra el panel y vuelven los botones', !b.q('.cb-sel') && !!b.row('c-has').querySelector('[data-cb="mode"]'));
+
+  // Marcar pagado con comprobante
+  b.click(b.row('c-has').querySelector('[data-m="paid"]')); await wait(20);
+  const fin = b.row('c-has').querySelector('[data-cbfile]');
+  t('«Marcar pagado» trae el campo «Comprobante (opcional)»', !!fin && /Si lo adjuntas, el tripulante lo ve en su app como enviado, revisado y aprobado/.test(txt(b.row('c-has'))));
+  const file = new w.File(['x'], 'comprobante-octubre.jpg', { type: 'image/jpeg' });
+  Object.defineProperty(fin, 'files', { value: [file], configurable: true });
+  fin.dispatchEvent(new w.Event('change', { bubbles: true })); await wait(10);
+  t('…al elegir el archivo lo dice: «Adjunto: comprobante-octubre.jpg…»', /^Adjunto: comprobante-octubre\.jpg\./.test(txt(b.row('c-has').querySelector('[data-cbfile-hint]'))));
+  b.type(b.row('c-has').querySelector('[data-cbf="viaLabel"]'), 'Bancolombia');
+  b.click(b.row('c-has').querySelector('[data-cb="save-paid"]')); await wait(30);
+  const mpp = b.calls.find(c => c[0] === 'adminMarkPaidWithProof');
+  t('guardar con archivo → adminMarkPaidWithProof(cuenta, su profile, archivo, {medio, monto, fecha}) y no el de sin archivo',
+    mpp && mpp[1] === 's-has' && mpp[2] === 'uhas' && mpp[3] === 'comprobante-octubre.jpg' && mpp[4].viaLabel === 'Bancolombia' && mpp[4].amountCOP === 170000 && mpp[4].paidOn === HOY
+    && !b.calls.some(c => c[0] === 'adminMarkPaid'), JSON.stringify(mpp));
+  t('…y avisa «Ya La Tiene quedó al día · con su comprobante»', b.toasts.at(-1) === 'Ya La Tiene quedó al día · con su comprobante', b.toasts.at(-1));
+  b.click(b.row('c-rev').querySelector('[data-m="paid"]')); await wait(20);
+  t('con un comprobante del tripulante en revisión no se adjunta otro (sale el aviso de que queda aprobado)', !b.row('c-rev').querySelector('[data-cbfile]')
+    && /queda aprobado con este pago/.test(txt(b.row('c-rev'))));
+  w.stopCobroTimer();
+  t('sin errores de consola (0115)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+  t('sin red (0115: window.sb nunca se usó)', b.red.length === 0, b.red.slice(0, 5).join(','));
 }
 
 console.log(`\n${ok} ✓ · ${bad} ✗`);

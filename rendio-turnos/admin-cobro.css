@@ -84,7 +84,7 @@
 #cobro-ui .cb-list{display:flex;flex-direction:column;gap:8px}
 #cobro-ui .cb-row{border:1px solid var(--line);border-radius:12px;background:#fff}
 #cobro-ui .cb-row.open{border-color:var(--amber)}
-#cobro-ui .cb-main{display:grid;align-items:center;gap:14px;padding:13px 15px;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) auto}
+#cobro-ui .cb-main{display:grid;align-items:center;gap:14px;padding:13px 15px;grid-template-columns:minmax(170px,1.4fr) minmax(0,1fr) minmax(120px,.9fr) minmax(0,2.2fr)}
 #cobro-ui .cb-who b{display:block;font-size:14.5px;font-weight:700;color:var(--ink)}
 #cobro-ui .cb-who span{display:block;font-size:12px;color:var(--ink3);margin-top:2px;word-break:break-word;font-family:var(--mono)}
 #cobro-ui .cb-st{display:flex;gap:6px;flex-wrap:wrap}
@@ -190,3 +190,33 @@
    tiene 15 columnas, un poco más ancho antes de deslizar. Sin animaciones. */
 #cobro-ui .cb-hist td em.cb-bad{color:var(--red);font-weight:800}
 #cobro-ui .cb-scroll .cb-bal-rows{min-width:1080px}
+/* 0115 · «Abrir varias»: el panel, la casilla de cada fila (en el lugar de los
+   botones) y el resumen de lo que se abrió. Mismas piezas (cb-panel, cb-filters,
+   cb-chk, cb-note). Sin animaciones. */
+#cobro-ui .cb-sel-on i{font-style:normal;font-family:var(--mono);font-size:11px;opacity:.7;margin-left:4px}
+#cobro-ui .cb-sel{display:flex;flex-direction:column;gap:12px}
+#cobro-ui .cb-sel .cb-panel-h{margin-bottom:0}
+#cobro-ui .cb-sel-row,#cobro-ui .cb-sel-terms{display:flex;gap:8px 14px;align-items:center;flex-wrap:wrap;min-width:0}
+#cobro-ui .cb-sel-row .cb-filters{min-width:0}
+#cobro-ui .cb-sel-l{font-size:11.5px;font-weight:700;color:var(--ink2);min-width:110px}
+#cobro-ui .cb-sel-terms label{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink);cursor:pointer}
+#cobro-ui .cb-sel .cb-f.cb-chk{height:auto;align-self:flex-start}
+#cobro-ui .cb-sel .cb-mini{margin:0}
+#cobro-ui .cb-sel .cb-ed-foot{margin-top:0}
+#cobro-ui .cb-pick label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;min-height:34px}
+#cobro-ui .cb-pick input{width:18px;height:18px;accent-color:var(--amber);margin:0}
+#cobro-ui .cb-pick.off span{font-size:12px;color:var(--ink3);text-align:right}
+#cobro-ui .cb-row.picked{border-color:var(--amber)}
+#cobro-ui .cb-row.nope{opacity:.62}
+#cobro-ui .cb-selres > div{flex:1;min-width:0}
+#cobro-ui .cb-selres-l{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink2);line-height:1.6}
+#cobro-ui .cb-selres > .set-btn{flex:none}
+@media (max-width: 900px){
+  #cobro-ui .cb-sel-l{min-width:0;width:100%}
+  #cobro-ui .cb-sel-on{flex:1 1 100%}
+  #cobro-ui .cb-pick.off span{text-align:left}
+}
+/* 0115 · En la columna de estado angosta, la etiqueta larga («Sin cuenta de cobro
+   abierta») baja de línea en lugar de montarse sobre el monto. */
+#cobro-ui .cb-st{min-width:0}
+#cobro-ui .cb-st .cb-tag{white-space:normal;max-width:100%}
