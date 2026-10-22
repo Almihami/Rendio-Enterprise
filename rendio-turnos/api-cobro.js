@@ -271,29 +271,35 @@
   // OJO: si la subida sale bien y el registro falla, el archivo queda huérfano
   // en el bucket (el cliente no puede borrar ahí, a propósito); reintentar sube
   // otro archivo con otra marca.
-  async function uploadProof(file, o) {
-    o = o || {};
-    if (!file) throw new Error('Falta la foto del comprobante');
-    if (!o.statementId) throw new Error('Falta la cuenta de cobro');
-    if (!o.viaLabel) throw new Error('Falta desde dónde pagaste');
+  // El archivo del comprobante (del tripulante o, desde 0115, del jefe): foto o
+  // PDF de hasta 10 MB. Devuelve la extensión y el tipo con que se sube.
+  function proofFile(file) {
     const type = String(file.type || '').toLowerCase();
     const ext = EXT[type] || (/\.([a-z0-9]{2,5})$/i.exec(file.name || '') || [])[1];
     if (!EXT[type] && !/^(jpe?g|png|webp|heic|heif|pdf)$/i.test(ext || '')) {
       throw new Error('El comprobante tiene que ser una foto (JPG, PNG) o un PDF');
     }
     if (file.size != null && file.size > MAX_BYTES) throw new Error('El archivo pesa más de 10 MB');
+    // Algunos teléfonos entregan el HEIC o el PDF sin tipo: se deduce de la extensión
+    // (el bucket solo acepta imágenes y PDF).
+    const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+      heic: 'image/heic', heif: 'image/heif', pdf: 'application/pdf' };
+    return { ext: String(ext || 'jpg').toLowerCase(), ctype: type || MIME[String(ext || '').toLowerCase()] || 'image/jpeg' };
+  }
+  const proofStamp = () => Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+
+  async function uploadProof(file, o) {
+    o = o || {};
+    if (!file) throw new Error('Falta la foto del comprobante');
+    if (!o.statementId) throw new Error('Falta la cuenta de cobro');
+    if (!o.viaLabel) throw new Error('Falta desde dónde pagaste');
+    const { ext, ctype } = proofFile(file);
     const acc = _last && _last.organizationId ? _last : await myAccount();
     if (!acc) throw new Error('Todavía no tienes mensualidad registrada');
     const { data: s } = await client().auth.getSession();
     const uid = s && s.session && s.session.user && s.session.user.id;
     if (!uid) throw new Error('Tu sesión se cerró: vuelve a entrar');
-    const stamp = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
-    const path = [acc.organizationId, uid, o.statementId, stamp + '.' + String(ext || 'jpg').toLowerCase()].join('/');
-    // Algunos teléfonos entregan el HEIC o el PDF sin tipo: se deduce de la extensión
-    // (el bucket solo acepta imágenes y PDF).
-    const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
-      heic: 'image/heic', heif: 'image/heif', pdf: 'application/pdf' };
-    const ctype = type || MIME[String(ext || '').toLowerCase()] || 'image/jpeg';
+    const path = [acc.organizationId, uid, o.statementId, proofStamp() + '.' + ext].join('/');
     const up = await client().storage.from(BUCKET)
       .upload(path, file, { contentType: ctype, upsert: false });
     if (up && up.error) throw up.error;
@@ -426,6 +432,49 @@
       p_paid_on: f.paidOn || null,
       p_note: f.note || null,
     });
+  }
+  // 0115: «Marcar pagado» con el comprobante que sube el jefe. El archivo va a la
+  // carpeta del tripulante (payment-proofs/{org}/{su profile id}/{cuenta}/…), así
+  // él lo ve en su app como enviado, revisado y aprobado. Sin archivo = adminMarkPaid.
+  // OJO: como en uploadProof, si la subida sale y el registro falla, el archivo
+  // queda huérfano en el bucket; reintentar sube otro.
+  async function adminMarkPaidWithProof(statementId, profileId, file, f) {
+    f = f || {};
+    if (!file) return adminMarkPaid(statementId, f);
+    if (!statementId) throw new Error('Falta la cuenta de cobro');
+    if (!profileId) throw new Error('Falta el tripulante');
+    const { ext, ctype } = proofFile(file);
+    const org = await myOrg();
+    if (!org) throw new Error('Tu sesión se cerró: vuelve a entrar');
+    const path = [org, profileId, statementId, 'admin-' + proofStamp() + '.' + ext].join('/');
+    const up = await client().storage.from(BUCKET)
+      .upload(path, file, { contentType: ctype, upsert: false });
+    if (up && up.error) throw up.error;
+    return rpc('admin_billing_mark_paid_with_proof', {
+      p_statement_id: statementId,
+      p_storage_path: path,
+      p_content_type: ctype,
+      p_size_bytes: file.size != null ? Math.round(file.size) : null,
+      p_via_label: f.viaLabel || null,
+      p_amount_cop: f.amountCOP != null ? Math.round(f.amountCOP) : null,
+      p_paid_on: f.paidOn || null,
+      p_note: f.note || null,
+    });
+  }
+  // 0115: abrir varias a la vez la cuenta de cobro del corte vigente.
+  //   o.fromToday: los días para pagar cuentan desde hoy (si no, desde su corte).
+  //   o.notify:    la push «está lista» (por defecto sí).
+  // Devuelve { today, opened: [{auxiliarProfileId, name, dueDate, blocked…}], skipped: [{auxiliarProfileId, name, reason}] }.
+  async function adminOpenMany(auxIds, o) {
+    o = o || {};
+    const ids = Array.isArray(auxIds) ? auxIds.filter(Boolean) : [];
+    if (!ids.length) throw new Error('Elige al menos un tripulante');
+    return rpc('admin_billing_open_statements', { p_auxes: ids, p_from_today: !!o.fromToday, p_notify: o.notify !== false });
+  }
+  // 0115: «Plazo desde hoy»: misma cuenta de cobro, los días para pagar vuelven a
+  // contar desde hoy y se quita la pausa.
+  async function adminRestartTerms(statementId) {
+    return rpc('admin_billing_restart_terms', { p_statement_id: statementId });
   }
 
   // Configuración de la organización (plazos por defecto, titular y NIT). La
@@ -590,6 +639,8 @@
     // jefe
     adminList, adminDetail, adminSaveAccount, adminOpenStatement, adminAdjust,
     adminProofs, adminApprove, adminReject, adminMarkPaid,
+    // jefe (0115)
+    adminMarkPaidWithProof, adminOpenMany, adminRestartTerms,
     adminSettings, adminSaveSettings, adminMethods, adminSaveMethod, adminSetMethodActive, adminDeleteMethod,
     adminAlerts, adminLastRun,
     // jefe (0094)
