@@ -30,3 +30,9 @@
 #auxiliar-ui.rx-phone .rx-pg-err{font-size:13.5px;line-height:1.45;padding:10px 12px;border-radius:12px;background:var(--r-error-soft);color:#B42318}
 #auxiliar-ui.rx-phone .rx-pg-err[hidden],
 #auxiliar-ui.rx-phone .rx-sh .rx-note[hidden]{display:none}
+
+/* Línea de tiempo (22-oct): cada nodo es position:absolute con left en %, así que
+   el de Pausa (left:100 %) se queda sin ancho y su fecha salía partida en dos
+   renglones («27 de / oct»). En uno solo, como los demás nodos del diseño. La
+   separación entre nodos la pone tlOf (aux-rx-pagos.js). */
+#auxiliar-ui.rx-phone .cb2-tl-n{white-space:nowrap}

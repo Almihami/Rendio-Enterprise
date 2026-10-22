@@ -776,13 +776,46 @@
   }
 
   // ── Cb2Timeline ─────────────────────────────────────────────────────────
+  // El diseño pone cada nodo en d/blockDay. Con plazos cortos (o una cuenta que se
+  // abre tarde, 0115) dos nodos quedan a pocos px y sus rótulos se montan (22-oct,
+  // 3/1/2 a 375 px: «23 de oc24 de oct»). Entre dos centros queda siempre TL_GAP %:
+  // a 320 px la línea mide 218 px y la fecha más ancha («30 de sept») 57 px. Los
+  // nodos se corren lo menos posible (mínimos cuadrados: PAVA sobre p − i·gap) y
+  // «Hoy» y la barra van por la misma escala, a trozos entre nodo y nodo.
+  const TL_GAP = 30;
+  function tlSpread(ps) {
+    const n = ps.length; if (n < 3) return ps.slice();
+    const top = 100 - (n - 1) * TL_GAP, bl = [];
+    for (let i = 1; i < n - 1; i++) {
+      bl.push({ s: ps[i] - i * TL_GAP, c: 1 });
+      while (bl.length > 1 && bl[bl.length - 2].s / bl[bl.length - 2].c > bl[bl.length - 1].s / bl[bl.length - 1].c) {
+        const b = bl.pop(); bl[bl.length - 1].s += b.s; bl[bl.length - 1].c += b.c;
+      }
+    }
+    const out = [ps[0]];
+    bl.forEach(b => { const v = Math.max(0, Math.min(top, b.s / b.c)); for (let k = 0; k < b.c; k++) out.push(v + out.length * TL_GAP); });
+    return out.concat(ps[n - 1]);
+  }
   function tlOf(sim, cfg, dates) {
-    const N = [[0, 'Corte']].concat(cfg.aviso > 0 ? [[sim.due - cfg.aviso, 'Aviso']] : [], [[sim.due, 'Vence'], [sim.blockDay, 'Pausa']]);
-    const pos = (d) => (sim.blockDay > 0 ? (d / sim.blockDay) * 100 : 0) + '%';
+    // Aviso solo si cae después del corte (antes la base no lo manda); con plazo 0
+    // el corte ES el vencimiento: un solo nodo, «Vence».
+    const N = sim.due > 0
+      ? [[0, 'Corte']].concat(cfg.aviso > 0 && sim.due - cfg.aviso > 0 ? [[sim.due - cfg.aviso, 'Aviso']] : [], [[sim.due, 'Vence'], [sim.blockDay, 'Pausa']])
+      : [[0, 'Vence'], [sim.blockDay, 'Pausa']];
+    const end = N[N.length - 1][0];
+    const xs = tlSpread(N.map(([d]) => (end > 0 ? (d / end) * 100 : 0)));
+    const at = (d) => {
+      if (!(d > 0)) return xs[0];
+      for (let i = 1; i < N.length; i++) {
+        if (d <= N[i][0]) return xs[i - 1] + (xs[i] - xs[i - 1]) * (d - N[i - 1][0]) / (N[i][0] - N[i - 1][0]);
+      }
+      return xs[xs.length - 1];
+    };
+    const pos = (d) => at(d) + '%';
     const now = Math.min(sim.today, sim.blockDay);
     return {
       bar: { width: sim.paid ? pos(sim.paidDay != null ? sim.paidDay : now) : pos(now), cls: sim.paid ? 'ok' : sim.today > sim.due ? 'late' : '' },
-      nodes: N.map(([d, l]) => ({ l, past: sim.today >= d, end: l === 'Pausa', left: pos(d), date: fmtDay(dates.at(d)) })),
+      nodes: N.map(([d, l], i) => ({ l, past: sim.today >= d, end: l === 'Pausa', left: xs[i] + '%', date: fmtDay(dates.at(d)) })),
       now: sim.paid ? null : pos(now),
     };
   }
@@ -1548,7 +1581,7 @@
     axVacExtraHTML, axVacExtraEnsure,
     refresh: (o) => load(o || { force: true }),
     // Para pruebas.
-    _state: () => S, _model: model, _ui: () => ({ P, U, V }),
+    _state: () => S, _model: model, _ui: () => ({ P, U, V }), _tl: tlOf,
   };
 
   const sh = SH();

@@ -280,7 +280,9 @@ console.log('\n── Por vencer: Cb2Pay, franja, punto y summary ──');
   const nodes = [...p.querySelectorAll('.cb2-tl .cb2-tl-n')];
   t('línea de tiempo: Corte · Aviso · Vence · Pausa con fechas reales', nodes.map(n => n.querySelector('b').textContent).join('|') === 'Corte|Aviso|Vence|Pausa'
     && nodes.map(n => n.querySelector('span').textContent).join('|') === [acc.current.periodStart, acc.current.noticeDate, acc.current.dueDate, acc.current.blockDate].map(fd).join('|'));
-  t('posiciones d/blockDay: 0 %, 33.3 %, 55.5 %, 100 %; «Hoy» en 4/9', nodes.map(n => Math.round(parseFloat(n.style.left))).join(',') === '0,33,56,100' && Math.round(parseFloat(p.querySelector('.cb2-tl-now').style.left)) === 44);
+  // d/blockDay daría 0/33/56/100, pero a 320 px Aviso y Vence quedan a 48 px y una
+  // fecha de dos cifras mide 50: se separan a 30 % (ver «Línea de tiempo» abajo).
+  t('posiciones separadas a 30 %: 0, 30, 60, 100; «Hoy» (día 4) a mitad de Aviso (3) y Vence (5)', nodes.map(n => Math.round(parseFloat(n.style.left))).join(',') === '0,30,60,100' && Math.round(parseFloat(p.querySelector('.cb2-tl-now').style.left)) === 45);
   t('pasados: Corte y Aviso (.past); Pausa lleva .end', nodes.map(n => n.classList.contains('past') ? 1 : 0).join('') === '1100' && nodes[3].classList.contains('end'));
   const lbls = [...p.querySelectorAll('.cb2-body > .cb2-lbl')];
   t('sin comprobante: no hay «Tu comprobante»; «Cómo pagar» con --d:3', lbls.map(l => l.textContent).join('|') === 'Cómo pagar' && lbls[0].style.getPropertyValue('--d') === '3');
@@ -887,6 +889,72 @@ console.log('\n── 0094 · Vacaciones ──');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+console.log('\n── Línea de tiempo: plazos cortos sin rótulos montados (22-oct) ──');
+{
+  const b = await boot(true);
+  const { w, AS } = b;
+  const tlDe = async (o) => {
+    await b.montar('historial', { acc: cuenta(o) });
+    AS.setTab('inicio'); await wait(20); AS.setTab('pagos'); await wait(30);
+    const p = payEl(b);
+    const ns = [...p.querySelectorAll('.cb2-tl .cb2-tl-n')];
+    return { p, ns, l: ns.map(n => n.querySelector('b').textContent).join('|'), x: ns.map(n => Math.round(parseFloat(n.style.left) * 10) / 10),
+      hoy: p.querySelector('.cb2-tl-now') ? Math.round(parseFloat(p.querySelector('.cb2-tl-now').style.left) * 10) / 10 : null,
+      bar: Math.round(parseFloat(p.querySelector('.cb2-tl-bar span').style.width) * 10) / 10 };
+  };
+  // Producción (22-oct): plazo 3, aviso 1, gracia 2 → días 0 · 2 · 3 · 6.
+  let r = await tlDe({ dia: 1, due: 3, notice: 1, grace: 2, id: 'st-p' });
+  t('producción 3/1/2: Corte · Aviso · Vence · Pausa en 0 · 30 · 60 · 100 (no 0 · 33 · 50 · 100)', r.l === 'Corte|Aviso|Vence|Pausa' && r.x.join(',') === '0,30,60,100', r.l + ' ' + r.x);
+  t('…«Hoy» (día 1) a mitad de Corte y Aviso (15 %) y la barra llega al mismo punto', r.hoy === 15 && r.bar === 15, r.hoy + ' / ' + r.bar);
+  t('…con las fechas de verdad (corte, aviso, vence, pausa)', r.ns.map(n => n.querySelector('span').textContent).join('|') === [0, 2, 3, 6].map(d => fd(addD(addD(HOY, -1), d))).join('|'));
+  // El día siguiente con Pagos arriba: se parchea en su lugar con la misma escala.
+  const n0 = r.ns[1];
+  b.cobro.acc = cuenta({ dia: 2, due: 3, notice: 1, grace: 2, id: 'st-p', start: addD(HOY, -1), hoy: addD(HOY, 1) });
+  await w.AuxPagos.refresh({ force: true }); await wait(20);
+  const hoy2 = parseFloat(r.p.querySelector('.cb2-tl-now').style.left);
+  t('…al día siguiente (día 2 = Aviso) el nodo es el mismo y «Hoy» pasa a 30 %, sobre Aviso', r.p.querySelector('.cb2-tl-n[data-l="Aviso"]') === n0 && Math.round(hoy2) === 30 && n0.classList.contains('past'), hoy2);
+  // Plazo 28, aviso 1, gracia 0: Aviso · Vence · Pausa caían en 93 · 97 · 100 %.
+  r = await tlDe({ dia: 28, due: 28, notice: 1, grace: 0, id: 'st-g0' });
+  t('plazo 28 / aviso 1 / gracia 0: 0 · 40 · 70 · 100 (antes 0 · 93 · 97 · 100: hasta los puntos se tapaban)', r.x.join(',') === '0,40,70,100' && r.hoy === 70, r.x + ' hoy ' + r.hoy);
+  // Aviso el mismo día del corte o antes: la base no lo manda (0090: notice > period_start).
+  r = await tlDe({ dia: 0, due: 2, notice: 2, grace: 2, id: 'st-a0' });
+  t('aviso = plazo (caería en el corte): sin nodo Aviso; Corte · Vence · Pausa', r.l === 'Corte|Vence|Pausa' && r.x.join(',') === '0,40,100', r.l + ' ' + r.x);
+  r = await tlDe({ dia: 0, due: 1, notice: 5, grace: 3, id: 'st-a5' });
+  t('aviso > plazo (caería ANTES del corte, en −4): sin nodo Aviso, nada a la izquierda de 0', r.l === 'Corte|Vence|Pausa' && Math.min(...r.x) === 0, r.l + ' ' + r.x);
+  // Plazo 0: el corte ES el vencimiento.
+  r = await tlDe({ dia: 0, due: 0, notice: 0, grace: 0, id: 'st-z' });
+  t('plazo 0 / gracia 0: un solo nodo «Vence» en 0 (no Corte y Vence encimados) y Pausa en 100', r.l === 'Vence|Pausa' && r.x.join(',') === '0,100' && r.ns[0].classList.contains('past') && !r.ns[0].classList.contains('end'), r.l + ' ' + r.x);
+  // 0115: cuenta abierta 21 días después del corte, plazo desde hoy → 0 · 23 · 24 · 27.
+  r = await tlDe({ dia: 21, due: 24, notice: 1, grace: 2, id: 'st-late' });
+  const esperado = (21 / 23) * 40;
+  t('abierta tarde (0115, días 0 · 23 · 24 · 27): 0 · 40 · 70 · 100 y «Hoy» (día 21) antes de Aviso', r.x.join(',') === '0,40,70,100' && Math.abs(r.hoy - esperado) < 0.11, r.x + ' hoy ' + r.hoy);
+
+  // Todas las combinaciones que deja la base (0–28 cada una) y abiertas hasta 60 días tarde.
+  const T = w.AuxPagos._tl;
+  const dates = { at: (d) => addD('2026-09-01', d) };
+  let malos = [], n = 0;
+  for (let late = 0; late <= 60; late += 4) for (let due = 0; due <= 28; due++) for (let av = 0; av <= 28; av++) for (let gr = 0; gr <= 28; gr++) {
+    const dd = late + due, blockDay = dd + gr + 1;
+    for (const today of [0, Math.floor(blockDay / 2), dd, blockDay + 3]) {
+      n++;
+      const sim = { paid: false, paidDay: null, today, due: dd, blockDay };
+      const tl = T(sim, { plazo: dd, aviso: av, gracia: gr }, dates);
+      const x = tl.nodes.map(nd => parseFloat(nd.left));
+      const lab = tl.nodes.map(nd => nd.l).join('|');
+      const conAviso = av > 0 && dd - av > 0;
+      const gaps = x.slice(1).map((v, i) => v - x[i]);
+      const hoy = parseFloat(tl.now);
+      const okLab = dd === 0 ? lab === 'Vence|Pausa' : lab === (conAviso ? 'Corte|Aviso|Vence|Pausa' : 'Corte|Vence|Pausa');
+      const iV = tl.nodes.findIndex(nd => nd.l === 'Vence');
+      const okHoy = hoy >= 0 && hoy <= 100 && (today === dd ? Math.abs(hoy - x[iV]) < 1e-9 : today < dd ? hoy < x[iV] : hoy > x[iV]) && tl.bar.width === tl.now;
+      if (!okLab || x[0] !== 0 || x[x.length - 1] !== 100 || gaps.some(g => g < 30 - 1e-9) || !okHoy) { if (malos.length < 3) malos.push([late, due, av, gr, today, lab, x.join('/'), hoy]); }
+    }
+  }
+  t('las ' + n + ' combinaciones (plazo, aviso, gracia 0–28; abierta 0–60 días tarde; 4 «hoy»): nodos en orden, 0 y 100 en las puntas, ≥ 30 % entre centros, «Hoy» del lado correcto de Vence', malos.length === 0, JSON.stringify(malos));
+  const otros = b.errors.filter(e => !/ids reservados/.test(e));
+  t('sin errores de consola', otros.length === 0, otros.slice(0, 4).join(' | '));
+}
+
 console.log('\n── Bandera APAGADA ──');
 {
   const b = await boot(false);
