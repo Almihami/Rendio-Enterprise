@@ -223,7 +223,7 @@ E.A().trips.length = 0;
 await nuevo(E);
 await tipo(E, 'sal');
 E.click(tierraTg(E)); await wait();
-t('salida en tierra: la hora sigue siendo «estar en el aeropuerto»', /Hora en que quieres estar en el aeropuerto/.test(txt(E)) && !E.$('[data-field="flightNum"]'));
+t('salida en tierra: la hora sigue siendo «estar en el aeropuerto»', /¿A qué hora deseas estar en el aeropuerto\?/.test(txt(E)) && !E.$('[data-field="flightNum"]'));
 t('título «¿Cuándo vas al aeropuerto?» y nota sin «presentación»', /Cuándo vas al aeropuerto/.test(txt(E)) && !/presentación/.test(txt(E)));
 t('sin pernocta; regreso del mismo día sí', !E.$('[data-key="isPernocta"]') && !!E.$('[data-key="sameDayBack"]'));
 E.set('date', FUTURO); E.set('time', '05:10');
