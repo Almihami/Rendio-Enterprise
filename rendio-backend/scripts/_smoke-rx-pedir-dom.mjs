@@ -264,8 +264,9 @@ t('fila Vuelo → goto-step vuelo', !!rv.querySelector('.rx-rv-row[data-rx="goto
 t('fila Recogida → donde-cambiar (con el conjunto)', /Olivar Apartamentos/.test(rv.querySelector('.rx-rv-row[data-ax="donde-cambiar"]')?.textContent || ''));
 t('fila Nivel → goto-step nivel, «Compartido · Incluido»', /Compartido · Incluido/.test(rv.querySelector('.rx-rv-row[data-step="nivel"]')?.textContent || ''));
 t('filas de regreso y pernocta', /Regreso/.test(rv.textContent) && /19:40/.test(rv.textContent) && /Pernocta/.test(rv.textContent));
-t('la política está (espera N minutos de Ajustes, cancelar, acompañado)', /El carro espera 5 minutos/.test(txt(E)) && /Puedes cancelar/.test(txt(E)) && /acompañado/.test(txt(E)));
+t('la política está (espera N minutos de Ajustes, cancelar, ruta compartida — textos del 25-oct)', /El carro espera 5 minutos/.test(txt(E)) && /Puedes cancelar y le avisaremos a tu conductor\. Gracias por informar a tiempo\./.test(txt(E)) && /Puedes ir en ruta compartida\. Agradecemos tu puntualidad\./.test(txt(E)) && !/acompañado/.test(txt(E)));
 t('maletas: stepper en 0 y nota data-field="notes"', E.$('[data-scr="book"]:not(.out) .rx-step-ctl b')?.textContent === '0' && !!E.$('[data-scr="book"]:not(.out) [data-field="notes"]'));
+t('maletas: «Morral pequeño no cuenta» (ya no «Carry-on»)', /Morral pequeño no cuenta/.test(txt(E)) && !/Carry-on/i.test(txt(E)));
 t('el pie lleva ax-cta-bar y el deslizador (no «Continuar»)', !!slide(E) && !cont(E));
 const sl = slide(E), knob = sl.querySelector('.rx-slide-k');
 E.click('[data-rx="bags-inc"]'); await wait(); E.click('[data-rx="bags-inc"]'); await wait();
@@ -559,9 +560,15 @@ console.log('\n── de RESERVA (0121): salida al Movich + regreso al fin de la
   t('elegir Movich lo marca', !!E5.$('[data-ax="lugar"][data-v="movich"].on') && E5.A().form.reservePlace === 'movich');
   t('la hora de la salida es la de estar en el hotel', /¿A qué hora deseas estar en el hotel\?/.test(txt(E5)) && /Hotel Movich/.test(txt(E5)));
   t('sin pernocta de reserva', !E5.$('[data-key="isPernocta"]'));
+  // 25-oct-2026 (profa): de reserva no se pregunta «¿Regresas el mismo día?»;
+  // queda solo «¿A qué hora finaliza tu asignación?» y el regreso va siempre.
+  t('de reserva NO pregunta «¿Regresas el mismo día?»', !E5.$('[data-key="sameDayBack"]') && !/¿Regresas el mismo día\?/.test(txt(E5)));
+  E5.click('[data-ax="viaje"][data-v="vuelo"]'); await wait();
+  t('de vuelta a Vuelo: el interruptor vuelve, apagado, y no hay regreso', !!E5.$('[data-key="sameDayBack"]') && E5.w.Auxiliar.vuelveMismoDia(E5.A().form) === false);
+  E5.click('[data-ax="viaje"][data-v="reserva"]'); await wait();
   E5.set('date', FUTURO); E5.set('time', '11:20');
-  E5.click('[data-key="sameDayBack"]'); await wait();
-  t('el regreso pregunta «¿A qué hora finaliza tu asignación?» y NO pide vuelo', /¿A qué hora finaliza tu asignación\?/.test(txt(E5)) && !E5.$('[data-field="backFlightNum"]'));
+  t('el regreso pregunta «¿A qué hora finaliza tu asignación?» de una vez y NO pide vuelo', /¿A qué hora finaliza tu asignación\?/.test(txt(E5)) && !!E5.$('[data-field="backTime"]') && !E5.$('[data-field="backFlightNum"]'));
+  t('sin la hora de fin de la asignación no se puede seguir', !!cont(E5) && cont(E5).disabled);
   E5.set('backTime', '18:30');
   t('se puede seguir sin ningún vuelo', !cont(E5).disabled);
   while (E5.w.Auxiliar.stepKind() !== 'revisar') { const c = cont(E5); if (!c || c.disabled) throw new Error('trancado en ' + E5.w.Auxiliar.stepKind()); E5.click(c); await wait(); }

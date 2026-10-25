@@ -113,9 +113,9 @@ t('el titular serif y el párrafo', /Llega antes\.\s*Llega descansado\./.test(q(
 const pil=[...ui().querySelectorAll('.axp-pillar')];
 t('los 4 pilares de INCLUYE con numeral romano', pil.length===P().INCLUYE.length && pil.map(p=>p.querySelector('.axp-pillar-n').textContent).join(',')==='I,II,III,IV' && P().INCLUYE.every((x,i)=>pil[i].textContent.includes(x.t) && pil[i].textContent.includes(x.d)));
 t('separados por reglas', ui().querySelectorAll('.axp-rule-ln').length===P().INCLUYE.length-1);
-t('la disponibilidad dicha de frente: «Una sola camioneta»', /Una sola camioneta/.test(txt()) && /No siempre está disponible: depende de la hora que necesites/.test(txt()) && !!q('.axp-avail use[href="#i-clock"]'));
+t('la disponibilidad dicha de frente: «Dos camionetas» (texto del 25-oct)', /Dos camionetas/.test(txt()) && /Están disponibles según la franja horaria de solicitud del servicio/.test(txt()) && !/Una sola camioneta/.test(txt()) && !!q('.axp-avail use[href="#i-clock"]'));
 t('el compartido sigue igual', /Tu viaje compartido sigue igual: mismo servicio, mismos conductores, sin costo\./.test(txt()));
-t('el pie dice la tarifa y que se suma a la cuenta de cobro al aprobar (sin fila «Tarifa»)', !q('.axp-fare') && /\$ 150\.000 por trayecto\. Se suma a tu cuenta de cobro cuando Coordinación lo apruebe; si no se puede, no se cobra nada\./.test(txt()));
+t('el pie dice la tarifa y que se suma a la cuenta de cobro al aprobar (sin fila «Tarifa»)', !q('.axp-fare') && /\$ 150\.000 adicional por trayecto Select\. Se suma a tu cuenta de cobro cuando Coordinación lo apruebe; si no hay disponibilidad, no se cobra el valor adicional\./.test(txt()));
 const elegir=q('[data-ax="lvl-choose"]');
 t('el botón de latón «Pedir en privado», habilitado', elegir && elegir.textContent.trim()==='Pedir en privado' && !elegir.hasAttribute('disabled'));
 t('y un «Volver» fantasma + el botón redondo de atrás, ambos lvl-close', q('.axp-btn.ghost[data-ax="lvl-close"]')?.textContent.trim()==='Volver' && !!q('.axp-back[data-ax="lvl-close"] use[href="#i-back"]'));
@@ -285,7 +285,10 @@ const ON={aux_private_enabled:true,aux_private_vehicle_id:'v1',aux_private_price
   t('párrafo honesto de la salida', /directo al aeropuerto, sin paradas en el camino/.test(sel.querySelector('.rx-sel-hero p').textContent));
   const pil=[...sel.querySelectorAll('.rx-sel-pil > div')];
   t('pilares desde INCLUYE con romanos y .rx-in --d 0..3', pil.length===P.INCLUYE.length && pil.map(p=>p.querySelector('em').textContent).join()==='I,II,III,IV' && pil.every((p,i)=>p.classList.contains('rx-in') && p.style.getPropertyValue('--d')===String(i) && p.querySelector('b').textContent===P.INCLUYE[i].t && p.querySelector('span').textContent===P.INCLUYE[i].d));
-  t('SIN kit a bordo; en su lugar «Cómo funciona» (.rx-in --d 4)', !sel.querySelector('.rx-sel-kit') && sel.querySelector('.rx-sel-how.rx-in')?.style.getPropertyValue('--d')==='4' && /\$ 150\.000 por trayecto: se suma a tu cuenta de cobro cuando Coordinación lo apruebe\./.test(sel.textContent));
+  t('SIN kit a bordo; en su lugar «Cómo funciona» (.rx-in --d 4)', !sel.querySelector('.rx-sel-kit') && sel.querySelector('.rx-sel-how.rx-in')?.style.getPropertyValue('--d')==='4' && /Contamos con dos camionetas, que están disponibles según la franja horaria de solicitud del servicio\./.test(sel.textContent)
+    && /\$ 150\.000 adicional por trayecto Select: se suma a tu cuenta de cobro cuando Coordinación lo apruebe\./.test(sel.textContent)
+    && /Si no hay disponibilidad, tu traslado será compartido y no se cobra el valor adicional\./.test(sel.textContent)
+    && !/sola camioneta/.test(sel.textContent));
   t('la nota del compartido', sel.querySelector('.rx-sel-note')?.textContent==='Tu viaje compartido sigue igual. Select es una opción, no un reemplazo.');
   t('pie: disponibilidad + «Pedir en privado» (rx-btn brass, lvl-choose)', sel.querySelector('.rx-foot.sel > .rx-cupo')?.textContent==='Disponible a esa hora' && sel.querySelector('.rx-foot.sel > .rx-btn.brass[data-ax="lvl-choose"]')?.textContent==='Pedir en privado');
   t('cerrar desde el pedido es lvl-close (no rx-pop)', sel.querySelector('.rx-sel-top [data-ax="lvl-close"]') && !sel.querySelector('.rx-sel-top [data-rx="rx-pop"]'));

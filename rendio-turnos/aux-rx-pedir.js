@@ -36,6 +36,11 @@
 
   const U = () => window.AuxRxUI;
   const A = () => window.Auxiliar || null;
+  // ¿La salida trae regreso el mismo día? De reserva, siempre (auxiliar.js).
+  const vuelve = (f) => {
+    const a = A();
+    return a && typeof a.vuelveMismoDia === 'function' ? a.vuelveMismoDia(f) : (f.type !== 'lle' && !!f.sameDayBack);
+  };
   const S = () => { const a = A(); return (a && a.state) || null; };
   const F = () => { const s = S(); return (s && s.form) || {}; };
   const shellOn = () => {
@@ -341,10 +346,12 @@
     // La tarjeta de opciones: regreso del mismo día (solo salida) y pernocta.
     // Solo las preguntas, sin descripción (pedido de la profa, 25-oct-2026).
     // «¿Es una reserva en firme?» se fue: «reserva» era otra cosa (0121).
+    // De reserva no hay interruptor: queda solo «¿A qué hora finaliza tu
+    // asignación?» (profa, 25-oct-2026), y el regreso va siempre.
     let card = '';
     if (!lle) {
-      card += toggleHTML('¿Regresas el mismo día?', 'sameDayBack', f.sameDayBack, '');
-      if (f.sameDayBack) {
+      if (!res) card += toggleHTML('¿Regresas el mismo día?', 'sameDayBack', f.sameDayBack, '');
+      if (vuelve(f)) {
         const rl = T ? T.regreso : (tierra ? 'Hora en que sales del aeropuerto' : 'Hora a la que aterrizas de vuelta');
         card += `<label class="rx-set col" data-rx-key="backTime"><b>${esc(rl)}</b>`
           + `<input data-field="backTime" type="time" value="${esc(f.backTime || '')}" placeholder="${T ? esc(T.regresoPh) : (tierra ? '17:00' : '19:40')}" /></label>`;
@@ -429,8 +436,8 @@
     return `<div class="rx-pd-pol rx-in" style="--d:${d}" data-rx-key="policy">`
       + `<div class="rx-lbl">Antes de confirmar</div>`
       + `<div class="rx-note">${ic('Clock', 15)}<span><b>El carro espera ${esc(wait)} minutos.</b> Se cuentan desde que llega al punto. Vas a ver la cuenta regresiva en la app.</span></div>`
-      + `<div class="rx-note">${ic('X', 15)}<span><b>Puedes cancelar</b> mientras no te hayan recogido. Si ya hay conductor asignado, le avisamos y sale de su ruta.</span></div>`
-      + `<div class="rx-note">${ic('Users', 15)}<span><b>Puedes ir acompañado de otros tripulantes.</b> Si alguien más sale a una hora parecida y cerca de ti, el carro hace una sola parada.</span></div>`
+      + `<div class="rx-note">${ic('X', 15)}<span><b>Puedes cancelar</b> y le avisaremos a tu conductor. Gracias por informar a tiempo.</span></div>`
+      + `<div class="rx-note">${ic('Users', 15)}<span><b>Puedes ir en ruta compartida.</b> Agradecemos tu puntualidad.</span></div>`
       + `</div>`;
   }
 
@@ -444,7 +451,7 @@
   function vacExtraHTML(f) {
     const PG = window.AuxPagos;
     if (!PG || typeof PG.vacExtraFor !== 'function' || !f || !f.date) return '';
-    const n = 1 + (f.type !== 'lle' && f.sameDayBack && f.backTime ? 1 : 0);
+    const n = 1 + (vuelve(f) && f.backTime ? 1 : 0);
     let x = null;
     try { x = PG.vacExtraFor(f.date, n); } catch (_) { x = null; }
     if (!x || !x.text) return '';
@@ -490,7 +497,7 @@
       try { pp = (window.AuxPrivado && typeof AuxPrivado.priceText === 'function' && AuxPrivado.priceText()) || null; } catch (_) { pp = null; }
       rows += row(priv ? 'Sparkle' : 'Users', 'Nivel', priv ? 'Privado · ' + (pp || 'con costo') : 'Compartido · Incluido', 'data-rx="goto-step" data-step="nivel"');
     }
-    if (!lle && f.sameDayBack && f.backTime) {
+    if (vuelve(f) && f.backTime) {
       rows += row('RotateCcw', 'Regreso', tierra ? 'Sales de JMC ' + hm(f.backTime)
         : L ? 'Finaliza tu asignación ' + hm(f.backTime) + (L.hotel ? ' · ' + L.name : '')
           : 'Aterriza ' + hm(f.backTime) + (f.backFlight ? ' · ' + f.backFlight : ''), goVuelo);
@@ -505,7 +512,7 @@
       + `<span class="rx-pd-rv-sub">La recogida te la confirmamos cuando armemos tu ruta.</span></div>`
       + rows + `</div>`
       + `<div class="rx-card rx-in" style="--d:1" data-rx-key="extras">`
-      + `<div class="rx-set"><span><b>Maletas</b><span>Carry-on no cuenta</span></span>${ctl}</div>`
+      + `<div class="rx-set"><span><b>Maletas</b><span>Morral pequeño no cuenta</span></span>${ctl}</div>`
       + `<label class="rx-set col"><b>Nota para el conductor</b><input data-field="notes" type="text" value="${esc(f.notes || '')}" placeholder="Ej. salgo por la portería de visitantes" /></label>`
       + `</div>`
       + ((P && typeof P.sumHTML === 'function') ? `<div class="rx-pd-sum" data-rx-key="sum">${P.sumHTML(f) || ''}</div>` : '')
