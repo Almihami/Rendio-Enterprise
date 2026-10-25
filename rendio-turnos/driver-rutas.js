@@ -43,7 +43,6 @@
   const RT_QR = ['Ya llegué, estoy afuera', 'Voy 5 min tarde', 'Estoy en la portería', 'No encuentro la dirección'];
   const RT_KINDS = [['mec', 'Falla mecánica', 'Wrench'], ['tra', 'Trancón', 'Traffic'], ['dir', 'No encuentro la dirección', 'MapPin'], ['otr', 'Otra cosa', 'Help']];
   const RT_CAT = { mec: 'vehicle_problem', tra: 'traffic', dir: 'wrong_address', otr: 'other' };
-  const RT_CAT_LABEL = { mec: 'Falla mecánica', tra: 'Trancón', dir: 'No encuentro la dirección', otr: 'Otra cosa' };
 
   // Íconos que la ruta agrega a los del auxiliar (rt-core.jsx, Object.assign(RXI, …)).
   // Se inyectan en el mismo sprite #rx-sprite con los trazos copiados tal cual.
@@ -1358,14 +1357,14 @@
     if (r.k === 'mec') details.puede_seguir = r.a === 'si';
     if (r.sos) details.sos = true;
     try {
-      const id = await Api.reportIncident({
+      // El push a los jefes lo encola la base al guardar el reporte (0117), con
+      // el nombre del conductor y el carro. Antes salía de este celular y nunca
+      // llegaba: la RLS no le deja ver quiénes son los jefes.
+      await Api.reportIncident({
         category: RT_CAT[r.k], description: r.txt.trim(), severity: r.grave ? 'high' : 'medium',
         reservationId: (st && st.rid) || null, details,
         latitude: RT.lastPos ? RT.lastPos[0] : null, longitude: RT.lastPos ? RT.lastPos[1] : null,
       });
-      const quien = (RT.profile && RT.profile.full_name) || 'Un conductor';
-      const titulo = r.grave ? `🚨 ${RT_CAT_LABEL[r.k]}` : RT_CAT_LABEL[r.k];
-      if (typeof notifyOps === 'function') notifyOps(titulo, `${quien}: ${r.txt.trim()}`.slice(0, 200), id);
       r.sent = true; r.sending = false; reportPaint();
     } catch (e) {
       console.error(e);
