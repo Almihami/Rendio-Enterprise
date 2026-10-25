@@ -108,6 +108,8 @@
   <link rel="stylesheet" href="admin-tiempos-reales.css" />
   <!-- Estado de vuelos (0099): el chip de vuelos-ui.js -->
   <link rel="stylesheet" href="vuelos.css" />
+  <!-- Rutas › Vuelos (0118 + 0122, 25-oct-2026): acotado a #vuelos-ui y .vu-* -->
+  <link rel="stylesheet" href="admin-vuelos.css" />
   <!-- Rutas › Asignación v2 (10-oct-2026): acotado a #routes-v2 y .rv2-* -->
   <link rel="stylesheet" href="admin-rutas-v2.css" />
 </head>
@@ -1226,6 +1228,19 @@
         </div>
       </section>
 
+      <!-- ADMIN: Vuelos (0118 + 0122): las llegadas del día con Flightradar24 —
+           tablero, mapa con la posición estimada de cada avión y «pegar la ruta».
+           Lo pinta admin-vuelos.js en #vu-root. -->
+      <section data-panel="vuelos" class="hidden">
+        <div id="vuelos-ui" class="set-ui" data-theme="light">
+          <div class="set-head">
+            <h1>Vuelos</h1>
+            <p>Las llegadas del día: dónde viene cada avión, quiénes vienen y si llega tarde. Lo dice Flightradar24 cada 15 minutos; la recogida no se mueve sola, eso lo decides tú.</p>
+          </div>
+          <div id="vu-root"></div>
+        </div>
+      </section>
+
       <!-- ADMIN: Reservas (tabla operativa de traslados del día) -->
       <section data-panel="reservas" class="hidden">
         <div id="rv-ui" data-theme="light">
@@ -1422,7 +1437,7 @@
             <span class="op-live"><span class="op-pulse"></span>En vivo</span>
             <span class="op-clock" id="oper-clock">--:--:--</span>
             <span class="op-spacer"></span>
-            <span class="op-stub" title="Tráfico (Google/TomTom) y vuelos (AeroDataBox) requieren API key de pago"><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Tráfico y vuelos: pendiente API key</span>
+            <span class="op-stub" title="El tráfico en vivo (TomTom) requiere API key de pago. Los vuelos ya se siguen con Flightradar24: Rutas › Vuelos."><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Tráfico: pendiente API key</span>
           </div>
           <div class="op-stage">
             <!-- IZQUIERDA: lista de carros -->
@@ -1624,6 +1639,7 @@
   <script src="admin-reservas.js"></script>
   <script src="admin-tripulantes.js"></script>
   <script src="admin-privados.js"></script>
+  <script src="admin-vuelos.js"></script>
   <script src="admin-operacion.js"></script>
   <script src="admin-eventualidades.js"></script>
   <script src="admin-chat.js"></script>
