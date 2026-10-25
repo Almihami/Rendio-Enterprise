@@ -201,17 +201,47 @@
   // una vez y ya. Heredarle la marca vieja a la primera cuenta que entrara era
   // peor: dejaba sin bienvenida justo al tripulante recién creado, que es el
   // caso que destapó todo esto.
+  //
+  // Y ADEMÁS EN LA CUENTA (0119, 25-oct-2026). La marca del teléfono no
+  // alcanzaba: a los tripulantes les salía varias veces. En iPhone, Safari y el
+  // ícono del inicio NO comparten almacenamiento, y la propia bienvenida le pide
+  // al de iPhone «Abre Rendio desde el ícono»: ahí la veía otra vez. Igual al
+  // cambiar de teléfono o cuando Safari borra los datos del sitio. Ahora manda
+  // profiles.welcome_seen_at, que llega con el perfil; la del teléfono queda de
+  // respaldo (sin señal al marcar, o una base sin 0119).
+  function perfil() {
+    try { return (window.Auxiliar && window.Auxiliar.state && window.Auxiliar.state.profile) || null; }
+    catch (_) { return null; }
+  }
   function quien() {
-    try {
-      const p = (window.Auxiliar && window.Auxiliar.state && window.Auxiliar.state.profile) || null;
-      return p && p.id ? String(p.id) : null;
-    } catch (_) { return null; }
+    const p = perfil();
+    return p && p.id ? String(p.id) : null;
+  }
+  // A la cuenta, sin esperar: la pantalla no se queda colgada de la red. Una vez
+  // por cuenta y sesión; si falla, el próximo ingreso lo vuelve a intentar
+  // (onboarded() sube la marca del teléfono que todavía no esté en la cuenta).
+  const subidas = new Set();
+  function subirMarca() {
+    const p = perfil(); const id = quien();
+    if (!id || p.welcome_seen_at || subidas.has(id) || id.startsWith('preview-')) return;
+    const A = window.Api;
+    if (!A || typeof A.markWelcomeSeen !== 'function') return;
+    subidas.add(id);
+    Promise.resolve().then(() => A.markWelcomeSeen()).catch((e) => {
+      subidas.delete(id);
+      console.warn('[AuxPresentacion] no se pudo guardar la bienvenida en la cuenta:', e && e.message);
+    });
   }
   function onboarded() {
+    const p = perfil();
+    if (p && p.welcome_seen_at) return true;                 // ya la vio, en este u otro aparato
     try {
       const id = quien();
       if (!id) return localStorage.getItem(KEY_ONB) === '1';   // sin perfil, lo de antes
-      return localStorage.getItem(KEY_ONB + '.' + id) === '1';
+      const visto = localStorage.getItem(KEY_ONB + '.' + id) === '1';
+      // La vio en ESTE teléfono antes de 0119 (o sin señal): que la cuenta lo sepa.
+      if (visto) subirMarca();
+      return visto;
     } catch (_) { return true; }
   }
   function markOnboarded() {
@@ -220,8 +250,10 @@
       localStorage.setItem(id ? KEY_ONB + '.' + id : KEY_ONB, '1');
       if (id) localStorage.removeItem(KEY_ONB);   // la llave de todo el navegador ya no manda
     } catch (_) {}
+    subirMarca();
   }
-  // Para volver a verla desde Perfil: se borra la marca de ESTA cuenta.
+  // Para volver a verla desde Perfil: se borra la marca de ESTA cuenta en el
+  // teléfono (la de la base se queda: Perfil la abre directo con onb-again).
   function resetOnboarding() {
     try {
       const id = quien();
@@ -284,7 +316,13 @@
   // que es la forma más segura de que digan "No" para siempre: una vez denegado,
   // el navegador no vuelve a preguntar y no hay forma de avisarle a esa persona
   // que su conductor está afuera.
+  //
+  // Llegar aquí ya cuenta como «la vio» (25-oct-2026): antes la marca se ponía
+  // solo al tocar el botón de abajo, y en iPhone esta misma pantalla manda a
+  // instalar la app — quien salía a hacerlo nunca lo tocaba y la veía de nuevo.
+  // Vale para los dos aspectos (rxNotifHTML hace lo mismo).
   function notifyHTML() {
+    markOnboarded();
     return `
       <div class="axo axo-ask">
         <div class="axo-top"><span class="axo-count">Último paso</span><span></span></div>
@@ -458,6 +496,7 @@
     </div>`;
   }
   function rxNotifHTML() {
+    markOnboarded();   // llegar al permiso ya cuenta (ver notifyHTML)
     return `<div class="rx-ob" data-ob="notif">
       <div class="rx-scr rx-center">
         <div class="rx-bell-big">${rxIc('Bell', 40)}<i></i><i></i></div>
