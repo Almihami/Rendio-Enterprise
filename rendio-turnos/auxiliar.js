@@ -223,6 +223,7 @@
     lugarDeTrip: (t) => auxLugarDeTrip(t),
     puntoJMC: (t) => auxPuntoJMC(t),
     textosVuelo: (f) => auxTextosVuelo(f || auxState.form || {}),
+    vuelveMismoDia: (f) => auxVuelveMismoDia(f || auxState.form || {}),
     lugar: (k) => auxLugar(k),
     lugares: () => auxLugares(),
     // El interruptor arranca como quedó en su ÚLTIMO pedido (el más reciente por
@@ -1092,8 +1093,8 @@
            (pedido de la profa, 25-oct-2026: «quitemos las descripciones»). */ ''}
       ${isLle ? '' : `
         <div class="ax-sec">El regreso</div>
-        ${auxToggle('¿Regresas el mismo día?', 'sameDayBack', f.sameDayBack, '')}
-        ${f.sameDayBack ? `
+        ${T.res ? '' : auxToggle('¿Regresas el mismo día?', 'sameDayBack', f.sameDayBack, '')}
+        ${auxVuelveMismoDia(f) ? `
           ${auxField(T.regreso, 'backTime', f.backTime || '', T.regresoPh, 'time')}
           ${T.regresoVuelo ? auxFlightField('Número del vuelo con el que aterrizas', 'backFlight', '9413') : ''}`
           : ''}`}
@@ -1222,7 +1223,7 @@
         ${tierra ? row('Trabajo', 'En tierra (sin vuelo)') : (L ? row('Reserva', L.hotel ? L.name : 'En el aeropuerto') : (f.flight ? row('Vuelo', f.flight) : ''))}
         ${row('Fecha', f.date ? auxDateES(f.date) : '—')}
         ${row(f.type === 'lle' ? (tierra ? 'Sales del aeropuerto' : (L ? 'Finaliza tu asignación' : 'Aterriza')) : (L && L.hotel ? 'Estar en el hotel' : 'Estar en el aeropuerto'), auxHM(f.time))}
-        ${f.type !== 'lle' && f.sameDayBack && f.backTime
+        ${auxVuelveMismoDia(f) && f.backTime
           ? row(tierra ? 'Regreso (sales del aeropuerto)' : (L ? 'Regreso (finaliza tu asignación)' : 'Regreso (aterriza)'), auxHM(f.backTime) + (!tierra && !L && f.backFlight ? ' · ' + f.backFlight : ''))
           : ''}
         ${row(f.residenceId ? (f.type === 'lle' ? 'Te dejamos en' : 'Te recogemos en') : 'Dirección', auxShortAddr(f.address), cambiar)}
@@ -1272,10 +1273,10 @@
           <span>Se cuentan desde que llega al punto. Vas a ver la cuenta regresiva en la app.</span></div></div>
         <div class="axp-row"><svg class="icon"><use href="#i-x"/></svg>
           <div><b>Puedes cancelar</b>
-          <span>Mientras no te hayan recogido. Si ya hay conductor asignado, le avisamos y sale de su ruta.</span></div></div>
+          <span>Le avisaremos a tu conductor. Gracias por informar a tiempo.</span></div></div>
         <div class="axp-row"><svg class="icon"><use href="#i-users"/></svg>
-          <div><b>Puedes ir acompañado de otros tripulantes</b>
-          <span>Si alguien más sale a una hora parecida y cerca de ti, el carro hace una sola parada.</span></div></div>
+          <div><b>Puedes ir en ruta compartida</b>
+          <span>Agradecemos tu puntualidad.</span></div></div>
       </div>`;
   }
 
@@ -1304,7 +1305,7 @@
       || (kind === 'vuelo' && ((f.type === 'lle' && !sinVuelo && (!f.flight || auxIataCorta('flight')))
             || (res && !auxReservaDe(f))
             || !f.date || !f.time || badDate
-            || (f.type !== 'lle' && f.sameDayBack
+            || (auxVuelveMismoDia(f)
                 && (!f.backTime || (!sinVuelo && (!f.backFlight || auxIataCorta('backFlight')))))))
       || (kind === 'donde' && !paso3Listo)
       || (kind === 'nivel' && !f.level)
@@ -1812,7 +1813,7 @@
     // La ida ya quedó guardada. Si el regreso falla, NO se deshace la ida — se
     // le dice qué pasó y qué le falta. Perder el traslado que sí quedó, porque
     // el segundo no pasó, sería peor que quedar a medias sabiéndolo.
-    if (f.type !== 'lle' && f.sameDayBack && f.backTime) {
+    if (auxVuelveMismoDia(f) && f.backTime) {
       const back = {
         ...f, type: 'lle',
         time: f.backTime,
@@ -3287,6 +3288,14 @@
   function auxReservaDe(f) {
     if (!f || f.groundOps === true || f.viaje !== 'reserva') return null;
     return auxLugar(f.reservePlace) ? f.reservePlace : null;
+  }
+  // ¿Esta salida trae regreso el mismo día? De reserva, siempre: el interruptor
+  // «¿Regresas el mismo día?» se fue y queda solo «¿A qué hora finaliza tu
+  // asignación?» (pedido de la profa, 25-oct-2026). En vuelo y en tierra manda
+  // el interruptor. Una llegada nunca trae regreso.
+  function auxVuelveMismoDia(f) {
+    if (!f || f.type === 'lle') return false;
+    return (!f.groundOps && f.viaje === 'reserva') || !!f.sameDayBack;
   }
   // El lugar de un viaje ya pedido (forma T) o null.
   function auxLugarDeTrip(t) { return t && !(t.groundOps === true) ? auxLugar(t.reservePlace) : null; }

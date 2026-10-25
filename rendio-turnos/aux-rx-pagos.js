@@ -697,7 +697,9 @@
   // público, como el Pedir del rediseño). null = nada que decir o sin dato.
   function vacExtraForForm(f) {
     if (!isObj(f) || !f.date) return null;
-    const n = 1 + (f.type !== 'lle' && f.sameDayBack && f.backTime ? 1 : 0);
+    const A = window.Auxiliar;
+    const vuelve = A && typeof A.vuelveMismoDia === 'function' ? A.vuelveMismoDia(f) : (f.type !== 'lle' && !!f.sameDayBack);
+    const n = 1 + (vuelve && f.backTime ? 1 : 0);
     const pub = window.AuxPagos;
     const fn = pub && typeof pub.vacExtraFor === 'function' ? pub.vacExtraFor : vacExtraFor;
     let x = null;

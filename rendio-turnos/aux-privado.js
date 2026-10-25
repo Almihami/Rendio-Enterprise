@@ -302,10 +302,10 @@
         <div class="axp-pillars">${pilares}</div>
         <div class="axp-avail">
           <svg class="icon"><use href="#i-clock"/></svg>
-          <div><b>Una sola camioneta</b>
+          <div><b>Dos camionetas</b>
           <span>${prev
-            ? 'Por eso no va a estar siempre: cuando abra, un jefe confirma cada solicitud y, si no se puede, tu traslado sale en compartido.'
-            : 'No siempre está disponible: depende de la hora que necesites. Un jefe confirma cada solicitud; si no se puede, tu traslado sale en compartido y no se cobra nada.'}</span></div>
+            ? 'Cuando abra, un jefe confirma cada solicitud y, si no hay disponibilidad, tu traslado será compartido.'
+            : 'Están disponibles según la franja horaria de solicitud del servicio. Un jefe confirma cada solicitud; si no hay disponibilidad, tu traslado será compartido y no se cobra el valor adicional.'}</span></div>
         </div>
         <div class="axp-shared">Tu viaje compartido sigue igual: mismo servicio, mismos conductores, sin costo. Select es una opción para las noches en que quieres llegar directo.</div>
         <div class="ax-spacer"></div>
@@ -314,7 +314,7 @@
         <div class="axp-fare-note">${prev
           ? 'Todavía no se puede pedir: estamos terminando de montarlo. Cuando esté, aparece aquí mismo.'
             + (soonPriceText() ? ' ' + esc(soonPriceText()) + '.' : '')
-          : esc(priceText()) + ' por trayecto. Se suma a tu cuenta de cobro cuando Coordinación lo apruebe; si no se puede, no se cobra nada.'}</div>
+          : esc(priceText()) + ' adicional por trayecto Select. Se suma a tu cuenta de cobro cuando Coordinación lo apruebe; si no hay disponibilidad, no se cobra el valor adicional.'}</div>
         <button class="axp-btn" data-ax="lvl-choose"${(ocupada || prev) ? ' disabled' : ''}>${
           prev ? 'Muy pronto' : ocupada ? 'Comprometida a esa hora' : 'Pedir en privado'}</button>
         <button class="axp-btn ghost" data-ax="lvl-close">Volver</button>
@@ -634,10 +634,11 @@
     const como = prev
       ? ['Todavía no se puede pedir: estamos terminando de montarlo. Cuando esté, aparece aquí mismo.',
         soonPriceText() ? soonPriceText() + ', y se sumará a tu cuenta de cobro cuando Coordinación lo apruebe.' : '',
-        'Hay una sola camioneta: cuando abra, un jefe confirma cada solicitud y, si no se puede, tu traslado sale en compartido.'].filter(Boolean)
-      : ['Hay una sola camioneta: no siempre está disponible, depende de la hora que necesites.',
-        priceText() + ' por trayecto: se suma a tu cuenta de cobro cuando Coordinación lo apruebe.',
-        'Si no se puede, tu traslado sale en compartido y no se cobra nada.'];
+        'Contamos con dos camionetas: cuando abra, un jefe confirma cada solicitud y, si no hay disponibilidad, tu traslado será compartido.'].filter(Boolean)
+      // Texto de la profa (25-oct-2026). El precio sigue saliendo de Ajustes.
+      : ['Contamos con dos camionetas, que están disponibles según la franja horaria de solicitud del servicio.',
+        priceText() + ' adicional por trayecto Select: se suma a tu cuenta de cobro cuando Coordinación lo apruebe.',
+        'Si no hay disponibilidad, tu traslado será compartido y no se cobra el valor adicional.'];
     const n = INCLUYE.length;
     const comoHTML = `<div class="rx-sel-how rx-in" style="--d:${n}"><span class="rx-sel-l">${prev ? 'Muy pronto' : 'Cómo funciona'}</span>`
       + como.map(p => `<p>${esc(p)}</p>`).join('') + `</div>`;
