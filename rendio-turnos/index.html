@@ -105,6 +105,7 @@
   <link rel="stylesheet" href="admin-inspecciones.css" />
   <link rel="stylesheet" href="admin-whatsapp.css" />
   <link rel="stylesheet" href="admin-conjuntos.css" />
+  <link rel="stylesheet" href="admin-tiempos-reales.css" />
   <!-- Estado de vuelos (0099): el chip de vuelos-ui.js -->
   <link rel="stylesheet" href="vuelos.css" />
   <!-- Rutas › Asignación v2 (10-oct-2026): acotado a #routes-v2 y .rv2-* -->
@@ -857,6 +858,21 @@
             </div>
           </details>
 
+          <!-- 0116 · Tiempos reales (24-oct-2026): la tabla que se llena sola con las marcas de
+               los conductores. La pinta admin-tiempos-reales.js en #rl-root la primera vez que
+               se abre. Al lado de la de Julián porque se leen juntas. -->
+          <details class="set-card set-card-acc" data-acc="reales" id="rl-card">
+            <summary class="set-ch">
+              <div class="set-ci"><svg class="icon"><use href="#i-clock"/></svg></div>
+              <div>
+                <h2>Tiempos reales de los viajes</h2>
+                <p>Se llenan solos con las marcas de los conductores («llegué», «a bordo», «entregado»). Todavía no cambian cómo se planea: primero se comparan con la tabla de Julián.</p>
+              </div>
+              <svg class="icon details-chevron set-card-chev"><use href="#i-chev"/></svg>
+            </summary>
+            <div class="set-cb" id="rl-root"></div>
+          </details>
+
           <details class="set-card set-card-acc" data-acc="parametros" data-bloque="calib">
             <summary class="set-ch">
               <div class="set-ci"><svg class="icon"><use href="#i-sliders"/></svg></div>
@@ -1586,6 +1602,7 @@
   <script src="admin-disponibilidad.js"></script>
   <script src="admin-personal.js"></script>
   <script src="admin-calibracion.js"></script>
+  <script src="admin-tiempos-reales.js"></script>
   <script src="admin-zonas.js"></script>
   <script src="admin-conjuntos.js"></script>
   <script src="admin-flota.js"></script>
