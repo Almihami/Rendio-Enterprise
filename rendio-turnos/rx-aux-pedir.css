@@ -38,6 +38,17 @@
 #auxiliar-ui.rx-phone .rx-pd-fl-row input{flex:1;min-width:0}
 #auxiliar-ui.rx-phone .rx-pd-fl-row .rx-pd-sig{height:44px;border-radius:12px}
 #auxiliar-ui.rx-phone .rx-set.col input[type="time"]{width:100%}
+/* Solo Safari de iOS (25-oct-2026): el campo de hora de la tarjeta («¿A qué hora
+   finaliza tu asignación?», la hora del regreso, el cambio de vuelo) traía el
+   ancho mínimo del control nativo y se salía de la tarjeta por la derecha. Sin
+   el aspecto nativo y sin mínimo cabe; el fondo, el borde y el alto ya son
+   propios, y la hora sigue centrada como la pinta el iPhone. */
+@supports (-webkit-touch-callout: none){
+  #auxiliar-ui.rx-phone .rx-set.col input[type="time"],
+  #auxiliar-ui.rx-phone .rx-set.col input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%}
+  #auxiliar-ui.rx-phone .rx-set.col input[type="time"]::-webkit-date-and-time-value,
+  #auxiliar-ui.rx-phone .rx-set.col input[type="date"]::-webkit-date-and-time-value{text-align:center}
+}
 #auxiliar-ui.rx-phone .rx-pd-set-note{padding:4px 0 10px}
 #auxiliar-ui.rx-phone .rx-pd-set-note .rx-note{padding:0}
 

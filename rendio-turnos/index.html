@@ -3,6 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- iPhone (25-oct-2026): Safari acerca la página solo al tocar un campo con
+       letra de menos de 16 px y no la vuelve a alejar; como la app es una sola
+       página, el zoom se quedaba en todas las pantallas («tienen que ajustarla»).
+       maximum-scale=1 apaga ESE zoom automático sin cambiar ningún tamaño; el
+       pellizco para agrandar sigue (iOS ignora maximum-scale para eso). Solo en
+       iOS: en Android sí quitaría el pellizco. -->
+  <script>
+    (function () {
+      try {
+        // El iPad nuevo se presenta como «Macintosh»; lo delata el táctil.
+        var ua = navigator.userAgent || '';
+        var ios = /iP(hone|od|ad)/.test(ua)
+          || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+        var m = ios && document.querySelector('meta[name="viewport"]');
+        if (m && !/maximum-scale/.test(m.content)) m.content += ', maximum-scale=1';
+      } catch (_) { /* sin esto la app sigue igual que antes */ }
+    })();
+  </script>
   <meta name="theme-color" content="#0A0A0A" />
   <title>Rendio</title>
   <meta name="description" content="Rendio: traslados de tripulación entre casa y el aeropuerto José María Córdova." />
