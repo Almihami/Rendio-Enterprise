@@ -921,6 +921,11 @@
       + ringHTML(ringOf(sim, cfg))
       + '</div>';
     h += '<div class="cb2-card cb2-in" style="--d:1">' + tlHTML(tlOf(sim, cfg, m.dates)) + '</div>';
+    // 0123: abierta por adelantado (el 21 se abre la del próximo corte): el plazo
+    // y la notificación empiezan el día del corte.
+    if (sim.today < 0) h += '<div class="cb2-hint cb2-in" style="--d:1" data-pg="early">' + ic('Info', 15) + '<span>' + esc(sim.paid
+      ? 'Pagaste por adelantado tu cuenta de ' + monthName(m.dates.start) + '.'
+      : 'Tu cuenta de ' + monthName(m.dates.start) + ' ya está abierta: puedes pagarla desde ya. Los días para pagar empiezan a contar el ' + fmtDay(m.dates.start) + '.') + '</span></div>';
     if (f.next) h += '<div class="cb2-hint cb2-in" style="--d:1" data-pg="next">' + ic('Info', 15) + '<span>Desde ' + esc(monthName(m.dates.nextCut) || 'el próximo corte') + ' tu mensualidad será ' + esc(money(f.next)) + '.</span></div>';
     if (f.disc) h += '<div class="cb2-hint cb2-in" style="--d:1" data-pg="disc">' + ic('Info', 15) + '<span>Este mes tiene un descuento de ' + esc(money(f.disc.n)) + (f.disc.note ? ' · ' + esc(f.disc.note) : '') + '.</span></div>';
     // 30-sep: los viajes extra de vacaciones de un cobro anterior que trae, y lo que entra en el próximo.

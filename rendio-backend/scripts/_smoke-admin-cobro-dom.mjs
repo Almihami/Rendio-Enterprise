@@ -1051,6 +1051,96 @@ console.log('\n── 0115 · Abrir varias, plazo desde hoy y comprobante del je
   t('sin red (0115: window.sb nunca se usó)', b.red.length === 0, b.red.slice(0, 5).join(','));
 }
 
+console.log('\n── 0123 · Por adelantado: la del próximo corte ──');
+{
+  const MESL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const mes = (iso) => MESL[Number(iso.split('-')[1]) - 1];
+  const NEXT = addD(HOY, 7), PAST = addD(HOY, -21);
+  const acc = (o) => ({ ...cuenta(o), cutDay: 1, currentCut: PAST, noValue: false, effectiveAmountCOP: 470000, amountCOP: null,
+    openCut: o.oc ?? null, openEarly: !!o.oe, openReason: o.or ?? null, earlyOpenDay: 21 });
+  const L123 = () => [
+    { auxiliarProfileId: 'e-early', profileId: 'ue1', name: 'Por Adelantado', isActive: true, account: acc({ ref: 'AUX-0501', oc: NEXT, oe: true }), current: null, proofInReview: null },
+    { auxiliarProfileId: 'e-has', profileId: 'ue2', name: 'Ya Abierta Antes', isActive: true, account: acc({ ref: 'AUX-0502', or: 'Ya tiene abierta la del ' + fd(NEXT) }),
+      current: st({ id: 's-early', dia: -7 }), proofInReview: null },
+    { auxiliarProfileId: 'e-cobra', profileId: 'ue3', name: 'Cobra Desde', isActive: true, account: acc({ ref: 'AUX-0503', or: 'Cobra desde el 1 de nov: se abre sola el 21 de oct' }), current: null, proofInReview: null },
+    { auxiliarProfileId: 'e-oct', profileId: 'ue4', name: 'Debe Su Corte', isActive: true, account: acc({ ref: 'AUX-0504', oc: PAST, oe: false }), current: null, proofInReview: null },
+  ];
+  const b = await boot({ lista: L123 });
+  const { w } = b;
+  const conf = [];
+  w.confirm = (m) => { conf.push(m); return true; };
+  w.ApiCobro.adminOpenMany = async (ids, o) => {
+    b.calls.push(['adminOpenMany', ids.slice(), { ...o }]);
+    return { today: HOY, opened: ids.map(id => ({ auxiliarProfileId: id, name: id, periodStart: id === 'e-oct' ? PAST : NEXT, dueDate: id === 'e-oct' ? addD(PAST, 5) : addD(NEXT, 5),
+      blocked: false, early: id !== 'e-oct' })), skipped: [] };
+  };
+  w.renderCobro(); await wait(30);
+  const btn = (a) => b.row(a).querySelector('[data-cb="open-st"]');
+  t('fila: «Abrir la de ' + mes(NEXT) + ' (por adelantado)» cuando le toca la del próximo corte', txt(btn('e-early')) === 'Abrir la de ' + mes(NEXT) + ' (por adelantado)', txt(btn('e-early')));
+  t('fila: sin cuenta todavía → «La de ' + mes(NEXT) + ' ya se puede abrir»', txt(b.row('e-early').querySelector('.cb-amt span')) === 'La de ' + mes(NEXT) + ' ya se puede abrir', txt(b.row('e-early').querySelector('.cb-amt span')));
+  t('fila: quien debe su corte → «Abrir cuenta de cobro» y «Su corte del … no se abrió»', txt(btn('e-oct')) === 'Abrir cuenta de cobro'
+    && txt(b.row('e-oct').querySelector('.cb-amt span')) === 'Su corte del ' + fd(PAST) + ' no se abrió');
+  t('fila: «Cobra desde…» → sin botón y dice cuándo se abre sola', !btn('e-cobra') && txt(b.row('e-cobra').querySelector('.cb-amt span')) === 'Cobra desde el 1 de nov: se abre sola el 21 de oct');
+  const has = b.row('e-has');
+  t('la ya abierta por adelantado: chip «Por adelantado», «Por adelantado · vence el …», «Marcar pagado» y sin «Abrir»',
+    txt(has.querySelector('[data-cb-chip="early"]')) === 'Por adelantado' && txt(has.querySelector('.cb-amt span')) === 'Por adelantado · vence el ' + fd(addD(NEXT, 5))
+    && !!has.querySelector('[data-m="paid"]') && !has.querySelector('[data-cb="open-st"]') && !has.querySelector('[data-cb="restart"]'), txt(has.querySelector('.cb-amt span')));
+  t('una normal no lleva el chip', !b.row('e-oct').querySelector('[data-cb-chip="early"]'));
+
+  b.click(btn('e-early')); await wait(30);
+  const om = b.calls.find(c => c[0] === 'adminOpenMany');
+  t('abrir la anticipada de una fila: adminOpenMany([e-early], {fromToday:false, notify:false}), sin preguntar «vencida»',
+    om && om[1].join() === 'e-early' && om[2].fromToday === false && om[2].notify === false && !conf.length && !b.calls.some(c => c[0] === 'adminOpenStatement'), JSON.stringify(om));
+  t('…y dice «Se abrió la de ' + mes(NEXT) + ' por adelantado: vence el …»', b.toasts.at(-1) === 'Se abrió la de ' + mes(NEXT) + ' por adelantado: vence el ' + fd(addD(NEXT, 5)), b.toasts.at(-1));
+  b.calls.length = 0;
+
+  b.click(b.q('[data-cb="sel-on"]')); await wait(20);
+  t('«Abrir varias»: casillas para las dos que tienen algo que abrir', b.qa('[data-cbpick]').length === 2);
+  t('casilla de la anticipada: «Abrir la de ' + mes(NEXT) + ' (por adelantado)»; la otra «Abrir»',
+    txt(b.row('e-early').querySelector('.cb-pick label span')) === 'Abrir la de ' + mes(NEXT) + ' (por adelantado)' && txt(b.row('e-oct').querySelector('.cb-pick label span')) === 'Abrir');
+  t('sin casilla, el motivo de la base', txt(b.row('e-cobra').querySelector('.cb-pick')) === 'Cobra desde el 1 de nov: se abre sola el 21 de oct' && txt(b.row('e-has').querySelector('.cb-pick')) === 'Ya tiene abierta la del ' + fd(NEXT));
+  const pick = (a) => { const i = b.row(a).querySelector('[data-cbpick]'); i.checked = true; i.dispatchEvent(new w.Event('change', { bubbles: true })); };
+  pick('e-early'); await wait(10);
+  t('solo la anticipada marcada: «se puede pagar desde ya; los días para pagar y la notificación empiezan el día de su corte»',
+    txt(b.q('[data-cbsel-terms]')) === 'Es del próximo corte (por adelantado): se puede pagar desde ya; los días para pagar y la notificación empiezan el día de su corte.', txt(b.q('[data-cbsel-terms]')));
+  pick('e-oct'); await wait(10);
+  t('con las dos: el aviso de la vencida y «1 es del próximo corte»', /1 es del próximo corte \(por adelantado\): esa empieza a contar el día de su corte\./.test(txt(b.q('[data-cbsel-terms]'))), txt(b.q('[data-cbsel-terms]')));
+  b.click(b.q('[data-cb="sel-go"]')); await wait(30);
+  t('la confirmación dice que 1 es del próximo corte', /1 es del próximo corte \(por adelantado\)/.test(conf.at(-1) || ''), conf.at(-1));
+  t('el resultado lo cuenta: «1 es del próximo corte, por adelantado…»', /1 es del próximo corte, por adelantado: ya se puede pagar o marcar pagada; el plazo y la notificación empiezan el día de su corte\./.test(txt(b.q('.cb-selres'))), txt(b.q('.cb-selres')));
+
+  // Valores por defecto › Día de apertura
+  b.D.settings = { exists: true, dueDays: 3, noticeDays: 1, graceDays: 2, holderName: null, holderNit: null, earlyOpenDay: 21, hasEarly: true };
+  b.click(b.q('[data-cb="selres-off"]')); await wait(10);
+  b.click(b.q('[data-cb="panel"][data-v="settings"]')); await wait(40);
+  const fEod = () => b.q('[data-cbs="earlyOpenDay"]');
+  t('«Día de apertura» en Valores por defecto, con el 21 de la base', !!fEod() && fEod().value === '21' && /Ese día se abre a todos la cuenta de su próximo corte/.test(txt(fEod().closest('label'))));
+  b.type(fEod(), '29');
+  b.click(b.q('[data-cb="s-save"]')); await wait(30);
+  t('29 no se guarda: «El día de apertura va del 1 al 28»', b.toasts.at(-1) === 'El día de apertura va del 1 al 28' && !b.calls.some(c => c[0] === 'adminSaveSettings'), b.toasts.at(-1));
+  b.type(fEod(), '');
+  b.click(b.q('[data-cb="s-save"]')); await wait(30);
+  const sv = b.calls.find(c => c[0] === 'adminSaveSettings');
+  t('vacío = apagado: se guarda earlyOpenDay null (con los plazos de siempre)', sv && sv[1].earlyOpenDay === null && sv[1].dueDays === 3, JSON.stringify(sv));
+  w.stopCobroTimer();
+  t('sin errores de consola (0123)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+  t('sin red (0123)', b.red.length === 0, b.red.slice(0, 5).join(','));
+}
+{
+  // Base sin 0123: el campo no sale y el guardado no manda earlyOpenDay.
+  const b = await boot();
+  const { w } = b;
+  b.D.settings = { exists: true, dueDays: 5, noticeDays: 2, graceDays: 3, holderName: null, holderNit: null, earlyOpenDay: null, hasEarly: false };
+  w.renderCobro(); await wait(30);
+  b.click(b.q('[data-cb="panel"][data-v="settings"]')); await wait(40);
+  t('base sin 0123: sin «Día de apertura»', !b.q('[data-cbs="earlyOpenDay"]'));
+  b.click(b.q('[data-cb="s-save"]')); await wait(30);
+  const sv = b.calls.find(c => c[0] === 'adminSaveSettings');
+  t('base sin 0123: el guardado no manda earlyOpenDay', sv && !('earlyOpenDay' in sv[1]), JSON.stringify(sv));
+  t('base sin 0123: la fila sin openCut sigue con la regla de antes («Abrir cuenta de cobro»)', !!b.row('a-corte').querySelector('[data-cb="open-st"]') && txt(b.row('a-corte').querySelector('[data-cb="open-st"]')) === 'Abrir cuenta de cobro');
+  w.stopCobroTimer();
+}
+
 console.log(`\n${ok} ✓ · ${bad} ✗`);
 console.log('NO cubre: layout (la ficha apilada del celular y las tablas anchas del balance se miran en el teléfono), la base');
 console.log('          real (RLS, reloj diario, push; 0094 solo se corrió en la base LOCAL con _verify-0094.mjs), el bucket privado real, la descarga');

@@ -69,6 +69,15 @@
 //   · «Marcar pagado» con «Comprobante (opcional)»: el archivo va a la carpeta del
 //     tripulante y en su app sale enviado → revisado → aprobado.
 //
+// 25-oct-2026 (0123, nota de voz de la dueña): «el 21 el sistema abre las cuentas
+// de todos, pero a cada uno le cuenta los días de vencimiento desde su corte».
+//   · El botón «Abrir» abre la que le toca (la base dice cuál: openCut/openEarly):
+//     la de su corte, o desde el día de apertura (el 21) la del próximo corte POR
+//     ADELANTADO, sin vencer ni pausar. Ya no abre octubre a quien cobra desde
+//     noviembre (eso era «la del mes pasado queda vencida»).
+//   · La anticipada se ve en la lista con «Por adelantado»; se puede marcar pagada.
+//   · «Valores por defecto» › «Día de apertura» (vacío = cada uno en su corte).
+//
 // Contrato con core.js: window.renderCobro() al entrar a la pestaña y
 // window.stopCobroTimer() al salir (core.setTab los llama con typeof). La entrada
 // «Cuentas de cobro» de la consola aparece sola cuando renderCobro existe.
@@ -268,14 +277,21 @@
     const p = parts(iso); if (!p) return null;
     return new Date(Date.UTC(p.y, p.mo - 1, p.d + n)).toISOString().slice(0, 10);
   };
-  // ¿Se le puede abrir la cuenta de cobro de su corte vigente? (la base lo vuelve
-  // a revisar y dice por qué no). «Ya la tiene» = su cuenta más reciente es de
-  // ese corte o posterior.
+  // 0123: la base dice qué abre el botón (openCut, openEarly) o por qué no
+  // (openReason). Sin esos campos (base vieja), como antes.
+  const hasTarget = (acc) => isObj(acc) && 'openCut' in acc;
+  const earlyOf = (r) => { const acc = isObj(r.account) ? r.account : null; return !!(hasTarget(acc) && acc.openCut && acc.openEarly); };
+  // La cuenta de una fila se abrió antes de su corte y su período no ha empezado.
+  const isEarly = (cur) => isObj(cur) && !!cur.periodStart && String(cur.periodStart) > hoyISO();
+  const mesOf = (iso) => MES[((parts(iso) || { mo: 1 }).mo) - 1];
+  // ¿Se le puede abrir una cuenta de cobro? (la base lo vuelve a revisar y dice
+  // por qué no). «Ya la tiene» = su cuenta más reciente es de ese corte o posterior.
   function whyNotOpen(r) {
     const acc = isObj(r.account) ? r.account : null;
     if (!acc) return 'Sin cuenta';
     if (acc.active === false) return 'Cuenta apagada';
     if (noValue(r)) return 'Sin valor';
+    if (hasTarget(acc)) return acc.openCut ? null : (acc.openReason || 'No hay cuenta que abrir');
     const cur = isObj(r.current) ? r.current : null;
     // Sin el corte vigente (base vieja): como antes, solo a quien no tiene ninguna.
     if (cur && !acc.currentCut) return 'Ya tiene cuenta de cobro';
@@ -287,7 +303,8 @@
   // vence = corte + días para pagar; pausa = vence + gracia + 1).
   function lateOf(r) {
     const acc = isObj(r.account) ? r.account : {};
-    const cut = acc.currentCut, hoy = hoyISO();
+    // 0123: la que se va a abrir (la anticipada vence en el futuro: nunca «vencida»).
+    const cut = hasTarget(acc) && acc.openCut ? acc.openCut : acc.currentCut, hoy = hoyISO();
     const due = addDays(cut, num(acc.effectiveDueDays) != null ? num(acc.effectiveDueDays) : 5);
     const block = addDays(due, (num(acc.effectiveGraceDays) != null ? num(acc.effectiveGraceDays) : 3) + 1);
     return { cut, due, block, vencida: !!due && due < hoy, pausada: !!block && block <= hoy,
@@ -487,6 +504,12 @@
     if (!acc || acc.amountSource !== 'own' || acc.sectorMonthlyCOP == null || !r.sector) return '';
     return ' <span class="cb-tag t-muted" data-cb-chip="own" title="' + esc('No paga la del sector ' + r.sector + ' (' + money(num(acc.sectorMonthlyCOP)) + ')') + '">Valor propio</span>';
   }
+  // 0123: abierta antes de su corte (el plazo y la notificación empiezan ese día).
+  function earlyChip(r) {
+    const cur = isObj(r.current) ? r.current : null;
+    if (!isEarly(cur)) return '';
+    return ' <span class="cb-tag t-info" data-cb-chip="early" title="' + esc('Se abrió antes de su corte: se puede pagar desde ya. Los días para pagar y la notificación empiezan el ' + fmtDay(cur.periodStart) + '.') + '">Por adelantado</span>';
+  }
   // «Sin valor» (30-sep): no se le abre cobro hasta que tenga uno.
   function noValChip(r) {
     if (!noValue(r)) return '';
@@ -514,12 +537,15 @@
     let when = '';
     if (!acc) when = 'Sin mensualidad';
     else if (!cur && noValue(r)) when = 'Sin valor: no se le abre cobro';
+    // 0123: lo que dice la base de lo que le toca abrir.
+    else if (!cur && hasTarget(acc) && acc.openCut) when = acc.openEarly ? 'La de ' + mesOf(acc.openCut) + ' ya se puede abrir' : 'Su corte del ' + fmtDay(acc.openCut) + ' no se abrió';
+    else if (!cur && hasTarget(acc)) when = acc.openReason || 'Sin cuenta de cobro abierta';
     // 0115: su corte de este mes ya debía estar abierto (el reloj no lo abrió) ≠ todavía no le toca.
     else if (!cur && acc.currentCut && acc.active !== false && (!acc.startsOn || String(acc.startsOn) <= String(acc.currentCut))) when = 'Su corte del ' + fmtDay(acc.currentCut) + ' no se abrió';
     else if (!cur) when = acc.nextCut ? 'Primer corte el ' + fmtDay(acc.nextCut) : 'Sin cuenta de cobro abierta';
     else if (cur.paid) when = 'Pagó el ' + fmtDay(cur.paidOn);
     else if (cur.blocked) when = 'Pausado desde el ' + fmtDay(cur.blockedOn || cur.blockDate);
-    else when = 'Vence el ' + fmtDay(cur.dueDate);
+    else when = (isEarly(cur) ? 'Por adelantado · vence el ' : 'Vence el ') + fmtDay(cur.dueDate);
     const acts = [];
     acts.push('<button class="set-btn ghost" data-cb="mode" data-m="edit" data-aux="' + esc(r.auxiliarProfileId) + '">' + (acc ? 'Editar cuenta' : 'Crear cuenta') + '</button>');
     if (cur && !cur.paid) {
@@ -531,7 +557,8 @@
       }
     }
     // 0115: también cuando ya pagó la anterior y la de su corte no se abrió.
-    if (canOpen(r)) acts.push('<button class="set-btn ghost" data-cb="open-st" data-aux="' + esc(r.auxiliarProfileId) + '"' + (cb.busy ? ' disabled' : '') + '>Abrir cuenta de cobro</button>');
+    if (canOpen(r)) acts.push('<button class="set-btn ghost" data-cb="open-st" data-aux="' + esc(r.auxiliarProfileId) + '"' + (cb.busy ? ' disabled' : '') + '>'
+      + esc(earlyOf(r) ? 'Abrir la de ' + mesOf(r.account.openCut) + ' (por adelantado)' : 'Abrir cuenta de cobro') + '</button>');
     if (acc && acc.active !== false && isObj(r.vacation)) acts.push('<button class="set-btn ghost" data-cb="mode" data-m="vac" data-aux="' + esc(r.auxiliarProfileId) + '">Vacaciones</button>');
     if (acc) acts.push('<button class="set-btn ghost" data-cb="mode" data-m="hist" data-aux="' + esc(r.auxiliarProfileId) + '">Historial</button>');
     // Sector: solo si la base ya lo trae (0094); sin él, «Sin sector» sería un invento.
@@ -543,12 +570,13 @@
       const on = !no && cb.sel.ids.has(r.auxiliarProfileId);
       const pick = no
         ? '<div class="cb-rowacts cb-pick off"><span>' + esc(no) + '</span></div>'
-        : '<div class="cb-rowacts cb-pick"><label><input type="checkbox" data-cbpick="' + esc(r.auxiliarProfileId) + '"' + (on ? ' checked' : '') + '><span>Abrir</span></label></div>';
+        : '<div class="cb-rowacts cb-pick"><label><input type="checkbox" data-cbpick="' + esc(r.auxiliarProfileId) + '"' + (on ? ' checked' : '') + '><span>'
+          + esc(earlyOf(r) ? 'Abrir la de ' + mesOf(r.account.openCut) + ' (por adelantado)' : 'Abrir') + '</span></label></div>';
       return '<div class="cb-row' + (on ? ' picked' : '') + (no ? ' nope' : '') + '" data-aux="' + esc(r.auxiliarProfileId) + '">'
         + '<div class="cb-main">'
         + '<div class="cb-who"><b>' + esc(r.name || 'Sin nombre') + (r.isActive === false ? ' <span class="cb-tag t-muted">Suspendida</span>' : '') + '</b>'
         + '<span>' + esc([acc && acc.reference, acc && acc.cutDay != null ? 'Corte día ' + acc.cutDay : null, sec].filter(Boolean).join(' · ')) + '</span></div>'
-        + '<div class="cb-st">' + tag(st) + noValChip(r) + '</div>'
+        + '<div class="cb-st">' + tag(st) + earlyChip(r) + noValChip(r) + '</div>'
         + '<div class="cb-amt"><b>' + esc(amount != null ? money(amount) : '—') + '</b><span>' + esc(when) + '</span></div>'
         + pick
         + '</div></div>';
@@ -557,7 +585,7 @@
       + '<div class="cb-main">'
       + '<div class="cb-who"><b>' + esc(r.name || 'Sin nombre') + (r.isActive === false ? ' <span class="cb-tag t-muted">Suspendida</span>' : '') + '</b>'
       + '<span>' + esc([acc && acc.reference, sec, r.phone || r.email].filter(Boolean).join(' · ')) + '</span></div>'
-      + '<div class="cb-st">' + tag(st) + (acc && acc.paused && st !== 'bloqueado' ? ' <span class="cb-tag t-block">Reservas pausadas</span>' : '') + vacChip(r) + ownChip(r) + noValChip(r) + extraChip(r) + '</div>'
+      + '<div class="cb-st">' + tag(st) + earlyChip(r) + (acc && acc.paused && st !== 'bloqueado' ? ' <span class="cb-tag t-block">Reservas pausadas</span>' : '') + vacChip(r) + ownChip(r) + noValChip(r) + extraChip(r) + '</div>'
       + '<div class="cb-amt"><b>' + esc(amount != null ? money(amount) : '—') + '</b><span>' + esc(when) + '</span></div>'
       + '<div class="cb-rowacts">' + acts.join('') + '</div>'
       + '</div>'
@@ -848,6 +876,7 @@
   function settingsForm(s) {
     return { dueDays: s.dueDays != null ? String(s.dueDays) : '',
       noticeDays: s.noticeDays != null ? String(s.noticeDays) : '', graceDays: s.graceDays != null ? String(s.graceDays) : '',
+      earlyOpenDay: s.earlyOpenDay != null ? String(s.earlyOpenDay) : '',
       holderName: s.holderName || '', holderNit: s.holderNit || '' };
   }
   function settingsHTML() {
@@ -865,6 +894,8 @@
       + sf('Días para pagar', 'dueDays', { inputmode: 'numeric', hint: 'Desde el corte hasta la fecha límite.' })
       + sf('Aviso (días antes)', 'noticeDays', { inputmode: 'numeric', hint: '0 = sin recordatorio.' })
       + sf('Gracia (días)', 'graceDays', { inputmode: 'numeric', hint: 'Después de vencer, antes de pausar.' })
+      // 0123: ese día se abre a todos la del próximo corte (sin la columna en la base, no sale).
+      + (cb.settings.hasEarly ? sf('Día de apertura', 'earlyOpenDay', { inputmode: 'numeric', ph: 'Vacío = cada uno en su corte', hint: 'Ese día se abre a todos la cuenta de su próximo corte (a los de corte 1, la del 1). Los días para pagar y los avisos cuentan desde su corte.' }) : '')
       + sf('Titular de las cuentas', 'holderName', { ph: 'Razón social' })
       + sf('NIT', 'holderNit')
       + '</div>'
@@ -1326,26 +1357,32 @@
     const allOn = vis.length > 0 && vis.every(r => s.ids.has(r.auxiliarProfileId));
     const picked = selPicked();
     const n = picked.length;
-    const lates = picked.map(lateOf);
+    // 0123: las del próximo corte (por adelantado) no vencen ni cuentan desde hoy.
+    const early = picked.filter(earlyOf), rest = picked.filter(r => !earlyOf(r));
+    const lates = rest.map(lateOf);
     const venc = lates.filter(x => x.vencida && !x.pausada).length, paus = lates.filter(x => x.pausada).length;
     const dues = lates.map(x => x.dueFromToday).filter(Boolean).sort();
     let terms = '';
-    if (n) {
+    if (n && !rest.length) {
+      terms = (early.length === 1 ? 'Es del próximo corte (por adelantado): se puede pagar desde ya; ' : 'Son del próximo corte (por adelantado): se pueden pagar desde ya; ')
+        + 'los días para pagar y la notificación empiezan el día de su corte.';
+    } else if (n) {
       if (s.fromToday) {
         terms = dues[0] === dues[dues.length - 1] ? 'Vencen el ' + fmtDay(dues[0]) + '.' : 'Vencen entre el ' + fmtDay(dues[0]) + ' y el ' + fmtDay(dues[dues.length - 1]) + '.';
       } else if (venc || paus) {
         terms = 'Ojo: su corte ya pasó. ' + [venc ? pl(venc, 'quedaría vencida', 'quedarían vencidas') : '', paus ? pl(paus, 'quedaría con las reservas pausadas', 'quedarían con las reservas pausadas') : ''].filter(Boolean).join(' y ')
           + ' de una vez. Con «desde hoy» tienen sus días para pagar completos.';
       } else terms = 'Vencen según su día de corte.';
+      if (early.length) terms += ' ' + pl(early.length, 'es', 'son') + ' del próximo corte (por adelantado): esa' + (early.length === 1 ? '' : 's') + ' empieza' + (early.length === 1 ? '' : 'n') + ' a contar el día de su corte.';
     }
     return '<div class="cb-panel cb-sel">'
-      + '<div class="cb-panel-h"><b>Abrir cuentas de cobro</b><span>Marca a quiénes. Se abre la cuenta de su corte de este mes; solo se puede marcar a quien todavía no la tiene.</span></div>'
+      + '<div class="cb-panel-h"><b>Abrir cuentas de cobro</b><span>Marca a quiénes. A cada uno se le abre la que le toca: la de su corte de este mes o, si esa ya la tiene (o todavía no le cobra), la del próximo corte por adelantado. Solo se puede marcar a quien tiene una por abrir.</span></div>'
       + '<div class="cb-sel-row"><span class="cb-sel-l">Día de corte</span><div class="cb-filters">' + chips + '</div></div>'
       + '<label class="cb-f cb-chk"><input type="checkbox" data-cbsel="all"' + (allOn ? ' checked' : '') + (vis.length ? '' : ' disabled') + '><span>Marcar ' + (vis.length === 1 ? 'el que se puede' : 'los ' + vis.length + ' que se pueden') + ' abrir en esta lista</span></label>'
       + '<div class="cb-sel-terms"><span class="cb-sel-l">Días para pagar</span>'
       + '<label><input type="radio" name="cb-sel-terms" data-cbsel="today"' + (s.fromToday ? ' checked' : '') + '><span>Desde hoy</span></label>'
       + '<label><input type="radio" name="cb-sel-terms" data-cbsel="cut"' + (!s.fromToday ? ' checked' : '') + '><span>Desde su día de corte (como el reloj)</span></label></div>'
-      + '<label class="cb-f cb-chk"><input type="checkbox" data-cbsel="notify"' + (s.notify ? ' checked' : '') + '><span>Avisarles con una notificación («Tu cuenta de cobro está lista»)</span></label>'
+      + '<label class="cb-f cb-chk"><input type="checkbox" data-cbsel="notify"' + (s.notify ? ' checked' : '') + '><span>Avisarles con una notificación («Tu cuenta de cobro está lista»). Las del próximo corte la reciben el día de su corte.</span></label>'
       + (terms ? '<p class="cb-mini' + (!s.fromToday && (venc || paus) ? ' warn' : '') + '" data-cbsel-terms>' + esc(terms) + '</p>' : '')
       + '<div class="cb-ed-foot"><button class="set-btn ghost" data-cb="sel-off">Cancelar</button>'
       + '<button class="set-btn" data-cb="sel-go"' + (n && !cb.busy ? '' : ' disabled') + '>' + esc(n ? 'Abrir ' + pl(n, 'cuenta de cobro', 'cuentas de cobro') : 'Marca a quiénes abrir') + '</button></div>'
@@ -1365,8 +1402,10 @@
     const x = cb.selRes; if (!isObj(x)) return '';
     const op = Array.isArray(x.opened) ? x.opened : [], sk = Array.isArray(x.skipped) ? x.skipped : [];
     const paus = op.filter(o => o && o.blocked).length;
+    const tem = op.filter(o => o && o.early).length;
     return '<div class="cb-note' + (sk.length || paus ? ' warn' : '') + ' cb-selres">' + icon(sk.length || paus ? 'i-warn' : 'i-check') + '<div>'
       + '<b>' + esc(op.length ? (op.length === 1 ? 'Se abrió 1 cuenta de cobro.' : 'Se abrieron ' + op.length + ' cuentas de cobro.') : 'No se abrió ninguna cuenta de cobro.') + '</b>'
+      + (tem ? '<span>' + esc(pl(tem, 'es', 'son') + ' del próximo corte, por adelantado: ya se ' + (tem === 1 ? 'puede' : 'pueden') + ' pagar o marcar pagada' + (tem === 1 ? '' : 's') + '; el plazo y la notificación empiezan el día de su corte.') + '</span>' : '')
       + (paus ? '<span>' + esc(pl(paus, 'quedó', 'quedaron') + ' con las reservas pausadas por la fecha de su corte: usa «Plazo desde hoy» en su fila.') + '</span>' : '')
       + (sk.length ? '<span>' + esc('No se ' + (sk.length === 1 ? 'abrió 1' : 'abrieron ' + sk.length) + ':') + '</span><ul class="cb-selres-l">'
         + sk.map(s => '<li>' + esc((s && s.name) || 'Tripulante') + ' — ' + esc((s && s.reason) || 'sin motivo') + '</li>').join('') + '</ul>' : '')
@@ -1407,7 +1446,7 @@
       const nOpen = list.filter(canOpen).length;
       h += selResHTML()
         + '<div class="cb-tools"><div class="cb-search">' + icon('i-search') + '<input id="cb-search" type="text" placeholder="Busca por nombre, correo, teléfono o referencia" value="' + esc(cb.q) + '" autocomplete="off"></div>'
-        + (cb.sel ? '' : '<button class="set-btn ghost cb-sel-on" data-cb="sel-on"' + (nOpen ? '' : ' disabled title="Nadie tiene pendiente abrir la cuenta de su corte"') + '>Abrir varias <i>' + nOpen + '</i></button>')
+        + (cb.sel ? '' : '<button class="set-btn ghost cb-sel-on" data-cb="sel-on"' + (nOpen ? '' : ' disabled title="Nadie tiene una cuenta de cobro por abrir"') + '>Abrir varias <i>' + nOpen + '</i></button>')
         + '<div class="cb-filters">' + FILTERS.map((f, i) => '<button class="' + (cb.filter === f[0] ? 'on' : '') + '" data-cb="filter" data-v="' + f[0] + '">' + esc(f[1]) + ' <i>' + counts[i] + '</i></button>').join('') + '</div></div>'
         + selHTML()
         + (rows.length ? '<div class="cb-list">' + rows.map(rowHTML).join('') + '</div>' : '<div class="cb-empty"><b>Nadie en este filtro.</b></div>');
@@ -1640,9 +1679,12 @@
     const picked = selPicked();
     if (!picked.length) { say('Marca a quiénes abrirles la cuenta'); return; }
     const a = api(); if (!a || typeof a.adminOpenMany !== 'function') { say('Esta versión no abre varias a la vez'); return; }
+    const nEarly = picked.filter(earlyOf).length;
     if (typeof window.confirm === 'function' && !window.confirm('¿Abrir ' + pl(picked.length, 'cuenta de cobro', 'cuentas de cobro') + '? '
-      + (s.fromToday ? 'Los días para pagar cuentan desde hoy. ' : 'Los días para pagar cuentan desde su día de corte. ')
-      + (s.notify ? 'A cada uno le llega la notificación.' : 'Sin notificación: lo ven al entrar a Pagos.'))) return;
+      + (nEarly === picked.length ? ''
+        : (s.fromToday ? 'Los días para pagar cuentan desde hoy. ' : 'Los días para pagar cuentan desde su día de corte. ')
+          + (s.notify ? 'A cada uno le llega la notificación. ' : 'Sin notificación: lo ven al entrar a Pagos. '))
+      + (nEarly ? pl(nEarly, 'es', 'son') + ' del próximo corte (por adelantado): el plazo y la notificación empiezan el día de su corte.' : ''))) return;
     const res = await run('sel', () => a.adminOpenMany(picked.map(r => r.auxiliarProfileId), { fromToday: s.fromToday, notify: s.notify }));
     if (!res) return;
     cb.sel = null;
@@ -1668,6 +1710,18 @@
     // 0115: si su corte ya pasó tanto que con esa fecha quedaría vencida (o
     // pausada), se abre con los días para pagar desde hoy (preguntando antes).
     const r = rowOf(aux);
+    // 0123: la del próximo corte, por adelantado: sin vencer ni pausar, y la
+    // notificación sale el día de su corte (la abre la misma función de «varias»).
+    if (r && earlyOf(r) && typeof a.adminOpenMany === 'function') {
+      const res = await run(aux, () => a.adminOpenMany([aux], { fromToday: false, notify: false }));
+      if (!res) return;
+      const op = isObj(res) && Array.isArray(res.opened) ? res.opened[0] : null;
+      const sk = isObj(res) && Array.isArray(res.skipped) ? res.skipped : [];
+      say(op ? 'Se abrió la de ' + mesOf(op.periodStart) + ' por adelantado: vence el ' + fmtDay(op.dueDate)
+        : 'No se abrió: ' + ((sk[0] && sk[0].reason) || 'sin motivo'));
+      loadAll(false);
+      return;
+    }
     const late = r ? lateOf(r) : null;
     if (late && late.vencida && typeof a.adminOpenMany === 'function') {
       if (typeof window.confirm === 'function' && !window.confirm('Su corte fue el ' + fmtDay(late.cut) + ': con esa fecha '
@@ -1722,11 +1776,16 @@
   async function saveSettings() {
     const f = cb.sform || {};
     for (const k of ['dueDays', 'noticeDays', 'graceDays']) { const d = digits(f[k]); if (d != null && d > 28) { say('Los plazos van de 0 a 28 días'); return; } }
+    const hasEarly = isObj(cb.settings) && cb.settings.hasEarly;
+    const eod = hasEarly ? digits(f.earlyOpenDay != null ? f.earlyOpenDay : settingsForm(cb.settings).earlyOpenDay) : null;
+    if (eod != null && (eod < 1 || eod > 28)) { say('El día de apertura va del 1 al 28'); return; }
     const a = api(); if (!a) return;
-    const ok = await run('s', () => a.adminSaveSettings({
+    const row = {
       dueDays: digits(f.dueDays), noticeDays: digits(f.noticeDays), graceDays: digits(f.graceDays),
       holderName: String(f.holderName || '').trim() || null, holderNit: String(f.holderNit || '').trim() || null,
-    }), 'Valores guardados');
+    };
+    if (hasEarly) row.earlyOpenDay = eod;
+    const ok = await run('s', () => a.adminSaveSettings(row), 'Valores guardados');
     if (ok) { cb.sform = null; cb.settings = undefined; loadPanel(); loadAll(true); }
   }
 

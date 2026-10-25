@@ -955,6 +955,31 @@ console.log('\n── Línea de tiempo: plazos cortos sin rótulos montados (22-
   t('sin errores de consola', otros.length === 0, otros.slice(0, 4).join(' | '));
 }
 
+console.log('\n── 0123 · Por adelantado (se abrió antes de su corte) ──');
+{
+  const b = await boot(true);
+  const { AS } = b;
+  const corte = addD(HOY, 7);
+  await b.montar('historial', { acc: cuenta({ dia: -7 }) });
+  AS.setTab('pagos'); await wait(30);
+  const p = payEl(b);
+  const h = p.querySelector('.cb2-hint[data-pg="early"]');
+  t('aviso: «Tu cuenta de <mes> ya está abierta: puedes pagarla desde ya. Los días para pagar empiezan a contar el <corte>.»',
+    !!h && new RegExp('^Tu cuenta de \\w+ ya está abierta: puedes pagarla desde ya\\. Los días para pagar empiezan a contar el ' + fd(corte) + '\\.$').test(txt(h)), txt(h));
+  t('chip «Pendiente» y anillo con los días hasta su vencimiento (12)', txt(p.querySelector('.cb-chip')) === 'Pendiente' && txt(p.querySelector('.cb2-ring-c b')) === '12', txt(p.querySelector('.cb2-ring-c b')));
+  t('línea de tiempo: ningún nodo pasado («Hoy» antes del corte)', !p.querySelector('.cb2-tl-n.past') && !!p.querySelector('.cb2-tl-now'));
+  AS.setTab('inicio'); await wait(20);
+  t('sin franja de cobro en Inicio (no hay nada que apurar)', !b.q('.rx-strip[data-tab="pagos"]'));
+  await b.montar('historial', { acc: cuenta({ dia: -7, paid: true }) });
+  AS.setTab('pagos'); await wait(30);
+  const h2 = payEl(b).querySelector('.cb2-hint[data-pg="early"]');
+  t('pagada por adelantado: «Pagaste por adelantado tu cuenta de <mes>.»', !!h2 && /^Pagaste por adelantado tu cuenta de \w+\.$/.test(txt(h2)), txt(h2));
+  await b.montar('historial', { acc: cuenta({ dia: 1 }) });
+  AS.setTab('pagos'); await wait(30);
+  t('una cuenta normal (ya empezó) no lleva el aviso', !payEl(b).querySelector('.cb2-hint[data-pg="early"]'));
+  t('sin errores de consola (0123)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
 console.log('\n── Bandera APAGADA ──');
 {
   const b = await boot(false);
