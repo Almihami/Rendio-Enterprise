@@ -6,7 +6,7 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v203';
+const CACHE_VERSION = 'rendio-turnos-v204';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
@@ -37,6 +37,8 @@ const APP_SHELL = [
   // Estado de vuelos (0099).
   '/api-vuelos.js',
   '/vuelos-ui.js',
+  '/admin-vuelos.js',
+  '/admin-vuelos.css',
   '/api-jefe.js',
   '/api-ajustes.js',
   // Cámara dentro de la app para Android (24-oct-2026), antes de shift-flow.

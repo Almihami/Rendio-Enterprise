@@ -1,0 +1,69 @@
+/* Rutas › Planeación › Vuelos (0118 + 0122, 25-oct-2026). Usa las piezas de
+   Configuración (.set-ui: tarjeta, campos, botones, .set-seg3), el mapa de las
+   zonas (.zn-map) y el chip de vuelos (.rvu-chip, vuelos.css); aquí solo lo propio. */
+#vuelos-ui .set-card + .set-card{margin-top:14px}
+#vuelos-ui .set-ch{align-items:center}
+#vuelos-ui .vu-ch-tx{min-width:0;flex:1}
+#vuelos-ui #vu-dias{margin-left:auto}
+#vuelos-ui #vu-pegar-toggle{margin-left:auto}
+#vuelos-ui .vu-banner{border:1px solid #F2D49C;background:#FBEBCF;color:#8A5300;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.4;margin:0 0 12px}
+#vuelos-ui .vu-banner.err{border-color:#F2BDB7;background:#FADFDC;color:#A8281D}
+#vuelos-ui .vu-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px;align-items:start}
+#vuelos-ui .vu-map{height:520px}
+#vuelos-ui .vu-maphint{margin:8px 2px 0;font-size:11.5px;line-height:1.4}
+#vuelos-ui .vu-listcol{border:1px solid var(--line2);border-radius:12px;overflow:hidden;background:var(--panel)}
+#vuelos-ui #vu-lista{max-height:560px;overflow:auto}
+#vuelos-ui .vu-vacio{padding:28px 16px;text-align:center;color:var(--ink2);font-size:13px;line-height:1.5}
+#vuelos-ui .vu-vacio .set-btn{margin-top:12px}
+#vuelos-ui .vu-row{display:flex;gap:12px;padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer;position:relative;transition:background .12s}
+#vuelos-ui .vu-row:last-child{border-bottom:0}
+#vuelos-ui .vu-row:hover{background:var(--panel2)}
+#vuelos-ui .vu-row.sel{background:var(--orange-soft)}
+#vuelos-ui .vu-row.tarde::before{content:'';position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:#E0A030}
+#vuelos-ui .vu-hora{flex:0 0 52px;display:flex;flex-direction:column;align-items:flex-start}
+#vuelos-ui .vu-hora b{font-family:var(--mono);font-size:15px;font-weight:800;color:var(--ink);line-height:1.2}
+#vuelos-ui .vu-hora span{font-size:10.5px;color:var(--ink3)}
+#vuelos-ui .vu-main{flex:1;min-width:0}
+#vuelos-ui .vu-l1{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+#vuelos-ui .vu-code{font-family:var(--mono);font-weight:800;font-size:13.5px;color:var(--ink);letter-spacing:.02em}
+#vuelos-ui .vu-air{font-size:11.5px;color:var(--ink2);font-weight:600}
+#vuelos-ui .vu-orig{font-size:11.5px;color:var(--ink2)}
+#vuelos-ui .vu-l2{font-size:12.5px;color:var(--ink);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#vuelos-ui .vu-l3{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px}
+#vuelos-ui .vu-real{font-size:11px;color:var(--ink2);font-family:var(--mono)}
+#vuelos-ui .vu-side{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+#vuelos-ui .vu-src{font-size:10.5px;color:var(--ink3);white-space:nowrap}
+#vuelos-ui .vu-x{width:24px;height:24px;border-radius:7px;border:1px solid var(--line2);background:var(--panel);color:var(--ink2);font-size:15px;line-height:1;cursor:pointer}
+#vuelos-ui .vu-x:hover{color:#A8281D;border-color:#F2BDB7}
+#vuelos-ui .vu-sub{font-size:12px;color:var(--ink2);margin:10px 2px 0;line-height:1.5}
+#vuelos-ui .vu-lbl{display:block;font-size:12px;font-weight:700;color:var(--ink2);margin:0 0 6px 2px}
+#vuelos-ui .vu-texto{width:100%;min-height:150px;height:auto;padding:10px 12px;font-family:var(--mono);font-size:12.5px;line-height:1.5;resize:vertical}
+#vuelos-ui .vu-acts{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+#vuelos-ui .vu-prev{margin-top:12px;border:1px solid var(--line2);border-radius:10px;padding:8px 12px;background:var(--panel2)}
+#vuelos-ui .vu-prev-h{font-size:12px;font-weight:700;color:var(--ink2);margin-bottom:4px}
+#vuelos-ui .vu-prev-r{display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:12.5px;border-top:1px solid var(--line)}
+#vuelos-ui .vu-prev-r:first-of-type{border-top:0}
+#vuelos-ui .vu-prev-r b{font-family:var(--mono);width:44px}
+#vuelos-ui .vu-msg{font-size:12.5px;color:#0F6E4E;margin:10px 2px 0;font-weight:600}
+#vuelos-ui .vu-msg.err,#vuelos-ui .set-hint.err{color:#A8281D;font-weight:600}
+/* El mapa: JMC y los aviones (divIcon de Leaflet, fuera del árbol de #vuelos-ui). */
+.vu-jmc span{display:flex;align-items:center;justify-content:center;width:44px;height:22px;border-radius:999px;background:#211D18;color:#fff;font:800 11px/1 var(--mono,monospace);letter-spacing:.04em;box-shadow:0 0 0 2px #fff,0 2px 6px rgba(0,0,0,.3)}
+.vu-plane{--vu-c:#1F55B0}
+.vu-plane--warn{--vu-c:#C77700}
+.vu-plane--bad{--vu-c:#C0392B}
+.vu-plane--muted{--vu-c:#64748B}
+.vu-plane-ic{display:block;width:26px;height:26px;transform-origin:50% 50%;transition:transform .6s ease}
+.vu-plane-ic svg{width:26px;height:26px;fill:var(--vu-c);filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff) drop-shadow(0 1px 2px rgba(0,0,0,.35))}
+.vu-plane.quieto .vu-plane-ic svg{opacity:.75}
+.vu-plane-tx{position:absolute;left:26px;top:4px;font:800 10.5px/1 var(--mono,monospace);color:var(--vu-c);white-space:nowrap;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #fff}
+@media (max-width:900px){
+  #vuelos-ui .vu-grid{grid-template-columns:1fr}
+  #vuelos-ui .vu-map{height:360px}
+  #vuelos-ui #vu-lista{max-height:none}
+}
+@media (max-width:640px){
+  #vuelos-ui #vu-card > .set-ch{flex-wrap:wrap}
+  #vuelos-ui #vu-dias{margin-left:0}
+  #vuelos-ui .vu-map{height:300px}
+  #vuelos-ui .vu-acts .set-btn{flex:1;justify-content:center}
+}

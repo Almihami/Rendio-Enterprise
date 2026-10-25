@@ -179,6 +179,14 @@ select flight_date, count(*) vuelos, sum(provider_credits) creditos
 ```
 Solo se ven 28 días hacia atrás (la purga). Para medir «unas semanas» hay que copiar el resumen cada semana.
 
+## La pantalla Vuelos y los vuelos pegados (0122)
+
+En el admin: **Rutas › Planeación › Vuelos** (enlace `#/vuelos`; ahí abre también el aviso del jefe).
+- **Tablero de llegadas** de hoy o mañana: hora prevista, quiénes vienen (de las reservas y de lo pegado), de dónde, qué dice FR24 y el retraso.
+- **Mapa** con la posición **estimada** de cada avión. Sale de la hora de despegue y la ETA de FR24, sobre la línea recta hasta JMC; si FR24 trajo una posición real hace menos de 40 min, arranca de ahí. No gasta créditos: se calcula en el navegador cada 20 s, y los datos se releen cada 2 min.
+- **Pegar la ruta:** el plan del jefe tal como va por WhatsApp. Solo se leen las llegadas (`18:35 Paula londoño (JA5987)`); las salidas (`(Terra)`) y los `Debe estar` se ignoran. Quedan en `flight_watches` y FR24 las sigue igual que una reserva. El aviso les llega a los jefes; al conductor no, porque no hay ruta publicada en la app.
+- `flight_watches` la leen y la escriben solo los jefes de la organización. Se purga a los 28 días porque lleva nombres.
+
 ## Lo que todavía no hace
 
 - **No pinta el chip** en la pantalla del conductor ni en Asignación. El contrato está listo: `RendioVuelos.cargar / para / chip` en `rendio-turnos/vuelos-ui.js`.
