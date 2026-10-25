@@ -31,6 +31,7 @@
     cual: 'curso',      // 'curso' | 'anterior' — cuál corte se está mirando
     corte: null,        // { from, to, label, pagaEl }
     shifts: [],
+    ajustes: [],        // ajustes manuales del jefe (0120): solo entran a LA CIFRA
     inspPorTurno: {},
     fuelPorTurno: {},
     autoCloseHours: null,
@@ -612,14 +613,19 @@
         </div>
       </div>`;
     }
-    const minPag = bc.minutosPagables(revState.shifts || []);
+    // Con los ajustes manuales del jefe encima (0120), con la MISMA función que
+    // el Balance: los puntos de abajo siguen mirando el turno como lo dejó la app.
+    const efectivos = typeof bc.conAjustes === 'function' ? bc.conAjustes(revState.shifts || [], revState.ajustes) : (revState.shifts || []);
+    const minPag = bc.minutosPagables(efectivos);
+    const nAj = efectivos.filter(t => t && t._ajuste).length;
     // «96 h 30 min» con las unidades pequeñas, como el resto de cifras grandes.
     const horasHtml = (typeof bc.hmHtml === 'function' ? bc.hmHtml(minPag) : escapeHtml(rvHTxt(minPag)))
       .replace(/<s>/g, '<s style="font-size:20px;color:var(--ink3);text-decoration:none;font-weight:700">');
     const abiertos = (revState.shifts || []).filter(t => bc.clasificar(t) === 'curso').length;
-    const nota = abiertos
+    const nota = (abiertos
       ? `${abiertos} turno(s) siguen abiertos y hoy suman 0 h: esta cifra sube cuando cierren.`
-      : 'Todos los turnos del corte están cerrados.';
+      : 'Todos los turnos del corte están cerrados.')
+      + (nAj ? ` Incluye ${nAj} ajuste${nAj === 1 ? '' : 's'} manual${nAj === 1 ? '' : 'es'} de horas (Balance › Ajustes manuales).` : '');
     return `<div style="${RV_CARD};padding:20px 22px;margin-bottom:16px;background:linear-gradient(180deg,var(--panel),var(--orange-soft));border-color:color-mix(in srgb,var(--orange) 26%,var(--line))">
       <div style="font-size:11.5px;font-weight:700;color:var(--ink2)">Horas pagables acumuladas del corte</div>
       <div style="font-size:44px;font-weight:800;letter-spacing:-.03em;line-height:1.05;color:var(--orange);font-variant-numeric:tabular-nums;margin-top:4px">${horasHtml}</div>
@@ -670,16 +676,20 @@
       const shifts = await Api.listShiftsForReview(
         `${c.from}T00:00:00-05:00`, `${rvDiaSiguiente(c.to)}T00:00:00-05:00`);
       const ids = shifts.map(s => s.id);
-      const [insps, fuels, settings] = await Promise.all([
+      const [insps, fuels, settings, ajustes] = await Promise.all([
         Api.listInspectionsForShifts(ids),
         Api.listFuelReceiptsForShifts(ids),
         Api.getSettings().catch(() => null),
+        // Si fallan, falla la carga entera: una cifra sin los ajustes no es la
+        // que se paga. null = la base aún no tiene 0120.
+        typeof Api.listHourAdjustments === 'function' ? Api.listHourAdjustments(c.from, c.to) : Promise.resolve(null),
       ]);
       const porTurno = (rows, destino) => {
         rows.forEach(r => { (destino[r.shift_id] = destino[r.shift_id] || []).push(r); });
         return destino;
       };
       revState.shifts = shifts;
+      revState.ajustes = ajustes || [];
       revState.inspPorTurno = porTurno(insps || [], {});
       revState.fuelPorTurno = porTurno(fuels || [], {});
       const ach = Number((settings && settings.auto_close_hours) != null
