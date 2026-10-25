@@ -18,6 +18,10 @@
 //
 // LO QUE NO CUBRE: la Edge Function (Deno, llamada HTTP al proveedor), pg_net
 // de verdad (la petición queda en cola y se deshace con el ROLLBACK), el push.
+//
+// OJO: verifica la 0099 TAL CUAL (AeroDataBox). En una base con 0118
+// (Flightradar24) el calendario cambia —solo llegadas, desde 2 h antes— y las
+// partes 4, 5 y 8 de aquí ya no aplican: la verificación vigente es _verify-0118.mjs.
 import { localClient, fixtures, user } from './_local-fixtures.mjs';
 
 const c = await localClient();
