@@ -72,7 +72,10 @@
   }
   function histRow(t, i) {
     const lle = t.type === 'lle';
-    const route = lle ? 'JMC → ' + conjunto(t) : conjunto(t) + ' → JMC';
+    // De reserva en un hotel (0121): el hotel reemplaza a JMC.
+    const RL = safe(() => AX().lugarDeTrip(t), null);
+    const jmc = RL && RL.hotel ? RL.name : 'JMC';
+    const route = lle ? jmc + ' → ' + conjunto(t) : conjunto(t) + ' → ' + jmc;
     const sub = [dayLabel(t.date), t.flight || t.time || ''].filter(Boolean).join(' · ');
     return '<div class="rx-hist rx-in" style="--d:' + Math.min(i, 8) + '" role="button" tabindex="0" data-rx="trips-open" data-id="' + esc(t.id) + '">'
       + '<span class="rx-row-ic t-' + (lle ? 'a2h' : 'h2a') + '">' + ic(lle ? 'Home' : 'Plane', 18) + '</span>'

@@ -193,13 +193,21 @@
   // tripulante puso (estar en MDE o aterrizar) y que la recogida se confirma
   // con la ruta.
   function calcKey(f) { return 'calc:' + (f.type || '') + ':' + (f.time || ''); }
+  // De reserva (0121): «Finaliza tu asignación» en la llegada y «Estar en el
+  // Hotel X» en la salida a un hotel.
+  function lugarRes(f) { const a = A(); return a && typeof a.reservaDe === 'function' && a.lugar ? a.lugar(a.reservaDe(f)) : null; }
+  function calcLabel(f) {
+    const lle = f.type === 'lle', L = lugarRes(f);
+    if (lle) return f.groundOps ? 'Sales de JMC' : (f.viaje === 'reserva' ? 'Finaliza tu asignación' : 'Aterrizas');
+    return L && L.hotel ? 'Estar en el ' + L.name : 'Estar en JMC';
+  }
   // Como en el diseño, sin --d: al re-montarse corren rxRise y rxPop.
   // En tierra (0092) la llegada no aterriza: sale del aeropuerto a esa hora.
   function calcHTML(f) {
     if (!f.time) return `<div class="rx-pd-calc-slot" data-rx-key="calc:"></div>`;
     const lle = f.type === 'lle';
     return `<div class="rx-calc rx-in" data-rx-key="${esc(calcKey(f))}">`
-      + `<span class="rx-calc-l">${lle ? (f.groundOps ? 'Sales de JMC' : 'Aterrizas') : 'Estar en JMC'}</span>`
+      + `<span class="rx-calc-l">${calcLabel(f)}</span>`
       + `<b class="rx-calc-t">${esc(hm(f.time))}</b>`
       + `<span class="rx-calc-s">La hora de recogida te la confirmamos cuando armemos tu ruta.</span></div>`;
   }
@@ -225,6 +233,8 @@
     if (kind === 'tipo') return '¿A dónde vas?';
     // En tierra (0092) no hay vuelo por el que preguntar.
     if (kind === 'vuelo' && f.groundOps) return lle ? '¿A qué hora sales?' : '¿Cuándo vas al aeropuerto?';
+    // De reserva (0121) no hay vuelo por el que preguntar.
+    if (kind === 'vuelo' && f.viaje === 'reserva') return '¿Cuándo es tu reserva?';
     if (kind === 'vuelo') return lle ? '¿Cuál es tu vuelo?' : '¿Cuándo es tu vuelo?';
     if (kind === 'donde') return lle ? '¿A dónde te llevamos?' : '¿Dónde te recogemos?';
     if (kind === 'nivel') return '¿Cómo quieres ir?';
@@ -232,8 +242,7 @@
   }
 
   // Quien trabaja en tierra (0092; el pedido arranca como su último traslado)
-  // no va «para su vuelo» ni «aterriza»: el subtítulo lo dice sin avión, y la
-  // pista de la pernocta (noche entre vuelos) no le aplica.
+  // no va «para su vuelo» ni «aterriza»: el subtítulo lo dice sin avión.
   const TYPES_TIERRA = { sal: 'Te llevamos al aeropuerto', lle: 'Te recogemos al salir del aeropuerto' };
   function tipoHTML(f) {
     const tierra = !!f.groundOps;
@@ -244,8 +253,9 @@
         + `<span class="rx-type-tx"><b>${esc(t.t)}</b><span>${esc(tierra ? TYPES_TIERRA[type] : t.s)}</span></span>`
         + `<span class="rx-type-code">${t.from}${ic('ArrowRight', 13)}${t.to}</span></button>`;
     };
-    return btn('sal', 0) + btn('lle', 1)
-      + (tierra ? '' : `<div class="rx-note rx-in" style="--d:2">${ic('Info', 15)}<span>Si tu vuelo incluye pernocta, lo marcas en el siguiente paso, con los datos del vuelo.</span></div>`);
+    // La nota «Si tu vuelo incluye pernocta, lo marcas en el siguiente paso» se
+    // quitó el 25-oct-2026: la pregunta está ahí mismo, sin explicación.
+    return btn('sal', 0) + btn('lle', 1);
   }
 
   function chipsHTML(f) {
@@ -274,45 +284,75 @@
   };
   const tierraTx = () => (A() && A().tierra) || TIERRA_RESPALDO;
 
+  // «¿Vas en vuelo o de reserva?» (0121, pedido de la profa del 25-oct-2026,
+  // 3 audios): de reserva no se pide vuelo y se elige dónde (Río Verde, Movich
+  // o Aero). Dos segmentos del diseño (AuxRxUI.seg, rx-seg con su indicador);
+  // los clics los atiende auxiliar.js (data-ax="viaje" / "lugar").
+  function viajeHTML(f, d) {
+    const a = A();
+    const res = f.viaje === 'reserva';
+    const seg = (v, opts, ax, label) => {
+      let segm = U() && typeof U().seg === 'function'
+        ? U().seg(v, opts, { name: ax, btnAttrs: (k) => ({ 'data-ax': ax, 'data-v': k }) })
+        : `<div class="rx-seg" style="--n:${opts.length}">` + opts.map(([k, t]) => `<button type="button" class="${k === v ? 'on' : ''}" data-ax="${ax}" data-v="${k}">${esc(t)}</button>`).join('') + '</div>';
+      // Sin nada elegido (el lugar, al pasar a Reserva) el indicador NO se pinta:
+      // seg() lo pondría en la primera opción y parecería elegida.
+      if (!opts.some(([k]) => k === v)) segm = segm.replace('class="rx-seg-ind"', 'class="rx-seg-ind" hidden');
+      return `<div class="rx-set col" data-rx-key="seg:${ax}"><b>${esc(label)}</b>${segm}</div>`;
+    };
+    let h = seg(res ? 'reserva' : 'vuelo', [['vuelo', 'Vuelo'], ['reserva', 'Reserva']], 'viaje', '¿Vas en vuelo o de reserva?');
+    if (res) {
+      const lugares = (a && typeof a.lugares === 'function') ? a.lugares() : [];
+      h += seg(f.reservePlace || '', lugares.map((L) => [L.key, L.short]), 'lugar', '¿Dónde?');
+    }
+    return `<div class="rx-card rx-in" style="--d:${d}" data-rx-key="viaje">${h}</div>`;
+  }
+
   function vueloHTML(f) {
     const lle = f.type === 'lle';
     // Trabajo en tierra (0092): arriba del paso, en su tarjeta. Encendido, la
     // llegada no pide vuelo y su hora es la de salir del aeropuerto (sin
     // desembarque); la salida queda igual. La pernocta y el vuelo del regreso
     // se esconden: no tienen sentido sin avión.
+    // De reserva (0121): debajo, «¿Vas en vuelo o de reserva?». De reserva
+    // tampoco hay vuelo, ni pernocta; la hora de la llegada (y la del regreso)
+    // es la de fin de la asignación. Los textos salen de auxiliar.js
+    // (textosVuelo), una sola fuente con la pantalla de siempre.
     const tierra = !!f.groundOps;
     const TX = tierraTx();
+    const a = A();
+    const T = (a && typeof a.textosVuelo === 'function') ? a.textosVuelo(f) : null;
+    const res = !!(T && T.res);
     let d = 1;
     let h = `<div class="rx-card rx-in" style="--d:0" data-rx-key="ground">${toggleHTML(TX.label, 'groundOps', tierra, TX.hint)}</div>`;
+    if (!tierra && T) h += viajeHTML(f, d++);
     h += chipsHTML(f);
-    if (lle && !tierra) h += flightField('Número de vuelo', 'flight', '9412', { d: d++ });
-    const lbl = lle ? (tierra ? 'Hora en que sales del aeropuerto' : 'Hora de aterrizaje') : '¿A qué hora deseas estar en el aeropuerto? 🕒';
-    h += field(lbl, 'time', f.time || '', lle ? (tierra ? '17:00' : '06:18') : '05:10', 'time', '', { d: d++ });
+    if (lle && !tierra && !res) h += flightField('Número de vuelo', 'flight', '9412', { d: d++ });
+    const lbl = T ? T.hora : (lle ? (tierra ? 'Hora en que sales del aeropuerto' : 'Hora de aterrizaje') : '¿A qué hora deseas estar en el aeropuerto? 🕒');
+    h += field(lbl, 'time', f.time || '', T ? T.horaPh : (lle ? (tierra ? '17:00' : '06:18') : '05:10'), 'time', '', { d: d++ });
     // La nota lleva key propia: al encender el interruptor cambia de texto en el
     // mismo nodo, y en la llegada aparece o se va sin mover a las demás.
-    const nota = lle ? (tierra ? TX.lleNote : '')
-      : (tierra ? TX.salNote : 'Selecciona la hora a la que deseas estar en el aeropuerto JMC. Con base en la hora que elijas coordinaremos tu recogida.');
+    const nota = T ? T.nota : (lle ? (tierra ? TX.lleNote : '')
+      : (tierra ? TX.salNote : 'Selecciona la hora a la que deseas estar en el aeropuerto JMC. Con base en la hora que elijas coordinaremos tu recogida.'));
     if (nota) h += `<div class="rx-note rx-in" style="--d:${d++}" data-rx-key="timenote">${ic('Info', 15)}<span>${esc(nota)}</span></div>`;
     h += calcHTML(f);
     const hint = A() && typeof A().timeHint === 'function' ? A().timeHint() : null;
     h += `<div id="ax-time-hints" data-rx-key="hints">${timeHintsHTML(hint)}</div>`;
-    // La tarjeta de opciones: regreso del mismo día (solo salida), pernocta y
-    // reserva en firme. Son datos del VIAJE: van con el vuelo.
+    // La tarjeta de opciones: regreso del mismo día (solo salida) y pernocta.
+    // Solo las preguntas, sin descripción (pedido de la profa, 25-oct-2026).
+    // «¿Es una reserva en firme?» se fue: «reserva» era otra cosa (0121).
     let card = '';
     if (!lle) {
-      card += toggleHTML('Regreso el mismo día', 'sameDayBack', f.sameDayBack,
-        'Si vuelves hoy mismo, lo dejamos pedido de una vez.');
+      card += toggleHTML('¿Regresas el mismo día?', 'sameDayBack', f.sameDayBack, '');
       if (f.sameDayBack) {
-        // En tierra el regreso es solo la hora de salir del aeropuerto.
-        card += `<label class="rx-set col" data-rx-key="backTime"><b>${tierra ? 'Hora en que sales del aeropuerto' : 'Hora a la que aterrizas de vuelta'}</b>`
-          + `<input data-field="backTime" type="time" value="${esc(f.backTime || '')}" placeholder="${tierra ? '17:00' : '19:40'}" /></label>`;
-        if (!tierra) card += flightField('Número del vuelo con el que aterrizas', 'backFlight', '9413', { compact: true });
-        card += `<div class="rx-set rx-pd-set-note" data-rx-key="backNote"><span class="rx-note">${ic('Info', 15)}<span>Quedan dos traslados: el de ida y el de regreso. Puedes cancelar cualquiera por separado.</span></span></div>`;
+        const rl = T ? T.regreso : (tierra ? 'Hora en que sales del aeropuerto' : 'Hora a la que aterrizas de vuelta');
+        card += `<label class="rx-set col" data-rx-key="backTime"><b>${esc(rl)}</b>`
+          + `<input data-field="backTime" type="time" value="${esc(f.backTime || '')}" placeholder="${T ? esc(T.regresoPh) : (tierra ? '17:00' : '19:40')}" /></label>`;
+        if (T ? T.regresoVuelo : !tierra) card += flightField('Número del vuelo con el que aterrizas', 'backFlight', '9413', { compact: true });
       }
     }
-    if (!tierra) card += toggleHTML('¿Es una pernocta?', 'isPernocta', f.isPernocta, 'Pasas la noche entre vuelos (hotel).');
-    card += toggleHTML('¿Es una reserva en firme?', 'isReserva', f.isReserva !== false, 'Confírmanos que el viaje va.');
-    h += `<div class="rx-card rx-in" style="--d:${d++}" data-rx-key="opts">${card}</div>`;
+    if (T ? T.pernocta : !tierra) card += toggleHTML('¿Es una pernocta?', 'isPernocta', f.isPernocta, '');
+    if (card) h += `<div class="rx-card rx-in" style="--d:${d++}" data-rx-key="opts">${card}</div>`;
     return h;
   }
 
@@ -426,11 +466,16 @@
     // El día y la hora ya van grandes arriba: la fila dice el vuelo (llegada)
     // o para qué es la hora (salida).
     const tierra = !!f.groundOps;
+    const L = lugarRes(f);
     if (tierra) {
       // En tierra (0092) la fila dice eso, no un vuelo (tampoco uno que haya
       // quedado escrito antes de encender el interruptor: ese no viaja).
       const cuando = f.time ? (lle ? 'sales ' : 'estar en JMC ') + hm(f.time) : '';
       rows += row('Briefcase', 'Trabajo', ['En tierra', cuando].filter(Boolean).join(' · '), goVuelo);
+    } else if (L) {
+      // De reserva (0121): el lugar y para qué es la hora; ningún vuelo.
+      const cuando = f.time ? (lle ? 'finaliza ' : 'estar ') + hm(f.time) : '';
+      rows += row('Clock', 'Reserva', [L.hotel ? L.name : 'En el aeropuerto', cuando].filter(Boolean).join(' · '), goVuelo);
     } else {
       const vuelo = lle ? [f.flight, f.time ? 'aterriza ' + hm(f.time) : ''].filter(Boolean).join(' · ')
         : (f.time ? 'Estar en JMC ' + hm(f.time) : '');
@@ -447,16 +492,16 @@
     }
     if (!lle && f.sameDayBack && f.backTime) {
       rows += row('RotateCcw', 'Regreso', tierra ? 'Sales de JMC ' + hm(f.backTime)
-        : 'Aterriza ' + hm(f.backTime) + (f.backFlight ? ' · ' + f.backFlight : ''), goVuelo);
+        : L ? 'Finaliza tu asignación ' + hm(f.backTime) + (L.hotel ? ' · ' + L.name : '')
+          : 'Aterriza ' + hm(f.backTime) + (f.backFlight ? ' · ' + f.backFlight : ''), goVuelo);
     }
-    if (f.isPernocta && !tierra) rows += row('Moon', 'Pernocta', 'Sí (hotel)', goVuelo);
-    if (f.isReserva === false) rows += row('Calendar', 'Reserva', 'Tentativa (sin confirmar)', goVuelo);
+    if (f.isPernocta && !tierra && !L) rows += row('Moon', 'Pernocta', 'Sí', goVuelo);
 
     const bags = Math.max(0, Math.min(3, Number(f.bags) || 0));
     const ctl = U() ? U().stepCtl(bags) : '';
     return `<div class="rx-review rx-in" data-rx-key="review">`
       + `<div class="rx-rv-time"><span>${esc(dayLabel(f.date) || '—')}</span><b>${esc(hm(f.time) || '--:--')}</b>`
-      + `<span>${lle ? (tierra ? 'sales de JMC' : 'aterrizas') : 'estar en JMC'}</span>`
+      + `<span>${lle ? (tierra ? 'sales de JMC' : (L ? 'finaliza tu asignación' : 'aterrizas')) : (L && L.hotel ? 'estar en el ' + esc(L.name) : 'estar en JMC')}</span>`
       + `<span class="rx-pd-rv-sub">La recogida te la confirmamos cuando armemos tu ruta.</span></div>`
       + rows + `</div>`
       + `<div class="rx-card rx-in" style="--d:1" data-rx-key="extras">`

@@ -178,13 +178,19 @@
 
   function rvRow(r) {
     const st = RV_ST[r.status] || { cls: 'muted', label: r.status };
-    const dir = r.type === 'lle' ? 'JMC → casa' : 'casa → JMC';
+    // De reserva (0121): el hotel reemplaza a JMC en el trayecto.
+    const RP = r.reservePlace && window.Api && Api.reservePlace ? Api.reservePlace(r.reservePlace) : null;
+    const lugar = RP && RP.hotel ? RP.name : 'JMC';
+    const dir = r.type === 'lle' ? lugar + ' → casa' : 'casa → ' + lugar;
     const chips = [];
+    if (RP) chips.push(`<span class="rv-tag" title="De reserva: sin vuelo">${escapeHtml(RP.hotel ? 'Reserva · ' + RP.short : 'Reserva · aeropuerto')}</span>`);
     // Trabajo en tierra (0092): operaciones del aeropuerto, sin vuelo. Se dice,
     // para que el hueco del vuelo no parezca un dato que falta.
     if (r.groundOps) chips.push('<span class="rv-tag" title="Operaciones del aeropuerto: sin vuelo">Tierra</span>');
     if (r.isPernocta) chips.push('<span class="rv-tag pern">🌙 Pernocta</span>');
-    if (r.isReserva === false) chips.push('<span class="rv-tag tent">Tentativa</span>');
+    // «Tentativa» (is_firm = false) se quitó el 25-oct-2026 (0121): la pregunta
+    // «¿Es una reserva en firme?» la leían como «¿Vas de reserva?» y quien iba en
+    // vuelo la apagaba (16 de 55 en producción). Ya no se pregunta.
     if (rvIsLate(r)) chips.push('<span class="rv-tag late">⏱ Pedido tarde</span>');
     if (r.readyAt) chips.push('<span class="rv-tag ready">✓ Confirmó recogida</span>');
     if (r.bags != null) chips.push(`<span class="rv-tag bags">🧳 ${escapeHtml(rvBagsLabel(r.bags))}</span>`);

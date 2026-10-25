@@ -108,7 +108,10 @@
       bags: null, quiet: false, meetingPoint: '',
       createdAt: haceMin(60 * 30), stopStatus: null, arrivedAt: null, pickedAt: null, droppedAt: null,
       cancelledAt: null, cancelReason: '',
-      isPernocta: false, isReserva: true, readyAt: null, rated: false, rating: 0,
+      isPernocta: false, isReserva: true,
+      // 0121: de reserva (null = va en un vuelo).
+      reservePlace: null,
+      readyAt: null, rated: false, rating: 0,
     }, o || {});
     if (t.type === 'lle' && !(o && 'rawStatus' in o)) t.rawStatus = 'scheduled';
     if (!(o && 'notes' in o)) t.notes = 'Vuelo ' + t.flight + '.' + (t.notesUser ? ' ' + t.notesUser : '');

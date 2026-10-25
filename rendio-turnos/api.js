@@ -2438,6 +2438,20 @@
     return m ? (m[1] + m[2]).toUpperCase() : '';
   }
 
+  // De RESERVA (0121, 25-oct-2026): el jefe manda al tripulante a un hotel o lo
+  // deja en el aeropuerto, y al terminar la asignación lo recoge AHÍ. Las mismas
+  // tres llaves que acepta la base (reservations_reserve_place_chk). Las
+  // coordenadas son las que dio la profa el 25-oct (Movich, Río Verde); la del
+  // aeropuerto es la rotonda del terminal, la misma de las rutas.
+  const RESERVE_PLACES = Object.freeze({
+    rio_verde: Object.freeze({ key: 'rio_verde', name: 'Hotel Río Verde', short: 'Río Verde', hotel: true, lat: 6.156991101546355, lng: -75.4355739305156 }),
+    movich: Object.freeze({ key: 'movich', name: 'Hotel Movich', short: 'Movich', hotel: true, lat: 6.1726933265356125, lng: -75.43533347469526 }),
+    aero: Object.freeze({ key: 'aero', name: 'Aeropuerto JMC', short: 'Aeropuerto', hotel: false, lat: 6.1715, lng: -75.4270 }),
+  });
+  const reserveKey = (k) => (k && Object.prototype.hasOwnProperty.call(RESERVE_PLACES, k) ? k : null);
+  const reservePlace = (k) => (reserveKey(k) ? RESERVE_PLACES[k] : null);
+  const reservePlaces = () => ['rio_verde', 'movich', 'aero'].map((k) => RESERVE_PLACES[k]);
+
   // Lo que ESCRIBIÓ el tripulante en las notas, sin lo que les pega la app
   // (rediseño 27-sep-2026, fase 0.10). createReservation antepone «Vuelo AV9412. »
   // y el regreso del mismo día agrega « · Regreso del mismo día»: eso no es suyo,
@@ -2490,7 +2504,9 @@
       // se cae al de siempre y el tablero trata a todos como si vinieran en vuelo.
       // El sector del conjunto (0055) es solo la etiqueta que se muestra en
       // Asignación v2 («Olivar · Llanogrande»); va en su propio escalón.
-      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe, sector), ground_ops');
+      // 0121: de reserva (hotel o aeropuerto), escalón propio encima de todo.
+      let res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe, sector), ground_ops, reserve_place');
+      if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe, sector), ground_ops');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe), ground_ops');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name, zona_jefe)');
       if (res.error) res = await q(COLS + ', is_overnight, is_firm, residence_id, residences(name)');
@@ -2553,15 +2569,24 @@
         // JA5116, P57433 o los dígitos pelados, y todos cuentan. La regex que
         // vivía aquí se mudó a _flightFromNotes, que ahora es la misma para los
         // tres lectores del vuelo (11-sep-2026).
-        // En tierra (0092) no hay vuelo aunque las notas traigan uno viejo.
-        vuelo: r.ground_ops === true ? '' : (r.flights?.flight_number || _flightFromNotes(r.notes)),
+        // En tierra (0092) no hay vuelo aunque las notas traigan uno viejo; de
+        // reserva (0121) tampoco.
+        vuelo: r.ground_ops === true || reserveKey(r.reserve_place) ? '' : (r.flights?.flight_number || _flightFromNotes(r.notes)),
         // Trabajo en tierra (0092): en una llegada la hora es la de salir del
         // terminal y NO se le suma desembarque (rtDeplaneOf, admin-rutas).
-        tierra: r.ground_ops === true,
+        // De reserva (0121) es lo mismo para el optimizador: su hora es la de
+        // fin de la asignación, sin vuelo ni desembarque. Por eso `tierra` va en
+        // true también con reserva (TODA la lógica de llegadas lo lee) y los
+        // textos miran `reserva` primero para no decir «tierra».
+        tierra: r.ground_ops === true || !!reserveKey(r.reserve_place),
         notas: r.notes || '',
-        // 'hotel' es el flag que el tablero ya sabía pintar (chip "Hotel"), pero
-        // nadie se lo llenaba: la pernocta se preguntaba y se perdía.
-        hotel: !!r.is_overnight,
+        // 'rio_verde' | 'movich' | 'aero' | null.
+        reserva: reserveKey(r.reserve_place),
+        // 'hotel' = va al HOTEL (o sale de él). Hasta el 25-oct salía de la
+        // PERNOCTA (is_overnight), que es dormir fuera, no el hotel: el tablero
+        // pintaba «Hotel» a quien no iba (Julián: «Juan Martínez LLEGA»).
+        hotel: !!(reservePlace(r.reserve_place) && reservePlace(r.reserve_place).hotel),
+        pernocta: !!r.is_overnight,
       };
       colors[key] = RT_PALETTE[i % RT_PALETTE.length];
     });
@@ -2639,7 +2664,9 @@
     // migración se cae al de 0085 y el viaje se lee como uno con vuelo). created_at
     // existe desde 0003: con él se sabe cuál fue el ÚLTIMO pedido (el interruptor
     // de «en tierra» arranca como ese).
-    let { data, error } = await q(TOP + ', calculated_pickup_at, created_at, ground_ops');
+    // 0121: el lugar de la reserva, escalón propio encima de todo.
+    let { data, error } = await q(TOP + ', calculated_pickup_at, created_at, ground_ops, reserve_place');
+    if (error) ({ data, error } = await q(TOP + ', calculated_pickup_at, created_at, ground_ops'));
     if (error) ({ data, error } = await q(TOP + ', calculated_pickup_at'));
     if (error) ({ data, error } = await q(TOP));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, ready_confirmed_at, cancellation_reason, residence_id, service_level, private_status, price_cop, private_reject_reason'));
@@ -2655,7 +2682,7 @@
       privateStatus: r.private_status || null,
       price: r.price_cop != null ? r.price_cop : null,
       privateReason: r.private_reject_reason || '',
-      flight: r.flights?.flight_number || _flightFromNotes(r.notes),
+      flight: reserveKey(r.reserve_place) ? '' : (r.flights?.flight_number || _flightFromNotes(r.notes)),
       // EN HORA DE BOGOTÁ (fase 0.8). Antes date era el día UTC (slice) y time
       // la hora del reloj del teléfono: un traslado entre las 19:00 y las 23:59
       // caía en el día siguiente («Mañana» en vez de «Hoy»).
@@ -2671,6 +2698,8 @@
       rated: r.rating != null, rating: r.rating || 0,
       // 0092. false también cuando la columna no llegó (escalón de abajo).
       groundOps: r.ground_ops === true,
+      // 0121: de reserva en un hotel o en el aeropuerto (null = vuelo).
+      reservePlace: reserveKey(r.reserve_place),
       createdAt: r.created_at || null,
     }));
   }
@@ -2826,9 +2855,13 @@
   async function createReservation(f) {
     const apId = await getMyAuxiliarProfileId(); if (!apId) throw new Error('Sin perfil de auxiliar');
     const isLle = f.type === 'lle';
+    // De reserva (0121): Río Verde, Movich o Aero. Solo vale con uno de los
+    // tres y nunca en tierra (el formulario ya lo cuida; aquí se repite).
+    const lugar = f.groundOps === true ? null : reserveKey(f.reservePlace);
     // En tierra (0092) no hay vuelo: aunque el formulario haya quedado con uno
-    // escrito de antes de encender el interruptor, no se pega a las notas.
-    const vuelo = f.groundOps === true ? '' : (f.flight || '');
+    // escrito de antes de encender el interruptor, no se pega a las notas. De
+    // reserva tampoco.
+    const vuelo = f.groundOps === true || lugar ? '' : (f.flight || '');
     const notes = (vuelo ? 'Vuelo ' + vuelo + '. ' : '') + (f.notes || '');
     const payload = {
       auxiliar_profile_id: apId, flight_id: null,
@@ -2837,7 +2870,9 @@
       pickup_address: f.address, pickup_latitude: f.lat, pickup_longitude: f.lng,
       required_arrival_at: f.date + 'T' + f.time + ':00-05:00', notes: notes.trim() || null,
     };
-    const extra = { is_overnight: !!f.isPernocta, is_firm: f.isReserva !== false };
+    // is_firm ya no se pregunta (0121: «reserva» era otra cosa): queda en true.
+    // La pernocta no va con una reserva: no es un vuelo con noche fuera.
+    const extra = { is_overnight: !lugar && !!f.isPernocta, is_firm: true };
     // La residencia va en su propio escalón de degradación: si la columna no
     // existiera (0055 sin aplicar) se reintenta sin ella y la reserva igual se
     // crea con el texto y el pin, que es el camino de excepción de siempre.
@@ -2890,7 +2925,9 @@
     const vistos = new Set();
     let data = null, error = null;
     for (let i = 0; i < escalones.length; i++) {
-      const row = conTierra ? { ...escalones[i], ground_ops: true } : escalones[i];
+      // La reserva (0121) viaja en TODOS los escalones y no se suelta nunca:
+      // sin el lugar el carro iría al aeropuerto. Si la columna faltara, no se crea.
+      const row = { ...escalones[i], ...(conTierra ? { ground_ops: true } : {}), ...(lugar ? { reserve_place: lugar } : {}) };
       const k = JSON.stringify(Object.keys(row).sort());
       if (vistos.has(k)) continue;          // escalón idéntico al anterior: no se repite
       vistos.add(k);
@@ -3010,19 +3047,22 @@
       .order('required_arrival_at', { ascending: true });
     // 0092 (trabajo en tierra) en su propio escalón encima: sin la migración se
     // lee como antes.
-    let { data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at, ground_ops');
+    // 0121 (de reserva) encima de todo.
+    let { data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at, ground_ops, reserve_place');
+    if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at, ground_ops'));
     if (error) ({ data, error } = await q(COLS + ', is_overnight, is_firm, cancellation_reason, ready_confirmed_at'));
     if (error) ({ data, error } = await q(COLS));
     if (error) return null;
     return (data || []).map(r => ({
       id: r.id, type: r.direction === 'airport_to_home' ? 'lle' : 'sal',
+      reservePlace: reserveKey(r.reserve_place),
       name: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar',
       profileId: r.auxiliar_profiles?.profiles?.id || null,
       phone: r.auxiliar_profiles?.profiles?.phone || '',
       address: r.pickup_address || '', when: r.required_arrival_at,
       date: r.required_arrival_at.slice(0, 10), time: rtHHMM(r.required_arrival_at),
       groundOps: r.ground_ops === true,
-      flight: r.ground_ops === true ? '' : _flightFromNotes(r.notes),
+      flight: r.ground_ops === true || reserveKey(r.reserve_place) ? '' : _flightFromNotes(r.notes),
       notes: r.notes || '', raw: r.status_h2a || r.status_a2h || '',
       status: _auxTripStatus(r), cancelledAt: r.cancelled_at || null,
       cancelReason: r.cancellation_reason || '', createdAt: r.created_at,
@@ -3476,7 +3516,9 @@
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true });
     // boarding_check (0097): si subió con código o «sin código», para pintarlo igual tras recargar.
-    let { data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status, boarding_check');
+    // 0121: de reserva (hotel o aeropuerto), escalón propio encima.
+    let { data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status, boarding_check, reserve_place');
+    if (error) ({ data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status, boarding_check'));
     if (error) ({ data, error } = await rv(', bags, quiet_ride, meet_code, meeting_point, service_level, private_status'));
     if (error) ({ data, error } = await rv(', service_level, private_status'));
     if (error) ({ data, error } = await rv(''));
@@ -3502,7 +3544,11 @@
         const r = s.reservations || {};
         return { name: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar', addr: r.pickup_address || '',
           unit: r.residence_unit || '',
-          lat: r.pickup_latitude, lng: r.pickup_longitude, flight: r.flights?.flight_number || _flightFromNotes(r.notes),
+          lat: r.pickup_latitude, lng: r.pickup_longitude,
+          flight: reserveKey(r.reserve_place) ? '' : (r.flights?.flight_number || _flightFromNotes(r.notes)),
+          // 0121: de reserva. En una salida lo deja en ese hotel (o en JMC); en
+          // una llegada lo recoge ahí. El conductor lo ve en la parada.
+          reserva: reserveKey(r.reserve_place),
           dl: rtHHMM(r.required_arrival_at), kind: type === 'lle' ? 'dropoff' : 'pickup',
           phone: r.auxiliar_profiles?.profiles?.phone || '', notes: r.notes || '',
           // null/'' cuando la columna no existe o no hay dato: el conductor no
@@ -3856,6 +3902,7 @@
 
   window.Api = {
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
+    reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,
     getProfileForEdit, listDeletedProfiles, adminUpdateProfile, adminSetEmail, adminSetPassword, adminSetStatus, adminSetRole, changeMyPassword,
     listAllDriversForAdmin, setProfileActive, softDeleteProfile, undeleteProfile, setAdminCoordinator, setDriverPriority, setDriverCanCoordinate,

@@ -106,7 +106,7 @@
       privateStatus: r.private_status || null,
       price: r.price_cop != null ? r.price_cop : null,
       privateReason: r.private_reject_reason || '',
-      flight: r.flight_number || flightFromNotes(r.notes),
+      flight: ['rio_verde', 'movich', 'aero'].includes(r.reserve_place) ? '' : (r.flight_number || flightFromNotes(r.notes)),
       // Calculados EN EL SERVIDOR en hora de Bogotá.
       date: r.date || null,
       time: r.time || null,
@@ -150,6 +150,9 @@
       cancelReason: r.cancellation_reason || '',
       isPernocta: !!r.is_overnight,
       isReserva: r.is_firm !== false,
+      // 0121: de reserva en un hotel o en el aeropuerto (null = vuelo). Mismas
+      // llaves que la base; una desconocida se lee como vuelo.
+      reservePlace: ['rio_verde', 'movich', 'aero'].includes(r.reserve_place) ? r.reserve_place : null,
       readyAt: r.ready_confirmed_at || null,
       rated: r.rating != null,
       rating: r.rating || 0,
@@ -216,11 +219,15 @@
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '') || !/^\d{2}:\d{2}$/.test(time || '')) {
       throw new Error('Elige el día y la hora');
     }
-    const r = await rpc('auxiliar_change_flight', {
+    // 0121: el lugar de la reserva. Sin `reservePlace` en f no se manda (queda
+    // como estaba); 'vuelo' = ahora va en un vuelo; o la llave del lugar.
+    const args = {
       p_reservation_id: reservationId,
       p_flight: (f && f.flight) || '',
       p_when: `${date}T${time}:00-05:00`,   // Colombia no tiene horario de verano
-    });
+    };
+    if (f && f.reservePlace !== undefined) args.p_reserve_place = f.reservePlace || 'vuelo';
+    const r = await rpc('auxiliar_change_flight', args);
     if (r.missing) return null;
     if (r.error) lanzar(r.error, 'No se pudo cambiar el vuelo');
     const d = r.data || {};
@@ -230,6 +237,7 @@
       requiredAt: d.required_arrival_at || null,
       unchanged: d.unchanged === true,
       notified: d.notified != null ? d.notified : null,
+      reservePlace: d.reserve_place !== undefined ? (d.reserve_place || null) : undefined,
     };
   }
 

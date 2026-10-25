@@ -182,7 +182,7 @@ t('las rayas: la 1 «now», el resto vacías', E.$('[data-scr="book"]:not(.out) 
 t('la X es rx.pop() del diseño (data-rx="rx-pop")', !!E.$('[data-scr="book"]:not(.out) .rx-book-h .rx-ib[data-rx="rx-pop"]'));
 t('dos .rx-type (salida t-h2a, llegada t-a2h) y sin Hotel', !!E.$('.rx-type.t-h2a[data-type="sal"]') && !!E.$('.rx-type.t-a2h[data-type="lle"]') && E.ui().querySelectorAll('.rx-type').length === 2 && !/Hotel/.test(txt(E)));
 t('con --d escalonado (0, 1)', E.$('.rx-type.t-h2a').getAttribute('style') === '--d:0' && E.$('.rx-type.t-a2h').getAttribute('style') === '--d:1');
-t('la pista de la pernocta queda como rx-note', /pernocta/.test(E.$('[data-scr="book"]:not(.out) .rx-step .rx-note')?.textContent || ''));
+t('el paso 1 ya no trae la pista de la pernocta (25-oct-2026)', !/pernocta/i.test(E.$('[data-scr="book"]:not(.out) .rx-step')?.textContent || ''));
 t('sin «Continuar» en el paso 1 (avanza solo, como el diseño)', !cont(E));
 const head0 = E.$('[data-scr="book"]:not(.out) .rx-book-h'), step0 = E.$('[data-scr="book"]:not(.out) .rx-step');
 E.click('[data-ax="type"][data-type="sal"]'); await wait(60);
@@ -231,8 +231,9 @@ E.set('time', '05:40');
 const calc2 = E.$('[data-scr="book"]:not(.out) .rx-calc');
 t('otra hora = rx-calc RECREADO (key) con rx-anim', calc2 !== calc && calc2.classList.contains('rx-anim') && calc2.querySelector('.rx-calc-t').textContent === '05:40');
 t('#ax-time-hints existe', !!E.$('[data-scr="book"]:not(.out) #ax-time-hints'));
-t('tarjeta de opciones: regreso, pernocta y reserva en firme', !!E.$('.rx-card [data-ax="toggle"][data-key="sameDayBack"]') && !!E.$('.rx-card [data-ax="toggle"][data-key="isPernocta"]') && !!E.$('.rx-card [data-ax="toggle"][data-key="isReserva"]'));
-t('la reserva en firme arranca encendida', E.$('[data-key="isReserva"]').classList.contains('on'));
+t('tarjeta de opciones: regreso y pernocta, sin «reserva en firme» (0121)', !!E.$('.rx-card [data-ax="toggle"][data-key="sameDayBack"]') && !!E.$('.rx-card [data-ax="toggle"][data-key="isPernocta"]') && !E.$('[data-key="isReserva"]'));
+t('solo las preguntas, sin descripción (25-oct-2026)', !E.$('.rx-card[data-rx-key="opts"] .rx-set > span > span'));
+t('«¿Vas en vuelo o de reserva?» con el segmento del diseño (.rx-seg), en Vuelo', !!E.$('.rx-card[data-rx-key="viaje"] .rx-seg [data-ax="viaje"][data-v="vuelo"].on') && !E.$('[data-ax="lugar"]'));
 const tg = E.$('[data-key="isPernocta"]'), timeIn = E.$('[data-field="time"]');
 E.click(tg); await wait();
 t('el interruptor cambia en el MISMO nodo (su transición corre)', E.$('[data-key="isPernocta"]') === tg && tg.classList.contains('on') && tg.getAttribute('aria-pressed') === 'true' && E.A().form.isPernocta === true);
@@ -309,7 +310,7 @@ prohibidos(E, 'revisar');
 
 console.log('\n── deslizar: toque sin arrastre → prime() en el gesto → createReservation ──');
 E.inserts.length = 0; E.spy.n = 0; E.spy.inGesture.length = 0;
-E.A().form.isReserva = false; E.w.Auxiliar.rerender(); await wait();
+E.w.Auxiliar.rerender(); await wait();
 E.click(slide(E).querySelector('.rx-slide-k'));
 t('prime() se llamó una vez y DENTRO del clic (sincrónico)', E.spy.n === 1 && E.spy.inGesture[0] === true, JSON.stringify(E.spy));
 t('todavía no se envió nada (espera 380 ms)', E.inserts.length === 0);
@@ -320,7 +321,7 @@ await wait(300);
 t('a los ~380 ms: 2 reservas (ida y regreso del mismo día)', E.inserts.length === 2, E.inserts.length);
 const ida = E.inserts[0] || {}, vuelta = E.inserts[1] || {};
 t('la ida: salida, con bags 2 y sin quiet_ride (compartido)', ida.direction === 'home_to_airport' && ida.bags === 2 && !('quiet_ride' in ida) && !('service_level' in ida), JSON.stringify(ida));
-t('pernocta y reserva en firme viajan (is_overnight true, is_firm false)', ida.is_overnight === true && ida.is_firm === false);
+t('la pernocta viaja; is_firm queda en true y sin reserve_place (0121)', ida.is_overnight === true && ida.is_firm === true && !('reserve_place' in ida), JSON.stringify(ida));
 t('la nota viaja', /Timbre 302/.test(ida.notes || ''));
 t('el regreso: llegada 19:40, sin pernocta', vuelta.direction === 'airport_to_home' && /T19:40/.test(vuelta.required_arrival_at || '') && vuelta.is_overnight === false);
 t('el prime no se repitió en el envío', E.spy.n === 1);
@@ -544,6 +545,34 @@ console.log('\n── bandera APAGADA: el aviso de vacaciones sale desde el PRIM
   conVac = false; await E4.w.AuxPagos.refresh({ force: true }); E4.w.Auxiliar.rerender(); await wait(60);
   t('sin vacaciones en ese cobro: la caja queda oculta y sin aviso (nada inventado)', !!caja() && caja().hidden === true && !E4.$('[data-ax-vacextra]'));
   t('sin errores de consola (aviso del primer pedido)', E4.errors.length === 0, E4.errors.slice(0, 3).join(' | '));
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+console.log('\n── de RESERVA (0121): salida al Movich + regreso al fin de la asignación ──');
+{
+  const E5 = await boot();
+  await nuevo(E5);
+  E5.click('[data-ax="type"][data-type="sal"]'); await wait(320);
+  E5.click('[data-ax="viaje"][data-v="reserva"]'); await wait();
+  t('Reserva: aparece «¿Dónde?» sin nada elegido (el indicador no se pinta)', !!E5.$('[data-ax="lugar"][data-v="movich"]') && !E5.$('[data-ax="lugar"].on') && E5.$('[data-rx-seg="lugar"] .rx-seg-ind').hidden === true);
+  E5.click('[data-ax="lugar"][data-v="movich"]'); await wait();
+  t('elegir Movich lo marca', !!E5.$('[data-ax="lugar"][data-v="movich"].on') && E5.A().form.reservePlace === 'movich');
+  t('la hora de la salida es la de estar en el hotel', /¿A qué hora deseas estar en el hotel\?/.test(txt(E5)) && /Hotel Movich/.test(txt(E5)));
+  t('sin pernocta de reserva', !E5.$('[data-key="isPernocta"]'));
+  E5.set('date', FUTURO); E5.set('time', '11:20');
+  E5.click('[data-key="sameDayBack"]'); await wait();
+  t('el regreso pregunta «¿A qué hora finaliza tu asignación?» y NO pide vuelo', /¿A qué hora finaliza tu asignación\?/.test(txt(E5)) && !E5.$('[data-field="backFlightNum"]'));
+  E5.set('backTime', '18:30');
+  t('se puede seguir sin ningún vuelo', !cont(E5).disabled);
+  while (E5.w.Auxiliar.stepKind() !== 'revisar') { const c = cont(E5); if (!c || c.disabled) throw new Error('trancado en ' + E5.w.Auxiliar.stepKind()); E5.click(c); await wait(); }
+  t('el resumen dice la reserva y el regreso al fin de la asignación', /Hotel Movich/.test(txt(E5)) && /Finaliza tu asignación 18:30/.test(txt(E5)) && !/Aterriza/.test(txt(E5)), txt(E5).slice(0, 300));
+  E5.inserts.length = 0;
+  E5.click(slide(E5).querySelector('.rx-slide-k')); await wait(520);
+  const [a5, b5] = E5.inserts;
+  t('dos reservas, las dos con reserve_place = movich', E5.inserts.length === 2 && a5.reserve_place === 'movich' && b5.reserve_place === 'movich', JSON.stringify(E5.inserts.map(x => x.reserve_place)));
+  t('ninguna lleva «Vuelo …» en las notas (el regreso tampoco copia uno)', !/Vuelo/i.test((a5 || {}).notes || '') && !/Vuelo/i.test((b5 || {}).notes || ''), JSON.stringify([a5 && a5.notes, b5 && b5.notes]));
+  t('el regreso es una llegada a las 18:30 y sin pernocta', b5 && b5.direction === 'airport_to_home' && /T18:30/.test(b5.required_arrival_at || '') && b5.is_overnight === false);
+  t('sin errores de consola (reserva)', E5.errors.length === 0, E5.errors.slice(0, 3).join(' | '));
 }
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
