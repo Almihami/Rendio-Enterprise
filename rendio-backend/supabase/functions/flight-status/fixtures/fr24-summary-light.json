@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "fr24_id": "3b4f1a2c",
+      "flight": "AV9563",
+      "callsign": "AVA9563",
+      "operating_as": "AVA",
+      "painted_as": "AVA",
+      "type": "A320",
+      "reg": "N724AV",
+      "orig_icao": "SKBO",
+      "datetime_takeoff": "2026-10-11T18:35:12Z",
+      "dest_icao": "SKRG",
+      "dest_icao_actual": "SKRG",
+      "datetime_landed": null,
+      "hex": "0D0A1B",
+      "first_seen": "2026-10-11T18:17:40Z",
+      "last_seen": "2026-10-11T19:02:31Z",
+      "flight_ended": false
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "fr24_id": "3b4f1a2c",
+      "flight": "AV9563",
+      "callsign": "AVA9563",
+      "lat": 6.41207,
+      "lon": -74.88415,
+      "track": 302,
+      "alt": 21000,
+      "gspeed": 412,
+      "vspeed": -1408,
+      "squawk": "4521",
+      "timestamp": "2026-10-11T19:05:00Z",
+      "source": "ADSB",
+      "hex": "0D0A1B",
+      "type": "A320",
+      "reg": "N724AV",
+      "painted_as": "AVA",
+      "operating_as": "AVA",
+      "orig_iata": "BOG",
+      "orig_icao": "SKBO",
+      "dest_iata": "MDE",
+      "dest_icao": "SKRG",
+      "eta": "2026-10-11T19:35:00Z"
+    }
+  ]
+}
