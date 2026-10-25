@@ -32,6 +32,7 @@
 //   FR24_API_TOKEN           el token de la FR24 API (Authorization: Bearer). Lo pone la dueña.
 //   FR24_SANDBOX=1           usa el sandbox de FR24 (datos FIJOS, token de sandbox):
 //                            sirve para probar token, headers y forma; no trae los vuelos de MDE.
+//   FR24_MIN_GAP_MS          pausa entre peticiones a FR24 (por defecto 6500 ms).
 //   FLIGHT_STATUS_MOCK=1     modo prueba: no llama a nadie. Con fr24, un vuelo falso por
 //                            reserva que avanza con el reloj (despega 25 min tarde);
 //                            se guarda con source 'mock' y el chip dice «· prueba».
@@ -96,7 +97,9 @@ async function corridaFr24(lista: Target[], o: { mock: boolean; token: string; s
         const rq = fr24.buildRequest(req, { token: o.token, sandbox: o.sandbox });
         return getJson(rq.url, rq.headers, 15000);
       };
-  return await fr24.run(lista, { fetch: doFetch, now, aliases: o.aliases, source: o.mock ? "mock" : "flightradar24" });
+  // Con FR24 de verdad, una pausa entre peticiones (ver MIN_GAP_MS); el modo prueba no la necesita.
+  const gap = o.mock ? 0 : Math.max(0, Number(Deno.env.get("FR24_MIN_GAP_MS") || fr24.MIN_GAP_MS));
+  return await fr24.run(lista, { fetch: doFetch, now, aliases: o.aliases, minGapMs: gap, source: o.mock ? "mock" : "flightradar24" });
 }
 
 // ── AeroDataBox (apagado desde 0118; se conserva solo por si hubiera que volver) ─
