@@ -479,15 +479,22 @@
 
   // Configuración de la organización (plazos por defecto, titular y NIT). La
   // mensualidad por defecto ya no se usa (30-sep): ni se lee ni se escribe.
+  // 0123: + el día de apertura (early_open_day). Con una base sin 0123 se lee como
+  // antes y la pantalla no muestra el campo (hasEarly = false).
   async function adminSettings() {
-    const { data, error } = await client().from('billing_settings')
-      .select('organization_id, due_days, notice_days, grace_days, holder_name, holder_nit, updated_at')
-      .maybeSingle();
+    const COLS = 'organization_id, due_days, notice_days, grace_days, holder_name, holder_nit, updated_at';
+    let hasEarly = true;
+    let { data, error } = await client().from('billing_settings').select(COLS + ', early_open_day').maybeSingle();
+    if (error && (error.code === '42703' || /early_open_day/.test(error.message || ''))) {
+      hasEarly = false;
+      ({ data, error } = await client().from('billing_settings').select(COLS).maybeSingle());
+    }
     if (error) throw error;
-    if (!data) return { exists: false, dueDays: 5, noticeDays: 2, graceDays: 3, holderName: null, holderNit: null };
+    if (!data) return { exists: false, dueDays: 5, noticeDays: 2, graceDays: 3, holderName: null, holderNit: null, earlyOpenDay: hasEarly ? 21 : null, hasEarly };
     return {
       exists: true, dueDays: data.due_days, noticeDays: data.notice_days,
       graceDays: data.grace_days, holderName: data.holder_name, holderNit: data.holder_nit, updatedAt: data.updated_at,
+      earlyOpenDay: hasEarly ? (data.early_open_day != null ? data.early_open_day : null) : null, hasEarly,
     };
   }
   // El upsert solo lleva estas columnas: default_amount_cop se queda como esté.
@@ -503,6 +510,8 @@
       holder_name: f.holderName || null,
       holder_nit: f.holderNit || null,
     };
+    // 0123: solo si la pantalla lo manda (la base lo tiene); vacío = apagado.
+    if ('earlyOpenDay' in f) row.early_open_day = n(f.earlyOpenDay);
     const { data, error } = await client().from('billing_settings')
       .upsert(row, { onConflict: 'organization_id' }).select().single();
     if (error) throw error;
