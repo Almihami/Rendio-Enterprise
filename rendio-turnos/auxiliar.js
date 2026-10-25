@@ -205,7 +205,7 @@
     tierra: {
       label: 'Trabajo en tierra (sin vuelo)',
       hint: 'Operaciones del aeropuerto: vas a JMC sin tomar un vuelo.',
-      salNote: 'Es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.',
+      salNote: 'Selecciona la hora a la que deseas estar en el aeropuerto JMC. Con base en la hora que elijas coordinaremos tu recogida.',
       lleNote: 'Es la hora a la que sales del terminal. Como no vienes en un vuelo, no le sumamos tiempo de desembarque.',
     },
     // ¿Este viaje (forma T) va en tierra?
@@ -1028,10 +1028,10 @@
       ${isLle && !tierra ? auxFlightField('Número de vuelo', 'flight', '9412') : ''}
       ${auxField(tierra ? 'Fecha' : 'Fecha del vuelo', 'date', f.date || '', '', 'date', `min="${auxTodayISO()}"`)}
       ${auxDateChips(f)}
-      ${auxField(isLle ? (tierra ? 'Hora en que sales del aeropuerto' : 'Hora de aterrizaje') : 'Hora en que quieres estar en el aeropuerto',
+      ${auxField(isLle ? (tierra ? 'Hora en que sales del aeropuerto' : 'Hora de aterrizaje') : '¿A qué hora deseas estar en el aeropuerto? 🕒',
         'time', f.time || '', isLle ? (tierra ? '17:00' : '06:18') : '05:10', 'time')}
       ${isLle ? (tierra ? `<div class="ax-geo-hint">${TX.lleNote}</div>` : '')
-        : `<div class="ax-geo-hint">${tierra ? TX.salNote : 'No es tu hora de presentación: es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.'}</div>`}
+        : `<div class="ax-geo-hint">${tierra ? TX.salNote : 'Selecciona la hora a la que deseas estar en el aeropuerto JMC. Con base en la hora que elijas coordinaremos tu recogida.'}</div>`}
       <div id="ax-time-hints">${auxTimeHints()}</div>
       ${isLle ? '' : `
         <div class="ax-sec">El regreso</div>

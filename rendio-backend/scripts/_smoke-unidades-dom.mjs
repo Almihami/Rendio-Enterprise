@@ -69,8 +69,8 @@ window.AuxResidencias.newTrip(); window.AuxResidencias.load(); await wait(80);
 window.Auxiliar.rerender();
 await tipo('sal');
 t('el paso del vuelo ya no dice «hora de presentación»', !/Hora de presentación/.test(txt()), txt().slice(0,200));
-t('pide la hora de estar EN EL AEROPUERTO', /Hora en que quieres estar en el aeropuerto/.test(txt()));
-t('lo aclara para que no lo confundan', /No es tu hora de presentación/.test(txt()));
+t('pide la hora de estar EN EL AEROPUERTO', /¿A qué hora deseas estar en el aeropuerto\?/.test(txt()));
+t('dice que con esa hora se coordina la recogida', /Con base en la hora que elijas coordinaremos tu recogida/.test(txt()));
 
 console.log('\n── el pedido: el regreso el mismo día ──');
 t('ofrece el regreso del mismo día', /Regreso el mismo día/.test(txt()));

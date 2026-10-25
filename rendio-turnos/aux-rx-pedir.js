@@ -269,7 +269,7 @@
   const TIERRA_RESPALDO = {
     label: 'Trabajo en tierra (sin vuelo)',
     hint: 'Operaciones del aeropuerto: vas a JMC sin tomar un vuelo.',
-    salNote: 'Es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.',
+    salNote: 'Selecciona la hora a la que deseas estar en el aeropuerto JMC. Con base en la hora que elijas coordinaremos tu recogida.',
     lleNote: 'Es la hora a la que sales del terminal. Como no vienes en un vuelo, no le sumamos tiempo de desembarque.',
   };
   const tierraTx = () => (A() && A().tierra) || TIERRA_RESPALDO;
@@ -286,12 +286,12 @@
     let h = `<div class="rx-card rx-in" style="--d:0" data-rx-key="ground">${toggleHTML(TX.label, 'groundOps', tierra, TX.hint)}</div>`;
     h += chipsHTML(f);
     if (lle && !tierra) h += flightField('Número de vuelo', 'flight', '9412', { d: d++ });
-    const lbl = lle ? (tierra ? 'Hora en que sales del aeropuerto' : 'Hora de aterrizaje') : 'Hora en que quieres estar en el aeropuerto';
+    const lbl = lle ? (tierra ? 'Hora en que sales del aeropuerto' : 'Hora de aterrizaje') : '¿A qué hora deseas estar en el aeropuerto? 🕒';
     h += field(lbl, 'time', f.time || '', lle ? (tierra ? '17:00' : '06:18') : '05:10', 'time', '', { d: d++ });
     // La nota lleva key propia: al encender el interruptor cambia de texto en el
     // mismo nodo, y en la llegada aparece o se va sin mover a las demás.
     const nota = lle ? (tierra ? TX.lleNote : '')
-      : (tierra ? TX.salNote : 'No es tu hora de presentación: es a qué hora quieres estar allá. Nosotros calculamos a qué hora pasa el carro.');
+      : (tierra ? TX.salNote : 'Selecciona la hora a la que deseas estar en el aeropuerto JMC. Con base en la hora que elijas coordinaremos tu recogida.');
     if (nota) h += `<div class="rx-note rx-in" style="--d:${d++}" data-rx-key="timenote">${ic('Info', 15)}<span>${esc(nota)}</span></div>`;
     h += calcHTML(f);
     const hint = A() && typeof A().timeHint === 'function' ? A().timeHint() : null;
