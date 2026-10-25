@@ -84,7 +84,16 @@ En la prueba real del 14-oct, AeroDataBox no trajo el aterrizaje de **ningún** 
    curl -s "https://fr24api.flightradar24.com/api/usage?period=24h" -H "Accept-Version: v1" -H "Authorization: Bearer $FR24_TOKEN"
    ```
 
-   **Lo primero que hay que confirmar es JetSmart.** Los tripulantes escriben `JA5116` (BOG→MDE). Hay que preguntar `flights=JA5116,J65116` en la misma petición y ver con cuál responde FR24.
+   **Confirmado el 25-oct-2026 con el token real** (la profa compró el Explorer ese día; 60.000 créditos, recarga automática apagada):
+   - JetSmart: FR24 lo conoce como **`JA5116`** (callsign `JEC5116`), igual que lo escriben los tripulantes. **No hace falta alias.** Los internacionales de JetSmart también salen con JA (`JA5831` desde Punta Cana; `JA7752`, de JetSmart Perú, desde Lima).
+   - Los nacionales traen la **hora real de aterrizaje en SKRG** (`AV9336` BOG→MDE aterrizó 12:42, `LA4024` 13:01, `P57623` 13:32…), justo lo que AeroDataBox no traía.
+   - Live full trae la `eta` (`AV269` CUN→MDE, `LA2392` LIM→MDE) y `dest_icao = SKRG`.
+   - Las horas vienen como `2026-10-25T16:45:29Z`, como dice la especificación.
+   - Una respuesta trae como máximo 20 resultados. Una consulta por aeropuerto (`airports=inbound:SKRG`, 4 h) devolvió 20 y cobró 38: parece que cobra lo que encuentra, no lo que devuelve. La función nunca pregunta por aeropuerto, solo por número.
+   - La prueba completa gastó 55 créditos.
+   - Ojo con el ritmo: con 4 peticiones en ~2 min, la quinta (`/api/usage`) dio **429**. Por eso la función deja 6,5 s entre una petición y la siguiente (`FR24_MIN_GAP_MS`).
+
+   Lo que había que confirmar, por si se vuelve a revisar: JetSmart. Los tripulantes escriben `JA5116` (BOG→MDE). Hay que preguntar `flights=JA5116,J65116` en la misma petición y ver con cuál responde FR24.
    - Si solo responde `J65116`:
      ```sql
      update public.app_settings set flight_code_aliases = '{"JA": ["J6"]}' where id = 'singleton';

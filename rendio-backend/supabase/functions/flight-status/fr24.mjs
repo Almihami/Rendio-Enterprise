@@ -48,6 +48,10 @@ export const COSTO = Object.freeze({ summary: 1, live: 8, vacia: 1 });
 export const MAX_VUELOS_POR_PETICION = 15;
 export const MAX_PETICIONES_POR_MIN = 10;
 export const MAX_RESULTADOS = 20;
+// Pausa entre una petición y la siguiente en la misma corrida. 25-oct, con el
+// token real: dos peticiones seguidas pasaron y la quinta en ~2 min dio 429.
+// 6,5 s = 10 por minuto parejas; una corrida de 9 peticiones tarda ~1 min.
+export const MIN_GAP_MS = 6500;
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -298,6 +302,7 @@ export async function run(targets, opts = {}) {
     batch = MAX_VUELOS_POR_PETICION,
     maxRequests = MAX_PETICIONES_POR_MIN - 1,
     perMinute = MAX_PETICIONES_POR_MIN,
+    minGapMs = 0,   // la Edge Function pasa MIN_GAP_MS; las pruebas, 0
     sleep = (ms) => new Promise(r => setTimeout(r, ms)),
     clock = () => Date.now(),
     source = 'flightradar24',
@@ -318,6 +323,8 @@ export async function run(targets, opts = {}) {
       topado = true;
       return null;
     }
+    const ultima = sent[sent.length - 1];
+    if (ultima != null && minGapMs > 0 && clock() - ultima < minGapMs) await sleep(minGapMs - (clock() - ultima));
     const t0 = clock();
     const recientes = sent.filter(x => t0 - x < 60000);
     if (recientes.length >= perMinute) await sleep(60000 - (t0 - recientes[0]) + 200);
