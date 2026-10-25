@@ -22,11 +22,16 @@ const CON_CARRO = process.argv.includes('--carros');
 const plan = JSON.parse(readFileSync(file, 'utf8'));
 
 // El jefe escribe 3:10, no 03:10, y siempre en múltiplos de 5: le da a la gente
-// una hora redonda. Al MÁS CERCANO, como lo haría una persona — redondear
-// siempre hacia abajo metía hasta 4 min de espera extra en cada parada.
+// una hora redonda. HACIA ABAJO desde el 24-oct-2026, igual que la app (rtCita
+// en admin-rutas.js). Antes era al más cercano, para no sumar hasta 4 min de
+// espera en cada parada; el jefe explicó por qué no: «si les ponemos 4:44 salen
+// a las y 50; si les ponemos y 37 salen a las y 40». La gente corre la hora al
+// siguiente múltiplo de 5, así que redondear hacia arriba deja al carro
+// esperando, y eso se suma vuelta abajo. Hacia abajo, ese «siguiente de 5» es
+// cuando llega el carro.
 const min = (hm) => { const [h, m] = hm.split(':').map(Number); return h * 60 + m; };
 const suave = (hm) => {
-  const t = Math.round(min(hm) / 5) * 5;
+  const t = Math.floor(min(hm) / 5) * 5;
   return `${Math.floor(t / 60) % 24}:${String(t % 60).padStart(2, '0')}`;
 };
 // Las llegadas de madrugada vienen como 24:43 (día siguiente) para que el solver
@@ -140,7 +145,7 @@ for (const v of bloques) {
     // En una SALIDA el renglón lleva la hora de RECOGIDA (v.eta); `dl` es la
     // presentación y ponerla acá decía "recójanlo a la hora en que ya tiene que
     // estar en el aeropuerto". En una LLEGADA sí manda la hora del vuelo.
-    console.log(`${crudo(v.eta || v.dl)} ${v.n} (${v.zona}) (QUIZÁS NO HAYA CARRO)`);
+    console.log(`${v.eta ? suave(v.eta) : crudo(v.dl)} ${v.n} (${v.zona}) (QUIZÁS NO HAYA CARRO)`);
     console.log('');
     continue;
   }

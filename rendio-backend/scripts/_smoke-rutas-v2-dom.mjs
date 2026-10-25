@@ -119,9 +119,9 @@ console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vue
   t('una sola frase: «Antes de publicar, revisa 3 avisos.» + «9 vueltas · 14 de 16 tripulantes con carro»', !q('#rv2-say').hidden && /^Antes de publicar, revisa 3 avisos ?\. 9 vueltas · 14 de 16 tripulantes con carro$/.test(say), say);
   t('el botón Publicar lleva el número de avisos (3)', txt(q('#rv2-pending')) === '3' && !q('#rv2-pending').hidden);
   const av = qa('#rv2-avisos .rv2-al li');
-  t('Avisos: Manuela y Kevin sin carro y V-01 de las 05:37 que llega 19 min tarde, en palabras', av.length === 3
+  t('Avisos: Manuela y Kevin sin carro y V-01 de las 05:35 (recoge 05:37, redondo hacia abajo) que llega 19 min tarde, en palabras', av.length === 3
     && /^Manuela Franco no tiene carro ?Salida · Presentación 09:10 · Mangle · El Porvenir/.test(leer(av[0])) && /no tiene carro/.test(leer(av[1]))
-    && /^V-01 de las 05:37 llega 19 min tarde ?Llega a JMC 06:39 · presentación 06:30 · con 10 min de entrega/.test(leer(av[2])), av.map(leer).join(' | '));
+    && /^V-01 de las 05:35 llega 19 min tarde ?Llega a JMC 06:39 · presentación 06:30 · con 10 min de entrega/.test(leer(av[2])), av.map(leer).join(' | '));
   t('…cada aviso con UN botón: «Ubicar» (sin carro) y «Ver» (tarde)', av[0].querySelector('[data-act="route"][data-crew="rN"]') && txt(av[0].querySelector('button')) === 'Ubicar' && txt(av[2].querySelector('[data-act="ver"]')) === 'Ver');
   const cel = (car, b2) => q(`#rv2-drivers [data-act="assignslot"][data-car="${car}"][data-shift="${b2}"]`);
   t('Conductores: carro × turno (AM / PM) con quién maneja', qa('#rv2-drivers .hd').map(txt).join(',') === 'Turno AM,Turno PM' && qa('#rv2-drivers .car').map(txt).join(',') === 'V-01,V-02,V-03', qa('#rv2-drivers .hd').map(txt).join(','));
@@ -137,11 +137,11 @@ console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vue
   t('encabezado con aviso: «06:00 – 07:00 · 1 vuelta · 1 con aviso»', /06:00 – 07:00 · 1 vuelta · 1 con aviso/.test(txt(qa('#rv2-list .rv2-hour').find((h) => /^06/.test(txt(h))))));
   const row = rows().find((x) => x.dataset.id === 'V-02·V2');
   t('la fila: horas, «Recoge → llega a JMC», tipo, carro, conductor y los tripulantes por nombre',
-    txt(row.querySelector('.when b')) === '06:59 → 07:23' && /Recoge → llega a JMC/.test(txt(row.querySelector('.when'))) && txt(row.querySelector('.rv2-pill')) === 'Hotel'
+    txt(row.querySelector('.when b')) === '06:55 → 07:23' && /Recoge → llega a JMC/.test(txt(row.querySelector('.when'))) && txt(row.querySelector('.rv2-pill')) === 'Hotel'
     && txt(row.querySelector('.l1 .car')) === 'V-02' && txt(row.querySelector('.l1 .drv')) === 'Luis Arango'
     && row.querySelectorAll('.rv2-p').length === 2 && /Daniela Cano/.test(txt(row.querySelectorAll('.rv2-p')[0])) && /Sergio Molina/.test(txt(row)),
     [row.querySelector('.when b'), row.querySelector('.rv2-pill'), row.querySelector('.l1 .car'), row.querySelector('.l1 .drv')].map(txt).join(' | '));
-  t('fila accesible: role=button, tabindex=0 y aria-label con carro, tipo, horas y nombres', row.getAttribute('role') === 'button' && row.getAttribute('tabindex') === '0' && /V-02, Hotel, 06:59 → 07:23, Daniela Cano, Sergio Molina/.test(row.getAttribute('aria-label')), row.getAttribute('aria-label'));
+  t('fila accesible: role=button, tabindex=0 y aria-label con carro, tipo, horas y nombres', row.getAttribute('role') === 'button' && row.getAttribute('tabindex') === '0' && /V-02, Hotel, 06:55 → 07:23, Daniela Cano, Sergio Molina/.test(row.getAttribute('aria-label')), row.getAttribute('aria-label'));
   const tarde = rows().find((x) => x.dataset.id === 'V-01·V2');
   t('la que llega tarde lo dice: «19 min tarde · presentación 06:30» (y queda marcada)', tarde.dataset.s === 'risk' && txt(tarde.querySelector('.late')) === '19 min tarde · presentación 06:30');
   const lle = rows().find((x) => x.dataset.id === 'V-01·V3');
@@ -178,7 +178,7 @@ console.log('\n── B · detalle con mapa, sugerencia, aplicar y deshacer ─�
   const alerta = txt(q('#rv2-detail .rv2-alert'));
   t('alerta: «Llega tarde · llega 06:39; con 10 min de entrega no alcanza la presentación (06:30): 19 min tarde»', alerta === 'Llega tarde · llega 06:39; con 10 min de entrega no alcanza la presentación (06:30): 19 min tarde', alerta);
   const li = qa('#rv2-detail .rv2-stops li');
-  t('paradas en orden de recogida: Camila 05:37, José 06:13 y la llegada a JMC 06:39', li.length === 3 && /^05:37 Camila Ortiz Ébano · Marinilla · pres. 06:30/.test(leer(li[0])) && /^06:13 José Ñáñez/.test(leer(li[1])) && /^06:39 Llegada JMC Presentación 06:30 · 10 min de entrega · 19 min tarde/.test(leer(li[2])), li.map(leer).join(' | '));
+  t('paradas en orden de recogida: Camila 05:35, José 06:10 (horas redondas) y la llegada a JMC 06:39 (la del modelo)', li.length === 3 && /^05:35 Camila Ortiz Ébano · Marinilla · pres. 06:30/.test(leer(li[0])) && /^06:10 José Ñáñez/.test(leer(li[1])) && /^06:39 Llegada JMC Presentación 06:30 · 10 min de entrega · 19 min tarde/.test(leer(li[2])), li.map(leer).join(' | '));
   t('cada parada: llamar (tel:) y un botón «Mover» con texto', li[0].querySelector('a[href="tel:3001110004"]') && li[0].querySelector('a').getAttribute('aria-label') === 'Llamar a Camila Ortiz' && txt(li[0].querySelector('.rv2-mv')) === 'Mover');
   t('conductor con teléfono → botón de llamar; «Cambiar»', /Jorge Pérez/.test(txt(q('#rv2-detail .rv2-drv'))) && q('#rv2-detail .rv2-drv a[href="tel:3015550101"]') && /Cambiar/.test(txt(q('#rv2-detail .rv2-drv'))));
   t('ya no hay pie con «Ver mapa / Mover auxiliar / Conductor» (el mapa está a la vista)', !q('#rv2-detail .rv2-dfoot') && !q('#rv2-detail [data-act="pickmove"]'));
@@ -258,7 +258,7 @@ console.log('\n── C · Mover (en el detalle, con vista previa), arrastrar, U
   click(q('#rv2-avisos [data-act="route"][data-crew="rN"]'));
   t('«Ubicar» (desde Avisos): «Ubicar a Manuela Franco» con conjunto, sector y presentación', !sheet().hidden && /Ubicar a Manuela Franco/.test(txt(sheet().querySelector('h2'))) && /Mangle · El Porvenir · presentación 09:10/.test(txt(sheet().querySelector('.rv2-sh-head p'))));
   const o1 = qa('#rv2-opts .rv2-opt');
-  t('una sola salida con cupo cerca de esa hora: V-03 vuelta 2, la recoge 08:14', o1.length === 1 && /V-03 · vuelta 2 · recoge 08:14/.test(txt(o1[0])), o1.map(txt).join(' | '));
+  t('una sola salida con cupo cerca de esa hora: V-03 vuelta 2, la recoge 08:10', o1.length === 1 && /V-03 · vuelta 2 · recoge 08:10/.test(txt(o1[0])), o1.map(txt).join(' | '));
   t('…en palabras: «a tiempo», mismo sector, +6 min de recorrido', txt(o1[0].querySelector('.st')) === 'a tiempo' && /mismo sector/.test(txt(o1[0])) && /\+6 min de recorrido/.test(txt(o1[0])), txt(o1[0]));
   t('la opción viene marcada (aria-checked) y el botón dice «Mover a V-03»', o1[0].getAttribute('aria-checked') === 'true' && txt(q('#rv2-doMove')) === 'Mover a V-03');
   type(q('#rv2-optq'), 'V-02'); await wait(160);
@@ -314,7 +314,7 @@ console.log('\n── D · Publicar: bloqueos, de todos modos y re-publicar ─�
   t('publica con Api.saveRoutePlan(día, vueltas) — las 9 vueltas', log.saved.length === 1 && log.saved[0].day === '2026-10-12' && log.saved[0].lanes.length === 9, log.saved.length && log.saved[0].lanes.length);
   const l2 = log.saved[0].lanes.find((l) => l.stops.join(',') === 'res-D,res-C');
   t('cada vuelta lleva carro, conductor del turno, tipo, hora y paradas en orden', l2 && l2.vehicleId === 'veh-1' && l2.driverProfileId === 'd1' && l2.type === 'sal' && l2.startAt === '2026-10-12T04:45:00-05:00', JSON.stringify(l2));
-  t('…con la ETA de cada parada (minutos)', l2 && l2.etas['res-D'] === 337 && l2.etas['res-C'] === 373, l2 && JSON.stringify(l2.etas));
+  t('…con la hora REDONDA de cada parada (minutos; el carro llega 05:37 y 06:13)', l2 && l2.etas['res-D'] === 335 && l2.etas['res-C'] === 370, l2 && JSON.stringify(l2.etas));
   t('la llegada de V-01 va con el conductor que puso la app (Rubén)', log.saved[0].lanes.find((l) => l.type === 'lle' && l.stops[0] === 'res-F').driverProfileId === 'd5');
   t('push «Ruta asignada» a los conductores con vuelta (Rubén incluido)', log.push.some((p) => /Ruta asignada/.test(p.title) && p.profileIds.slice().sort().join(',') === 'd1,d2,d3,d4,d5'), JSON.stringify(log.push.map((p) => p.profileIds)));
   t('aviso con el mensaje real de rtSavePlan', /Plan publicado: 9 vueltas/.test(b.toastV2()), b.toastV2());
