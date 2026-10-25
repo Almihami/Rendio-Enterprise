@@ -45,7 +45,11 @@
     } else tramo += ' → en curso';
     if (tramo) partes.push(tramo);
     let marca = null;
-    if (clase === 'ok') {
+    if (sh._ajuste) {
+      // Ajustado por el jefe (0120): se le dice que lo cambió y por qué.
+      if (BC) partes.push(BC.hm(BC.minutosDe(sh)));
+      marca = `${sh._manual ? 'Agregado' : 'Ajustado'} por el jefe: ${sh._ajuste.note || ''}`.trim();
+    } else if (clase === 'ok') {
       if (BC) partes.push(BC.hm(BC.minutosDe(sh)));
       if (sh.closing_km != null && sh.opening_km != null) {
         const km = Math.max(0, Number(sh.closing_km) - Number(sh.opening_km));
@@ -65,7 +69,13 @@
     if (!BC || !driverId || !window.Api || typeof Api.listMyShiftsForHours !== 'function') return null;
     const cur = BC.corteEnCurso(), prev = BC.corteAnterior();
     const lim = { desde: BC.limitesDe(prev.from, prev.to).desde, hasta: BC.limitesDe(cur.from, cur.to).hasta };
-    const turnos = await Api.listMyShiftsForHours(driverId, lim.desde, lim.hasta);
+    // Los ajustes del jefe (0120) van encima con BalanceCore.conAjustes, igual
+    // que en el Balance: si no, el conductor vería otra cifra que la que se paga.
+    const [crudos, ajustes] = await Promise.all([
+      Api.listMyShiftsForHours(driverId, lim.desde, lim.hasta),
+      typeof Api.listMyHourAdjustments === 'function' ? Api.listMyHourAdjustments(driverId, prev.from, cur.to) : Promise.resolve(null),
+    ]);
+    const turnos = typeof BC.conAjustes === 'function' ? BC.conAjustes(crudos, ajustes) : crudos;
     return { cur: BC.delCorte(turnos, cur), prev: BC.delCorte(turnos, prev) };
   }
 

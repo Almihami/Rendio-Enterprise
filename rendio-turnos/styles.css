@@ -1087,6 +1087,42 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #balance-ui .bal-empty h3{font-size:15px;font-weight:800;color:var(--ink2)}
 #balance-ui .bal-empty p{font-size:13px;margin-top:5px}
 @media(max-width:720px){#balance-ui .bal-hrs .bar{width:64px}}
+/* Ajuste manual de horas (0120, admin-ajuste-horas.js). Con la columna del
+   botón la tabla ya no cabía en 1320 px (y en 1024 px no cabía desde antes):
+   los rótulos cortos de datos pasan a dos renglones y, si aun así no cabe, la
+   tabla se corre de lado en vez de cortarse. */
+#balance-ui .bal-bt-wrap{overflow-x:auto}
+#balance-ui .bal-bt thead th.num{white-space:normal;line-height:1.35;vertical-align:bottom}
+#balance-ui .bal-bt td.bal-adj-td{padding-left:8px}
+#balance-ui .bal-adj{height:30px;padding:0 11px;border-radius:9px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);font-family:var(--font);font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+#balance-ui .bal-adj:hover{border-color:var(--orange);color:var(--orange)}
+#balance-ui .bal-pill.bal-pill-aj{background:var(--orange-soft);color:var(--orange);cursor:help;height:19px;min-width:0;padding:0 6px;margin-left:6px;font-size:10.5px;vertical-align:1px}
+#balance-ui .bal-ajustes{margin-top:16px}
+#balance-ui .bal-aj{display:flex;gap:14px;align-items:flex-start;padding:13px 18px;border-bottom:1px solid var(--line)}
+#balance-ui .bal-aj-main{flex:1;min-width:0}
+#balance-ui .bal-aj-t{font-size:13px;line-height:1.4}
+#balance-ui .bal-aj-t b{font-weight:800}
+#balance-ui .bal-aj-h{font-family:var(--mono);font-size:12.5px;margin-top:3px}
+#balance-ui .bal-aj-dif{font-family:var(--font);font-size:11.5px;font-weight:700;color:var(--orange);margin-left:4px}
+#balance-ui .bal-aj-o{font-size:12px;color:var(--ink2);margin-top:3px;line-height:1.4}
+#balance-ui .bal-aj-n{font-size:12.5px;margin-top:7px;padding:8px 10px;border-radius:8px;background:var(--panel2);line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+#balance-ui .bal-aj-q{font-size:11.5px;color:var(--ink3);margin-top:5px}
+#balance-ui .bal-aj-x{font-size:11.5px;color:var(--red);margin-top:4px;font-weight:600;overflow-wrap:anywhere}
+#balance-ui .bal-aj.anulado .bal-aj-t b,#balance-ui .bal-aj.anulado .bal-aj-h{text-decoration:line-through;color:var(--ink3)}
+#balance-ui .bal-aj.anulado .bal-aj-n{color:var(--ink3)}
+#balance-ui .bal-aj-vacio{padding:14px 18px;font-size:12.5px;color:var(--ink3);border-bottom:1px solid var(--line)}
+#balance-ui .bal-aj-pie{padding:12px 18px;background:var(--panel2)}
+.ah-opts{display:flex;flex-direction:column;gap:8px}
+.ah-opt{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line2);border-radius:11px;cursor:pointer;background:var(--panel)}
+.ah-opt.on{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+.ah-opt.off{opacity:.55;cursor:not-allowed}
+.ah-opt input{margin-top:3px;accent-color:var(--orange);flex:0 0 auto}
+.ah-opt-tx{min-width:0}
+.ah-opt-tx > b{display:block;font-family:var(--mono);font-size:13px;color:var(--ink)}
+.ah-opt-tx > span{display:block;font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.4}
+.ah-dur{margin-top:8px;font-size:13px;font-weight:700;color:var(--ink);min-height:1px}
+.set-ui textarea.set-input.ah-nota{height:auto;min-height:84px;padding:10px 13px;line-height:1.45;resize:vertical}
+.set-ui .set-grid2.ah-horas{grid-template-columns:1fr 1fr}
 
 /* ---- Disponibilidad ---- */
 #avail-ui .av-phead{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
@@ -3792,6 +3828,14 @@ html,body{overflow-x:hidden}
   #balance-ui .bal-bt tbody td:nth-child(4)::before { content: "Auto-cerrados"; }
   #balance-ui .bal-bt tbody td:nth-child(5)::before { content: "Arranques falsos"; }
   #balance-ui .bal-bt tbody td:nth-child(6)::before { content: "En curso"; }
+  /* «Ajustar horas» (0120): el botón al final de la ficha, ancho completo. */
+  #balance-ui .bal-bt tbody td.bal-adj-td { border-top: 0; padding-top: 10px; }
+  #balance-ui .bal-bt tbody td.bal-adj-td::before { content: none; }
+  #balance-ui .bal-bt tbody td.bal-adj-td .bal-adj { flex: 1 1 auto; height: 38px; }
+  #balance-ui .bal-bt tfoot td.bal-adj-td { display: none; }
+  #balance-ui .bal-aj { flex-direction: column; gap: 10px; padding: 13px 16px; }
+  #balance-ui .bal-aj > .bal-adj { align-self: stretch; height: 38px; }
+  #balance-ui .bal-aj-pie .bal-adj { width: 100%; height: 40px; white-space: normal; }
 
   /* La barra de horas ya no compite con nada: se lleva el resto del renglón. */
   #balance-ui .bal-hrs { flex: 1 1 auto; }

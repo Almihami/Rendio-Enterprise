@@ -100,7 +100,11 @@
   //                            razón por la que un mismo corte cambia de cifra según
   //                            la hora a la que se genere: mientras haya turnos en
   //                            curso el informe va rotulado PROVISIONAL.
+  //   • Un turno con AJUSTE del jefe (0120, ver conAjustes) es 'ok' siempre: el
+  //     jefe dijo de qué hora a qué hora se trabajó, con una observación, y eso
+  //     es lo que se paga aunque la app lo tuviera auto-cerrado o sin arrancar.
   function clasificar(turno) {
+    if (turno && turno._ajuste) return 'ok';
     if (!turno || turno.opening_km == null) return 'falso';
     if (!turno.end_at) return 'curso';
     if (turno.closing_km == null) return 'auto';
@@ -117,6 +121,45 @@
   }
   function minutosPagables(turnos) {
     return (turnos || []).reduce((a, s) => a + (clasificar(s) === 'ok' ? minutosDe(s) : 0), 0);
+  }
+
+  // ── Ajustes manuales del jefe (0120, 25-oct-2026) ──────────────────────────
+  // A los jefes les reportan eventualidades (el celular se apagó y el sistema
+  // cerró el turno, la app no dejó iniciar) y corrigen las horas en Balance ›
+  // «Ajustar horas». El turno de la base NO se toca: el ajuste vive aparte
+  // (shift_hour_adjustments) y se pone ENCIMA acá, en la única cabeza que suma.
+  // Balance, Excel, Revisión y «Mis horas» del conductor llaman a esta función,
+  // así que las cuatro dan la misma cifra con o sin ajustes.
+  //
+  // Devuelve la lista de turnos EFECTIVOS:
+  //   • el turno con ajuste vigente → copia con start_at/end_at del ajuste,
+  //     _ajuste (la fila) y _orig (cómo estaba: inicio, cierre y clase);
+  //   • el ajuste sin turno (no quedó en la app) → un turno sintético con id
+  //     'ajuste:<id>', _ajuste y _manual = true;
+  //   • el resto, tal cual.
+  // Los anulados no cuentan (siguen en la lista del jefe, para el rastro).
+  function conAjustes(turnos, ajustes) {
+    const vigentes = (ajustes || []).filter(a => a && !a.voided_at && a.start_at && a.end_at);
+    if (!vigentes.length) return (turnos || []).slice();
+    const porTurno = new Map();
+    vigentes.forEach(a => { if (a.shift_id) porTurno.set(a.shift_id, a); });
+    const usados = new Set();
+    const out = (turnos || []).map(t => {
+      const a = t && porTurno.get(t.id);
+      if (!a) return t;
+      usados.add(a.id);
+      return { ...t, start_at: a.start_at, end_at: a.end_at, _ajuste: a,
+               _orig: { start_at: t.start_at, end_at: t.end_at, tipo: clasificar(t) } };
+    });
+    // Los sueltos, y los de un turno que no vino en la lista (no debería pasar:
+    // el ajuste va en el día en que arrancó el turno, que es el mismo filtro).
+    vigentes.filter(a => !usados.has(a.id)).forEach(a => out.push({
+      id: `ajuste:${a.id}`, driver_id: a.driver_id, status: 'closed',
+      start_at: a.start_at, end_at: a.end_at, opening_km: null, closing_km: null,
+      driver_profiles: a.driver_profiles || null, vehicles: null,
+      _ajuste: a, _manual: true,
+    }));
+    return out.sort((x, y) => new Date(x.start_at) - new Date(y.start_at));
   }
   // Minutos → horas con 1 decimal. YA NO SE PINTA en ninguna parte (ver hm()
   // abajo); se queda exportada en BalanceCore para no romperle la llamada a un
@@ -246,7 +289,8 @@
       const pid = dp.profile_id || `sinperfil:${s.driver_id}`;
       const name = (dp.profiles && dp.profiles.full_name) || '(desconocido)';
       const email = (dp.profiles && dp.profiles.email) || '';
-      const a = agg[pid] || (agg[pid] = { id: pid, name, email, ok: 0, okMin: 0, auto: 0, autoMin: 0, falso: 0, curso: 0 });
+      const a = agg[pid] || (agg[pid] = { id: pid, name, email, ok: 0, okMin: 0, auto: 0, autoMin: 0, falso: 0, curso: 0, ajustes: 0 });
+      if (s._ajuste) a.ajustes++;
       switch (clasificar(s)) {
         case 'ok':    a.ok++;    a.okMin += minutosDe(s); break;
         case 'auto':  a.auto++;  a.autoMin += minutosDe(s); break;
@@ -283,18 +327,22 @@
     // tiempo, que es justo lo que este archivo existe para impedir.
     if (!fromV || !toV) { state.balanceData = null; sum.innerHTML = ''; box.innerHTML = '<div class="bal-empty"><h3>Elige el rango</h3><p>Selecciona Desde y Hasta para generar el informe.</p></div>'; return; }
     sum.innerHTML = ''; box.innerHTML = '<div class="bal-empty"><p>Calculando…</p></div>';
-    let shifts, scheds = [], schedError = '';
+    let shifts, scheds = [], schedError = '', ajustes = null;
     try {
       const semDesde = Scheduler.startOfWeekISO(fromV), semHasta = Scheduler.startOfWeekISO(toV);
       const lim = limitesDe(fromV, toV);
-      const [sh, sc] = await Promise.all([
+      const [sh, sc, aj] = await Promise.all([
         Api.listShiftsForBalance(lim.desde, lim.hasta),
         // Si el horario falla no se cae el informe de horas (que es el que se
         // paga): se congela vacío y se avisa. Lo que no puede volver a pasar es
         // leerlo después, en otro instante.
         Api.listPublishedSchedules(semDesde, semHasta).catch(e => { schedError = (e && e.message) || 'la consulta del horario no respondió'; return []; }),
+        // Los ajustes del jefe (0120) SÍ tumban el informe si fallan: sin ellos
+        // la cifra sale distinta de la que se va a pagar. null = la base aún no
+        // tiene 0120 (no hay ajustes posibles, el botón no sale).
+        typeof Api.listHourAdjustments === 'function' ? Api.listHourAdjustments(fromV, toV) : Promise.resolve(null),
       ]);
-      shifts = sh; scheds = sc;
+      shifts = sh; scheds = sc; ajustes = aj;
     } catch (e) {
       // Si no se pudieron leer los turnos, tampoco queda informe descargable: la
       // foto vieja no corresponde a lo que el jefe está viendo en pantalla.
@@ -302,16 +350,22 @@
       box.innerHTML = `<div class="bal-empty"><h3>No se pudo calcular</h3><p>${escapeHtml(e.message || 'La consulta de turnos no respondió. Reintenta.')}</p></div>`;
       return;
     }
-    const agg = aggregateRealHours(shifts);
+    // Los turnos EFECTIVOS (con los ajustes del jefe encima) son los que suman,
+    // los que van al Excel y los que se congelan. Los crudos quedan al lado.
+    const efectivos = conAjustes(shifts, ajustes);
+    const agg = aggregateRealHours(efectivos);
     const totCurso = agg.list.reduce((a, x) => a + x.curso, 0);
     state.balanceData = {
-      ...agg, fromV, toV, shifts, scheds,
+      ...agg, fromV, toV, shifts: efectivos, shiftsCrudos: shifts, scheds,
+      ajustes: ajustes || [], ajustesOn: ajustes !== null,
       generadoEn: new Date().toISOString(),
       provisional: totCurso > 0,
     };
     if (schedError) toast('El informe quedó congelado SIN horario publicado: ' + schedError);
     if (!agg.list.length) {
-      box.innerHTML = '<div class="bal-empty"><h3>Sin datos</h3><p>No hay turnos en ese rango.</p></div>';
+      const otra = (ajustes !== null && typeof ahBotonOtraHtml === 'function') ? ahBotonOtraHtml() : '';
+      box.innerHTML = `<div class="bal-empty"><h3>Sin datos</h3><p>No hay turnos en ese rango.</p>${otra ? `<div style="margin-top:14px">${otra}</div>` : ''}</div>
+        ${(ajustes && ajustes.length && typeof ahListaHtml === 'function') ? ahListaHtml(state.balanceData) : ''}`;
       return;
     }
     const bd = state.balanceData;
@@ -338,20 +392,27 @@
            Un turno sin cierre cuenta 0 h: si generas ahora y vuelves a generar mañana, la cifra sube. No pagues con esta foto.
          </div>`
       : '';
+    // «Ajustar horas» (0120): un botón por persona. Sale solo si la base ya tiene
+    // la tabla de ajustes y el módulo cargó; si no, la tabla queda como antes.
+    const conAjuste = bd.ajustesOn && typeof ahAbrir === 'function';
+    const marcaAjuste = p => p.ajustes
+      ? ` <span class="bal-pill bal-pill-aj" title="${p.ajustes} turno${p.ajustes === 1 ? '' : 's'} con horas ajustadas a mano por un jefe — ver «Ajustes manuales» abajo">✎ ${p.ajustes}</span>`
+      : '';
     box.innerHTML = `
       <div class="bal-report">
         <div class="bal-rhead"><svg class="icon"><use href="#i-doc"/></svg><h2>Horas reales por persona</h2><span class="period">${escapeHtml(corte ? `Corte ${corte.label} · se paga el ${balDiaMes(corte.pagaEl)}` : `${fromV} → ${toV} (rango libre)`)} · ${agg.count} turnos</span></div>
         <p style="margin:2px 4px 0;font-size:12px;color:var(--ink2)">${escapeHtml(balSello(bd.generadoEn))} · Un turno pertenece al día en que <b>ARRANCÓ</b>, aunque cierre al día siguiente.</p>
         ${aviso}
-        <table class="bal-bt">
-          <thead><tr><th>Persona</th><th class="num">Turnos</th><th class="num" style="width:230px">Horas reales</th><th class="num">Auto-cerrados</th><th class="num">Arranques falsos</th><th class="num">En curso</th></tr></thead>
+        <div class="bal-bt-wrap"><table class="bal-bt">
+          <thead><tr><th>Persona</th><th class="num">Turnos</th><th class="num" style="width:230px">Horas reales</th><th class="num">Auto-cerrados</th><th class="num">Arranques falsos</th><th class="num">En curso</th>${conAjuste ? '<th class="num"><span class="sr-only">Ajustar horas</span></th>' : ''}</tr></thead>
           <tbody>${r.map(p => `<tr>
-            <td><div class="person"><span class="bal-avt" style="background:${colorOfId(p.id)}">${escapeHtml(initialsOf(p.name))}</span><div><b>${escapeHtml(p.name)}</b><span>${escapeHtml(p.email || p.role)}</span></div></div></td>
+            <td><div class="person"><span class="bal-avt" style="background:${colorOfId(p.id)}">${escapeHtml(initialsOf(p.name))}</span><div><b>${escapeHtml(p.name)}${marcaAjuste(p)}</b><span>${escapeHtml(p.email || p.role)}</span></div></div></td>
             <td class="num"><b>${p.ok}</b></td>
             <td class="num"><div class="bal-hrs"><span class="bar"><i style="width:${Math.round(p.okMin / maxMin * 100)}%"></i></span><b>${p.okH}</b></div></td>
             <td class="num">${p.auto ? warn(`${p.auto} · ${p.autoH}`, 'Los cerró el sistema con la hora del cron o del clic, no el conductor — esas horas no son las trabajadas y NO se pagan') : zero}</td>
             <td class="num">${p.falso ? warn(p.falso, 'Reserva/inspección sin avanzar — no hubo trabajo (0 h)') : zero}</td>
             <td class="num">${p.curso ? `<span class="bal-pill z" style="background:#dbeafe;color:#1e3a8a">${p.curso}</span>` : zero}</td>
+            ${conAjuste ? `<td class="num bal-adj-td">${String(p.id).startsWith('sinperfil:') ? '' : `<button type="button" class="bal-adj" data-ah="ajustar" data-pid="${escapeAttr(p.id)}" data-name="${escapeAttr(p.name)}">Ajustar horas</button>`}</td>` : ''}
           </tr>`).join('')}</tbody>
           <tfoot><tr>
             <td>Total · ${r.length} personas</td>
@@ -360,14 +421,17 @@
             <td class="num">${totAuto}${agg.totalAutoMin ? ' · ' + hm(agg.totalAutoMin) : ''}</td>
             <td class="num">${totFalso}</td>
             <td class="num">${totCurso}</td>
+            ${conAjuste ? '<td class="bal-adj-td"></td>' : ''}
           </tr></tfoot>
-        </table>
+        </table></div>
         <p style="margin:12px 4px 0;font-size:12.5px;color:var(--ink2);line-height:1.55">
           <b>Horas reales</b> = suma de (cierre − inicio) de los turnos que el conductor abrió y cerró. Es lo único pagable.
           <b>Auto-cerrados</b>: los cerró el sistema (cron o admin) poniendo el cierre en ese instante; esas horas no son las trabajadas y no se pagan.
           <b>Arranques falsos</b>: reserva/inspección que no avanzó, no hubo trabajo. <b>En curso</b>: turnos aún abiertos, cuentan 0 h hasta que cierren.
+          ${conAjuste ? '<b>✎ Ajustadas</b>: un jefe corrigió a mano las horas de ese turno (o agregó uno que no quedó en la app) con una observación; cuentan como pagables y están en «Ajustes manuales».' : ''}
         </p>
-      </div>`;
+      </div>
+      ${conAjuste && typeof ahListaHtml === 'function' ? ahListaHtml(bd) : ''}`;
   }
 
   // Descarga el balance DETALLADO en Excel (.xlsx), 3 hojas:
@@ -377,6 +441,10 @@
   //   2) "Detalle turnos reales": cada turno con horas PAGABLES y NO pagables en
   //      columnas separadas, motivo y fila de TOTAL.
   //   3) "Resumen por persona": totales (= tabla en pantalla, misma función).
+  //   4) "Ajustes manuales" (0120): cada ajuste del jefe, vigente o anulado, con
+  //      lo que tenía la app, a qué quedó, la observación, quién y cuándo.
+  // Los turnos ajustados ya vienen con sus horas nuevas en bd.shifts (conAjustes)
+  // y se marcan «✎ ajustado a mano» en las Hojas 1 y 2.
   // Cruza el horario publicado que quedó CONGELADO al generar con los turnos reales.
   async function onDownloadBalanceXlsx() {
     const bd = state.balanceData;
@@ -429,7 +497,8 @@
       const key = balYmdUTC(b);
       const slot = (H >= 2 && H < 14) ? 'AM' : 'PM'; // 00:00–02:00 = cola de la tarde
       const tipo = clasificar(s), min = minutosDe(s);
-      const fila = { key, slot, name: nm, tipo, min, start: s.start_at, end: s.end_at };
+      // aj = el ajuste del jefe que manda en este turno (0120), si lo hay.
+      const fila = { key, slot, name: nm, tipo, min, start: s.start_at, end: s.end_at, aj: s._ajuste || null, orig: s._orig || null, manual: !!s._manual };
       detail.push(fila);
       const fuera = key < bd.fromV || key > bd.toV;
       if (fuera || tipo === 'falso') {
@@ -437,7 +506,7 @@
         return;
       }
       const e = real[key] || (real[key] = { AM: [], PM: [] });
-      e[slot].push({ pid, name: nm, tipo, min });
+      e[slot].push({ pid, name: nm, tipo, min, aj: !!fila.aj });
     });
 
     const wb = new ExcelJS.Workbook();
@@ -488,7 +557,7 @@
         const pubIds = slot === 'AM' ? P.AM : P.PM;
         const pubNames = pubIds.map(id => (coordSet.has(id) ? '● ' : '') + nameOf(id));
         const realArr = Rr[slot];
-        const realNames = realArr.map(x => `${x.name} — ${hmCorto(x.min)} h${x.tipo === 'auto' ? ' (auto, NO pagable)' : ''}${x.tipo === 'curso' ? ' (en curso)' : ''}`);
+        const realNames = realArr.map(x => `${x.name} — ${hmCorto(x.min)} h${x.aj ? ' (✎ ajustado a mano)' : ''}${x.tipo === 'auto' ? ' (auto, NO pagable)' : ''}${x.tipo === 'curso' ? ' (en curso)' : ''}`);
         // Minutos primero, la celda después: el TOTAL de abajo no suma celdas,
         // suma los minutos del día.
         const jmin = realArr.reduce((a, x) => a + (x.tipo === 'ok' ? x.min : 0), 0);
@@ -552,6 +621,16 @@
       falso: 'Arranque falso (sin km de apertura)',
       curso: 'En curso (turno aún abierto)',
     };
+    // Turno con ajuste del jefe (0120): quién, cuándo, la observación y cómo lo
+    // tenía la app, para que el Excel suelto cuente la historia completa.
+    const KIND_TXT = { ok: 'completo', auto: 'auto-cerrado', falso: 'arranque falso', curso: 'en curso' };
+    const motivoAjuste = d => {
+      const a = d.aj;
+      const antes = d.manual || !d.orig
+        ? 'no quedó en la app'
+        : `la app tenía ${balFmtDT(d.orig.start_at)} → ${balFmtDT(d.orig.end_at)} (${KIND_TXT[d.orig.tipo] || d.orig.tipo})`;
+      return `✎ Ajustado a mano por ${(a.creador && a.creador.full_name) || 'un jefe'} el ${balFmtDT(a.created_at)}: «${a.note || ''}» · Antes: ${antes}`;
+    };
     const ws2 = wb.addWorksheet('Detalle turnos reales', { views: [{ showGridLines: false, state: 'frozen', ySplit: 3 }] });
     ws2.columns = [{ width: 14 }, { width: 8 }, { width: 26 }, { width: 16 }, { width: 16 }, { width: 15 }, { width: 17 }, { width: 44 }];
     titulo(ws2, 'H', 'Detalle turnos reales');
@@ -568,10 +647,11 @@
       const noPag = d.tipo === 'auto' ? d.min : 0;
       minPag += pag; minNoPag += noPag;
       const rr = ws2.getRow(r2++);
-      const vals = [balDayLabel(d.key), d.slot, d.name, balFmtDT(d.start), balFmtDT(d.end), diaExcel(pag), diaExcel(noPag), MOTIVO[d.tipo] || ''];
+      const vals = [balDayLabel(d.key), d.slot, d.name, balFmtDT(d.start), balFmtDT(d.end), diaExcel(pag), diaExcel(noPag), d.aj ? motivoAjuste(d) : (MOTIVO[d.tipo] || '')];
       vals.forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10 }; c.alignment = { vertical: 'middle', horizontal: (i === 1 || i === 5 || i === 6) ? 'center' : 'left' }; c.border = AB; if (i === 5 || i === 6) horaCelda(c); });
       if (d.tipo === 'falso' || d.tipo === 'curso') rr.getCell(8).font = { name: 'Arial', size: 10, color: { argb: 'FFB91C1C' } };
       if (d.tipo === 'auto') rr.getCell(8).font = { name: 'Arial', size: 10, color: { argb: 'FF92400E' } };
+      if (d.aj) { rr.getCell(8).font = { name: 'Arial', size: 10, color: { argb: 'FF9A3412' } }; rr.getCell(8).alignment = { vertical: 'middle', wrapText: true }; }
     });
     const t2r = ws2.getRow(r2);
     [`TOTAL · ${detail.length} turnos`, '', '', '', '', diaExcel(minPag), diaExcel(minNoPag), (minPag === bd.totalMin ? 'Solo "Horas pagables" se paga; las NO pagables son turnos auto-cerrados. Cuadra con la Hoja 1, la Hoja 3 y la pantalla.' : `Solo "Horas pagables" se paga. ¡DESCUADRE! la Hoja 3 dice ${hm(bd.totalMin)} — no pagues hasta revisarlo.`)]
@@ -609,6 +689,52 @@
     vt.numFmt = PESOS; vt.font = { name: 'Arial', size: 10, bold: true }; vt.fill = TOT;
     vt.alignment = { vertical: 'middle', horizontal: 'right' }; vt.border = AB;
 
+    // ---- Hoja 4: Ajustes manuales (0120) ----
+    // TODOS los ajustes del rango, también los anulados: es la bitácora. Solo
+    // los vigentes suman, y ya están dentro de las horas de las Hojas 1 a 3.
+    if (bd.ajustesOn) {
+      const ws4 = wb.addWorksheet('Ajustes manuales', { views: [{ showGridLines: false, state: 'frozen', ySplit: 3 }] });
+      ws4.columns = [{ width: 14 }, { width: 24 }, { width: 26 }, { width: 30 }, { width: 30 }, { width: 13 }, { width: 13 }, { width: 46 }, { width: 22 }, { width: 15 }, { width: 34 }];
+      titulo(ws4, 'K', 'Ajustes manuales de horas');
+      ['Día', 'Conductor', 'Qué se corrigió', 'La app tenía', 'Ajustado a', 'Pagaba antes (h:mm)', 'Horas ajustadas (h:mm)', 'Observación', 'Hecho por', 'Cuándo', 'Estado']
+        .forEach((h, i) => headCell(ws4.getRow(3).getCell(i + 1), h));
+      ws4.getRow(3).height = 30;
+      const QUE = { ok: 'Turno completo', auto: 'Turno auto-cerrado', falso: 'Arranque falso', curso: 'Turno' };
+      const lista4 = (bd.ajustes || []).slice()
+        .sort((x, y) => String(x.work_date).localeCompare(String(y.work_date)) || new Date(x.created_at) - new Date(y.created_at));
+      let r4 = 4, minAntesV = 0, minAjV = 0, nV = 0;
+      const mins = (a, b) => (a && b) ? Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000)) : 0;
+      if (!lista4.length) {
+        ws4.mergeCells(`A${r4}:K${r4}`);
+        const c = ws4.getCell(`A${r4}`);
+        c.value = 'Ningún ajuste manual en este rango.'; c.font = { name: 'Arial', size: 10, italic: true }; c.border = AB;
+        r4++;
+      }
+      lista4.forEach(a => {
+        const antes = (a.shift_id && a.orig_kind === 'ok') ? mins(a.orig_start_at, a.orig_end_at) : 0;
+        const ahora = mins(a.start_at, a.end_at);
+        const vig = !a.voided_at;
+        if (vig) { minAntesV += antes; minAjV += ahora; nV++; }
+        const nombre = (a.driver_profiles && a.driver_profiles.profiles && a.driver_profiles.profiles.full_name) || '(sin nombre)';
+        const estado = vig ? 'Vigente (cuenta)'
+          : `Anulado por ${(a.anulador && a.anulador.full_name) || 'un jefe'} el ${balFmtDT(a.voided_at)}: ${a.void_note || ''}`;
+        const rr = ws4.getRow(r4++);
+        const vals = [balDayLabel(String(a.work_date).slice(0, 10)), nombre,
+          a.shift_id ? (QUE[a.orig_kind] || 'Turno') : 'Turno que no quedó en la app',
+          a.shift_id ? `${balFmtDT(a.orig_start_at)} → ${balFmtDT(a.orig_end_at)}` : '—',
+          `${balFmtDT(a.start_at)} → ${balFmtDT(a.end_at)}`,
+          diaExcel(antes), diaExcel(ahora), a.note || '',
+          (a.creador && a.creador.full_name) || '', balFmtDT(a.created_at), estado];
+        vals.forEach((v, i) => { const c = rr.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10, color: vig ? undefined : { argb: 'FF888888' } }; c.alignment = { vertical: 'top', wrapText: true, horizontal: (i === 5 || i === 6) ? 'center' : 'left' }; c.border = AB; if (i === 5 || i === 6) horaCelda(c); });
+        if (!vig) rr.getCell(11).font = { name: 'Arial', size: 10, color: { argb: 'FFB91C1C' } };
+        rr.height = Math.max(18, Math.ceil(String(a.note || '').length / 50) * 14);
+      });
+      const t4 = ws4.getRow(r4);
+      [`TOTAL · ${nV} vigente${nV === 1 ? '' : 's'}`, '', '', '', '', diaExcel(minAntesV), diaExcel(minAjV), 'Solo los vigentes cuentan, y ya están sumados en las Hojas 1, 2 y 3 (y en la pantalla).', '', '', '']
+        .forEach((v, i) => { const c = t4.getCell(i + 1); c.value = v; c.font = { name: 'Arial', size: 10, bold: true }; c.fill = TOT; c.alignment = { vertical: 'middle', wrapText: i === 7, horizontal: (i === 5 || i === 6) ? 'center' : 'left' }; c.border = AB; if (i === 5 || i === 6) horaCelda(c); });
+      t4.height = 30;
+    }
+
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const a = document.createElement('a');
@@ -630,6 +756,7 @@
     clasificar,
     minutosDe,
     minutosPagables,
+    conAjustes,
     horas,
     hm,
     hmHtml,
