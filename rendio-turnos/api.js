@@ -265,8 +265,8 @@
   }
 
   // Quién recibe los avisos de eventualidades en el celular. Si nadie queda
-  // marcado, `opsAlertProfileIds` avisa a todos los admins: la operación no se
-  // puede quedar muda por un olvido.
+  // marcado, la base (ops_alert_recipients, 0066) avisa a todos los admins: la
+  // operación no se puede quedar muda por un olvido.
   async function setOpsAlerts(profileId, on) {
     const { error } = await sb.from('profiles')
       .update({ receives_ops_alerts: !!on }).eq('id', profileId);
@@ -1472,7 +1472,8 @@
 
   // Reporta una eventualidad durante un traslado. Pasa por el RPC, que valida que
   // quien reporta esté vinculado a la reserva y deriva turno, vehículo, ruta y
-  // parada: el cliente no elige nada de eso.
+  // parada: el cliente no elige nada de eso. Si lo reporta un conductor o un
+  // tripulante, la base encola ella misma el push a los jefes (0117).
   async function reportIncident({ category, description, severity, reservationId, details, latitude, longitude, photoPaths }) {
     const { data, error } = await sb.rpc('report_incident', {
       p_category: category,
@@ -1538,25 +1539,6 @@
       .update({ acknowledged_at: new Date().toISOString(), acknowledged_by: me })
       .eq('id', id).is('acknowledged_at', null);
     if (error) throw error;
-  }
-
-  // A quién se le avisa una eventualidad. Los marcados en Personal; y si NADIE
-  // está marcado, a todos los admins activos: una operación sin nadie marcado no
-  // puede quedarse muda — ese es justo el problema que vinimos a resolver.
-  async function opsAlertProfileIds() {
-    const activos = (rows) => (rows || []).filter(p => p.is_active !== false).map(p => p.id);
-    try {
-      const { data, error } = await sb.from('profiles')
-        .select('id,is_active').eq('role', 'admin')
-        .eq('receives_ops_alerts', true).is('deleted_at', null);
-      if (!error) {
-        const ids = activos(data);
-        if (ids.length) return ids;
-      }
-    } catch (_) { /* 0063 sin aplicar: cae al listado completo */ }
-    const { data } = await sb.from('profiles')
-      .select('id,is_active').eq('role', 'admin').is('deleted_at', null);
-    return activos(data);
   }
 
   // Cambia el estado de una novedad. Al resolver sella resolved_at + notas; al reabrir los limpia.
@@ -3880,7 +3862,7 @@
     getMyDriverProfileId, listVehiclesForShift, createVehicle, updateVehicle, softDeleteVehicle, returnVehicleToService, driverOverrideOilBlock, registerOilChange, getMyOpenShift,
     reserveVehicleForShift, createShiftDraft, createInspection, getExistingInitialInspectionId, uploadInspectionPhoto, addInspectionPhotos,
     addIncident, listIncidents, countOpenIncidents, updateIncidentStatus,
-    reportIncident, listEventualidades, countOpenEventualidades, acknowledgeIncident, opsAlertProfileIds, opsAlertHealth,
+    reportIncident, listEventualidades, countOpenEventualidades, acknowledgeIncident, opsAlertHealth,
     startShift, startShiftDeferred, clearInspectionDue, abortShift, closeShift, uploadShiftFile, addFuelReceipts, listFuelReceiptsForShift, listInspectionsByShift, getVehicleStatus, listActiveShifts, forceCloseShift,
     listNoFuelReasons, getShiftFuelStatus,
     listInspectionsForReview, listInspectionDrivers, listInspectionVehicles, listInspectionsByVehicle, getInspectionDetail, signedInspectionPhotoUrls, reviewInspection,

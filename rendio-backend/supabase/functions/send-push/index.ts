@@ -7,14 +7,22 @@
 //   { profileIds: string[], title: string, body: string, url?: string }
 //
 // Auth:
-//   Authorization: Bearer <JWT de cualquier usuario autenticado>.
-//   Solo se valida que el caller esté autenticado; el ENVÍO usa SERVICE_ROLE
-//   para leer las suscripciones (bypass RLS).
+//   Authorization: Bearer <JWT de un usuario autenticado>.
+//   A QUIÉN se le puede mandar lo decide la base, no el cliente (0117):
+//   push_allowed_recipients() corre con el JWT del que llama y devuelve, de la
+//   lista pedida, solo a los que le corresponden — un jefe a su organización; un
+//   conductor o un tripulante a sí mismo, a los jefes y a la otra punta de un
+//   traslado o cambio de turno vigente. Al resto no se le manda nada (rejected).
+//   Antes cualquier usuario con sesión podía mandarle push a cualquiera.
+//   El ENVÍO usa SERVICE_ROLE para leer las suscripciones (bypass RLS).
+//
+//   La url del clic solo puede ser una ruta de la propia app ("/…"): el service
+//   worker abre lo que venga, y un push con un enlace afuera sería una trampa.
 //
 // Requiere los secrets (supabase secrets set ...):
 //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (mailto:tu@correo)
 //
-// Respuesta: 200 { sent, failed }
+// Respuesta: 200 { sent, failed, rejected }
 // =============================================================================
 
 // @ts-ignore — Deno specifier resuelto en runtime Edge.
@@ -64,20 +72,39 @@ Deno.serve(async (req: Request) => {
   // 2) Body
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch { return json({ error: "Invalid JSON body" }, 400); }
-  const profileIds = Array.isArray(body.profileIds) ? (body.profileIds as string[]).filter(Boolean) : [];
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const pedidos = Array.isArray(body.profileIds)
+    ? [...new Set((body.profileIds as unknown[]).map((x) => String(x ?? "")).filter((x) => UUID.test(x)))]
+    : [];
   const title = String(body.title ?? "Rendio").slice(0, 120);
   const text = String(body.body ?? "").slice(0, 300);
-  const clickUrl = String(body.url ?? "/");
-  if (!profileIds.length) return json({ sent: 0, failed: 0 });
+  // Solo rutas de la app: "/…" sí; "//otro.sitio", "/\otro" o "https://…" no.
+  const rawUrl = String(body.url ?? "/");
+  const clickUrl = /^\/(?![\/\\])/.test(rawUrl) ? rawUrl.slice(0, 300) : "/";
+  if (!pedidos.length) return json({ sent: 0, failed: 0, rejected: 0 });
 
-  // 3) Cargar suscripciones (service role, bypass RLS).
+  // 3) A quiénes SÍ le toca (la base decide, con el JWT del que llama).
+  const { data: permitidos, error: permErr } = await userClient.rpc("push_allowed_recipients", { p_profile_ids: pedidos });
+  if (permErr) {
+    console.log(JSON.stringify({ level: "error", msg: "push_allowed_recipients falló", ctx: { error: permErr.message } }));
+    return json({ error: "No se pudo validar a quién avisar" }, 500);
+  }
+  const profileIds = Array.isArray(permitidos) ? (permitidos as string[]) : [];
+  const rejected = pedidos.length - profileIds.length;
+  if (rejected > 0) {
+    console.log(JSON.stringify({ level: "warn", msg: "send-push: destinatarios rechazados",
+      ctx: { caller: userData.user.id, pedidos: pedidos.length, rechazados: rejected } }));
+  }
+  if (!profileIds.length) return json({ sent: 0, failed: 0, rejected });
+
+  // 4) Cargar suscripciones (service role, bypass RLS).
   const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const { data: subs, error: subErr } = await admin
     .from("push_subscriptions")
     .select("id, endpoint, p256dh, auth")
     .in("profile_id", profileIds);
   if (subErr) return json({ error: `Error leyendo suscripciones: ${subErr.message}` }, 500);
-  if (!subs || !subs.length) return json({ sent: 0, failed: 0 });
+  if (!subs || !subs.length) return json({ sent: 0, failed: 0, rejected });
 
   webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
   const payload = JSON.stringify({ title, body: text, url: clickUrl });
@@ -99,10 +126,10 @@ Deno.serve(async (req: Request) => {
     }
   }));
 
-  // 4) Limpiar suscripciones muertas.
+  // 5) Limpiar suscripciones muertas.
   if (stale.length) {
     await admin.from("push_subscriptions").delete().in("id", stale);
   }
 
-  return json({ sent, failed });
+  return json({ sent, failed, rejected });
 });

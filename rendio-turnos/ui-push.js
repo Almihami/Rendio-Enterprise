@@ -292,23 +292,11 @@
   document.addEventListener('click', onAdmPush);
   document.addEventListener('keydown', onAdmPush);
 
-  // Aviso a los jefes de operación por una eventualidad.
-  //
-  // El push sale del dispositivo de QUIEN REPORTA: el conductor y el tripulante
-  // siempre tienen la app abierta en ese momento, así que no hace falta que la
-  // base llame a nadie. Lo que nace en el servidor —el vigilante de rutas, la API
-  // de vuelos— va por otro camino (bandeja de salida, migración 0064).
-  //
-  // La URL lleva a la eventualidad exacta, no a la app en general: a las 4am
-  // nadie quiere ponerse a buscar cuál fue.
-  async function notifyOps(title, body, incidentId) {
-    try {
-      const ids = await Api.opsAlertProfileIds();
-      if (!ids || !ids.length) return;
-      const url = incidentId ? `/#/eventualidades?ev=${incidentId}` : '/#/eventualidades';
-      await Api.sendPush({ profileIds: ids, title, body, url });
-    } catch (e) { /* el reporte ya quedó guardado; el aviso es best-effort */ }
-  }
+  // El aviso a los jefes por una eventualidad ya NO sale de aquí (0117): lo
+  // encola la base al guardar el reporte y lo manda dispatch-notifications, como
+  // los avisos del vigilante de rutas. Desde el celular de quien reportaba no
+  // salía nunca: la RLS no le deja a un conductor ni a un tripulante ver quiénes
+  // son los jefes, así que la lista quedaba vacía.
 
   // Notificación best-effort (si la Edge Function no está desplegada, ignora).
   async function notify(profileIds, title, body, url) {

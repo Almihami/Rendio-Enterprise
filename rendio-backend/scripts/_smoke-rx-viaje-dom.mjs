@@ -282,9 +282,15 @@ t('entregado (En el aeropuerto / En casa): sin botón rojo', !q('[data-ax="alarm
 d = await abrir('pendiente-sin-plan');
 t('pedido sin conductor: sin botón rojo (la regla de siempre)', !q('[data-ax="alarm"]'));
 
-// Lo que se envía lleva el texto elegido: eventualidad, chat y aviso a los jefes.
+// Lo que se envía lleva el texto elegido: eventualidad y chat. El aviso a los
+// jefes ya NO sale del celular (0117): lo encola la base al guardar el reporte
+// (el título «🚨 Emergencia de Laura Gómez» se prueba en _verify-0117.mjs). Si
+// alguien vuelve a mandarlo desde aquí, sonaría dos veces: estos espías lo atrapan.
 const avisosOps = [];
 w.notifyOps = (title, body, id) => { avisosOps.push({ title, body, id }); };
+const pushes = [];
+if (w.Api) w.Api.sendPush = async (p) => { pushes.push(p); return { sent: 1 }; };
+w.notify = (profileIds, title, body, url) => { pushes.push({ profileIds, title, body, url }); };
 d = await abrir('a-bordo-salida');
 await abrirAlarma();
 click(q('[data-ax="alarm-pick"][data-v="inseguro"]')); await wait(10);
@@ -296,9 +302,7 @@ t('a bordo, «Me siento en riesgo»: la eventualidad lleva el texto, severidad h
   !!a0 && a0.category === 'aux_emergency' && a0.description === 'Me siento en riesgo — Va muy rápido' && a0.severity === 'high'
   && a0.details.motivo === 'inseguro' && a0.details.texto === 'Me siento en riesgo' && a0.details.fase === 'onboard' && a0.reservationId === d.principal, JSON.stringify(a0));
 t('…el 🚨 del chat dice lo mismo', E.llamadas.some(c => c.fn === 'Api.sendReservationMessage' && c.args[1] === '🚨 Me siento en riesgo — Va muy rápido'));
-// 15-oct-2026: el nombre (nombre y primer apellido) va en el título del aviso.
-t('…y el aviso a los jefes dice quién («🚨 Emergencia de Laura Gómez»)', avisosOps.length === 1 && avisosOps[0].title === '🚨 Emergencia de Laura Gómez'
-  && avisosOps[0].body === 'Me siento en riesgo — Va muy rápido', JSON.stringify(avisosOps));
+t('…y el celular NO le manda push a los jefes (lo hace la base, 0117)', avisosOps.length === 0 && pushes.length === 0, JSON.stringify(avisosOps.concat(pushes)));
 t('…la hoja se cierra al enviar', A.state.alarm === null);
 await wait(240);
 d = await abrir('llegada-parada');
@@ -306,8 +310,8 @@ await abrirAlarma();
 click(q('[data-ax="alarm-pick"][data-v="equipaje"]')); await wait(10);
 click(q('[data-ax="alarm-send"]')); await wait(60);
 inc = E.llamadas.filter(c => c.fn === 'Api.reportIncident').pop(); a0 = inc && inc.args[0];
-t('llegada, «Estoy esperando mi equipaje»: severidad medium y «Novedad de Laura Gómez»', !!a0 && a0.description === 'Estoy esperando mi equipaje'
-  && a0.severity === 'medium' && avisosOps.length === 2 && avisosOps[1].title === 'Novedad de Laura Gómez', JSON.stringify(a0) + JSON.stringify(avisosOps[1]));
+t('llegada, «Estoy esperando mi equipaje»: severidad medium, sin push desde el celular', !!a0 && a0.description === 'Estoy esperando mi equipaje'
+  && a0.severity === 'medium' && avisosOps.length === 0 && pushes.length === 0, JSON.stringify(a0) + JSON.stringify(avisosOps.concat(pushes)));
 await wait(240);
 d = await abrir('en-camino');
 await abrirAlarma();
@@ -331,6 +335,9 @@ await cerrarAlarma();
 
 console.log('\n── Cancelar ──');
 d = await abrir('asignado-publicado');
+// Como responde el RPC de verdad cuando el plan ya estaba publicado: con el
+// conductor afectado. Antes eso hacía que el celular le mandara el push.
+w.Api.cancelMyReservation = async (...args) => { E.llamadas.push({ fn: 'Api.cancelMyReservation', args }); return { ok: true, driver_profile_id: 'drv-esc', driver_notified: true }; };
 click(q('[data-ax="cancel-trip"]'));
 await wait(10);
 const hc = q('.rx-sheet-bg[data-rx-own="cancel"]');
@@ -346,6 +353,7 @@ q('#ax-cancel-reason').value = 'Cambio de programación';
 click(q('[data-ax="cancel-do"]'));
 await wait(40);
 t('«Sí, cancelar» → Api.cancelMyReservation con el motivo', E.llamadas.some(c => c.fn === 'Api.cancelMyReservation' && c.args[1] === 'Cambio de programación'));
+t('…y el aviso al conductor no sale del celular (lo encola la base, 0117)', pushes.length === 0, JSON.stringify(pushes));
 await wait(300);
 t('al cancelar la capa se va y la hoja no queda colgada', !q('.rx-layer[data-scr="trip"]:not(.out)') && !q('.rx-sheet-bg[data-rx-own="cancel"]'));
 

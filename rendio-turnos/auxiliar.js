@@ -3121,12 +3121,13 @@
     try { if (typeof state !== 'undefined') state.profile = null; } catch (e) {}
     location.reload();
   }
-  // Cancela de verdad: RPC (saca la reserva de la ruta activa) + push al
-  // conductor afectado, que el propio RPC nos dice quién es.
   // Envía la alarma del tripulante (eventualidad #4).
   //
   // Dos destinos, por dos caminos que YA funcionan:
-  //  · A los jefes, por push directo — es a quienes les toca decidir.
+  //  · A los jefes, desde la BASE: el reporte encola el push en la bandeja de
+  //    salida (0117), con el nombre del tripulante en el título. Antes lo
+  //    mandaba este celular, pero la RLS no le deja ver quiénes son los jefes y
+  //    el aviso no salía nunca.
   //  · Al conductor, por el chat del traslado (0052), que de por sí le manda
   //    push a la otra punta y además deja el aviso escrito en el hilo.
   //
@@ -3152,20 +3153,13 @@
     a.sending = true; auxRender();
 
     try {
-      const id = await Api.reportIncident({
+      await Api.reportIncident({
         category: 'aux_emergency',
         description: desc,
         severity: opt.sev,
         reservationId: t.id,
         details: { motivo: a.motivo, texto: opt.label, fase: auxPhaseKey(t, t._info) },
       });
-      // El nombre va en el TÍTULO (15-oct-2026): es lo primero que lee el jefe
-      // en la pantalla bloqueada, y «de un tripulante» no le decía de quién.
-      const quien = String(auxState.profile?.full_name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ');
-      if (typeof notifyOps === 'function') {
-        notifyOps(opt.sev === 'high' ? `🚨 Emergencia de ${quien || 'un tripulante'}` : `Novedad de ${quien || 'un tripulante'}`,
-          desc.slice(0, 200), id);
-      }
       if (window.Api?.sendReservationMessage) {
         try { await Api.sendReservationMessage(t.id, `🚨 ${desc}`); } catch (_) { /* el aviso principal ya salió */ }
       }
@@ -3179,6 +3173,9 @@
     }
   }
 
+  // Cancela de verdad: el RPC saca la reserva de la ruta activa y le encola el
+  // aviso al conductor afectado (0117). Ya no lo manda este celular: al cancelar
+  // se borra la parada que lo unía con el conductor, y send-push ya no lo deja.
   async function auxDoCancel(btn) {
     const t = auxCurTrip(); if (!t) return;
     const reason = (document.getElementById('ax-cancel-reason')?.value || '').trim();
@@ -3191,11 +3188,7 @@
       return;
     }
     try {
-      const r = await Api.cancelMyReservation(t.id, reason);
-      if (r && r.driver_profile_id && typeof notify === 'function') {
-        notify([r.driver_profile_id], 'Traslado cancelado',
-          `${(auxState.profile?.full_name || 'Un auxiliar').split(' ')[0]} canceló su traslado. Ya no está en tu ruta.`, '/');
-      }
+      await Api.cancelMyReservation(t.id, reason);
     } catch (e) {
       btn.disabled = false; btn.textContent = 'Sí, cancelar';
       auxToast(e.message && e.message.includes('en curso')
