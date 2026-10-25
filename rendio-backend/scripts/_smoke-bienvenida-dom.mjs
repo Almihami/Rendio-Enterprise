@@ -207,6 +207,71 @@ await entrar(ANA);
 t('a esa persona ya no le sale otra vez', window.Auxiliar.state.view === 'home');
 await entrar(NUEVO);
 t('y a la cuenta nueva le sale igual', window.Auxiliar.state.view === 'onboarding');
+
+console.log('\n── en la CUENTA, no solo en el teléfono (0119, 25-oct-2026) ──');
+// Caso real: a los tripulantes les salía varias veces. En iPhone Safari y el
+// ícono del inicio no comparten almacenamiento, y la bienvenida misma le pide
+// instalar la app: en el ícono el almacenamiento está vacío. Manda
+// profiles.welcome_seen_at, que llega con el perfil.
+const limpio = () => { window.localStorage.clear(); window.localStorage.setItem('rendio.aux.rx', RX ? '1' : '0'); };
+const marcas = [];
+let falla = false;
+window.Api.markWelcomeSeen = async () => {
+  if (falla) throw new Error('sin señal');
+  marcas.push(window.Auxiliar.state.profile.id);
+  return '2026-10-25T12:00:00Z';
+};
+const vista = () => window.Auxiliar.state.view;
+
+limpio();
+await entrar({ id: 'perfil-vista-en-safari', full_name: 'Sara Gómez Arango', role: 'auxiliar', welcome_seen_at: '2026-10-20T10:00:00Z' });
+t('marcada en la cuenta y con el teléfono vacío (el ícono del iPhone): NO sale', vista() === 'home', 'vista: ' + vista());
+t('y no se vuelve a escribir en la base', marcas.length === 0);
+
+limpio();
+const TCP = { id: 'perfil-tcp-nuevo', full_name: 'Valentina Ríos Cardona', role: 'auxiliar', welcome_seen_at: null };
+await entrar(TCP);
+t('cuenta nueva (welcome_seen_at vacío): sale', vista() === 'onboarding');
+q('[data-ax="onb-next"]').click(); await wait();
+t('mientras recorre las láminas todavía no cuenta como vista', marcas.length === 0
+  && window.localStorage.getItem('rendio.aux.onboarded.' + TCP.id) === null);
+q('[data-ax="onb-skip"]').click(); await wait();
+t('«Saltar» lleva al permiso', (RX ? /Siempre informado/ : /Te avisamos/).test(txt()));
+t('llegar al permiso YA la marca en la cuenta, sin tocar el botón (el que sale a instalar)',
+  marcas.length === 1 && marcas[0] === TCP.id, JSON.stringify(marcas));
+t('y en el teléfono', window.localStorage.getItem('rendio.aux.onboarded.' + TCP.id) === '1');
+q('[data-ax="onb-later"]').click(); await wait();
+t('«Ahora no» después no la vuelve a escribir (una vez por sesión)', vista() === 'home' && marcas.length === 1);
+limpio();
+await entrar(Object.assign({}, TCP, { welcome_seen_at: '2026-10-25T12:00:00Z' }));
+t('abre el ícono del inicio: el perfil ya trae la fecha y no sale', vista() === 'home');
+
+console.log('\n── quien la vio ANTES de 0119 (solo en el teléfono) ──');
+limpio();
+const VIEJA = { id: 'perfil-antes-de-0119', full_name: 'Mariana Duque Soto', role: 'auxiliar', welcome_seen_at: null };
+window.localStorage.setItem('rendio.aux.onboarded.' + VIEJA.id, '1');
+await entrar(VIEJA); await wait();
+t('no le sale', vista() === 'home');
+t('y su marca del teléfono se sube a la cuenta', marcas.includes(VIEJA.id));
+
+console.log('\n── sin señal al marcar ──');
+limpio(); falla = true;
+const SIN = { id: 'perfil-sin-senal', full_name: 'Paula Henao Mejía', role: 'auxiliar', welcome_seen_at: null };
+await entrar(SIN);
+window.Auxiliar.state.onbStep = window.AuxPresentacion.slideCount; window.Auxiliar.rerender(); await wait();
+t('si la base no responde, la marca del teléfono queda igual', window.localStorage.getItem('rendio.aux.onboarded.' + SIN.id) === '1');
+q('[data-ax="onb-later"]').click(); await wait();
+t('y entra a la app sin error', vista() === 'home');
+falla = false;
+await entrar(SIN); await wait();
+t('en el siguiente ingreso no sale (teléfono) y se reintenta subirla', vista() === 'home' && marcas.includes(SIN.id));
+
+console.log('\n── la vista previa local no escribe en la base ──');
+limpio();
+const antesPrev = marcas.length;
+await entrar({ id: 'preview-auxiliar', full_name: 'Vista previa', role: 'auxiliar' });
+window.Auxiliar.state.onbStep = window.AuxPresentacion.slideCount; window.Auxiliar.rerender(); await wait();
+t('sale siempre y no llama a la base', vista() === 'onboarding' && marcas.length === antesPrev);
 t('sin errores en consola', errores.length === 0, errores.slice(0, 3).join(' | '));
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
