@@ -73,7 +73,7 @@ t('pide la hora de estar EN EL AEROPUERTO', /¿A qué hora deseas estar en el ae
 t('dice que con esa hora se coordina la recogida', /Con base en la hora que elijas coordinaremos tu recogida/.test(txt()));
 
 console.log('\n── el pedido: el regreso el mismo día ──');
-t('ofrece el regreso del mismo día', /Regreso el mismo día/.test(txt()));
+t('ofrece el regreso del mismo día (como pregunta, 25-oct-2026)', /¿Regresas el mismo día\?/.test(txt()));
 set('date','2026-12-20'); set('time','05:10');   // una salida no pide vuelo (25-ago)
 t('sin regreso, el botón se habilita', !next().hasAttribute('disabled'));
 click('[data-ax="toggle"][data-key="sameDayBack"]'); await wait();
@@ -87,7 +87,7 @@ t('el pegado del vuelo se parte en sigla + dígitos', window.Auxiliar.state.form
 
 console.log('\n── el pedido: la pernocta y la reserva en firme viven con el vuelo (15-sep) ──');
 t(RX?'el paso del vuelo trae la tarjeta de opciones (.rx-card)':'el paso del vuelo trae la sección «Sobre el viaje»', RX ? !!scope().querySelector('.rx-card [data-key="isPernocta"]') : /Sobre el viaje/.test(txt()));
-t('con los dos toggles', !!scope().querySelector('[data-ax="toggle"][data-key="isPernocta"]') && !!scope().querySelector('[data-ax="toggle"][data-key="isReserva"]'));
+t('con la pernocta y sin «reserva en firme» (0121)', !!scope().querySelector('[data-ax="toggle"][data-key="isPernocta"]') && !scope().querySelector('[data-key="isReserva"]'));
 click('[data-ax="toggle"][data-key="isPernocta"]'); await wait();
 t('marcar la pernocta aquí queda en el pedido', window.Auxiliar.state.form.isPernocta===true);
 t('y no se pierde el regreso marcado', window.Auxiliar.state.form.sameDayBack===true && scope().querySelector('[data-field="backTime"]').value==='19:40');
@@ -119,7 +119,7 @@ t('el resumen muestra la unidad', RX ? /Casa 8/.test(filaPunto()) : /UnidadCasa 
 t('el resumen muestra el regreso', (RX?/RegresoAterriza 19:40 · AV9413/:/Regreso \(aterriza\)19:40 · AV9413/).test(txt()), txt().slice(0,300));
 if (RX) t('el resumen es la .rx-review del diseño, con la fila «Recogida»', !!scope().querySelector('.rx-review .rx-rv-time') && /Recogida/.test(filaPunto()));
 else t('el resumen encabeza con la ruta Casa → Aeropuerto', /CasaAeropuerto/.test(ui().querySelector('.ax-sum-head').textContent.replace(/\s+/g,'')) && !!ui().querySelector('.ax-sum-head span.ax-route'));
-t('la pernocta marcada en el vuelo sale en el resumen', /PernoctaSí \(hotel\)/.test(txt()));
+t('la pernocta marcada en el vuelo sale en el resumen (sin «(hotel)»)', /PernoctaSí/.test(txt()) && !/Sí \(hotel\)/.test(txt()));
 t('las notas se escriben en el resumen (15-sep)', !!scope().querySelector('[data-field="notes"]'));
 set('notes','Timbre 302');
 t('escribir la nota NO repinta el paso (el campo conserva el foco/valor)', scope().querySelector('[data-field="notes"]').value==='Timbre 302' && window.Auxiliar.state.form.notes==='Timbre 302');

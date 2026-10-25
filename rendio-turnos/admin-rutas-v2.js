@@ -66,6 +66,15 @@
   const nombre = (id) => (aux(id) && aux(id).n) || 'Tripulante';
   const sectorDe = (id) => { const a = aux(id); return a ? (a.sector || a.zonaJefe || '') : ''; };
   const lugar = (id) => { const a = aux(id); if (!a) return ''; const s = a.sector && a.sector !== a.zona ? ' · ' + a.sector : ''; return (a.zona || '—') + s; };
+  // De reserva (0121): el lugar ('Hotel Movich', 'Reserva JMC') o ''. `tierra`
+  // viene en true también con reserva (misma lógica de llegadas): los textos
+  // miran esto primero.
+  const resP = (a) => (a && a.reserva && typeof Api !== 'undefined' && Api && typeof Api.reservePlace === 'function' ? Api.reservePlace(a.reserva) : null);
+  const resTxt = (a) => { const P = resP(a); return P ? (P.hotel ? P.name : 'Reserva JMC') : ''; };
+  const horaTxt = (a) => (a.reserva ? 'termina la asignación' : (a.tierra ? 'sale del terminal' : 'aterriza'));
+  // El hotel de la vuelta si TODOS van/vienen del mismo (para el renglón final).
+  const hotelDe = (ids) => { const ps = ids.map((id) => resP(aux(id))); return ps.length && ps.every((P) => P && P.hotel && P.key === ps[0].key) ? ps[0] : null; };
+  const algunHotel = (ids) => { const P = ids.map((id) => resP(aux(id))).find((x) => x && x.hotel); return P || null; };
   const fijaDe = (laneId) => (rt.rv2Fijas && rt.rv2Fijas[laneId]) || null;
   const atendida = (id) => !!(rt.rv2Atendidas && rt.rv2Atendidas[id]);
   const lanesDeCarro = (carId) => rt.lanes.filter((l) => l.car === carId && (rt.order[l.id] || []).length).sort((a, b) => a.vuelta - b.vuelta);
@@ -455,7 +464,8 @@
     const out = [];
     (rt.pool || []).slice().sort((a, b) => rtToMin((aux(a) || {}).dl) - rtToMin((aux(b) || {}).dl)).forEach((id) => {
       const a = aux(id); if (!a) return;
-      const cuando = (a.type === 'lle' ? `${a.tierra ? 'Sale del terminal' : 'Aterriza'} ${a.dl}` : `Presentación ${a.dl}`)
+      const cuando = (a.type === 'lle' ? `${a.reserva ? 'Termina la asignación' : (a.tierra ? 'Sale del terminal' : 'Aterriza')} ${a.dl}` : `Presentación ${a.dl}`)
+        + (resTxt(a) ? ` · ${resTxt(a)}` : '')
         + (rtToMin(a.dl) < rtCut() ? ` (madrugada, turno PM del ${rtDiaAnterior()})` : '');
       out.push({ k: 'unrouted', html: `<b>${esc(a.n)}</b> no tiene carro<small>${a.type === 'lle' ? 'Llegada' : 'Salida'} · ${esc(cuando)} · ${esc(lugar(id))}</small>`, btn: 'Ubicar', act: `data-act="route" data-crew="${esc(id)}"` });
     });
@@ -621,8 +631,8 @@
     const stops = r.stops.map((st) => {
       const a = aux(st.crewId) || {};
       const extra = r.type === 'llegada'
-        ? (a.tierra ? ' · tierra' : (a.vuelo ? ' · vuelo ' + esc(a.vuelo) + chipVuelo(a.vuelo, 'lle') : ''))
-        : (a.dl ? ' · pres. ' + esc(a.dl) : '') + (a.vuelo ? chipVuelo(a.vuelo, 'sal') : '');
+        ? (a.tierra ? ' · ' + esc(resTxt(a) || 'tierra') : (a.vuelo ? ' · vuelo ' + esc(a.vuelo) + chipVuelo(a.vuelo, 'lle') : ''))
+        : (a.dl ? ' · pres. ' + esc(a.dl) : '') + (resTxt(a) ? ' · ' + esc(resTxt(a)) : '') + (a.vuelo ? chipVuelo(a.vuelo, 'sal') : '');
       const at = atendida(st.crewId);
       const tel = a.tel ? `<a class="rv2-ic" href="${esc(telHref(a.tel))}" aria-label="Llamar a ${esc(a.n)}">${IC.phone}</a>`
         : `<button class="rv2-ic" disabled aria-label="${esc(a.n)} no tiene teléfono registrado" title="Sin teléfono registrado">${IC.phone}</button>`;
@@ -639,10 +649,17 @@
     let end;
     if (r.type === 'llegada') {
       const tierra = r.stops.every((s) => aux(s.crewId) && aux(s.crewId).tierra);
+      const reserva = tierra && r.stops.every((s) => aux(s.crewId).reserva);
       const salir = Math.round(r.pickup - r.arrival);
-      end = `<li class="end"><span class="mono">${hhmm(r.pickup)}</span><div><b>Recogida en JMC</b>${tierra ? 'Salen del terminal' : 'Aterriza'} ${hhmm(r.arrival)}${!tierra && salir > 0 ? ` · ${salir} min para salir del aeropuerto` : ''}${r.wait ? ` · <span class="${r.wait > LLE_ESPERA_LARGA ? 't-risk' : ''}">espera ${r.wait} min</span>` : ''}</div></li>`;
+      // De reserva (0121): si todos salen del mismo hotel, la recogida es ahí;
+      // si se mezclan, se dice que además pasa por el hotel.
+      const ids = r.stops.map((s) => s.crewId), H = hotelDe(ids), h1 = H ? null : algunHotel(ids);
+      const donde = H ? `Recogida en el ${esc(H.name)}` : `Recogida en JMC${h1 ? ' y en el ' + esc(h1.name) : ''}`;
+      end = `<li class="end"><span class="mono">${hhmm(r.pickup)}</span><div><b>${donde}</b>${reserva ? 'Termina la asignación' : (tierra ? 'Salen del terminal' : 'Aterriza')} ${hhmm(r.arrival)}${!tierra && salir > 0 ? ` · ${salir} min para salir del aeropuerto` : ''}${r.wait ? ` · <span class="${r.wait > LLE_ESPERA_LARGA ? 't-risk' : ''}">espera ${r.wait} min</span>` : ''}</div></li>`;
     } else {
-      end = `<li class="end"><span class="mono${m < 0 ? ' neg' : ''}">${hhmm(r.arrival)}</span><div><b>Llegada JMC</b>Presentación ${hhmm(r.pres)} · ${BUF()} min de entrega · <span class="${m < 0 ? 't-risk' : 't-ok'}">${m < 0 ? Math.abs(m) + ' min tarde' : 'a tiempo'}</span></div></li>`;
+      const ids = r.stops.map((s) => s.crewId), H = hotelDe(ids), h1 = H ? null : algunHotel(ids);
+      const llega = H ? `Llegada al ${esc(H.name)}` : `Llegada JMC${h1 ? ' y después el ' + esc(h1.name) : ''}`;
+      end = `<li class="end"><span class="mono${m < 0 ? ' neg' : ''}">${hhmm(r.arrival)}</span><div><b>${llega}</b>Presentación ${hhmm(r.pres)} · ${BUF()} min de entrega · <span class="${m < 0 ? 't-risk' : 't-ok'}">${m < 0 ? Math.abs(m) + ' min tarde' : 'a tiempo'}</span></div></li>`;
     }
     return r.type === 'llegada' ? end + stops : stops + end;
   }
@@ -731,7 +748,7 @@
     const { crew } = ui.moving; const a = aux(crew) || {};
     const ops = candidatas(crew, r.id, { todas: ui.todas, max: ui.todas ? 12 : 5 });
     const st = r.stops.find((s) => s.crewId === crew);
-    el.dtop.innerHTML = `<div class="rv2-mvhead"><div><h3>Mover a ${esc(a.n)} a…</h3><p>${esc(lugar(crew))} · ${a.type === 'lle' ? (a.tierra ? 'sale del terminal' : 'aterriza') : 'presentación'} ${esc(a.dl)} · hoy en ${esc(r.vehicle)} (${hhmm(st ? st.time : null)})</p></div>` +
+    el.dtop.innerHTML = `<div class="rv2-mvhead"><div><h3>Mover a ${esc(a.n)} a…</h3><p>${esc(lugar(crew))} · ${a.type === 'lle' ? horaTxt(a) : 'presentación'} ${esc(a.dl)} · hoy en ${esc(r.vehicle)} (${hhmm(st ? st.time : null)})</p></div>` +
       `<button class="rv2-btn rv2-btn--sm" data-act="mvcancel">Cancelar</button></div>${impactoDe(crew, r)}`;
     el.dbot.innerHTML = `<h3 class="rv2-cap">${ui.todas ? 'Todas las vueltas con cupo' : 'Vueltas con cupo cerca de esa hora'}</h3>` +
       `<div class="rv2-mvopts" id="rv2-mvopts">${ops.length ? ops.map((o) => optHTML(o, `data-act="moveto" data-crew="${esc(crew)}" data-from="${esc(r.id)}" data-to="${esc(o.lane.id)}"`)).join('')
@@ -937,7 +954,7 @@
     const a = aux(crewId); if (!a) return;
     const sugeridas = candidatas(crewId, null);
     let sel = (sugeridas[0] && sugeridas[0].lane.id) || null;
-    const sub = `${esc(lugar(crewId))} · ${a.type === 'lle' ? (a.tierra ? 'sale del terminal' : 'aterriza') : 'presentación'} ${esc(a.dl)}`;
+    const sub = `${esc(lugar(crewId))} · ${a.type === 'lle' ? horaTxt(a) : 'presentación'} ${esc(a.dl)}`;
     let mostradas = [];
     const draw = (q = '') => {
       if (q) {

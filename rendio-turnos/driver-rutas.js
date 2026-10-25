@@ -610,6 +610,7 @@
       + (!apt && st.bags > 0 ? chip('Bag', '', String(st.bags)) : '')
       + (!apt && quiet(st) ? chip('Quiet', 'plus', 'Silencio') : '')
       + (!apt && st.meetingPoint ? chip('Door', '', st.meetingPoint) : '')
+      + (!apt && st.reserva && window.Api && Api.reservePlace && Api.reservePlace(st.reserva) ? chip('Door', 'plus', Api.reservePlace(st.reserva).hotel ? Api.reservePlace(st.reserva).name : 'Reserva JMC') : '')
       + '</div></div>'
       + (!apt && st.rid ? '<button type="button" class="rt-act sm" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(st.rid) + '" aria-label="' + esc('Escribir a ' + st.name) + '">' + ic('MessageCircle', 18) + (u > 0 ? '<span class="rt-badge">' + u + '</span>' : '') + '</button>' : '')
       + '</div>';
@@ -711,9 +712,21 @@
       + (st.phone ? '<a class="rt-act" href="tel:' + esc(String(st.phone).replace(/\s/g, '')) + '" aria-label="Llamar">' + ic('Phone', 19) + '</a>' : '')
       + '</div>';
   }
+  // De reserva (0121): en una salida se deja en ese hotel (o en JMC) y en una
+  // llegada se recoge ahí, no en el terminal. El optimizador todavía rutea
+  // como si fuera el aeropuerto (están a 1–2 km): el conductor lo lee aquí.
+  function reservaTxt(st) {
+    const P = st && st.reserva && window.Api && typeof Api.reservePlace === 'function' ? Api.reservePlace(st.reserva) : null;
+    if (!P) return '';
+    const f = first(st.name);
+    if (!P.hotel) return st.kind === 'dropoff' ? `Recoges a ${f} en el aeropuerto, sin vuelo` : `Dejas a ${f} en el aeropuerto, sin vuelo`;
+    return st.kind === 'dropoff' ? `Recoges a ${f} en el ${P.name}, no en el aeropuerto` : `Dejas a ${f} en el ${P.name}, no en el aeropuerto`;
+  }
   function infoHTML(st) {
-    if (!st.meetingPoint && !st.notes) return '';
+    const res = reservaTxt(st);
+    if (!st.meetingPoint && !st.notes && !res) return '';
     return '<div class="rt-info">'
+      + (res ? '<div>' + ic('Door', 17) + '<span><em>De reserva</em>' + esc(res) + '</span></div>' : '')
       + (st.meetingPoint ? '<div>' + ic('Door', 17) + '<span><em>Punto de encuentro</em>' + esc(st.meetingPoint) + '</span></div>' : '')
       + (st.notes ? '<div>' + ic('Note', 17) + '<span><em>' + esc(`Nota de ${first(st.name)}`) + '</em>' + esc(st.notes) + '</span></div>' : '')
       + '</div>';

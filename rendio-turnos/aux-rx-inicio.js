@@ -172,23 +172,29 @@
     const pub = isPublished(t);
     const pk = pickupISO(t);
     const home = conjunto(t);
-    const from = lle ? ['JMC', APT_SUB] : ['CASA', [home]];
-    const to = lle ? ['CASA', [home]] : ['JMC', APT_SUB];
+    // De reserva (0121): el hotel en vez de JMC; de reserva en el aeropuerto,
+    // JMC igual pero sin «Aterrizas».
+    const RL = safe(() => AX().lugarDeTrip(t), null);
+    const apt = RL && RL.hotel ? ['HOTEL', [RL.short]] : ['JMC', APT_SUB];
+    const from = lle ? apt : ['CASA', [home]];
+    const to = lle ? ['CASA', [home]] : apt;
+    const enJMC = RL && RL.hotel ? 'en el ' + RL.name : 'en JMC';
     let bigL, bigV;
-    if (pk) { bigL = lle ? 'Te esperamos en JMC' : 'Te recogemos'; bigV = hm(pk); }
-    else { bigL = lle ? (ground ? 'Sales del aeropuerto' : 'Aterrizas') : 'Estar en JMC'; bigV = t.time || '--:--'; }
+    if (pk) { bigL = lle ? 'Te esperamos ' + enJMC : 'Te recogemos'; bigV = hm(pk); }
+    else { bigL = lle ? (ground ? 'Sales del aeropuerto' : (RL ? 'Finaliza tu asignación' : 'Aterrizas')) : 'Estar ' + enJMC; bigV = t.time || '--:--'; }
     const note = !pub ? 'Hora de recogida: te avisamos cuando armemos tu ruta'
       : (!pk ? 'Conductor asignado · hora por confirmar' : '');
     // Grilla: nunca «Trayecto» ni «Presentación». La hora del vuelo solo si la
     // grande es la recogida (si no, ya es la grande). En tierra no hay vuelo.
     const cells = [];
     if (!lle) {
-      if (pk && t.time) cells.push(['En JMC', t.time]);
-      if (t.flight && !ground) cells.push(['Vuelo', t.flight]);
+      if (pk && t.time) cells.push([RL && RL.hotel ? 'En el hotel' : 'En JMC', t.time]);
+      if (t.flight && !ground && !RL) cells.push(['Vuelo', t.flight]);
     } else {
-      if (t.flight && !ground) cells.push(['Vuelo', t.flight]);
-      if (pk && t.time) cells.push([ground ? 'Sales' : 'Aterriza', t.time]);
+      if (t.flight && !ground && !RL) cells.push(['Vuelo', t.flight]);
+      if (pk && t.time) cells.push([ground ? 'Sales' : (RL ? 'Finaliza' : 'Aterriza'), t.time]);
     }
+    if (RL) cells.push(['Reserva', RL.hotel ? RL.short : 'Aeropuerto']);
     if (t.bags != null && t.bags !== '') cells.push(['Maletas', String(t.bags)]);
     // El orden en el carro va último, en la fila de Maletas y pegado a la
     // derecha (rx-pass-ord). Con cuatro celdas la grilla pasa a cuatro columnas.
@@ -256,7 +262,7 @@
     if (t.status === 'onboard') {
       const late = !lle ? safe(() => AX().lateness(t), null) : null;
       const sub = !lle ? ((late && late.text) || '') : [firstOf(t), plateOf(t)].filter(Boolean).join(' · ');
-      return { kind: 'onboard', title: 'A bordo · rumbo a ' + (lle ? 'casa' : 'JMC'), sub: esc(sub) };
+      return { kind: 'onboard', title: 'A bordo · rumbo a ' + (lle ? 'casa' : safe(() => AX().puntoJMC(t), 'JMC')), sub: esc(sub) };
     }
     if (arrived(t)) {
       const code = codeOf(t);
@@ -334,7 +340,9 @@
         if (t.lat != null && t.lng != null && !isNaN(+t.lat) && !isNaN(+t.lng)) {
           const pt = [+t.lat, +t.lng]; lfMarker('pin', pt).addTo(map); lv.pts.push(pt);
         }
-        const apt = [MDE.lat, MDE.lng]; lfMarker('apt', apt).addTo(map); lv.pts.push(apt);
+        // De reserva en un hotel (0121): el extremo es el hotel, no el terminal.
+        const RLm = safe(() => AX().lugarDeTrip(t), null);
+        const apt = RLm && RLm.hotel ? [RLm.lat, RLm.lng] : [MDE.lat, MDE.lng]; lfMarker('apt', apt).addTo(map); lv.pts.push(apt);
         placeCar(lv, t);
         fitLive(lv);
         box.classList.add('on');

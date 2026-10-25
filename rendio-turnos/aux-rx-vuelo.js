@@ -140,6 +140,14 @@
   const isPrivate = (t) => !!t && t.level === 'private' && (t.privateStatus === 'requested' || t.privateStatus === 'approved');
   // «Solo por tierra» (0092/0093): operación del aeropuerto sin vuelo.
   const isGround = (t) => !!t && t.groundOps === true;
+  // De reserva (0121, pedido de Sara Jaramillo vía Chris, 25-oct-2026: «si me
+  // activan la reserva y necesito modificar el traslado, ¿cómo hago?»). Aquí
+  // también se pregunta «¿Vas en vuelo o de reserva?»: de reserva no hay vuelo,
+  // se elige el lugar y la hora es la de fin de la asignación.
+  const lugar = (k) => { const a = AX(); return k && a && typeof a.lugar === 'function' ? a.lugar(k) : null; };
+  const lugares = () => { const a = AX(); return a && typeof a.lugares === 'function' ? a.lugares() : []; };
+  const esRes = () => fv.viaje === 'reserva';
+  const lugarFv = () => (esRes() ? lugar(fv.place) : null);
 
   // ── Modos (la entrada desde la hoja del viaje) ───────────────────────────
   const MODES = {
@@ -162,7 +170,7 @@
   // phase: 'form' | 'pick' (varios, falta elegir) | 'none' (ninguno) |
   //        'blocked' (el que llegó ya empezó o se canceló) | 'done'
   // mode: null (Inicio: «Cambió mi vuelo») | 'presentacion' | 'llegada' | 'hora'
-  const fv = { key: null, el: null, phase: 'none', mode: null, tripId: null, flight: '', date: '', time: '', sending: false, result: null, bound: false };
+  const fv = { key: null, el: null, phase: 'none', mode: null, tripId: null, flight: '', date: '', time: '', viaje: 'vuelo', place: '', sending: false, result: null, bound: false };
   const curTrip = () => (fv.tripId ? trips().find(t => t && t.id === fv.tripId) || null : null);
 
   function choose(t) {
@@ -170,6 +178,8 @@
     fv.flight = normFlight(t.flight);
     fv.date = t.date || '';
     fv.time = hmOnly(t.time);
+    fv.viaje = lugar(t.reservePlace) ? 'reserva' : 'vuelo';
+    fv.place = lugar(t.reservePlace) ? t.reservePlace : '';
     fv.result = null;
     fv.phase = 'form';
   }
@@ -194,8 +204,12 @@
     const timeChanged = !!t && (fv.date !== (t.date || '') || fv.time !== hmOnly(t.time));
     // Salida: vacío = se conserva. Llegada: vaciarlo también es un cambio (y la
     // validación lo frena con su texto). En tierra no hay campo de vuelo.
-    const flightChanged = !!t && !isGround(t) && (nf ? nf !== of : (isLle(t) && !!of));
-    return { timeChanged, flightChanged, any: timeChanged || flightChanged };
+    const flightChanged = !!t && !isGround(t) && !esRes() && (nf ? nf !== of : (isLle(t) && !!of));
+    // Vuelo ↔ reserva, u otro lugar (0121). Con «Reserva» sin lugar elegido no
+    // hay cambio que mandar todavía (validate lo dice).
+    const ahora = esRes() ? (fv.place || null) : null;
+    const placeChanged = !!t && !isGround(t) && (esRes() ? !!fv.place : true) && ahora !== (lugar(t.reservePlace) ? t.reservePlace : null);
+    return { timeChanged, flightChanged, placeChanged, any: timeChanged || flightChanged || placeChanged };
   }
   // f = {date, time} opcional (por defecto, lo escrito). → 'updated' | 'needs_ops'
   function predict(t, f) {
@@ -209,8 +223,9 @@
     return (isPublished(t) || isPrivate(t) || (nt != null && nt < lim) || (ot != null && ot < lim)) ? 'needs_ops' : 'updated';
   }
   function validate(t) {
-    const nf = isGround(t) ? '' : normFlight(fv.flight);
-    if (isLle(t) && !isGround(t) && !nf) return 'Escribe el número de vuelo en el que llegas';
+    if (!isGround(t) && esRes() && !lugar(fv.place)) return 'Elige dónde estás de reserva';
+    const nf = isGround(t) || esRes() ? '' : normFlight(fv.flight);
+    if (isLle(t) && !isGround(t) && !esRes() && !nf) return 'Escribe el número de vuelo en el que llegas';
     if (nf && !FLIGHT_RE.test(nf)) return 'Ese número de vuelo no se entiende (ej.: AV9412)';
     const nt = tsOf(fv.date, fv.time);
     if (nt == null) return 'Elige el día y la hora';
@@ -245,26 +260,44 @@
     const newT = hmOnly(fv.time) || '--:--';
     const dayChanged = !!(fv.date && t.date && fv.date !== t.date);
     const moved = dayChanged || (!!hmOnly(fv.time) && hmOnly(fv.time) !== hmOnly(t.time));
-    const ahora = isLle(t) ? (isGround(t) ? 'Ahora sales' : 'Ahora aterrizas') : 'Ahora, en JMC';
+    const L = lugarFv();
+    // «Finaliza» apenas se elige Reserva, aunque falte el lugar.
+    const ahora = isLle(t) ? (isGround(t) ? 'Ahora sales' : (esRes() ? 'Ahora finalizas' : 'Ahora aterrizas')) : (L && L.hotel ? 'Ahora, en el hotel' : 'Ahora, en JMC');
     return `<div><span>Antes${dayChanged && shortDay(t.date) ? ' · ' + esc(shortDay(t.date)) : ''}</span><b${moved ? ' class="strike"' : ''}>${esc(oldT)}</b></div>`
       + ic('ArrowRight', 18)
       + `<div><span>${ahora}${dayChanged && shortDay(fv.date) ? ' · ' + esc(shortDay(fv.date)) : ''}</span><b>${esc(newT)}</b></div>`;
   }
   function noteInner(t) {
     const ch = changes(t);
-    const mode = ch.flightChanged && !ch.timeChanged ? 'updated' : predict(t);
+    const mode = ch.flightChanged && !ch.timeChanged && !ch.placeChanged ? 'updated' : predict(t);
     let txt;
     if (mode === 'needs_ops') {
       const pk = isPublished(t) ? pickupHM(t.pickupAt) : '';
       txt = pk ? `Tu recogida está a las <b>&nbsp;${esc(pk)}</b>. Coordinación la ajusta y te confirma.`
         : 'Coordinación ajusta tu recogida y te confirma.';
     } else {
-      txt = ch.flightChanged && !ch.timeChanged ? 'Actualizamos el vuelo de tu traslado.' : 'Actualizamos tu traslado con la hora nueva.';
+      txt = ch.placeChanged && !ch.timeChanged ? 'Actualizamos tu traslado.'
+        : ch.flightChanged && !ch.timeChanged ? 'Actualizamos el vuelo de tu traslado.' : 'Actualizamos tu traslado con la hora nueva.';
     }
     // Pasada la medianoche la fecha es la del día siguiente (20-oct-2026): el
     // mismo aviso que al pedir el traslado (auxMadrugadaHint, auxiliar.js).
     const mad = typeof auxMadrugadaHint === 'function' ? auxMadrugadaHint({ date: fv.date, time: fv.time, type: isLle(t) ? 'lle' : 'sal' }) : null;
     return ic('Clock', 15) + txt + (mad ? ' ' + esc(mad) : '');
+  }
+  // «¿Vas en vuelo o de reserva?» y el lugar: los segmentos del diseño
+  // (AuxRxUI.seg). Los clics van por el shell (data-rx fv-viaje / fv-lugar).
+  function viajeHTML() {
+    const u = UI();
+    const seg = (v, opts, act) => {
+      let h = u && u.seg ? u.seg(v, opts, { name: act, btnAttrs: (k) => ({ 'data-rx': act, 'data-v': k }) })
+        : `<div class="rx-seg" style="--n:${opts.length}">` + opts.map(([k, x]) => `<button type="button" class="${k === v ? 'on' : ''}" data-rx="${act}" data-v="${esc(k)}">${esc(x)}</button>`).join('') + '</div>';
+      if (!opts.some(([k]) => k === v)) h = h.replace('class="rx-seg-ind"', 'class="rx-seg-ind" hidden');
+      return h;
+    };
+    let h = `<div class="rx-card rx-in rx-fv-viaje" style="--d:1"><div class="rx-set col"><b>¿Vas en vuelo o de reserva?</b>`
+      + seg(esRes() ? 'reserva' : 'vuelo', [['vuelo', 'Vuelo'], ['reserva', 'Reserva']], 'fv-viaje') + '</div>';
+    if (esRes()) h += `<div class="rx-set col"><b>¿Dónde?</b>${seg(fv.place || '', lugares().map((L) => [L.key, L.short]), 'fv-lugar')}</div>`;
+    return h + '</div>';
   }
   function whenField(label, key, type, value, extra, icon) {
     return `<label class="rx-field"><span>${esc(label)}</span><span class="rx-input">${ic(icon, 18)}`
@@ -278,16 +311,21 @@
     // Abierta desde la hoja de UN traslado (con modo): no se ofrece otro.
     const others = !fv.mode && candidates().some(x => x.id !== t.id);
     const which = (lle ? 'llegada' : 'salida') + (deDay(t.date) ? ' ' + deDay(t.date) : '');
-    const hint = ground ? 'Elige el día y la hora nuevos.' : 'Escribe el vuelo nuevo o confirma el mismo si solo cambió la hora.';
+    const res = !ground && esRes();
+    const L = lugarFv();
+    const hint = ground || res ? 'Elige el día y la hora nuevos.' : 'Escribe el vuelo nuevo o confirma el mismo si solo cambió la hora.';
+    const horaLbl = lle ? (ground ? 'Sales del aeropuerto' : (res ? '¿A qué hora finaliza tu asignación?' : 'Aterrizas'))
+      : (L && L.hotel ? 'Estar en el hotel' : 'Estar en JMC');
     return `<div class="rx-ob-h rx-in"><h1>¿Qué cambió?</h1><p>Tu <b>${esc(which)}</b>. ${hint}</p>`
       + (others ? '<button type="button" class="rx-fv-other" data-rx="fv-pick">Es otro traslado</button>' : '')
       + '</div>'
-      // En tierra no hay vuelo: sin el campo.
-      + (ground ? '' : `<div class="rx-input rx-in" style="--d:1">${ic('Plane', 18)}<input type="text" data-rx-field="fv-flight" value="${esc(fv.flight)}"`
+      // En tierra no hay vuelo ni reserva: sin los campos.
+      + (ground ? '' : viajeHTML())
+      + (ground || res ? '' : `<div class="rx-input rx-in" style="--d:1">${ic('Plane', 18)}<input type="text" data-rx-field="fv-flight" value="${esc(fv.flight)}"`
         + ` placeholder="${lle ? 'Número de vuelo' : 'Número de vuelo (opcional)'}" aria-label="Número de vuelo" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>`)
       + '<div class="rx-fv-when rx-in" style="--d:1">'
       + whenField('Día', 'fv-date', 'date', fv.date, ` min="${esc(today)}" max="${esc(maxDay)}"`, 'Calendar')
-      + whenField(lle ? (ground ? 'Sales del aeropuerto' : 'Aterrizas') : 'Estar en JMC', 'fv-time', 'time', fv.time, '', 'Clock')
+      + whenField(horaLbl, 'fv-time', 'time', fv.time, '', 'Clock')
       + '</div>'
       + `<div class="rx-flight-new rx-in" style="--d:2">${flightNewInner(t)}</div>`
       + `<div class="rx-note rx-in" style="--d:3" data-fv="note">${noteInner(t)}</div>`;
@@ -298,11 +336,16 @@
     const u = UI();
     const chk = u && u.check ? u.check(ops ? 'info' : 'ok') : '';
     const day = elDay(r.date);
+    const RL = r.place ? lugar(r.place) : null;
+    const dondeRes = RL ? (RL.hotel ? 'de reserva en el ' + RL.name : 'de reserva en el aeropuerto') : '';
     const nueva = r.timeChanged
-      ? (r.type === 'lle' ? (r.ground ? 'Nueva hora de salida del aeropuerto: ' : 'Nueva hora de aterrizaje: ') : 'Nueva hora en JMC: ')
+      ? (r.type === 'lle' ? (r.ground ? 'Nueva hora de salida del aeropuerto: ' : (RL ? 'Nueva hora de fin de la asignación: ' : 'Nueva hora de aterrizaje: '))
+        : (RL && RL.hotel ? 'Nueva hora en el hotel: ' : 'Nueva hora en JMC: '))
         + (day ? day + ' a las ' : '') + r.time
         + (r.flight && r.flightChanged ? ' · vuelo ' + r.flight : '')
-      : 'Vuelo nuevo: ' + (r.flight || '') + '. La hora sigue igual';
+        + (r.placeChanged ? (RL ? ' · ' + dondeRes : ' · en un vuelo') : '')
+      : r.placeChanged ? (RL ? 'Ahora vas ' + dondeRes : 'Ahora vas en un vuelo' + (r.flight ? ' (' + r.flight + ')' : '')) + '. La hora sigue igual'
+        : 'Vuelo nuevo: ' + (r.flight || '') + '. La hora sigue igual';
     const p = ops
       ? 'Les pasamos tu cambio. ' + nueva + '. Mientras te confirman, tu traslado sigue como estaba.'
       : nueva + '.' + (r.timeChanged ? ' Te avisamos cuando armemos tu ruta.' : '');
@@ -377,8 +420,9 @@
     const lle = isLle(t);
     const title = (lle ? 'Llegada' : 'Salida') + (shortDay(t.date) ? ' · ' + shortDay(t.date) : '');
     const ground = isGround(t);
-    const sub = (lle ? (ground ? 'Sales del aeropuerto ' : 'Aterrizas ') : 'Estar en JMC ') + (hmOnly(t.time) || '--:--')
-      + (t.flight && !ground ? ' · ' + normFlight(t.flight) : '');
+    const RL = ground ? null : lugar(t.reservePlace);
+    const sub = (lle ? (ground ? 'Sales del aeropuerto ' : (RL ? 'Finaliza ' : 'Aterrizas ')) : (RL && RL.hotel ? 'Estar en el hotel ' : 'Estar en JMC ')) + (hmOnly(t.time) || '--:--')
+      + (RL ? ' · ' + (RL.hotel ? RL.short : 'reserva JMC') : (t.flight && !ground ? ' · ' + normFlight(t.flight) : ''));
     return `<button type="button" class="rx-opt rx-in${t.id === fv.tripId ? ' on' : ''}" style="--d:${i}" data-rx="fv-choose" data-id="${esc(t.id)}">`
       + `<span class="rx-opt-ic">${ic(lle ? 'Home' : 'Plane', 18)}</span>`
       + `<span class="rx-opt-tx"><b>${esc(cap(title))}</b><span>${esc(sub)}</span></span></button>`;
@@ -419,7 +463,11 @@
     const X = window.ApiAux;
     if (!X || typeof X.changeFlight !== 'function') { toast(NO_DISP, 'AlertTriangle'); return; }
     // En tierra no hay vuelo: va vacío (salida = se conserva; llegada = 0093).
-    const payload = { flight: isGround(t) ? '' : normFlight(fv.flight), date: fv.date, time: hmOnly(fv.time) };
+    // De reserva tampoco (0121). El lugar solo viaja cuando hay reserva de por
+    // medio (antes o ahora): un cambio de vuelo de siempre manda lo mismo de antes.
+    const res = !isGround(t) && esRes();
+    const payload = { flight: isGround(t) || res ? '' : normFlight(fv.flight), date: fv.date, time: hmOnly(fv.time) };
+    if (!isGround(t) && (res || lugar(t.reservePlace))) payload.reservePlace = res ? fv.place : 'vuelo';
     const key = fv.key;
     fv.sending = true;
     paintFoot();
@@ -431,7 +479,7 @@
         if (key === fv.key) fv.sending = false;
         if (e) { if (here) paintFoot(); toast((e && e.message) || 'No se pudo cambiar el vuelo', 'AlertTriangle'); return; }
         if (!r) { if (here) paintFoot(); toast(NO_DISP, 'AlertTriangle'); return; }
-        if (r.unchanged) { if (here) paintFoot(); toast('Tu traslado ya tenía ese vuelo y esa hora', 'Info'); return; }
+        if (r.unchanged) { if (here) paintFoot(); toast(res ? 'Tu traslado ya estaba así' : 'Tu traslado ya tenía ese vuelo y esa hora', 'Info'); return; }
         const ops = r.mode === 'needs_ops';
         if (!ops) refreshTrips();
         if (!here) {
@@ -441,7 +489,8 @@
         }
         fv.result = {
           mode: ops ? 'needs_ops' : 'updated', type: t.type, ground: isGround(t), date: payload.date, time: payload.time,
-          flight: payload.flight || normFlight(t.flight), timeChanged: ch.timeChanged, flightChanged: ch.flightChanged,
+          flight: res ? '' : (payload.flight || normFlight(t.flight)), timeChanged: ch.timeChanged, flightChanged: ch.flightChanged,
+          placeChanged: ch.placeChanged, place: res ? fv.place : null,
         };
         fv.phase = 'done';
         remountBody();
@@ -501,6 +550,24 @@
     const mode = reservationId && o && isMode(o.mode) ? o.mode : null;
     return s.push('flight', mode ? { reservationId, mode } : { reservationId: reservationId || null });
   }
+  // Vuelo ↔ reserva y el lugar: se repinta el cuerpo SIN animar (lo escrito
+  // vive en fv: vuelo, día y hora no se pierden).
+  function repaintForm() {
+    const b = $('[data-fv="body"]');
+    if (b && fv.phase === 'form' && curTrip()) b.innerHTML = bodyInner();
+    paintFoot();
+  }
+  function viajeAct(el) {
+    if (fv.phase !== 'form' || fv.sending) return;
+    fv.viaje = el && el.getAttribute('data-v') === 'reserva' ? 'reserva' : 'vuelo';
+    repaintForm();
+  }
+  function lugarAct(el) {
+    if (fv.phase !== 'form' || fv.sending) return;
+    const k = el && el.getAttribute('data-v');
+    if (lugar(k)) { fv.place = k; fv.viaje = 'reserva'; }
+    repaintForm();
+  }
   function openAct(el) {
     open(el && el.getAttribute('data-id'), { mode: el && el.getAttribute('data-mode') });
   }
@@ -521,5 +588,7 @@
     sh.action('fv-choose', chooseAct);
     sh.action('fv-send', sendAct);
     sh.action('fv-open', openAct);
+    sh.action('fv-viaje', viajeAct);
+    sh.action('fv-lugar', lugarAct);
   }
 })();

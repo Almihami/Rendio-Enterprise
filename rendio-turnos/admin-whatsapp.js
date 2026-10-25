@@ -31,11 +31,16 @@
 //   hardDL), y se arman con la misma receta de plan-del-dia.mjs. Si el solver
 //   cambia, el mensaje cambia con él: el papel dice lo mismo que la pantalla.
 //
-// LO QUE NO SE ESCRIBE: «Va a hotel». En el tablero `hotel` es la PERNOCTA
-// (reservations.is_overnight: duerme fuera de Rionegro), no el destino. El
-// generador del backend tampoco lo escribe por eso mismo —Julián ya lo cazó:
-// "no sé por qué puso que iba a hotel, Juan Martínez LLEGA"—. El modal sí
-// avisa a quiénes el tablero pinta «Hotel», para que él lo agregue si va.
+// EL HOTEL (0121, 25-oct-2026). Hasta hoy `hotel` en el tablero era la
+// PERNOCTA (duerme fuera), no el destino, y por eso aquí no se escribía —Julián
+// ya lo había cazado: "no sé por qué puso que iba a hotel, Juan Martínez
+// LLEGA"—. Ahora el tripulante dice si va DE RESERVA y dónde (Río Verde, Movich
+// o Aero), y eso sí se escribe como él: la llegada desde el hotel «(Hotel
+// Movich)», la de reserva en el aeropuerto «(Aero R)», y la salida al hotel en
+// el renglón del deadline: «Debe estar 11:20 (Hotel Movich)» si van todos, o
+// «Deben estar 11:20 y Hotel Movich» si el carro pasa primero por JMC. Sin el
+// dato de la reserva (lo que manda el generador del backend) queda la regla
+// de antes: `hotel` sin vuelo → «(Aero R)».
 //
 // Botón: #rt-waBtn en la barra de Asignación (index.html). La v2 de esa
 // pantalla llama RendioWhatsApp.abrir() desde el suyo.
@@ -49,6 +54,8 @@
   // (_smoke-whatsapp-dom.mjs compara la salida de ambos).
   // ════════════════════════════════════════════════════════════════════
   const rwaMin = (hm) => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
+  // De reserva (0121): el lugar ({name, hotel}) o null.
+  const rwaRes = (q) => (q && q.reserva && typeof Api !== 'undefined' && Api && typeof Api.reservePlace === 'function' ? Api.reservePlace(q.reserva) : null);
   // Hora como la escribe él: 3:10, no 03:10. Envuelve en 24 h (un «deben estar»
   // de las 00:05 menos el colchón es 23:55, no "-1:55").
   const rwaHM = (t) => { const x = ((t % 1440) + 1440) % 1440; return `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`; };
@@ -137,11 +144,13 @@
       }
       if (v.tipo === 'lle') {
         // LLEGADA: una línea por VUELO (hora de aterrizaje + número); los del
-        // mismo vuelo y la misma hora van juntos. Los de reserva sin vuelo, «Aero R».
+        // mismo vuelo y la misma hora van juntos. Los de reserva: «(Hotel X)» si
+        // se recogen en el hotel, «(Aero R)» si en el aeropuerto (0121).
         const porVuelo = new Map();
         for (const p of v.paradas) for (const q of p.personas) {
           const sg = q.vuelo ? rwaSigla(q.vuelo) : null;
-          const donde = sg || (q.hotel ? 'Aero R' : 'Aero');
+          const R = rwaRes(q);
+          const donde = R ? (R.hotel ? R.name : 'Aero R') : (sg || (q.hotel ? 'Aero R' : 'Aero'));
           const k = `${q.dl}|${donde}`;
           if (!porVuelo.has(k)) porVuelo.set(k, { hora: q.dl, vuelo: donde, gente: [] });
           porVuelo.get(k).gente.push(q.n);
@@ -162,7 +171,11 @@
           primera = false;
         }
         const colchon = plan.ajustes && plan.ajustes.colchonAeropuerto != null ? plan.ajustes.colchonAeropuerto : 10;
-        L.push(`${pax > 1 ? 'Deben' : 'Debe'} estar ${rwaDeben(v.presentacion, colchon)}`);
+        // Al hotel (0121): todos al mismo → «(Hotel X)»; alguno → «y Hotel X».
+        const hs = v.paradas.flatMap((p) => p.personas).map(rwaRes);
+        const H = hs.length && hs.every((P) => P && P.hotel && P.name === hs[0].name) ? hs[0] : null;
+        const h1 = H ? null : hs.find((P) => P && P.hotel);
+        L.push(`${pax > 1 ? 'Deben' : 'Debe'} estar ${rwaDeben(v.presentacion, colchon)}${H ? ` (${H.name})` : (h1 ? ` y ${h1.name}` : '')}`);
       }
       L.push('');
     }
@@ -196,7 +209,7 @@
       if (!a) return;
       const ult = paradas[paradas.length - 1];
       const k = rtStopKey(s.id);
-      const p = { n: a.n, dl: a.dl, vuelo: a.vuelo || '', hotel: !!a.hotel, tierra: !!a.tierra };
+      const p = { n: a.n, dl: a.dl, vuelo: a.vuelo || '', hotel: !!a.hotel, tierra: !!a.tierra, reserva: a.reserva || null };
       // Los de la misma portería son UNA parada: "Sofía y José (Cámbulo)".
       if (ult && ult.key === k) { ult.personas.push(p); return; }
       paradas.push({ key: k, zona: a.zona, eta: rtToHM(s.eta), personas: [p] });
@@ -390,7 +403,7 @@
     const notas = [];
     if (r.sinRutear.length) notas.push(rwaListaSinRutear(r.sinRutear));
     if (r.hotel.length) {
-      notas.push(`<div class="rwa-nota" id="rwa-hotel">Con «Hotel» en el tablero: <b>${rwaEsc(r.hotel.join(', '))}</b>. Ese dato es la pernocta, no dice si va al hotel, así que el mensaje no escribe «Va a hotel»: si alguno va, agrégalo antes de mandar.</div>`);
+      notas.push(`<div class="rwa-nota" id="rwa-hotel">De reserva en hotel: <b>${rwaEsc(r.hotel.join(', '))}</b>. El mensaje ya dice a qué hotel va o de cuál sale; el carro está programado como si fuera a JMC (queda a 1–2 km).</div>`);
     }
     cuerpo.innerHTML = notas.join('')
       + '<textarea class="rwa-ta" id="rwa-ta" readonly spellcheck="false" aria-label="Texto del plan para WhatsApp"></textarea>';

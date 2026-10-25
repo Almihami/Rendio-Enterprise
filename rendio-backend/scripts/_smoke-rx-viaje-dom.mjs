@@ -581,6 +581,48 @@ const B2 = await boot({ conVuelo: true });
   t('…y el «hecho» habla de la hora de salida del aeropuerto', /Nueva hora de salida del aeropuerto/.test((layer2('flight').querySelector('.rx-center-in') || {}).textContent || ''));
   AS2.popAll(); await new Promise(r => setTimeout(r, 320));
 
+  // DE RESERVA (0121, la pregunta de Sara Jaramillo): una llegada en vuelo pasa
+  // a reserva en Movich desde «Cambio de hora de llegada», sin pedir vuelo.
+  dd = await abrir2('llegada-parada');
+  click2(chBtn()); await new Promise(r => setTimeout(r, 80));
+  fl = layer2('flight');
+  t('reserva: la pantalla pregunta «¿Vas en vuelo o de reserva?», en Vuelo', /¿Vas en vuelo o de reserva\?/.test(fl.textContent) && !!fl.querySelector('[data-rx="fv-viaje"][data-v="vuelo"].on'));
+  click2(fl.querySelector('[data-rx="fv-viaje"][data-v="reserva"]')); await new Promise(r => setTimeout(r, 30));
+  fl = layer2('flight');
+  t('reserva: se va el vuelo y aparece «¿Dónde?» con los tres lugares', !fl.querySelector('[data-rx-field="fv-flight"]') && ['rio_verde', 'movich', 'aero'].every(k => !!fl.querySelector(`[data-rx="fv-lugar"][data-v="${k}"]`)));
+  t('reserva: la hora es «¿A qué hora finaliza tu asignación?»', /¿A qué hora finaliza tu asignación\?/.test(fl.querySelector('.rx-fv-when').textContent));
+  t('reserva: sin lugar elegido no se puede enviar', fl.querySelector('[data-rx="fv-send"]').disabled === true);
+  t('reserva: la tarjeta dice «Ahora finalizas» (no «Ahora aterrizas»), aunque falte el lugar', /Ahora finalizas/.test(fl.querySelector('.rx-flight-new').textContent) && !/aterrizas/i.test(fl.querySelector('.rx-flight-new').textContent));
+  click2(fl.querySelector('[data-rx="fv-lugar"][data-v="movich"]')); await new Promise(r => setTimeout(r, 30));
+  fl = layer2('flight');
+  t('reserva: con Movich ya se puede enviar (aunque la hora no cambió)', fl.querySelector('[data-rx="fv-send"]').disabled === false && !!fl.querySelector('[data-rx="fv-lugar"][data-v="movich"].on'));
+  type2(fl.querySelector('[data-rx-field="fv-time"]'), '18:30');
+  const nR = E2.llamadas.filter(c => c.fn === 'ApiAux.changeFlight').length;
+  click2(fl.querySelector('[data-rx="fv-send"]')); await new Promise(r => setTimeout(r, 80));
+  const cfR = E2.llamadas.filter(c => c.fn === 'ApiAux.changeFlight');
+  const aR = cfR[cfR.length - 1] && cfR[cfR.length - 1].args[1];
+  t('reserva: changeFlight(id, {flight:"", time:"18:30", reservePlace:"movich"})', cfR.length === nR + 1 && aR && aR.flight === '' && aR.time === '18:30' && aR.reservePlace === 'movich', JSON.stringify(aR));
+  t('reserva: el «hecho» dice fin de la asignación y el hotel', /fin de la asignación/.test((layer2('flight').querySelector('.rx-center-in') || {}).textContent || '') && /Hotel Movich/.test((layer2('flight').querySelector('.rx-center-in') || {}).textContent || ''));
+  AS2.popAll(); await new Promise(r => setTimeout(r, 320));
+
+  // Y al revés: un traslado de reserva vuelve a vuelo y ahí sí pide el número.
+  dd = await abrir2('llegada-parada');
+  const trR = A2.state.trips.find(y => y.id === dd.principal); trR.reservePlace = 'rio_verde'; trR.flight = '';
+  click2(chBtn()); await new Promise(r => setTimeout(r, 80));
+  fl = layer2('flight');
+  t('de reserva: arranca en Reserva · Río Verde, sin vuelo', !!fl.querySelector('[data-rx="fv-viaje"][data-v="reserva"].on') && !!fl.querySelector('[data-rx="fv-lugar"][data-v="rio_verde"].on') && !fl.querySelector('[data-rx-field="fv-flight"]'));
+  click2(fl.querySelector('[data-rx="fv-viaje"][data-v="vuelo"]')); await new Promise(r => setTimeout(r, 30));
+  fl = layer2('flight');
+  t('pasa a Vuelo: vuelve el campo del vuelo (obligatorio)', !!fl.querySelector('[data-rx-field="fv-flight"]') && fl.querySelector('[data-rx-field="fv-flight"]').getAttribute('placeholder') === 'Número de vuelo');
+  type2(fl.querySelector('[data-rx-field="fv-flight"]'), 'AV9412');
+  const nV = E2.llamadas.filter(c => c.fn === 'ApiAux.changeFlight').length;
+  click2(fl.querySelector('[data-rx="fv-send"]')); await new Promise(r => setTimeout(r, 80));
+  const cfV = E2.llamadas.filter(c => c.fn === 'ApiAux.changeFlight');
+  const aV = cfV[cfV.length - 1] && cfV[cfV.length - 1].args[1];
+  t('…y manda el vuelo con reservePlace "vuelo"', cfV.length === nV + 1 && aV && aV.flight === 'AV9412' && aV.reservePlace === 'vuelo', JSON.stringify(aV));
+  trR.reservePlace = null; trR.flight = 'LA4021';
+  AS2.popAll(); await new Promise(r => setTimeout(r, 320));
+
   // Mismos estados que Inicio: la regla es AuxRxInicio.canChangeFlight.
   const malos2 = [];
   for (const n of E2.list()) {

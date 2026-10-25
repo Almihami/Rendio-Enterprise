@@ -80,7 +80,7 @@ async function boot() {
   const helpers = CONSOLA.slice(0, CONSOLA.indexOf('  // ---------------- CONSOLA'));
   const STUBS = `
     var state = { settings: {} };
-    const Api = {};
+    const Api = window.__ApiStub = {};
     const $ = (s) => document.querySelector(s);
     const $$ = (s) => document.querySelectorAll(s);
     function toast() {}
@@ -261,6 +261,27 @@ const B = await boot();
   t('«No aplica» con hotel → (Aero R)', tr.includes('14:50 María Camila (Aero R)'));
   t('un solo pasajero → «Debe estar», sin línea de «quizás no haya carro»', tr.includes('17:10 Pau londo (Terra)\nDebe estar 17:50') && !tr.includes('quizás'));
   lineas('siglas raras: backend == admin-whatsapp.js', backend(raro), tr);
+  // De RESERVA (0121): el dato real del lugar manda sobre todo lo demás.
+  {
+    // El Api del tablero en esta prueba es el stub `const Api = {}` (ver STUBS).
+    const LUG = { rio_verde: { name: 'Hotel Río Verde', hotel: true }, movich: { name: 'Hotel Movich', hotel: true }, aero: { name: 'Aeropuerto JMC', hotel: false } };
+    B.w.__ApiStub.reservePlace = (k) => LUG[k] || null;
+    const res = RW.formatear({
+      dia: '2026-10-25', traslados: 5, salidas: 3, llegadas: 2, carros: [{ id: 'R01' }], ajustes: { colchonAeropuerto: 10 },
+      vueltas: [
+        { carro: 'R01', tipo: 'lle', sale: '18:30', presentacion: null, paradas: [{ zona: 'Olivar', eta: '18:50', personas: [
+          { n: 'Karol L', dl: '18:30', vuelo: '', reserva: 'movich', hotel: true }, { n: 'Lesmes', dl: '18:30', vuelo: '', reserva: 'aero' }] }] },
+        { carro: 'R01', tipo: 'sal', sale: '10:40', presentacion: '11:30', paradas: [{ zona: 'Terra', eta: '10:42', personas: [{ n: 'Dayana', dl: '11:30', reserva: 'movich', hotel: true }] }] },
+        { carro: 'R01', tipo: 'sal', sale: '15:00', presentacion: '16:00', paradas: [{ zona: 'Cerezos', eta: '15:05', personas: [{ n: 'Ana', dl: '16:00', vuelo: 'AV9412' }, { n: 'Laura V', dl: '16:00', reserva: 'rio_verde', hotel: true }] }] },
+      ],
+      sinRutear: [],
+    });
+    t('reserva: la llegada desde el hotel dice «(Hotel Movich)»', res.includes('18:30 Karol L (Hotel Movich)'), res);
+    t('reserva en el aeropuerto: «(Aero R)»', res.includes('18:30 Lesmes (Aero R)'), res);
+    t('salida de todos al hotel: «Debe estar 11:20 (Hotel Movich)»', res.includes('Debe estar 11:20 (Hotel Movich)'), res);
+    t('salida mezclada: «Deben estar 15:50 y Hotel Río Verde»', res.includes('Deben estar 15:50 y Hotel Río Verde'), res);
+    delete B.w.__ApiStub.reservePlace;
+  }
   // Borde que el backend imprime mal ("-1:55"): aquí envuelve en 24 h.
   const borde = RW.formatear({ dia: '2026-10-10', traslados: 1, salidas: 1, llegadas: 0, carros: [{ id: 'R01' }], ajustes: { colchonAeropuerto: 10 },
     vueltas: [{ carro: 'R01', tipo: 'sal', sale: '23:30', presentacion: '00:05', paradas: [{ zona: 'Mota', eta: '23:33', personas: [{ n: 'Isa', dl: '00:05' }] }] }], sinRutear: [] });
@@ -290,7 +311,7 @@ console.log('\n── El botón y el modal ──');
     && qa('#rwa-sinRutear li').map(li => li.textContent).join(' | ') === '12:35Juanita Ortiz (Olivar Apartamentos) · salida | 15:40Jolene Capron (Olivar Apartamentos) · llegada',
     qa('#rwa-sinRutear li').map(li => li.textContent).join(' | '));
   const ho = q('#rwa-hotel');
-  t('aviso de «Hotel» con Pau y Karol', ho && ho.textContent.includes('Pau Londoño, Karol Londoño') && /Va a hotel/.test(ho.textContent));
+  t('aviso de «Hotel» con Pau y Karol (0121: ya es la reserva en hotel, no la pernocta)', ho && ho.textContent.includes('Pau Londoño, Karol Londoño') && /De reserva en hotel/.test(ho.textContent));
   const wa = q('#rwa-wa');
   const pref = 'https://wa.me/?text=';
   t('«Abrir WhatsApp» = wa.me con el texto codificado, en otra pestaña', wa.getAttribute('href').startsWith(pref)

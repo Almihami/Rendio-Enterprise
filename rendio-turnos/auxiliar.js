@@ -210,6 +210,21 @@
     },
     // ¿Este viaje (forma T) va en tierra?
     isGround: (t) => !!(t && (t.groundOps === true || t.ground_ops === true)),
+    // DE RESERVA (0121, 25-oct-2026). En la operación «reserva» es quedar de
+    // reserva: el jefe lo manda a un hotel (Río Verde, Movich) o lo deja en el
+    // aeropuerto, y al terminar la asignación lo recoge ahí. En el pedido es
+    // «¿Vas en vuelo o de reserva?»: de reserva no se pide vuelo, se elige el
+    // lugar y la hora del regreso es la de fin de la asignación (sin
+    // desembarque). Una sola fuente para la pantalla de siempre y el rediseño.
+    //   reservaDe(f)  → la llave del lugar si el pedido va de reserva, o null
+    //   lugar(k)      → { key, name, short, hotel, lat, lng } | null
+    //   lugares()     → los tres, en orden
+    reservaDe: (f) => auxReservaDe(f),
+    lugarDeTrip: (t) => auxLugarDeTrip(t),
+    puntoJMC: (t) => auxPuntoJMC(t),
+    textosVuelo: (f) => auxTextosVuelo(f || auxState.form || {}),
+    lugar: (k) => auxLugar(k),
+    lugares: () => auxLugares(),
     // El interruptor arranca como quedó en su ÚLTIMO pedido (el más reciente por
     // cuándo lo pidió; cancelados incluidos: lo que dice es a qué se dedica, no
     // si el viaje se hizo). Sin viajes, apagado. No se guarda en el teléfono: el
@@ -929,8 +944,7 @@
         <span class="ax-radio">${sel ? '<svg class="icon"><use href="#i-check"/></svg>' : ''}</span>
       </button>`;
     };
-    return `<p class="ax-lead">Elige el tipo de traslado.</p>${opt('sal')}${opt('lle')}
-      <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Si tu vuelo incluye pernocta, lo marcas en el siguiente paso, con los datos del vuelo.</div>`;
+    return `<p class="ax-lead">Elige el tipo de traslado.</p>${opt('sal')}${opt('lle')}`;
   }
 
   // Momento del vuelo en hora de Colombia (o null si aún falta un dato).
@@ -1007,49 +1021,86 @@
     catch (_) { return iso; }
   }
 
+  // ── Los textos del paso del vuelo, con la reserva (0121) ──
+  // Una sola fuente para la pantalla de siempre y el rediseño (AuxRxPedir los
+  // lee de window.Auxiliar.textos).
+  function auxTextosVuelo(f) {
+    const lle = f.type === 'lle';
+    const tierra = !!f.groundOps;
+    const res = !tierra && f.viaje === 'reserva';
+    const L = res ? auxLugar(f.reservePlace) : null;
+    const TX = window.Auxiliar.tierra;
+    const aeroNota = 'Selecciona la hora a la que deseas estar en el aeropuerto JMC. Con base en la hora que elijas coordinaremos tu recogida.';
+    return {
+      res, lugar: L,
+      hora: lle
+        ? (tierra ? 'Hora en que sales del aeropuerto' : (res ? '¿A qué hora finaliza tu asignación?' : 'Hora de aterrizaje'))
+        : (L && L.hotel ? '¿A qué hora deseas estar en el hotel? 🕒' : '¿A qué hora deseas estar en el aeropuerto? 🕒'),
+      horaPh: lle ? (tierra || res ? '17:00' : '06:18') : '05:10',
+      nota: lle
+        ? (tierra ? TX.lleNote : (res && L ? `Te recogemos en el ${L.hotel ? L.name : 'aeropuerto'} a esa hora.` : ''))
+        : (tierra ? TX.salNote : (L && L.hotel ? `Selecciona la hora a la que deseas estar en el ${L.name}. Con base en la hora que elijas coordinaremos tu recogida.` : aeroNota)),
+      regreso: tierra ? 'Hora en que sales del aeropuerto' : (res ? '¿A qué hora finaliza tu asignación?' : 'Hora a la que aterrizas de vuelta'),
+      regresoPh: tierra || res ? '17:00' : '19:40',
+      // En tierra y de reserva no hay vuelo de regreso que pedir.
+      regresoVuelo: !tierra && !res,
+      // La pernocta es de un vuelo: ni en tierra ni de reserva.
+      pernocta: !tierra && !res,
+    };
+  }
+
+  // «¿Vas en vuelo o de reserva?» y, de reserva, el lugar (pantalla de siempre).
+  function auxViajeHTML(f) {
+    const res = f.viaje === 'reserva';
+    const chip = (ax, v, on, label) => `<button class="ax-daychip${on ? ' on' : ''}" data-ax="${ax}" data-v="${v}"><b>${label}</b></button>`;
+    return `
+      <div class="ax-sec">¿Vas en vuelo o de reserva?</div>
+      <div class="ax-daychips">${chip('viaje', 'vuelo', !res, 'Vuelo')}${chip('viaje', 'reserva', res, 'Reserva')}</div>
+      ${res ? `<div class="ax-sec">¿Dónde?</div>
+      <div class="ax-daychips">${auxLugares().map(L => chip('lugar', L.key, f.reservePlace === L.key, L.short)).join('')}</div>` : ''}`;
+  }
+
   function auxStep2() {
     const isLle = auxState.form.type === 'lle';
     const f = auxState.form;
     // Trabajo en tierra (0092): sin vuelo. En la llegada no se pide número y la
     // hora es la de salir del aeropuerto; la pernocta (noche entre vuelos) no
     // aplica. Mismo interruptor y mismas reglas que el rediseño (auxCtaState).
+    // De reserva (0121): tampoco hay vuelo; se elige el lugar y en la llegada
+    // la hora es la de fin de la asignación.
     const tierra = !!f.groundOps;
     const TX = window.Auxiliar.tierra;
+    const T = auxTextosVuelo(f);
     return `
       <div class="ax-toggles">
         ${auxToggle(TX.label, 'groundOps', tierra, TX.hint)}
       </div>
+      ${tierra ? '' : auxViajeHTML(f)}
       ${/* SOLO EL VUELO DE LLEGADA (Julián, 25-ago-2026): "omitir ese primer
            número de vuelo, realmente solo nos interesa saber el vuelo de
            llegada". En una salida el número de ida no se usa para nada — lo que
            manda es a qué hora tiene que estar en JMC. En una llegada este mismo
            campo SÍ es el vuelo que aterriza, y ahí es obligatorio: es el que se
            rastrea cuando el avión se retrasa. */ ''}
-      ${isLle && !tierra ? auxFlightField('Número de vuelo', 'flight', '9412') : ''}
-      ${auxField(tierra ? 'Fecha' : 'Fecha del vuelo', 'date', f.date || '', '', 'date', `min="${auxTodayISO()}"`)}
+      ${isLle && !tierra && !T.res ? auxFlightField('Número de vuelo', 'flight', '9412') : ''}
+      ${auxField(tierra || T.res ? 'Fecha' : 'Fecha del vuelo', 'date', f.date || '', '', 'date', `min="${auxTodayISO()}"`)}
       ${auxDateChips(f)}
-      ${auxField(isLle ? (tierra ? 'Hora en que sales del aeropuerto' : 'Hora de aterrizaje') : '¿A qué hora deseas estar en el aeropuerto? 🕒',
-        'time', f.time || '', isLle ? (tierra ? '17:00' : '06:18') : '05:10', 'time')}
-      ${isLle ? (tierra ? `<div class="ax-geo-hint">${TX.lleNote}</div>` : '')
-        : `<div class="ax-geo-hint">${tierra ? TX.salNote : 'Selecciona la hora a la que deseas estar en el aeropuerto JMC. Con base en la hora que elijas coordinaremos tu recogida.'}</div>`}
+      ${auxField(T.hora, 'time', f.time || '', T.horaPh, 'time')}
+      ${T.nota ? `<div class="ax-geo-hint">${T.nota}</div>` : ''}
       <div id="ax-time-hints">${auxTimeHints()}</div>
+      ${/* La sección del regreso y la del viaje van SOLO con las preguntas
+           (pedido de la profa, 25-oct-2026: «quitemos las descripciones»). */ ''}
       ${isLle ? '' : `
         <div class="ax-sec">El regreso</div>
-        ${auxToggle('Regreso el mismo día', 'sameDayBack', f.sameDayBack,
-          'Si vuelves hoy mismo, lo dejamos pedido de una vez y no tienes que volver a entrar.')}
+        ${auxToggle('¿Regresas el mismo día?', 'sameDayBack', f.sameDayBack, '')}
         ${f.sameDayBack ? `
-          ${auxField(tierra ? 'Hora en que sales del aeropuerto' : 'Hora a la que aterrizas de vuelta', 'backTime', f.backTime || '', tierra ? '17:00' : '19:40', 'time')}
-          ${tierra ? '' : auxFlightField('Número del vuelo con el que aterrizas', 'backFlight', '9413')}
-          <div class="ax-hint"><svg class="icon"><use href="#i-info"/></svg>Quedan dos traslados: el de ida y el de regreso. Puedes cancelar cualquiera por separado.</div>`
+          ${auxField(T.regreso, 'backTime', f.backTime || '', T.regresoPh, 'time')}
+          ${T.regresoVuelo ? auxFlightField('Número del vuelo con el que aterrizas', 'backFlight', '9413') : ''}`
           : ''}`}
-      ${/* La pernocta y la reserva en firme vivían en el paso del punto de
-           recogida. Ese paso ya no lo ve todo el mundo (15-sep-2026), y son
-           datos del VIAJE, no de la dirección: van aquí, con el vuelo. */ ''}
-      <div class="ax-sec">Sobre el viaje</div>
+      ${T.pernocta ? `<div class="ax-sec">Sobre el viaje</div>
       <div class="ax-toggles">
-        ${tierra ? '' : auxToggle('¿Es una pernocta?', 'isPernocta', f.isPernocta, 'Pasas la noche entre vuelos (hotel).')}
-        ${auxToggle('¿Es una reserva en firme?', 'isReserva', f.isReserva !== false, 'Confírmanos que el viaje va.')}
-      </div>`;
+        ${auxToggle('¿Es una pernocta?', 'isPernocta', f.isPernocta, '')}
+      </div>` : ''}`;
   }
   // Va en su propio contenedor porque se repinta en cada tecla (junto con el
   // CTA) sin remontar los inputs — si no, el botón se deshabilitaba sin decir
@@ -1162,15 +1213,17 @@
     const cambiar = (window.AuxResidencias && AuxResidencias.hasCatalog())
       ? `<button class="ax-link" data-ax="donde-cambiar">Cambiar</button>` : '';
     // En tierra (0092) no hay vuelo: ni se pinta uno que haya quedado escrito.
+    // De reserva (0121) tampoco: va el lugar.
     const tierra = !!f.groundOps;
+    const L = auxLugar(auxReservaDe(f));
     return `
       <div class="ax-sum">
         <div class="ax-sum-head ${m.cls}">${auxRouteHTML(m)}</div>
-        ${tierra ? row('Trabajo', 'En tierra (sin vuelo)') : (f.flight ? row('Vuelo', f.flight) : '')}
+        ${tierra ? row('Trabajo', 'En tierra (sin vuelo)') : (L ? row('Reserva', L.hotel ? L.name : 'En el aeropuerto') : (f.flight ? row('Vuelo', f.flight) : ''))}
         ${row('Fecha', f.date ? auxDateES(f.date) : '—')}
-        ${row(f.type === 'lle' ? (tierra ? 'Sales del aeropuerto' : 'Aterriza') : 'Estar en el aeropuerto', auxHM(f.time))}
+        ${row(f.type === 'lle' ? (tierra ? 'Sales del aeropuerto' : (L ? 'Finaliza tu asignación' : 'Aterriza')) : (L && L.hotel ? 'Estar en el hotel' : 'Estar en el aeropuerto'), auxHM(f.time))}
         ${f.type !== 'lle' && f.sameDayBack && f.backTime
-          ? row(tierra ? 'Regreso (sales del aeropuerto)' : 'Regreso (aterriza)', auxHM(f.backTime) + (!tierra && f.backFlight ? ' · ' + f.backFlight : ''))
+          ? row(tierra ? 'Regreso (sales del aeropuerto)' : (L ? 'Regreso (finaliza tu asignación)' : 'Regreso (aterriza)'), auxHM(f.backTime) + (!tierra && !L && f.backFlight ? ' · ' + f.backFlight : ''))
           : ''}
         ${row(f.residenceId ? (f.type === 'lle' ? 'Te dejamos en' : 'Te recogemos en') : 'Dirección', auxShortAddr(f.address), cambiar)}
         ${f.residenceUnit ? row('Unidad', f.residenceUnit) : ''}
@@ -1180,8 +1233,7 @@
               ? 'Privado · ' + ((AuxPrivado.priceText && AuxPrivado.priceText()) || 'con costo')
               : 'Compartido · incluido')
           : ''}
-        ${f.isPernocta && !tierra ? row('Pernocta', 'Sí (hotel)') : ''}
-        ${f.isReserva === false ? row('Reserva', 'Tentativa (sin confirmar)') : ''}
+        ${f.isPernocta && !tierra && !L ? row('Pernocta', 'Sí') : ''}
       </div>
       ${/* Con el privado elegido, la franja Select: cuánto, quién lo confirma y
            que aquí no se cobra. aux-privado devuelve '' en compartido. */ ''}
@@ -1245,11 +1297,15 @@
     // es la única que lo muestra, y un interruptor que quedó encendido antes de
     // cambiar a llegada no puede trancar un paso donde ni se ve.
     const tierra = !!f.groundOps;
+    // De reserva (0121): sin vuelo, ni a la ida ni al regreso; falta el lugar.
+    const res = !tierra && f.viaje === 'reserva';
+    const sinVuelo = tierra || res;
     const disabled = (kind === 'tipo' && !f.type)
-      || (kind === 'vuelo' && ((f.type === 'lle' && !tierra && (!f.flight || auxIataCorta('flight')))
+      || (kind === 'vuelo' && ((f.type === 'lle' && !sinVuelo && (!f.flight || auxIataCorta('flight')))
+            || (res && !auxReservaDe(f))
             || !f.date || !f.time || badDate
             || (f.type !== 'lle' && f.sameDayBack
-                && (!f.backTime || (!tierra && (!f.backFlight || auxIataCorta('backFlight')))))))
+                && (!f.backTime || (!sinVuelo && (!f.backFlight || auxIataCorta('backFlight')))))))
       || (kind === 'donde' && !paso3Listo)
       || (kind === 'nivel' && !f.level)
       || (kind === 'revisar' && badDate);
@@ -1640,6 +1696,8 @@
       type: f.type, flight: tierra ? '' : f.flight, date: f.date, time: f.time,
       // Trabajo en tierra (0092): el mismo dato que trae el servidor.
       groundOps: tierra,
+      // De reserva (0121): el lugar, o null si va en un vuelo.
+      reservePlace: tierra ? null : (auxLugar(f.reservePlace) ? f.reservePlace : null),
       address: f.address, lat: f.lat, lng: f.lng,
       residenceId: f.residenceId || null,
       residenceUnit: f.residenceUnit || null,
@@ -1715,9 +1773,14 @@
     // En tierra (0092) no viaja ningún vuelo —aunque haya quedado escrito uno de
     // antes de encender el interruptor— ni la pernocta (noche entre vuelos), que
     // en ese caso ni se muestra. Es una copia: el formulario no se toca.
+    // De reserva (0121) igual: sin vuelos ni pernocta, y con el lugar. Fuera de
+    // la reserva el lugar no viaja aunque haya quedado elegido de antes.
+    const lugarRes = auxReservaDe(auxState.form);
     const f = auxState.form.groundOps === true
-      ? { ...auxState.form, groundOps: true, flight: '', backFlight: '', isPernocta: false }
-      : auxState.form;
+      ? { ...auxState.form, groundOps: true, flight: '', backFlight: '', isPernocta: false, reservePlace: null }
+      : lugarRes
+        ? { ...auxState.form, flight: '', backFlight: '', isPernocta: false, reservePlace: lugarRes }
+        : { ...auxState.form, reservePlace: null };
     const trip = auxNuevoTrip(f);
     // Persistir en dev si hay sesión real; si falla, no se inventa nada.
     try { trip.id = await Api.createReservation(f); }
@@ -1757,8 +1820,11 @@
         // la fecha es la del día siguiente (antes quedaba ANTES de la ida).
         date: f.backTime <= f.time ? auxSumarDia(f.date) : f.date,
         // En tierra (f ya viene sin vuelos) el regreso tampoco lleva: es la
-        // hora a la que sale del aeropuerto, sin desembarque.
-        flight: f.backFlight || f.flight,
+        // hora a la que sale del aeropuerto, sin desembarque. De reserva (0121)
+        // tampoco: es la hora en que termina la asignación, y lo recogen en el
+        // mismo lugar (reservePlace viene en f). Antes, sin vuelo de regreso se
+        // copiaba el de la IDA: nunca es el mismo avión.
+        flight: f.backFlight || '',
         // Marcarlo como pernocta al regreso no tiene sentido: la pernocta es
         // del viaje de ida.
         isPernocta: false,
@@ -2025,13 +2091,13 @@
         ${window.AuxPrivado ? AuxPrivado.statusHTML(t) : ''}
         ${!closed ? `<div id="ax-late-wrap">${auxLateHTML(t, t._info)}</div>` : ''}
         <div class="ax-sum">
-          <div class="ax-sum-row"><span>Te recogen en</span><b>${t.type === 'lle' ? 'JMC' : auxShortAddr(t.address)}</b></div>
-          <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Te dejan en' : 'Destino'}</span><b>${t.type === 'lle' ? auxShortAddr(t.address) : 'JMC'}</b></div>
+          ${/* De reserva (0121): el hotel reemplaza a JMC en el trayecto. */ ''}
+          <div class="ax-sum-row"><span>Te recogen en</span><b>${t.type === 'lle' ? auxPuntoJMC(t) : auxShortAddr(t.address)}</b></div>
+          <div class="ax-sum-row"><span>${t.type === 'lle' ? 'Te dejan en' : 'Destino'}</span><b>${t.type === 'lle' ? auxShortAddr(t.address) : auxPuntoJMC(t)}</b></div>
           ${/* En tierra (0092) no hay vuelo: se dice, en vez de un «—». */ ''}
-          <div class="ax-sum-row"><span>${window.Auxiliar.isGround(t) ? 'Trabajo' : 'Vuelo'}</span><b>${window.Auxiliar.isGround(t) ? 'En tierra (sin vuelo)' : (t.flight || '—')}</b></div>
-          <div class="ax-sum-row"><span>${t.type === 'lle' ? (window.Auxiliar.isGround(t) ? 'Sale del aeropuerto' : 'Aterriza') : 'Estar en JMC'}</span><b>${auxDateES(t.date)} · ${auxHM(t.time)}</b></div>
-          ${t.isPernocta ? `<div class="ax-sum-row"><span>Pernocta</span><b>Sí (hotel)</b></div>` : ''}
-          ${t.isReserva === false ? `<div class="ax-sum-row"><span>Reserva</span><b>Tentativa</b></div>` : ''}
+          <div class="ax-sum-row"><span>${window.Auxiliar.isGround(t) ? 'Trabajo' : (auxLugarDeTrip(t) ? 'Reserva' : 'Vuelo')}</span><b>${window.Auxiliar.isGround(t) ? 'En tierra (sin vuelo)' : (auxLugarDeTrip(t) ? (auxLugarDeTrip(t).hotel ? auxLugarDeTrip(t).name : 'En el aeropuerto') : (t.flight || '—'))}</b></div>
+          <div class="ax-sum-row"><span>${t.type === 'lle' ? (window.Auxiliar.isGround(t) ? 'Sale del aeropuerto' : (auxLugarDeTrip(t) ? 'Finaliza la asignación' : 'Aterriza')) : (auxLugarDeTrip(t) && auxLugarDeTrip(t).hotel ? 'Estar en el hotel' : 'Estar en JMC')}</span><b>${auxDateES(t.date)} · ${auxHM(t.time)}</b></div>
+          ${t.isPernocta ? `<div class="ax-sum-row"><span>Pernocta</span><b>Sí</b></div>` : ''}
           ${t.notes ? `<div class="ax-sum-row"><span>Notas</span><b>${t.notes}</b></div>` : ''}
         </div>
         ${closed ? (t.status === 'done'
@@ -2319,8 +2385,8 @@
   function auxTrackDest(t, info) {
     const pend = auxPendingStops(t, info);
     if (t.status === 'onboard' && pend.length) return { lat: pend[0].lat, lng: pend[0].lng };
-    if (t.type === 'lle') return t.status === 'onboard' ? { lat: t.lat, lng: t.lng } : AUX_MDE;
-    return t.status === 'onboard' ? AUX_MDE : { lat: t.lat, lng: t.lng };
+    if (t.type === 'lle') return t.status === 'onboard' ? { lat: t.lat, lng: t.lng } : auxAptPt(t);
+    return t.status === 'onboard' ? auxAptPt(t) : { lat: t.lat, lng: t.lng };
   }
   function auxDistM(a, b) {
     const R = 6371000, toR = Math.PI / 180;
@@ -2655,7 +2721,7 @@
     // Destino final. En una llegada mi casa YA es una de las paradas: no se repite.
     if (t.type !== 'sal' && pend.some(s => s.mine)) return;
     const isApt = t.type === 'sal';
-    const finalPt = isApt ? [AUX_MDE.lat, AUX_MDE.lng] : [t.lat, t.lng];
+    const finalPt = isApt ? [auxAptPt(t).lat, auxAptPt(t).lng] : [t.lat, t.lng];
     if (finalPt[0] == null) return;
     const fIcon = rx ? auxLfIcon(isApt ? 'apt' : 'pin')
       : L.divIcon({ className: '', html: `<div class="ax-stop end">${isApt ? '✈' : '🏠'}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
@@ -2728,7 +2794,7 @@
     const pts = [driverPt];
     if (t.type === 'lle' && t.status !== 'onboard') {
       // Llegada y aún no me monto: el carro va al aeropuerto por mí.
-      return { pts: pts.concat([[AUX_MDE.lat, AUX_MDE.lng]]), target: 1 };
+      return { pts: pts.concat([[auxAptPt(t).lat, auxAptPt(t).lng]]), target: 1 };
     }
     const pend = auxPendingStops(t, info);
     let target = -1;
@@ -2738,7 +2804,7 @@
     }
     pend.forEach(s => { pts.push([s.lat, s.lng]); if (s.mine) target = pts.length - 1; });
     if (t.type === 'sal') {
-      pts.push([AUX_MDE.lat, AUX_MDE.lng]);        // una salida siempre termina en JMC
+      pts.push([auxAptPt(t).lat, auxAptPt(t).lng]); // una salida termina en JMC (o en el hotel de su reserva, 0121)
       if (target < 0) target = pts.length - 1;     // ya me recogieron → me importa el aeropuerto
     } else if (target < 0 && t.lat != null) {
       pts.push([t.lat, t.lng]); target = pts.length - 1;
@@ -3204,13 +3270,38 @@
     auxRender();
   }
 
+  // De reserva (0121). Los lugares viven en api.js (Api.reservePlaces); sin
+  // api.js (pruebas viejas) hay respaldo con las mismas llaves.
+  const AUX_LUGARES_RESPALDO = [
+    { key: 'rio_verde', name: 'Hotel Río Verde', short: 'Río Verde', hotel: true, lat: 6.156991101546355, lng: -75.4355739305156 },
+    { key: 'movich', name: 'Hotel Movich', short: 'Movich', hotel: true, lat: 6.1726933265356125, lng: -75.43533347469526 },
+    { key: 'aero', name: 'Aeropuerto JMC', short: 'Aeropuerto', hotel: false, lat: 6.1715, lng: -75.4270 },
+  ];
+  function auxLugares() {
+    try { if (window.Api && typeof Api.reservePlaces === 'function') return Api.reservePlaces(); } catch (_) {}
+    return AUX_LUGARES_RESPALDO;
+  }
+  function auxLugar(k) { return k ? (auxLugares().find(x => x.key === k) || null) : null; }
+  // ¿El pedido (formulario) va de reserva? → la llave del lugar o null. En
+  // tierra nunca: son dos cosas distintas.
+  function auxReservaDe(f) {
+    if (!f || f.groundOps === true || f.viaje !== 'reserva') return null;
+    return auxLugar(f.reservePlace) ? f.reservePlace : null;
+  }
+  // El lugar de un viaje ya pedido (forma T) o null.
+  function auxLugarDeTrip(t) { return t && !(t.groundOps === true) ? auxLugar(t.reservePlace) : null; }
+  // El extremo «aeropuerto» del viaje: el hotel si va de reserva a uno, si no JMC.
+  function auxPuntoJMC(t) { const L = auxLugarDeTrip(t); return L && L.hotel ? L.name : 'JMC'; }
+  // Las coordenadas de ese extremo (los mapas del seguimiento).
+  function auxAptPt(t) { const L = auxLugarDeTrip(t); return L && L.hotel ? { lat: L.lat, lng: L.lng } : AUX_MDE; }
+
   // Arranca un pedido nuevo. Lo usan el botón «Pedir traslado» (data-ax="new")
   // y Auxiliar.newTrip(); el candado de suspensión va ANTES, en quien lo llama.
   function auxStartNew() {
     if (auxState.typeTimer) { clearTimeout(auxState.typeTimer); auxState.typeTimer = null; }
     auxState.view = 'form'; auxState.step = 1; auxState.stepDir = 'fwd';
     // Trabajo en tierra (0092): arranca como su último pedido.
-    auxState.form = { isReserva: true, date: auxDefaultDate(), groundOps: window.Auxiliar.groundDefault() };
+    auxState.form = { isReserva: true, viaje: 'vuelo', reservePlace: null, date: auxDefaultDate(), groundOps: window.Auxiliar.groundDefault() };
     // El catálogo se pide ya, para que el paso del punto no muestre spinner
     // (y para que con una unidad ni aparezca). Las siglas también: si la
     // primera vez no llegaron (app abierta sin señal, perfil recién creado),
@@ -3476,6 +3567,8 @@
           isReserva: true, type: last.type,
           // Trabajo en tierra (0092): es de lo estable, como el tipo y el punto.
           groundOps: window.Auxiliar.isGround(last),
+          // La reserva (0121) NO: un día va en vuelo y otro de reserva.
+          viaje: 'vuelo', reservePlace: null,
           date: auxDefaultDate(),
           // Las notas guardadas llevan pegados el vuelo de ESA vez («Vuelo AV9412. »,
           // createReservation) y la marca del regreso. Repetirlos metía un vuelo viejo
@@ -3637,6 +3730,18 @@
         auxState.form.flOtra = k; auxRender();
         const inp = auxRoot() && auxRoot().querySelector('[data-field="' + k + 'Iata"]');
         if (inp) { try { inp.focus(); inp.select(); } catch (_) {} }
+      }
+      // De reserva (0121): «¿Vas en vuelo o de reserva?» y el lugar.
+      else if (a === 'viaje') {
+        const v = el.dataset.v === 'reserva' ? 'reserva' : 'vuelo';
+        auxState.form.viaje = v;
+        // El selector de la sigla, si estaba abierto, no vuelve abierto.
+        auxState.form.flPick = null;
+        auxRender();
+      }
+      else if (a === 'lugar') {
+        if (auxLugar(el.dataset.v)) { auxState.form.reservePlace = el.dataset.v; auxState.form.viaje = 'reserva'; }
+        auxRender();
       }
       else if (a === 'toggle') {
         const k = el.dataset.key; auxState.form[k] = !auxState.form[k];

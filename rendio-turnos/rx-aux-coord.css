@@ -53,7 +53,10 @@
 
 /* ── Cambió mi vuelo (.rx-fv) ─────────────────────────────────────────────────── */
 /* Día y hora (el diseño solo trae el vuelo): dos campos lado a lado. */
-#auxiliar-ui.rx-phone .rx-fv-when { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* minmax(0, 1fr): con 1fr a secas la columna no baja de lo que mide el campo
+   de la hora, y en un iPhone 13 se salía 10 px de la pantalla (25-oct-2026). */
+#auxiliar-ui.rx-phone .rx-fv-when { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: end; }
+#auxiliar-ui.rx-phone .rx-fv-when > .rx-field { min-width: 0; }
 #auxiliar-ui.rx-phone .rx-fv-when .rx-input { padding: 0 12px; gap: 8px; }
 #auxiliar-ui.rx-phone .rx-fv-when .rx-input input {
   min-width: 0; width: 100%; font-size: 16px; -webkit-appearance: none; appearance: none; text-align: left;

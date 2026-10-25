@@ -359,6 +359,8 @@
   // aterrizaje + su desembarque, los de tierra a su hora, y manda el último.
   // Sin nadie en tierra el resultado es exactamente el de siempre (y no se mira
   // landingMin). Todos en tierra = 0.
+  // DE RESERVA (0121): llega con tierra=true (api.js), así que tampoco suma
+  // desembarque: su hora ya es la de fin de la asignación.
   function rtDeplaneOf(ids, landingMin) {
     const todos = ids || [];
     const tierra = todos.filter(id => rt.aux[id] && rt.aux[id].tierra);
@@ -509,7 +511,9 @@
     // tierra: todos los de la vuelta trabajan en tierra (0092) → nadie «aterriza»
     // (lo usa el tablero para decir «sale del terminal» en vez de «aterriza»).
     const tierra = stops.length > 0 && stops.every(x => rt.aux[x.id] && rt.aux[x.id].tierra);
-    return { stops, pax, arrival, hardDL: ideal, holg: -wait, status, depart: ideal, wait, lle: true, tierra };
+    // reserva (0121): todos de reserva → la hora es la de fin de la asignación.
+    const reserva = tierra && stops.every(x => rt.aux[x.id].reserva);
+    return { stops, pax, arrival, hardDL: ideal, holg: -wait, status, depart: ideal, wait, lle: true, tierra, reserva };
   }
 
   function rtDayStats() {
@@ -1263,6 +1267,16 @@
     return { lanes, order, unassigned };
   }
 
+  // De reserva (0121): el nombre corto del lugar, o '' si va en vuelo/tierra.
+  // `tierra` viene en true también con reserva (misma lógica de llegadas): los
+  // textos miran esto primero.
+  function rtReservaTxt(a, largo) {
+    const P = a && a.reserva && typeof Api !== 'undefined' && Api && typeof Api.reservePlace === 'function' ? Api.reservePlace(a.reserva) : null;
+    if (!P) return '';
+    return P.hotel ? (largo ? 'De reserva en el ' + P.name : P.short) : (largo ? 'De reserva en el aeropuerto (sin vuelo)' : 'Reserva JMC');
+  }
+  function rtSinVueloTxt(a) { return rtReservaTxt(a, true) || 'Trabajo en tierra (sin vuelo)'; }
+
   // Tarjeta del pool. Antes solo decía nombre + zona + hora: para saber de qué
   // vuelo era, a qué teléfono llamar o qué pidió el auxiliar había que irse a
   // Reservas. Ahora el dato está donde se toma la decisión.
@@ -1271,14 +1285,14 @@
     const tt = a.hotel ? 'hotel' : a.type;
     const ttl = a.hotel ? 'Hotel' : (a.type === 'sal' ? 'Salida' : 'Llegada');
     // En tierra (0092): sin vuelo, y se dice («Tierra») en vez de dejar el hueco.
-    const tip = [a.dir || a.zona, a.tierra ? 'Trabajo en tierra (sin vuelo)' : (a.vuelo && ('Vuelo ' + a.vuelo)), a.tel, a.notas].filter(Boolean).join(' · ');
+    const tip = [a.dir || a.zona, a.tierra ? rtSinVueloTxt(a) : (a.vuelo && ('Vuelo ' + a.vuelo)), a.tel, a.notas].filter(Boolean).join(' · ');
     return `<div class="aux" draggable="true" data-aux="${id}" data-src="pool" title="${rtEsc(tip)}">
       <span class="pax">${a.pax > 1 ? '×' + a.pax : ''}</span>
       <div class="a-top"><span class="a-av" style="background:${rt.colors[id] || '#888'}">${rtIni(a.n)}</span>
         <div class="a-nm"><b>${a.n}</b><span>${rtEsc(a.dir || a.zona)}</span></div></div>
       <div class="a-meta">
         <span class="triptype ${tt}"><svg class="icon"><use href="#${a.hotel ? 'i-home' : (a.type === 'lle' ? 'i-down' : 'i-up')}"/></svg>${ttl}</span>
-        ${a.tierra ? '<span class="a-flight">Tierra</span>' : (a.vuelo ? `<span class="a-flight">${rtEsc(a.vuelo)}</span>` : '')}
+        ${a.tierra ? `<span class="a-flight">${rtEsc(rtReservaTxt(a) || 'Tierra')}</span>` : (a.vuelo ? `<span class="a-flight">${rtEsc(a.vuelo)}</span>` : '')}
         <span class="dl hard"><svg class="icon"><use href="#i-clock"/></svg>${a.dl}</span>
       </div>
       ${a.notas ? `<div class="a-note" title="${rtEsc(a.notas)}"><svg class="icon"><use href="#i-info"/></svg>${rtEsc(a.notas)}</div>` : ''}
@@ -1310,11 +1324,11 @@
     const p = a.n.split(' ');
     // El title carga el detalle completo: en una parada estrecha no cabe, pero el
     // admin necesita poder consultarlo sin abrir Reservas.
-    const tip = [a.n, a.dir || a.zona, a.tierra ? 'Trabajo en tierra (sin vuelo)' : (a.vuelo && ('Vuelo ' + a.vuelo)), a.tel, a.notas].filter(Boolean).join('\n');
+    const tip = [a.n, a.dir || a.zona, a.tierra ? rtSinVueloTxt(a) : (a.vuelo && ('Vuelo ' + a.vuelo)), a.tel, a.notas].filter(Boolean).join('\n');
     return `<div class="stop ${overDL ? 'over-dl' : ''}" draggable="true" data-aux="${s.id}" data-src="${cid}" title="${rtEsc(tip)}">
       <div class="s-top"><span class="s-n">${idx + 1}</span><span class="s-av" style="background:${rt.colors[s.id] || '#888'}">${rtIni(a.n)}</span><span class="s-nm">${rtEsc(p[0] + ' ' + (p[1] ? p[1][0] + '.' : ''))}</span></div>
       <div class="s-meta"><span class="s-zona">${rtEsc(a.zona)}</span><span class="s-eta">${rtToHM(s.cita ?? s.eta)}</span></div>
-      <div class="s-dl"><svg class="icon" style="width:10px;height:10px"><use href="#i-clock"/></svg>pres. ${a.dl}${a.tierra ? ' · tierra' : (a.vuelo ? ' · ' + rtEsc(a.vuelo) : '')}${a.hotel ? ' · hotel' : ''}${a.pax > 1 ? ' · ×' + a.pax : ''}</div>
+      <div class="s-dl"><svg class="icon" style="width:10px;height:10px"><use href="#i-clock"/></svg>pres. ${a.dl}${a.tierra ? ' · ' + rtEsc(rtReservaTxt(a) || 'tierra') : (a.vuelo ? ' · ' + rtEsc(a.vuelo) : '')}${a.pax > 1 ? ' · ×' + a.pax : ''}</div>
       ${a.notas ? `<div class="s-note"><svg class="icon" style="width:10px;height:10px"><use href="#i-info"/></svg>${rtEsc(a.notas)}</div>` : ''}
     </div>`;
   }
@@ -1332,8 +1346,8 @@
       : `<span class="drv none">${rtBandIcon(rtBandOf(lane))} <svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Sin conductor ${rtBandName(rtBandOf(lane))} (borrador)</span>`;
     const sema = r.lle
       ? (st === 'ontime'
-        ? `<div class="holg"><div class="big" style="color:var(--green)">al bajar</div><div class="sm">${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`
-        : `<div class="holg"><div class="big" style="color:${st === 'late' ? 'var(--red)' : 'var(--amber)'}">espera ${r.wait} min</div><div class="sm">${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ${st}"><svg class="icon"><use href="#${st === 'late' ? 'i-warn' : 'i-clock'}"/></svg>${st === 'late' ? 'Espera larga' : 'Ajustado'}</span>`)
+        ? `<div class="holg"><div class="big" style="color:var(--green)">al bajar</div><div class="sm">${r.tierra ? (r.reserva ? 'termina la asignación' : 'sale del terminal') : 'aterriza'} ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ontime"><svg class="icon"><use href="#i-check"/></svg>A tiempo</span>`
+        : `<div class="holg"><div class="big" style="color:${st === 'late' ? 'var(--red)' : 'var(--amber)'}">espera ${r.wait} min</div><div class="sm">${r.tierra ? (r.reserva ? 'termina la asignación' : 'sale del terminal') : 'aterriza'} ${lane.landing} · recoge ${lane.start} · termina ${rtToHM(r.arrival)}</div></div><span class="spill ${st}"><svg class="icon"><use href="#${st === 'late' ? 'i-warn' : 'i-clock'}"/></svg>${st === 'late' ? 'Espera larga' : 'Ajustado'}</span>`)
       : st === 'empty'
       ? `<span class="spill empty">Vacío</span>`
       : st === 'late'
@@ -1729,7 +1743,7 @@
     const lane = rtLaneOf(laneId);
     $('#rt-mapTitle').textContent = `Trayecto ${lane.car} · Vuelta ${lane.vuelta}`;
     $('#rt-mapSub').textContent = lane.type === 'lle'
-      ? `${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing} · recoge en JMC ${lane.start} · ${r.stops.length} paradas · termina ${rtToHM(r.arrival)}`
+      ? `${r.tierra ? (r.reserva ? 'termina la asignación' : 'sale del terminal') : 'aterriza'} ${lane.landing} · recoge en JMC ${lane.start} · ${r.stops.length} paradas · termina ${rtToHM(r.arrival)}`
       : `${lane.origin === 'airport' ? 'sale de JMC ' + lane.start : '1ª recogida ' + lane.start} · ${r.stops.length} paradas · llega a JMC ${rtToHM(r.arrival)} (pres. ${rtToHM(r.hardDL)})`;
     ovl.classList.add('show');
     // Mapa una sola vez; capa de ruta se redibuja por carro.
@@ -1747,7 +1761,12 @@
     const pin = (bg, tx) => `<div style="width:26px;height:26px;border-radius:50%;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font:800 12px Inter,sans-serif;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)">${tx}</div>`;
     const stopColor = r.lle ? '#10B981' : '#E2551A';
     r.stops.forEach((s, i) => { const a = rt.aux[s.id]; mk(rtCoordsOf(s.id), pin(stopColor, String(i + 1)), `<b>${i + 1}. ${a.n}</b><br>${a.dir || a.zona}<br>${r.lle ? 'Lo dejan' : 'Recogida'} ${rtToHM(s.cita ?? s.eta)}${r.lle ? '' : ' · pres. ' + a.dl}`); });
-    mk(RT_AIRPORT, pin('#16936A', '✈'), r.lle ? `<b>JMC</b> · recoge ${lane.start} (${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing})` : `<b>JMC</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
+    // De reserva (0121): el hotel no es una parada del optimizador todavía (está a
+    // 1–2 km de JMC), pero se marca para que el jefe vea a dónde va o de dónde sale.
+    const hoteles = {};
+    r.stops.forEach(s => { const a = rt.aux[s.id]; const P = a && a.reserva && typeof Api !== 'undefined' && Api && typeof Api.reservePlace === 'function' ? Api.reservePlace(a.reserva) : null; if (P && P.hotel) (hoteles[P.key] = hoteles[P.key] || { P, n: [] }).n.push(a.n); });
+    Object.values(hoteles).forEach(({ P, n }) => mk(P, pin('#F59E0B', 'H'), `<b>${rtEsc(P.name)}</b><br>De reserva: ${rtEsc(n.join(', '))}<br>${r.lle ? 'Se recoge aquí' : 'Se deja aquí'}`));
+    mk(RT_AIRPORT, pin('#16936A', '✈'), r.lle ? `<b>JMC</b> · recoge ${lane.start} (${r.tierra ? (r.reserva ? 'termina la asignación' : 'sale del terminal') : 'aterriza'} ${lane.landing})` : `<b>JMC</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
     // Geometría real por carretera (OSRM route). Si falla → línea recta punteada.
     let drew = false;
     try {

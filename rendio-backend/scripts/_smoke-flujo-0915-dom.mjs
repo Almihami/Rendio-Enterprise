@@ -94,7 +94,7 @@ t('la llegada es .rx-type.t-a2h y dice Aeropuerto → Casa', !!lle && lle.queryS
 t('y su tile pinta la casa', !!lle.querySelector('.rx-type-ic use[href="#rx-Home"]'));
 t('los subtítulos del diseño', /Te recogemos para tu vuelo/.test(txt()) && /Te esperamos al aterrizar/.test(txt()));
 t('sin Aeropuerto → Hotel (D22)', !/Hotel/.test(txt()) && scope().querySelectorAll('.rx-type').length===2);
-t('la pista de la pernocta ya no manda al «paso de dirección»', !/paso de dirección/.test(txt()) && /pernocta/.test(txt()));
+t('el paso 1 ya no trae la pista de la pernocta (25-oct: la pregunta está en el paso 2, sola)', !/paso de dirección/.test(txt()) && !/pernocta/i.test(txt()));
 } else {
 const sal=ui().querySelector('.ax-opt.h2a'), lle=ui().querySelector('.ax-opt.a2h');
 t('la salida dice Casa → Aeropuerto', sal && sal.querySelector('b span.ax-route') && sal.querySelector('b').textContent.replace(/\s+/g,'')==='CasaAeropuerto', sal?.querySelector('b')?.textContent);
@@ -104,7 +104,7 @@ t('el tile de la salida pinta a dónde va (avión)', !!sal.querySelector('.ax-op
 t('la llegada dice Aeropuerto → Casa', lle.querySelector('b').textContent.replace(/\s+/g,'')==='AeropuertoCasa');
 t('y su tile pinta la casa', !!lle.querySelector('.ax-opt-ic use[href="#i-home"]'));
 t('los subtítulos siguen igual', /Voy al aeropuerto a operar un vuelo/.test(txt()) && /Vengo aterrizando de un vuelo/.test(txt()));
-t('la pista de la pernocta ya no manda al «paso de dirección»', !/paso de dirección/.test(txt()) && /pernocta/.test(txt()));
+t('el paso 1 ya no trae la pista de la pernocta (25-oct: la pregunta está en el paso 2, sola)', !/paso de dirección/.test(txt()) && !/pernocta/i.test(txt()));
 }
 
 console.log('\n── los pasos, por nombre: una unidad ──');
@@ -229,22 +229,23 @@ click('[data-ax="donde-cambiar"]'); await wait();
 t('«Cambiar» abre el CATÁLOGO, no otra vez la dirección en blanco', window.Auxiliar.stepKind()==='donde' && !!scope().querySelector('#axr-q') && !scope().querySelector('[data-field="address"]') && A().form.manualAddr===false, txt().slice(0,120));
 t('y sigue ofreciendo «Mi punto no está en la lista»', !!scope().querySelector('[data-ax="res-manual"]'));
 
-console.log('\n── pernocta y reserva en el vuelo, notas en el resumen → payload ──');
+console.log('\n── la pernocta en el vuelo, notas en el resumen → payload (sin «reserva en firme», 0121) ──');
 await nuevo();
 await tipo('sal'); await wait();
-t(RX?'el paso 2 trae la tarjeta de opciones (.rx-card) con los dos toggles':'el paso 2 trae «Sobre el viaje» con los dos toggles', (RX ? !!scope().querySelector('.rx-card [data-key="isPernocta"]') : /Sobre el viaje/.test(txt())) && !!scope().querySelector('[data-ax="toggle"][data-key="isPernocta"]') && !!scope().querySelector('[data-ax="toggle"][data-key="isReserva"]'));
-t('la reserva en firme arranca encendida', scope().querySelector('[data-ax="toggle"][data-key="isReserva"]').classList.contains('on'));
+t(RX?'el paso 2 trae la pernocta en la tarjeta de opciones (.rx-card)':'el paso 2 trae «Sobre el viaje» con la pernocta', (RX ? !!scope().querySelector('.rx-card [data-key="isPernocta"]') : /Sobre el viaje/.test(txt())) && !!scope().querySelector('[data-ax="toggle"][data-key="isPernocta"]'));
+t('«¿Es una reserva en firme?» ya no está (0121)', !scope().querySelector('[data-key="isReserva"]') && !/reserva en firme/i.test(txt()) && !/Confírmanos que el viaje va/.test(txt()));
+t('solo las preguntas: sin descripciones de regreso ni pernocta', /¿Regresas el mismo día\?/.test(txt()) && /¿Es una pernocta\?/.test(txt()) && !/Pasas la noche entre vuelos/.test(txt()) && !/Si vuelves hoy mismo/.test(txt()));
+t('y la pregunta nueva: «¿Vas en vuelo o de reserva?», en Vuelo', /¿Vas en vuelo o de reserva\?/.test(txt()) && !!scope().querySelector('[data-ax="viaje"][data-v="vuelo"].on'));
 set('date','2026-12-20'); set('time','05:10');
 click('[data-ax="toggle"][data-key="isPernocta"]'); await wait();
-click('[data-ax="toggle"][data-key="isReserva"]'); await wait();
-t('quedan marcados en el form', A().form.isPernocta===true && A().form.isReserva===false);
+t('queda marcada en el form', A().form.isPernocta===true);
 t('y la hora no se perdió al repintar', scope().querySelector('[data-field="time"]').value==='05:10');
 click('[data-ax="next"]'); await wait();
 t('del vuelo se pasa al nivel', window.Auxiliar.stepKind()==='nivel');
 click('[data-ax="next"]'); await wait();
 t('en revisar están las notas y NO los toggles', !!scope().querySelector('[data-field="notes"]') && !scope().querySelector('[data-ax="toggle"]'));
 t('las notas van entre el resumen y «Antes de confirmar»', (()=>{ const h=scope().innerHTML; const i0=h.indexOf(RX?'class="rx-review':'class="ax-sum"'); return i0>=0 && i0<h.indexOf('data-field="notes"') && h.indexOf('data-field="notes"')<h.indexOf('Antes de confirmar'); })());
-t('el resumen refleja pernocta y reserva tentativa', /PernoctaSí \(hotel\)/.test(txt()) && /ReservaTentativa/.test(txt()));
+t('el resumen refleja la pernocta (sin «(hotel)») y nada de «Tentativa»', /PernoctaSí/.test(txt()) && !/Sí \(hotel\)/.test(txt()) && !/Tentativa/.test(txt()));
 const ta=scope().querySelector('[data-field="notes"]'); ta.focus();
 const pie=RX?scope().querySelector('.ax-cta-bar .rx-slide'):null;
 set('notes','Timbre 302');
@@ -253,7 +254,28 @@ if (RX) t('…ni rehace el deslizador (#17)', scope().querySelector('.ax-cta-bar
 creadas.length=0;
 await confirmar();
 t('se creó la reserva', creadas.length===1);
-t('los tres llegan al payload de createReservation', creadas[0]?.isPernocta===true && creadas[0]?.isReserva===false && creadas[0]?.notes==='Timbre 302', JSON.stringify(creadas[0]));
+t('llegan al payload: pernocta, notas y SIN lugar de reserva', creadas[0]?.isPernocta===true && creadas[0]?.notes==='Timbre 302' && !creadas[0]?.reservePlace, JSON.stringify(creadas[0]));
+
+console.log('\n── de RESERVA en Movich: sin vuelo, «¿A qué hora finaliza tu asignación?» (0121) ──');
+await nuevo();
+await tipo('lle'); await wait();
+t('una llegada en Vuelo pide el número de vuelo', !!scope().querySelector('[data-field="flightNum"]'));
+click('[data-ax="viaje"][data-v="reserva"]'); await wait();
+t('al pasar a Reserva se va el número de vuelo', !scope().querySelector('[data-field="flightNum"]') && A().form.viaje==='reserva');
+t('aparece «¿Dónde?» con Río Verde, Movich y Aeropuerto', /¿Dónde\?/.test(txt()) && ['rio_verde','movich','aero'].every(k=>!!scope().querySelector(`[data-ax="lugar"][data-v="${k}"]`)));
+t('la hora es «¿A qué hora finaliza tu asignación?»', /¿A qué hora finaliza tu asignación\?/.test(txt()));
+t('sin pernocta de reserva', !scope().querySelector('[data-key="isPernocta"]'));
+set('date','2026-12-20'); set('time','18:30');
+t('sin lugar elegido, Continuar sigue bloqueado', window.Auxiliar.ctaState().disabled===true);
+click('[data-ax="lugar"][data-v="movich"]'); await wait();
+t('con Movich se puede seguir (sin vuelo)', A().form.reservePlace==='movich' && window.Auxiliar.ctaState().disabled===false);
+t('la nota dice dónde lo recogen', /Te recogemos en el Hotel Movich a esa hora/.test(txt()));
+click('[data-ax="next"]'); await wait();
+if (window.Auxiliar.stepKind()==='nivel') { click('[data-ax="next"]'); await wait(); }
+t('el resumen dice la reserva y «finaliza», no un vuelo', /Reserva/.test(txt()) && /Hotel Movich/.test(txt()) && /[Ff]inaliza/.test(txt()) && !/Aterriza/.test(txt()), txt().slice(0,200));
+creadas.length=0;
+await confirmar();
+t('el payload lleva el lugar y ningún vuelo', creadas[0]?.reservePlace==='movich' && !creadas[0]?.flight && creadas[0]?.isPernocta===false, JSON.stringify(creadas[0]));
 
 console.log('\n── con privado encendido: el paso del nivel entra en su sitio ──');
 window.state.settings={...CON_PRIVADO};

@@ -179,7 +179,7 @@ t('el título ya no pregunta por un vuelo («¿A qué hora sales?»)', /A qué h
 t('la nota dice que no se suma desembarque', /no le sumamos tiempo de desembarque/.test(txt(E)));
 t('rx-calc «Sales de JMC» con la hora puesta', /Sales de JMC/.test(E.$(bk + ' .rx-calc')?.textContent || '') && E.$(bk + ' .rx-calc .rx-calc-t')?.textContent === '17:00');
 t('la hora escrita no se perdió', E.$('[data-field="time"]').value === '17:00' && E.A().form.time === '17:00');
-t('sin pernocta (noche entre vuelos) en tierra', !E.$('[data-key="isPernocta"]') && !!E.$('[data-key="isReserva"]'));
+t('sin pernocta (noche entre vuelos) ni «¿Vas en vuelo o de reserva?» en tierra', !E.$('[data-key="isPernocta"]') && !E.$('[data-ax="viaje"]') && !E.$('[data-key="isReserva"]'));
 t('Continuar habilitado solo con fecha y hora (sin vuelo)', !cont(E).disabled);
 E.set('time', '');
 t('sin hora, bloqueado', cont(E).disabled);
