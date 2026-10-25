@@ -27,6 +27,9 @@ const sondas = [
   ['columna shifts.fueled',   `SELECT 1 FROM information_schema.columns WHERE table_name='shifts' AND column_name='fueled'`],
   ['enum unset',              `SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid=e.enumtypid WHERE t.typname='availability_state' AND e.enumlabel='unset'`],
   ['close_shift sin sobrecarga', `SELECT 1 FROM (SELECT count(*) n FROM pg_proc p JOIN pg_namespace ns ON ns.oid=p.pronamespace WHERE ns.nspname='public' AND p.proname='close_shift') s WHERE s.n=1`],
+  ['0117 disparador de avisos prendido', `SELECT 1 FROM pg_trigger WHERE tgname='tr_incidents_avisar_jefes' AND tgrelid='public.incidents'::regclass AND tgenabled='O'`],
+  ['0117 push_allowed_recipients (send-push la necesita)', `SELECT 1 WHERE to_regprocedure('public.push_allowed_recipients(uuid[])') IS NOT NULL`],
+  ['0117 la app ya no encola avisos a mano', `SELECT 1 WHERE NOT has_function_privilege('authenticated','public.enqueue_incident_alert(uuid)','EXECUTE') AND NOT has_function_privilege('anon','public.enqueue_incident_alert(uuid)','EXECUTE')`],
 ];
 for (const [n, sql] of sondas) t(n, (await c.query(sql)).rows.length>0);
 
