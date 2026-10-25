@@ -57,7 +57,10 @@ const N = LAS_FIJAS.length;
 
 // fallaHasta: cuántas veces seguidas debe fallar la subida de door_right.
 // Infinity = se cayó de verdad (el caso de Juan Esteban).
-async function correr({ fallaHasta, pararEn = null, sinIdb = false }) {
+// camara: el teléfono es Android y las fotos salen de la cámara DENTRO de la app
+// (camara-app.js), no del input. Se sustituye CamaraApp por un doble que
+// entrega un JPEG al instante y anota con qué se le llamó.
+async function correr({ fallaHasta, pararEn = null, sinIdb = false, camara = false }) {
   const dom = new JSDOM(readFileSync(APP + 'index.html', 'utf8'),
     { runScripts: 'outside-only', pretendToBeVisual: true, url: 'http://localhost/' });
   const { window } = dom;
@@ -126,6 +129,15 @@ async function correr({ fallaHasta, pararEn = null, sinIdb = false }) {
   };
   window.state = { settings: {} }; global.state = window.state;
 
+  const camaraLlamadas = [];
+  let clicsInput = 0;
+  if (camara) {
+    window.CamaraApp = {
+      disponible: () => true,
+      tomar: async (op) => { camaraLlamadas.push(op); return new window.Blob(['jpeg'], { type: 'image/jpeg' }); },
+    };
+  }
+
   for (const f of ['driver-disponibilidad.js', 'shift-flow.js']) window.eval(readFileSync(APP + f, 'utf8'));
   await window.ShiftFlow.init({ id: 'p1', full_name: 'Juan Esteban', organization_id: 'o1', role: 'driver' });
   await esperar(120);
@@ -174,6 +186,14 @@ async function correr({ fallaHasta, pararEn = null, sinIdb = false }) {
   let msFotos = 0;
   for (const slot of LAS_FIJAS) {
     const t = Date.now();
+    if (camara) {
+      const inp = doc.getElementById('sf-photo-input');
+      inp.click = () => { clicsInput++; };
+      q(`[data-slot="${slot}"]`).click();
+      await esperar(20);   // la promesa del doble se resuelve y repinta
+      msFotos += Date.now() - t;
+      continue;
+    }
     q(`[data-slot="${slot}"]`).click();
     const input = doc.getElementById('sf-photo-input');
     const file = new window.File(['x'.repeat(300 * 1024)], slot + '.jpg', { type: 'image/jpeg' });
@@ -183,10 +203,10 @@ async function correr({ fallaHasta, pararEn = null, sinIdb = false }) {
     msFotos += Date.now() - t;
     await esperar(40);
   }
-  const capturadas = LAS_FIJAS.length;
+  const capturadas = camara ? wiz().querySelectorAll('[data-slot] img').length : LAS_FIJAS.length;
   // Aquí es donde se murió el teléfono de Juan Esteban en su segundo intento:
   // con el checklist marcado y las fotos tomadas, ANTES de pulsar confirmar.
-  if (pararEn === 'fotos') { await esperar(600); return { capturadas, muerto: true, msFotos, html: wiz().innerHTML }; }
+  if (pararEn === 'fotos') { await esperar(600); return { capturadas, muerto: true, msFotos, html: wiz().innerHTML, camaraLlamadas, clicsInput }; }
   pulsar('sf-next'); await esperar(150);
   // — paso 4: kilometraje —
   const km = doc.getElementById('sf-km');
@@ -203,7 +223,7 @@ async function correr({ fallaHasta, pararEn = null, sinIdb = false }) {
   // Los reintentos esperan 0,8s y 1,6s: hay que dejarlos correr enteros.
   await esperar(4000);
 
-  return { orden, subidas, filasFoto, texto: txt(), capturadas, intentosPorFoto, html: wiz().innerHTML };
+  return { orden, subidas, filasFoto, texto: txt(), capturadas, intentosPorFoto, html: wiz().innerHTML, camaraLlamadas, clicsInput };
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -256,6 +276,29 @@ t(`le devuelve las ${N} fotos`, new RegExp(`${N} fotos`).test(C2.recuperado.avis
 t('vuelve por el paso del vehículo para re-reservar el carro', /Paso 1 de 6/.test(C2.recuperado.texto), C2.recuperado.texto.slice(0, 90));
 t('pero con el carro ya seleccionado, listo para continuar', !C2.continuarBloqueado, 'el botón Continuar salió deshabilitado');
 t('y conserva el checklist marcado', C2.checklistMarcado === 2, String(C2.checklistMarcado));
+
+console.log('\n══ ESCENARIO D · Android: las fotos salen de la cámara DE LA APP (24-oct) ══');
+// El caso de Miguel Ángel (21 y 22-oct): con la cámara del teléfono Android a
+// veces cerraba Chrome y la app se reiniciaba con la foto perdida. En Android
+// el asistente ya no abre el input: le pide la foto a CamaraApp.
+nuevaIdb();
+const D = await correr({ fallaHasta: 0, camara: true });
+t(`las ${N} casillas quedaron con su foto`, D.capturadas === N, String(D.capturadas));
+t(`le pidió a la cámara de la app las ${N} fotos`, D.camaraLlamadas.length === N, String(D.camaraLlamadas.length));
+t('NUNCA abrió la cámara del teléfono (el input)', D.clicsInput === 0, String(D.clicsInput));
+t('la cámara recibe el nombre de cada foto', D.camaraLlamadas.map(o => o.titulo).join('|').startsWith('Frontal|Trasera'), D.camaraLlamadas.map(o => o.titulo).join('|'));
+t('y su indicación', D.camaraLlamadas[0] && /Placa visible/.test(D.camaraLlamadas[0].detalle), D.camaraLlamadas[0] && D.camaraLlamadas[0].detalle);
+t('las del recorrido van en RUTINA (1280 px, calidad 0,6)', D.camaraLlamadas.every(o => o.maxDim === 1280 && o.quality === 0.6));
+t('si la cámara de la app falla, tiene a mano el input de siempre', D.camaraLlamadas.every(o => o.respaldo && o.respaldo.id === 'sf-photo-input'));
+t('a la inspección no se le ofrece galería', D.camaraLlamadas.every(o => !o.galeria));
+t('el turno arrancó', D.orden.includes('ARRANCAR TURNO'), D.orden.join(' → '));
+t(`subieron las ${N} fotos`, D.subidas.length === N, D.subidas.join(','));
+// Las fotos de la cámara de la app también van al teléfono en cuanto se toman:
+// si la app muere después, al volver las recupera igual que las del input.
+nuevaIdb();
+await correr({ fallaHasta: 0, camara: true, pararEn: 'fotos' });
+const D2 = await correr({ fallaHasta: 0, pararEn: 'recuperar' });
+t(`si la app muere después, recupera las ${N} fotos de la cámara de la app`, new RegExp(`${N} fotos`).test(D2.recuperado.aviso), D2.recuperado.aviso);
 
 console.log('\n══ COSTO · el arreglo no puede volver lenta la app ══');
 // Control: la MISMA inspección sin persistencia (como estaba antes del arreglo).

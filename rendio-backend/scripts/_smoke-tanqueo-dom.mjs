@@ -105,6 +105,18 @@ console.log('\n── el recibo adjuntado no se cuela ──');
 $('#cl-fuel-si').click(); await esperar();
 // simula un recibo ya adjuntado y con valor
 const btnRec = $('#cl-add-receipt'); t('vuelve el adjuntar al decir que sí', !!btnRec);
+// Android (24-oct): el comprobante sale de la cámara DE LA APP (camara-app.js),
+// no de la del teléfono. Un doble entrega el JPEG y anota con qué se le llamó.
+const llamadasCam = [];
+let clicsRecibo = 0;
+window.CamaraApp = { disponible: () => true, tomar: async (op) => { llamadasCam.push(op); return new window.Blob(['jpeg'], { type: 'image/jpeg' }); } };
+window.document.getElementById('cl-file-receipt').click = () => { clicsRecibo++; };
+btnRec.click(); await esperar();
+t('Android: el comprobante se toma con la cámara de la app', llamadasCam.length === 1 && clicsRecibo === 0, `${llamadasCam.length} llamadas, ${clicsRecibo} clics al input`);
+t('…y quedó adjuntado, esperando su valor', wiz().querySelectorAll('[data-receipt-amt]').length === 1);
+t('…en calidad LEGIBLE (1600 px), para que se lea el valor', llamadasCam[0] && llamadasCam[0].maxDim === 1600 && llamadasCam[0].quality === 0.7);
+t('…con «Galería» (el recibo pudo quedar fotografiado en la estación)', llamadasCam[0] && llamadasCam[0].galeria === true && llamadasCam[0].respaldo && llamadasCam[0].respaldo.id === 'cl-file-receipt');
+// Ahora sí hay un recibo DE VERDAD adjuntado: decir que no tanqueó lo tiene que botar.
 $('#cl-fuel-no').click(); await esperar();
 wiz().querySelector('[data-nofuel="r2"]').click(); await esperar();
 
@@ -115,6 +127,20 @@ t('mandó el id del motivo, no la etiqueta', enviado && enviado.noFuelReasonId =
 t('no mandó comprobantes', enviado && !enviado.receipts);
 t('el resumen le dice al conductor que quedó registrado', /No se pudo/.test(txt()), txt().slice(0, 160));
 t('y le muestra el motivo', /No alcanzó el tiempo/.test(txt()));
+
+console.log('\n── Android: la foto de la novedad sale de la cámara de la app ──');
+window.location.hash = '';
+window.document.getElementById('sf-close-btn').click(); await esperar(150);
+$('#cl-nov-si').click(); await esperar();
+const antes = llamadasCam.length;
+let clicsFoto = 0;
+window.document.getElementById('cl-file-photo').click = () => { clicsFoto++; };
+$('#cl-add-photo').click(); await esperar();
+const opFoto = llamadasCam[antes];
+t('la evidencia se toma con la cámara de la app', llamadasCam.length === antes + 1 && clicsFoto === 0, `${llamadasCam.length - antes} llamadas, ${clicsFoto} clics al input`);
+t('…y aparece en la novedad', wiz().querySelectorAll('[data-rm-media]').length === 1);
+t('…en calidad LEGIBLE y sin galería', opFoto && opFoto.maxDim === 1600 && !opFoto.galeria && opFoto.respaldo && opFoto.respaldo.id === 'cl-file-photo');
+window.CamaraApp = undefined;
 
 // Volcado del markup REAL para inspeccionarlo con CSS de verdad (no es parte
 // de las comprobaciones: jsdom no hace layout, el navegador sí).

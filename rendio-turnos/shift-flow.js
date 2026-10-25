@@ -1264,6 +1264,17 @@
     }
   }
 
+  // De dónde sale cada foto. En Android, de la cámara DENTRO de la app
+  // (camara-app.js: con la del teléfono Android a veces cerraba Chrome y la app
+  // se reiniciaba con la foto perdida). En iPhone, o si esa cámara falla, el
+  // input de siempre, que sigue entregando por su 'change'. `alListo` recibe el
+  // JPEG ya reducido al perfil, lo mismo que devolvería compressPhoto.
+  function tomarFoto(input, perfil, titulo, detalle, alListo, galeria) {
+    if (!window.CamaraApp || !window.CamaraApp.disponible()) { input.click(); return; }
+    window.CamaraApp.tomar({ titulo, detalle, maxDim: perfil.maxDim, quality: perfil.quality, respaldo: input, galeria: !!galeria })
+      .then(blob => { if (blob) alListo(blob); });
+  }
+
   function renderPhotos(wiz) {
     // Las fijas (PHOTO_SLOTS) son todas obligatorias; la del golpe es opcional y
     // solo aparece si se marcó un golpe en el checklist.
@@ -1323,10 +1334,36 @@
     );
     bindChrome();
     const input = $('#sf-photo-input');
+    // La foto ya reducida, venga de la cámara de la app o del input.
+    const guardarFoto = (slot, blob) => {
+      if (slot === '__extra__') {
+        sf.extraPhotos.push({ blob, url: URL.createObjectURL(blob), size: blob.size });
+        bdGuardar(BD_FOTOS, '__extras__', sf.extraPhotos.map(p => p.blob));
+      } else {
+        const prev = sf.photos[slot];
+        if (prev && prev.url) URL.revokeObjectURL(prev.url);
+        sf.photos[slot] = { blob, url: URL.createObjectURL(blob), size: blob.size };
+        // Al teléfono, en cuanto se toma: si Safari descarta la página, la foto
+        // sobrevive y no hay que volver a bajarse del carro a repetirla.
+        bdGuardar(BD_FOTOS, slot, blob);
+      }
+      sf._slot = null;
+      render();
+    };
+    // El recorrido al carro va en RUTINA; el golpe y las adicionales, LEGIBLE.
+    const perfilDe = (slot) => PHOTO_SLOTS.some(sl => sl.id === slot) ? FOTO_RUTINA : FOTO_LEGIBLE;
     wiz.querySelectorAll('[data-slot]').forEach(btn => {
-      btn.addEventListener('click', () => { sf._slot = btn.dataset.slot; input.click(); });
+      btn.addEventListener('click', () => {
+        const slot = btn.dataset.slot;
+        const s = activePhotoSlots().find(x => x.id === slot) || {};
+        sf._slot = slot;
+        tomarFoto(input, perfilDe(slot), s.label || 'Foto', s.detail || '', (blob) => guardarFoto(slot, blob));
+      });
     });
-    wiz.querySelector('[data-add-extra]')?.addEventListener('click', () => { sf._slot = '__extra__'; input.click(); });
+    wiz.querySelector('[data-add-extra]')?.addEventListener('click', () => {
+      sf._slot = '__extra__';
+      tomarFoto(input, FOTO_LEGIBLE, 'Foto adicional', 'Algo que valga la pena registrar', (blob) => guardarFoto('__extra__', blob));
+    });
     wiz.querySelectorAll('[data-extra-rm]').forEach(btn => {
       btn.addEventListener('click', () => {
         const i = parseInt(btn.dataset.extraRm, 10);
@@ -1343,22 +1380,8 @@
       const stateEl = $('#sf-photo-state');
       if (stateEl) stateEl.textContent = 'Procesando foto…';
       try {
-        // El recorrido al carro va en RUTINA; el golpe y las adicionales, LEGIBLE.
-        const rutina = PHOTO_SLOTS.some(sl => sl.id === sf._slot);
-        const blob = await compressPhoto(file, rutina ? FOTO_RUTINA : FOTO_LEGIBLE);
-        if (sf._slot === '__extra__') {
-          sf.extraPhotos.push({ blob, url: URL.createObjectURL(blob), size: blob.size });
-          bdGuardar(BD_FOTOS, '__extras__', sf.extraPhotos.map(p => p.blob));
-        } else {
-          const prev = sf.photos[sf._slot];
-          if (prev && prev.url) URL.revokeObjectURL(prev.url);
-          sf.photos[sf._slot] = { blob, url: URL.createObjectURL(blob), size: blob.size };
-          // Al teléfono, en cuanto se toma: si Safari descarta la página, la foto
-          // sobrevive y no hay que volver a bajarse del carro a repetirla.
-          bdGuardar(BD_FOTOS, sf._slot, blob);
-        }
-        sf._slot = null;
-        render();
+        const slot = sf._slot;
+        guardarFoto(slot, await compressPhoto(file, perfilDe(slot)));
       } catch (e) {
         console.error(e);
         if (stateEl) stateEl.textContent = '';
@@ -2293,7 +2316,12 @@
     $('#cl-attest').addEventListener('change', (e) => { sf.close.attest = e.target.checked; updateCloseConfirm(); });
     $('#cl-confirm').addEventListener('click', submitClose);
     const ntext = $('#cl-nov-text'); if (ntext) ntext.addEventListener('input', (e) => { sf.close.novedadText = e.target.value; updateCloseConfirm(); });
-    const ap = $('#cl-add-photo'); if (ap) ap.addEventListener('click', () => $('#cl-file-photo').click());
+    // Foto de la novedad y comprobante: en Android, cámara de la app (ver tomarFoto).
+    const ap = $('#cl-add-photo'); if (ap) ap.addEventListener('click', () => tomarFoto($('#cl-file-photo'), FOTO_LEGIBLE,
+      'Evidencia de la novedad', 'Que se vea bien lo que pasó', (blob) => {
+        sf.close.media.push({ kind: 'photo', blob, url: URL.createObjectURL(blob), size: blob.size });
+        renderClose();
+      }));
     const av = $('#cl-add-video'); if (av) av.addEventListener('click', () => $('#cl-file-video').click());
     const fp = $('#cl-file-photo'); if (fp) fp.addEventListener('change', (e) => onAddCloseMedia(e.target, 'photo'));
     const fv = $('#cl-file-video'); if (fv) fv.addEventListener('change', (e) => onAddCloseMedia(e.target, 'video'));
@@ -2304,7 +2332,12 @@
     // pierde el foco del teclado en cada letra.
     const nft = $('#cl-nofuel-text'); if (nft) nft.addEventListener('input', (e) => { sf.close.noFuelText = e.target.value; updateCloseConfirm(); });
     // Los comprobantes solo existen en el DOM cuando dijo que sí tanqueó.
-    const ar = $('#cl-add-receipt'); if (ar) ar.addEventListener('click', () => $('#cl-file-receipt').click());
+    // «Galería»: el recibo pudo quedar fotografiado en la estación.
+    const ar = $('#cl-add-receipt'); if (ar) ar.addEventListener('click', () => tomarFoto($('#cl-file-receipt'), FOTO_LEGIBLE,
+      'Recibo de gasolina', 'Que se lea el valor pagado', (blob) => {
+        sf.close.receipts.push({ blob, url: URL.createObjectURL(blob), amount: 0 });
+        renderClose();
+      }, true));
     const fr = $('#cl-file-receipt'); if (fr) fr.addEventListener('change', (e) => onAddReceipt(e.target));
     wiz.querySelectorAll('[data-rm-media]').forEach(b => b.addEventListener('click', () => rmCloseMedia(Number(b.dataset.rmMedia))));
     wiz.querySelectorAll('[data-rm-receipt]').forEach(b => b.addEventListener('click', () => rmReceipt(Number(b.dataset.rmReceipt))));
