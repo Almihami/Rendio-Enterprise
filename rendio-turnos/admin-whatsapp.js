@@ -52,8 +52,12 @@
   // Hora como la escribe él: 3:10, no 03:10. Envuelve en 24 h (un «deben estar»
   // de las 00:05 menos el colchón es 23:55, no "-1:55").
   const rwaHM = (t) => { const x = ((t % 1440) + 1440) % 1440; return `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`; };
-  // Recogida: múltiplo de 5 al MÁS CERCANO.
-  const rwaSuave = (hm) => rwaHM(Math.round(rwaMin(hm) / 5) * 5);
+  // Recogida: múltiplo de 5 hacia ABAJO, la misma hora que muestra y publica el
+  // tablero (rtCita en admin-rutas.js; el porqué está allá).
+  const rwaSuave = (hm) => rwaHM(Math.floor(rwaMin(hm) / 5) * 5);
+  // La hora de un suelto: en una salida la recogida estimada, redonda como las
+  // demás; en una llegada (o sin estimación) la hora tal cual.
+  const rwaHoraSuelto = (v) => (v.eta ? rwaSuave(v.eta) : rwaCrudo(v.dl));
   // Hora exacta (vuelos, sin carro): solo se le quita el cero de la izquierda.
   const rwaCrudo = (hm) => `${Number(String(hm).split(':')[0]) % 24}:${String(hm).split(':')[1]}`;
   // «Deben estar» = presentación − colchón del aeropuerto, hacia ABAJO a múltiplo
@@ -127,7 +131,7 @@
       const etiqueta = conCarro ? `[${v.carro}] ` : '';
       if (v.sinCarro) {
         // Salida: la hora de RECOGIDA estimada (eta), no la presentación.
-        L.push(`${rwaCrudo(v.eta || v.dl)} ${v.n} (${v.zona}) (QUIZÁS NO HAYA CARRO)`);
+        L.push(`${rwaHoraSuelto(v)} ${v.n} (${v.zona}) (QUIZÁS NO HAYA CARRO)`);
         L.push('');
         continue;
       }
@@ -351,7 +355,7 @@
   function rwaListaSinRutear(lista) {
     const orden = lista.map((s) => Object.assign({}, s, { sinCarro: true })).sort((a, b) => rwaOrden(a) - rwaOrden(b));
     const filas = orden.slice(0, RWA_MAX_LISTA).map((s) =>
-      `<li><span class="rwa-hr">${rwaEsc(rwaCrudo(s.eta || s.dl))}</span>${rwaEsc(rwaLimpio(s.n))} <span class="rwa-z">(${rwaEsc(s.zona)}) · ${s.tipo === 'lle' ? 'llegada' : 'salida'}</span></li>`).join('');
+      `<li><span class="rwa-hr">${rwaEsc(rwaHoraSuelto(s))}</span>${rwaEsc(rwaLimpio(s.n))} <span class="rwa-z">(${rwaEsc(s.zona)}) · ${s.tipo === 'lle' ? 'llegada' : 'salida'}</span></li>`).join('');
     const resto = orden.length > RWA_MAX_LISTA ? `<li class="rwa-mas">y ${orden.length - RWA_MAX_LISTA} más</li>` : '';
     return `<div class="rwa-nota warn" id="rwa-sinRutear"><b>${orden.length} sin carro.</b> Van en el mensaje con «QUIZÁS NO HAYA CARRO»: revísalos antes de mandar.<ul>${filas}${resto}</ul></div>`;
   }

@@ -156,7 +156,9 @@
     const d = libre != null ? libre - start : 0;
     const retraso = d > TOL_CHOQUE ? Math.round(d) : 0;
     const fija = fijaDe(lane.id);
-    const stops = c.stops.map((s) => ({ crewId: s.id, time: s.eta + retraso }));
+    // En una salida la hora de cada parada es la REDONDA que se le da al
+    // tripulante (rtCita, admin-rutas.js), corrida si el carro viene atrasado.
+    const stops = c.stops.map((s) => ({ crewId: s.id, time: s.cita != null ? rtCita(s.eta + retraso) : s.eta + retraso }));
     let arrival, end, pres = null, margin = null, wait = null;
     if (lle) {
       arrival = rtToMin(lane.landing || lane.start);          // aterrizaje (README §6)

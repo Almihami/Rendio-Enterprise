@@ -413,7 +413,30 @@
     return raw * rt.TRAFFIC_FACTOR * aero;
   }
 
+  // LA HORA QUE SE LE DA A LA GENTE ES REDONDA (pedido del jefe, 24-oct-2026):
+  // «nosotros siempre programamos horas en punto, 5:10, 5:00, 5:20, 5:15… si les
+  // ponemos 4:44 salen a las y 50; si les ponemos y 37 salen a las y 40». Una
+  // hora rara la gente la corre al siguiente múltiplo de 5, o más.
+  // En sus 18 planes escritos (ago–oct) el 99 % de las horas van en múltiplos
+  // de 5 (543 de 550), y entre dos porterías seguidas deja 5 o 10 min.
+  // Se redondea HACIA ABAJO: la persona queda lista antes de que llegue el carro,
+  // y «la siguiente de 5», que es cuando de verdad sale, coincide con el carro.
+  // Es la única forma de redondear que no mueve el plan: el carro nunca espera a
+  // nadie al que se le dio una hora más tarde de cuando él llega, así que la
+  // vuelta llega a MDE igual o antes. Si se redondeara al más cercano (4:43 → 4:45),
+  // el carro esperaría hasta 2 min en cada portería y eso se suma vuelta abajo.
+  // Costo: la persona espera afuera hasta 4 min (2 en promedio).
+  // SOLO para mostrar y publicar: el modelo (holgura, techo de madrugada,
+  // 'late') sigue con `eta`, la llegada real del carro.
+  const RT_PASO_CITA = 5;
+  function rtCita(min) {
+    return min == null || !isFinite(min) ? min : Math.floor(min / RT_PASO_CITA) * RT_PASO_CITA;
+  }
+
   // Evalúa una VUELTA (lane): ETAs por parada, llegada a MDE, holgura y estado.
+  // En una salida cada parada lleva además `cita`: la hora redonda que se le da
+  // al tripulante (ver rtCita). Las llegadas no llevan cita: ahí no se le da hora
+  // a nadie en la casa, lo que se le dice es la hora del vuelo.
   function rtCarCompute(laneId) {
     const lane = rtLaneOf(laneId);
     if (lane.type === 'lle') return rtCarComputeLle(lane);
@@ -429,7 +452,7 @@
       }
       // Los de la misma portería comparten el frenazo y la misma ETA.
       pax += rt.aux[id].pax;
-      stops.push({ id, eta });
+      stops.push({ id, eta, cita: rtCita(eta) });
       hardDL = Math.min(hardDL, rtToMin(rt.aux[id].dl));
     });
     const hastaUltima = t - rtToMin(lane.start);   // antes del tramo final
@@ -1290,7 +1313,7 @@
     const tip = [a.n, a.dir || a.zona, a.tierra ? 'Trabajo en tierra (sin vuelo)' : (a.vuelo && ('Vuelo ' + a.vuelo)), a.tel, a.notas].filter(Boolean).join('\n');
     return `<div class="stop ${overDL ? 'over-dl' : ''}" draggable="true" data-aux="${s.id}" data-src="${cid}" title="${rtEsc(tip)}">
       <div class="s-top"><span class="s-n">${idx + 1}</span><span class="s-av" style="background:${rt.colors[s.id] || '#888'}">${rtIni(a.n)}</span><span class="s-nm">${rtEsc(p[0] + ' ' + (p[1] ? p[1][0] + '.' : ''))}</span></div>
-      <div class="s-meta"><span class="s-zona">${rtEsc(a.zona)}</span><span class="s-eta">${rtToHM(s.eta)}</span></div>
+      <div class="s-meta"><span class="s-zona">${rtEsc(a.zona)}</span><span class="s-eta">${rtToHM(s.cita ?? s.eta)}</span></div>
       <div class="s-dl"><svg class="icon" style="width:10px;height:10px"><use href="#i-clock"/></svg>pres. ${a.dl}${a.tierra ? ' · tierra' : (a.vuelo ? ' · ' + rtEsc(a.vuelo) : '')}${a.hotel ? ' · hotel' : ''}${a.pax > 1 ? ' · ×' + a.pax : ''}</div>
       ${a.notas ? `<div class="s-note"><svg class="icon" style="width:10px;height:10px"><use href="#i-info"/></svg>${rtEsc(a.notas)}</div>` : ''}
     </div>`;
@@ -1493,7 +1516,9 @@
       const etas = {};
       (comp.stops || []).forEach(s => {
         const a = rt.aux[s.id];
-        if (a && a.reservationId) etas[a.reservationId] = s.eta;
+        // Se publica la hora REDONDA (cita): es la que leen el conductor, el
+        // tripulante y el aviso «Te recogen a las…». Ver rtCita.
+        if (a && a.reservationId) etas[a.reservationId] = s.cita ?? s.eta;
       });
       return {
         vehicleId: car ? car.vehicleId : null,
@@ -1605,7 +1630,7 @@
           </div>
         </div>
         <div class="dsec"><h3>Paradas en orden</h3>
-          <div class="stoplist">${r.stops.map((s, i) => { const a = rt.aux[s.id]; return `<div class="sl"><span class="n">${i + 1}</span><span class="av" style="background:${rt.colors[s.id] || '#888'}">${rtIni(a.n)}</span><div class="nm"><b>${a.n}</b><span>${a.zona} · pres. ${a.dl}</span></div><span class="eta">${rtToHM(s.eta)}</span></div>`; }).join('')}</div>
+          <div class="stoplist">${r.stops.map((s, i) => { const a = rt.aux[s.id]; return `<div class="sl"><span class="n">${i + 1}</span><span class="av" style="background:${rt.colors[s.id] || '#888'}">${rtIni(a.n)}</span><div class="nm"><b>${a.n}</b><span>${a.zona} · pres. ${a.dl}</span></div><span class="eta">${rtToHM(s.cita ?? s.eta)}</span></div>`; }).join('')}</div>
         </div>
         ${driverSecs}
       </div>
@@ -1721,7 +1746,7 @@
     const mk = (p, html, pop) => { const m = L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(layer); if (pop) m.bindPopup(pop); return m; };
     const pin = (bg, tx) => `<div style="width:26px;height:26px;border-radius:50%;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font:800 12px Inter,sans-serif;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)">${tx}</div>`;
     const stopColor = r.lle ? '#10B981' : '#E2551A';
-    r.stops.forEach((s, i) => { const a = rt.aux[s.id]; mk(rtCoordsOf(s.id), pin(stopColor, String(i + 1)), `<b>${i + 1}. ${a.n}</b><br>${a.dir || a.zona}<br>${r.lle ? 'Lo dejan' : 'ETA'} ${rtToHM(s.eta)}${r.lle ? '' : ' · pres. ' + a.dl}`); });
+    r.stops.forEach((s, i) => { const a = rt.aux[s.id]; mk(rtCoordsOf(s.id), pin(stopColor, String(i + 1)), `<b>${i + 1}. ${a.n}</b><br>${a.dir || a.zona}<br>${r.lle ? 'Lo dejan' : 'Recogida'} ${rtToHM(s.cita ?? s.eta)}${r.lle ? '' : ' · pres. ' + a.dl}`); });
     mk(RT_AIRPORT, pin('#16936A', '✈'), r.lle ? `<b>JMC</b> · recoge ${lane.start} (${r.tierra ? 'sale del terminal' : 'aterriza'} ${lane.landing})` : `<b>JMC</b> · José María Córdova<br>Llega ${rtToHM(r.arrival)} · pres. ${rtToHM(r.hardDL)}`);
     // Geometría real por carretera (OSRM route). Si falla → línea recta punteada.
     let drew = false;

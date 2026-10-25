@@ -7,8 +7,9 @@
 // tiempos fija —para que cada hora se pueda sacar con lápiz— y comprueba:
 //
 //   · el texto, LÍNEA POR LÍNEA, contra lo que dice FORMATO.md: encabezado,
-//     horas sin cero a la izquierda (0:43, 2:55), recogida al múltiplo de 5 más
-//     cercano (3:22 → 3:20, 4:08 → 4:10, 10:23 → 10:25), «Deben/Debe estar» =
+//     horas sin cero a la izquierda (0:43, 2:55), recogida al múltiplo de 5
+//     HACIA ABAJO, como el tablero (3:22 → 3:20, 4:08 → 4:05, 10:23 → 10:20;
+//     el sin carro 12:36 → 12:35), «Deben/Debe estar» =
 //     presentación − colchón hacia abajo, una vuelta por bloque en orden de
 //     reloj aunque sean de carros distintos, la misma portería en una línea
 //     («Sofía Ñañez y José Pérez»), llegadas por vuelo con dos del mismo vuelo
@@ -111,7 +112,7 @@ const A = (n, zona, resId, dl, type, o = {}) => ({
 //   D (R01, llegada)  AV9563 09:10 (Jessica «AV9563» + Erika «9563») · JA5133 09:14
 //   C (R01, salida)   sale de MDE 10:05 · +18 → 10:23 Laura · pres. 10:55
 //   E (R02, llegada)  16:00 Karol (reserva, hotel) · 16:00 Kris (tierra)
-//   R02·V4 vacía · sin rutear: Juanita (salida 13:10; 4 + 20 al aeropuerto → recogida 12:36) y Jolene (llegada 15:40)
+//   R02·V4 vacía · sin rutear: Juanita (salida 13:10; 4 + 20 al aeropuerto → recogida 12:36, se escribe 12:35) y Jolene (llegada 15:40)
 function cargarDia(rt, rtCfg) {
   rtCfg();
   rt.source = 'live'; rt.day = '2026-10-09'; rt.emptyReason = 'reservas';
@@ -174,16 +175,16 @@ const ESPERADO = [
   'Deben estar 3:40',
   '',
   '3:55 Pau Londoño (Edificio Los Cerezos)',
-  '4:10 Ana Lucía Ramírez (Condominio Planté)',
+  '4:05 Ana Lucía Ramírez (Condominio Planté)',
   'Deben estar 4:30',
   '',
   '9:10 Jessica Gómez y Erika Ríos (AV9563)',
   '9:14 Danna León (JA5133)',
   '',
-  '10:25 Laura Fernández (Guayacán)',
+  '10:20 Laura Fernández (Guayacán)',
   'Debe estar 10:45',
   '',
-  '12:36 Juanita Ortiz (Olivar Apartamentos) (QUIZÁS NO HAYA CARRO)',
+  '12:35 Juanita Ortiz (Olivar Apartamentos) (QUIZÁS NO HAYA CARRO)',
   '',
   '15:40 Jolene Capron (Olivar Apartamentos) (QUIZÁS NO HAYA CARRO)',
   '',
@@ -198,7 +199,7 @@ const ESPERADO_CARROS = ESPERADO
   .replace('\n2:55 ', '\n[R01] 2:55 ')
   .replace('\n3:55 ', '\n[R02] 3:55 ')
   .replace('\n9:10 ', '\n[R01] 9:10 ')
-  .replace('\n10:25 ', '\n[R01] 10:25 ')
+  .replace('\n10:20 ', '\n[R01] 10:20 ')
   .replace('\n16:00 Karol', '\n[R02] 16:00 Karol');
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -286,7 +287,7 @@ console.log('\n── El botón y el modal ──');
   t('subtítulo con la fecha y las vueltas', /viernes.*9 de octubre/i.test(q('#rwa-sub').textContent) && /6 vueltas/.test(q('#rwa-sub').textContent), q('#rwa-sub').textContent);
   const sr = q('#rwa-sinRutear');
   t('aviso de sin rutear: cuántos y quiénes, en orden de hora', sr && /2 sin carro/.test(sr.textContent)
-    && qa('#rwa-sinRutear li').map(li => li.textContent).join(' | ') === '12:36Juanita Ortiz (Olivar Apartamentos) · salida | 15:40Jolene Capron (Olivar Apartamentos) · llegada',
+    && qa('#rwa-sinRutear li').map(li => li.textContent).join(' | ') === '12:35Juanita Ortiz (Olivar Apartamentos) · salida | 15:40Jolene Capron (Olivar Apartamentos) · llegada',
     qa('#rwa-sinRutear li').map(li => li.textContent).join(' | '));
   const ho = q('#rwa-hotel');
   t('aviso de «Hotel» con Pau y Karol', ho && ho.textContent.includes('Pau Londoño, Karol Londoño') && /Va a hotel/.test(ho.textContent));
