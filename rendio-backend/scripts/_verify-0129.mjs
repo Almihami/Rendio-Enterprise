@@ -159,10 +159,12 @@ try {
   await asDb();
   check('un conductor de otra organización no se puede poner', e2 && /no existe/.test(e2.message), e2 && e2.message);
   const jefeAjeno = await user(c, otraOrg, 'admin', 'Jefe ajeno 0129');
+  // Con un conductor DE SU organización, para que lo que frene sea la vuelta (la del
+  // tablero trae organization_id NULL: sin el coalesce de la guarda, pasaba).
   await asUser(c, jefeAjeno, 'admin');
-  const e3 = await debeFallar(`SELECT public.admin_route_set_driver($1, $2)`, [raA, DANI.dp]);
+  const e3 = await debeFallar(`SELECT public.admin_route_set_driver($1, $2)`, [raA, AJENO.dp]);
   await asDb();
-  check('el jefe de otra organización no la ve', e3 && /no existe/.test(e3.message), e3 && e3.message);
+  check('el jefe de otra organización no ve la vuelta del tablero (organization_id NULL)', e3 && /Esa vuelta no existe/.test(e3.message) && (await fila(raA)).d !== AJENO.dp, e3 && e3.message);
   for (const [quien, rol] of [[JUAN.u, 'driver'], [LUZ.u, 'auxiliar']]) {
     await asUser(c, quien, rol);
     const e = await debeFallar(`SELECT public.admin_route_set_driver($1, $2)`, [raA, DANI.dp]);

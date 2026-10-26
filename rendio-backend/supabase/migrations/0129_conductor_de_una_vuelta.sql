@@ -62,7 +62,9 @@ BEGIN
     RAISE EXCEPTION 'Solo un jefe cambia el conductor de una vuelta' USING ERRCODE = '42501';
   END IF;
   SELECT * INTO ra FROM public.route_assignments WHERE id = p_route FOR UPDATE;
-  IF ra.id IS NULL OR NOT (ra.organization_id = v_org OR EXISTS (
+  -- coalesce: una vuelta del tablero no trae organization_id (NULL) y «NULL = org»
+  -- no es falso: sin él, un jefe de OTRA organización pasaba esta guarda.
+  IF ra.id IS NULL OR NOT (coalesce(ra.organization_id = v_org, false) OR EXISTS (
        SELECT 1 FROM public.route_stops rs JOIN public.reservations r ON r.id = rs.reservation_id
        JOIN public.auxiliar_profiles ap ON ap.id = r.auxiliar_profile_id JOIN public.profiles pr ON pr.id = ap.profile_id
         WHERE rs.route_assignment_id = ra.id AND pr.organization_id = v_org)) THEN
