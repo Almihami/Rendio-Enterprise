@@ -481,6 +481,8 @@
 .rv2-sheet .rj-p[data-st="sin"] select { border-color: var(--orange); }
 .rv2-sheet .rj-p[data-st="rev"] select { border-color: var(--red-ink); }
 .rv2-sheet .rj-p[data-st="man"] select { border-color: var(--green); }
+/* 0133: «Va sin cuenta» (en la ruta, sin aviso). */
+.rv2-sheet .rj-p[data-st="guest"] select { border-color: #4338CA; }
 @media (max-width: 767px) {
   .rv2-sheet .rj-p { grid-template-columns: 44px minmax(0, 1fr); }
   .rv2-sheet .rj-p select { grid-column: 1 / -1; }

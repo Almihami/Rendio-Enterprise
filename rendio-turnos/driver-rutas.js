@@ -257,7 +257,10 @@
       v.type = v.type === 'lle' ? 'llegada' : 'salida';
       v.legs.forEach((l) => {
         l.k = l.kind === 'airport' ? 'apt' : (l.kind === 'pickup' ? 'pick' : 'drop');
-        l.rid = l.reservationId || null;
+        // 0133: el pasajero sin cuenta no tiene reserva: su llave es la de la parada
+        // («g:<id>»). Todo lo demás (estado, deshacer, la cola) va igual.
+        l.rid = l.reservationId || (l.guestStopId ? 'g:' + l.guestStopId : null);
+        l.guest = !!l.guestStopId;
         if (l.k !== 'apt') l.ini = initials(l.name);
       });
       v.from = v.type === 'salida' ? 'Casas' : 'JMC';
@@ -328,6 +331,11 @@
   function qSave(q) { try { localStorage.setItem(QKEY(), JSON.stringify(q)); } catch (e) { /* modo privado */ } }
   async function qRun(op) {
     if (!window.Api) throw new Error('sin Api');
+    // 0133: la parada de un sin cuenta va por su propia función (mismos estados).
+    if (typeof op.rid === 'string' && op.rid.indexOf('g:') === 0) {
+      const st = op.f === 'status' ? op.st : op.f === 'board' ? 'on_board' : op.f === 'aptno' ? 'no_show' : op.f === 'undo' ? 'at_pickup' : null;
+      return st && Api.driverSetGuestStopStatus ? Api.driverSetGuestStopStatus(op.rid.slice(2), st) : null;
+    }
     if (op.f === 'status') return Api.driverSetStopStatus(op.rid, op.st);
     if (op.f === 'board') return Api.driverBoardWithCode(op.rid, op.code, op.sin);
     if (op.f === 'apt') return Api.driverMarkAirportArrival(op.ra);
@@ -715,7 +723,7 @@
       + (!apt && st.meetingPoint ? chip('Door', '', st.meetingPoint) : '')
       + (!apt && st.reserva && window.Api && Api.reservePlace && Api.reservePlace(st.reserva) ? chip('Door', 'plus', Api.reservePlace(st.reserva).hotel ? Api.reservePlace(st.reserva).name : 'Reserva JMC') : '')
       + '</div></div>'
-      + (!apt && st.rid ? '<button type="button" class="rt-act sm" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(st.rid) + '" aria-label="' + esc('Escribir a ' + st.name) + '">' + ic('MessageCircle', 18) + (u > 0 ? '<span class="rt-badge">' + u + '</span>' : '') + '</button>' : '')
+      + (!apt && st.rid && !st.guest ? '<button type="button" class="rt-act sm" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(st.rid) + '" aria-label="' + esc('Escribir a ' + st.name) + '">' + ic('MessageCircle', 18) + (u > 0 ? '<span class="rt-badge">' + u + '</span>' : '') + '</button>' : '')
       + '</div>';
   }
   function detailHTML(v) {
@@ -830,7 +838,7 @@
     const u = RT.unread[st.rid] || 0;
     return '<div class="rt-person ' + (compact ? 'cp' : '') + '">' + av(st.ini)
       + '<div class="rt-person-tx"><b>' + esc(st.name) + '</b>' + (!compact ? '<span>' + esc(hasUnit(st) ? String(st.addr).replace(new RegExp('\\s*·?\\s*' + st.unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'i'), '') : st.addr) + '</span>' : '') + (st.unit ? '<em>' + esc(st.unit) + '</em>' : '') + '</div>'
-      + (st.rid ? '<button type="button" class="rt-act" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(st.rid) + '" aria-label="' + esc('Escribir a ' + st.name) + '">' + ic('MessageCircle', 20) + (u > 0 ? '<span class="rt-badge">' + u + '</span>' : '') + '</button>' : '')
+      + (st.rid && !st.guest ? '<button type="button" class="rt-act" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(st.rid) + '" aria-label="' + esc('Escribir a ' + st.name) + '">' + ic('MessageCircle', 20) + (u > 0 ? '<span class="rt-badge">' + u + '</span>' : '') + '</button>' : '')
       + (st.phone ? '<a class="rt-act" href="tel:' + esc(String(st.phone).replace(/\s/g, '')) + '" aria-label="Llamar">' + ic('Phone', 19) + '</a>' : '')
       + '</div>';
   }
@@ -893,14 +901,15 @@
     const cs = RT.code[st.rid] || {}, nc = !!RT.nc[st.rid];
     const left = at ? waitLeft(v) : waitSec();
     const pres = present(v);
-    let h = '<div class="rt-eb">' + (at ? '<i class="ok"></i><span>' + esc(`En el punto · ${f} ya sabe que llegaste`) + '</span>'
+    // 0133: el sin cuenta no tiene la app: no sabe que llegaste ni ve el reloj.
+    let h = '<div class="rt-eb">' + (at ? '<i class="ok"></i><span>' + esc(st.guest ? `En el punto · ${f} no tiene la app: llámala si no sale` : `En el punto · ${f} ya sabe que llegaste`) + '</span>'
       : '<i></i><span>' + esc(`Vas por ${f}`) + '</span><span class="dist">' + esc(liveDist(v)) + '</span>') + '</div>';
     if (!at) h += '<div class="rt-big"><b>' + esc((st.pickup || st.eta) ? `Recoges ${st.pickup || st.eta}` : `Recoges a ${f}`) + '</b><span>' + esc(pres ? `Presentación en JMC ${pres}` : 'Destino JMC') + '</span></div>';
     h += personHTML(v, st, at);
     if (!at) h += tagsHTML(st) + infoHTML(st);
     if (at) {
       h += '<div class="rt-wait ' + (left <= 0 ? 'ok' : '') + '">' + ringHTML(Math.max(0, left) / waitSec(), left <= 0 ? ic('Check', 24) : fmtSec(left))
-        + '<div><b>' + (left <= 0 ? 'Espera cumplida' : 'Espera acordada') + '</b><span>' + esc(left <= 0 ? `Si ${f} no aparece, ya puedes seguir.` : `${f} ve este mismo reloj en su app.${pres ? ` Presentación ${pres}.` : ''}`) + '</span></div></div>';
+        + '<div><b>' + (left <= 0 ? 'Espera cumplida' : 'Espera acordada') + '</b><span>' + esc(left <= 0 ? `Si ${f} no aparece, ya puedes seguir.` : st.guest ? `${f} va sin cuenta en la app.${pres ? ` Presentación ${pres}.` : ''}` : `${f} ve este mismo reloj en su app.${pres ? ` Presentación ${pres}.` : ''}`) + '</span></div></div>';
     }
     if (at && code && !nc) {
       h += '<div class="rt-code"><div class="rt-code-h"><b>' + esc(`Pídele a ${f} su código`) + '</b><span>' + codeLen(st) + ' dígitos</span></div>'
@@ -945,7 +954,7 @@
       return '<div class="rt-cl ' + (r || '') + '">' + av(c.ini, 'sm')
         + '<span class="rt-cl-tx"><b>' + esc(c.name) + '</b><span>' + esc(r ? RT_RES[r][0] : (b != null ? `${b} ${b === 1 ? 'maleta' : 'maletas'}` : (c.unit || ''))) + '</span></span>'
         + (r && RT_ON.includes(r) ? '<span class="rt-cl-ok">' + ic('Check', 15) + '</span>' : '')
-        + (withChat && !RT_NO.includes(r) && c.rid ? '<button type="button" class="rt-act sm" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(c.rid) + '" aria-label="' + esc('Escribir a ' + c.name) + '">' + ic('MessageCircle', 17) + (u > 0 ? '<span class="rt-badge">' + u + '</span>' : '') + '</button>' : '')
+        + (withChat && !RT_NO.includes(r) && c.rid && !c.guest ? '<button type="button" class="rt-act sm" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(c.rid) + '" aria-label="' + esc('Escribir a ' + c.name) + '">' + ic('MessageCircle', 17) + (u > 0 ? '<span class="rt-badge">' + u + '</span>' : '') + '</button>' : '')
         + '</div>';
     }).join('') + '</div>';
   }
@@ -982,7 +991,7 @@
       + '<span class="rt-cl-tx"><b>' + esc(c.name) + '</b><span class="' + (cs.st === 'err' ? 'err' : '') + '">' + esc(sub) + '</span></span>'
       + (code ? codeBoxesHTML(c.rid, 'sm', cs, codeLen(c)) : '') + '</div>'
       + (!ask ? '<div class="rt-cr-acts">'
-        + '<button type="button" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(c.rid) + '">' + ic('MessageCircle', 15) + '<span>Escribir</span>' + (u > 0 ? '<span class="rt-badge in">' + u + '</span>' : '') + '</button>'
+        + (c.guest ? '' : '<button type="button" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(c.rid) + '">' + ic('MessageCircle', 15) + '<span>Escribir</span>' + (u > 0 ? '<span class="rt-badge in">' + u + '</span>' : '') + '</button>')
         + '<button type="button" data-rt="ask" data-rid="' + esc(c.rid) + '" data-ask="nocode">' + (code ? 'Sin código' : 'A bordo') + '</button>'
         + '<button type="button" class="err" data-rt="ask" data-rid="' + esc(c.rid) + '" data-ask="notarrived">No llegó</button></div>'
         : '<div class="rt-cr-ask"><span>' + esc(ask === 'nocode' ? (code ? `¿Subir a ${f} sin código?` : `¿${f} ya está a bordo?`) : `¿Marcar que ${f} no llegó? Le avisamos.`) + '</span>'
@@ -1394,7 +1403,9 @@
   // llega un mensaje y el chat de esa parada no está abierto.
   async function syncUnread() {
     if (!window.Api || !Api.countUnreadMessages || RT.source !== 'live') return;
-    const ids = [...new Set(RT.vueltas.flatMap((v) => crew(v).map((l) => l.rid).filter(Boolean)))];
+    // 0133: el sin cuenta no tiene chat (y su llave «g:…» no es una reserva: sola
+    // tumbaría el conteo de todos).
+    const ids = [...new Set(RT.vueltas.flatMap((v) => crew(v).filter((l) => !l.guest).map((l) => l.rid).filter(Boolean)))];
     if (!ids.length) return;
     let counts = {};
     try { counts = await Api.countUnreadMessages(ids, ['auxiliar', 'admin']) || {}; } catch (e) { return; }
@@ -1851,7 +1862,7 @@
   function near(v) {
     if (RT.source !== 'live') return;
     const st = v.legs[S(v).idx];
-    if (!st || st.k !== 'pick' || !st.rid || st._near || st.lat == null) return;
+    if (!st || st.k !== 'pick' || !st.rid || st.guest || st._near || st.lat == null) return;   // 0133: el sin cuenta no tiene a quién avisar
     if (hav(RT.lastPos, [st.lat, st.lng]) < 0.3 && window.Api && Api.driverNearStop) {
       st._near = true;
       Api.driverNearStop(st.rid).catch(() => { st._near = false; });
@@ -1905,7 +1916,8 @@
       if (b && (!okNow || !wasOk)) b.innerHTML = okNow ? ic('Check', 24) : fmtSec(left);
       const t = w.querySelector(':scope > div:not(.rt-ring) > b'), sp = w.querySelector(':scope > div:not(.rt-ring) > span');
       if (t) t.textContent = okNow ? 'Espera cumplida' : 'Espera acordada';
-      if (sp) sp.textContent = okNow ? `Si ${f} no aparece, ya puedes seguir.` : `${f} ve este mismo reloj en su app.${pres ? ` Presentación ${pres}.` : ''}`;
+      // 0133: el sin cuenta no ve el reloj (mismo texto que pickHTML).
+      if (sp) sp.textContent = okNow ? `Si ${f} no aparece, ya puedes seguir.` : st.guest ? `${f} va sin cuenta en la app.${pres ? ` Presentación ${pres}.` : ''}` : `${f} ve este mismo reloj en su app.${pres ? ` Presentación ${pres}.` : ''}`;
     }
     const ns = el.querySelector('.rt-link.err[data-rt="noshow"]');
     if (ns) {
