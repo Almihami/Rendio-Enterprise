@@ -32,6 +32,11 @@
   --r-warn-soft:#FEF4E2;
   --r-info:#3B82F6;
   --r-info-soft:#EAF2FE;
+  /* Salida / llegada (los de tokens.css). Solo estaban en el modo oscuro: en claro
+     las tarjetas de «Tu día» de Inicio salían sin su borde ni su pastilla de color
+     (26-oct-2026). */
+  --r-h2a:#F26522;--r-h2a-soft:#FEEEE3;
+  --r-a2h:#10B981;--r-a2h-soft:#E7F8F1;
   --r-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;
   --r-font-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter",system-ui,sans-serif;
   --r-shadow-sm:0 1px 2px rgba(20,20,30,0.04);

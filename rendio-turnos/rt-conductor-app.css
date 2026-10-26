@@ -192,6 +192,13 @@
 #driver-ruta-ui.rx-phone .rt-fl-plane.tierra span{background:#71717A}
 #driver-ruta-ui.rx-phone .rt-fl-plane svg{display:block;width:19px;height:19px;fill:#fff}
 
+/* ── 8. «Completadas» plegada (26-oct-2026) ──────────────────────────────────
+   Mismo rótulo que .rx-lbl del diseño, con «Ver / Ocultar» a la derecha. 44 px de
+   alto para el dedo. */
+#driver-ruta-ui.rx-phone .rt-donetg{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:44px;margin:4px 0 -8px;padding:0 4px;border:0;background:none;font-family:inherit;cursor:pointer;color:var(--r-text-2)}
+#driver-ruta-ui.rx-phone .rt-donetg>span{font-size:12px;font-weight:650;text-transform:uppercase;letter-spacing:.6px}
+#driver-ruta-ui.rx-phone .rt-donetg>em{font-style:normal;display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;color:var(--r-accent)}
+
 /* BEGIN noanim (generado) */
 /* Generado por _portar-css-ruta-conductor.mjs — no editar este tramo a mano.
 
