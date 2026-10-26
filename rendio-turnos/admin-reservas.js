@@ -136,17 +136,19 @@
   // «pedido» (no tiene conductor de Rendio), así que sin esto saldría «Sin
   // rutear». Sin 0126 (o si la consulta falla) no se marca nada.
   async function rvLoadDelegadas(rows) {
-    (rows || []).forEach(r => { r.delegated = false; });
+    (rows || []).forEach(r => { r.delegated = false; r.delegateName = null; });
     const ids = (rows || []).map(r => r.id).filter(Boolean);
     const cli = window.sb;
     if (!ids.length || !cli || typeof cli.from !== 'function') return;
     try {
-      const { data, error } = await cli.from('route_stops')
-        .select('reservation_id, route_assignments!inner(delegated_at, status)').in('reservation_id', ids);
+      // 0131: + a quién se delegó («Delegado · Carlos»). Sin la columna, sin el nombre.
+      const leer = (cols) => cli.from('route_stops').select('reservation_id, route_assignments!inner(' + cols + ')').in('reservation_id', ids);
+      let { data, error } = await leer('delegated_at, status, delegate_name');
+      if (error) ({ data, error } = await leer('delegated_at, status'));
       if (error || !Array.isArray(data)) return;
-      const si = new Set(data.filter(x => x.route_assignments && x.route_assignments.delegated_at
-        && ['planned', 'in_progress'].includes(x.route_assignments.status)).map(x => x.reservation_id));
-      rows.forEach(r => { r.delegated = si.has(r.id); });
+      const si = new Map(data.filter(x => x.route_assignments && x.route_assignments.delegated_at
+        && ['planned', 'in_progress'].includes(x.route_assignments.status)).map(x => [x.reservation_id, x.route_assignments.delegate_name || null]));
+      rows.forEach(r => { r.delegated = si.has(r.id); r.delegateName = si.get(r.id) || null; });
     } catch (_) { /* sin el dato, sin la marca */ }
   }
   // Estado del vuelo (0099, vuelos-ui.js): una sola consulta para los días de la
@@ -227,7 +229,7 @@
   }
 
   function rvRow(r) {
-    const st = r.delegated && r.status === 'pending' ? { cls: 'ok', label: 'Delegado' } : (RV_ST[r.status] || { cls: 'muted', label: r.status });
+    const st = r.delegated && r.status === 'pending' ? { cls: 'ok', label: r.delegateName ? 'Delegado · ' + r.delegateName.split(' ')[0] : 'Delegado' } : (RV_ST[r.status] || { cls: 'muted', label: r.status });
     // De reserva (0121): el hotel reemplaza a JMC en el trayecto.
     const RP = r.reservePlace && window.Api && Api.reservePlace ? Api.reservePlace(r.reservePlace) : null;
     const lugar = RP && RP.hotel ? RP.name : 'JMC';
@@ -269,7 +271,7 @@
       <div class="rv-main">
         <div class="rv-top">
           <b>${escapeHtml(r.name)}</b>
-          <span class="rv-st ${st.cls}">${st.label}</span>
+          <span class="rv-st ${st.cls}">${escapeHtml(st.label)}</span>
         </div>
         <div class="rv-sub">${escapeHtml(dir)} · ${escapeHtml(r.address || 'sin dirección')}${rvuFlightLabel(r)}</div>
         ${chips.length ? `<div class="rv-tags">${chips.join('')}</div>` : ''}

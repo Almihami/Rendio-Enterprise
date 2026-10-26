@@ -208,6 +208,10 @@
       const veh = vehLine(t);
       const avatar = u && u.av ? u.av(d.initials || initials(d.name, 'C'), 'sm', 'lt', { src: d.avatarUrl || '' }) : '';
       bot = avatar + '<span class="rx-pass-drv"><b>' + esc(d.name) + '</b>' + (veh ? '<span>' + esc(veh) + '</span>' : '') + '</span>';
+    } else if (t.delegated && t.delegate && t.delegate.name) {
+      // 0131: delegada A ALGUIEN: quién te recoge y su número.
+      bot = '<span class="rx-pass-wait">' + ic('Car', 16) + '</span><span class="rx-pass-drv"><b>Te recogerá ' + esc(t.delegate.name) + '</b>'
+        + (t.delegate.phone ? '<span>Su número: ' + esc(t.delegate.phone) + '</span>' : '') + '</span>';
     } else if (t.delegated) {
       // 0126: la hace alguien de afuera; no hay conductor de Rendio que mostrar.
       bot = '<span class="rx-pass-wait">' + ic('MessageCircle', 16) + '</span><span class="rx-pass-drv"><b>Servicio delegado</b><span>Te contactaremos por WhatsApp</span></span>';

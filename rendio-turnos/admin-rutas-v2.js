@@ -207,6 +207,8 @@
       stops, pax: c.pax, driverId, shift, status, fija, fin, etaSource: rt.etaSource || null,
       propio: lane.drv !== undefined,   // conductor puesto solo a esta vuelta (rtDriverOf)
       delegada: lane.deleg === true,    // 0126: la hace alguien de afuera (sin conductor a propósito)
+      delegName: lane.deleg ? (lane.delegName || null) : null,   // 0131: a quién
+      delegPhone: lane.deleg ? (lane.delegPhone || null) : null,
       hora: ((Math.floor(arrival / 60) % 24) + 24) % 24,
     };
   }
@@ -630,7 +632,7 @@
       `<div class="when"><b class="mono">${horas(r)}</b><small>${sub}</small>${estado}</div>` +
       `<div class="main"><div class="l1"><span class="rv2-pill ${r.type}">${TYPE[r.type]}</span><b class="car">${hl(r.vehicle)}</b>` +
       (r.delegada
-        ? '<span class="drv deleg" title="La hace alguien de afuera: ningún conductor la ve">Delegada</span>'
+        ? `<span class="drv deleg" title="La hace alguien de afuera: ningún conductor la ve">Delegada${r.delegName ? ' · ' + hl(r.delegName) : ''}</span>`
         : `<span class="drv${d ? '' : ' none'}">${d ? hl(d.name) : 'Sin conductor'}</span>${r.propio ? ' <span class="tag own" title="Conductor puesto solo a esta vuelta">solo esta vuelta</span>' : ''}`) +
       `${enCurso}</div><div class="people">${chips}</div></div></div>`;
   }
@@ -832,12 +834,15 @@
     const turno = rtBandName(r.shift);
     const auto = d && rt.rv2Auto && rt.rv2Auto[r.vehicle + '|' + r.shift] === r.driverId;
     const quien = r.delegada
-      ? '<b>Delegada</b>La hace alguien de afuera. Ningún conductor la ve; al publicar, al tripulante le llega que lo contactan por WhatsApp'
+      ? (r.delegName
+        ? `<b>Delegada a ${esc(r.delegName)}</b>${r.delegPhone ? esc(r.delegPhone) + ' · ' : ''}al tripulante le llega «Te recogerá ${esc(r.delegName.split(' ')[0])}» con este número`
+        : '<b>Delegada</b>La hace alguien de afuera. Ningún conductor la ve; al publicar, al tripulante le llega que lo contactan por WhatsApp')
       : r.propio
       ? (d ? `<b>${esc(d.name)}</b>Conductor solo de esta vuelta` : '<b>Sin conductor</b>Se le quitó solo a esta vuelta')
       : (d ? `<b>${esc(d.name)}</b>Conductor · turno ${turno}${auto ? ' · automático' : ''}` : `<b>Sin conductor</b>Turno ${turno} de ${esc(r.vehicle)}`);
     const drvHTML = `<div class="rv2-drv"><span class="rv2-av">${d ? esc(initials(d.name)) : r.delegada ? '↗' : '?'}</span><div>${quien}</div>` +
       (d && d.phone ? `<a class="rv2-ic" href="${esc(telHref(d.phone))}" aria-label="Llamar a ${esc(d.name)}">${IC.phone}</a>` : '') +
+      (r.delegada && r.delegPhone ? `<a class="rv2-ic" href="${esc(telHref(r.delegPhone))}" aria-label="Llamar a ${esc(r.delegName || 'quien la hace')}">${IC.phone}</a>` : '') +
       (r.fija === 'completed' ? '' : `<button class="rv2-btn ${d || r.delegada ? '' : 'rv2-btn--soft'} rv2-btn--sm" data-act="assign" data-id="${esc(r.id)}">${d || r.delegada ? 'Cambiar' : 'Asignar'}</button>`) + '</div>';
     el.dtop.innerHTML = `<p class="rv2-alert rv2-alert--${alertCls(r)}">${esc(alertTxt(r))}</p>${sugHTML}`;
     el.dbot.innerHTML = `${drvHTML}<h3 class="rv2-cap">Paradas · orden de ${r.type === 'llegada' ? 'entrega' : 'recogida'}</h3><ol class="rv2-stops">${stopsHTML(r)}</ol>`;
@@ -1191,7 +1196,10 @@
     const extra = [];
     if (r.propio) extra.push(`<button class="rv2-opt" role="radio" aria-checked="false" data-pick="__carro"><span class="t"><b>Como el resto de ${esc(r.vehicle)}</b></span><small>${delCarro ? esc(conductor(delCarro).name) + ', el conductor de ' + esc(r.vehicle) + ' en el turno ' + esc(turno) : esc(r.vehicle) + ' no tiene conductor en el turno ' + esc(turno)}</small></button>`);
     // 0126: la hace alguien de afuera (el carro del jefe, un Uber).
-    if (!r.delegada) extra.push(`<button class="rv2-opt rv2-opt--deleg" role="radio" aria-checked="false" data-pick="__deleg"><span class="t"><b>Delegar esta vuelta</b></span><small>La hace alguien de afuera (tu carro, un Uber). Ningún conductor la ve; al publicar, al tripulante le llega «Tu servicio fue delegado, te contactaremos por WhatsApp».</small></button>`);
+    // 0131: luego se elige A QUIÉN (libreta o a mano) y el tripulante ve «Te recogerá X».
+    extra.push(`<button class="rv2-opt rv2-opt--deleg" role="radio" aria-checked="false" data-pick="__deleg"><span class="t"><b>${r.delegada ? 'Cambiar a quién se delegó' : 'Delegar esta vuelta'}</b></span><small>${r.delegada
+      ? (r.delegName ? `Hoy la hace ${esc(r.delegName)}${r.delegPhone ? ' · ' + esc(r.delegPhone) : ''}.` : 'Hoy está delegada sin nombre: al tripulante le dice que lo contactan por WhatsApp.') + ' Elige a otra persona o escribe una nueva.'
+      : 'La hace alguien de afuera (tu carro, un Uber). Ningún conductor la ve. Después eliges a quién (de la libreta o a mano) y al tripulante le llega «Te recogerá… su número de contacto es…».'}</small></button>`);
     if (cur) extra.push(`<button class="rv2-opt rv2-opt--drop" role="radio" aria-checked="false" data-pick="__none"><span class="t"><b>Quitar el conductor de esta vuelta</b></span><small>Queda sin conductor y nadie la ve hasta que le pongas uno.</small></button>`);
     let sel = null;
     // 0129: una vuelta ya publicada que no ha arrancado se puede publicar sola.
@@ -1222,15 +1230,86 @@
         pub.textContent = !sel ? 'Elige un conductor' : sePublica(sel) ? 'Guardar y publicar' : 'Delegar: publica el plan';
       } else btn.textContent = sel === '__none' ? 'Quitar de esta vuelta' : sel === '__deleg' ? 'Delegar esta vuelta' : 'Asignar a esta vuelta';
     });
-    btn.addEventListener('click', () => { if (!sel) return; const s = sel; closeSheet(); setVueltaDriver(r.id, s); });
-    if (pub) pub.addEventListener('click', () => { if (!sel || !sePublica(sel)) return; const s = sel; closeSheet(); publicarVuelta(r.id, s); });
+    // 0131: «Delegar» sigue en la hoja «Delegar a…» (a quién), en el tablero o publicando.
+    btn.addEventListener('click', () => { if (!sel) return; const s = sel; closeSheet(); if (s === '__deleg') return delegarVuelta(r.id, false); setVueltaDriver(r.id, s); });
+    if (pub) pub.addEventListener('click', () => { if (!sel || !sePublica(sel)) return; const s = sel; closeSheet(); if (s === '__deleg') return delegarVuelta(r.id, true); publicarVuelta(r.id, s); });
+  }
+
+  // ── 0131 · «Delegar a…»: a quién (de la libreta o a mano) ───────────────────
+  // Lista de los jefes (26-oct): «si se va a delegar se pueda seleccionar DELEGAR,
+  // y aparezca una opción de seleccionar el conductor inscrito o de manera manual
+  // colocar nombre y teléfono, y que al tripulante le aparezca: Te recogerá tal
+  // conductor, su número de contacto es…». La libreta la guarda la base (0131).
+  // opts: { titulo, sub, actual: {name, phone}, publicar: (name, phone) => promesa | null, tablero: (name, phone) => void | null }
+  async function openDelegar(opts) {
+    let lista = null;
+    try { lista = window.Api && Api.listDelegateContacts ? await Api.listDelegateContacts() : null; } catch (_) { lista = null; }
+    const act = opts.actual || {};
+    const dig = (x) => String(x || '').replace(/\D/g, '');
+    const fila = (c, i) => `<button class="rv2-opt" role="radio" aria-checked="false" data-dpick="${i}"><span class="t"><b>${esc(c.name)}</b></span>`
+      + (act.phone && dig(act.phone) === dig(c.phone) ? '<span class="st st--ok">Hoy</span>' : '') + `<small>${esc(c.phone)}</small></button>`;
+    openSheet(sheetHead(opts.titulo, opts.sub || '')
+      + '<div class="rv2-sh-body"><div id="rv2-dlg" role="radiogroup" aria-label="A quién se delega" style="display:flex;flex-direction:column;gap:8px">'
+      + (lista && lista.length ? '<h3 class="rv2-cap">De la libreta</h3>' + lista.map(fila).join('') : '')
+      + `<h3 class="rv2-cap" style="margin-top:6px">${lista && lista.length ? 'O alguien nuevo' : 'Quién la hace'}</h3>`
+      + `<button class="rv2-opt" role="radio" aria-checked="${lista && lista.length ? 'false' : 'true'}" data-dpick="nuevo"><span class="t"><b>Escribir nombre y teléfono</b></span><small>Queda en la libreta para la próxima vez.</small></button>`
+      + '<div class="rv2-dlg-form" id="rv2-dlg-form"' + (lista && lista.length ? ' hidden' : '') + '>'
+      + `<label class="rv2-cap" for="rv2-dlg-n">Nombre</label><input id="rv2-dlg-n" class="rv2-inp" type="text" autocomplete="off" maxlength="80" placeholder="Carlos Uber" value="${esc(lista && lista.length ? '' : (act.name || ''))}">`
+      + `<label class="rv2-cap" for="rv2-dlg-p">Teléfono</label><input id="rv2-dlg-p" class="rv2-inp" type="tel" inputmode="tel" autocomplete="off" maxlength="20" placeholder="300 123 4567" value="${esc(lista && lista.length ? '' : (act.phone || ''))}">`
+      + '</div>'
+      + (lista === null ? '<p class="rv2-impact">La libreta todavía no está en esta base: escribe nombre y teléfono.</p>' : '')
+      + '<p class="rv2-impact" id="rv2-dlg-msg" hidden></p></div></div>'
+      + '<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button>'
+      + `<button class="rv2-btn rv2-btn--cta" id="rv2-dlg-ok" disabled>${opts.publicar ? 'Delegar y avisar' : 'Delegar en el tablero'}</button></div>`);
+    setLabel();
+    let elegido = lista && lista.length ? null : 'nuevo';
+    const okb = $('#rv2-dlg-ok'), form = $('#rv2-dlg-form'), n = $('#rv2-dlg-n'), ph = $('#rv2-dlg-p'), msg = $('#rv2-dlg-msg');
+    const valor = () => {
+      if (elegido === 'nuevo') return { name: (n.value || '').trim().replace(/\s+/g, ' '), phone: (ph.value || '').trim() };
+      const c = lista && lista[Number(elegido)]; return c ? { name: c.name, phone: c.phone } : { name: '', phone: '' };
+    };
+    const valido = () => { const v = valor(); return v.name.length >= 2 && dig(v.phone).length >= 7 && dig(v.phone).length <= 15; };
+    const sync = () => { okb.disabled = !elegido || !valido(); };
+    $('#rv2-dlg').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-dpick]'); if (!b) return;
+      elegido = b.dataset.dpick;
+      $$('#rv2-dlg [data-dpick]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.dpick === elegido)));
+      form.hidden = elegido !== 'nuevo';
+      if (elegido === 'nuevo') setTimeout(() => n.focus(), 30);
+      sync();
+    });
+    [n, ph].forEach((x) => x.addEventListener('input', sync));
+    sync();
+    okb.addEventListener('click', async () => {
+      if (!valido()) return;
+      const v = valor();
+      if (opts.publicar) {
+        okb.disabled = true; okb.textContent = 'Delegando…';
+        try { await opts.publicar(v.name, v.phone); closeSheet(); }
+        catch (e) { msg.hidden = false; msg.textContent = 'No se pudo delegar: ' + ((e && e.message) || 'error') + '. No cambió nada.'; okb.disabled = false; okb.textContent = 'Delegar y avisar'; }
+      } else { closeSheet(); if (opts.tablero) opts.tablero(v.name, v.phone); }
+    });
+  }
+  // La vuelta del tablero: publicando (vuelta ya publicada) o solo en el tablero.
+  function delegarVuelta(laneId, publicando) {
+    const lane = rtLaneOf(laneId); const r = D && D.byId[laneId]; if (!lane || !r) return;
+    const quienes = r.stops.map((s) => nombre(s.crewId).split(' ')[0]).join(', ');
+    openDelegar({
+      titulo: 'Delegar a…',
+      sub: `${esc(TYPE[r.type])} de las ${hhmm(inicioDe(r).at)}${quienes ? ' · ' + esc(quienes) : ''} · ${publicando ? 'se publica ya y se le avisa a cada tripulante' : 'queda en el tablero: se avisa al publicar'}`,
+      actual: lane.deleg ? { name: lane.delegName || '', phone: lane.delegPhone || '' } : null,
+      publicar: publicando ? (name, phone) => publicarVuelta(laneId, '__deleg', { name, phone }, true) : null,
+      tablero: publicando ? null : (name, phone) => { setVueltaDriver(laneId, '__deleg', false, { name, phone }); },
+    });
   }
   // 0129: «Guardar y publicar» desde la hoja de la vuelta. Cambia SOLO esa fila en
   // la base (admin_route_set_driver, o admin_route_set_delegated para delegar) y
   // después el tablero. Si el día estaba publicado sin otros cambios, sigue
   // publicado; si había otros cambios pendientes, esos siguen pendientes.
   let publicandoVuelta = false;
-  async function publicarVuelta(laneId, pick) {
+  // quien (0131): {name, phone} al delegar. lanzar: que el error suba (la hoja
+  // «Delegar a…» lo muestra y se queda abierta) en vez de quedar en el aviso.
+  async function publicarVuelta(laneId, pick, quien, lanzar) {
     const lane = rtLaneOf(laneId); if (!lane || !lane.raId || publicandoVuelta) return;
     const car = rt.cars.find((c) => c.id === lane.car);
     const delCarro = car ? rtCarDrv(car, rtBandOf(lane)) : null;
@@ -1239,9 +1318,10 @@
     toast('Publicando esta vuelta…');
     try {
       let resp;
-      if (pick === '__deleg') resp = await Api.setRouteDelegated(lane.raId, true);
+      if (pick === '__deleg' && quien && quien.name && Api.delegateRoute) resp = await Api.delegateRoute(lane.raId, quien.name, quien.phone);
+      else if (pick === '__deleg') resp = await Api.setRouteDelegated(lane.raId, true);
       else resp = await Api.setVueltaDriver(lane.raId, pick === '__none' ? null : pick === '__carro' ? delCarro : pick);
-      const msg = setVueltaDriver(laneId, pick, true);
+      const msg = setVueltaDriver(laneId, pick, true, resp && resp.name ? { name: resp.name, phone: resp.phone } : quien);
       if (resp && resp.status) lane.raStatus = resp.status;
       if (limpio) rt.firmaPublicada = firmaActual();
       // «Deshacer» volvería el tablero a una foto con el conductor anterior y la
@@ -1254,12 +1334,13 @@
       toast(resp && resp.unchanged ? `Ya estaba así en la app: ${base}.`
         : `Publicado: ${base}${n ? ` · se avisó a ${plural(n, 'tripulante', 'tripulantes')}` : ''}. El resto del día no se tocó.`, true);
     } catch (e) {
+      if (lanzar) { publicandoVuelta = false; throw e; }
       toast('No se pudo publicar esta vuelta: ' + ((e && e.message) || 'error') + '. No cambió nada.');
     } finally { publicandoVuelta = false; }
   }
   // Pone (o quita) el conductor de UNA vuelta. No re-encadena ni re-programa
   // nada: las otras vueltas y las horas de todas quedan como estaban.
-  function setVueltaDriver(laneId, pick, callado) {
+  function setVueltaDriver(laneId, pick, callado, quien) {
     const lane = rtLaneOf(laneId); if (!lane) return '';
     const r = D.byId[laneId];
     const car = rt.cars.find((c) => c.id === lane.car);
@@ -1269,9 +1350,14 @@
     const cual = `la vuelta de las ${hhmm(r ? inicioDe(r).at : rtToMin(lane.start))} de ${lane.car}`;
     let msg;
     delete lane.deleg;
+    if (pick !== '__deleg') { delete lane.delegName; delete lane.delegPhone; }
     if (pick === '__carro') { delete lane.drv; msg = `${cual} vuelve a ${delCarro ? conductor(delCarro).name : 'quedar sin conductor, como el carro'}`; }
     else if (pick === '__none') { lane.drv = false; msg = `${cual} quedó sin conductor · las demás no cambian`; }
-    else if (pick === '__deleg') { lane.drv = false; lane.deleg = true; msg = `${cual} queda delegada · al publicar se le avisa al tripulante`; }
+    else if (pick === '__deleg') {
+      lane.drv = false; lane.deleg = true;
+      if (quien && quien.name) { lane.delegName = quien.name; lane.delegPhone = quien.phone || ''; }
+      msg = `${cual} queda delegada${lane.delegName ? ' a ' + lane.delegName : ''} · al publicar se le avisa al tripulante`;
+    }
     else { if (pick === delCarro) delete lane.drv; else lane.drv = pick; msg = `${conductor(pick).name} hace ${cual} · las demás no cambian`; }
     if (callado) return msg;
     commit(msg.charAt(0).toUpperCase() + msg.slice(1));
@@ -1473,7 +1559,7 @@
     if (!vueltas.length) return false;
     const porReserva = {};
     Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
-    const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {}, guardado = {}, fines = {};
+    const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {}, guardado = {}, fines = {}, delegQuien = {};
     const hm = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false }).slice(0, 5);
     // 0124: cada vuelta vuelve a su carro del plan («Carro 1»). Las publicadas
     // antes de 0124 no lo traen: se reparten por placa en los carros del plan
@@ -1507,6 +1593,7 @@
       if (lane.type === 'lle') { lane.origin = 'airport'; lane.landing = rtToHM(horaVuelta(ids)); }
       lanes.push(lane); order[lane.id] = ids;
       guardado[lane.id] = v.delegated ? 'deleg' : (v.driverProfileId || null);
+      if (v.delegated && v.delegateName) delegQuien[lane.id] = { name: v.delegateName, phone: v.delegatePhone || '' };   // 0131
       // La hora guardada (rtHorasPub, admin-rutas.js): en una salida la de cada
       // parada; en una llegada basta el arranque (la salida de JMC).
       const etas = {};
@@ -1533,7 +1620,7 @@
     lanes.forEach((l) => {
       const car = rt.cars.find((c) => c.id === l.car);
       const g = guardado[l.id], delCarro = car ? rtCarDrv(car, rtBandOf(l)) : null;
-      if (g === 'deleg') { l.drv = false; l.deleg = true; return; }   // 0126
+      if (g === 'deleg') { l.drv = false; l.deleg = true; if (delegQuien[l.id]) { l.delegName = delegQuien[l.id].name; l.delegPhone = delegQuien[l.id].phone; } return; }   // 0126 · 0131
       if (g && g !== delCarro) l.drv = g;
       else if (!g && delCarro) l.drv = false;
     });
@@ -1804,6 +1891,7 @@
     // Para las pruebas y para depurar desde la consola (no lo usa la app).
     // 0125: la ruta de Julián (admin-ruta-julian.js) usa la hoja, el aviso y el día.
     _sheet: { open: openSheet, close: closeSheet, head: sheetHead }, toast, diaActual: () => ui.dia,
+    delegar: openDelegar,   // 0131: «Delegar a…» (lo usa la ruta de Julián)
     _ui: ui, _hist: hist, dia: () => D, medir, sugerencia: (id) => sugerencia(D && D.byId[id]), candidatas, _mover: moveCrew,
     _avisos: () => avisosDe(), _sacar: sacarDeRuta,
   };

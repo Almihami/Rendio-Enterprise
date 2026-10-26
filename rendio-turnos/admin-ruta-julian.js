@@ -464,7 +464,7 @@
       const enCurso = v.status === 'in_progress' || (v.atendidas || []).length > 0;
       const estado = v.status === 'completed' ? ['hecha', 'Terminada']
         : enCurso ? ['curso', v.delegated ? 'En curso · delegada' : `En curso · ${esc(v.conductor)}`]
-          : v.delegated ? ['delegada', 'Delegada · la hace alguien de afuera']
+          : v.delegated ? ['delegada', v.delegateName ? `Delegada · ${esc(v.delegateName)}${v.delegatePhone ? ' · ' + esc(v.delegatePhone) : ''}` : 'Delegada · la hace alguien de afuera']
             : v.driverProfileId ? ['tomada', `Tomada por ${esc(v.conductor)}${v.placa ? ' · ' + esc(v.placa) : ''}`]
               : ['libre', 'Disponible'];
       // 0126: delegar (o devolver) mientras no haya arrancado. Aplica al momento.
@@ -474,7 +474,10 @@
         ? `<button class="rv2-btn rv2-btn--sm" data-rj-drv="${esc(v.id)}" data-hora="${esc(t0)}" data-actual="${esc(v.driverProfileId || '')}">${v.driverProfileId ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
         : '';
       const btn = v.status === 'completed' || enCurso ? ''
-        : asignar + `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="${v.delegated ? 0 : 1}" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="${!v.delegated && v.driverProfileId ? esc(v.conductor) : ''}">${v.delegated ? 'Devolver' : 'Delegar'}</button>`;
+        : asignar
+          // 0131: a quién se delegó (de la libreta o a mano); una delegada lo puede cambiar.
+          + (v.delegated && W.Api && W.Api.delegateRoute ? `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="1" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="" data-dn="${esc(v.delegateName || '')}" data-dp="${esc(v.delegatePhone || '')}">${v.delegateName ? 'Cambiar a quién' : 'A quién'}</button>` : '')
+          + `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="${v.delegated ? 0 : 1}" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="${!v.delegated && v.driverProfileId ? esc(v.conductor) : ''}">${v.delegated ? 'Devolver' : 'Delegar'}</button>`;
       h += `<div class="rj-v" data-st="${estado[0]}"><div class="rj-v-t"><b>${esc(t0)}</b><small>${v.type === 'lle' ? 'Llegada' : 'Salida'}</small></div>`
         + `<div class="rj-v-m"><span>${esc(gente.map((g) => g.name.split(' ')[0]).join(', ') || '—')}</span>`
         + `<small>${esc([v.deadlineAt ? 'Deben estar ' + bogHM(v.deadlineAt) : '', v.nota || '', `${gente.length} ${gente.length === 1 ? 'persona' : 'personas'}`].filter(Boolean).join(' · '))}</small></div>`
@@ -531,6 +534,23 @@
       if (dl) {
         const on = dl.getAttribute('data-on') === '1';
         const hora = dl.getAttribute('data-hora'), quienes = dl.getAttribute('data-quienes'), tomada = dl.getAttribute('data-tomada');
+        // 0131: delegar A ALGUIEN (libreta o a mano) en la hoja «Delegar a…» de Asignación.
+        if (on && V2() && typeof V2().delegar === 'function' && W.Api && Api.delegateRoute) {
+          const id = dl.getAttribute('data-rj-deleg');
+          const dn = dl.getAttribute('data-dn') || '', dp = dl.getAttribute('data-dp') || '';
+          V2().delegar({
+            titulo: 'Delegar a…',
+            sub: `Vuelta de las ${esc(hora)}${quienes ? ' · ' + esc(quienes) : ''}${tomada ? ` · ${esc(tomada)} la había tomado: se le avisa que ya no la hace` : ''} · se le avisa a cada tripulante quién lo recoge y su número`,
+            actual: dn ? { name: dn, phone: dp } : null,
+            publicar: async (name, phone) => {
+              const r = await Api.delegateRoute(id, name, phone);
+              say(r && r.unchanged ? `La vuelta de las ${hora} ya estaba con ${name}.` : `Vuelta de las ${hora} delegada a ${name}${r && r.notified ? ` · avisamos a ${r.notified} ${r.notified === 1 ? 'tripulante' : 'tripulantes'}` : ''}.`);
+              const dia = diaActual();
+              if (dia && V2() && typeof V2().cargarDia === 'function') await V2().cargarDia(dia);
+            },
+          });
+          return;
+        }
         const pregunta = on
           ? `¿Delegar la vuelta de las ${hora}${quienes ? ' (' + quienes + ')' : ''}? La hace alguien de afuera: ningún conductor la verá y a cada tripulante le llega «Tu servicio fue delegado, te contactaremos por WhatsApp».${tomada ? ` ${tomada} la había tomado: se le avisa que ya no la hace.` : ''}`
           : `¿Devolver la vuelta de las ${hora}? Vuelve a la lista para que un conductor la tome, y se le avisa al tripulante.`;

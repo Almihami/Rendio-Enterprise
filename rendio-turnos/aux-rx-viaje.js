@@ -246,6 +246,15 @@
         + '</div>';
     }
     if (isClosed(t)) return '';
+    // 0131: delegada A ALGUIEN (lista de los jefes, 26-oct): «Te recogerá tal
+    // conductor, su número de contacto es…», con el número para llamarlo.
+    if (t.delegated && t.delegate && t.delegate.name) {
+      const tel = String(t.delegate.phone || '').replace(/[^\d+]/g, '');
+      return '<div class="rx-assign rx-in" data-rx-k="drv-deleg-quien"><span class="rx-pass-wait">' + ic('Car', 16) + '</span>'
+        + '<div><b>Te recogerá ' + esc(t.delegate.name) + '</b>'
+        + (tel ? '<span>Su número de contacto es <a href="tel:' + esc(tel) + '" data-rx-k="deleg-tel">' + esc(t.delegate.phone) + '</a></span>' : '<span>Tu servicio lo hace alguien de afuera.</span>')
+        + '</div></div>';
+    }
     // 0126: la vuelta la hace alguien de afuera (el carro del jefe, un Uber).
     if (t.delegated) {
       return '<div class="rx-assign rx-in" data-rx-k="drv-deleg"><span class="rx-pass-wait">' + ic('MessageCircle', 16) + '</span>'

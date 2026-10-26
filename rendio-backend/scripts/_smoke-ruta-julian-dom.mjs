@@ -321,6 +321,28 @@ console.log('\n── D · El día con la ruta de Julián ──');
   w.Api.setRouteDelegated = async () => { throw new Error('Para delegar falta la actualización 0126 de la base.'); };
   click(btnDe(qa('.rj-dia .rj-v')[2])); await wait(60);
   t('0126: sin la base al día lo dice (y el botón vuelve a servir)', /No se pudo: Para delegar falta la actualización 0126/.test(C.toastV2() || '') && !btnDe(qa('.rj-dia .rj-v')[2]).disabled, C.toastV2());
+  // 0131 · Delegar A ALGUIEN (libreta o a mano) desde la ruta de Julián.
+  const dlg = [], quien = {};
+  w.Api.listDelegateContacts = async () => [{ id: 'c1', name: 'Uber de Camilo', phone: '311 222 3344' }];
+  w.Api.delegateRoute = async (id, n, ph) => { dlg.push([id, n, ph]); quien[id] = { n, ph }; return { id, delegated: true, name: n, phone: ph, notified: 2 }; };
+  w.Api.getPublishedPlan = async (...a) => { const r = await pub1(...a); (r.vueltas || []).forEach((v) => { if (quien[v.id]) Object.assign(v, { delegated: true, driverProfileId: null, conductor: 'Sin conductor', placa: null, delegateName: quien[v.id].n, delegatePhone: quien[v.id].ph }); }); return r; };
+  await C.V2().cargarDia(DAY); await wait(80);
+  let vsD = qa('.rj-dia .rj-v');
+  const idD = btnDe(vsD[3]).getAttribute('data-rj-deleg');
+  C.confirms.length = 0;
+  click(btnDe(vsD[3])); await wait(40);
+  t('0131: «Delegar» abre «Delegar a…» (ya no la pregunta de antes) con la libreta', C.confirms.length === 0 && txt(q('#rv2-shTitle')) === 'Delegar a…' && /Uber de Camilo/.test(txt(q('#rv2-dlg'))) && /Delegar y avisar/.test(txt(q('#rv2-dlg-ok'))), txt(q('#rv2-shTitle')));
+  click(q('#rv2-dlg [data-dpick="0"]')); await wait(5);
+  click(q('#rv2-dlg-ok')); await wait(120);
+  t('0131: delega esa vuelta a «Uber de Camilo · 311 222 3344»', dlg.length === 1 && dlg[0][0] === idD && dlg[0][1] === 'Uber de Camilo' && dlg[0][2] === '311 222 3344', JSON.stringify(dlg));
+  t('0131: el aviso dice a quién y a cuántos avisó', /delegada a Uber de Camilo · avisamos a 2 tripulantes/.test(C.toastV2() || ''), C.toastV2());
+  vsD = qa('.rj-dia .rj-v');
+  const laD = vsD.find((v) => v.querySelector(`[data-rj-deleg="${idD}"]`));
+  t('0131: el día se recarga: «Delegada · Uber de Camilo · 311 222 3344» con «Cambiar a quién» y «Devolver»', laD && laD.dataset.st === 'delegada' && /Delegada · Uber de Camilo · 311 222 3344/.test(txt(laD)) && /Cambiar a quién/.test(txt(laD)) && /Devolver/.test(txt(laD)), laD && txt(laD));
+  w.Api.getPublishedPlan = pub1;
+  delete w.Api.delegateRoute; delete w.Api.listDelegateContacts;
+  await C.V2().cargarDia(DAY); await wait(80);
+
   w.Api.getPublishedPlan = pub1;
 
   // 0129 · El jefe le da una vuelta pegada a un conductor (sin que la tome desde

@@ -253,7 +253,8 @@
   // último plan publicado/leído, lo que se ve es lo que tienen los conductores.
   function rtFirmaPlan() {
     const lanes = (rt.lanes || []).filter(l => rt.order[l.id] && rt.order[l.id].length)
-      .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(','), l.drv === undefined ? null : l.drv, l.deleg ? 1 : 0]);
+      // 0131: a quién se delegó también es parte del plan.
+      .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(','), l.drv === undefined ? null : l.drv, l.deleg ? 1 : 0, l.deleg && l.delegName ? [l.delegName, l.delegPhone || ''] : null]);
     const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null, c.driverMad || null]);
     return JSON.stringify([lanes, drv]);
   }
@@ -1586,6 +1587,8 @@
         planCar: car ? car.id : null,   // 0124: «Carro 1»; la placa la pone el turno del conductor
         driverProfileId: l.deleg ? null : rtDriverOf(l), // conductor de la FRANJA de esta vuelta (AM/PM)
         delegated: l.deleg === true,    // 0126: la hace alguien de afuera
+        delegateName: l.deleg ? (l.delegName || null) : null,     // 0131: a quién
+        delegatePhone: l.deleg ? (l.delegPhone || null) : null,
         type: l.type || 'sal',
         startAt: rt.day + 'T' + (l.start || '04:00') + ':00-05:00',
         stops: rt.order[l.id].map(k => rt.aux[k] && rt.aux[k].reservationId).filter(Boolean),
@@ -1620,12 +1623,26 @@
         const fresh = (r.notify || []).filter(n => !n.delegated && !n.changed).map(n => n.reservationId);
         const moved = (r.notify || []).filter(n => !n.delegated && n.changed).map(n => n.reservationId);
         // 0126: delegada = la hace alguien de afuera; lo contactan por WhatsApp.
-        const deleg = (r.notify || []).filter(n => n.delegated).map(n => n.reservationId);
+        const deleg = (r.notify || []).filter(n => n.delegated && !n.delegateName).map(n => n.reservationId);
         if (deleg.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
           const ids = await Api.auxiliarUserIdsForReservations(deleg);
           if (ids.length) await Api.sendPush({ profileIds: ids,
             title: 'Tu servicio fue delegado 🤝',
             body: 'Te contactaremos por WhatsApp para coordinar tu traslado.', url: '/#/viajes' });
+        }
+        // 0131: delegada A ALGUIEN: «Te recogerá X · su número es Y» (un push por persona).
+        const porQuien = {};
+        (r.notify || []).filter(n => n.delegated && n.delegateName).forEach(n => {
+          const k = n.delegateName + '|' + (n.delegatePhone || '');
+          (porQuien[k] = porQuien[k] || { name: n.delegateName, phone: n.delegatePhone || '', rids: [] }).rids.push(n.reservationId);
+        });
+        for (const g of Object.values(porQuien)) {
+          if (!Api.auxiliarUserIdsForReservations || !Api.sendPush) break;
+          const ids = await Api.auxiliarUserIdsForReservations(g.rids);
+          const corto = g.name.split(' ').slice(0, 2).join(' ');
+          if (ids.length) await Api.sendPush({ profileIds: ids,
+            title: `Te recogerá ${corto} 🤝`,
+            body: `Tu traslado lo hace ${corto}.${g.phone ? ` Su número de contacto es ${g.phone}.` : ''}`, url: '/#/viajes' });
         }
         if (fresh.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
           const ids = await Api.auxiliarUserIdsForReservations(fresh);
