@@ -56,6 +56,7 @@
   Layer.prototype._onAdd = function () {};
   Layer.prototype._onRemove = function () { log.removed.push(this); };
   Layer.prototype.bindTooltip = function (t, o) { this._tooltip = { text: t, opts: o || {} }; return this; };
+  Layer.prototype.setTooltipContent = function (t) { this._tooltip = { text: t, opts: (this._tooltip && this._tooltip.opts) || {} }; return this; };
   Layer.prototype.bindPopup = function (t, o) { this._popup = { text: t, opts: o || {} }; return this; };
   Layer.prototype.openPopup = function () { return this; };
   Layer.prototype.closePopup = function () { return this; };

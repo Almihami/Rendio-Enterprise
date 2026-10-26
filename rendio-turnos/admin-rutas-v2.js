@@ -77,6 +77,9 @@
   const algunHotel = (ids) => { const P = ids.map((id) => resP(aux(id))).find((x) => x && x.hotel); return P || null; };
   const fijaDe = (laneId) => (rt.rv2Fijas && rt.rv2Fijas[laneId]) || null;
   const atendida = (id) => !!(rt.rv2Atendidas && rt.rv2Atendidas[id]);
+  // Cómo terminó una vuelta publicada (26-oct-2026, Api._opResultado): la base
+  // nunca la cierra, así que se deduce de sus paradas al releer el plan.
+  const resultadoDe = (laneId) => (rt.rv2Fin && rt.rv2Fin[laneId]) || null;
   const lanesDeCarro = (carId) => rt.lanes.filter((l) => l.car === carId && (rt.order[l.id] || []).length).sort((a, b) => a.vuelta - b.vuelta);
 
   // Cuándo puede empezar el carro ESTA vuelta, con la misma cuenta que el
@@ -186,6 +189,9 @@
     }
     const driverId = rtDriverOf(lane) || null;
     const shift = rtBandOf(lane);
+    // El resultado vale mientras la vuelta siga como se publicó: la terminada no
+    // se puede tocar (fija), y una «sin marcar» que se reacomoda ya es otra.
+    const fin = fija === 'completed' || fijaPub ? resultadoDe(lane.id) : null;
     let status;
     if (fija === 'completed') status = 'ok';
     else if (margin != null && margin < 0) status = 'risk';
@@ -198,7 +204,7 @@
     return {
       id: lane.id, lane, vuelta: lane.vuelta, vehicle: car.id, cap: rtCapOf(car), type,
       depart: start + retraso, pickup, arrival, end, pres, margin, wait, retraso,
-      stops, pax: c.pax, driverId, shift, status, fija, etaSource: rt.etaSource || null,
+      stops, pax: c.pax, driverId, shift, status, fija, fin, etaSource: rt.etaSource || null,
       propio: lane.drv !== undefined,   // conductor puesto solo a esta vuelta (rtDriverOf)
       delegada: lane.deleg === true,    // 0126: la hace alguien de afuera (sin conductor a propósito)
       hora: ((Math.floor(arrival / 60) % 24) + 24) % 24,
@@ -593,11 +599,22 @@
       + [...libres.values()].map((x) => '<b>' + esc(x.n) + '</b>' + (x.car ? ' (turno abierto en ' + esc(x.car) + ')' : '')).join(', ') + '.</p>';
   }
 
+  // 'ok' | 'bad' para una terminada, 'sinmarcar' si pasó su hora sin marcas; '' si no.
+  function finFila(r) {
+    if (r.fija === 'completed') return r.fin && r.fin.estado === 'bad' ? 'bad' : 'ok';
+    return r.fin && r.fin.estado === 'sinmarcar' ? 'sinmarcar' : '';
+  }
+
   function rowHTML(r) {
     const d = conductor(r.driverId);
     const sub = r.type === 'llegada' ? 'Aterriza → última entrega' : 'Recoge → llega a JMC';
     let estado;
-    if (r.fija === 'completed') estado = '<small>Terminada</small>';
+    // Terminada (verde o roja) o pasada sin marcar (gris): la fila va degradada.
+    const fin = finFila(r);
+    if (r.fija === 'completed') estado = fin === 'bad'
+      ? `<small class="late">Terminada · ${esc(r.fin.motivos.join(' · '))}</small>`
+      : `<small class="done">Terminada${r.fin && r.fin.at ? ' ' + esc(r.fin.at) : ''}${r.fin ? ' · sin novedad' : ''}</small>`;
+    else if (fin === 'sinmarcar') estado = `<small>Pasó su hora · ${plural(r.fin.faltan, 'parada', 'paradas')} sin marcar</small>`;
     else if (r.status === 'risk') estado = `<small class="late">${Math.abs(r.margin)} min tarde · presentación ${hhmm(r.pres)}</small>`;
     else if (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA) estado = `<small class="late">Esperan ${r.wait} min el carro</small>`;
     else estado = r.type === 'llegada' ? `<small>Recoge en JMC ${hhmm(r.pickup)}</small>` : `<small>Presentación ${hhmm(r.pres)}</small>`;
@@ -609,7 +626,7 @@
       return `<button class="rv2-p" ${attrs}><span class="mono">${hhmm(st.time)}</span><span class="nm">${hl(a.n || 'Tripulante')}</span><span class="pl">${hl(a.zona || '')}</span></button>`;
     }).join('');
     const aria = `${r.vehicle}, ${TYPE[r.type]}, ${horas(r)}${r.status === 'risk' ? ', llega tarde' : ''}, ${r.stops.map((s) => nombre(s.crewId)).join(', ')}`;
-    return `<div class="rv2-row" role="button" tabindex="0" data-id="${esc(r.id)}" data-s="${r.status}"${ui.sel === r.id ? ' aria-current="true"' : ''} aria-label="${esc(aria)}">` +
+    return `<div class="rv2-row" role="button" tabindex="0" data-id="${esc(r.id)}" data-s="${r.status}"${fin ? ` data-fin="${fin}"` : ''}${ui.sel === r.id ? ' aria-current="true"' : ''} aria-label="${esc(aria)}">` +
       `<div class="when"><b class="mono">${horas(r)}</b><small>${sub}</small>${estado}</div>` +
       `<div class="main"><div class="l1"><span class="rv2-pill ${r.type}">${TYPE[r.type]}</span><b class="car">${hl(r.vehicle)}</b>` +
       (r.delegada
@@ -725,7 +742,11 @@
   function alertTxt(r) {
     const m = r.margin; const B = BUF();
     const choque = r.retraso ? ` · el carro termina su vuelta anterior ${r.retraso} min tarde` : '';
-    if (r.fija === 'completed') return 'Terminada · el conductor ya la cerró';
+    if (r.fija === 'completed') {
+      if (r.fin && r.fin.estado === 'bad') return `Terminada con novedad · ${r.fin.motivos.join(' · ')}`;
+      return r.fin ? `Terminada${r.fin.at ? ' a las ' + r.fin.at : ''} · todos entregados, sin novedad` : 'Terminada · el conductor ya la cerró';
+    }
+    if (finFila(r) === 'sinmarcar') return `Pasó su hora y quedaron ${plural(r.fin.faltan, 'parada', 'paradas')} sin marcar: no se sabe si se hizo`;
     if (r.status === 'risk') return `Llega tarde · llega ${hhmm(r.arrival)}; con ${B} min de entrega no alcanza la presentación (${hhmm(r.pres)}): ${Math.abs(m)} min tarde${choque}`;
     if (r.status === 'nodriver') return `Sin conductor para el turno ${rtBandName(r.shift)} de ${r.vehicle}`;
     if (r.type === 'llegada') {
@@ -734,7 +755,7 @@
     }
     return `A tiempo · llega ${hhmm(r.arrival)} a JMC; presentación ${hhmm(r.pres)}`;
   }
-  const alertCls = (r) => (r.fija === 'completed' ? 'ok' : r.status === 'risk' || (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA) ? 'risk' : r.status === 'nodriver' ? 'nodriver' : 'ok');
+  const alertCls = (r) => (r.fija === 'completed' ? (finFila(r) === 'bad' ? 'risk' : 'ok') : finFila(r) === 'sinmarcar' ? 'sinmarcar' : r.status === 'risk' || (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA) ? 'risk' : r.status === 'nodriver' ? 'nodriver' : 'ok');
 
   // Lo que dice cada opción de «Mover», en palabras (15-oct: sin «±0 min · ajustada»).
   function pillDe(sim) {
@@ -1007,7 +1028,7 @@
     ui.optimizando = true; renderBar();
     try {
       await rtOptimize({ toast: (m) => toast(m, true) });
-      rt.rv2Fijas = {};
+      rt.rv2Fijas = {}; rt.rv2Fin = {};
     } catch (e) {
       hist.pop();
       toast('No se pudo optimizar: ' + ((e && e.message) || 'error'));
@@ -1361,7 +1382,7 @@
   // tablero vacío con todos «sin rutear». Mismas reglas que rtSolveDay para el
   // número de vuelta, el origen y la hora de aterrizaje.
   async function rearmarPublicado() {
-    rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {};
+    rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {}; rt.rv2Fin = {};
     ui.manual = null; rt.manualDia = false;
     if (rt.source !== 'live' || !rt.day || !window.Api || typeof Api.getPublishedPlan !== 'function') return false;
     let plan = null;
@@ -1382,7 +1403,7 @@
     if (!vueltas.length) return false;
     const porReserva = {};
     Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
-    const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {}, guardado = {};
+    const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {}, guardado = {}, fines = {};
     const hm = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false }).slice(0, 5);
     // 0124: cada vuelta vuelve a su carro del plan («Carro 1»). Las publicadas
     // antes de 0124 no lo traen: se reparten por placa en los carros del plan
@@ -1423,6 +1444,9 @@
       // ruta a 'in_progress'; la que el conductor va haciendo sigue en 'planned').
       if (v.status === 'in_progress' || v.status === 'completed') fijas[lane.id] = v.status;
       else if ((v.atendidas || []).length) fijas[lane.id] = 'in_progress';
+      // Todas sus paradas resueltas = terminada, aunque la base la deje 'planned'.
+      if (v.fin && (v.fin.estado === 'ok' || v.fin.estado === 'bad')) fijas[lane.id] = 'completed';
+      if (v.fin) fines[lane.id] = v.fin;
       if (v.driverProfileId) {
         if (!(rt.drivers || []).some((d) => d.id === v.driverProfileId)) rt.drivers.push({ id: v.driverProfileId, n: v.conductor || 'Conductor', c: '#8895a7' });
         const banda = rtBandOf(lane);
@@ -1443,7 +1467,7 @@
     });
     rt.lanes = lanes; rt.order = order; rt.horasPub = horas;
     rt.pool = Object.keys(rt.aux).filter((k) => !usados.has(k));
-    rt.rv2Fijas = fijas; rt.rv2Atendidas = atendidas;
+    rt.rv2Fijas = fijas; rt.rv2Atendidas = atendidas; rt.rv2Fin = fines;
     rt.cars.forEach((c) => encadenar(c.id));
     rt.optimized = true;
     rt.firmaPublicada = firmaActual();

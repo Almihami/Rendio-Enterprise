@@ -14,10 +14,14 @@
   // Rotonda del TERMINAL DE PASAJEROS (acceso occidental) — la coord genérica
   // del aeropuerto ruteaba por la zona de carga/CACOM 5, que es prohibida.
   const OP_MDE = { lat: 6.1715, lng: -75.4270 }; // JMC · terminal de pasajeros
-  const OP_COLORS = { ontime: '#16936A', tight: '#C9810F', late: '#D6473B', done: '#9D998F' };
+  // idle = con turno pero entre vueltas (o sin iniciar): sin semáforo, porque
+  // no hay nada que pueda llegar tarde todavía.
+  const OP_COLORS = { ontime: '#16936A', tight: '#C9810F', late: '#D6473B', done: '#9D998F', idle: '#6B7A90' };
   // Color por carro (identidad en el mapa y en la tarjeta), en orden estable.
   const OP_CAR_COLORS = ['#2563A8', '#7C5CD6', '#16936A', '#0EA5E9', '#E2551A', '#8B5CF6'];
-  const OP_STLABEL = { ontime: ['A tiempo', 'i-check'], tight: ['Ajustado', 'i-clock'], late: ['Va tarde', 'i-warn'], done: ['Completó', 'i-check'] };
+  const OP_STLABEL = { ontime: ['A tiempo', 'i-check'], tight: ['Ajustado', 'i-clock'], late: ['Va tarde', 'i-warn'], done: ['Terminó', 'i-check'], idle: ['En espera', 'i-clock'] };
+  // Cómo terminó cada vuelta (Api._opResultado), en palabras.
+  const OP_VT_TXT = { ok: 'Hecha', bad: 'Con novedad', sinmarcar: 'Sin marcar', curso: 'En curso', falta: 'Pendiente' };
   const OP_VAN_SVG = '<svg viewBox="0 0 24 24"><path d="M3 13V7a1 1 0 0 1 1-1h9l4 4h3a1 1 0 0 1 1 1v2"/><path d="M3 13h19v4H3z"/><circle cx="7.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>';
   // 2026-07-25: se eliminaron OP_DEMO_CARS y OP_DEMO_FEED (4 carros y 5 eventos
   // inventados que se pintaban cuando no había operación real). Servían para
@@ -25,7 +29,8 @@
   // pruebas reales mentían: mostraban carros rodando y conductores por nombre
   // que no existían. Ver [feedback-no-inventar-datos]. Sin datos reales la
   // pantalla ahora lo DICE y no pinta nada.
-  const opState = { map: null, routeLayer: null, markerLayer: null, markers: {}, cars: [], feed: [], sel: null, clockT: 0, timers: [], bound: false, source: 'empty', day: null, loading: false, tweens: {}, raf: null };
+  // open = la tarjeta abierta (su detalle); feedAll = carros con toda su actividad a la vista.
+  const opState = { map: null, routeLayer: null, markerLayer: null, markers: {}, cars: [], feed: [], risks: [], sel: null, open: null, feedAll: {}, clockT: 0, timers: [], bound: false, source: 'empty', day: null, loading: false, tweens: {}, raf: null };
   // Cada cuánto se relee la operación real. La posición llega por polling: la
   // tabla driver_locations se diseñó para Realtime, pero el polling es suficiente
   // para una flota de 3-4 carros y no exige habilitar replicación.
@@ -112,23 +117,28 @@
           _needsOsrm: stale,
         };
       });
-      opState.feed = data.feed.length ? data.feed : [{ k: 'info', t: opFmt(opState.clockT).slice(0, 5), h: 'Sin eventos todavía. El feed se llena cuando el conductor marca su avance.' }];
-      // Demoras que detectó el vigilante mientras nadie miraba la pantalla
-      // (corre en la base cada 5 min, también de madrugada). Van ARRIBA del feed:
+      // La actividad va POR CARRO (cada tarjeta trae la suya, c.feed); aquí solo
+      // quedan las demoras que detectó el vigilante mientras nadie miraba la
+      // pantalla (corre en la base cada 5 min, también de madrugada). Van ARRIBA:
       // es lo primero que el jefe tiene que ver al abrir en la mañana.
+      opState.feed = data.feed;
+      const avisos = [];
       try {
         if (window.Api?.listOpenRouteRisks) {
           const risks = await Api.listOpenRouteRisks();
-          risks.slice(0, 8).reverse().forEach(r => {
+          risks.slice(0, 8).forEach(r => {
             const hora = (() => { try { return new Date(r.at).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' }); } catch (_) { return ''; } })();
             // El feed se pinta con innerHTML: el nombre viene de la base y va escapado.
-            const nom = String(r.aux || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            opState.feed.unshift({ k: 'warn', t: hora,
-              h: `<b>${nom}</b> — el carro no alcanzaba su recogida por ~${r.minutesLate} min${r.km ? ` (estaba a ${r.km} km)` : ''}.` });
+            avisos.push({ k: 'warn', t: hora,
+              h: `<b>${opEsc(r.aux || '')}</b> — el carro no alcanzaba su recogida por ~${r.minutesLate} min${r.km ? ` (estaba a ${r.km} km)` : ''}.` });
           });
         }
-      } catch (_) { /* sin vigilante: el feed queda como estaba */ }
+      } catch (_) { /* sin vigilante: no hay avisos que mostrar */ }
+      opState.risks = avisos;
       if (first || !opState.cars.some(c => c.id === opState.sel)) opState.sel = opState.cars[0].id;
+      // La tarjeta abierta se sigue por su llave (sigue abierta aunque tome la
+      // placa al iniciar turno); si desapareció, se cierra.
+      if (opState.open && !opState.cars.some(c => c.key === opState.open)) opState.open = null;
       await opComputeStates();
       renderOperCars(); renderOperFeed(); syncOperDelay();
 
@@ -166,6 +176,9 @@
   async function opComputeStates() {
     for (const c of opState.cars) {
       if (c.done) { c.state = 'done'; c.arrival = c.posAt ? opHHMM(c.posAt) : '—'; continue; }
+      // Entre vueltas o sin iniciar turno: sin semáforo (antes salía «A tiempo»
+      // un carro que ni había arrancado).
+      if (c.enCurso === false) { c.state = 'idle'; c.arrival = '—'; c.etaNext = '—'; c.lateMin = null; continue; }
       if (!c.pos) { c.state = 'ontime'; c.arrival = '—'; c.etaNext = '—'; continue; }
       if (!c._needsOsrm) continue; // no se movió lo bastante: vale el cálculo anterior
       const etaSec = await opEtaSec(c.pos, [OP_MDE.lat, OP_MDE.lng]);
@@ -319,7 +332,7 @@
       const m = L.marker(c.pos, { icon, zIndexOffset: c.state === 'late' ? 1000 : 0 })
         .addTo(opState.markerLayer).bindTooltip(tip);
       m._opHtml = html;
-      m.on('click', () => { opState.sel = c.id; renderOperCars(); renderOperMarkers(); });
+      m.on('click', () => opAbrir(c.key, true));
       opState.markers[c.id] = m;
     });
     // Carros que ya no van en el mapa (terminaron o perdieron posición).
@@ -335,7 +348,8 @@
     // vuelve a pedir a OSRM la de los carros que se movieron.
     if (opState.source === 'live' && opState.routeLayer) opState.routeLayer.clearLayers();
     for (const c of opState.cars) {
-      if (c.state === 'done' || !c.pos) continue;
+      // Entre vueltas no hay trayecto que dibujar.
+      if (c.state === 'done' || c.state === 'idle' || !c.pos) continue;
       const col = OP_COLORS[c.state];
       // El trayecto que importa es hacia donde va: la próxima parada si la hay,
       // el aeropuerto si ya no quedan recogidas.
@@ -359,28 +373,108 @@
     }
   }
 
+  // Los nombres, lugares y placas vienen de la base y se pintan con innerHTML.
+  const opEsc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  // Una tarjeta por CARRO (26-oct-2026): placa, quién lo lleva, qué está
+  // haciendo en una frase y una tira con todas sus vueltas del día (verde =
+  // hecha, rojo = con novedad, gris = sin marcar). Al tocarla se abre el detalle.
   function opCarCard(c) {
-    const [lab, ic] = OP_STLABEL[c.state];
+    let [lab, ic] = OP_STLABEL[c.state] || OP_STLABEL.idle;
+    // Entre vueltas la píldora dice POR QUÉ espera (y no se repite al lado de la placa).
+    const espera = c.state === 'idle' || c.state === 'done';
+    if (c.state === 'idle') lab = c.status === 'Sin iniciar turno' ? 'Sin turno' : c.status;
+    const aviso = c.state === 'idle' && c.status === 'Sin marcar' ? ' warn' : '';
     const etaCls = c.state === 'late' ? 'late' : c.state === 'tight' ? 'tight' : '';
-    const next = c.state !== 'done'
-      ? `<div class="op-cc-next"><svg class="icon"><use href="#i-pin"/></svg><span>Próx: <b>${c.next}</b></span><span class="eta ${etaCls}">${c.etaNext}</span></div>`
-      : `<div class="op-cc-next"><svg class="icon"><use href="#i-check"/></svg><span>Llegó ${c.arrival} · sin pendientes</span></div>`;
+    const open = c.key === opState.open;
     // En vivo mostramos de dónde salió el punto y qué tan viejo es.
-    const fr = opState.source === 'live' ? opFreshness(c) : null;
-    const fresh = fr ? `<div class="op-cc-fresh ${fr.cls}"><span class="op-cc-freshdot"></span>${fr.txt}</div>` : '';
-    return `<div class="op-cc ${c.state} ${c.id === opState.sel ? 'sel' : ''}" data-car="${c.id}">
+    const fr = opState.source === 'live' && c.turno !== 'sin' ? opFreshness(c) : null;
+    const fresh = fr && !c.done ? `<div class="op-cc-fresh ${fr.cls}"><span class="op-cc-freshdot"></span>${fr.txt}</div>` : '';
+    const eta = c.enCurso && c.etaNext && c.etaNext !== '—' ? `<span class="eta ${etaCls}" title="Llegada estimada a JMC">${opEsc(c.etaNext)}</span>` : '';
+    const r = c.resumen || { hechas: 0, conNovedad: 0, sinMarcar: 0, faltan: 0 };
+    const tira = (c.vueltas || []).map(v => `<i class="op-vd ${v.estado}" title="${opEsc(v.hora)} · ${v.type === 'lle' ? 'llegada' : 'salida'} · ${opEsc(OP_VT_TXT[v.estado] || '')}"></i>`).join('');
+    const cuenta = [`${r.hechas} de ${(c.vueltas || []).length} hechas`]
+      .concat(r.conNovedad ? [`<b class="bad">${r.conNovedad} con novedad</b>`] : [])
+      .concat(r.sinMarcar ? [`${r.sinMarcar} sin marcar`] : []).join(' · ');
+    return `<div class="op-cc ${c.state} ${c.id === opState.sel ? 'sel' : ''} ${open ? 'open' : ''}" data-car="${opEsc(c.id)}" data-key="${opEsc(c.key)}" role="button" tabindex="0" aria-expanded="${open}">
       <div class="op-cc-top">
         <span class="op-cc-dot" style="background:${c.dc}"><svg class="icon"><use href="#i-van"/></svg></span>
-        <span class="op-cc-id">${c.id}<span>${c.status}</span></span>
-        <span class="op-cc-state ${c.state}"><svg class="icon"><use href="#${ic}"/></svg>${lab}</span>
+        <span class="op-cc-id">${c.plate ? opEsc(c.plate) : 'Sin placa'}${espera ? '' : `<span>${opEsc(c.status)}</span>`}</span>
+        <span class="op-cc-state ${c.state}${aviso}"><svg class="icon"><use href="#${ic}"/></svg>${opEsc(lab)}</span>
       </div>
       <div class="op-cc-body">
-        <div class="op-cc-drv"><span class="av" style="background:${c.dc}">${opIni(c.driver)}</span><b>${c.driver}</b></div>
-        <span class="op-cc-pax"><svg class="icon"><use href="#i-users"/></svg>${c.pax}/${c.cap}</span>
+        <div class="op-cc-drv"><span class="av" style="background:${c.dc}">${opEsc(opIni(c.driver))}</span><b>${opEsc(c.driver)}</b></div>
+        ${c.enCurso ? `<span class="op-cc-pax"><svg class="icon"><use href="#i-users"/></svg>${c.pax}/${c.cap}</span>` : ''}
       </div>
-      ${next}
+      <div class="op-cc-now"><svg class="icon"><use href="#i-pin"/></svg><span>${opEsc(c.ahora || '')}</span>${eta}</div>
+      ${tira ? `<div class="op-cc-strip"><span class="op-vds">${tira}</span><span class="op-cc-cuenta">${cuenta}</span></div>` : ''}
       ${fresh}
+      ${open ? opCarDetail(c) : ''}
     </div>`;
+  }
+
+  // Una parada en palabras: dónde y qué pasó (sin «a/o»: es un sustantivo).
+  function opParadaTxt(p, type) {
+    if (p.status === 'delivered') return (p.recogio ? `recogida ${p.recogio} · ` : '') + `entrega ${p.entrego}`;
+    if (p.status === 'no_show') return 'no se presentó';
+    if (p.status === 'picked_up') return `a bordo · recogida ${p.recogio}`;
+    if (p.status === 'arrived') return type === 'lle' ? 'el carro está en el aeropuerto' : 'el carro ya llegó';
+    return type === 'lle' ? 'por recoger en el aeropuerto' : (p.cita ? `pendiente · al aeropuerto ${p.cita}` : 'pendiente');
+  }
+
+  function opCarDetail(c) {
+    // Abiertas persona por persona: la que va, la siguiente y las que dejaron
+    // algo por revisar. Las demás en una línea, para que lo de ahora se vea.
+    const siguiente = (c.vueltas || []).find(v => v.estado === 'falta');
+    const vts = (c.vueltas || []).map(v => {
+      const abierta = v.estado === 'curso' || v.estado === 'bad' || v.estado === 'sinmarcar' || v === siguiente;
+      const tipo = v.type === 'lle' ? 'Llegada' : 'Salida';
+      const otro = v.conductor && v.conductor !== c.driver ? ` · ${opEsc(v.conductor)}` : '';
+      let st = OP_VT_TXT[v.estado] || '';
+      if (v.estado === 'ok' && v.fin) st = `Hecha ${opEsc(v.fin)}`;
+      if (v.estado === 'sinmarcar') st = `Sin marcar · faltan ${v.faltan}`;
+      const motivos = v.motivos && v.motivos.length && (v.estado === 'bad' || v.estado === 'sinmarcar' || v.estado === 'curso')
+        ? `<div class="op-vt-why">${v.motivos.map(opEsc).join(' · ')}</div>` : '';
+      // Cada persona en su línea, con su lugar: nada cortado.
+      const ps = abierta
+        ? `<ul class="op-vps">${(v.paradas || []).map(p => `<li class="op-vp ${p.status}"><b>${opEsc(p.nombre)}</b><span>${v.type === 'lle' ? 'a ' : 'en '}${opEsc(p.lugar)} · ${opEsc(opParadaTxt(p, v.type))}</span></li>`).join('')}</ul>`
+        : `<div class="op-vt-n">${(v.paradas || []).map(p => `${opEsc(p.nombre)} <span>(${opEsc(p.lugar)})</span>`).join(' · ')}</div>`;
+      return `<li class="op-vt ${v.estado}${abierta ? ' abierta' : ''}">
+        <div class="op-vt-l"><b>${opEsc(v.hora)}</b><span class="op-vt-tipo">${tipo}${otro}</span><span class="op-vt-st">${st}</span></div>
+        ${motivos}
+        ${ps}
+      </li>`;
+    }).join('');
+    const evs = (c.feed || []).slice(0, 6).map(e => `<li class="${e.k}"><span class="op-evdot"></span><span class="t">${opEsc(e.t)}</span><span>${opEsc(e.h)}</span></li>`).join('');
+    const tel = (c.driverPhone || '').replace(/\s/g, '');
+    const lectura = c.novedadesLeidas === false ? '<p class="op-det-note">No se pudieron leer los reportes de hoy: el rojo solo cuenta los no-show y las llegadas tarde.</p>' : '';
+    return `<div class="op-cc-det">
+      <div class="op-det-h">Vueltas de hoy</div>
+      <ol class="op-vts">${vts}</ol>
+      ${lectura}
+      ${evs ? `<div class="op-det-h">Lo último que marcó</div><ul class="op-det-ev">${evs}</ul>` : ''}
+      ${tel ? `<button class="op-det-call" data-op-call="${opEsc(c.key)}"><svg class="icon"><use href="#i-phone"/></svg>Llamar a ${opEsc(c.driver.split(/\s+/)[0])}</button>` : ''}
+    </div>`;
+  }
+
+  function opAbrir(key, desdeFuera) {
+    const c = opState.cars.find(x => x.key === key);
+    if (!c) return;
+    opState.sel = c.id;
+    // Desde el mapa o la actividad se abre; desde la tarjeta, alterna.
+    opState.open = desdeFuera ? key : (opState.open === key ? null : key);
+    renderOperCars(); renderOperMarkers(); renderOperFeed();
+    if (desdeFuera) {
+      const el = document.querySelector(`#oper-carlist [data-key="${key}"]`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+
+  function opCall(key) {
+    const c = opState.cars.find(x => x.key === key);
+    const tel = c ? (c.driverPhone || '').replace(/\s/g, '') : '';
+    if (tel) window.open('tel:' + tel);
+    else toast('Ese conductor no tiene teléfono registrado.');
   }
 
   function renderOperCars() {
@@ -398,7 +492,10 @@
       const kl0 = document.getElementById('oper-kLate'); if (kl0) kl0.className = 'op-kpi ok';
       return;
     }
+    // Repintar con innerHTML no debe mover la lista mientras se lee el detalle.
+    const top = list.scrollTop;
     list.innerHTML = opState.cars.map(opCarCard).join('');
+    list.scrollTop = top;
     const on = opState.cars.filter(c => c.state === 'ontime').length;
     const risk = opState.cars.filter(c => c.state === 'late' || c.state === 'tight').length;
     const done = opState.cars.filter(c => c.state === 'done').length;
@@ -408,19 +505,41 @@
     const kl = document.getElementById('oper-kLate'); if (kl) kl.className = 'op-kpi ' + (lateN ? 'bad' : risk ? 'warn' : 'ok');
   }
 
+  // La actividad SEPARADA POR CARRO (26-oct-2026): un bloque por placa, en el
+  // mismo orden que las tarjetas, con el nombre completo y el lugar. Antes era
+  // una sola lista mezclada de 12 eventos con «Sebastian V..» (el apellido
+  // abreviado más el punto de la frase).
+  const OP_FEED_N = 8;
   function renderOperFeed() {
     const f = document.getElementById('oper-feed');
     if (!f) return;
-    if (!opState.feed.length) {
-      f.innerHTML = `<div class="op-empty sm"><span>Sin eventos. El feed se llena con lo que marcan los conductores en su ruta.</span></div>`;
-      return;
-    }
-    f.innerHTML = opState.feed.map(e => `<div class="op-ev ${e.k}"><span class="op-evdot"></span><div class="op-evtx"><p>${e.h}</p><div class="op-evt">${e.t}</div></div></div>`).join('');
+    const top = f.scrollTop;
+    const avisos = (opState.risks || []).length
+      ? `<section class="op-fs warn"><div class="op-fs-h"><svg class="icon"><use href="#i-warn"/></svg><b>Avisos del vigilante</b></div>${opState.risks.map(opEvHTML).join('')}</section>` : '';
+    const bloques = opState.cars.map(c => {
+      const evs = c.feed || [];
+      const todos = !!opState.feedAll[c.key];
+      const vis = todos ? evs : evs.slice(0, OP_FEED_N);
+      const cuerpo = vis.length
+        ? vis.map(e => opEvHTML({ k: e.k, t: e.t, h: opEsc(e.h) })).join('')
+        : `<div class="op-fs-empty">${c.turno === 'sin' ? 'Todavía no inicia turno.' : 'Sin marcas todavía.'}</div>`;
+      const mas = evs.length > OP_FEED_N
+        ? `<button class="op-fs-more" data-op-more="${opEsc(c.key)}">${todos ? 'Ver menos' : `Ver ${evs.length - OP_FEED_N} más`}</button>` : '';
+      return `<section class="op-fs ${c.key === opState.open || c.id === opState.sel ? 'sel' : ''} ${c.done ? 'done' : ''}">
+        <button class="op-fs-h" data-op-fs="${opEsc(c.key)}" title="Ver este carro"><span class="op-fs-dot" style="background:${c.dc}"></span><b>${c.plate ? opEsc(c.plate) : 'Sin placa'}</b><span>${opEsc(c.driver)}</span></button>
+        ${cuerpo}${mas}
+      </section>`;
+    }).join('');
+    f.innerHTML = avisos + bloques || `<div class="op-empty sm"><span>Sin eventos. El feed se llena con lo que marcan los conductores en su ruta.</span></div>`;
+    f.scrollTop = top;
   }
+  function opEvHTML(e) {
+    return `<div class="op-ev ${e.k}"><span class="op-evdot"></span><div class="op-evtx"><p>${e.h}</p><div class="op-evt">${e.t}</div></div></div>`;
+  }
+  // La actividad es la de la base (por carro): lo que hace el jefe en esta
+  // pantalla se le confirma con un aviso, no se mezcla con lo que marcan ellos.
   function opPushFeed(k, h) {
-    const now = opFmt(opNowSec()).slice(0, 5);   // hora real, no un 05:12 fijo
-    opState.feed.unshift({ k, t: now, h });
-    renderOperFeed();
+    toast(String(h || '').replace(/<[^>]+>/g, ''));
   }
 
   function syncOperDelay() {
@@ -511,12 +630,28 @@
     if (!root) return;
     opState.bound = true;
     root.addEventListener('click', (e) => {
+      const call = e.target.closest('[data-op-call]');
+      if (call) { opCall(call.dataset.opCall); return; }
+      const more = e.target.closest('[data-op-more]');
+      if (more) { const k = more.dataset.opMore; opState.feedAll[k] = !opState.feedAll[k]; renderOperFeed(); return; }
+      const fs = e.target.closest('[data-op-fs]');
+      if (fs) { opAbrir(fs.dataset.opFs, true); return; }
+      // Tocar la tarjeta abre su detalle (qué hace ahora, sus vueltas, su
+      // actividad); tocarla otra vez lo cierra. Dentro del detalle no se cierra.
+      if (e.target.closest('.op-cc-det')) return;
       const cc = e.target.closest('[data-car]');
-      if (cc) { opState.sel = cc.dataset.car; renderOperCars(); renderOperMarkers(); return; }
+      if (cc) { opAbrir(cc.dataset.key, false); return; }
       if (e.target.closest('#oper-delayClose')) { document.getElementById('oper-delay').classList.remove('show'); return; }
       if (e.target.closest('#oper-actReopt')) { resolveOperLate('reopt'); return; }
       if (e.target.closest('#oper-actReassign')) { resolveOperLate('reassign'); return; }
       if (e.target.closest('#oper-actCall')) { resolveOperLate('call'); return; }
+    });
+    root.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const cc = e.target.closest && e.target.closest('.op-cc[data-key]');
+      if (!cc || e.target !== cc) return;
+      e.preventDefault();
+      opAbrir(cc.dataset.key, false);
     });
   }
 

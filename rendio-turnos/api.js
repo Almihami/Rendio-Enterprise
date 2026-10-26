@@ -3696,20 +3696,108 @@
     if (error) throw error;
   }
 
-  // Etiqueta legible del avance de un carro, según el estado de sus paradas.
-  function _opStatusLabel(stops, type) {
-    const pend = stops.filter(s => s.status === 'pending');
-    const arrived = stops.some(s => s.status === 'arrived');
-    const onboard = stops.filter(s => s.status === 'picked_up').length;
-    if (!pend.length && !arrived && !onboard) return type === 'lle' ? 'Entregó a todos' : 'Completó';
-    if (arrived) return 'Recogiendo';
-    if (onboard && !pend.length) return type === 'lle' ? 'A bordo · llevando' : 'A bordo · llegando';
-    if (onboard) return 'En ruta · con pasajeros';
-    return 'En ruta';
+  // ════════════════════════════════════════════════════════════════════
+  // CÓMO TERMINÓ UNA VUELTA (26-oct-2026)
+  //
+  // La base nunca cierra una vuelta: driver_set_reservation_status (0045) marca
+  // cada parada, pero nadie pasa la ruta a 'completed', así que la que el
+  // conductor terminó sigue 'planned' para siempre. Operación y Asignación la
+  // mostraban como si faltara. El resultado sale de las paradas, igual para las
+  // dos pantallas:
+  //   'ok'        todas resueltas y sin novedad            → verde, degradada
+  //   'bad'       todas resueltas, con novedad             → rojo, degradada
+  //   'sinmarcar' pasó su hora con paradas sin marcar      → gris: no sabemos si
+  //               se hizo, y pintarla verde sería inventarlo
+  //   'curso'     ya tiene alguna parada atendida
+  //   'falta'     todavía no arranca
+  // Novedad = alguien no se presentó, una salida dejó al tripulante en el
+  // aeropuerto después de la hora que pidió, o una persona reportó algo de esa
+  // vuelta (incidents de operación). Los avisos automáticos (reserva tardía,
+  // tercer carro) y los cambios de vuelo NO cuentan: son pronósticos o
+  // información, no algo que salió mal.
+  // ════════════════════════════════════════════════════════════════════
+  const OP_NOVEDAD_TXT = Object.freeze({
+    cant_leave_on_time: 'no podía salir a tiempo', driver_late: 'el conductor iba tarde',
+    missed_flight: 'perdió el vuelo', traffic: 'trancón', aux_not_responding: 'el tripulante no respondía',
+    aux_not_ready: 'el tripulante no estaba listo', wrong_address: 'dirección equivocada',
+    vehicle_problem: 'problema con el carro', aux_emergency: 'emergencia del tripulante', other: 'reporte',
+  });
+  // Cuánto después del fin esperado de la vuelta se da por «sin marcar».
+  const OP_SIN_MARCAR_MIN = 60;
+  // Una llegada sale de JMC a su hora y entrega en menos de esto.
+  const OP_LLEGADA_DURA_MIN = 90;
+
+  // Reportes humanos de operación desde `desde`, por vuelta y por reserva. Si la
+  // tabla no se puede leer, `ok:false`: la pantalla no dice «sin novedad» a
+  // ciegas, solo deja de contar los reportes.
+  async function _opNovedades(desde) {
+    const out = { ok: false, byRa: {}, byRes: {} };
+    try {
+      const { data, error } = await sb.from('incidents')
+        .select('id, category, source, route_assignment_id, reservation_id, occurred_at')
+        .eq('scope', 'operacion')
+        .in('category', Object.keys(OP_NOVEDAD_TXT))
+        .in('source', ['driver', 'auxiliar', 'admin'])
+        .gte('occurred_at', desde)
+        .limit(500);
+      if (error) return out;
+      (data || []).forEach((i) => {
+        const n = { id: i.id, txt: OP_NOVEDAD_TXT[i.category] || 'reporte', at: i.occurred_at, source: i.source };
+        if (i.route_assignment_id) (out.byRa[i.route_assignment_id] = out.byRa[i.route_assignment_id] || []).push(n);
+        if (i.reservation_id) (out.byRes[i.reservation_id] = out.byRes[i.reservation_id] || []).push(n);
+      });
+      out.ok = true;
+    } catch (_) { /* sin la tabla: sin reportes */ }
+    return out;
   }
 
-  // Operación en vivo para el admin: las vueltas activas del día operativo más
-  // próximo, con la última posición conocida de cada conductor.
+  // ra: la fila de route_assignments con sus route_stops (y reservations).
+  // Devuelve { estado, motivos[], reportes[], faltan, finAt }.
+  function _opResultado(ra, nov, nowMs) {
+    const type = ra.direction === 'airport_to_home' ? 'lle' : 'sal';
+    const vivas = (ra.route_stops || []).filter((s) => !(s.reservations && s.reservations.cancelled_at));
+    const resuelta = (s) => s.status === 'delivered' || s.status === 'no_show';
+    const motivos = [];
+    const noShow = vivas.filter((s) => s.status === 'no_show').length;
+    if (noShow) motivos.push(noShow === 1 ? '1 no se presentó' : `${noShow} no se presentaron`);
+    if (type === 'sal') {
+      const tarde = vivas.map((s) => {
+        const due = Date.parse(s.reservations?.required_arrival_at || ''), at = Date.parse(s.actual_dropoff_at || '');
+        return s.status === 'delivered' && isFinite(due) && isFinite(at) ? Math.floor((at - due) / 60000) : 0;
+      }).filter((m) => m >= 1);
+      if (tarde.length) motivos.push(`llegó ${Math.max(...tarde)} min después de la hora pedida`);
+    }
+    // Un mismo reporte puede venir por la vuelta y por la reserva: uno solo.
+    const vistos = new Set(), reportes = [];
+    [...((nov && nov.byRa[ra.id]) || []), ...vivas.flatMap((s) => (nov && nov.byRes[s.reservation_id]) || [])]
+      .forEach((n) => { if (!vistos.has(n.id)) { vistos.add(n.id); reportes.push(n); } });
+    [...new Set(reportes.map((n) => n.txt))].forEach((t) => motivos.push(t));
+
+    const faltan = vivas.filter((s) => !resuelta(s)).length;
+    if (!vivas.length) return { estado: 'vacia', motivos, reportes, faltan: 0, finAt: null };
+    if (!faltan) {
+      const fin = vivas.map((s) => s.actual_dropoff_at || s.actual_arrival_at).filter(Boolean).sort().pop() || null;
+      return { estado: motivos.length ? 'bad' : 'ok', motivos, reportes, faltan: 0, finAt: fin };
+    }
+    // Fin esperado: en una salida, la hora más tardía que pidió alguien de la
+    // vuelta; en una llegada, la salida de JMC más lo que tarda en entregar.
+    const start = Date.parse(ra.planned_start_at);
+    const dues = vivas.map((s) => Date.parse(s.reservations?.required_arrival_at || '')).filter(isFinite);
+    const finEsperado = type === 'sal' && dues.length ? Math.max(...dues) : start + OP_LLEGADA_DURA_MIN * 60000;
+    if (nowMs > finEsperado + OP_SIN_MARCAR_MIN * 60000) return { estado: 'sinmarcar', motivos, reportes, faltan, finAt: null };
+    const empezada = vivas.some((s) => s.status && s.status !== 'pending');
+    return { estado: empezada ? 'curso' : 'falta', motivos, reportes, faltan, finAt: null };
+  }
+
+  // Operación en vivo para el admin: los CARROS del día operativo más próximo,
+  // cada uno con todas sus vueltas, lo que está haciendo ahora y su actividad.
+  //
+  // Una tarjeta por carro, no por vuelta (26-oct-2026). Desde 0124 la placa
+  // llega a la vuelta solo cuando el conductor inicia turno, y antes se agrupaba
+  // por `vehicle_id || id de la vuelta`: cada vuelta de un conductor sin turno
+  // salía como tarjeta propia (el lunes 26: 3 carros + 18 tarjetas sueltas de
+  // Juan Ospina y Lennin). Ahora las vueltas sin placa van con su conductor, y
+  // si ese conductor ya tiene placa hoy, a la tarjeta de ese carro.
   //
   // La posición sale de driver_locations, que mezcla dos fuentes (0045):
   //   source='gps'    → ping del dispositivo (continuo, poco fiable)
@@ -3717,84 +3805,129 @@
   // Gana la más reciente por recorded_at; el admin muestra la frescura para no
   // creerle ciegamente a un punto viejo.
   async function listLiveOperation() {
-    // Las notas (donde vive el vuelo, ver _flightFromNotes) y ground_ops (0092,
-    // trabajo en tierra) van en el escalón de arriba: sin 0092 se cae al select
-    // de siempre, que solo sabe el vuelo si la reserva quedó ligada a flights.
+    const corte = await _corteMadrugada();
+    const nowMs = Date.now();
+    const today = _opDay(new Date(nowMs).toISOString(), corte);
+    // Solo desde el inicio del día de turno: como ninguna vuelta pasa a
+    // 'completed', sin este filtro se traía cada 5 s todo lo publicado de la
+    // historia.
+    const desde = new Date(Date.parse(today + 'T00:00:00-05:00') + corte * 60000).toISOString();
+    // Las notas (donde vive el vuelo, ver _flightFromNotes), ground_ops (0092,
+    // trabajo en tierra) y reserve_place (0121, hotel) van en el escalón de
+    // arriba: sin ellas se cae al select de siempre.
     const sel = (extra) => sb
       .from('route_assignments')
-      .select(`id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profiles(full_name, phone)), route_stops(stop_order, status, reservation_id, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at${extra}, auxiliar_profiles(profiles(full_name)), flights(flight_number)))`)
-      .in('status', ['planned', 'in_progress'])
+      .select(`id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profiles(full_name, phone)), route_stops(stop_order, status, reservation_id, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, cancelled_at${extra}, residences(name), auxiliar_profiles(profiles(full_name)), flights(flight_number)))`)
+      .in('status', ['planned', 'in_progress', 'completed'])
+      .gte('planned_start_at', desde)
       .order('planned_start_at');
-    let { data, error } = await sel(', notes, ground_ops');
+    let { data, error } = await sel(', notes, ground_ops, reserve_place');
+    if (error) ({ data, error } = await sel(', notes, ground_ops'));
     if (error) ({ data, error } = await sel(''));
     if (error) throw error;
 
-    // Día de turno, no de calendario: a las 11 p. m. del lunes ya se ve la vuelta
-    // de la 1 a. m. del martes (es del turno PM del lunes). Ver _opDay.
-    const corte = await _corteMadrugada();
-    const today = _opDay(new Date().toISOString(), corte);
     const active = (data || []).filter(ra => ra.planned_start_at && _opDay(ra.planned_start_at, corte) >= today);
     if (!active.length) return { source: 'empty', day: null, cars: [], feed: [] };
     const day0 = _opDay(active[0].planned_start_at, corte);
-    const rows = active.filter(ra => _opDay(ra.planned_start_at, corte) === day0);
+    // Sin conductor ni placa no hay carro que seguir (la vuelta del tercer carro,
+    // la que nadie ha tomado, la delegada): no hacen tarjeta.
+    const rows = active.filter(ra => _opDay(ra.planned_start_at, corte) === day0 && (ra.vehicle_id || ra.driver_profile_id));
+    if (!rows.length) return { source: 'empty', day: null, cars: [], feed: [] };
 
-    // Última posición por conductor (una sola consulta para todos).
     const driverIds = [...new Set(rows.map(r => r.driver_profile_id).filter(Boolean))];
-    const posOf = {};
-    if (driverIds.length) {
-      const { data: locs } = await sb
-        .from('driver_locations')
+    const posOf = {}, turnoOf = {};
+    const [locsR, shR, nov] = await Promise.all([
+      driverIds.length ? sb.from('driver_locations')
         .select('driver_profile_id, latitude, longitude, source, recorded_at, route_assignment_id')
         .in('driver_profile_id', driverIds)
         .order('recorded_at', { ascending: false })
-        .limit(400);
-      // Vienen ordenadas desc: la primera de cada conductor es la más reciente.
-      (locs || []).forEach(l => { if (!posOf[l.driver_profile_id]) posOf[l.driver_profile_id] = l; });
-    }
+        .limit(400) : Promise.resolve({ data: [] }),
+      // El turno de cada conductor: dice si ya lo abrió («sin iniciar turno») o
+      // si ya lo cerró («terminó»). 20 h atrás alcanza para el turno más largo.
+      driverIds.length ? sb.from('shifts')
+        .select('driver_id, status, start_at, end_at')
+        .in('driver_id', driverIds)
+        .gte('start_at', new Date(nowMs - 20 * 3600000).toISOString())
+        .order('start_at', { ascending: false }) : Promise.resolve({ data: [] }),
+      _opNovedades(new Date(Date.parse(desde) - 6 * 3600000).toISOString()),
+    ]);
+    // Vienen ordenadas desc: la primera de cada conductor es la más reciente.
+    ((locsR && locsR.data) || []).forEach(l => { if (!posOf[l.driver_profile_id]) posOf[l.driver_profile_id] = l; });
+    ((shR && !shR.error && shR.data) || []).forEach(s => { if (!turnoOf[s.driver_id]) turnoOf[s.driver_id] = s; });
 
-    const nameOf = (s) => s.reservations?.auxiliar_profiles?.profiles?.full_name || 'Auxiliar';
+    const nameOf = (s) => s.reservations?.auxiliar_profiles?.profiles?.full_name || 'Tripulante';
     const shortName = (n) => { const p = n.split(/\s+/); return p[0] + (p[1] ? ' ' + p[1][0] + '.' : ''); };
-    const stopsOf = (ra) => (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order);
-    const raDone = (ra) => !stopsOf(ra).some(s => s.status === 'pending' || s.status === 'arrived' || s.status === 'picked_up');
+    const stopsOf = (ra) => (ra.route_stops || []).filter(s => !(s.reservations && s.reservations.cancelled_at))
+      .sort((a, b) => a.stop_order - b.stop_order);
+    // Dónde: el conjunto del catálogo, o la dirección que escribió.
+    const lugarCasa = (s) => s.reservations?.residences?.name || (s.reservations?.pickup_address || '').split(',')[0].trim() || 'su casa';
+    // Dónde se recoge una llegada: el hotel de la reserva (0121) o el aeropuerto.
+    const lugarJmc = (s) => {
+      const p = reservePlace(s.reservations?.reserve_place);
+      return p && p.hotel ? 'el ' + p.name : 'el aeropuerto';
+    };
+    const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
 
-    // Feed real: los eventos que YA ocurrieron, con su hora real. Sale de todas
-    // las vueltas del día, no solo de la que el carro tiene ahora.
+    // ── Agrupar por carro ───────────────────────────────────────────────
+    // 1) las vueltas con placa, por placa; 2) las sin placa, con la placa que su
+    // conductor ya tenga hoy, o con el conductor (tarjeta «sin iniciar turno»).
+    const groups = new Map();
+    const add = (k, ra) => { if (!groups.has(k)) groups.set(k, []); groups.get(k).push(ra); };
+    const placaDe = {};
+    rows.forEach(ra => {
+      if (!ra.vehicle_id) return;
+      add('v:' + ra.vehicle_id, ra);
+      if (ra.driver_profile_id) placaDe[ra.driver_profile_id] = 'v:' + ra.vehicle_id;
+    });
+    rows.forEach(ra => {
+      if (ra.vehicle_id) return;
+      add(placaDe[ra.driver_profile_id] || ('d:' + ra.driver_profile_id), ra);
+    });
+
     const feed = [];
-    rows.forEach(ra => {
-      // 0124: sin placa todavía (el conductor no ha iniciado turno), su nombre.
-      const plate = ra.vehicles?.license_plate || ra.vehicles?.internal_code
-        || (ra.driver_profiles?.profiles?.full_name ? shortName(ra.driver_profiles.profiles.full_name) : '') || 'Carro';
-      stopsOf(ra).forEach(s => {
-        const who = shortName(nameOf(s));
-        if (s.actual_pickup_at) feed.push({ at: s.actual_pickup_at, k: 'ok', h: `<b>${plate}</b> recogió a ${who}.` });
-        if (s.actual_dropoff_at) feed.push({ at: s.actual_dropoff_at, k: 'ok', h: `<b>${plate}</b> entregó a ${who}.` });
-        if (s.status === 'no_show' && s.actual_arrival_at) feed.push({ at: s.actual_arrival_at, k: 'bad', h: `<b>${plate}</b> reportó que ${who} no se presentó.` });
-      });
-    });
+    const cars = [...groups.entries()].map(([key, ras], i) => {
+      ras.sort((a, b) => Date.parse(a.planned_start_at) - Date.parse(b.planned_start_at));
+      const conPlaca = ras.find(ra => ra.vehicles);
+      const v = (conPlaca && conPlaca.vehicles) || {};
+      const plate = v.license_plate || v.internal_code || '';
 
-    // La pantalla monitorea CARROS, no vueltas: un carro hace varias vueltas al
-    // día y cambia de conductor en el relevo AM→PM. Cada tarjeta muestra la
-    // vuelta que el carro tiene ENTRE MANOS (la primera sin terminar), y el
-    // conductor de esa vuelta — que es quien lo lleva ahora.
-    const byVeh = new Map();
-    rows.forEach(ra => {
-      const k = ra.vehicle_id || ra.id;
-      if (!byVeh.has(k)) byVeh.set(k, []);
-      byVeh.get(k).push(ra);
-    });
+      const vueltas = ras.map(ra => {
+        const r = _opResultado(ra, nov, nowMs);
+        const stops = stopsOf(ra);
+        const type = ra.direction === 'airport_to_home' ? 'lle' : 'sal';
+        return {
+          id: ra.id, ra, type, stops, hora: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at,
+          estado: r.estado, motivos: r.motivos, reportes: r.reportes, faltan: r.faltan,
+          fin: r.finAt ? rtHHMM(r.finAt) : '',
+          driverProfileId: ra.driver_profile_id,
+          conductor: ra.driver_profiles?.profiles?.full_name || 'Sin conductor',
+          paradas: stops.map(s => ({
+            nombre: nameOf(s), lugar: lugarCasa(s), status: s.status || 'pending',
+            recogio: s.actual_pickup_at ? rtHHMM(s.actual_pickup_at) : '',
+            entrego: s.actual_dropoff_at ? rtHHMM(s.actual_dropoff_at) : '',
+            cita: s.reservations?.required_arrival_at ? rtHHMM(s.reservations.required_arrival_at) : '',
+          })),
+        };
+      }).filter(x => x.estado !== 'vacia');
 
-    const cars = [...byVeh.values()].map((ras, i) => {
-      const activa = ras.find(ra => !raDone(ra)) || ras[ras.length - 1];
-      const type = activa.direction === 'airport_to_home' ? 'lle' : 'sal';
-      const stops = stopsOf(activa);
-      const v = activa.vehicles || {};
+      // La vuelta ENTRE MANOS: la primera en curso; si no, la próxima que falta.
+      // Las «sin marcar» se saltan: si no, una vuelta vieja que el conductor no
+      // marcó se quedaba de «actual» todo el día.
+      const activaV = vueltas.find(x => x.estado === 'curso') || vueltas.find(x => x.estado === 'falta') || null;
+      const ultimaV = vueltas[vueltas.length - 1] || null;
+      const refV = activaV || ultimaV;
+      const ref = refV ? refV.ra : ras[ras.length - 1];
+      const done = !activaV;
+      const type = ref.direction === 'airport_to_home' ? 'lle' : 'sal';
+      const stops = refV ? refV.stops : stopsOf(ref);
+      const driverName = ref.driver_profiles?.profiles?.full_name || 'Sin conductor';
+      const id = plate || driverName;
+
+      const turno = turnoOf[ref.driver_profile_id] || null;
+      const turnoEstado = !turno ? 'sin' : (turno.status === 'closed' ? 'cerrado' : (turno.status === 'active' || turno.status === 'closing') ? 'abierto' : 'abriendo');
 
       const nextStop = stops.find(s => s.status === 'pending' || s.status === 'arrived');
-      const onboard = stops.filter(s => s.status === 'picked_up').length;
-      // El carro terminó el día solo si TODAS sus vueltas están cerradas.
-      const done = ras.every(raDone);
-
-      // Presentación = el pasajero pendiente con la hora límite más temprana.
+      const onboard = stops.filter(s => s.status === 'picked_up');
       const pend = stops.filter(s => s.status !== 'delivered' && s.status !== 'no_show');
       const presAt = pend.map(s => s.reservations?.required_arrival_at).filter(Boolean).sort()[0] || null;
       // En tierra (0092) no hay vuelo: se dice «Tierra» en vez de un «—» que
@@ -3803,45 +3936,129 @@
       const flight = rsv.ground_ops === true ? 'Tierra'
         : (rsv.flights?.flight_number || _flightFromNotes(rsv.notes) || '—');
 
-      const loc = posOf[activa.driver_profile_id];
+      // ── Qué está haciendo, en una frase ───────────────────────────────
+      let ahora;
+      const hechas = vueltas.filter(x => x.estado === 'ok' || x.estado === 'bad').length;
+      if (!activaV) {
+        ahora = turnoEstado === 'abierto'
+          ? `Sin más vueltas hoy · ${plural(hechas, 'vuelta hecha', 'vueltas hechas')}`
+          : `Terminó · ${plural(hechas, 'vuelta hecha', 'vueltas hechas')}${turnoEstado === 'cerrado' ? ' · turno cerrado' : ''}`;
+      } else if (activaV.estado === 'falta') {
+        const minFalta = Math.round((Date.parse(activaV.startAt) - nowMs) / 60000);
+        const primera = activaV.stops[0];
+        const quien = primera ? (activaV.type === 'lle' ? ` · recoge en ${lugarJmc(primera)}` : ` · primera: ${nameOf(primera)} en ${lugarCasa(primera)}`) : '';
+        if (turnoEstado === 'sin' && !hechas) ahora = `Sin iniciar turno · primera vuelta ${activaV.hora}`;
+        // Ya pasó la hora de arrancar y no marcó nada: no se sabe si va en camino.
+        else if (minFalta < -5) ahora = `La vuelta de las ${activaV.hora} no tiene marcas todavía${quien}`;
+        else if (minFalta > 20) ahora = `Libre · próxima vuelta ${activaV.hora} (${activaV.type === 'lle' ? 'llegada' : 'salida'})`;
+        else ahora = `Sale a las ${activaV.hora}${quien}`;
+      } else if (type === 'sal') {
+        const esperando = stops.find(s => s.status === 'arrived');
+        const aBordo = onboard.length ? ` · ${onboard.length} a bordo` : '';
+        if (esperando) ahora = `Esperando a ${nameOf(esperando)} en ${lugarCasa(esperando)}${aBordo}`;
+        else if (nextStop) ahora = `Recogiendo · va por ${nameOf(nextStop)} a ${lugarCasa(nextStop)}${aBordo}`;
+        else if (onboard.length) ahora = `Va al aeropuerto con ${plural(onboard.length, 'tripulante', 'tripulantes')}`;
+        else ahora = 'Entregando en el aeropuerto';
+      } else {
+        // Llegada: primero se recogen todos en JMC (o el hotel) y después se reparten.
+        const porRecoger = stops.filter(s => s.status === 'pending' || s.status === 'arrived');
+        const llevando = onboard[0];
+        if (llevando) ahora = `Llevando a ${nameOf(llevando)} a ${lugarCasa(llevando)}${onboard.length > 1 ? ` · ${onboard.length} a bordo` : ''}`;
+        else if (porRecoger.length) ahora = `En ${lugarJmc(porRecoger[0])} · recoge a ${plural(porRecoger.length, 'tripulante', 'tripulantes')}`;
+        else ahora = 'Entregando';
+      }
 
+      // ── Actividad de este carro ───────────────────────────────────────
+      const evs = [];
+      vueltas.forEach(vv => {
+        vv.stops.forEach(s => {
+          const who = nameOf(s);
+          if (vv.type === 'sal') {
+            if (s.actual_arrival_at && s.status !== 'no_show') evs.push({ at: s.actual_arrival_at, k: 'info', h: `llegó a ${lugarCasa(s)} por ${who}` });
+            if (s.actual_pickup_at) evs.push({ at: s.actual_pickup_at, k: 'ok', h: `recogió a ${who} en ${lugarCasa(s)}` });
+            if (s.actual_dropoff_at) {
+              const due = Date.parse(s.reservations?.required_arrival_at || ''), at = Date.parse(s.actual_dropoff_at);
+              const tarde = isFinite(due) && at - due >= 60000 ? Math.floor((at - due) / 60000) : 0;
+              evs.push({ at: s.actual_dropoff_at, k: tarde ? 'bad' : 'ok', h: `dejó a ${who} en el aeropuerto${tarde ? ` · ${tarde} min después de la hora pedida` : ''}` });
+            }
+          } else {
+            if (s.actual_pickup_at) evs.push({ at: s.actual_pickup_at, k: 'ok', h: `recogió a ${who} en ${lugarJmc(s)}` });
+            if (s.actual_dropoff_at) evs.push({ at: s.actual_dropoff_at, k: 'ok', h: `dejó a ${who} en ${lugarCasa(s)}` });
+          }
+          if (s.status === 'no_show') evs.push({ at: s.actual_arrival_at || vv.startAt, k: 'bad', h: `${who} no se presentó (${lugarCasa(s)})` });
+        });
+        vv.reportes.forEach(n => evs.push({ at: n.at, k: 'bad', h: `reporte: ${n.txt}` }));
+      });
+      evs.sort((a, b) => (a.at < b.at ? 1 : -1));
+      const carFeed = evs.slice(0, 40).map(e => ({ k: e.k, t: rtHHMM(e.at), at: e.at, h: e.h }));
+      carFeed.forEach(e => feed.push({ ...e, car: id }));
+
+      const loc = posOf[ref.driver_profile_id];
       return {
-        id: v.license_plate || v.internal_code || ('RD-' + String(i + 1).padStart(2, '0')),
-        assignmentId: activa.id,
-        vueltasHoy: ras.length,
-        driver: activa.driver_profiles?.profiles?.full_name || 'Sin conductor',
-        driverPhone: activa.driver_profiles?.profiles?.phone || '',
-        driverProfileId: activa.driver_profile_id,
+        id,
+        key,
+        plate,
+        assignmentId: ref.id,
+        vueltasHoy: vueltas.length,
+        driver: driverName,
+        driverPhone: ref.driver_profiles?.profiles?.phone || '',
+        driverProfileId: ref.driver_profile_id,
+        turno: turnoEstado,
         type,
         cap: v.capacity || 4,
-        pax: onboard,
+        pax: onboard.length,
         paxTotal: stops.length,
         flight,
         pres: presAt ? rtHHMM(presAt) : '—',
         presAt,
-        next: nextStop ? `${shortName(nameOf(nextStop))} · ${(nextStop.reservations?.pickup_address || '').split(',')[0]}` : (type === 'lle' ? 'Entregas pendientes' : 'Aeropuerto JMC'),
+        next: nextStop ? `${shortName(nameOf(nextStop))} · ${lugarCasa(nextStop)}` : (type === 'lle' ? 'Entregas pendientes' : 'Aeropuerto JMC'),
         nextPos: nextStop && nextStop.reservations?.pickup_latitude
           ? [nextStop.reservations.pickup_latitude, nextStop.reservations.pickup_longitude]
           : null,
         // La reserva de la próxima parada: es la que hay que reacomodar cuando
         // este carro no alcanza (bloque D). Sin esto, "Reasignar" no sabe QUÉ mover.
         nextReservationId: nextStop ? (nextStop.reservation_id || null) : null,
-        status: done ? 'Disponible' : _opStatusLabel(stops, type),
+        status: done ? (turnoEstado === 'abierto' ? 'Disponible' : 'Terminó')
+          : activaV.estado === 'curso' ? 'En ruta'
+          : turnoEstado === 'sin' && !hechas ? 'Sin iniciar turno'
+          : Date.parse(activaV.startAt) < nowMs - 5 * 60000 ? 'Sin marcar'
+          : Date.parse(activaV.startAt) - nowMs <= 20 * 60000 ? 'Por salir' : 'Libre',
+        ahora,
+        // Una vuelta que todavía no arranca no tiene semáforo: no hay nada que
+        // llegue tarde todavía.
+        enCurso: !!(activaV && activaV.estado === 'curso'),
         done,
+        vueltas: vueltas.map(({ ra, stops: _s, ...x }) => x),
+        resumen: {
+          hechas,
+          conNovedad: vueltas.filter(x => x.estado === 'bad').length,
+          sinMarcar: vueltas.filter(x => x.estado === 'sinmarcar').length,
+          faltan: vueltas.filter(x => x.estado === 'falta' || x.estado === 'curso').length,
+        },
+        novedadesLeidas: nov.ok,
+        feed: carFeed,
         pos: loc ? [loc.latitude, loc.longitude] : null,
         posSource: loc ? loc.source : null,
         posAt: loc ? loc.recorded_at : null,
+        _orden: i,
       };
     });
+
+    // Orden: los que están trabajando, luego los que entran más tarde, y al
+    // final los que ya terminaron (degradados).
+    const rango = (c) => (c.enCurso ? 0 : !c.done && c.turno !== 'sin' ? 1 : !c.done ? 2 : 3);
+    cars.sort((a, b) => rango(a) - rango(b) || a._orden - b._orden);
 
     feed.sort((a, b) => (a.at < b.at ? 1 : -1));
     return {
       source: 'live',
       day: day0,
       cars,
-      feed: feed.slice(0, 12).map(e => ({ k: e.k, t: rtHHMM(e.at), h: e.h })),
+      feed: feed.slice(0, 60).map(e => ({ k: e.k, t: e.t, car: e.car, h: `<b>${_escOp(e.car)}</b> ${_escOp(e.h)}` })),
     };
   }
+  // Los nombres y lugares vienen de la base y la pantalla pinta con innerHTML.
+  const _escOp = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   // ════════════════════════════════════════════════════════════════════
   // RELEER EL PLAN PUBLICADO (bloque D)
@@ -3867,7 +4084,7 @@
       .select('id, direction, status, planned_start_at, driver_profile_id, vehicle_id, ' + extra +
         'vehicles(license_plate, internal_code, capacity), ' +
         'driver_profiles(profile_id, profiles(full_name)), ' +
-        'route_stops(id, stop_order, status, estimated_arrival_at, reservation_id, ' +
+        'route_stops(id, stop_order, status, estimated_arrival_at, reservation_id, actual_arrival_at, actual_dropoff_at, ' +
         'reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, ' +
         'residence_id, cancelled_at, auxiliar_profiles(profiles(full_name))))')
       .in('status', estados))
@@ -3891,6 +4108,10 @@
     if (error) throw error;
 
     const raws = data || [];
+    // Cómo terminó cada vuelta (ver _opResultado): la base nunca la cierra, así
+    // que Asignación la mostraba «en curso» después de entregar al último.
+    const nov = await _opNovedades(new Date(Date.parse(d0) - 6 * 3600000).toISOString());
+    const nowMs = Date.now();
     // Última posición conocida de cada conductor: si la vuelta ya arrancó, el
     // punto de partida real es donde está el carro, no de donde salió.
     const drvIds = [...new Set(raws.map(r => r.driver_profile_id).filter(Boolean))];
@@ -3924,10 +4145,13 @@
       const pend = vivos.filter(s => !atendida(s)).map(map);
       const hechas = vivos.filter(atendida).map(map);
       const pos = posOf[ra.driver_profile_id];
+      const res = _opResultado(ra, nov, nowMs);
       return {
         id: ra.id,
         type: ra.direction === 'airport_to_home' ? 'lle' : 'sal',
         status: ra.status,
+        // 'ok' | 'bad' | 'sinmarcar' | 'curso' | 'falta' | 'vacia' + por qué.
+        fin: { estado: res.estado, motivos: res.motivos, faltan: res.faltan, at: res.finAt ? rtHHMM(res.finAt) : '' },
         startAt: ra.planned_start_at,
         vehicleId: ra.vehicle_id,
         planCar: ra.plan_car || null,

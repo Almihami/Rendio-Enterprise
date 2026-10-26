@@ -175,6 +175,18 @@
 #routes-v2 .rv2-row .when b { display: block; font-size: 14.5px; font-weight: 700; white-space: nowrap; }
 #routes-v2 .rv2-row .when small { display: block; font-size: 12px; color: var(--ink3); margin-top: 3px; line-height: 1.35; }
 #routes-v2 .rv2-row .when small.late { color: var(--red-ink); font-weight: 700; }
+/* Vuelta terminada o pasada (26-oct-2026): degradada, con su resultado en el
+   borde — verde sin novedad, rojo con novedad, gris si nadie la marcó. Al
+   pasar el mouse o abrirla vuelve a verse entera. */
+#routes-v2 .rv2-row[data-fin] { opacity: .6; }
+#routes-v2 .rv2-row[data-fin]:hover, #routes-v2 .rv2-row[data-fin][aria-current="true"], #routes-v2 .rv2-row[data-fin]:focus-visible { opacity: 1; }
+#routes-v2 .rv2-row[data-fin="ok"] { box-shadow: inset 4px 0 0 var(--green); background: color-mix(in srgb, var(--green-soft) 55%, var(--panel)); }
+#routes-v2 .rv2-row[data-fin="bad"] { box-shadow: inset 4px 0 0 var(--red); background: color-mix(in srgb, var(--red-soft) 55%, var(--panel)); border-color: #F0C2BB; }
+#routes-v2 .rv2-row[data-fin="sinmarcar"] { box-shadow: inset 4px 0 0 var(--line2); background: var(--panel2); }
+#routes-v2 .rv2-row[data-fin="ok"][aria-current="true"] { box-shadow: inset 4px 0 0 var(--green), 0 0 0 2px rgba(226, 85, 26, .22); }
+#routes-v2 .rv2-row[data-fin="bad"][aria-current="true"] { box-shadow: inset 4px 0 0 var(--red), 0 0 0 2px rgba(226, 85, 26, .22); }
+#routes-v2 .rv2-row[data-fin="sinmarcar"][aria-current="true"] { box-shadow: inset 4px 0 0 var(--line2), 0 0 0 2px rgba(226, 85, 26, .22); }
+#routes-v2 .rv2-row .when small.done { color: var(--green); font-weight: 700; }
 #routes-v2 .rv2-row .l1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; min-width: 0; }
 #routes-v2 .rv2-row .l1 .car { font-weight: 800; }
 #routes-v2 .rv2-row .l1 .drv { color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -229,6 +241,7 @@
 #routes-v2 .rv2-alert--adj { background: var(--amber-soft); color: var(--amber-ink); }
 #routes-v2 .rv2-alert--ok { background: var(--green-soft); color: var(--green); }
 #routes-v2 .rv2-alert--nodriver { background: var(--orange-soft); color: var(--orange-ink); }
+#routes-v2 .rv2-alert--sinmarcar { background: var(--panel2); color: var(--ink2); }
 #routes-v2 .rv2-note { font-size: 12px; color: var(--ink2); line-height: 1.5; }
 #routes-v2 .rv2-sug { padding: 14px; background: #FFF6F0; border: 1px solid #F5C7AE; border-radius: 12px; display: flex; flex-direction: column; gap: 10px; }
 #routes-v2 .rv2-sug h3 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; }
