@@ -3782,6 +3782,13 @@
     if (error) throw error;
     return data;
   }
+  // 0136 · «Iniciar ruta»: avisa a los jefes «X inició una vuelta» (una sola vez).
+  // Devuelve true si encoló el aviso; false si no había a quién o ya se avisó.
+  async function driverRouteStarted(routeAssignmentId) {
+    const { data, error } = await sb.rpc('driver_route_started', { p_route_assignment_id: routeAssignmentId });
+    if (error) throw error;
+    return !!data;
+  }
   // 0097 · «Estoy cerca» (GPS del teléfono a menos de 300 m). Una vez por parada:
   // la base no lo repite aunque se llame de nuevo.
   async function driverNearStop(reservationId) {
@@ -4489,7 +4496,7 @@
     privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
     saveRoutePlan, listMyVueltasForDriver, getMadrugadaSiguiente, driverSetStopStatus, auxiliarUserIdsForReservations,
-    driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverAirportUndo, driverNearStop,
+    driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverAirportUndo, driverNearStop, driverRouteStarted,
     sendDriverLocation, listLiveOperation,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
     chatUnreadFor,
