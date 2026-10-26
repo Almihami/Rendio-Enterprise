@@ -48,17 +48,35 @@ Deno.serve(async (req: Request) => {
   webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
   const db = createClient(url, serviceKey, { auth: { persistSession: false } });
 
-  // 1) Lo que está pendiente y todavía vale la pena intentar.
-  const { data: pend, error: errPend } = await db
-    .from("notification_outbox")
-    .select("id, profile_id, title, body, url, attempts")
-    .is("sent_at", null)
-    .lte("send_after", new Date().toISOString())
-    .lt("attempts", MAX_INTENTOS)
-    .order("created_at", { ascending: true })
-    .limit(LOTE);
-
-  if (errPend) return json({ error: errPend.message }, 500);
+  // 1) Lo que está pendiente y todavía vale la pena intentar, APARTADO para esta
+  //    corrida (0144). Varias decisiones en la misma pasada piden «despacha ya» y
+  //    las corridas salen juntas: si todas leían las mismas filas, cada una las
+  //    mandaba y el teléfono sonaba repetido. claim_notification_outbox las aparta
+  //    (FOR UPDATE SKIP LOCKED): cada fila la manda una sola corrida.
+  //    Sin 0144 en la base, se lee como antes.
+  type Fila = { id: string; profile_id: string; title: string; body: string; url: string | null; attempts: number | null };
+  let pend: Fila[] | null = null;
+  let apartadas = true;
+  const claim = await db.rpc("claim_notification_outbox", { p_limit: LOTE });
+  if (!claim.error) {
+    pend = (claim.data || []) as Fila[];
+  } else if (claim.error.code !== "PGRST202" && claim.error.code !== "42883") {
+    // Falló por otra cosa (no es que falte la función): mejor no mandar nada en
+    // esta corrida que mandar repetido. El cron vuelve en un minuto.
+    return json({ error: claim.error.message }, 500);
+  } else {
+    apartadas = false;
+    const { data, error: errPend } = await db
+      .from("notification_outbox")
+      .select("id, profile_id, title, body, url, attempts")
+      .is("sent_at", null)
+      .lte("send_after", new Date().toISOString())
+      .lt("attempts", MAX_INTENTOS)
+      .order("created_at", { ascending: true })
+      .limit(LOTE);
+    if (errPend) return json({ error: errPend.message }, 500);
+    pend = (data || []) as Fila[];
+  }
   if (!pend || !pend.length) return json({ enviados: 0, fallidos: 0, pendientes: 0 });
 
   // 2) Las suscripciones de todos los destinatarios, de una sola consulta.
@@ -120,9 +138,11 @@ Deno.serve(async (req: Request) => {
       }).eq("id", fila.id);
       enviados++;
     } else {
+      // Se suelta (claimed_at = null) para que la próxima corrida la reintente.
       await db.from("notification_outbox").update({
         attempts: (fila.attempts || 0) + 1,
         last_error: ultimoError.slice(0, 300),
+        ...(apartadas ? { claimed_at: null } : {}),
       }).eq("id", fila.id);
       fallidos++;
     }
@@ -133,6 +153,6 @@ Deno.serve(async (req: Request) => {
     .select("id", { count: "exact", head: true })
     .is("sent_at", null);
 
-  console.log(JSON.stringify({ level: "info", msg: "outbox drenada", ctx: { enviados, fallidos, pendientes: count } }));
+  console.log(JSON.stringify({ level: "info", msg: "outbox drenada", ctx: { enviados, fallidos, pendientes: count, apartadas } }));
   return json({ enviados, fallidos, pendientes: count ?? 0 });
 });
