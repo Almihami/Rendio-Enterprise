@@ -524,7 +524,7 @@
     D.routes.forEach((r) => { if (r.fija === 'completed') return; const k = r.vehicle + '|' + r.shift; (cells[k] = cells[k] || { n: 0 }).n++; });
     const bands = RT_BANDS.filter((b) => Object.keys(cells).some((k) => k.endsWith('|' + b)));
     const cars = (rt.cars || []).filter((c) => bands.some((b) => cells[c.id + '|' + b]));
-    let h = `<h2>Conductores</h2><p class="sub">Se ponen solos con el horario publicado: uno por carro y turno, para todas sus vueltas. Toca uno para cambiarlo.</p>` +
+    let h = `<h2>Conductores</h2><p class="sub">Se ponen solos con el horario publicado: uno por carro y turno, para todas sus vueltas. La placa sale del carro con que cada uno inicia turno. Toca uno para cambiarlo.</p>` +
       `<div class="rv2-dgrid" style="grid-template-columns: 52px repeat(${bands.length}, minmax(0, 1fr))"><span></span>` +
       bands.map((b) => `<span class="hd">${esc(turnoTxt(b))}</span>`).join('');
     cars.forEach((car) => {
@@ -534,11 +534,19 @@
         if (!c) { h += '<span class="cell none">Sin vueltas</span>'; return; }
         const id = rtCarDrv(car, b); const d = conductor(id);
         const auto = !!id && !!rt.rv2Auto && rt.rv2Auto[k] === id;
-        h += `<button class="cell${id ? '' : ' need'}" data-act="assignslot" data-car="${esc(car.id)}" data-shift="${b}" aria-label="${esc(`${car.id}, ${turnoTxt(b)}: ${d ? d.name : 'sin conductor'}. Cambiar`)}">` +
-          `<b>${d ? esc(shortName(d.name)) : 'Sin conductor'}</b><small>${plural(c.n, 'vuelta', 'vueltas')}${id ? (auto ? ' · automático' : ' · elegido') : ''}</small></button>`;
+        // 0124: la placa sale del turno. Hoy: la del turno abierto, o «sin iniciar turno».
+        const placa = id ? placaDeTurno(id) : null;
+        const enTurno = placa ? ' · en ' + esc(placa) : (id && Array.isArray(rt.activos) ? ' · sin iniciar turno' : '');
+        h += `<button class="cell${id ? '' : ' need'}" data-act="assignslot" data-car="${esc(car.id)}" data-shift="${b}" aria-label="${esc(`${car.id}, ${turnoTxt(b)}: ${d ? d.name : 'sin conductor'}${placa ? ', en ' + placa : ''}. Cambiar`)}">` +
+          `<b>${d ? esc(shortName(d.name)) : 'Sin conductor'}</b><small>${plural(c.n, 'vuelta', 'vueltas')}${id ? (auto ? ' · automático' : ' · elegido') : ''}${enTurno}</small></button>`;
       });
     });
     el.drivers.innerHTML = h + '</div>' + libresHTML(cars, bands, cells);
+  }
+  // 0124: la placa del turno abierto de un conductor (solo si el día es hoy), o null.
+  function placaDeTurno(id) {
+    const a = (rt.activos || []).find((x) => x.id === id);
+    return a && a.car ? a.car : null;
   }
   // 25-oct-2026: la tarjeta va por carro con vueltas, así que quien está en turno
   // sin ninguna no salía («¿y Daniel?»). Del horario publicado de los turnos que
@@ -1191,12 +1199,25 @@
     Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
     const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {};
     const hm = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false }).slice(0, 5);
+    // 0124: cada vuelta vuelve a su carro del plan («Carro 1»). Las publicadas
+    // antes de 0124 no lo traen: se reparten por placa en los carros del plan
+    // que estén libres (la misma placa, el mismo carro), y solo si no queda
+    // ninguno se agrega uno con su placa.
+    const porPlaca = {};
+    const libreParaPlaca = () => rt.cars.find((c) => !Object.values(porPlaca).includes(c.id)
+      && !vueltas.some((x) => x.planCar === c.id));
     vueltas.slice().sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt)).forEach((v) => {
-      let car = rt.cars.find((c) => c.vehicleId && c.vehicleId === v.vehicleId);
+      let car = v.planCar ? rt.cars.find((c) => c.id === v.planCar) : null;
+      if (!car && !v.planCar && v.vehicleId) car = rt.cars.find((c) => c.vehicleId && c.vehicleId === v.vehicleId) || null;
+      if (!car && !v.planCar && v.vehicleId) {
+        if (!porPlaca[v.vehicleId]) { const c = libreParaPlaca(); if (c) porPlaca[v.vehicleId] = c.id; }
+        car = rt.cars.find((c) => c.id === porPlaca[v.vehicleId]) || null;
+      }
       if (!car) {
-        let id = v.carro || 'Carro'; while (rt.cars.some((c) => c.id === id)) id += '·';
-        car = { id, avail0: '00:00', driver: null, capacity: v.cap || rt.CAP, vehicleId: v.vehicleId };
+        let id = v.planCar || v.carro || 'Carro'; while (rt.cars.some((c) => c.id === id)) id += '·';
+        car = { id, avail0: '00:00', driver: null, capacity: v.cap || rt.CAP, vehicleId: null };
         rt.cars.push(car);
+        if (!v.planCar && v.vehicleId) porPlaca[v.vehicleId] = car.id;
       }
       const stops = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
       const ids = stops.map((s) => porReserva[s.rid]).filter((k) => k && !usados.has(k));

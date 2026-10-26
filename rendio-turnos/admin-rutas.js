@@ -1574,6 +1574,7 @@
       });
       return {
         vehicleId: car ? car.vehicleId : null,
+        planCar: car ? car.id : null,   // 0124: «Carro 1»; la placa la pone el turno del conductor
         driverProfileId: rtDriverOf(l), // conductor de la FRANJA de esta vuelta (AM/PM)
         type: l.type || 'sal',
         startAt: rt.day + 'T' + (l.start || '04:00') + ':00-05:00',

@@ -595,6 +595,86 @@ console.log('\n── H · api.js de verdad (sb falso) ──');
   log.length = 0;
   const pp = await A.getPublishedPlan(MAN, { estados: ['draft', 'planned', 'in_progress', 'completed'] });
   t('getPublishedPlan(día, { estados }) pide esos estados (con borradores)', pp.vueltas.length === 2 && JSON.stringify(log.find((x) => x.table === 'route_assignments').ops.find((o) => o[0] === 'in')[2]) === '["draft","planned","in_progress","completed"]');
+  // 0124: el plan va por conductor: «Carro 1…N» sin placa; la placa la pone el turno.
+  t('0124: los carros del plan son «Carro 1» y «Carro 2» (Ajustes: 2), sin placa y con el cupo de la flota',
+    p1.cars.map((c) => c.id).join(',') === 'Carro 1,Carro 2' && p1.cars.every((c) => c.vehicleId === null && c.capacity === 4), JSON.stringify(p1.cars));
+  tablas.route_assignments[0].plan_car = 'Carro 2';
+  const pp2 = await A.getPublishedPlan(MAN, { estados: ['draft', 'planned'] });
+  const v1 = pp2.vueltas.find((v) => v.id === 'ra1'), v2 = pp2.vueltas.find((v) => v.id === 'ra2');
+  t('0124: getPublishedPlan trae el carro del plan (planCar) y, sin placa, lo usa de nombre', v1.planCar === 'Carro 2' && v1.carro === 'Carro 2' && v1.placa === null && v2.planCar === null && v2.carro === 'Carro', JSON.stringify([v1.planCar, v1.carro, v2.carro]));
+  t('0124: getPublishedPlan pide plan_car', /plan_car/.test(log.filter((x) => x.table === 'route_assignments').at(-1).ops.find((o) => o[0] === 'select')[1]));
+}
+
+console.log('\n── 0124 · publicar sin placa (saveRoutePlan con sb falso) ──');
+for (const sinColumna of [false, true]) {
+  const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'http://localhost/' });
+  const w = dom.window; const ins = [];
+  const bld = (name) => {
+    const st = { name, op: null, payload: null };
+    const b2 = {
+      select() { return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, not() { return b2; }, order() { return b2; },
+      delete() { st.op = 'delete'; return b2; },
+      insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
+      single() { return b2; }, maybeSingle() { return b2; },
+      then(ok2, ko) {
+        let r = { data: [], error: null };
+        if (st.op === 'insert') {
+          ins.push([name, st.payload]);
+          if (name === 'route_assignments' && sinColumna && st.payload.plan_car) r = { data: null, error: { code: '42703', message: 'column "plan_car" of relation "route_assignments" does not exist' } };
+          else r = { data: name === 'route_assignments' ? { id: 'ra-' + ins.length } : null, error: null };
+        } else if (name === 'driver_profiles') r = { data: [{ id: 'dp-1', profile_id: 'd1' }], error: null };
+        return Promise.resolve(r).then(ok2, ko);
+      },
+    };
+    return b2;
+  };
+  w.sb = { from: bld, auth: { getUser: async () => ({ data: { user: null } }), getSession: async () => ({ data: { session: null } }) } };
+  w.RENDIO_CONFIG = {};
+  w.eval(read('api.js'));
+  const r = await w.Api.saveRoutePlan('2026-10-26', [{ vehicleId: null, planCar: 'Carro 1', driverProfileId: 'd1', type: 'lle', startAt: '2026-10-26T22:55:00-05:00', stops: ['res-1'], etas: {} }]);
+  const ras = ins.filter((x) => x[0] === 'route_assignments').map((x) => x[1]);
+  if (!sinColumna) {
+    t('una vuelta SIN placa se publica (antes se saltaba en silencio)', r.saved === 1 && r.skipped === 0 && r.failed === 0, JSON.stringify(r));
+    t('…con vehicle_id null, plan_car «Carro 1» y su conductor (la base le pone el carro del turno)', ras.length === 1 && ras[0].vehicle_id === null && ras[0].plan_car === 'Carro 1' && ras[0].driver_profile_id === 'dp-1' && ras[0].status === 'planned', JSON.stringify(ras));
+    t('…y sus paradas', ins.some((x) => x[0] === 'route_stops' && Array.isArray(x[1]) && x[1][0].reservation_id === 'res-1'));
+  } else {
+    t('base sin 0124 (sin plan_car): reintenta sin la columna y publica igual', r.saved === 1 && r.failed === 0 && ras.length === 2 && 'plan_car' in ras[0] && !('plan_car' in ras[1]), JSON.stringify([r, ras]));
+  }
+}
+
+console.log('\n── 0124 · rearmar por carro del plan y la placa del turno ──');
+{
+  const b = await boot();
+  const { q, T, V2, w } = b;
+  const rt = T().rt;
+  // El plan publicado ya no trae placa: cada vuelta vuelve a su carro del plan.
+  const cel = (car, b2) => q(`#rv2-drivers [data-act="assignslot"][data-car="${car}"][data-shift="${b2}"]`);
+  const id = rt.cars[0].driverPM;
+  rt.activos = [{ id, n: 'x', car: 'PRW443' }];
+  V2().render(); await wait(10);
+  t('0124: la casilla dice en qué carro inició turno su conductor («· en PRW443»)', /· en PRW443/.test(txt(cel(rt.cars[0].id, 'pm'))), txt(cel(rt.cars[0].id, 'pm')));
+  const otroCarro = rt.cars.find((c) => c.driverAM && c.driverAM !== id);
+  t('0124: el que no tiene turno abierto hoy dice «· sin iniciar turno»', !!otroCarro && /· sin iniciar turno/.test(txt(cel(otroCarro.id, 'am'))), otroCarro && txt(cel(otroCarro.id, 'am')));
+  rt.activos = null;
+  V2().render(); await wait(10);
+  t('0124: un día que no es hoy no dice nada del turno', !/sin iniciar turno|· en /.test(txt(q('#rv2-drivers'))));
+  t('0124: la nota de la tarjeta explica de dónde sale la placa', /La placa sale del carro con que cada uno inicia turno/.test(txt(q('#rv2-drivers .sub'))));
+  // Rearmar un plan publicado: una vuelta con su carro del plan y una vieja (antes
+  // de 0124) que solo trae una placa que el tablero no tiene.
+  const keys = Object.keys(rt.aux).filter((k) => rt.aux[k].reservationId);
+  const [k1, k2] = keys;
+  const drv0 = rt.drivers[0] && rt.drivers[0].id;
+  const V = (o) => Object.assign({ type: 'lle', status: 'planned', cap: 4, driverProfileId: drv0, conductor: 'Juan', atendidas: [] }, o);
+  w.Api.getPublishedPlan = async () => ({ vueltas: [
+    V({ id: 'x1', startAt: `${rt.day}T22:55:00-05:00`, vehicleId: 'veh-zzz', planCar: null, carro: 'HYU376', pendientes: [{ rid: rt.aux[k1].reservationId, order: 1, status: 'pending' }] }),
+    V({ id: 'x2', startAt: `${rt.day}T23:30:00-05:00`, vehicleId: null, planCar: rt.cars[2].id, carro: rt.cars[2].id, pendientes: [{ rid: rt.aux[k2].reservationId, order: 1, status: 'pending' }] }),
+  ] });
+  await V2().cargarDia(rt.day); await wait(30);
+  const rt2 = T().rt;
+  const carDe = (k) => (rt2.lanes.find((l) => (rt2.order[l.id] || []).includes(k)) || {}).car;
+  t('0124: la vuelta con carro del plan vuelve a ESE carro', carDe(k2) === rt2.cars[2].id, carDe(k2));
+  t('0124: la vieja con una placa que el tablero no tiene cae en un carro del plan libre (no crea uno nuevo)', carDe(k1) === rt2.cars[0].id && !rt2.cars.some((c) => c.id === 'HYU376'), JSON.stringify([carDe(k1), rt2.cars.map((c) => c.id)]));
+  t('sin errores de consola (0124)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);

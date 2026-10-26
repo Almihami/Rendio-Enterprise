@@ -202,6 +202,21 @@ console.log('\n── Conductor, ★ y acciones ──');
 d = await abrir('asignado-publicado');
 t('conductor: nombre, «Marca Modelo · Color» y placa', /Mauricio Arango Pérez/.test(q('.rx-drv').textContent) && q('.rx-drv-tx span').textContent === 'Chevrolet Onix · Gris' && q('.rx-plate').textContent === 'RDO481');
 t('★ oculta con 6 calificaciones (< 10)', !q('.rx-drv-st'));
+// 0124: el carro sale del turno del conductor; antes de que lo inicie no hay placa.
+{
+  const conPlaca = !!q('[data-rx-k="car-tbd"]');
+  t('0124: con placa no dice «Carro por confirmar»', !conPlaca);
+  const sinCarro = (dd) => {
+    const tr = dd.track[dd.principal]; if (tr) tr.vehicle = null;
+    // montar() ya copió los viajes al estado: se quita la placa ahí.
+    (w.Auxiliar.state.trips || []).forEach((x) => { if (x && x.id === dd.principal) { x.vehicle = null; if (x.driver) x.driver.plate = ''; } });
+  };
+  d = await abrir('asignado-publicado', sinCarro);
+  const tbd = q('[data-rx-k="car-tbd"]');
+  t('0124: con conductor y sin placa: «Carro por confirmar» (el nombre del conductor sigue)', !!tbd && tbd.textContent === 'Carro por confirmar' && /Mauricio Arango Pérez/.test(q('.rx-drv').textContent) && !q('.rx-plate'),
+    q('.rx-drv') && q('.rx-drv').textContent);
+  d = await abrir('asignado-publicado');
+}
 t('acciones: Llamar (call), Mensaje (chat), Coordinación (open-coord con el id)', !!q('.rx-drv-acts [data-ax="call"]') && !!q('.rx-drv-acts [data-ax="chat"]')
   && q('.rx-drv-acts [data-rx="open-coord"]').getAttribute('data-id') === d.principal);
 t('datos: Vuelo · En JMC · Nivel · Maletas', qa('.rx-trip-info span').map(s => s.textContent).join() === 'Vuelo,En JMC,Nivel,Maletas');

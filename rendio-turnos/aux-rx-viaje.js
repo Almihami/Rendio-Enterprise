@@ -239,7 +239,9 @@
       const ini = d.initials || (u && u.initials ? u.initials(d.name) : '');
       const av = u && u.av ? u.av(ini, 'lg', null, { src: d.avatarUrl || null }) : '';
       return `<div class="rx-drv rx-in" style="--d:1">${av}`
-        + `<div class="rx-drv-tx"><b>${esc(d.name)}</b>${car ? `<span>${esc(car)}</span>` : ''}${plate ? `<span class="rx-plate">${esc(plate)}</span>` : ''}</div>`
+        + `<div class="rx-drv-tx"><b>${esc(d.name)}</b>${car ? `<span>${esc(car)}</span>` : ''}${plate ? `<span class="rx-plate">${esc(plate)}</span>` : ''}`
+        // 0124: la placa sale del carro con que el conductor inicia turno.
+        + `${!plate && !car && !isClosed(t) ? '<span data-rx-k="car-tbd">Carro por confirmar</span>' : ''}</div>`
         + (hasStar(d) ? `<div class="rx-drv-r"><span class="rx-drv-st">${ic('Star', 13)}${fmtRating(d.rating)}</span></div>` : '')
         + '</div>';
     }
