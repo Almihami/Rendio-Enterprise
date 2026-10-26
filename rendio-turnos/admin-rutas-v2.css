@@ -492,7 +492,10 @@
 #routes-v2 .rj-dia-h > div:first-child { display: flex; flex-direction: column; gap: 2px; }
 #routes-v2 .rj-dia-h span { color: var(--ink2); font-size: 13px; }
 #routes-v2 .rj-dia-a { display: flex; gap: 6px; flex-wrap: wrap; }
-#routes-v2 .rj-v { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+/* La columna de los nombres no baja de 180 px: con una delegada de nombre largo
+   y tres botones, la de la derecha se la comía («Mateo, Juliana» desaparecía y
+   «Deben estar» quedaba una palabra por renglón; capturas del día mezclado, 26-oct). */
+#routes-v2 .rj-v { display: grid; grid-template-columns: 64px minmax(180px, 1fr) auto; gap: 10px; align-items: center; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 #routes-v2 .rj-v-t { display: flex; flex-direction: column; }
 #routes-v2 .rj-v-t b { font-family: var(--mono); font-size: 16px; }
 #routes-v2 .rj-v-t small, #routes-v2 .rj-v-m small { color: var(--ink3); font-size: 12px; }
@@ -515,3 +518,6 @@
 }
 /* 0134: las vueltas para tomar que armó el sistema, arriba de la lista. */
 #routes-v2 .rv2-solas { margin-bottom: 10px; }
+/* Día mezclado (26-oct-2026): la ruta pegada va arriba de la lista del tablero,
+   en un recuadro aparte (no en lugar del tablero). */
+#routes-v2 .rj-dia.is-mixto { padding: 12px; border: 1px dashed var(--line2); border-radius: 12px; background: var(--panel2); }

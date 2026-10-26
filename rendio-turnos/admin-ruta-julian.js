@@ -193,7 +193,10 @@
     }).filter((c) => c.rid);
   }
   async function cargarCandidatos(dia) {
-    const hoy = (typeof rt !== 'undefined' && rt.day === dia && rt.aux) ? candidatosDe(rt.aux, dia)
+    // Día mezclado (26-oct-2026): el tablero saca de rt.aux a quien va en una vuelta
+    // pegada (rt.rv2AuxPegadas, admin-rutas-v2.js); para volver a pegar y para el
+    // Excel del día siguen siendo pedidos del día.
+    const hoy = (typeof rt !== 'undefined' && rt.day === dia && rt.aux) ? candidatosDe(Object.assign({}, rt.aux, rt.rv2AuxPegadas || {}), dia)
       : (W.Api && Api.listRoutePlanning ? candidatosDe(((await Api.listRoutePlanning('all', dia).catch(() => null)) || {}).aux, dia) : []);
     let mad = [];
     try {
@@ -484,14 +487,19 @@
   }
 
   // ── 6. El día con la ruta de Julián (Rutas del día, en lugar del tablero) ───
-  function diaHTML(vueltas, dia, otras) {
+  // o.mixto (26-oct-2026): el día también tiene vueltas del tablero. El bloque va
+  // ARRIBA de la lista del tablero (admin-rutas-v2.js · pegadasHTML), no en su lugar.
+  function diaHTML(vueltas, dia, otras, o) {
+    const mixto = !!(o && o.mixto);
     const vs = (vueltas || []).slice().sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
     const libres = vs.filter((v) => !v.driverProfileId && !v.delegated && v.status !== 'completed').length;
     const delegadas = vs.filter((v) => v.delegated).length;
-    let h = `<div class="rj-dia"><div class="rj-dia-h"><div><b>Ruta de Julián · ${esc(diaTxt(dia))}</b><span>${vs.length} vueltas · ${libres ? `${libres} sin tomar` : 'todas tomadas'}${delegadas ? ` · ${delegadas} ${delegadas === 1 ? 'delegada' : 'delegadas'}` : ''}</span></div>`
+    const n = mixto ? `${vs.length} ${vs.length === 1 ? 'vuelta pegada' : 'vueltas pegadas'}` : `${vs.length} vueltas`;
+    let h = `<div class="rj-dia${mixto ? ' is-mixto' : ''}" data-k="julian"><div class="rj-dia-h"><div><b>Ruta de Julián · ${esc(diaTxt(dia))}</b><span>${n} · ${libres ? `${libres} sin tomar` : 'todas tomadas'}${delegadas ? ` · ${delegadas} ${delegadas === 1 ? 'delegada' : 'delegadas'}` : ''}</span></div>`
       + '<div class="rj-dia-a"><button class="rv2-btn rv2-btn--sm" data-rj-dia="pegar">Volver a pegar</button><button class="rv2-btn rv2-btn--sm" data-rj-dia="excel">Excel del día</button>'
-      + '<button class="rv2-btn rv2-btn--sm" data-rj-dia="quitar">Quitar la ruta</button></div></div>';
-    if (otras) h += `<p class="rj-note">Además hay ${otras} ${otras === 1 ? 'vuelta' : 'vueltas'} del tablero publicadas ese día.</p>`;
+      + `<button class="rv2-btn rv2-btn--sm" data-rj-dia="quitar"${mixto ? ' data-mixto="1"' : ''}>Quitar la ruta</button></div></div>`;
+    if (mixto) h += '<p class="rj-note">Van aparte del tablero: los conductores las toman en su app. Publicar el tablero no las toca.</p>';
+    else if (otras) h += `<p class="rj-note">Además hay ${otras} ${otras === 1 ? 'vuelta' : 'vueltas'} del tablero publicadas ese día.</p>`;
     vs.forEach((v) => {
       const gente = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
       const t0 = v.type === 'lle' ? bogHM(v.startAt) : (gente[0] && gente[0].etaAt ? bogHM(gente[0].etaAt) : bogHM(v.startAt));
@@ -604,7 +612,10 @@
       else if (k === 'excel') excel();
       else if (k === 'quitar') {
         const dia = diaActual(); if (!dia) return;
-        if (typeof W.confirm === 'function' && !W.confirm(`¿Quitar la ruta de Julián del ${diaTxt(dia)}? Se borran las vueltas que no han arrancado (también las ya tomadas) y el día vuelve al tablero.`)) return;
+        const pregunta = b.getAttribute('data-mixto') === '1'
+          ? `¿Quitar la ruta de Julián del ${diaTxt(dia)}? Se borran sus vueltas que no han arrancado (también las ya tomadas) y esos tripulantes quedan sin carro en el tablero: ubícalos y publica. Las vueltas del tablero no cambian.`
+          : `¿Quitar la ruta de Julián del ${diaTxt(dia)}? Se borran las vueltas que no han arrancado (también las ya tomadas) y el día vuelve al tablero.`;
+        if (typeof W.confirm === 'function' && !W.confirm(pregunta)) return;
         try {
           const n = await Api.adminManualRouteClear(dia);
           say(`Se quitaron ${n} vueltas de la ruta de Julián.`);
