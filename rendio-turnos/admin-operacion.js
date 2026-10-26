@@ -29,8 +29,9 @@
   // pruebas reales mentían: mostraban carros rodando y conductores por nombre
   // que no existían. Ver [feedback-no-inventar-datos]. Sin datos reales la
   // pantalla ahora lo DICE y no pinta nada.
-  // open = la tarjeta abierta (su detalle); feedAll = carros con toda su actividad a la vista.
-  const opState = { map: null, routeLayer: null, markerLayer: null, markers: {}, cars: [], feed: [], risks: [], sel: null, open: null, feedAll: {}, clockT: 0, timers: [], bound: false, source: 'empty', day: null, loading: false, tweens: {}, raf: null };
+  // open = la tarjeta abierta (su detalle); feedAll = carros con toda su actividad a la vista;
+  // vista = la pestaña del teléfono (cars / map / feed), ver opVista.
+  const opState = { map: null, routeLayer: null, markerLayer: null, markers: {}, cars: [], feed: [], risks: [], sel: null, open: null, feedAll: {}, vista: 'cars', clockT: 0, timers: [], bound: false, source: 'empty', day: null, loading: false, tweens: {}, raf: null };
   // Cada cuánto se relee la operación real. La posición llega por polling: la
   // tabla driver_locations se diseñó para Realtime, pero el polling es suficiente
   // para una flota de 3-4 carros y no exige habilitar replicación.
@@ -448,12 +449,16 @@
     const evs = (c.feed || []).slice(0, 6).map(e => `<li class="${e.k}"><span class="op-evdot"></span><span class="t">${opEsc(e.t)}</span><span>${opEsc(e.h)}</span></li>`).join('');
     const tel = (c.driverPhone || '').replace(/\s/g, '');
     const lectura = c.novedadesLeidas === false ? '<p class="op-det-note">No se pudieron leer los reportes de hoy: el rojo solo cuenta los no-show y las llegadas tarde.</p>' : '';
+    // «Ver en el mapa» solo se muestra en el teléfono (CSS): ahí el mapa está en
+    // otra pestaña. En pantalla grande está al lado y el carro ya sale marcado.
+    const mapa = c.pos && c.state !== 'done' ? `<button class="op-det-call op-det-map" data-op-mapa="${opEsc(c.key)}"><svg class="icon"><use href="#i-pin"/></svg>Ver en el mapa</button>` : '';
+    const llamar = tel ? `<button class="op-det-call" data-op-call="${opEsc(c.key)}"><svg class="icon"><use href="#i-phone"/></svg>Llamar a ${opEsc(c.driver.split(/\s+/)[0])}</button>` : '';
     return `<div class="op-cc-det">
       <div class="op-det-h">Vueltas de hoy</div>
       <ol class="op-vts">${vts}</ol>
       ${lectura}
       ${evs ? `<div class="op-det-h">Lo último que marcó</div><ul class="op-det-ev">${evs}</ul>` : ''}
-      ${tel ? `<button class="op-det-call" data-op-call="${opEsc(c.key)}"><svg class="icon"><use href="#i-phone"/></svg>Llamar a ${opEsc(c.driver.split(/\s+/)[0])}</button>` : ''}
+      ${mapa || llamar ? `<div class="op-det-acts">${mapa}${llamar}</div>` : ''}
     </div>`;
   }
 
@@ -463,11 +468,41 @@
     opState.sel = c.id;
     // Desde el mapa o la actividad se abre; desde la tarjeta, alterna.
     opState.open = desdeFuera ? key : (opState.open === key ? null : key);
+    // En el teléfono el mapa y la actividad son otra pestaña: se vuelve a Carros
+    // para que se vea la tarjeta que se acaba de abrir.
+    if (desdeFuera) opVista('cars');
     renderOperCars(); renderOperMarkers(); renderOperFeed();
     if (desdeFuera) {
+      // Arriba de la lista, no «lo más cerca»: abierta mide más que la lista, y
+      // con 'nearest' quedaba a la vista el final del detalle y no la placa.
       const el = document.querySelector(`#oper-carlist [data-key="${key}"]`);
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }
+  }
+
+  // Pestañas del teléfono (≤768 px): Carros, Mapa o Actividad, una a la vez. En
+  // pantalla grande el atributo no hace nada (las tres columnas están a la vista).
+  function opVista(v) {
+    opState.vista = v;
+    const root = document.getElementById('oper-ui');
+    if (!root) return;
+    root.dataset.opVista = v;
+    root.querySelectorAll('[data-op-tab]').forEach(b => {
+      const on = b.dataset.opTab === v;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    // El mapa oculto conserva su tamaño, pero si el teléfono se giró mientras
+    // tanto Leaflet tiene que volver a medir (si no, quedan franjas sin cuadros).
+    if (v === 'map') setTimeout(() => { try { opState.map && opState.map.invalidateSize(); } catch (e) {} }, 30);
+  }
+
+  // Desde el detalle de una tarjeta (teléfono): a la pestaña del mapa, centrado en ese carro.
+  function opVerMapa(key) {
+    const c = opState.cars.find(x => x.key === key);
+    opVista('map');
+    if (!c || !c.pos || !opState.map) return;
+    try { opState.map.setView(c.pos, Math.max(opState.map.getZoom(), 14)); } catch (e) {}
   }
 
   function opCall(key) {
@@ -489,6 +524,7 @@
         <span>Aparecen aquí cuando hay un plan de rutas publicado con conductor asignado y ese conductor inicia su ruta desde la app.</span>
       </div>`;
       ['oper-kOn', 'oper-kLate', 'oper-kDone'].forEach(id => { const e = document.querySelector(`#${id} b`); if (e) e.textContent = '0'; });
+      const tn0 = document.getElementById('oper-tabN'); if (tn0) tn0.textContent = '';
       const kl0 = document.getElementById('oper-kLate'); if (kl0) kl0.className = 'op-kpi ok';
       return;
     }
@@ -503,6 +539,7 @@
     set('oper-kOn', on); set('oper-kLate', risk); set('oper-kDone', done);
     const lateN = opState.cars.filter(c => c.state === 'late').length;
     const kl = document.getElementById('oper-kLate'); if (kl) kl.className = 'op-kpi ' + (lateN ? 'bad' : risk ? 'warn' : 'ok');
+    const tn = document.getElementById('oper-tabN'); if (tn) tn.textContent = opState.cars.length;
   }
 
   // La actividad SEPARADA POR CARRO (26-oct-2026): un bloque por placa, en el
@@ -544,6 +581,13 @@
 
   function syncOperDelay() {
     const late = opState.cars.find(c => c.state === 'late');
+    // En el teléfono la alerta vive en la pestaña del mapa: la pestaña lleva un
+    // punto rojo para que se note desde Carros o Actividad.
+    const tabMapa = document.querySelector('#oper-ui [data-op-tab="map"]');
+    if (tabMapa) {
+      tabMapa.classList.toggle('alerta', !!late);
+      if (late) tabMapa.setAttribute('aria-label', 'Mapa: un carro va tarde'); else tabMapa.removeAttribute('aria-label');
+    }
     const box = document.getElementById('oper-delay');
     if (!box) return;
     if (late) {
@@ -630,8 +674,12 @@
     if (!root) return;
     opState.bound = true;
     root.addEventListener('click', (e) => {
+      const tab = e.target.closest('[data-op-tab]');
+      if (tab) { opVista(tab.dataset.opTab); return; }
       const call = e.target.closest('[data-op-call]');
       if (call) { opCall(call.dataset.opCall); return; }
+      const verMapa = e.target.closest('[data-op-mapa]');
+      if (verMapa) { opVerMapa(verMapa.dataset.opMapa); return; }
       const more = e.target.closest('[data-op-more]');
       if (more) { const k = more.dataset.opMore; opState.feedAll[k] = !opState.feedAll[k]; renderOperFeed(); return; }
       const fs = e.target.closest('[data-op-fs]');
