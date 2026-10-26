@@ -295,6 +295,10 @@ console.log('\n── D · Asignación: la vuelta terminada degradada, verde o r
   const q = (s) => w.document.querySelector(s);
   const click = (el) => el.dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true }));
   await w.__T.renderRoutes(); await wait(60);
+  // Lista de los jefes (26-oct): las terminadas se recogen al final; se abren para mirarlas.
+  const hb = q('#rv2-list .rv2-hechas-b');
+  t('las terminadas están recogidas al final («✓ 3 vueltas terminadas · Ver»)', hb && /✓ 3 vueltas terminadas/.test(txt(hb)) && /con novedad/.test(txt(hb)), hb && txt(hb));
+  if (hb) { click(hb); await wait(20); }
   const rt = w.__T.rt;
   const laneDe = (k) => Object.keys(rt.order).find((l) => rt.order[l].includes('r' + k));
   const fila = (k) => q(`#rv2-list .rv2-row[data-id="${laneDe(k)}"]`);
