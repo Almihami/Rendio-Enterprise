@@ -161,6 +161,11 @@
 #routes-v2 .rv2-madh b, #routes-v2 .rv2-madsig b { display: block; font-size: 13.5px; color: var(--ink); }
 #routes-v2 .rv2-madh small, #routes-v2 .rv2-madsig small { display: block; font-size: 12.5px; line-height: 1.4; color: var(--ink2); margin-top: 2px; }
 #routes-v2 .rv2-dayh { font-size: 13px; font-weight: 700; color: var(--ink); padding: 6px 2px 0; border-top: 1px solid var(--line); }
+/* Lista de los jefes 26-oct: las vueltas terminadas se recogen al final. */
+#routes-v2 .rv2-hechas { display: flex; flex-direction: column; gap: 8px; }
+#routes-v2 .rv2-hechas-b { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; padding: 10px 14px; border: 1px dashed var(--line2); border-radius: 12px; background: var(--panel2); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+#routes-v2 .rv2-hechas-b b { font-size: 13.5px; color: var(--green); }
+#routes-v2 .rv2-hechas-b small { font-size: 12.5px; color: var(--ink2); white-space: nowrap; }
 #routes-v2 .rv2-madsig { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px; border: 1px dashed var(--line2); border-radius: 12px; background: var(--panel2); }
 #routes-v2 .rv2-madsig > div { flex: 1 1 220px; min-width: 0; }
 #routes-v2 .t-risk, .rv2-sheet .t-risk { color: var(--red-ink); }
