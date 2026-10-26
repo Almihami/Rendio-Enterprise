@@ -158,22 +158,57 @@
   // `day` (YYYY-MM-DD, opcional): el día que se quiere planear. Sin él, como
   // siempre, el próximo día con reservas — que con algo pendiente de hoy nunca
   // dejaba planear mañana (la barra ‹ día › de Asignación v2 pasa el día).
-  async function rtLoad(day) {
+  //
+  // 26-oct-2026 · CAMBIAR DE DÍA TARDABA 5–10 s (y una vez se quedó colgado más
+  // de 10 min). Todo esto se pedía una consulta detrás de otra. Ahora lo que no
+  // depende de otra cosa sale a la vez —con el día pedido, es todo— y lo leído se
+  // pone en `rt` AL FINAL, de un solo golpe y solo si `opts.vigente()` sigue
+  // diciendo que sí: si el jefe cambió de día a mitad de la carga, una carga
+  // vieja no pinta encima de la nueva (Asignación v2). Devuelve false si se
+  // descartó. Las reglas y los respaldos de cada pieza son los de siempre.
+  async function rtLoad(day, opts = {}) {
     rtCfg();
+    const vigente = typeof opts.vigente === 'function' ? opts.vigente : () => true;
+    // Arranca la lectura YA; su error sale cuando se espere, en el mismo try de siempre.
+    const lanza = (f) => { let p; try { p = Promise.resolve(f()); } catch (e) { p = Promise.reject(e); } p.catch(() => {}); return p; };
+    const leer = (p) => (p ? p.then((v) => ({ v }), (e) => ({ e })) : Promise.resolve({ v: undefined }));
+    const val = (r) => { if (r.e) throw r.e; return r.v; };
+    const hoyBog = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    const ayerDe = (dia) => { const d = new Date(dia + 'T12:00:00-05:00'); d.setUTCDate(d.getUTCDate() - 1); return d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }); };
+    // Lo que depende del día. El horario y los turnos abiertos solo se usan si el
+    // día tiene reservas (abajo); si no, se piden de balde, pero no se espera más.
+    const delDia = (dia) => ({
+      dia,
+      tablas: Api.getRouteTables ? lanza(() => Api.getRouteTables(dia, { corta: true })) : null,
+      turno: dia && Api.listDriversOnShift ? lanza(() => Api.listDriversOnShift(dia, { corta: true })) : null,
+      turnoAyer: dia && Api.listDriversOnShift ? lanza(() => Api.listDriversOnShift(ayerDe(dia), { corta: true })) : null,
+      activos: dia && dia === hoyBog && Api.listActiveShifts ? lanza(() => Api.listActiveShifts()) : null,
+    });
+    const pPlanning = Api.listRoutePlanning ? lanza(() => Api.listRoutePlanning('all', day || undefined)) : null;
+    const pCorte = Api.getRouteNightCutoff ? lanza(() => Api.getRouteNightCutoff({ corta: true })) : null;
+    let porDia = day ? delDia(day) : null;
     let loaded = null;
-    try { if (Api.listRoutePlanning) loaded = await Api.listRoutePlanning('all', day || undefined); }
+    try { loaded = pPlanning ? await pPlanning : null; }
     catch (e) { loaded = null; }
-    if (loaded && loaded.aux && Object.keys(loaded.aux).length) {
+    const live = !!(loaded && loaded.aux && Object.keys(loaded.aux).length);
+    const dia = live ? (loaded.day || day || null) : (day || null);
+    // Sin día pedido (o si el día salió otro), lo del día va ahora, ya sabiendo cuál es.
+    if (!porDia || porDia.dia !== dia) porDia = delDia(dia);
+    const [corte, tablas, turno, turnoAyer, activosR] = await Promise.all([pCorte, porDia.tablas, porDia.turno, porDia.turnoAyer, porDia.activos].map(leer));
+    if (!vigente()) return false;
+
+    if (live) {
       rt.aux = loaded.aux; rt.colors = loaded.colors || {}; rt.cars = loaded.cars || [];
       rt.drivers = loaded.drivers || []; rt.plan = loaded.plan || {}; rt.source = 'live';
       rt.day = loaded.day || day || null; // día operativo real (para persistir el plan)
+      rt.flota = loaded.flota || null;    // la flota ya leída (placa de «Carro 1», 0132)
     } else {
       // Sin reservas reales para ese día: tablero VACÍO.
       // `reason` explica qué falta (reservas o vehículos), no se inventa nada.
       // Si se pidió un día, se queda ese día (para poder decir «sin traslados
       // para el martes» y seguir navegando); publicar sigue exigiendo 'live'.
       rt.aux = {}; rt.colors = {}; rt.cars = []; rt.drivers = [];
-      rt.plan = {}; rt.source = 'empty'; rt.day = day || null;
+      rt.plan = {}; rt.source = 'empty'; rt.day = day || null; rt.flota = null;
       rt.emptyReason = (loaded && loaded.noVehicles) ? 'vehiculos' : 'reservas';
     }
     // Lo publicado de ESTE día se vuelve a leer en cada carga (Asignación v2):
@@ -182,7 +217,7 @@
     rt.etaSource = null;
     // 0107: el corte de la madrugada (lectura propia; sin la columna, 02:00).
     if (Api.getRouteNightCutoff) {
-      try { const v = await Api.getRouteNightCutoff(); if (v != null) rt.NIGHT_CUTOFF = Math.min(240, Math.max(0, v)); } catch (e) { /* 02:00 */ }
+      try { const v = val(corte); if (v != null) rt.NIGHT_CUTOFF = Math.min(240, Math.max(0, v)); } catch (e) { /* 02:00 */ }
     }
     // Estado inicial: una vuelta vacía por carro; todos los auxiliares en el pool.
     rt.lanes = rt.cars.map(c => ({ id: `${c.id}·V1`, car: c.id, vuelta: 1, start: rtToHM(rtCut()), origin: null }));
@@ -196,7 +231,7 @@
     rt.ZONAS = null; rt.TRAMOS = null; rt.esDiaLento = false; rt.diaLentoNombre = null; rt.zonasSinConfirmar = [];
     if (Api.getRouteTables) {
       try {
-        const t = await Api.getRouteTables(rt.day);
+        const t = val(tablas);
         if (t && Object.keys(t.zonas || {}).length) {
           rt.ZONAS = t.zonas; rt.TRAMOS = t.tramos || [];
           rt.esDiaLento = !!(t.esDomingo || t.esFestivo);
@@ -209,7 +244,7 @@
     rt.shift = null; rt.shiftLoaded = false;
     if (rt.source === 'live' && rt.day && Api.listDriversOnShift) {
       try {
-        const sh = await Api.listDriversOnShift(rt.day);
+        const sh = val(turno);
         if (sh) {
           const byId = {}; rt.drivers.forEach(d => { byId[d.id] = d; });
           const enr = arr => (arr || []).map(x => ({ id: x.id, n: x.n, c: (byId[x.id] && byId[x.id].c) || '#8895a7' }));
@@ -222,9 +257,7 @@
     rt.shiftPrev = null; rt.shiftPrevLoaded = false;
     if (rt.source === 'live' && rt.day && Api.listDriversOnShift) {
       try {
-        const d = new Date(rt.day + 'T12:00:00-05:00'); d.setUTCDate(d.getUTCDate() - 1);
-        const ayer = d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-        const sh = await Api.listDriversOnShift(ayer);
+        const sh = val(turnoAyer);
         if (sh) {
           const byId = {}; rt.drivers.forEach(x => { byId[x.id] = x; });
           rt.shiftPrev = { pm: (sh.pm || []).map(x => ({ id: x.id, n: x.n, c: (byId[x.id] && byId[x.id].c) || '#8895a7' })) };
@@ -235,10 +268,9 @@
     // Turnos ABIERTOS ahora, solo si el día que se planea es hoy: quién tiene qué
     // carro en la vida real (25-oct-2026, línea «También en turno» de la v2).
     rt.activos = null;
-    const hoyBog = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
     if (rt.source === 'live' && rt.day === hoyBog && Api.listActiveShifts) {
       try {
-        const rows = await Api.listActiveShifts();
+        const rows = val(activosR);
         rt.activos = (rows || []).map(s => {
           const p = s && s.driver_profiles && s.driver_profiles.profiles;
           const v = (s && s.vehicles) || {};
@@ -247,6 +279,7 @@
       } catch (e) { rt.activos = null; /* sin turnos abiertos → solo el horario */ }
     }
     rt.cargadoEn = Date.now();
+    return true;
   }
   // Huella del plan EN MEMORIA tal como lo publicaría rtSavePlan: vueltas
   // (carro, tipo, hora, paradas en orden) y conductores. Si es igual a la del
@@ -571,6 +604,8 @@
   // Si la vuelta sale dentro de menos de esto, se pide tráfico EN VIVO: a menos
   // de una hora lo que está pasando en la vía pesa más que el patrón histórico.
   const RT_LIVE_WINDOW_MIN = 60;
+  // Lo más que se espera la tabla de OSRM (82 puntos tardan ~1 s). Pasado esto, línea recta.
+  const RT_OSRM_PLAZO_MS = 15000;
 
   // La hora para la que hay que pedir el tráfico: la salida MÁS TEMPRANA que se
   // está planeando, no "ahora". Ese es todo el punto — a las 4pm preguntar cómo
@@ -600,9 +635,12 @@
   // nada nuevo a TomTom —cobra por celda, ~400 transacciones en un día de 80
   // traslados— solo por abrir la pantalla. Se usa su respuesta en caché si
   // sigue fresca y, si no, OSRM. Optimizar sigue pidiendo TomTom como siempre.
+  // opts.vigente (26-oct-2026, Asignación v2): si devuelve false cuando llega la
+  // respuesta, la carga ya es otra (el jefe cambió de día) y no se toca `rt`.
   async function rtBuildMatrix(opts = {}) {
     const keys = ['depot', 'airport', ...Object.keys(rt.aux)];
     const pts = keys.map(rtCoordsOf);
+    const vigente = typeof opts.vigente === 'function' ? opts.vigente : () => true;
     rt.mHasTraffic = false; rt.trafficDelay = 0;
 
     // 1) TomTom, vía Edge Function (la llave vive en el servidor, no en la PWA).
@@ -632,6 +670,7 @@
         const ttl = (mode === 'live' ? 3 : 10) * 60000;
         const fresco = hit && hit.key === ck && Date.now() - hit.at < ttl;
         const r = fresco ? hit.data : (opts.sinTrafico ? null : await Api.trafficMatrix(coords, departAt, mode));
+        if (!vigente()) return null;
         if (r) rt.trafficMode = mode;
         if (r && Array.isArray(r.durations)) {
           rt._mCache = { key: ck, at: (hit && hit.key === ck) ? hit.at : Date.now(), data: r };
@@ -659,16 +698,23 @@
       } catch (e) { /* sin tráfico: cae a OSRM */ }
     }
 
+    // OSRM con plazo (26-oct-2026): el servidor público a veces no contesta y
+    // fetch espera sin fin. Vencido, cae a línea recta como con cualquier error.
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const plazo = ctl ? setTimeout(() => ctl.abort(), RT_OSRM_PLAZO_MS) : null;
     try {
       const coords = pts.map(p => `${p.lng},${p.lat}`).join(';');
       const url = `https://router.project-osrm.org/table/v1/driving/${coords}?annotations=duration`;
-      const j = await (await fetch(url)).json();
+      const j = await (await fetch(url, ctl ? { signal: ctl.signal } : undefined)).json();
+      if (!vigente()) return null;
       if (j.code === 'Ok' && j.durations) {
         const M = {};
         keys.forEach((ka, i) => { M[ka] = {}; keys.forEach((kb, jx) => { const s = j.durations[i][jx]; M[ka][kb] = (s == null) ? rtHaversineMin(pts[i], pts[jx]) : Math.max(1, s / 60); }); });
         rt.M = M; return 'osrm';
       }
     } catch (e) { /* cae a haversine */ }
+    finally { if (plazo) clearTimeout(plazo); }
+    if (!vigente()) return null;
     const M = {};
     keys.forEach((ka, i) => { M[ka] = {}; keys.forEach((kb, jx) => { M[ka][kb] = (i === jx) ? 0 : rtHaversineMin(pts[i], pts[jx]); }); });
     rt.M = M; return 'haversine';
@@ -2023,6 +2069,9 @@
     // Asignación v2 es la vista por defecto (admin-rutas-v2.js). Esta función
     // sigue siendo la puerta de la pestaña; la vista anterior queda entera y se
     // usa si se elige «Vista anterior» o si el archivo nuevo no cargó.
+    // Entrar a la pestaña lee fresco lo que guarda la caché corta (api.js): lo
+    // que se cambió en Ajustes o en Flota se ve. Entre ‹ › de días, se reusa.
+    if (window.Api && typeof Api.limpiarCacheCorta === 'function') Api.limpiarCacheCorta();
     if (window.RendioRutasV2 && window.RendioRutasV2.activa()) return window.RendioRutasV2.entrar();
     if (window.RendioRutasV2) window.RendioRutasV2.ocultar();
     await rtLoad();

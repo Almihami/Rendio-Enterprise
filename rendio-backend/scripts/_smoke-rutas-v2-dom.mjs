@@ -1237,6 +1237,52 @@ console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio 
   t('0134 · publicar con la pantalla vieja: a Felipe (ya en una vuelta para tomar) no lo vuelve a meter; a Manuela sí', st.length === 1 && st[0].reservation_id === 'res-N' && r.kept === 1, JSON.stringify([r, st]));
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 26-oct · carga del día: consulta colgada, plazo, Reintentar y cambiar de día a mitad ──');
+{
+  const b = await boot();
+  const { w, q, click, V2, T } = b;
+  V2()._plazoCarga(150);
+  const orig = w.Api.listRoutePlanning;
+  w.Api.listRoutePlanning = () => new Promise(() => {});   // la consulta se cuelga
+  click(q('#routes-v2 [data-act="nav"][data-dir="1"]')); await wait(30);
+  t('mientras carga, la barra ya dice el día pedido (no el viejo)', txt(q('#rv2-dayLabel')) === 'Mar 13 oct', txt(q('#rv2-dayLabel')));
+  t('…y ‹ › siguen activos', [...b.qa('#routes-v2 [data-act="nav"]')].every((x) => !x.disabled));
+  await wait(250);
+  t('vencido el plazo sale de «Cargando»: «No se pudo cargar Mar 13 oct» con Reintentar', /No se pudo cargar Mar 13 oct/.test(txt(q('#rv2-list'))) && !!q('#rv2-list [data-act="reintentar"]') && !/Cargando/.test(txt(q('#rv2-list'))), txt(q('#rv2-list')));
+  t('la frase de arriba: «No se pudo cargar el día · Reintentar»', /No se pudo cargar el día · Reintentar/.test(txt(q('#rv2-say'))), txt(q('#rv2-say')));
+  t('…Publicar y Re-optimizar apagados, ‹ › activos', q('#rv2-publish').disabled && q('#rv2-reopt').disabled && [...b.qa('#routes-v2 [data-act="nav"]')].every((x) => !x.disabled));
+  w.Api.listRoutePlanning = orig;
+  click(q('#routes-v2 [data-act="nav"][data-dir="-1"]')); await wait(80);
+  t('‹ desde el error vuelve al 12 y rearma lo publicado', T().rt.day === '2026-10-12' && V2().dia().routes.length === 9 && !V2()._ui.falloCarga && /^Publicado/.test(txt(q('#rv2-pubChip'))));
+  // Reintentar
+  w.Api.listRoutePlanning = () => new Promise(() => {});
+  await V2().cargarDia('2026-10-12');
+  w.Api.listRoutePlanning = orig;
+  click(q('#rv2-list [data-act="reintentar"]')); await wait(80);
+  t('«Reintentar» vuelve a cargar el mismo día', T().rt.day === '2026-10-12' && V2().dia().routes.length === 9 && !V2()._ui.cargando);
+  // Lo publicado colgado: error, NO el día «sin publicar»
+  const gp = w.Api.getPublishedPlan;
+  w.Api.getPublishedPlan = () => new Promise(() => {});
+  await V2().cargarDia('2026-10-12');
+  t('lo publicado colgado: dice que no cargó (no muestra el día como sin publicar)', /No se pudo cargar Lun 12 oct/.test(txt(q('#rv2-list'))) && /plan publicado/.test(txt(q('#rv2-list'))), txt(q('#rv2-list')));
+  w.Api.getPublishedPlan = gp;
+  // Cambiar de día a mitad: la carga vieja no pinta encima
+  w.Api.listRoutePlanning = async (tipo, day) => { if (day === '2026-10-13') { await wait(120); return orig(tipo, '2026-10-12').then((r) => r && { ...r, day: '2026-10-13' }); } return orig(tipo, day); };
+  const lento = V2().cargarDia('2026-10-13');
+  await wait(10);
+  await V2().cargarDia('2026-10-12');
+  await lento; await wait(150);
+  t('cambiar de día a mitad de una carga: gana el último día pedido', T().rt.day === '2026-10-12' && txt(q('#rv2-dayLabel')) === 'Lun 12 oct' && V2().dia().routes.length === 9, JSON.stringify([T().rt.day, txt(q('#rv2-dayLabel'))]));
+  // En paralelo: lo publicado sale sin esperar a las reservas
+  let terminaron = false, planMientras = false;
+  w.Api.listRoutePlanning = async (tipo, day) => { terminaron = false; await wait(60); terminaron = true; return orig(tipo, day); };
+  w.Api.getPublishedPlan = async (...a) => { if (!terminaron) planMientras = true; return gp(...a); };
+  await V2().cargarDia('2026-10-12');
+  t('lo publicado se pide a la vez que las reservas', planMientras && V2().dia().routes.length === 9);
+  t('sin errores de script (carga del día)', b.errors.length === 0, b.errors.join(' | '));
+}
+
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: layout real (puntos de quiebre, cajón, tarjetas, barra fija del celular: ver _capturas-rutas-v2.mjs y revisar en un teléfono), la base real (RLS, saveRoutePlan/getPublishedPlan en producción), TomTom/OSRM reales, el mapa Leaflet real, el push real y el módulo de WhatsApp.');
 process.exit(bad ? 1 : 0);
