@@ -253,7 +253,7 @@
   // último plan publicado/leído, lo que se ve es lo que tienen los conductores.
   function rtFirmaPlan() {
     const lanes = (rt.lanes || []).filter(l => rt.order[l.id] && rt.order[l.id].length)
-      .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(',')]);
+      .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(','), l.drv === undefined ? null : l.drv]);
     const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null, c.driverMad || null]);
     return JSON.stringify([lanes, drv]);
   }
@@ -287,7 +287,14 @@
     return rt.drivers;
   }
   // Conductor asignado a una vuelta, según SU franja.
-  function rtDriverOf(lane) { const car = rtCarOf(lane); if (!car) return null; return rtCarDrv(car, rtBandOf(lane)); }
+  // Conductor PROPIO de la vuelta (26-oct-2026): la profa quería darle UNA vuelta
+  // a otro conductor y la hoja del carro cambiaba todas las de ese turno. Si la
+  // vuelta trae `lane.drv`, manda eso: el id de otro conductor, o `false` = sin
+  // conductor solo en esta vuelta. Sin `lane.drv`, sigue al del carro.
+  function rtDriverOf(lane) {
+    if (lane && lane.drv !== undefined) return lane.drv || null;
+    const car = rtCarOf(lane); if (!car) return null; return rtCarDrv(car, rtBandOf(lane));
+  }
   // Franjas que realmente cubre un carro (por sus vueltas con paradas), en orden del día.
   const RT_BANDS = ['mad', 'am', 'pm'];
   function rtBandsOfCar(carId) { return [...new Set(rt.lanes.filter(l => l.car === carId && rt.order[l.id] && rt.order[l.id].length).map(rtBandOf))].sort((a, b) => RT_BANDS.indexOf(a) - RT_BANDS.indexOf(b)); }

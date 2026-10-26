@@ -677,6 +677,162 @@ console.log('\n── 0124 · rearmar por carro del plan y la placa del turno �
   t('sin errores de consola (0124)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 26-oct · el conductor de UNA vuelta: cambiarlo no mueve el resto ──');
+{
+  // La profa: «intenté cambiar algo y se cambió toda la programación, solo quería
+  // darle a otro conductor una ruta». La hoja del carro cambia TODAS sus vueltas
+  // del turno; «Cambiar» en una vuelta ahora pone el conductor SOLO a esa.
+  const b = await boot();
+  const { w, q, qa, click, T, V2, sheet } = b;
+  const rt = T().rt;
+  const hm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const laneDe = (k) => Object.keys(rt.order).find((l) => rt.order[l].includes('r' + k));
+  const foto = () => JSON.stringify(V2().dia().routes.map((r) => [r.id, r.driverId, r.stops.map((s) => hm(s.time)).join(','), hm(r.arrival)]));
+  const LM = laneDe('M'), LE = laneDe('E'), LH = laneDe('H'), LI = laneDe('I');
+  const v02 = rt.cars.find((c) => c.id === 'V-02');
+  t('el día de prueba: V-02 hace E, H/G y M con Luis (AM)', v02.driverAM === 'd2' && [LE, LH, LM].every((l) => V2().dia().byId[l].driverId === 'd2'), JSON.stringify([v02.driverAM, LE, LH, LM]));
+  const antes = JSON.parse(foto());
+  // Abrir la vuelta de M y tocar «Cambiar».
+  click(q(`#rv2-list .rv2-row[data-id="${LM}"]`)); await wait(10);
+  click(q(`#routes-v2 [data-act="assign"][data-id="${LM}"]`)); await wait(10);
+  const titulo = txt(q('#rv2-shTitle'));
+  t('«Cambiar» en la vuelta abre «Conductor de esta vuelta», no la del carro', titulo === 'Conductor de esta vuelta' && !sheet().hidden, titulo);
+  t('el subtítulo dice que solo cambia esta vuelta', /solo cambia esta vuelta: las demás y sus horas quedan igual/.test(txt(q('#rv2-sheet .rv2-sh-head p'))), txt(q('#rv2-sheet .rv2-sh-head p')));
+  const opc = (id) => q(`#rv2-sheet [data-pick="${id}"]`);
+  t('Luis (el de hoy) sale como «Actual» y no se puede elegir', opc('d2') && opc('d2').disabled && /Actual/.test(txt(opc('d2'))));
+  t('Carlos (V-03) alcanza: dice de qué vuelta viene y a qué hora llega', opc('d3') && /Alcanza/.test(txt(opc('d3'))) && /viene de su vuelta de las \d\d:\d\d y alcanza \(llega a las \d\d:\d\d\)/.test(txt(opc('d3'))), txt(opc('d3')));
+  t('el botón arranca apagado', q('#rv2-doAssign').disabled);
+  t('hay un enlace para cambiar todo el turno del carro (la hoja de antes)', /Cambiar el conductor de todas las vueltas de V-02 en el turno AM/.test(txt(q('#rv2-sheet [data-act="assignslot"]'))));
+  click(opc('d3')); await wait(5);
+  t('al elegir, el botón dice «Asignar a esta vuelta»', !q('#rv2-doAssign').disabled && /Asignar a esta vuelta/.test(txt(q('#rv2-doAssign'))));
+  click(q('#rv2-doAssign')); await wait(10);
+  const despues = JSON.parse(foto());
+  const lane = rt.lanes.find((l) => l.id === LM);
+  t('la vuelta de M queda con Carlos (conductor propio)', V2().dia().byId[LM].driverId === 'd3' && lane.drv === 'd3' && V2().dia().byId[LM].propio, JSON.stringify(lane));
+  t('el carro sigue con Luis y sus otras dos vueltas también', v02.driverAM === 'd2' && V2().dia().byId[LE].driverId === 'd2' && V2().dia().byId[LH].driverId === 'd2');
+  const cambiadas = despues.filter((x, i) => JSON.stringify(x) !== JSON.stringify(antes[i]));
+  t('NADA más cambió: ni conductores ni horas de las otras vueltas (solo el conductor de esa)', cambiadas.length === 1 && cambiadas[0][0] === LM && cambiadas[0][2] === antes.find((x) => x[0] === LM)[2] && cambiadas[0][3] === antes.find((x) => x[0] === LM)[3], JSON.stringify(cambiadas));
+  t('el aviso lo dice en palabras', /Carlos Mejía hace la vuelta de las \d\d:\d\d de V-02 · las demás no cambian/.test(b.toastV2()), b.toastV2());
+  const fila = q(`#rv2-list .rv2-row[data-id="${LM}"]`);
+  t('la fila dice Carlos y «solo esta vuelta»', /Carlos Mejía/.test(txt(fila)) && /solo esta vuelta/.test(txt(fila.querySelector('.tag.own'))), txt(fila));
+  t('el detalle dice «Conductor solo de esta vuelta»', /Carlos Mejía\s*Conductor solo de esta vuelta/.test(txt(q('#routes-v2 .rv2-drv'))), txt(q('#routes-v2 .rv2-drv')));
+  const celda = q('#rv2-drivers [data-act="assignslot"][data-car="V-02"][data-shift="am"]');
+  t('Conductores: V-02 AM sigue Luis, «2 vueltas · 1 con otro conductor»', /Luis A\./.test(txt(celda)) && /2 vueltas · 1 con otro conductor/.test(txt(celda)), txt(celda));
+  t('queda como cambio sin publicar', /Publicar cambios/.test(txt(q('#routes-v2'))) || /Publicar cambios/.test(w.document.body.textContent));
+  // Publicar: a la base va Carlos en ESA vuelta y Luis en las otras dos.
+  b.log.saved.length = 0;
+  click(q('#rv2-publish')); await wait(10);
+  const go = q('#rv2-doPublish:not([hidden])');
+  if (go && !go.disabled) { click(go); } else { click(q('#rv2-forceOpen')); await wait(5); const a1 = q('#rv2-forceRisk'); if (a1) { a1.checked = true; a1.dispatchEvent(new w.Event('change')); } const a2 = q('#rv2-forceUnr'); if (a2) { a2.checked = true; a2.dispatchEvent(new w.Event('change')); } click(q('#rv2-doForce')); }
+  await wait(40);
+  const pub = b.log.saved.at(-1);
+  const pubDe = (k) => pub && pub.lanes.find((l) => l.stops.includes('res-' + k));
+  t('publicar manda Carlos en la vuelta de M y Luis en E y en H/G', !!pub && pubDe('M').driverProfileId === 'd3' && pubDe('E').driverProfileId === 'd2' && pubDe('H').driverProfileId === 'd2', pub && JSON.stringify(pub.lanes.map((l) => [l.stops.join('+'), l.driverProfileId])));
+  // Cambiar el conductor de TODO el carro después: la vuelta con conductor propio no se mueve.
+  click(q('#rv2-drivers [data-act="assignslot"][data-car="V-02"][data-shift="am"]')); await wait(10);
+  t('la hoja del carro avisa que la vuelta con conductor propio no cambia', /menos la que tiene conductor propio/.test(txt(q('#rv2-sheet .rv2-sh-head p'))), txt(q('#rv2-sheet .rv2-sh-head p')));
+  click(q('#rv2-sheet [data-pick="d1"]')); await wait(5); click(q('#rv2-doAssign')); await wait(10);
+  t('cambiar el carro (Jorge ↔ Luis) mueve sus vueltas, pero la de M sigue con Carlos', V2().dia().byId[LE].driverId === 'd1' && V2().dia().byId[LH].driverId === 'd1' && V2().dia().byId[LM].driverId === 'd3', JSON.stringify([LE, LH, LM].map((l) => V2().dia().byId[l].driverId)));
+  click(q('#rv2-toast [data-act="undo"]')); await wait(10);
+  // Volver al del carro.
+  click(q(`#rv2-list .rv2-row[data-id="${LM}"]`)); await wait(10);
+  click(q(`#routes-v2 [data-act="assign"][data-id="${LM}"]`)); await wait(10);
+  t('con conductor propio, la hoja ofrece «Como el resto de V-02» (Luis)', /Como el resto de V-02/.test(txt(q('#rv2-sheet [data-pick="__carro"]'))) && /Luis Arango/.test(txt(q('#rv2-sheet [data-pick="__carro"]'))));
+  click(q('#rv2-sheet [data-pick="__carro"]')); await wait(5); click(q('#rv2-doAssign')); await wait(10);
+  t('«Como el resto» la devuelve a Luis y quita la marca', V2().dia().byId[LM].driverId === 'd2' && !V2().dia().byId[LM].propio && !('drv' in rt.lanes.find((l) => l.id === LM)));
+  // Quitar el conductor solo de una vuelta.
+  click(q(`#routes-v2 [data-act="assign"][data-id="${LM}"]`)); await wait(10);
+  click(q('#rv2-sheet [data-pick="__none"]')); await wait(5);
+  t('«Quitar el conductor de esta vuelta»: el botón dice «Quitar de esta vuelta»', /Quitar de esta vuelta/.test(txt(q('#rv2-doAssign'))));
+  click(q('#rv2-doAssign')); await wait(10);
+  t('la vuelta queda sin conductor y las otras de V-02 siguen con Luis', V2().dia().byId[LM].driverId === null && V2().dia().byId[LM].status === 'nodriver' && V2().dia().byId[LE].driverId === 'd2' && v02.driverAM === 'd2');
+  const avs = V2()._avisos();
+  t('Avisos: «La vuelta de V-02 de las … no tiene conductor» y su botón abre ESA vuelta', avs.some((a) => /La vuelta de <b>V-02<\/b> de las \d\d:\d\d no tiene conductor/.test(a.html) && a.act.includes(`data-act="assign" data-id="${LM}"`)) && !avs.some((a) => /<b>V-02<\/b> no tiene conductor/.test(a.html)), JSON.stringify(avs.map((a) => a.html)));
+  // Deshacer vuelve atrás paso a paso.
+  click(q('#rv2-toast [data-act="undo"]')); await wait(10);
+  t('Deshacer devuelve el conductor a la vuelta', V2().dia().byId[LM].driverId === 'd2');
+  // ¿Alcanza? La hoja dice si el conductor llega desde su vuelta anterior.
+  // Con los tiempos del modelo: tras una salida queda en JMC + TURNAROUND y de
+  // ahí va a la primera casa de la vuelta que se le quiere dar.
+  const llegaDesdeJMC = (prev, r) => Math.round(prev.arrival + rt.TURNAROUND + w.eval(`rtLegMin('airport', ${JSON.stringify(r.stops[0].crewId)})`));
+  click(q(`#rv2-list .rv2-row[data-id="${LI}"]`)); await wait(10);
+  click(q(`#routes-v2 [data-act="assign"][data-id="${LI}"]`)); await wait(10);
+  const rI = V2().dia().byId[LI], rH = V2().dia().byId[LH];
+  const luis = q('#rv2-sheet [data-pick="d2"]'), lL = llegaDesdeJMC(rH, rI);
+  t('Luis (sale de JMC tras H/G) sí alcanza la de I/J: lo dice con la hora a la que llega', lL - rI.stops[0].time <= 4 && /Alcanza/.test(txt(luis)) && txt(luis).includes(`y alcanza (llega a las ${hm(lL)})`), `${txt(luis)} · esperado ${hm(lL)}`);
+  click(q('#rv2-sheet [data-act="sclose"]')); await wait(5);
+  // Jorge termina la vuelta de C/D en JMC y la de H/G empieza lejos de ahí.
+  click(q(`#rv2-list .rv2-row[data-id="${LH}"]`)); await wait(10);
+  click(q(`#routes-v2 [data-act="assign"][data-id="${LH}"]`)); await wait(10);
+  const rD = V2().dia().byId[laneDe('D')];
+  const jH = q('#rv2-sheet [data-pick="d1"]'), lJ = llegaDesdeJMC(rD, rH), tJ = lJ - rH.stops[0].time;
+  t('Jorge NO alcanza la de H/G: dice de qué vuelta viene, a qué hora llegaría y cuánto tarde',
+    tJ > 4 && /No alcanza/.test(txt(jH)) && txt(jH).includes(`llegaría a las ${hm(lJ)}, ${tJ} min tarde`), `${txt(jH)} · esperado ${hm(lJ)} (${tJ})`);
+  click(q('#rv2-sheet [data-act="sclose"]')); await wait(5);
+  click(q(`#rv2-list .rv2-row[data-id="${LE}"]`)); await wait(10);
+  click(q(`#routes-v2 [data-act="assign"][data-id="${LE}"]`)); await wait(10);
+  const jorge = q('#rv2-sheet [data-pick="d1"]');
+  t('Jorge, que a esa hora va en otra vuelta, sale «Ocupado» con la hora', !!jorge && /Ocupado/.test(txt(jorge)) && /tiene su vuelta de las \d\d:\d\d \(hasta las \d\d:\d\d\)/.test(txt(jorge)), txt(jorge));
+  click(q('#rv2-sheet [data-act="sclose"]')); await wait(5);
+  t('el día de prueba no trae avisos de conductor (sin falsas alarmas)', !V2()._avisos().some((x) => x.k === 'drv'), JSON.stringify(V2()._avisos().filter((x) => x.k === 'drv').map((x) => x.html)));
+  // Elegir igual a quien no alcanza: el jefe manda, pero queda en Avisos.
+  click(q(`#rv2-list .rv2-row[data-id="${LH}"] .when`)); await wait(10);
+  click(q(`#routes-v2 [data-act="assign"][data-id="${LH}"]`)); await wait(10);
+  click(q('#rv2-sheet [data-pick="d1"]')); await wait(5); click(q('#rv2-doAssign')); await wait(10);
+  const avJ = V2()._avisos().filter((x) => x.k === 'drv');
+  t('si igual se la da a Jorge: Avisos «Jorge Pérez no alcanza a llegar a la vuelta de las … de V-02» con la hora y los minutos, y «Cambiar» abre esa vuelta',
+    avJ.length === 1 && /<b>Jorge Pérez<\/b> no alcanza a llegar a la vuelta de las \d\d:\d\d de V-02/.test(avJ[0].html) && avJ[0].html.includes(`llegaría a las ${hm(lJ)}, ${tJ} min tarde`) && avJ[0].act.includes(`data-id="${LH}"`), JSON.stringify(avJ));
+  click(q('#rv2-toast [data-act="undo"]')); await wait(10);
+  click(q(`#routes-v2 [data-act="assign"][data-id="${LH}"]`)); await wait(10);
+  click(q('#rv2-sheet [data-pick="d3"]')); await wait(5); click(q('#rv2-doAssign')); await wait(10);
+  const avC = V2()._avisos().filter((x) => x.k === 'drv');
+  t('si se la da a Carlos (ocupado): «Carlos Mejía tiene dos vueltas a la vez» con las dos horas', avC.length === 1 && /<b>Carlos Mejía<\/b> tiene dos vueltas a la vez<small>V-02 de las \d\d:\d\d \(hasta las \d\d:\d\d\) y V-03 de las \d\d:\d\d/.test(avC[0].html), JSON.stringify(avC));
+  t('…aunque la otra (la de V-03) ya va en curso, el botón abre la que se puede cambiar', V2().dia().byId[laneDe('P')].fija === 'in_progress' && avC.length === 1 && avC[0].act.includes(`data-id="${LH}"`), avC[0] && avC[0].act);
+  click(q('#rv2-toast [data-act="undo"]')); await wait(10);
+  t('deshacer quita el aviso', !V2()._avisos().some((x) => x.k === 'drv'));
+  t('sin errores de consola (conductor de una vuelta)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+{
+  // El caso del lunes 26-oct: plan publicado con las horas del jefe. Luis deja a
+  // H/G en JMC y la vuelta siguiente de su carro recoge lejos MUY poco después;
+  // el carro «está libre» antes de esa hora (JMC + TURNAROUND), así que el
+  // tablero no decía nada. Ahora sale en Avisos.
+  const b = await boot({ horas: { 'ra-6': { start: '07:40', etas: { M: '07:40' } } } });
+  const { T, V2 } = b;
+  const rt = T().rt;
+  const laneDe = (k) => Object.keys(rt.order).find((l) => rt.order[l].includes('r' + k));
+  const rH = V2().dia().byId[laneDe('H')], rM = V2().dia().byId[laneDe('M')];
+  const hm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const libre = rH.arrival + rt.TURNAROUND;
+  t('la vuelta de M quedó con la hora del jefe (07:40) y el carro está libre antes (sin choque del tablero)', rM.stops[0].time === 460 && libre <= 460 && !rM.retraso, JSON.stringify([hm(rM.stops[0].time), hm(libre), rM.retraso]));
+  const av = V2()._avisos().filter((x) => x.k === 'drv');
+  t('Avisos: «Luis Arango no alcanza a llegar a la vuelta de las 07:40 de V-02» (termina la de las 06:55 en JMC)', av.length === 1 && /<b>Luis Arango<\/b> no alcanza a llegar a la vuelta de las 07:40 de V-02<small>Termina la de las 06:55 en JMC a las 07:23/.test(av[0].html), JSON.stringify(av.map((x) => x.html)));
+  t('sin errores de consola (horas del jefe)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+{
+  // Un plan publicado con DOS conductores en el mismo carro y turno (la vuelta de
+  // M con Carlos): al abrir el día se respeta, y re-publicar no se lo cambia.
+  const b = await boot();
+  const { w, T, V2 } = b;
+  const vs = w.RV2Fixture.vueltas();
+  const vM = vs.find((v) => v.pendientes.some((s) => s.rid === 'res-M'));
+  vM.driverProfileId = 'd3'; vM.conductor = 'Carlos Mejía';
+  const vH = vs.find((v) => v.pendientes.some((s) => s.rid === 'res-H'));
+  vH.driverProfileId = null; vH.conductor = 'Sin conductor'; vH.status = 'draft';
+  w.Api.getPublishedPlan = async () => ({ vueltas: vs, publicado: true });
+  await V2().cargarDia(T().rt.day); await wait(30);
+  const rt = T().rt;
+  const laneDe = (k) => Object.keys(rt.order).find((l) => rt.order[l].includes('r' + k));
+  const r = (k) => V2().dia().byId[laneDe(k)];
+  t('al abrir el día: V-02 AM es de Luis, la vuelta de M vuelve con Carlos y la de H/G sin conductor', rt.cars.find((c) => c.id === 'V-02').driverAM === 'd2' && r('M').driverId === 'd3' && r('M').propio && r('H').driverId === null && r('H').propio && r('E').driverId === 'd2' && !r('E').propio,
+    JSON.stringify(['E', 'H', 'M'].map((k) => [r(k).driverId, r(k).propio])));
+  const n0 = b.confirms.length;
+  await V2().cambiarDia(1); await wait(20);
+  t('recién abierto no cuenta como cambio sin publicar (cambiar de día no pregunta)', b.confirms.length === n0, b.confirms.slice(n0).join(' | '));
+  t('sin errores de consola (rearmar con conductor propio)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: layout real (puntos de quiebre, cajón, tarjetas, barra fija del celular: ver _capturas-rutas-v2.mjs y revisar en un teléfono), la base real (RLS, saveRoutePlan/getPublishedPlan en producción), TomTom/OSRM reales, el mapa Leaflet real, el push real y el módulo de WhatsApp.');
 process.exit(bad ? 1 : 0);
