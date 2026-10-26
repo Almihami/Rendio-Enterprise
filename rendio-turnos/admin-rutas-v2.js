@@ -359,7 +359,7 @@
   //     cada opción en ese mismo mapa.
   // El motor (tiempos, simular, sugerencia, publicar, deshacer) es el de arriba.
   // Prototipo aprobado: Visual/prototipo-asignacion-simple-2026-10-14.
-  const ui = { q: '', sel: null, moving: null, todas: false, cargando: false, dia: null, publicando: false, optimizando: false, drag: null };
+  const ui = { q: '', sel: null, moving: null, todas: false, cargando: false, dia: null, publicando: false, optimizando: false, drag: null, verHechas: false };
   const hist = [];
   let D = null;           // último «día» armado
   let bound = false;
@@ -677,11 +677,29 @@
       `<small>${esc(que)}. De 00:00 a ${rtHHc()} también son de este turno PM, pero se planean y publican en el día siguiente.</small></div>` +
       `<button class="rv2-btn rv2-btn--sm" data-act="nav" data-dir="1">Ver la madrugada</button></div>`;
   }
+  // Lista de los jefes (26-oct-2026): «a medida que se vayan terminando los
+  // servicios que los quite del listado del día, para así tener mejor
+  // visualización». Las terminadas (verdes o rojas) salen de la lista y quedan
+  // en un renglón al final que las muestra si se toca; las que pasaron su hora
+  // SIN marcar se quedan arriba, porque piden que alguien mire. Buscando a
+  // alguien se ven todas: la búsqueda tiene que encontrarlo aunque ya llegó.
+  function hechasHTML(hechas) {
+    if (!hechas.length) return '';
+    const malas = hechas.filter((r) => finFila(r) === 'bad').length;
+    return `<div class="rv2-hechas"><button class="rv2-hechas-b" data-act="hechas" aria-expanded="${ui.verHechas}">` +
+      `<b>✓ ${plural(hechas.length, 'vuelta terminada', 'vueltas terminadas')}</b>` +
+      `<small>${malas ? `${plural(malas, 'con novedad', 'con novedad')} · ` : ''}${ui.verHechas ? 'Ocultar' : 'Ver'}</small></button>` +
+      (ui.verHechas ? horasHTML(hechas) : '') + '</div>';
+  }
   function renderList() {
     const vacio = emptyHTML();
     if (vacio) { el.list.innerHTML = vacio + (ui.cargando ? '' : madSigHTML()); return; }
-    const rows = D.routes.filter(matchesQ);
-    if (!rows.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
+    const todas = D.routes.filter(matchesQ);
+    if (!todas.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
+    const buscando = !!(ui.q && ui.q.trim());
+    const hechas = buscando ? [] : todas.filter((r) => r.fija === 'completed');
+    const rows = todas.filter((r) => !hechas.includes(r));
+    if (!rows.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Ya terminaron todas las vueltas de ${esc(dayLabel(rt.day || ui.dia).toLowerCase())}</b>Quedan abajo, por si quieres revisarlas.</div>` + hechasHTML(hechas) + madSigHTML(); return; }
     const mad = rows.filter((r) => r.shift === 'mad'), resto = rows.filter((r) => r.shift !== 'mad');
     let html = '';
     if (mad.length) {
@@ -690,7 +708,7 @@
         horasHTML(mad) + '</section>';
       if (resto.length) html += `<div class="rv2-dayh">${esc(dayLabel(rt.day || ui.dia))} · desde las ${rtHHc()}</div>`;
     }
-    el.list.innerHTML = html + horasHTML(resto) + madSigHTML();
+    el.list.innerHTML = html + horasHTML(resto) + hechasHTML(hechas) + madSigHTML();
   }
 
   // Estado del vuelo (0099). Apagado o sin dato → nada (sin inventar).
@@ -1379,8 +1397,11 @@
   // primera del día): el mapa nunca queda vacío.
   function autoSelect() {
     if (esCajon() || ui.sel || !D) return;
-    const first = D.routes.filter((r) => r.status === 'risk').sort((a, b) => a.arrival - b.arrival)[0]
-      || D.routes.slice().sort((a, b) => a.pickup - b.pickup)[0];
+    // Las terminadas van recogidas al final: se abre la primera que todavía falta.
+    const vivas = D.routes.filter((r) => r.fija !== 'completed');
+    const base = vivas.length ? vivas : D.routes;
+    const first = base.filter((r) => r.status === 'risk').sort((a, b) => a.arrival - b.arrival)[0]
+      || base.slice().sort((a, b) => a.pickup - b.pickup)[0];
     if (first) select(first.id, { open: false });
   }
 
@@ -1730,6 +1751,7 @@
         if (box && box.scrollIntoView) box.scrollIntoView({ block: 'start', behavior: 'smooth' });
         return;
       }
+      if (a === 'hechas') { ui.verHechas = !ui.verHechas; return renderList(); }
       if (a === 'nav') return cambiarDia(Number(act.dataset.dir) || 0);
       if (a === 'vista') return aVista(act.dataset.v);
       return;

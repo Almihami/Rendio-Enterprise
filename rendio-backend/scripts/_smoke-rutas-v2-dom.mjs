@@ -226,7 +226,19 @@ console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vue
   t('turno por la hora de la vuelta (AM 02:30–14:00, PM después)', b.rutaDe('V-01·V2').shift === 'am' && b.rutaDe('V-01·V3').shift === 'pm');
   t('la vuelta terminada no es un aviso', b.rutaDe('V-01·V1').fija === 'completed' && b.rutaDe('V-01·V1').status === 'ok');
   const horas = qa('#rv2-list .rv2-hour strong').map((x) => txt(x).slice(0, 2));
-  t('vueltas agrupadas por hora de llegada a JMC / aterrizaje: 04,05,06,07,08,11,15,16 — TODAS a la vista (9)', horas.join(',') === '04,05,06,07,08,11,15,16' && rows().length === 9, horas.join(',') + ' / ' + rows().length);
+  // Lista de los jefes (26-oct): las terminadas se recogen al final.
+  t('vueltas agrupadas por hora de llegada a JMC / aterrizaje: 05,06,07,08,11,15,16 — las 8 que faltan a la vista; la terminada (04) recogida', horas.join(',') === '05,06,07,08,11,15,16' && rows().length === 8 && !rowIds().includes('V-01·V1'), horas.join(',') + ' / ' + rows().length);
+  const hb = q('#rv2-list .rv2-hechas-b');
+  t('al final: «✓ 1 vuelta terminada · Ver» (cerrado)', hb && /✓ 1 vuelta terminada/.test(txt(hb)) && /Ver/.test(txt(hb)) && hb.getAttribute('aria-expanded') === 'false', hb && txt(hb));
+  b.click(hb); await wait(5);
+  t('al tocarlo se ven las terminadas (la de las 04) y dice «Ocultar»', rowIds().includes('V-01·V1') && rows().length === 9 && /Ocultar/.test(txt(q('#rv2-list .rv2-hechas-b'))) && /Terminada/.test(txt(rows().find((x) => x.dataset.id === 'V-01·V1'))));
+  b.click(q('#rv2-list .rv2-hechas-b')); await wait(5);
+  t('…y al tocarlo otra vez se recogen', !rowIds().includes('V-01·V1') && rows().length === 8);
+  const nomHecha = (rt.aux[b.rutaDe('V-01·V1').stops[0].crewId] || {}).n || '';
+  type(q('#rv2-q'), nomHecha); await wait(160);
+  t('buscando a alguien de una terminada, sale (la búsqueda la encuentra)', rowIds().includes('V-01·V1') && !q('#rv2-list .rv2-hechas-b'), nomHecha + ' → ' + rowIds().join(','));
+  type(q('#rv2-q'), ''); await wait(160);
+  t('al abrir el día se elige la primera que falta, no la terminada', V2()._ui.sel !== 'V-01·V1', V2()._ui.sel);
   t('encabezado con aviso: «06:00 – 07:00 · 1 vuelta · 1 con aviso»', /06:00 – 07:00 · 1 vuelta · 1 con aviso/.test(txt(qa('#rv2-list .rv2-hour').find((h) => /^06/.test(txt(h))))));
   const row = rows().find((x) => x.dataset.id === 'V-02·V2');
   t('la fila: horas, «Recoge → llega a JMC», tipo, carro, conductor y los tripulantes por nombre',
@@ -240,7 +252,9 @@ console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vue
   const lle = rows().find((x) => x.dataset.id === 'V-01·V3');
   t('llegada: «15:00 → …» (aterriza → última entrega) y el conductor puesto solo', /^15:00 → \d\d:\d\d$/.test(txt(lle.querySelector('.when b'))) && /Aterriza → última entrega/.test(txt(lle)) && txt(lle.querySelector('.l1 .drv')) === 'Rubén Díaz');
   t('cada tripulante se puede arrastrar (draggable) o tocar para moverlo', tarde.querySelectorAll('.rv2-p[draggable="true"][data-drag][data-act="move"]').length === 2);
+  b.click(q('#rv2-list .rv2-hechas-b')); await wait(5);   // las terminadas, a la vista
   t('…menos los de una vuelta terminada', [...rows().find((x) => x.dataset.id === 'V-01·V1').querySelectorAll('.rv2-p')].every((p) => p.disabled && !p.getAttribute('draggable')));
+  b.click(q('#rv2-list .rv2-hechas-b')); await wait(5);
   // Búsqueda
   type(q('#rv2-q'), 'jose nanez'); await wait(160);
   t('búsqueda sin tildes: «jose nanez» encuentra a José Ñáñez (V-01·V2)', rowIds().join(',') === 'V-01·V2', rowIds().join(','));
@@ -298,6 +312,7 @@ console.log('\n── B · detalle con mapa, sugerencia, aplicar y deshacer ─�
   click(q('.rv2-row[data-id="V-03·V1"]'));
   const liP = q('#rv2-detail .rv2-stops li');
   t('vuelta en curso: la parada atendida no se puede mover («ya atendido»)', /en curso/.test(txt(q('#rv2-detail .rv2-dhead p'))) && liP.querySelector('.rv2-mv').disabled && /ya atendido/.test(txt(liP)) && q('.rv2-row[data-id="V-03·V1"] .rv2-p').disabled);
+  click(q('#rv2-list .rv2-hechas-b'));   // la terminada está recogida al final
   click(q('.rv2-row[data-id="V-01·V1"]'));
   t('vuelta terminada: «Terminada · el conductor ya la cerró» y nadie se mueve', /Terminada/.test(txt(q('#rv2-detail .rv2-alert'))) && qa('#rv2-detail .rv2-mv').every((x) => x.disabled));
   t('sin errores de script', b.errors.length === 0, b.errors.join(' | '));
@@ -485,14 +500,15 @@ console.log('\n── F · teclado, WhatsApp, llegadas en el detalle ──');
   key('Escape', q('#rv2-q'));
   t('Esc en el buscador lo limpia', q('#rv2-q').value === '' && V2()._ui.q === '');
   const first = q('.rv2-row'); click(first); first.focus();
-  t('(la primera fila es la de V-01·V1)', first.dataset.id === 'V-01·V1' && V2()._ui.sel === 'V-01·V1');
+  const f0 = first.dataset.id;
+  t('(la primera fila es la primera que falta, no la terminada V-01·V1)', f0 && f0 !== 'V-01·V1' && V2()._ui.sel === f0, f0);
   key('ArrowDown', first);
   const sel1 = V2()._ui.sel;
-  t('↓ recorre las filas y actualiza el detalle', sel1 && sel1 !== 'V-01·V1' && w.document.activeElement.dataset.id === sel1, sel1);
+  t('↓ recorre las filas y actualiza el detalle', sel1 && sel1 !== f0 && w.document.activeElement.dataset.id === sel1, sel1);
   key('ArrowUp', w.document.activeElement);
-  t('↑ vuelve', V2()._ui.sel === 'V-01·V1');
+  t('↑ vuelve', V2()._ui.sel === f0);
   key('Enter', w.document.activeElement);
-  t('Enter en una fila la abre', V2()._ui.sel === 'V-01·V1');
+  t('Enter en una fila la abre', V2()._ui.sel === f0);
   click(q('.rv2-row[data-id="V-01·V2"]'));
   click(q('#rv2-detail .rv2-stops [data-act="move"][data-crew="rC"]'));
   key('Escape', w.document.body);
