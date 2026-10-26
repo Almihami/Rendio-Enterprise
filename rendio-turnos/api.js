@@ -4244,6 +4244,25 @@
     }
     return data;
   }
+  // 0129: el jefe cambia el conductor de UNA vuelta ya publicada (o la deja sin
+  // conductor) sin re-publicar el día. Recibe el id de PERFIL del conductor (el
+  // que usa el tablero) o null. La base avisa al nuevo, al anterior y a sus
+  // tripulantes, y pone la placa del turno del nuevo (0124).
+  async function setVueltaDriver(routeId, driverProfileId) {
+    let dp = null;
+    if (driverProfileId) {
+      const { data: d, error: e1 } = await sb.from('driver_profiles').select('id').eq('profile_id', driverProfileId).limit(1);
+      if (e1) throw e1;
+      dp = d && d[0] ? d[0].id : null;
+      if (!dp) throw new Error('Ese conductor no tiene perfil de conductor.');
+    }
+    const { data, error } = await sb.rpc('admin_route_set_driver', { p_route: routeId, p_driver: dp });
+    if (error) {
+      if (error.code === '42883' || error.code === 'PGRST202' || /admin_route_set_driver/.test(error.message || '')) throw new Error('Para publicar una sola vuelta falta la actualización 0129 de la base.');
+      throw error;
+    }
+    return data;
+  }
   async function driverReleaseRoute(routeId) {
     const { data, error } = await sb.rpc('driver_release_route', { p_route: routeId });
     if (error) throw error;
@@ -4251,7 +4270,7 @@
   }
 
   window.Api = {
-    adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated,
+    adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,

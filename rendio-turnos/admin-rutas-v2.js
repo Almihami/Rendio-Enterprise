@@ -1176,31 +1176,78 @@
     if (!r.delegada) extra.push(`<button class="rv2-opt rv2-opt--deleg" role="radio" aria-checked="false" data-pick="__deleg"><span class="t"><b>Delegar esta vuelta</b></span><small>La hace alguien de afuera (tu carro, un Uber). Ningún conductor la ve; al publicar, al tripulante le llega «Tu servicio fue delegado, te contactaremos por WhatsApp».</small></button>`);
     if (cur) extra.push(`<button class="rv2-opt rv2-opt--drop" role="radio" aria-checked="false" data-pick="__none"><span class="t"><b>Quitar el conductor de esta vuelta</b></span><small>Queda sin conductor y nadie la ve hasta que le pongas uno.</small></button>`);
     let sel = null;
+    // 0129: una vuelta ya publicada que no ha arrancado se puede publicar sola.
+    const lane = rtLaneOf(r.id);
+    const sePublica = (p) => !!(lane && lane.raId && !r.fija && rt.source === 'live' && window.Api && Api.setVueltaDriver
+      && !(p === '__deleg' && lane.raStatus !== 'planned'));
+    const conPub = sePublica(null);
     openSheet(sheetHead('Conductor de esta vuelta', `${esc(r.vehicle)} · ${esc(TYPE[r.type])} de las ${hhmm(inicioDe(r).at)}${r.delegada ? ' · hoy está delegada' : ''} · solo cambia esta vuelta: las demás y sus horas quedan igual`) +
       `<div class="rv2-sh-body"><h3 class="rv2-cap">${esc(nota)}</h3><div id="rv2-dopts" role="radiogroup" aria-label="Conductor de esta vuelta" style="display:flex;flex-direction:column;gap:8px">` +
       (pool.length ? pool.map((d) => opt(d, false)).join('') : `<p class="rv2-impact">Nadie en turno ${esc(turno)} ese día en el horario publicado. Puedes elegir otro conductor abajo.</p>`) +
       (cargado && otros.length ? `<h3 class="rv2-cap" style="margin-top:6px">Otros conductores</h3>` + otros.map((d) => opt(d, true)).join('') : '') +
       (extra.length ? `<h3 class="rv2-cap" style="margin-top:6px">O bien</h3>` + extra.join('') : '') +
-      `</div><button class="rv2-linkbtn rv2-linkbtn--ink" data-act="assignslot" data-car="${esc(r.vehicle)}" data-shift="${esc(r.shift)}">Cambiar el conductor de todas las vueltas de ${esc(r.vehicle)} en el turno ${esc(turno)}</button></div>` +
-      `<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button><button class="rv2-btn rv2-btn--cta" id="rv2-doAssign" disabled>Elige un conductor</button></div>`);
+      `</div><button class="rv2-linkbtn rv2-linkbtn--ink" data-act="assignslot" data-car="${esc(r.vehicle)}" data-shift="${esc(r.shift)}">Cambiar el conductor de todas las vueltas de ${esc(r.vehicle)} en el turno ${esc(turno)}</button>` +
+      (conPub ? `<p class="rv2-impact rv2-pubone">«Guardar y publicar» cambia solo esta vuelta en la app y avisa al conductor nuevo, al que la tenía y a sus tripulantes. El resto del día no se toca.</p>` : '') +
+      `</div>` +
+      `<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button>` +
+      (conPub
+        ? `<button class="rv2-btn" id="rv2-doAssign" disabled>Solo en el tablero</button><button class="rv2-btn rv2-btn--cta" id="rv2-doPub" disabled>Elige un conductor</button>`
+        : `<button class="rv2-btn rv2-btn--cta" id="rv2-doAssign" disabled>Elige un conductor</button>`) + `</div>`);
     setLabel();
-    const btn = $('#rv2-doAssign');
+    const btn = $('#rv2-doAssign'), pub = $('#rv2-doPub');
     $('#rv2-dopts').addEventListener('click', (e) => {
       const b = e.target.closest('[data-pick]'); if (!b || b.disabled) return; sel = b.dataset.pick;
       $$('#rv2-dopts [data-pick]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.pick === sel)));
       btn.disabled = !sel;
-      btn.textContent = sel === '__none' ? 'Quitar de esta vuelta' : sel === '__deleg' ? 'Delegar esta vuelta' : 'Asignar a esta vuelta';
+      if (pub) {
+        pub.disabled = !sel || !sePublica(sel);
+        pub.textContent = !sel ? 'Elige un conductor' : sePublica(sel) ? 'Guardar y publicar' : 'Delegar: publica el plan';
+      } else btn.textContent = sel === '__none' ? 'Quitar de esta vuelta' : sel === '__deleg' ? 'Delegar esta vuelta' : 'Asignar a esta vuelta';
     });
     btn.addEventListener('click', () => { if (!sel) return; const s = sel; closeSheet(); setVueltaDriver(r.id, s); });
+    if (pub) pub.addEventListener('click', () => { if (!sel || !sePublica(sel)) return; const s = sel; closeSheet(); publicarVuelta(r.id, s); });
+  }
+  // 0129: «Guardar y publicar» desde la hoja de la vuelta. Cambia SOLO esa fila en
+  // la base (admin_route_set_driver, o admin_route_set_delegated para delegar) y
+  // después el tablero. Si el día estaba publicado sin otros cambios, sigue
+  // publicado; si había otros cambios pendientes, esos siguen pendientes.
+  let publicandoVuelta = false;
+  async function publicarVuelta(laneId, pick) {
+    const lane = rtLaneOf(laneId); if (!lane || !lane.raId || publicandoVuelta) return;
+    const car = rt.cars.find((c) => c.id === lane.car);
+    const delCarro = car ? rtCarDrv(car, rtBandOf(lane)) : null;
+    const limpio = publicado() && firmaActual() === rt.firmaPublicada;
+    publicandoVuelta = true;
+    toast('Publicando esta vuelta…');
+    try {
+      let resp;
+      if (pick === '__deleg') resp = await Api.setRouteDelegated(lane.raId, true);
+      else resp = await Api.setVueltaDriver(lane.raId, pick === '__none' ? null : pick === '__carro' ? delCarro : pick);
+      const msg = setVueltaDriver(laneId, pick, true);
+      if (resp && resp.status) lane.raStatus = resp.status;
+      if (limpio) rt.firmaPublicada = firmaActual();
+      // «Deshacer» volvería el tablero a una foto con el conductor anterior y la
+      // base ya tiene el nuevo: al re-publicar se desharía a escondidas. Lo
+      // publicado se corrige con otro cambio, no con Deshacer.
+      hist.length = 0;
+      render();
+      const n = resp && typeof resp.notified === 'number' ? resp.notified : 0;
+      const base = msg.replace(/ · (las demás no cambian|al publicar se le avisa al tripulante)$/, '');
+      toast(resp && resp.unchanged ? `Ya estaba así en la app: ${base}.`
+        : `Publicado: ${base}${n ? ` · se avisó a ${plural(n, 'tripulante', 'tripulantes')}` : ''}. El resto del día no se tocó.`, true);
+    } catch (e) {
+      toast('No se pudo publicar esta vuelta: ' + ((e && e.message) || 'error') + '. No cambió nada.');
+    } finally { publicandoVuelta = false; }
   }
   // Pone (o quita) el conductor de UNA vuelta. No re-encadena ni re-programa
   // nada: las otras vueltas y las horas de todas quedan como estaban.
-  function setVueltaDriver(laneId, pick) {
-    const lane = rtLaneOf(laneId); if (!lane) return;
+  function setVueltaDriver(laneId, pick, callado) {
+    const lane = rtLaneOf(laneId); if (!lane) return '';
     const r = D.byId[laneId];
     const car = rt.cars.find((c) => c.id === lane.car);
     const delCarro = car ? rtCarDrv(car, rtBandOf(lane)) : null;
-    snapshot('conductor de una vuelta');
+    // Lo publicado ya está en la base: «Deshacer» no lo devolvería (ver publicarVuelta).
+    if (!callado) snapshot('conductor de una vuelta');
     const cual = `la vuelta de las ${hhmm(r ? inicioDe(r).at : rtToMin(lane.start))} de ${lane.car}`;
     let msg;
     delete lane.deleg;
@@ -1208,7 +1255,9 @@
     else if (pick === '__none') { lane.drv = false; msg = `${cual} quedó sin conductor · las demás no cambian`; }
     else if (pick === '__deleg') { lane.drv = false; lane.deleg = true; msg = `${cual} queda delegada · al publicar se le avisa al tripulante`; }
     else { if (pick === delCarro) delete lane.drv; else lane.drv = pick; msg = `${conductor(pick).name} hace ${cual} · las demás no cambian`; }
+    if (callado) return msg;
     commit(msg.charAt(0).toUpperCase() + msg.slice(1));
+    return msg;
   }
   function openAssignSlot(carId, shift) {
     const car = rt.cars.find((c) => c.id === carId); if (!car) return;
@@ -1432,6 +1481,8 @@
       (v.atendidas || []).forEach((s) => { const k = porReserva[s.rid]; if (k) atendidas[k] = s.status; });
       const n = (nCarro[car.id] || 0) + 1; nCarro[car.id] = n;
       const lane = { id: `${car.id}·V${n}`, car: car.id, vuelta: n, type: v.type === 'lle' ? 'lle' : 'sal', start: hm(v.startAt), origin: null };
+      // 0129: la fila publicada de esta vuelta, para «Guardar y publicar» solo ella.
+      lane.raId = v.id; lane.raStatus = v.status;
       if (lane.type === 'lle') { lane.origin = 'airport'; lane.landing = rtToHM(horaVuelta(ids)); }
       lanes.push(lane); order[lane.id] = ids;
       guardado[lane.id] = v.delegated ? 'deleg' : (v.driverProfileId || null);
