@@ -54,6 +54,16 @@
 
 BEGIN;
 
+-- La hora corta de los avisos (0125) dejaba la medianoche como «:00» y las
+-- 12:35 a. m. como «:35» (le quitaba TODOS los ceros de adelante): ahora «0:00».
+CREATE OR REPLACE FUNCTION public.hm_bog(p timestamptz)
+RETURNS text
+LANGUAGE sql IMMUTABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT CASE WHEN p IS NULL THEN NULL ELSE regexp_replace(to_char(p AT TIME ZONE 'America/Bogota', 'HH24:MI'), '^0([0-9]:)', '\1') END;
+$$;
+
 -- -----------------------------------------------------------------------------
 -- 1a. Minutos de manejo entre dos puntos. Mismo conjunto o JMC→JMC = 0.
 -- -----------------------------------------------------------------------------

@@ -11,7 +11,7 @@
 //
 // ANTES comprueba que la base tiene 0134 y que las tres funciones que 0135
 // reemplaza (reubicar_reserva, reub_candidatas, auxiliar_change_flight) son
-// EXACTAMENTE las del archivo 0134 (huella md5 del cuerpo). Si alguien las
+// EXACTAMENTE las del archivo 0134, y hm_bog la de 0125 (huella md5 del cuerpo). Si alguien las
 // cambió, no aplica.
 //
 // Después comprueba que aplicar no mueve nada (paradas, reservas, vueltas, avisos
@@ -65,6 +65,7 @@ const ESPERADAS = {
   reubicar_reserva: md5(cuerpo(F0134, 'reubicar_reserva')),
   reub_candidatas: md5(cuerpo(F0134, 'reub_candidatas')),
   auxiliar_change_flight: md5(cuerpo(F0134, 'auxiliar_change_flight')),
+  hm_bog: md5(cuerpo('0125_ruta_de_julian.sql', 'hm_bog')),
 };
 const huellasDB = async () => Object.fromEntries((await q(`SELECT p.proname, md5(p.prosrc) h FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public' AND p.proname = ANY ($1)`, [Object.keys(ESPERADAS)])).map((r) => [r.proname, r.h]));
@@ -94,7 +95,7 @@ try {
   else {
     const hoy = await huellasDB();
     const distintas = Object.keys(ESPERADAS).filter((f) => hoy[f] !== ESPERADAS[f]);
-    t('reubicar_reserva, reub_candidatas y auxiliar_change_flight son las de 0134 (nadie las cambió)', distintas.length === 0, distintas.map((f) => `${f}: base ${hoy[f]} ≠ archivo ${ESPERADAS[f]}`).join(' · '));
+    t('reubicar_reserva, reub_candidatas y auxiliar_change_flight son las de 0134, y hm_bog la de 0125 (nadie las cambió)', distintas.length === 0, distintas.map((f) => `${f}: base ${hoy[f]} ≠ archivo ${ESPERADAS[f]}`).join(' · '));
     if (fallas.length) throw new Error('alguien cambió esas funciones: hay que volver a copiarlas en 0135');
   }
 
