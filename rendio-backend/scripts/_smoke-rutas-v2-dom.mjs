@@ -1175,6 +1175,59 @@ console.log('\n── 26-oct · 0132: «¿Qué carro es Carro 1?» (el carro de 
   t('sin errores de consola (0132)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio de vuelo) ──');
+{
+  // El día es del tablero; el sistema creó una vuelta para tomar para Felipe (M)
+  // porque cambió de vuelo y no cabía en otra. NO debe pasar el día a «ruta de
+  // Julián», ni volver a rutear a Felipe en el tablero.
+  const b = await boot();
+  const { w, q, T, V2 } = b;
+  const vs = w.RV2Fixture.vueltas().filter((v) => !v.pendientes.some((x) => x.rid === 'res-M'));
+  const DAY = w.RV2Fixture.DAY;
+  vs.push({ id: 'ra-sola', type: 'sal', status: 'planned', startAt: `${DAY}T09:40:00-05:00`, pool: true, autoCreated: true, manualDay: DAY,
+    vehicleId: null, planCar: null, carro: 'Carro', placa: null, cap: 4, driverProfileId: null, conductor: 'Sin conductor', delegated: false,
+    pendientes: [{ stopId: 'st-sola', rid: 'res-M', order: 1, status: 'pending', etaAt: `${DAY}T09:40:00-05:00`, name: 'Felipe Vélez' }], atendidas: [] });
+  w.Api.getPublishedPlan = async () => ({ vueltas: vs, publicado: true });
+  await V2().cargarDia(T().rt.day); await wait(30);
+  const rt = T().rt;
+  t('el día sigue siendo del tablero (no «ruta de Julián»)', rt.manualDia === false && !q('#rv2-list .rj-dia') && q('#rv2-list .rv2-row'), String(rt.manualDia));
+  t('Felipe no queda «sin carro» en el tablero (ya va en su vuelta para tomar)', !rt.aux.rM && !(rt.pool || []).includes('rM') && !Object.values(rt.order).some((ids) => ids.includes('rM')));
+  const nota = q('#rv2-list .rv2-solas');
+  t('arriba de la lista: «1 vuelta para tomar que armó el sistema · 09:40 Salida · Felipe · sin tomar»', !!nota && /1 vuelta para tomar que armó el sistema/.test(txt(nota)) && /09:40 Salida · Felipe · sin tomar/.test(txt(nota)) && /cambió de vuelo/.test(txt(nota)), txt(nota));
+  t('sin errores de consola (vuelta armada sola)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+{
+  // api.js de verdad: publicar el tablero no vuelve a meter a quien ya va en una
+  // vuelta para tomar (aunque la pantalla estuviera abierta desde antes).
+  const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'http://localhost/' });
+  const w = dom.window; const ins = [];
+  const bld = (name) => {
+    const st = { name, op: null, payload: null, sel: '' };
+    const b2 = {
+      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
+      delete() { st.op = 'delete'; return b2; },
+      insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
+      single() { return b2; }, maybeSingle() { return b2; },
+      then(ok2, ko) {
+        let r = { data: [], error: null };
+        if (st.op === 'insert') { ins.push([name, st.payload]); r = { data: name === 'route_assignments' ? { id: 'ra-' + ins.length } : null, error: null }; }
+        else if (name === 'route_assignments' && st.op !== 'delete' && /route_stops\(id, reservation_id, status\)/.test(st.sel)) {
+          r = { data: [{ id: 'pool-1', status: 'planned', pool: true, driver_profile_id: null, delegated_at: null, driver_profiles: null, route_stops: [{ id: 'st-p', reservation_id: 'res-M', status: 'pending' }] }], error: null };
+        } else if (name === 'driver_profiles') r = { data: [{ id: 'dp-1', profile_id: 'd1' }], error: null };
+        return Promise.resolve(r).then(ok2, ko);
+      },
+    };
+    return b2;
+  };
+  w.sb = { from: bld, auth: { getUser: async () => ({ data: { user: null } }), getSession: async () => ({ data: { session: null } }) } };
+  w.RENDIO_CONFIG = {};
+  w.eval(read('api.js'));
+  const r = await w.Api.saveRoutePlan('2026-10-26', [{ vehicleId: null, planCar: 'Carro 1', driverProfileId: 'd1', type: 'sal', startAt: '2026-10-26T10:00:00-05:00', stops: ['res-M', 'res-N'], etas: {} }]);
+  const st = ins.filter((x) => x[0] === 'route_stops').flatMap((x) => x[1]);
+  t('0134 · publicar con la pantalla vieja: a Felipe (ya en una vuelta para tomar) no lo vuelve a meter; a Manuela sí', st.length === 1 && st[0].reservation_id === 'res-N' && r.kept === 1, JSON.stringify([r, st]));
+}
+
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: layout real (puntos de quiebre, cajón, tarjetas, barra fija del celular: ver _capturas-rutas-v2.mjs y revisar en un teléfono), la base real (RLS, saveRoutePlan/getPublishedPlan en producción), TomTom/OSRM reales, el mapa Leaflet real, el push real y el módulo de WhatsApp.');
 process.exit(bad ? 1 : 0);

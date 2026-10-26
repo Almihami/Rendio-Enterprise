@@ -3461,12 +3461,15 @@
     const prevDelegName = {};       // 0131: y a quién
     const movableInProgress = [];   // route_stops.id pendientes de rutas ya arrancadas
     const arrancadas = new Set();   // route_assignments.id que NO se borran
+    const enPool = new Set();       // 0134: reservas que ya van en una vuelta para tomar
     {
       const leerPlan = (extra) => sb.from('route_assignments')
         .select('id, status, driver_profile_id, ' + extra + 'driver_profiles(profile_id), route_stops(id, reservation_id, status)')
         .gte('planned_start_at', d0).lte('planned_start_at', d1);
       // 0131: + a quién se delegó (si cambia, se le avisa al tripulante).
-      let { data, error } = await leerPlan('delegated_at, delegate_name, ');
+      // 0134: + pool, para no volver a meter a quien ya va en una vuelta para tomar.
+      let { data, error } = await leerPlan('pool, delegated_at, delegate_name, ');
+      if (error && (error.code === '42703' || /pool/.test(error.message || ''))) ({ data, error } = await leerPlan('delegated_at, delegate_name, '));
       if (error && (error.code === '42703' || /delegate_name/.test(error.message || ''))) ({ data, error } = await leerPlan('delegated_at, '));
       // Base sin 0126: se lee como antes (ninguna vuelta delegada).
       if (error && (error.code === '42703' || /delegated_at/.test(error.message || ''))) ({ data, error } = await leerPlan(''));
@@ -3478,6 +3481,9 @@
         if (arrancada || ra.status === 'completed') arrancadas.add(ra.id);
         stops.forEach(s => {
           prev[s.reservation_id] = pid;
+          // 0134: va en una vuelta para tomar (la de Julián o una que armó el sistema
+          // al cambiar de vuelo): el tablero no la vuelve a poner en otra.
+          if (ra.pool && (ra.status === 'planned' || ra.status === 'in_progress')) enPool.add(s.reservation_id);
           if (ra.delegated_at) { prevDeleg[s.reservation_id] = true; prevDelegName[s.reservation_id] = ra.delegate_name || null; }
           const atendida = s.status && s.status !== 'pending';
           if (ra.status === 'completed' || atendida) locked.add(s.reservation_id);
@@ -3529,7 +3535,7 @@
       // 0124: sin placa también: la pone el turno del conductor (la base).
       if (!lane.stops || !lane.stops.length) { skipped++; continue; }
       // Las paradas ya en curso no se re-planean: siguen donde están.
-      const stopIds = lane.stops.filter(rid => !locked.has(rid));
+      const stopIds = lane.stops.filter(rid => !locked.has(rid) && !enPool.has(rid));
       kept += lane.stops.length - stopIds.length;
       if (!stopIds.length) { skipped++; continue; }
       // 0126: la vuelta DELEGADA (la hace alguien de afuera) se publica sin
@@ -4202,8 +4208,11 @@
     const C0131 = C0126 + 'delegate_name, delegate_phone, ';
     // 0132: + el carro físico que el plan le pone a «Carro N».
     const C0132 = C0131 + 'plan_vehicle_id, ';
-    let { data, error } = await sel(C0132);
-    let cols = C0132;
+    // 0134: + auto_created (la vuelta para tomar que armó el sistema al cambiar de vuelo).
+    const C0134 = C0132 + 'auto_created, ';
+    let { data, error } = await sel(C0134);
+    let cols = C0134;
+    if (error && (error.code === '42703' || /auto_created/.test(error.message || ''))) { ({ data, error } = await sel(C0132)); cols = C0132; }
     if (error && (error.code === '42703' || /plan_vehicle_id/.test(error.message || ''))) { ({ data, error } = await sel(C0131)); cols = C0131; }
     if (error && (error.code === '42703' || /delegate_(name|phone)/.test(error.message || ''))) { ({ data, error } = await sel(C0126)); cols = C0126; }
     if (error && (error.code === '42703' || /delegated_at/.test(error.message || ''))) { ({ data, error } = await sel(C0125)); cols = C0125; }
@@ -4275,6 +4284,8 @@
         pool: ra.pool === true, deadlineAt: ra.deadline_at || null, nota: ra.manual_note || '', manualDay: ra.manual_day || null,
         // 0126: la hace alguien de afuera (sin conductor a propósito).
         delegated: !!ra.delegated_at,
+        // 0134: vuelta para tomar que armó el sistema (cambio de vuelo sin puesto).
+        autoCreated: ra.auto_created === true,
         // 0131: a quién (null = delegada sin nombre, «te contactaremos por WhatsApp»).
         delegateName: ra.delegate_name || null, delegatePhone: ra.delegate_phone || null,
         planVehicleId: ra.plan_vehicle_id || null,   // 0132

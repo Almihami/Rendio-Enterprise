@@ -219,7 +219,10 @@
   // «Cambió mi vuelo». date 'YYYY-MM-DD' y time 'HH:MM' en hora de Bogotá.
   // flight '' = en una salida se conserva el que tenía; en una llegada de
   // tierra (groundOps) no hay vuelo (0093; con 0089 sola la RPC lo rechaza).
-  // → { mode:'updated'|'needs_ops', incidentId?, requiredAt?, unchanged? }
+  // → { mode:'updated'|'needs_ops'|'reassigned', incidentId?, requiredAt?, unchanged?, reassign? }
+  // 0134: 'reassigned' = con la ruta publicada el sistema la cambió de vuelta solo
+  // (reassign.kind: 'joined' entró en otra, 'new' vuelta nueva para tomar,
+  // 'unplanned' el día aún no tiene ruta).
   async function changeFlight(reservationId, f) {
     if (!reservationId) throw new Error('Falta el traslado');
     const date = f && f.date, time = f && f.time;
@@ -239,7 +242,11 @@
     if (r.error) lanzar(r.error, 'No se pudo cambiar el vuelo');
     const d = r.data || {};
     return {
-      mode: d.mode === 'needs_ops' ? 'needs_ops' : 'updated',
+      mode: d.mode === 'needs_ops' ? 'needs_ops' : d.mode === 'reassigned' ? 'reassigned' : 'updated',
+      reassign: d.reassign && typeof d.reassign === 'object' ? {
+        kind: d.reassign.kind || 'unplanned', pickupAt: d.reassign.pickup_at || null, startAt: d.reassign.start_at || null,
+        driver: d.reassign.driver_name || '', tight: d.reassign.tight === true,
+      } : null,
       incidentId: d.incident_id || null,
       requiredAt: d.required_arrival_at || null,
       unchanged: d.unchanged === true,

@@ -271,10 +271,13 @@
     const ch = changes(t);
     const mode = ch.flightChanged && !ch.timeChanged && !ch.placeChanged ? 'updated' : predict(t);
     let txt;
-    if (mode === 'needs_ops') {
+    if (mode === 'needs_ops' && isPrivate(t)) {
       const pk = isPublished(t) ? pickupHM(t.pickupAt) : '';
       txt = pk ? `Tu recogida está a las <b>&nbsp;${esc(pk)}</b>. Coordinación la ajusta y te confirma.`
         : 'Coordinación ajusta tu recogida y te confirma.';
+    } else if (mode === 'needs_ops') {
+      // 0134: ya no espera a Coordinación: el sistema le busca puesto al enviar.
+      txt = 'Con la hora nueva te buscamos puesto y te confirmamos en el momento.';
     } else {
       txt = ch.placeChanged && !ch.timeChanged ? 'Actualizamos tu traslado.'
         : ch.flightChanged && !ch.timeChanged ? 'Actualizamos el vuelo de tu traslado.' : 'Actualizamos tu traslado con la hora nueva.';
@@ -330,8 +333,15 @@
       + `<div class="rx-flight-new rx-in" style="--d:2">${flightNewInner(t)}</div>`
       + `<div class="rx-note rx-in" style="--d:3" data-fv="note">${noteInner(t)}</div>`;
   }
+  // 0134: lo que hizo el sistema solo, en una frase (para el aviso corto).
+  function reassignToast(t, ra) {
+    const hm = ra && pickupHM(ra.pickupAt);
+    if (!ra || ra.kind === 'unplanned' || !hm) return 'Actualizamos tu traslado';
+    return isLle(t) ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
+  }
   function doneHTML() {
     const r = fv.result || {};
+    if (r.mode === 'reassigned') return reassignedHTML(r);
     const ops = r.mode === 'needs_ops';
     const u = UI();
     const chk = u && u.check ? u.check(ops ? 'info' : 'ok') : '';
@@ -352,6 +362,28 @@
     return `<div class="rx-center-in" data-fv="done" data-mode="${ops ? 'needs_ops' : 'updated'}">${chk}`
       + `<h2>${ops ? 'Coordinación ajusta tu recogida y te confirma' : 'Actualizamos tu traslado'}</h2>`
       + `<p>${esc(p)}</p></div>`;
+  }
+  // 0134: con la ruta publicada el sistema ya la reubicó: se dice dónde quedó.
+  function reassignedHTML(r) {
+    const ra = r.reassign || {};
+    const u = UI();
+    const chk = u && u.check ? u.check('ok') : '';
+    const hm = pickupHM(ra.pickupAt);
+    const lle = r.type === 'lle';
+    const quien = ra.driver ? String(ra.driver).trim().split(/\s+/)[0] : '';
+    let h2, p;
+    if (ra.kind === 'joined' && hm) {
+      h2 = lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
+      p = quien ? `Con tu hora nueva te pasamos a la vuelta de ${quien}.` : 'Con tu hora nueva te pasamos a otra vuelta. Te avisamos quién te recoge.';
+    } else if (ra.kind === 'new' && hm) {
+      h2 = lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
+      p = 'Con tu hora nueva te armamos una vuelta. Te avisamos quién te recoge.';
+    } else {
+      h2 = 'Actualizamos tu traslado';
+      p = 'Ya tiene tu hora nueva. Te avisamos cuando armemos tu ruta.';
+    }
+    if (ra.tight) p += ' Como queda muy encima de la hora, Coordinación ya está enterada.';
+    return `<div class="rx-center-in" data-fv="done" data-mode="reassigned">${chk}<h2>${esc(h2)}</h2><p>${esc(p)}</p></div>`;
   }
   function bodyInner() {
     const t = curTrip();
@@ -484,11 +516,12 @@
         if (!ops) refreshTrips();
         if (!here) {
           // Se fue de la pantalla mientras se enviaba: que igual sepa qué pasó.
-          toast(ops ? 'Coordinación ajusta tu recogida y te confirma' : 'Actualizamos tu traslado', ops ? 'Headset' : 'Check');
+          toast(ops ? 'Coordinación ajusta tu recogida y te confirma' : r.mode === 'reassigned' ? reassignToast(t, r.reassign) : 'Actualizamos tu traslado', ops ? 'Headset' : 'Check');
           return;
         }
         fv.result = {
-          mode: ops ? 'needs_ops' : 'updated', type: t.type, ground: isGround(t), date: payload.date, time: payload.time,
+          mode: ops ? 'needs_ops' : r.mode === 'reassigned' ? 'reassigned' : 'updated', reassign: r.reassign || null,
+          type: t.type, ground: isGround(t), date: payload.date, time: payload.time,
           flight: res ? '' : (payload.flight || normFlight(t.flight)), timeChanged: ch.timeChanged, flightChanged: ch.flightChanged,
           placeChanged: ch.placeChanged, place: res ? fv.place : null,
         };
