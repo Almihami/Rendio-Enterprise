@@ -155,6 +155,11 @@ try {
   const t1 = await de('entrega-tarde', jefe);
   check('a las 2:20 p. m.: al jefe marcado «⚠️ Carlos Mejía no ha marcado la entrega del carro»', t1.length === 1 && t1[0].title === '⚠️ Carlos Mejía no ha marcado la entrega del carro' && t1[0].url === '/#/operacion', t1);
   check('… y solo al marcado en Personal (Christian no)', (await de('entrega-tarde', jefe2)).length === 0);
+  // Sin destinatario: a los jefes no les llega nada (no había a quién entregar).
+  await q(`UPDATE public.shift_handovers SET manual = false, to_text = NULL WHERE from_profile = $1 AND band = 'pm'`, [MIGUEL.u]);
+  await alertas(D1, '02:20');
+  check('sin destinatario: a los jefes no les llega «no ha marcado» (no había a quién)', (await q(`SELECT 1 FROM public.notification_outbox WHERE dedupe_key LIKE $1`, ['entrega-tarde:%:pm:' + MIGUEL.u + ':%'])).length === 0);
+  await q(`UPDATE public.shift_handovers SET manual = true, to_text = 'En casa de Julián' WHERE from_profile = $1 AND band = 'pm'`, [MIGUEL.u]);
   await alertas(D1, '00:05');
   const mi = await de('entrega', MIGUEL.u);
   check('a Miguel a las 00:05: «🔑 Hoy dejas el carro: En casa de Julián»', mi.length === 1 && mi[0].title === '🔑 Hoy dejas el carro: En casa de Julián', mi);
