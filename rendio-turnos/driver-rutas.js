@@ -75,6 +75,7 @@
     ask: {},                   // rid → 'nocode'|'notarrived'  (confirmación en la fila)
     report: null, busy: false, keySeq: 0,
     flPoll: null,              // relee el estado de los vuelos cada 2 min con la ruta abierta
+    showDone: false,           // «Completadas» abierta (se cierra cada vez que se entra a la ruta)
     fl: null,                  // la hoja «Ver avión» abierta: { vid, map, plane, timer }
   };
   window.DriverRutas = { open: rtOpen, close: rtClose, background: rtBackground, deepLink: rtDeepLink };
@@ -405,6 +406,7 @@
     const root = host(); if (!root) return;
     ensureIcons();
     RT.open = true;
+    RT.showDone = false;
     root.classList.remove('hidden');
     root.classList.add('rt-v2');
     root.innerHTML = shellHTML('<div class="rt-scr"><div class="rt-body rt-loading"><div class="rt-title"><span>Rutas</span><h1>Mi día</h1><p>Cargando tu ruta…</p></div></div></div>');
@@ -664,8 +666,18 @@
         : '<div class="rt-alldone rx-in">' + check(64) + '<b>Terminaste tus rutas de hoy</b><span>' + esc(`Las ${list.length} ${list.length === 1 ? 'vuelta quedó entregada' : 'vueltas quedaron entregadas'}.`) + '</span></div>')
       + (later.length ? '<div class="rx-lbl">Más tarde</div>' + later.map((v, i) => vcardHTML(v, i)).join('') : '')
       + libresHTML()
-      + (done.length ? '<div class="rx-lbl">Completadas</div>' + done.map((v, i) => vcardHTML(v, i)).join('') : '')
+      + completadasHTML(done)
       + '</div>' + nowbarHTML() + '</div>';
+  }
+  // Las vueltas hechas quedan guardadas (26-oct-2026, pedido de la profa): no
+  // estorban para ver lo que falta y están a un toque si el conductor las quiere ver.
+  function completadasHTML(done) {
+    if (!done.length) return '';
+    const open = !!RT.showDone;
+    return '<button type="button" class="rt-donetg" data-rt="toggle-done" aria-expanded="' + open + '">'
+      + '<span>' + esc(`Completadas · ${done.length}`) + '</span>'
+      + '<em>' + (open ? 'Ocultar' : 'Ver') + ic('ChevronDown', 16, open ? 'transform:rotate(180deg)' : '') + '</em></button>'
+      + (open ? done.map((v, i) => vcardHTML(v, i)).join('') : '');
   }
   function doing(v) {
     const s = S(v), st = v.legs[s.idx]; if (!st) return '';
@@ -1988,6 +2000,7 @@
       }
       if (a === 'chat') { chatOpen(vid, rid); return; }
       if (a === 'flight') { flightOpen(vid); return; }
+      if (a === 'toggle-done') { RT.showDone = !RT.showDone; repaintBase(); return; }
       if (a === 'qr') { chatSend(el.dataset.q); return; }
       if (a === 'send') { const i = document.getElementById('rt-chat-in'); if (i) chatSend(i.value); return; }
       if (a === 'push-tap') { document.getElementById('rt-push-host').innerHTML = ''; if (vid && rid) chatOpen(vid, rid); return; }
