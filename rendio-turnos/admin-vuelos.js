@@ -136,7 +136,10 @@
     if (!window.Api || typeof Api.listReservationsAdmin !== 'function') return [];
     let rows = null;
     try { rows = await Api.listReservationsAdmin(1, 2); } catch (_) { rows = null; }
-    return (rows || []).filter((r) => r.type === 'lle' && !r.cancelledAt && r.flight && diaBog(tms(r.when)) === dia);
+    // Lista de los jefes (26-oct): TODAS las llegadas del día en Reservas, con o
+    // sin vuelo. Las que no dijeron su vuelo no se pueden seguir, pero se ven
+    // (abajo, aparte) en vez de desaparecer y obligar a pegar la ruta.
+    return (rows || []).filter((r) => r.type === 'lle' && !r.cancelledAt && diaBog(tms(r.when)) === dia);
   }
 
   // Una fila por vuelo: lo que dicen las reservas, los pegados y FR24 juntos.
@@ -177,7 +180,9 @@
       const dia = diaSel();
       const [estados, peg, reservas] = await Promise.all([leerEstados(dia), leerPegados(dia), leerReservas(dia)]);
       st.sin0122 = peg.falta;
-      st.vuelos = armar(estados, peg.rows, reservas);
+      st.vuelos = armar(estados, peg.rows, reservas.filter((r) => r.flight));
+      // Sin vuelo y sin ser de tierra ni de reserva en hotel (esas no tienen vuelo a propósito).
+      st.sinVuelo = reservas.filter((r) => !r.flight && !r.groundOps && !r.reservePlace).sort((a, b) => tms(a.when) - tms(b.when));
       st.cargadoEn = Date.now();
     } catch (e) {
       st.err = 'No se pudieron leer los vuelos: ' + ((e && e.message) || e);
@@ -252,8 +257,8 @@
         <div class="set-ch">
           <div class="set-ci"><svg class="icon"><use href="#i-doc"/></svg></div>
           <div class="vu-ch-tx">
-            <h2>Pegar la ruta</h2>
-            <p>Los vuelos del plan de WhatsApp que no están como reserva en la app. Se siguen igual: desde 2 h antes de su hora, y los jefes reciben el aviso si se mueven 15 min o más.</p>
+            <h2>Pegar la ruta <small class="vu-opc">(opcional)</small></h2>
+            <p>Vuelos se llena solo con las llegadas de Reservas y con la ruta de Julián que se publica en Asignación. Pega aquí solo vuelos que no estén en ninguna de las dos. Se siguen igual: desde 2 h antes de su hora, y los jefes reciben el aviso si se mueven 15 min o más.</p>
           </div>
           <button class="set-btn sm ghost" data-vu="pegar-toggle" id="vu-pegar-toggle">Pegar</button>
         </div>
@@ -290,12 +295,22 @@
         n((x) => x.e.grupo === 'sindato') ? `${n((x) => x.e.grupo === 'sindato')} sin dato` : '',
       ].filter(Boolean);
       resumen.textContent = (st.dia === 'manana' ? 'Mañana · ' : 'Hoy · ') + partes.join(' · ');
-      lista.innerHTML = vs.length ? g.map(({ v, e, r }) => fila(v, e, r)).join('') : `<div class="vu-vacio">No hay llegadas con vuelo para ${st.dia === 'manana' ? 'mañana' : 'hoy'}: ni reservas en la app ni vuelos pegados.<br><button class="set-btn sm" data-vu="pegar-abrir">Pegar la ruta</button></div>`;
+      lista.innerHTML = (vs.length ? g.map(({ v, e, r }) => fila(v, e, r)).join('') : `<div class="vu-vacio">No hay llegadas con vuelo para ${st.dia === 'manana' ? 'mañana' : 'hoy'}. Esto se llena solo con las llegadas de Reservas y con la ruta de Julián que se publica en Asignación.</div>`)
+        + sinVueloHTML();
     }
     const ult = (st.vuelos || []).map((v) => tms(v.st && v.st.fetched_at)).filter(Boolean).sort((a, b) => b - a)[0];
     act.textContent = ult ? 'Último dato de Flightradar24: ' + hhmm(ult) + '.' : '';
     pintarMapa(now);
     pintarPegar();
+  }
+
+  // Las llegadas de Reservas sin número de vuelo: se ven, con la hora y quién.
+  function sinVueloHTML() {
+    const xs = st.sinVuelo || [];
+    if (!xs.length) return '';
+    return `<div class="vu-sinvuelo"><div class="vu-sinvuelo-h"><b>${xs.length} ${xs.length === 1 ? 'llegada' : 'llegadas'} sin número de vuelo</b>`
+      + ` <small>Están en Reservas pero no dijeron su vuelo: no se pueden seguir en Flightradar24.</small></div>`
+      + xs.map((r) => `<div class="vu-sinvuelo-r"><b>${hhmm(tms(r.when))}</b> <span>${esc(r.name || 'Tripulante')}</span></div>`).join('') + '</div>';
   }
 
   function fila(v, e, r) {
@@ -442,6 +457,19 @@
     }
   }
 
+  // La ruta de Julián (Asignación, 0125) es el MISMO mensaje del WhatsApp: al
+  // publicarla, sus llegadas con vuelo entre paréntesis se siguen solas, sin
+  // pegarlas otra vez aquí (lista de los jefes, 26-oct). Devuelve cuántos vuelos.
+  async function seguirDesdeTexto(texto, dia) {
+    const L = leerPlan(texto, dia);
+    const vs = (L && L.vuelos) || [];
+    if (!vs.length || !window.sb) return 0;
+    const rows = vs.map((v) => ({ flight_code: v.code, sched_at: new Date(v.ms).toISOString(), label: v.label || null, source: 'pegado' }));
+    const { error } = await window.sb.from('flight_watches').upsert(rows, { onConflict: 'organization_id,flight_code,flight_date' });
+    if (error) throw error;
+    return vs.length;
+  }
+
   async function quitar(id) {
     if (!id || !window.sb) return;
     const { error } = await window.sb.from('flight_watches').delete().eq('id', id);
@@ -501,6 +529,7 @@
   window.stopVuelosTimer = pararRelojes;
   // Para las pruebas (node / jsdom).
   window.renderVuelos._leerPlan = leerPlan;
+  window.renderVuelos.seguirDesdeTexto = seguirDesdeTexto;
   window.renderVuelos._posicion = posicion;
   window.renderVuelos._aeropuerto = aeropuerto;
   window.renderVuelos._armar = armar;

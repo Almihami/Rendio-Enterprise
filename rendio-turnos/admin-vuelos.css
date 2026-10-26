@@ -67,3 +67,11 @@
   #vuelos-ui .vu-map{height:300px}
   #vuelos-ui .vu-acts .set-btn{flex:1;justify-content:center}
 }
+
+/* Lista de los jefes 26-oct: las llegadas de Reservas sin número de vuelo. */
+#vuelos-ui .vu-sinvuelo{margin-top:12px;padding:10px 12px;border:1px dashed var(--line2);border-radius:12px;background:var(--panel2)}
+#vuelos-ui .vu-sinvuelo-h b{display:block;font-size:13.5px}
+#vuelos-ui .vu-sinvuelo-h small{display:block;font-size:12.5px;color:var(--ink2);margin:2px 0 6px;line-height:1.4}
+#vuelos-ui .vu-sinvuelo-r{display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:13.5px}
+#vuelos-ui .vu-sinvuelo-r b{font-variant-numeric:tabular-nums;min-width:46px}
+#vuelos-ui .vu-opc{font-size:12px;font-weight:500;color:var(--ink2)}
