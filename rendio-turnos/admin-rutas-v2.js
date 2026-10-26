@@ -550,11 +550,12 @@
     D.routes.forEach((r) => { if (r.fija === 'completed') return; const k = r.vehicle + '|' + r.shift; const c = (cells[k] = cells[k] || { n: 0, otros: 0, deleg: 0 }); if (r.delegada) c.deleg++; else if (r.propio) c.otros++; else c.n++; });
     const bands = RT_BANDS.filter((b) => Object.keys(cells).some((k) => k.endsWith('|' + b)));
     const cars = (rt.cars || []).filter((c) => bands.some((b) => cells[c.id + '|' + b]));
-    let h = `<h2>Conductores</h2><p class="sub">Se ponen solos con el horario publicado: uno por carro y turno, para todas sus vueltas. La placa sale del carro con que cada uno inicia turno. Toca uno para cambiarlo en todo el turno; para cambiar una sola vuelta, ábrela y toca «Cambiar».</p>` +
-      `<div class="rv2-dgrid" style="grid-template-columns: 52px repeat(${bands.length}, minmax(0, 1fr))"><span></span>` +
+    let h = `<h2>Conductores</h2><p class="sub">Se ponen solos con el horario publicado: uno por carro y turno, para todas sus vueltas. La placa sale del carro con que cada uno inicia turno: toca «Carro 1» para elegir cuál de la flota le toca (le sale primero al iniciar turno); si inicia en otro, manda la inspección y te avisamos. Toca un conductor para cambiarlo en todo el turno; para cambiar una sola vuelta, ábrela y toca «Cambiar».</p>` +
+      `<div class="rv2-dgrid" style="grid-template-columns: 66px repeat(${bands.length}, minmax(0, 1fr))"><span></span>` +
       bands.map((b) => `<span class="hd">${esc(turnoTxt(b))}</span>`).join('');
     cars.forEach((car) => {
-      h += `<span class="car">${esc(car.id)}</span>`;
+      // 0132: «Carro 1» se toca para elegir el carro de la flota.
+      h += `<button class="car carbtn" data-act="plancar" data-car="${esc(car.id)}" aria-label="${esc(`${car.id}: ${car.planPlate ? 'es ' + car.planPlate : 'sin carro elegido'}. Elegir el carro`)}"><b>${esc(car.id)}</b><small>${car.planPlate ? esc(car.planPlate) : 'Elegir'}</small></button>`;
       bands.forEach((b) => {
         const k = car.id + '|' + b; const c = cells[k];
         if (!c) { h += '<span class="cell none">Sin vueltas</span>'; return; }
@@ -1363,6 +1364,70 @@
     commit(msg.charAt(0).toUpperCase() + msg.slice(1));
     return msg;
   }
+  async function placasDelPlan() {
+    const faltan = (rt.cars || []).filter((c) => c.planVehicleId && !c.planPlate);
+    if (!faltan.length || !window.Api || !Api.listVehiclesForShift) return;
+    try {
+      const flota = await Api.listVehiclesForShift();
+      faltan.forEach((c) => { const v = (flota || []).find((x) => x.id === c.planVehicleId); c.planPlate = v ? (v.license_plate || v.internal_code || null) : null; });
+    } catch (_) { /* sin la flota, «Carro 1» sin placa */ }
+  }
+  // ── 0132 · «¿Qué carro es Carro 1?» ─────────────────────────────────────────
+  // Lista de los jefes (26-oct): «al hacer click en carro 1 o 2, despliegue el
+  // listado de carros para uno seleccionar qué carro se le asigna a cada conductor
+  // según la programación». Es la INDICACIÓN: al conductor le sale primero al
+  // iniciar turno; si inicia en otro, manda la inspección (0124) y a los jefes les
+  // llega el aviso (0132). Con el día publicado se guarda al momento, sin
+  // re-publicar (no le avisa a nadie).
+  async function openPlanCar(carId) {
+    const car = rt.cars.find((c) => c.id === carId); if (!car) return;
+    let flota = null;
+    try { flota = window.Api && Api.listVehiclesForShift ? await Api.listVehiclesForShift() : null; } catch (_) { flota = null; }
+    if (!flota || !flota.length) { toast('No se pudo leer la flota (o no hay carros registrados).'); return; }
+    const nom = (v) => v.license_plate || v.internal_code || 'Carro';
+    const de = (vid) => rt.cars.find((c) => c.id !== carId && c.planVehicleId === vid);
+    const ST = { available: '', in_use: 'En uso', maintenance: 'En taller', blocked: 'Bloqueado', reserved: 'Reservado' };
+    const opt = (v) => {
+      const otro = de(v.id);
+      const st = ST[v.status] || '';
+      return `<button class="rv2-opt" role="radio" aria-checked="${car.planVehicleId === v.id}" data-pcar="${esc(v.id)}"><span class="t"><b>${esc(nom(v))}</b></span>`
+        + (car.planVehicleId === v.id ? '<span class="st st--ok">Hoy</span>' : otro ? `<span class="st st--off">Es ${esc(otro.id)}</span>` : st ? `<span class="st st--adj">${esc(st)}</span>` : '')
+        + `<small>${esc([[v.brand, v.model].filter(Boolean).join(' '), v.capacity ? v.capacity + ' pasajeros' : '', v.internal_code && v.license_plate && v.internal_code !== v.license_plate ? v.internal_code : '', otro ? 'si lo eliges, ' + otro.id + ' queda sin carro elegido' : ''].filter(Boolean).join(' · '))}</small></button>`;
+    };
+    openSheet(sheetHead(`¿Qué carro es ${esc(carId)}?`, `${esc(dayLabel(rt.day || ui.dia))} · al conductor le sale primero al iniciar turno; si inicia en otro, manda la inspección y te avisamos`)
+      + `<div class="rv2-sh-body"><div id="rv2-pcars" role="radiogroup" aria-label="Carro de la flota para ${esc(carId)}" style="display:flex;flex-direction:column;gap:8px">`
+      + flota.map(opt).join('')
+      + `<h3 class="rv2-cap" style="margin-top:6px">O bien</h3><button class="rv2-opt" role="radio" aria-checked="${!car.planVehicleId}" data-pcar=""><span class="t"><b>Sin definir</b></span><small>El carro sale de la inspección, como hasta ahora.</small></button>`
+      + '</div></div>'
+      + `<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button><button class="rv2-btn rv2-btn--cta" id="rv2-pcar-ok">${car.planVehicleId ? 'Cambiar' : 'Elegir'}</button></div>`);
+    setLabel();
+    let sel = car.planVehicleId || '';
+    $('#rv2-pcars').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-pcar]'); if (!b) return; sel = b.dataset.pcar;
+      $$('#rv2-pcars [data-pcar]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.pcar === sel)));
+    });
+    $('#rv2-pcar-ok').addEventListener('click', async () => {
+      const vid = sel || null;
+      const v = flota.find((x) => x.id === vid) || null;
+      const otro = vid ? de(vid) : null;
+      const limpio = publicado() && firmaActual() === rt.firmaPublicada;
+      const publicadas = (rt.lanes || []).some((l) => l.car === carId && l.raId);
+      if (publicado() && publicadas && window.Api && Api.setPlanCarVehicle) {
+        try {
+          await Api.setPlanCarVehicle(rt.day, carId, vid);
+          if (otro) await Api.setPlanCarVehicle(rt.day, otro.id, null);
+        } catch (e) { toast('No se pudo guardar: ' + ((e && e.message) || 'error') + '. No cambió nada.'); return; }
+      }
+      closeSheet();
+      if (otro) { otro.planVehicleId = null; otro.planPlate = null; }
+      car.planVehicleId = vid; car.planPlate = v ? nom(v) : null;
+      if (publicado() && publicadas && limpio) rt.firmaPublicada = firmaActual();
+      render();
+      toast(vid ? `${carId} es ${nom(v)}${otro ? ` · ${otro.id} queda sin carro elegido` : ''}${publicado() && publicadas ? ' · guardado (no se re-publicó nada)' : ' · se guarda al publicar'}.`
+        : `${carId} queda sin carro elegido: sale de la inspección.`);
+    });
+  }
+
   function openAssignSlot(carId, shift) {
     const car = rt.cars.find((c) => c.id === carId); if (!car) return;
     const cur = rtCarDrv(car, shift);
@@ -1581,6 +1646,8 @@
         rt.cars.push(car);
         if (!v.planCar && v.vehicleId) porPlaca[v.vehicleId] = car.id;
       }
+      // 0132: «Carro 1 = PRW443» (lo que decía el plan publicado).
+      if (v.planVehicleId && !car.planVehicleId) car.planVehicleId = v.planVehicleId;
       const stops = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
       const ids = stops.map((s) => porReserva[s.rid]).filter((k) => k && !usados.has(k));
       if (!ids.length) return;
@@ -1642,6 +1709,8 @@
       ui.dia = rt.day || day || hoyBog();
       rt.rv2Auto = {};
       const hay = await rearmarPublicado();
+      // 0132: la placa del carro del plan, para que «Carro 1» diga «PRW443».
+      if (hay) await placasDelPlan();
       // Sin tiempos por carretera las ETAs saldrían en línea recta. Para LEER
       // lo publicado no se gasta TomTom (cobra por celda): caché si la hay, si
       // no OSRM. Re-optimizar sí pide tráfico, como siempre.
@@ -1812,6 +1881,7 @@
       const a = act.dataset.act; e.stopPropagation();
       if (a === 'assign') return openAssign(act.dataset.id);
       if (a === 'assignslot') return openAssignSlot(act.dataset.car, act.dataset.shift);
+      if (a === 'plancar') return openPlanCar(act.dataset.car);
       if (a === 'move') {
         if (!el.sheet.hidden) closeSheet();
         if (!act.dataset.from) return openMove(act.dataset.crew);
