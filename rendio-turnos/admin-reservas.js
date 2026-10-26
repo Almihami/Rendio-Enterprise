@@ -8,7 +8,7 @@
 //   3. Las calificaciones se guardaban (0048) y NO las veía nadie. Aquí salen.
 // Comparte scope global con los demás módulos; el orden de carga está en index.html.
 
-  const rvState = { items: [], filter: 'all', day: 'all', dir: 'all', cancelId: null, loading: false, focusChatId: null };
+  const rvState = { items: [], filter: 'all', day: 'all', dir: 'all', cancelId: null, loading: false, focusChatId: null, cutoff: null };
 
   const RV_ST = {
     pending:  { cls: 'warn',  label: 'Sin rutear' },
@@ -63,6 +63,22 @@
     if (!lead || !r.createdAt) return false;
     return (new Date(r.when).getTime() - new Date(r.createdAt).getTime()) / 3600000 < lead;
   }
+  // Late (0130, lista de los jefes del 26-oct): se pidió después del corte de las
+  // 7:40 p. m. del día anterior a su día operativo, así que no salió en el Excel
+  // con el que Julián armó la ruta. El corte viene de Ajustes (Api.getRequestCutoff).
+  function rvLateCut(r) {
+    if (!window.Api || typeof Api.isLateRequest !== 'function') return false;
+    return Api.isLateRequest(r.when, r.createdAt, rvState.cutoff) === true;
+  }
+  // «9:05 p. m. del dom»: la hora en que se pidió, en Bogotá.
+  function rvPidio(r) {
+    try {
+      const d = new Date(r.createdAt);
+      const h = d.toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s+/g, ' ').replace(/a\.?\s?m\.?/i, 'a. m.').replace(/p\.?\s?m\.?/i, 'p. m.');
+      const dia = rvDayShort(r.createdAt).split(' ')[0].toLowerCase();
+      return `${h} del ${dia}`;
+    } catch (_) { return ''; }
+  }
   // Solo se puede cancelar lo que aún no ha empezado.
   const rvCanCancel = (r) => ['pending', 'assigned', 'onway'].includes(r.status);
 
@@ -80,6 +96,7 @@
       return;
     }
     rvState.items = rows;
+    try { rvState.cutoff = (window.Api && Api.getRequestCutoff) ? await Api.getRequestCutoff() : null; } catch (_) { rvState.cutoff = null; }
     await rvLoadExtras(rows);
     await rvLoadDelegadas(rows);
     await rvuLoadFlights(rows);
@@ -154,6 +171,7 @@
   const RV_F = {
     all:       () => true,
     active:    (r) => !['cancelled', 'done', 'noshow'].includes(r.status),
+    late:      (r) => !['cancelled', 'done', 'noshow'].includes(r.status) && rvLateCut(r),
     pending:   (r) => r.status === 'pending' && !r.delegated,
     cancelled: (r) => r.status === 'cancelled',
     rated:     (r) => r.rating > 0,
@@ -229,7 +247,10 @@
     // «Tentativa» (is_firm = false) se quitó el 25-oct-2026 (0121): la pregunta
     // «¿Es una reserva en firme?» la leían como «¿Vas de reserva?» y quien iba en
     // vuelo la apagaba (16 de 55 en producción). Ya no se pregunta.
-    if (rvIsLate(r)) chips.push('<span class="rv-tag late">⏱ Pedido tarde</span>');
+    // Late manda (es la regla de los jefes: después del corte no salió en el
+    // Excel); «Pedido tarde» (poca antelación, Ajustes) solo si no es Late.
+    if (rvLateCut(r)) chips.push(`<span class="rv-tag late" title="Después del corte de las ${escapeHtml(Api.hm12((rvState.cutoff || {}).corte ?? 1180))}: no salió en el Excel del día">Late · pidió ${escapeHtml(rvPidio(r))}</span>`);
+    else if (rvIsLate(r)) chips.push('<span class="rv-tag late">⏱ Pedido tarde</span>');
     if (r.readyAt) chips.push('<span class="rv-tag ready">✓ Confirmó recogida</span>');
     if (r.bags != null) chips.push(`<span class="rv-tag bags">🧳 ${escapeHtml(rvBagsLabel(r.bags))}</span>`);
     if (r.quiet === true) chips.push('<span class="rv-tag quiet">Pidió silencio</span>');

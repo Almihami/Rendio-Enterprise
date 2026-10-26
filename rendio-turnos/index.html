@@ -901,12 +901,14 @@
               <span class="set-sec-dot set-card-dot"></span><svg class="icon details-chevron set-card-chev"><use href="#i-chev"/></svg>
             </summary>
             <div class="set-cb">
-              <details class="set-sec" data-guarda="btn" data-secval="setting-aux-wait,setting-aux-lead,setting-priv-enabled,setting-priv-vehicle,setting-priv-price,setting-priv-block">
+              <details class="set-sec" data-guarda="btn" data-secval="setting-aux-wait,setting-aux-lead,setting-aux-cutoff,setting-priv-enabled,setting-priv-vehicle,setting-priv-price,setting-priv-block">
                 <summary><span class="set-sec-dot"></span><span class="set-sec-t">Traslados de auxiliares</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
                 <div class="set-sec-body">
               <div class="set-row2" style="margin-top:14px">
                 <div class="set-field"><label>Espera en el punto (min)</label><input id="setting-aux-wait" class="set-input" type="number" min="1" max="60" /><div class="set-hint">Cuánto espera el conductor al auxiliar en la recogida. El auxiliar ve la misma cuenta regresiva, y "No se presentó" solo se habilita al vencerse. Default 5.</div></div>
                 <div class="set-field"><label>Anticipación mínima (horas)</label><input id="setting-aux-lead" class="set-input" type="number" min="0" max="72" /><div class="set-hint">Por debajo de esto se le avisa al auxiliar y el traslado queda marcado como "pedido tarde" en Reservas. No se bloquea: la operación tiene urgencias. Default 6.</div></div>
+                <!-- 0130: corte de pedidos del día siguiente (Excel del día + «Late» en Reservas). -->
+                <div class="set-field"><label>Corte de pedidos (hora)</label><input id="setting-aux-cutoff" class="set-input" type="time" step="300" /><div class="set-hint">A esta hora se cierra el día siguiente: a los jefes les llega «El Excel de mañana está listo» con lo pedido hasta aquí, y lo que se pida después sale como <b>Late</b> en Reservas (y en la hoja LATE del Excel). La madrugada (antes del corte de la madrugada) cuenta con el día anterior. Default 7:40 p. m.</div><div class="set-hint" id="setting-aux-cutoff-off" hidden>Falta la actualización 0130 de la base: por ahora el corte es 7:40 p. m. y no se puede cambiar.</div></div>
                 <div class="set-field"><label>Traslado privado (la camioneta)</label>
                   <label class="set-checkrow"><input id="setting-priv-enabled" type="checkbox" style="width:18px;height:18px;accent-color:var(--orange)"><span>Ofrecerlo a los auxiliares</span></label>
                   <div class="set-hint">Mientras esté apagado, el auxiliar lo ve como «Pronto» y no lo puede pedir: pide su traslado como siempre. Enciéndelo solo cuando la camioneta y la tarifa estén definidas.</div>
@@ -1283,6 +1285,8 @@
             <div class="rv-bar" role="group" aria-label="Filtrar por estado">
               <button class="rv-fbtn on" data-rv-f="all">Todas <span class="n"></span></button>
               <button class="rv-fbtn" data-rv-f="active">En pie <span class="n"></span></button>
+              <!-- 0130: pedidos después del corte de las 7:40 p. m. (no salen en el Excel del día). -->
+              <button class="rv-fbtn" data-rv-f="late" title="Pedidos después del corte de las 7:40 p. m.: no salen en el Excel del día">Late <span class="n"></span></button>
               <button class="rv-fbtn" data-rv-f="pending">Sin rutear <span class="n"></span></button>
               <button class="rv-fbtn" data-rv-f="cancelled">Canceladas <span class="n"></span></button>
               <button class="rv-fbtn" data-rv-f="rated">Calificadas <span class="n"></span></button>

@@ -1117,12 +1117,53 @@
       ({ error } = await upd({ route_night_cutoff_min: s.route_night_cutoff_min }));
       if (error) throw error;
     }
+    // 0130: el corte de pedidos (7:40 p. m.), aparte igual. Solo si Ajustes lo
+    // manda (el campo se apaga cuando la base no tiene la columna).
+    if (s.crew_request_cutoff_min != null) {
+      ({ error } = await upd({ crew_request_cutoff_min: s.crew_request_cutoff_min }));
+      if (error) throw error;
+    }
   }
 
   // 0107: hasta qué hora (min desde medianoche) las vueltas son del turno PM del
   // día anterior. Lectura propia —no en getSettings, que tiene que ser una sola
   // ida a la base—: la piden solo Asignación y Calibración. null = la base no
   // tiene la columna (el tablero usa 02:00 y Calibración apaga el campo).
+  // 0130: el corte de pedidos (7:40 p. m. por defecto) y el corte de la madrugada
+  // (2:00, 0107). Sin la migración se usa 7:40 p. m.: es la regla de los jefes.
+  async function getRequestCutoff() {
+    const def = { corte: 1180, noche: 120, enBase: false };
+    try {
+      const { data, error } = await sb.from('app_settings').select('crew_request_cutoff_min, route_night_cutoff_min').eq('id', 'singleton').maybeSingle();
+      if (error || !data) return def;
+      return { corte: data.crew_request_cutoff_min != null ? Number(data.crew_request_cutoff_min) : 1180,
+        noche: data.route_night_cutoff_min != null ? Number(data.route_night_cutoff_min) : 120, enBase: data.crew_request_cutoff_min != null };
+    } catch (_) { return def; }
+  }
+  // El corte que le toca a un traslado (la misma cuenta que crew_request_deadline,
+  // 0130): el día operativo empieza a las 2:00 (la madrugada es del turno PM del
+  // día anterior) y se cierra el día anterior a la hora del corte. Bogotá no
+  // cambia de hora, así que -05:00 vale todo el año. Devuelve milisegundos.
+  function crewRequestDeadline(whenIso, cfg) {
+    const t = Date.parse(whenIso); if (!isFinite(t)) return null;
+    const noche = cfg && cfg.noche != null ? cfg.noche : 120, corte = cfg && cfg.corte != null ? cfg.corte : 1180;
+    const op = new Date(t - noche * 60000).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    const antes = new Date(Date.parse(op + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
+    return Date.parse(antes + 'T00:00:00-05:00') + corte * 60000;
+  }
+  // ¿Se pidió después de su corte? null si no se sabe (sin fecha de pedido).
+  function isLateRequest(whenIso, createdIso, cfg) {
+    if (!whenIso || !createdIso) return null;
+    const d = crewRequestDeadline(whenIso, cfg), c = Date.parse(createdIso);
+    if (d == null || !isFinite(c)) return null;
+    return c > d;
+  }
+  // «7:40 p. m.»
+  function hm12(min) {
+    const h = Math.floor(min / 60) % 24, m = min % 60;
+    return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`;
+  }
+
   async function getRouteNightCutoff() {
     const { data, error } = await sb.from('app_settings').select('route_night_cutoff_min').eq('id', 'singleton').maybeSingle();
     if (error || !data || data.route_night_cutoff_min == null) return null;
@@ -2487,7 +2528,9 @@
       // teléfono, notas y pernocta. Defensivo igual que listMyReservations: si
       // 0050 no está aplicada, se reintenta sin las columnas nuevas.
       // 0125: + auxiliar_profile_id (los apodos de la ruta de Julián van por tripulante).
-      const COLS = 'id, direction, auxiliar_profile_id, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)';
+      // 0130: + created_at (existe desde 0003): el Excel del día separa lo que se
+      // pidió después del corte de las 7:40 p. m. («Late»).
+      const COLS = 'id, direction, auxiliar_profile_id, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, created_at, auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)';
       const q = cols => {
         let b = sb.from('reservations').select(cols)
           .is('cancelled_at', null)
@@ -2588,6 +2631,8 @@
         // pintaba «Hotel» a quien no iba (Julián: «Juan Martínez LLEGA»).
         hotel: !!(reservePlace(r.reserve_place) && reservePlace(r.reserve_place).hotel),
         pernocta: !!r.is_overnight,
+        // 0130: cuándo se pidió y para cuándo (el corte de pedidos sale de ahí).
+        createdAt: r.created_at || null, at: r.required_arrival_at || null,
       };
       colors[key] = RT_PALETTE[i % RT_PALETTE.length];
     });
@@ -4281,7 +4326,7 @@
     getWeeklyAvailability, getMyWeeklyAvailability,
     upsertAvailabilityRow, saveDriverWeekAvailability,
     getSchedule, saveSchedule, deleteSchedule, listPublishedSchedules, listDriversOnShift,
-    getSettings, saveSettings, getRouteNightCutoff, setAvailabilityReopen,
+    getSettings, saveSettings, getRouteNightCutoff, getRequestCutoff, crewRequestDeadline, isLateRequest, hm12, setAvailabilityReopen,
     listMyApprovalRequests, listPendingApprovals, resolveApproval, runAutoResolve,
     listDriverStrikes, getActiveStrikeCounts, addStrike, voidStrike,
     getWeekSuspensions, getMyWeekSuspension, addManualSuspension, liftSuspension,

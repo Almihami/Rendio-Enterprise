@@ -188,7 +188,8 @@
       const a = aux[k];
       return { rid: a.reservationId, auxId: a.auxId || null, n: a.n || 'Tripulante', type: a.type === 'lle' ? 'lle' : 'sal', dia,
         dl: a.dl || '', vuelo: a.vuelo || '', zona: a.zona || '', sector: a.sector || '', tel: a.tel || '',
-        reserva: a.reserva || null, hotel: !!a.hotel, pernocta: !!a.pernocta };
+        reserva: a.reserva || null, hotel: !!a.hotel, pernocta: !!a.pernocta,
+        creada: a.createdAt || null, at: a.at || null };   // 0130: para el corte de las 7:40 p. m.
     }).filter((c) => c.rid);
   }
   async function cargarCandidatos(dia) {
@@ -232,6 +233,7 @@
       const k = b.getAttribute('data-rj');
       if (k === 'leer') leerYMostrar();
       else if (k === 'publicar') publicar();
+      else if (k === 'xl') descargarDelAviso(b.getAttribute('data-dia'));
     });
     sh.addEventListener('change', (e) => {
       const s = e.target.closest('[data-rj-pick]'); if (!s) return;
@@ -367,21 +369,44 @@
     });
     return [...por.values()].flat().sort((a, b) => (a.dia + (a.pres || a.lleg)).localeCompare(b.dia + (b.pres || b.lleg)));
   }
-  async function excel() {
-    const dia = diaActual();
+  // `diaPedido` (0130): el día que pide el aviso de las 7:40 p. m.; sin él, el de
+  // la pantalla. El Excel no depende del tablero: lee los pedidos de ese día.
+  async function excel(diaPedido) {
+    const dia = (typeof diaPedido === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(diaPedido)) ? diaPedido : diaActual();
     if (!dia) { say('Elige primero el día en Rutas del día.'); return null; }
     if (typeof ExcelJS === 'undefined') { say('No se pudo cargar la librería de Excel. Revisa la conexión y reintenta.'); return null; }
     const cands = await cargarCandidatos(dia);
-    const filas = filasExcel(cands);
+    // 0130 (lista de los jefes, 26-oct): la hoja RESPUESTAS es el consolidado del
+    // corte (7:40 p. m. del día anterior, Ajustes), tal cual el Formulario. Lo que
+    // se pidió después del corte («Late», Reservas) va aparte, en la hoja LATE, con
+    // la hora en que se pidió: Julián lo programa con lo que vaya faltando.
+    let cfg = null;
+    try { cfg = W.Api && Api.getRequestCutoff ? await Api.getRequestCutoff() : null; } catch (_) { cfg = null; }
+    const esLate = (c) => !!(cfg && W.Api && Api.isLateRequest && Api.isLateRequest(c.at, c.creada, cfg) === true);
+    const late = cands.filter(esLate);
+    const filas = filasExcel(cands.filter((c) => !esLate(c)));
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Rendio';
-    const ws = wb.addWorksheet('RESPUESTAS', { views: [{ state: 'frozen', ySplit: 1 }] });
-    ws.columns = COLS.map((h) => ({ header: h, key: h, width: h === 'NOMBRE Y APELLIDO' ? 30 : (h.length < 12 ? 14 : h.length + 4) }));
-    ws.getRow(1).font = { bold: true };
-    filas.forEach((f) => ws.addRow({
+    const fila = (f) => ({
       'NOMBRE Y APELLIDO': f.n, 'FECHA': f.dia.split('-').reverse().join('/'), 'HORA DE PRESENTACIÓN': f.pres, 'HORA DE LLEGADA': f.lleg,
       'VUELO DE LLEGADA': f.vuelo, '¿ES UNA RESERVA?': f.reserva ? 'SI' : 'NO', '¿ES UNA PERNOCTA?': f.pernocta ? 'SI' : 'NO',
-      'CONJUNTO': f.zona, 'SECTOR': f.sector, 'TELÉFONO': f.tel }));
+      'CONJUNTO': f.zona, 'SECTOR': f.sector, 'TELÉFONO': f.tel });
+    const hoja = (nombre, cols) => {
+      const ws = wb.addWorksheet(nombre, { views: [{ state: 'frozen', ySplit: 1 }] });
+      ws.columns = cols.map((h) => ({ header: h, key: h, width: h === 'NOMBRE Y APELLIDO' ? 30 : (h.length < 12 ? 14 : h.length + 4) }));
+      ws.getRow(1).font = { bold: true };
+      return ws;
+    };
+    const ws = hoja('RESPUESTAS', COLS);
+    filas.forEach((f) => ws.addRow(fila(f)));
+    if (late.length) {
+      const wl = hoja('LATE', COLS.concat(['PIDIÓ']));
+      const pidio = new Map(late.map((c) => [c.n + '|' + c.dia, c.creada]));
+      filasExcel(late).forEach((f) => {
+        const t = pidio.get(f.n + '|' + f.dia);
+        wl.addRow(Object.assign(fila(f), { 'PIDIÓ': t ? new Date(t).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) : '' }));
+      });
+    }
     const buf = await wb.xlsx.writeBuffer();
     const nombre = `PROGRAMACIÓN RENDIO ${dia}.xlsx`;
     try {
@@ -390,8 +415,35 @@
       a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => { try { URL.revokeObjectURL(a.href); } catch (_) { /* */ } }, 1000);
     } catch (e) { say('No se pudo descargar el Excel: ' + ((e && e.message) || 'error')); return null; }
-    say(`Excel del ${diaTxt(dia)}: ${filas.length} filas (${cands.length} pedidos).`);
-    return { nombre, filas: filas.length, buf };
+    const corteTxt = cfg && W.Api && Api.hm12 ? Api.hm12(cfg.corte) : '7:40 p. m.';
+    say(`Excel del ${diaTxt(dia)}: ${filas.length} filas (${cands.length - late.length} pedidos hasta las ${corteTxt})${late.length ? ` · ${late.length} Late en su hoja` : ''}.`);
+    return { nombre, filas: filas.length, late: late.length, buf };
+  }
+
+  // 0130 · El aviso de las 7:40 p. m. («📋 El Excel de mañana está listo») abre
+  // #/rutas?excel=AAAA-MM-DD: se abre esta hoja, se arma el Excel de ESE día y se
+  // descarga solo. Si el teléfono no deja bajarlo sin un toque, queda el botón.
+  async function ofrecer(dia) {
+    if (!(typeof dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dia))) return null;
+    let cfg = null;
+    try { cfg = W.Api && Api.getRequestCutoff ? await Api.getRequestCutoff() : null; } catch (_) { cfg = null; }
+    const corte = W.Api && Api.hm12 ? Api.hm12(cfg && cfg.corte != null ? cfg.corte : 1180) : '7:40 p. m.';
+    const S = sheet();
+    if (S) {
+      S.open(S.head(`Excel del ${esc(diaTxt(dia))}`, `Lo pedido hasta las ${esc(corte)} de la víspera, como el Formulario. Lo que llegue después sale como «Late» en Reservas y en la hoja LATE.`)
+        + '<div class="rv2-sh-body"><p class="rv2-impact" id="rj-xl-msg">Armando el Excel…</p></div>'
+        + `<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cerrar</button><button class="rv2-btn rv2-btn--cta" data-rj="xl" data-dia="${esc(dia)}">Descargar</button></div>`);
+      atar();
+    }
+    return descargarDelAviso(dia);
+  }
+  async function descargarDelAviso(dia) {
+    const r = await excel(dia);
+    const m = document.getElementById('rj-xl-msg');
+    if (m) m.textContent = r
+      ? `Listo: ${r.filas} ${r.filas === 1 ? 'fila' : 'filas'}${r.late ? ` · ${r.late} Late en su hoja` : ''}. Si no se descargó solo, toca «Descargar».`
+      : 'No se pudo armar el Excel. Toca «Descargar» para intentar otra vez.';
+    return r;
   }
 
   // ── 6. El día con la ruta de Julián (Rutas del día, en lugar del tablero) ───
@@ -506,5 +558,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', atarDia); else atarDia();
 
-  W.RendioRutaJulian = { abrir, excel, diaHTML, _leer: leer, _emparejar: emparejar, _filasExcel: filasExcel, _st: st, _norm: norm };
+  W.RendioRutaJulian = { abrir, excel, ofrecer, diaHTML, _leer: leer, _emparejar: emparejar, _filasExcel: filasExcel, _st: st, _norm: norm };
 })();

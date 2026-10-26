@@ -17,6 +17,22 @@
     const S = state.settings;
     if ($('#setting-aux-wait')) $('#setting-aux-wait').value = S.aux_wait_minutes != null ? S.aux_wait_minutes : 5;
     if ($('#setting-aux-lead')) $('#setting-aux-lead').value = S.aux_min_lead_hours != null ? S.aux_min_lead_hours : 6;
+    // 0130: corte de pedidos. Lectura propia como el de la madrugada; sin la
+    // columna el campo se apaga y se explica (el corte sigue siendo 7:40 p. m.).
+    const cc = $('#setting-aux-cutoff');
+    if (cc) {
+      const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+      cc.disabled = true; cc.value = hhmm(1180);
+      const nota = $('#setting-aux-cutoff-off'); if (nota) nota.hidden = true;
+      const pinta = (c) => {
+        const hay = !!(c && c.enBase);
+        cc.disabled = !hay; cc.value = hhmm(c && c.corte != null ? c.corte : 1180);
+        if (nota) nota.hidden = hay;
+        if (typeof setRepintarValores === 'function') setRepintarValores('calib');
+      };
+      if (window.Api && typeof Api.getRequestCutoff === 'function') Api.getRequestCutoff().then(pinta).catch(() => pinta(null));
+      else pinta(null);
+    }
     // 0069 · traslado privado. El desplegable de vehículos se llena aparte
     // (es una consulta), pero el valor se deja puesto para que al llegar la
     // lista quede seleccionado el que ya estaba.
@@ -306,6 +322,13 @@
       route_airport_buffer_min: (() => {
         const n = parseInt($('#setting-route-buffer') && $('#setting-route-buffer').value, 10);
         return isNaN(n) ? 10 : Math.min(45, Math.max(0, n));
+      })(),
+      // 0130: el corte de pedidos, solo si la base tiene la columna.
+      ...(() => {
+        const el = $('#setting-aux-cutoff');
+        if (!el || el.disabled) return {};
+        const m = /^(\d{1,2}):(\d{2})/.exec(el.value || '');
+        return m ? { crew_request_cutoff_min: Math.min(1439, Math.max(0, Number(m[1]) * 60 + Number(m[2]))) } : {};
       })(),
       // 0107: solo si la base tiene la columna (el campo queda apagado si no).
       ...(() => {

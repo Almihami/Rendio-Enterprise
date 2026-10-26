@@ -557,6 +557,12 @@
     // Se limpia el hash para que un refresco no vuelva a abrir lo mismo.
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* */ }
     setTab(tab);
+    // «📋 El Excel de mañana está listo» (0130): `#/rutas?excel=AAAA-MM-DD` abre
+    // Asignación y descarga el Excel de ese día (admin-ruta-julian.js).
+    const xl = params.get('excel');
+    if (tab === 'routes' && xl && window.RendioRutaJulian && typeof window.RendioRutaJulian.ofrecer === 'function') {
+      setTimeout(() => { try { window.RendioRutaJulian.ofrecer(xl); } catch (e) { /* */ } }, 0);
+    }
     return true;
   }
 
