@@ -833,6 +833,10 @@ console.log('\n── E · El Excel del día ──');
   t('en orden de hora', filas[0][2] === '05:00' && filas.findIndex((f) => f[0] === 'Natalia Duque') > filas.findIndex((f) => f[0] === 'Felipe Vélez'));
   t('el aviso dice cuántas filas (hasta el corte de las 7:40 p. m.)', /Excel del lun 12 oct: 17 filas \(17 pedidos hasta las 7:40 p\. m\.\)\.$/.test(E.toastV2() || ''), E.toastV2());
   t('sin Late, no hay hoja LATE', !wb.getWorksheet('LATE'));
+  // 26-oct: la fila de títulos trae filtros (A1 hasta la última fila y columna).
+  t('RESPUESTAS trae filtros en los títulos, sobre las 10 columnas y las 17 filas', String(ws.autoFilter) === 'A1:J18', String(ws.autoFilter));
+  const xmlR = await (await import('jszip')).default.loadAsync(Buffer.from(r.buf)).then((z) => z.file('xl/worksheets/sheet1.xml').async('string'));
+  t('…y en el archivo de verdad (<autoFilter ref="A1:J18"/>)', /<autoFilter ref="A1:J18"\s*\/>/.test(xmlR), (xmlR.match(/<autoFilter[^>]*>/) || ['(no hay)'])[0]);
 
   // 0130 (lista de los jefes, 26-oct): lo pedido después del corte (la víspera,
   // 7:40 p. m.) no va en RESPUESTAS: va en la hoja LATE con la hora del pedido.
@@ -861,6 +865,7 @@ console.log('\n── E · El Excel del día ──');
   if (wl) wl.eachRow((row, i) => { if (i > 1) fl.push(row.values.slice(1).map((v) => (v == null ? '' : String(v)))); });
   const cabL = wl ? wl.getRow(1).values.slice(1) : [];
   t('0130: hoja LATE con las mismas columnas + «PIDIÓ»', wl && cabL.length === 11 && cabL[0] === 'NOMBRE Y APELLIDO' && cabL[10] === 'PIDIÓ', JSON.stringify(cabL));
+  t('26-oct: las dos hojas traen filtros (RESPUESTAS A1:J17, LATE A1:K2)', String(wb2.getWorksheet('RESPUESTAS').autoFilter) === 'A1:J17' && wl && String(wl.autoFilter) === 'A1:K2', String(wb2.getWorksheet('RESPUESTAS').autoFilter) + ' · ' + String(wl && wl.autoFilter));
   t('0130: en LATE va Mónica (madrugada, pidió el dom 11 a las 9:05 p. m.)', fl.length === 1 && fl[0][0] === 'Mónica Madrugada' && /9:05/.test(fl[0][10]) && /p\. m\./.test(fl[0][10]), JSON.stringify(fl));
   t('0130: el aviso cuenta las dos cosas', /16 filas \(16 pedidos hasta las 7:40 p\. m\.\) · 1 Late en su hoja\./.test(E.toastV2() || ''), E.toastV2());
   // El aviso de las 7:40 p. m. abre #/rutas?excel=día → ofrecer(día).

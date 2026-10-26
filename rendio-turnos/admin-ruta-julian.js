@@ -480,8 +480,12 @@
       ws.getRow(1).font = { bold: true };
       return ws;
     };
+    // 26-oct: filtros en la fila de títulos (la flechita de Excel en cada columna),
+    // para que Julián filtre por sector, conjunto, hora… sin armarlos él.
+    const filtros = (ws) => { ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, ws.rowCount), column: ws.columnCount } }; };
     const ws = hoja('RESPUESTAS', COLS);
     filas.forEach((f) => ws.addRow(fila(f)));
+    filtros(ws);
     if (late.length) {
       const wl = hoja('LATE', COLS.concat(['PIDIÓ']));
       const pidio = new Map(late.map((c) => [c.n + '|' + c.dia, c.creada]));
@@ -489,6 +493,7 @@
         const t = pidio.get(f.n + '|' + f.dia);
         wl.addRow(Object.assign(fila(f), { 'PIDIÓ': t ? new Date(t).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) : '' }));
       });
+      filtros(wl);
     }
     const buf = await wb.xlsx.writeBuffer();
     const nombre = `PROGRAMACIÓN RENDIO ${dia}.xlsx`;
