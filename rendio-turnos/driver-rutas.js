@@ -339,6 +339,7 @@
     if (op.f === 'status') return Api.driverSetStopStatus(op.rid, op.st);
     if (op.f === 'board') return Api.driverBoardWithCode(op.rid, op.code, op.sin);
     if (op.f === 'apt') return Api.driverMarkAirportArrival(op.ra);
+    if (op.f === 'ini') return Api.driverRouteStarted ? Api.driverRouteStarted(op.ra) : null;
     if (op.f === 'aptno') return Api.driverAirportNoShow(op.rid);
     if (op.f === 'undo') return Api.driverAirportUndo(op.rid);
     return null;
@@ -380,8 +381,9 @@
           // Reintentable y todavía con intentos: se queda primero en la cola.
           if (isNetErr(e) && op.n < 40) { q[0] = op; qSave(q); break; }
           // Nunca en silencio: el conductor ve qué no quedó guardado (y por qué).
+          // Menos el aviso de inicio a los jefes (0136): no es una marca suya.
           console.error('[ruta] no se pudo guardar', op, e);
-          toast(`No se guardó ${OP_TXT[op.f] || 'un cambio'}: ${(e && e.message) || 'error'}`, 'AlertTriangle');
+          if (op.f !== 'ini') toast(`No se guardó ${OP_TXT[op.f] || 'un cambio'}: ${(e && e.message) || 'error'}`, 'AlertTriangle');
         }
         q = qLoad(); q.shift(); qSave(q);
       }
@@ -1149,6 +1151,9 @@
     if (!s.started) {
       s.started = true; s.idx = 0; s.phase = 'road'; s.at = null; s.startedAt = Date.now();
       save();
+      // 0136: el aviso «X inició una vuelta» a los jefes. Es un aviso, no una marca:
+      // si la base lo rechaza no se le dice nada al conductor (sin señal, va a la cola).
+      if (v.assignmentId) write({ f: 'ini', ra: v.assignmentId }).catch((e) => console.warn('[ruta] aviso de inicio', e));
       markEnRoute(v);
       toast('Ruta iniciada · compartiendo ubicación', 'Nav');
     }
