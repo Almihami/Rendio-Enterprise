@@ -84,6 +84,7 @@
 
   async function renderReservas() {
     bindReservas();
+    if (window.RendioPedido) window.RendioPedido.bind();   // 0139: «+ Nuevo pedido»
     const list = $('#rv-list');
     if (list) list.innerHTML = '<p class="rv-msg">Cargando reservas…</p>';
     rvState.loading = true;
@@ -98,6 +99,7 @@
     rvState.items = rows;
     try { rvState.cutoff = (window.Api && Api.getRequestCutoff) ? await Api.getRequestCutoff() : null; } catch (_) { rvState.cutoff = null; }
     await rvLoadExtras(rows);
+    await rvLoadExternos(rows);
     await rvLoadDelegadas(rows);
     await rvuLoadFlights(rows);
     renderReservasList();
@@ -110,6 +112,16 @@
       if (r) jcOpen(rid, r.name || 'Traslado', `${r.time} · ${r.address || 'sin dirección'}`.slice(0, 60));
       else toast('Ese traslado ya no está en la lista de la semana.');
     }
+  }
+
+  // 0139: quién es externo sin app (lo cargó Coordinación). Sin la migración, nadie.
+  async function rvLoadExternos(rows) {
+    (rows || []).forEach(r => { r.external = false; });
+    try {
+      const ext = window.Api && Api.listExternalAuxIds ? await Api.listExternalAuxIds() : null;
+      if (!ext || !ext.profiles || !ext.profiles.size) return;
+      (rows || []).forEach(r => { r.external = !!(r.profileId && ext.profiles.has(r.profileId)); });
+    } catch (_) { /* sin 0139 */ }
   }
 
   // Maletas y «Prefiero silencio» (reservations.bags / quiet_ride, 0086, rediseño
@@ -241,6 +253,7 @@
       ? '<em class="rv-dirtag lle"><svg class="icon"><use href="#i-down"/></svg>Llegada</em>'
       : '<em class="rv-dirtag sal"><svg class="icon"><use href="#i-up"/></svg>Salida</em>';
     const chips = [];
+    if (r.external) chips.push('<span class="rv-tag ext" title="Lo cargó Coordinación: no tiene la app, no le llegan avisos">Externo · sin app</span>');
     if (RP) chips.push(`<span class="rv-tag" title="De reserva: sin vuelo">${escapeHtml(RP.hotel ? 'Reserva · ' + RP.short : 'Reserva · aeropuerto')}</span>`);
     // Trabajo en tierra (0092): operaciones del aeropuerto, sin vuelo. Se dice,
     // para que el hueco del vuelo no parezca un dato que falta.

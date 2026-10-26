@@ -378,7 +378,14 @@
 
   // Todos los tripulantes de la org, con o sin cuenta. Primero los que tienen
   // comprobante por revisar, luego pausados, en mora, pendientes, al día y sin cuenta.
-  async function adminList() { const d = await rpc('admin_billing_list'); return Array.isArray(d) ? d : []; }
+  // 0139: los externos sin app (los cargó Coordinación) no se cobran: no salen aquí.
+  async function adminList() {
+    const d = await rpc('admin_billing_list');
+    const rows = Array.isArray(d) ? d : [];
+    let ext = null;
+    try { ext = window.Api && window.Api.listExternalAuxIds ? await window.Api.listExternalAuxIds() : null; } catch (_) { ext = null; }
+    return ext && ext.aux && ext.aux.size ? rows.filter((r) => !ext.aux.has(r.auxiliarProfileId)) : rows;
+  }
   async function adminDetail(auxId) { return rpc('admin_billing_detail', { p_aux: auxId }); }
 
   // Guardado completo del formulario. Plazos null = los de la organización.

@@ -73,6 +73,24 @@
       if (window.Api && typeof Api.getRouteNightCutoff === 'function') Api.getRouteNightCutoff().then(pinta).catch(() => pinta(null));
       else pinta(null);
     }
+    // 0137 + 0140: vueltas terminadas y entrega de turno. Lectura propia (como la
+    // madrugada): getSettings es una sola consulta. Sin la columna, el campo se
+    // apaga con el valor de siempre y guardar no lo manda.
+    const cfin = [['#setting-done-hide', 10], ['#setting-unmarked', 30], ['#setting-handover-lead', 120], ['#setting-handover-late', 15]];
+    if ($('#setting-done-hide')) {
+      cfin.forEach(([sel, def]) => { const e = $(sel); if (e) { e.disabled = true; e.value = String(def); } });
+      const pinta = (r) => {
+        const fin = !!(r && r.enBase), ent = !!(r && r.handoverEnBase);
+        const pon = (sel, v, on) => { const e = $(sel); if (e) { e.disabled = !on; e.value = String(v); } };
+        pon('#setting-done-hide', r ? r.hide : 10, fin); pon('#setting-unmarked', r ? r.unmarked : 30, fin);
+        pon('#setting-handover-lead', r ? r.handoverLead : 120, ent); pon('#setting-handover-late', r ? r.handoverLate : 15, ent);
+        if ($('#setting-finish-off')) $('#setting-finish-off').hidden = fin;
+        if ($('#setting-handover-off')) $('#setting-handover-off').hidden = ent;
+        if (typeof setRepintarValores === 'function') setRepintarValores('calib');
+      };
+      if (window.Api && typeof Api.getRouteFinishRules === 'function') Api.getRouteFinishRules(true).then(pinta).catch(() => pinta(null));
+      else pinta(null);
+    }
     // 0071: colchón de la tabla de zona. 0 = usar su tabla completa.
     if ($('#setting-zone-cushion')) $('#setting-zone-cushion').value = S.route_zone_cushion_min != null ? S.route_zone_cushion_min : 25;
     // 0074: cómo despacha él. Sin la migración los campos quedan con el default
@@ -329,6 +347,18 @@
         if (!el || el.disabled) return {};
         const m = /^(\d{1,2}):(\d{2})/.exec(el.value || '');
         return m ? { crew_request_cutoff_min: Math.min(1439, Math.max(0, Number(m[1]) * 60 + Number(m[2]))) } : {};
+      })(),
+      // 0137 + 0140: solo los que la base tiene (los campos quedan apagados si no).
+      ...(() => {
+        const out = {};
+        [['#setting-done-hide', 'route_done_hide_min', 10, 0, 120], ['#setting-unmarked', 'route_unmarked_min', 30, 5, 240],
+         ['#setting-handover-lead', 'handover_lead_min', 120, 15, 360], ['#setting-handover-late', 'handover_late_min', 15, 5, 120]]
+          .forEach(([sel, col, def, lo, hi]) => {
+            const el = $(sel); if (!el || el.disabled) return;
+            const n = parseInt(el.value, 10);
+            out[col] = isNaN(n) ? def : Math.min(hi, Math.max(lo, n));
+          });
+        return out;
       })(),
       // 0107: solo si la base tiene la columna (el campo queda apagado si no).
       ...(() => {

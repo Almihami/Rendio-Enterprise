@@ -140,7 +140,7 @@ let lanzo = false; try { await w2.Api.driverRouteStarted('RA9'); } catch (e) { l
 t('un error de la base se lanza (driver-rutas decide qué hacer)', lanzo);
 
 const sw = read('sw.js');
-t('SW v222', /rendio-turnos-v222/.test(sw));
+t('SW v222 o posterior', Number((/rendio-turnos-v(\d+)/.exec(sw) || [])[1]) >= 222, (/rendio-turnos-v\d+/.exec(sw) || [])[0]);
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: la base (_verify-0136.mjs), la push de verdad ni el teléfono.');
