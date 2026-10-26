@@ -4443,6 +4443,18 @@
     if (error) throw error;
     return data;
   }
+  // 0145 · «Cambiar hora» en UNA vuelta pegada, sin volver a pegar el día. En una
+  // salida: la hora de cada parada (stops: [{ stop_id, at }]) y el «Deben estar»
+  // (deadline; null = el que tenía). En una llegada: start, cuando sale el carro.
+  async function adminManualRouteSetTimes(routeId, { stops, start, deadline } = {}) {
+    const { data, error } = await sb.rpc('admin_manual_route_set_times', {
+      p_route: routeId, p_stops: stops || [], p_start: start || null, p_deadline: deadline || null });
+    if (error) {
+      if (error.code === '42883' || error.code === 'PGRST202' || /admin_manual_route_set_times/.test(error.message || '')) throw new Error('Para cambiar la hora de una vuelta falta la actualización 0145 de la base. Mientras tanto, usa «Volver a pegar».');
+      throw error;
+    }
+    return data;
+  }
   // Cómo escribe Julián a cada tripulante (lo aprendido). Sin 0125: vacío.
   async function listCrewAliases() {
     const { data, error } = await sb.from('crew_aliases').select('alias_norm, auxiliar_profile_id');
@@ -4621,7 +4633,7 @@
     getRouteFinishRules, _opResultado, _opFinEsperado,   // 0137 (las dos últimas, para las pruebas)
     createExternal, adminCreateReservation, listExternalAuxIds,   // 0139
     listHandovers, setHandover, driverMyHandovers, driverHandoverDelivered,   // 0140
-    adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
+    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,

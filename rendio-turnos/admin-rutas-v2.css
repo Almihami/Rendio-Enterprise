@@ -539,12 +539,34 @@
 #routes-v2 .rj-pick select { font: inherit; font-size: 16px; min-height: 34px; max-width: 220px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); }
 @media (max-width: 767px) {
   #routes-v2 .rj-dia { padding: 12px 16px 24px; }
+  /* Volver a pegar · Excel del día · Quitar la ruta: con el dedo (44 px). */
+  #routes-v2 .rj-dia-a .rv2-btn--sm { height: 44px; }
   #routes-v2 .rj-v { grid-template-columns: 56px minmax(0, 1fr); }
   #routes-v2 .rj-v-st { grid-column: 1 / -1; justify-self: start; }
   #routes-v2 .rj-v-r { grid-column: 1 / -1; justify-content: space-between; }
 }
 /* 0134: las vueltas para tomar que armó el sistema, arriba de la lista. */
 #routes-v2 .rv2-solas { margin-bottom: 10px; }
-/* Día mezclado (26-oct-2026): la ruta pegada va arriba de la lista del tablero,
-   en un recuadro aparte (no en lugar del tablero). */
+/* Día mezclado (26-oct-2026). Arriba de la lista queda solo la barra de la ruta
+   pegada (Volver a pegar, Excel del día, Quitar la ruta); cada vuelta pegada va EN
+   la lista, en su hora (audios de los jefes de las 4:22 p. m.). */
 #routes-v2 .rj-dia.is-mixto { padding: 12px; border: 1px dashed var(--line2); border-radius: 12px; background: var(--panel2); }
+#routes-v2 .rj-dia.rj-barra { padding: 10px 12px; gap: 6px; margin-bottom: 12px; }
+/* La vuelta pegada en la lista: la misma fila del tablero con su raya y su etiqueta.
+   No se abre en el detalle ni recibe gente (no es del tablero): sin mano de clic. */
+#routes-v2 .rv2-row--julian { cursor: default; box-shadow: inset 4px 0 0 #6366F1; }
+#routes-v2 .rv2-row--julian:hover { border-color: var(--line); }
+#routes-v2 .rv2-row--julian[data-st="libre"] { box-shadow: inset 4px 0 0 var(--orange); }
+#routes-v2 .rv2-row--julian.is-flash { box-shadow: inset 4px 0 0 #6366F1, 0 0 0 3px rgba(99, 102, 241, .35); }
+#routes-v2 .rv2-row .l1 .tag.rj-tag { color: #4338CA; background: #EEF2FF; white-space: nowrap; }
+#routes-v2 .rv2-p.is-fijo { cursor: default; }
+#routes-v2 .rv2-p.is-fijo:hover { border-color: var(--line); background: var(--panel2); }
+#routes-v2 .rv2-p em { font-style: normal; color: var(--ink3); }
+#routes-v2 .rv2-row--julian .rj-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+/* 0145 · «Cambiar hora»: una fila por recogida (o la salida de la llegada). */
+.rv2-sheet .rj-hora { display: flex; flex-direction: column; gap: 8px; }
+.rv2-sheet .rj-h-p { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; align-items: center; font-size: 14px; }
+.rv2-sheet .rj-h-p input { font: inherit; font-size: 16px; height: 44px; min-width: 0; padding: 0 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); }
+.rv2-sheet .rj-h-p input[data-tocado="1"] { border-color: var(--orange); }
+.rv2-sheet .rj-h-p em { font-style: normal; color: var(--ink3); }
+.rv2-sheet .rj-hora .rj-warn { margin: 4px 0 0; font-size: 13px; }

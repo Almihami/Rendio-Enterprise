@@ -18,9 +18,16 @@
 //      tablero bloqueado (Publicar, Re-optimizar, rtSavePlan), «Volver a pegar»
 //      y «Quitar la ruta»;
 //   D2) el día MEZCLADO (26-oct-2026: tablero + unas vueltas pegadas): se ve el
-//      tablero entero con la ruta pegada arriba y sus botones; Publicar y
-//      Re-optimizar encendidos sin meter en el tablero a la gente de lo pegado;
-//      buscar, «Volver a pegar», el Excel y «Quitar la ruta» en ese día;
+//      tablero entero y cada vuelta pegada DENTRO de la lista, en su hora, con
+//      su etiqueta, los nombres completos y sus botones (arriba solo la barra);
+//      Publicar y Re-optimizar encendidos sin meter en el tablero a la gente de
+//      lo pegado; buscar, «Volver a pegar», el Excel y «Quitar la ruta»;
+//   D3) la lista mezclada: lo terminado abajo, la madrugada siguiente al final,
+//      la llegada del hotel, choques del conductor con una vuelta pegada y quién
+//      queda «en turno, sin vueltas»;
+//   D4) «Cambiar hora» (0145): la hoja, correr las demás, lo que no deja y lo
+//      que le llega a Api.adminManualRouteSetTimes;
+//   A2) «(Aero r)», «(Hotel)», «(Río Verde)»: de JMC o del hotel a la casa;
 //   E) el Excel del día (ExcelJS de verdad, vendor/): columnas del Formulario y
 //      la madrugada siguiente;
 //   F) la madrugada que Julián pegó con el día anterior no se vuelve a rutear.
@@ -424,6 +431,7 @@ console.log('\n── D2 · Día mezclado: tablero + unas vueltas pegadas ──
       w.Api.setRouteDelegated = async (id, on) => { (log.julian.deleg = log.julian.deleg || []).push([id, on]); return { id, delegated: on, notified: 2 }; };
       w.Api.delegateRoute = async () => ({ delegated: true, notified: 0 });
       w.Api.setVueltaDriver = async () => ({ notified: 0 });
+      w.Api.adminManualRouteSetTimes = async (id, a) => { (log.julian.horas = log.julian.horas || []).push([id, a]); return { notified: 2 }; };   // 0145
       const pub0 = w.Api.getPublishedPlan;
       w.Api.getPublishedPlan = async (day, o) => {
         const r = await pub0(day, o);
@@ -454,15 +462,31 @@ console.log('\n── D2 · Día mezclado: tablero + unas vueltas pegadas ──
   const rt = () => T().rt;
   const enAux = (rid) => Object.values(rt().aux).some((a) => a.reservationId === rid);
   const bloque = () => q('#rv2-list .rj-dia');
-  t('se ve el TABLERO: las 7 vueltas que no han terminado, en la lista', qa('#rv2-list .rv2-row').length === 7, String(qa('#rv2-list .rv2-row').length));
-  t('…y la ruta pegada ARRIBA de la lista, en su recuadro («Ruta de Julián · lun 12 oct»)', bloque() && bloque().classList.contains('is-mixto') && q('#rv2-list').firstElementChild === bloque() && /Ruta de Julián · lun 12 oct/.test(txt(bloque())), txt(q('#rv2-list')) && txt(q('#rv2-list')).slice(0, 120));
-  t('el encabezado: «2 vueltas pegadas · todas tomadas · 1 delegada» y que van aparte del tablero', /2 vueltas pegadas · todas tomadas · 1 delegada/.test(txt(q('.rj-dia-h'))) && /Van aparte del tablero/.test(txt(bloque())) && !/Además hay/.test(txt(bloque())), txt(bloque()));
-  const vsM = qa('.rj-dia .rj-v');
-  t('la delegada: «Delegada · Felix Covault (Placa LLU676)» con «Cambiar a quién» y «Devolver»', vsM[0] && vsM[0].dataset.st === 'delegada' && /Delegada · Felix Covault \(Placa LLU676\)/.test(txt(vsM[0])) && /Cambiar a quién/.test(txt(vsM[0])) && /Devolver/.test(txt(vsM[0])), vsM[0] && txt(vsM[0]));
-  t('la tomada: «Tomada por Rubén Díaz» con «Cambiar conductor» y «Delegar»', vsM[1] && vsM[1].dataset.st === 'tomada' && /Tomada por Rubén Díaz/.test(txt(vsM[1])) && /Cambiar conductor/.test(txt(vsM[1])) && /Delegar/.test(txt(vsM[1])), vsM[1] && txt(vsM[1]));
-  t('arriba están los botones del día pegado: Volver a pegar, Excel del día, Quitar la ruta', q('.rj-dia [data-rj-dia="pegar"]') && q('.rj-dia [data-rj-dia="excel"]') && q('.rj-dia [data-rj-dia="quitar"][data-mixto="1"]'));
+  const tablero = () => qa('#rv2-list .rv2-row[data-id]');
+  const pegada = (id) => q(`#rv2-list .rv2-row--julian[data-julian="${id}"]`);
+  const filas = () => qa('#rv2-list .rv2-row');
+  t('se ve el TABLERO: las 7 vueltas que no han terminado, en la lista', tablero().length === 7, String(tablero().length));
+  // Audios de los jefes, 26-oct 4:22 p. m.: «que lo meta en el listado normal completo y lo organice por horas».
+  t('las 2 vueltas pegadas van DENTRO de la lista (ya no en un recuadro aparte)', pegada('pool-m1') && pegada('pool-m2') && !q('#rv2-list .rj-dia .rj-v') && filas().length === 9, String(filas().length));
+  const ix = (el) => filas().indexOf(el);
+  const deTab = (id) => tablero().find((r) => r.dataset.id === id);
+  t('…en su hora: la de las 8:10 («Deben estar 8:50») después de V-03 7:00 y antes de V-02 10:00; la de las 8:30 detrás',
+    ix(deTab('V-03·V1')) < ix(pegada('pool-m1')) && ix(pegada('pool-m1')) < ix(pegada('pool-m2')) && ix(pegada('pool-m2')) < ix(deTab('V-02·V3')), filas().map((r) => r.dataset.id || r.dataset.julian).join(' '));
+  t('…bajo el encabezado de su hora («08:00 – 09:00»)', /^08:00 – 09:00/.test(txt(pegada('pool-m1').closest('.rv2-gwrap').querySelector('.rv2-hour'))), txt(pegada('pool-m1').closest('.rv2-gwrap').querySelector('.rv2-hour')));
+  t('cada una con la etiqueta «Ruta de Julián», su tipo y su hora (08:10 → 08:50)', /Salida/.test(txt(pegada('pool-m1').querySelector('.rv2-pill'))) && txt(pegada('pool-m1').querySelector('.rj-tag')) === 'Ruta de Julián' && /^08:10 → 08:50/.test(txt(pegada('pool-m1').querySelector('.when b'))), txt(pegada('pool-m1')));
+  t('…con los NOMBRES COMPLETOS y su conjunto (los jefes no sabían si «Paula» era Paula Londoño)', /Mateo Zapata/.test(txt(pegada('pool-m1'))) && /Juliana Ossa/.test(txt(pegada('pool-m1'))) && /Cámbulo/.test(txt(pegada('pool-m1'))) && /Manuela Franco/.test(txt(pegada('pool-m2'))), txt(pegada('pool-m1')));
+  t('arriba queda solo la barra: «Ruta de Julián · lun 12 oct», «2 vueltas pegadas · todas tomadas · 1 delegada» y que van en la lista',
+    bloque() && bloque().classList.contains('rj-barra') && q('#rv2-list').firstElementChild === bloque() && /Ruta de Julián · lun 12 oct/.test(txt(bloque())) && /2 vueltas pegadas · todas tomadas · 1 delegada/.test(txt(q('.rj-dia-h'))) && /Van en la lista, en su hora/.test(txt(bloque())) && !/Van aparte/.test(txt(bloque())), txt(bloque()));
+  const vM1 = pegada('pool-m1'), vM2 = pegada('pool-m2');
+  t('la delegada: «Delegada · Felix Covault (Placa LLU676)» con «Cambiar a quién», «Devolver» y «Cambiar hora»', vM1.dataset.st === 'delegada' && /Delegada · Felix Covault \(Placa LLU676\)/.test(txt(vM1)) && /Cambiar a quién/.test(txt(vM1)) && /Devolver/.test(txt(vM1)) && /Cambiar hora/.test(txt(vM1)), txt(vM1));
+  t('la tomada: «Tomada por Rubén Díaz» con «Cambiar conductor», «Delegar» y «Cambiar hora»', vM2.dataset.st === 'tomada' && /Tomada por Rubén Díaz/.test(txt(vM2)) && /Cambiar conductor/.test(txt(vM2)) && /Delegar/.test(txt(vM2)) && /Cambiar hora/.test(txt(vM2)), txt(vM2));
+  t('arriba están los botones del día pegado: Volver a pegar, Excel del día, Quitar la ruta', q('.rj-barra [data-rj-dia="pegar"]') && q('.rj-barra [data-rj-dia="excel"]') && q('.rj-barra [data-rj-dia="quitar"][data-mixto="1"]'));
   t('Avisos y Conductores se ven', !q('#rv2-summary').hidden && /Avisos/.test(txt(q('#rv2-avisos'))) && /Conductores/.test(txt(q('#rv2-drivers'))), txt(q('#rv2-avisos')) && txt(q('#rv2-avisos')).slice(0, 80));
   t('el detalle de una vuelta del tablero con su mapa', !q('#rv2-mapwrap').hidden && /V-0\d · Vuelta \d/.test(txt(q('#rv2-dhead'))), txt(q('#rv2-dhead')));
+  const dhead0 = txt(q('#rv2-dhead')), sel0 = M.V2()._ui.sel;
+  click(vM2.querySelector('.people')); await wait(20);
+  t('tocar una vuelta pegada no abre el detalle (no es del tablero): queda la que estaba', M.V2()._ui.sel === sel0 && txt(q('#rv2-dhead')) === dhead0, M.V2()._ui.sel);
+  t('las pegadas no son filas del tablero: sin data-id, sin «role=button» y sin gente para arrastrar', !vM1.hasAttribute('data-id') && !vM1.hasAttribute('role') && !vM1.querySelector('[draggable="true"], [data-drag]'));
   t('la frase de arriba es la del tablero y cuenta lo pegado aparte', !/Este día va con la ruta de Julián/.test(txt(q('#rv2-say'))) && /además 2 vueltas de la ruta de Julián/.test(txt(q('#rv2-say'))), txt(q('#rv2-say')));
   t('Publicar y Re-optimizar quedan ENCENDIDOS (el día no queda marcado como solo de Julián)', !q('#rv2-publish').disabled && !q('#rv2-reopt').disabled && rt().manualDia === false && txt(q('#rv2-publishLabel')) !== 'Ruta de Julián publicada', txt(q('#rv2-publishLabel')));
   t('Mateo, Juliana y Manuela (van en lo pegado) NO están en el tablero ni «sin carro»', !enAux('res-I') && !enAux('res-J') && !enAux('res-N') && !(rt().pool || []).some((k) => ['rI', 'rJ', 'rN'].includes(k)));
@@ -481,26 +505,29 @@ console.log('\n── D2 · Día mezclado: tablero + unas vueltas pegadas ──
   const ridsP = lanesP.flatMap((l) => l.stops || []);
   t('publica el tablero (una vez) sin la gente de lo pegado', log.saved.length === antesP + 1 && lanesP.length > 0 && !['res-I', 'res-J', 'res-N'].some((x) => ridsP.includes(x)), JSON.stringify(ridsP));
   t('…con Paula en su vuelta en curso (ahí la deja saveRoutePlan)', ridsP.includes('res-P'));
-  t('…y la ruta pegada sigue arriba', bloque() && bloque().classList.contains('is-mixto') && qa('#rv2-list .rv2-row').length > 0);
+  t('…y las vueltas pegadas siguen en la lista', bloque() && pegada('pool-m1') && pegada('pool-m2') && tablero().length > 0);
 
   // Re-optimizar arma el tablero sin meter a nadie de lo pegado.
   M.confirms.length = 0; w.__confirma = true;
   click(q('#rv2-reopt')); await wait(400);
   const ruteados = Object.values(rt().order).flat();
   t('Re-optimizar arma el día sin la gente de lo pegado', ruteados.length > 0 && !['rI', 'rJ', 'rN'].some((k) => ruteados.includes(k)) && !M.toasts.some((x) => /ruta de Julián/.test(x)), JSON.stringify(ruteados));
-  t('…y la ruta pegada sigue arriba', !!bloque() && qa('#rv2-list .rv2-row').length > 0);
+  t('…y las vueltas pegadas siguen en la lista', !!pegada('pool-m1') && tablero().length > 0);
 
   // Buscar: también encuentra a quien va en lo pegado.
   type(q('#rv2-q'), 'manuela'); await wait(200);
-  t('buscar «manuela»: sale su vuelta pegada (no «Sin resultados»)', bloque() && qa('.rj-dia .rj-v').length === 1 && /Manuela/.test(txt(bloque())) && !/Sin resultados/.test(txt(q('#rv2-list'))), txt(q('#rv2-list')) && txt(q('#rv2-list')).slice(0, 120));
+  t('buscar «manuela»: sale su vuelta pegada, en la lista (no «Sin resultados»)', qa('#rv2-list .rv2-row--julian').length === 1 && /Manuela/.test(txt(pegada('pool-m2'))) && !/Sin resultados/.test(txt(q('#rv2-list'))), txt(q('#rv2-list')) && txt(q('#rv2-list')).slice(0, 120));
+  t('…resaltada como en el tablero, y buscando no sale la barra', pegada('pool-m2').querySelector('mark') && !bloque());
   type(q('#rv2-q'), 'laura'); await wait(200);
-  t('buscar «laura» (va en el tablero): no sale el recuadro pegado', !bloque() && qa('#rv2-list .rv2-row').length >= 1);
+  t('buscar «laura» (va en el tablero): no sale ninguna pegada', !qa('#rv2-list .rv2-row--julian').length && tablero().length >= 1);
+  type(q('#rv2-q'), 'felix'); await wait(200);
+  t('buscar «felix» (a quién se delegó): sale la delegada', qa('#rv2-list .rv2-row--julian').length === 1 && pegada('pool-m1'));
   type(q('#rv2-q'), 'zzz'); await wait(200);
   t('buscar algo que no está: «Sin resultados»', /Sin resultados para «zzz»/.test(txt(q('#rv2-list'))));
   type(q('#rv2-q'), ''); await wait(200);
 
   // Volver a pegar y el Excel: la gente de lo pegado sigue siendo del día.
-  click(q('.rj-dia [data-rj-dia="pegar"]')); await wait(20);
+  click(q('.rj-barra [data-rj-dia="pegar"]')); await wait(20);
   type(q('#rj-ta'), '8:30 Manuela (Mangle)\nDeben estar 9:00');
   click(q('#rv2-sheet [data-rj="leer"]')); await wait(60);
   const filaMa = qa('#rj-prev .rj-p').find((p) => /Manuela/.test(txt(p.querySelector('.rj-w'))));
@@ -513,18 +540,227 @@ console.log('\n── D2 · Día mezclado: tablero + unas vueltas pegadas ──
   wb.getWorksheet('RESPUESTAS').eachRow((row, i) => { if (i > 1) nombres.push(String(row.values[1] || '')); });
   t('el Excel del día trae a todos (16), también a Mateo, Juliana y Manuela', nombres.length === 16 && ['Mateo Zapata', 'Juliana Ossa', 'Manuela Franco'].every((n) => nombres.includes(n)), String(nombres.length));
 
-  // Los botones de cada vuelta pegada funcionan igual dentro del tablero.
+  // Los botones de cada vuelta pegada funcionan igual dentro de la lista.
   M.confirms.length = 0;
-  click(qa('.rj-dia .rj-v')[0].querySelector('[data-rj-deleg][data-on="0"]')); await wait(100);
-  t('«Devolver» en el día mezclado: pregunta y la devuelve en la base', /¿Devolver la vuelta/.test(M.confirms[0] || '') && JSON.stringify(log.julian.deleg) === JSON.stringify([['pool-m1', false]]), JSON.stringify(log.julian.deleg));
+  click(pegada('pool-m1').querySelector('[data-rj-deleg][data-on="0"]')); await wait(100);
+  t('«Devolver» desde la lista: pregunta y la devuelve en la base', /¿Devolver la vuelta/.test(M.confirms[0] || '') && JSON.stringify(log.julian.deleg) === JSON.stringify([['pool-m1', false]]), JSON.stringify(log.julian.deleg));
 
   // «Quitar la ruta» en el día mezclado: su gente vuelve al tablero sin carro.
   M.confirms.length = 0;
-  click(q('.rj-dia [data-rj-dia="quitar"]')); await wait(150);
+  click(q('.rj-barra [data-rj-dia="quitar"]')); await wait(150);
   t('«Quitar la ruta» explica que esos tripulantes quedan sin carro en el tablero', /quedan sin carro en el tablero/.test(M.confirms[0] || '') && /Las vueltas del tablero no cambian/.test(M.confirms[0] || ''), M.confirms[0]);
-  t('…la quita en la base y el día queda solo con el tablero', JSON.stringify(log.julian.quitar) === JSON.stringify([DAY]) && !bloque() && qa('#rv2-list .rv2-row').length > 0, JSON.stringify(log.julian.quitar));
+  t('…la quita en la base y el día queda solo con el tablero', JSON.stringify(log.julian.quitar) === JSON.stringify([DAY]) && !bloque() && !qa('#rv2-list .rv2-row--julian').length && tablero().length > 0, JSON.stringify(log.julian.quitar));
   t('…y Mateo, Juliana y Manuela salen «sin carro» en Avisos', enAux('res-I') && enAux('res-J') && enAux('res-N') && /Manuela Franco no tiene carro/.test(txt(q('#rv2-avisos'))) && /Mateo Zapata no tiene carro/.test(txt(q('#rv2-avisos'))), txt(q('#rv2-avisos')) && txt(q('#rv2-avisos')).slice(0, 200));
   t('sin errores de script', M.errors.length === 0, M.errors.join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Audio de los jefes, 26-oct 4:26 p. m.: «si uno coloca aero que sepa que es desde
+// el JMC, aero r que es desde el JMC, Río Verde que es desde el hotel Río Verde…
+// lo detectó como si fuese desde la casa y puso la ruta invertida».
+console.log('\n── A2 · «(Aero r)», «(Hotel)», «(Río Verde)»: de JMC o del hotel a la casa ──');
+{
+  const L = J._leer('16:20 Andrea Núñez y Lesmes (aero r)\n\n18:00 Lina (Río Verde)\n18:05 Pacho (Av9563)\n\n19:00 Kris (Aero)\nDeben estar 19:30', DAY);
+  const l0 = L.bloques[0].lineas[0];
+  t('«16:20 Andrea Núñez y Lesmes (aero r)»: las recogen en JMC (dos personas, sin vuelo)', l0.desde === 'aero' && !l0.vuelo && l0.personas.join('|') === 'Andrea Núñez|Lesmes', JSON.stringify(l0));
+  t('«(Río Verde)» junto a un vuelo en el mismo bloque: hotel Río Verde + AV9563', L.bloques[1].lineas[0].desde === 'rio_verde' && L.bloques[1].lineas[1].vuelo === 'AV9563');
+  t('con «Deben estar» el bloque es una salida (el paréntesis es solo dónde lo recoge)', L.bloques[2].deadline && L.bloques[2].deadline.min === 1170 && L.bloques[2].lineas[0].desde === 'aero');
+  const variantes = { 'Aero R': 'aero', AeroR: 'aero', 'aero-r': 'aero', JMC: 'aero', Aeropuerto: 'aero', Hotel: 'hotel', 'Hotel R': 'hotel', 'Hotel Movich': 'movich', 'Hotel Rioverde R': 'rio_verde', 'rio verde': 'rio_verde', 'Río Verde reserva': 'rio_verde', Av9563: null, Mota: null, 'Hotel Sandiego': null };
+  const malas = Object.entries(variantes).filter(([k, v]) => (J._leer(`10:00 X (${k})`, DAY).bloques[0].lineas[0].desde || null) !== v);
+  t(`las formas que escribe Julián (${Object.keys(variantes).length}): «Aero R», «AeroR», «JMC», «Hotel R», «Hotel Rioverde R»…; un conjunto o un vuelo no`, malas.length === 0, JSON.stringify(malas));
+  // Medido sobre los planes reales del jefe (26-oct): 75 líneas así, todas en bloques de llegadas.
+  let n = 0, conDl = 0, conCasa = 0;
+  for (const f of readdirSync(PLANES).filter((x) => /^plan-.*\.txt$/.test(x))) {
+    J._leer(readFileSync(PLANES + f, 'utf8'), '2026-08-10').bloques.forEach((b) => {
+      const ds = b.lineas.filter((l) => l.desde); if (!ds.length) return;
+      n += ds.length;
+      if (b.deadline) conDl++; else if (b.lineas.some((l) => !l.desde && !l.vuelo)) conCasa++;
+    });
+  }
+  t(`en los planes reales: ${n} líneas «(Aero)», «(Hotel)»…, NINGUNA en un bloque con «Deben estar» ni junto a una recogida en casa`, n >= 70 && conDl === 0 && conCasa === 0, JSON.stringify({ n, conDl, conCasa }));
+
+  const C2 = [
+    { rid: 'q1', auxId: 'qa1', n: 'Andrea Núñez', type: 'sal', dia: DAY, dl: '17:00', zona: 'Sendai' },
+    { rid: 'q2', auxId: 'qa1', n: 'Andrea Núñez', type: 'lle', dia: DAY, dl: '16:20', reserva: 'aero', tierra: true },
+    { rid: 'q3', auxId: 'qa3', n: 'Ana Lesmes', type: 'lle', dia: DAY, dl: '16:15', reserva: 'rio_verde', hotel: true, tierra: true },
+    { rid: 'q4', auxId: 'qa4', n: 'Paula Londoño', type: 'sal', dia: DAY, dl: '17:20' },
+  ];
+  const P = (key, nombre, o) => Object.assign({ key, nombre, min: 980, dia: DAY, vuelo: null, deadline: null, lugar: '' }, o);
+  const r = J._emparejar([P('a', 'Andrea Núñez', { desde: 'aero', lugar: 'aero r' }), P('b', 'Lesmes', { desde: 'hotel', lugar: 'Hotel R' }), P('c', 'Paula', { desde: 'aero', lugar: 'aero r' })], C2, {});
+  t('«Andrea Núñez (aero r)» con salida Y regreso ese día: el REGRESO (de reserva en JMC), sola', r.a.auto && r.a.rid === 'q2', JSON.stringify(r.a));
+  t('«Lesmes (Hotel R)»: su regreso de reserva en el hotel', r.b.auto && r.b.rid === 'q3', JSON.stringify(r.b));
+  t('«Paula (aero r)» que solo pidió salida: NO se elige sola, su salida queda de opción', !r.c.auto && r.c.opciones.includes('q4'), JSON.stringify(r.c));
+
+  let pub = null;
+  const H = await boot({
+    publicado: false,
+    antes(w) {
+      const plan1 = w.Api.listRoutePlanning;
+      w.Api.listRoutePlanning = async (tipo, day) => {
+        const x = await plan1(tipo, day);
+        if (x && (day || DAY) === DAY) {
+          const b = { zona: 'Sendai', sector: 'Rionegro', lat: 6.02, lng: -75.4, pax: 1, tel: '', notas: '', vuelo: '', hotel: false, tierra: false, reserva: null };
+          x.aux.rQ = Object.assign({}, b, { n: 'Andrea Núñez', type: 'lle', dl: '16:20', reservationId: 'res-Q', auxId: 'aux-andrea', reserva: 'aero', tierra: true });
+          x.aux.rR = Object.assign({}, b, { n: 'Andrea Núñez', type: 'sal', dl: '17:00', reservationId: 'res-R', auxId: 'aux-andrea' });
+        }
+        return x;
+      };
+      w.Api.adminManualRoutePublish = async (day, blocks) => { pub = JSON.parse(JSON.stringify(blocks)); return { created: blocks.length, kept: 0, removed: 0, skipped: 0, notified: 1, drivers: 1, vueltas: blocks.length }; };
+    },
+  });
+  H.click(H.q('#rv2-julian')); await wait();
+  H.type(H.q('#rj-ta'), '16:20 Andrea Núñez (aero r)\n\n17:00 Paula (aero r)');
+  H.click(H.q('#rv2-sheet [data-rj="leer"]')); await wait(60);
+  const bs = H.qa('#rj-prev .rj-b');
+  t('la hoja: «Llegada · 16:20 · Recoge en JMC y los lleva a la casa» (antes decía «Salida»)', /^Llegada · 16:20/.test(txt(bs[0].querySelector('.rj-bh'))) && /Recoge en JMC y los lleva a la casa/.test(txt(bs[0])), txt(bs[0]));
+  t('…y elige el regreso de Andrea (res-Q), no su salida', bs[0].querySelector('select').value === 'res-Q', bs[0].querySelector('select').value);
+  t('«Paula (aero r)», que solo pidió salida: «Revisa: pidió una salida, no el regreso desde JMC»', /Revisa: pidió una salida, no el regreso desde JMC/.test(txt(bs[1])) && bs[1].querySelector('select').value === '', txt(bs[1]));
+  H.pick(bs[1].querySelector('select'), 'res-P'); await wait();
+  t('…y si el jefe la elige igual, lo advierte en palabras', /Pidió una salida \(de la casa a JMC\), no el regreso desde JMC/.test(txt(H.qa('#rj-prev .rj-b')[1])), txt(H.qa('#rj-prev .rj-b')[1]));
+  H.pick(H.qa('#rj-prev .rj-b')[1].querySelector('select'), ''); await wait();
+  H.w.__confirma = true;
+  H.click(H.q('#rv2-sheet [data-rj="publicar"]')); await wait(80);
+  t('publica la vuelta de Andrea como LLEGADA (de JMC a la casa)', pub && pub.length === 1 && pub[0].type === 'lle' && pub[0].stops[0].reservation_id === 'res-Q' && pub[0].deadline_at === null, JSON.stringify(pub));
+  t('sin errores de script', H.errors.length === 0, H.errors.join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── D3 · La lista mezclada: terminadas, madrugada, hotel, choques ──');
+const PX = await boot({
+  antes(w, log) {
+    w.Api.adminManualRouteSetTimes = async (id, a) => {
+      (log.julian.horas = log.julian.horas || []).push([id, JSON.parse(JSON.stringify(a))]);
+      if (w.__horaFalla) throw new Error(w.__horaFalla);
+      return w.__horaR || { notified: 1, driver_notified: true };
+    };
+    w.Api.setVueltaDriver = async () => ({ notified: 0 });
+    w.Api.reservePlace = (k) => ({ rio_verde: { key: 'rio_verde', name: 'Hotel Río Verde', short: 'Río Verde', hotel: true }, aero: { key: 'aero', name: 'Aeropuerto JMC', short: 'Aeropuerto', hotel: false } })[k] || null;
+    const plan1 = w.Api.listRoutePlanning;
+    w.Api.listRoutePlanning = async (tipo, day) => {
+      const x = await plan1(tipo, day);
+      if (x && x.aux.rO) Object.assign(x.aux.rO, { reserva: 'rio_verde', hotel: true, tierra: true, vuelo: '' });   // Kevin, de reserva en el Río Verde
+      if (x) x.drivers = x.drivers.concat([{ id: 'd6', n: 'Lennin Vanegas', c: '#7C5CD6', tel: '' }]);
+      return x;
+    };
+    const sh0 = w.Api.listDriversOnShift;
+    w.Api.listDriversOnShift = async (...a) => { const x = await sh0(...a); x.pm = x.pm.concat([{ id: 'd6', n: 'Lennin Vanegas' }]); return x; };
+    const pub0 = w.Api.getPublishedPlan;
+    w.Api.getPublishedPlan = async (day, o) => {
+      const r = await pub0(day, o);
+      if (day !== DAY) return r;
+      const st = (rid, name, j, at, extra) => Object.assign({ stopId: 'px-' + (rid || name), rid, order: j + 1, status: 'pending', etaAt: at ? `${at}:00-05:00` : null, name, lat: 6.02, lng: -75.40 }, extra || {});
+      const base = { pool: true, manualDay: DAY, nota: '', vehicleId: null, planCar: null, carro: 'Carro', placa: null, cap: 4, delegated: false, atendidas: [] };
+      let pool = [
+        // Jorge la tomó y se le cruza con su V-01 del tablero (recoge a las 5:35, llega 6:39).
+        Object.assign({}, base, { id: 'pool-x1', type: 'sal', status: 'planned', startAt: `${DAY}T05:40:00-05:00`, deadlineAt: `${DAY}T06:20:00-05:00`, driverProfileId: 'd1', conductor: 'Jorge Pérez',
+          pendientes: [st('res-N', 'Manuela Franco', 0, `${DAY}T05:40`), st(null, 'Primo de Manuela', 1, `${DAY}T05:45`, { guest: true })] }),
+        // Terminada: va abajo, con las terminadas.
+        Object.assign({}, base, { id: 'pool-x2', type: 'sal', status: 'completed', startAt: `${DAY}T03:30:00-05:00`, deadlineAt: `${DAY}T04:10:00-05:00`, driverProfileId: 'd2', conductor: 'Luis Arango',
+          fin: { estado: 'ok', motivos: [], faltan: 0, at: '04:05' }, pendientes: [], atendidas: [st(null, 'Tío de Laura', 0, `${DAY}T03:30`, { guest: true, status: 'dropped_off' })] }),
+        // La madrugada siguiente que Julián pegó con este día.
+        Object.assign({}, base, { id: 'pool-x3', type: 'sal', status: 'planned', startAt: `${SIG}T00:20:00-05:00`, deadlineAt: `${SIG}T00:50:00-05:00`, driverProfileId: null, conductor: 'Sin conductor',
+          pendientes: [st(null, 'Pepe', 0, `${SIG}T00:20`, { guest: true })] }),
+        // Kevin, de reserva en el Hotel Río Verde: la llegada sale del hotel. Nadie la ha tomado.
+        Object.assign({}, base, { id: 'pool-x4', type: 'lle', status: 'planned', startAt: `${DAY}T15:40:00-05:00`, deadlineAt: null, driverProfileId: null, conductor: 'Sin conductor',
+          pendientes: [st('res-O', 'Kevin Uribe', 0, null)] }),
+        // Lennin (en el horario de la tarde, sin vueltas del tablero) tomó dos que se cruzan.
+        Object.assign({}, base, { id: 'pool-x5', type: 'sal', status: 'planned', startAt: `${DAY}T13:00:00-05:00`, deadlineAt: `${DAY}T13:40:00-05:00`, driverProfileId: 'd6', conductor: 'Lennin Vanegas',
+          pendientes: [st(null, 'Pepa', 0, `${DAY}T13:00`, { guest: true })] }),
+        Object.assign({}, base, { id: 'pool-x6', type: 'sal', status: 'planned', startAt: `${DAY}T13:20:00-05:00`, deadlineAt: `${DAY}T13:55:00-05:00`, driverProfileId: 'd6', conductor: 'Lennin Vanegas',
+          pendientes: [st(null, 'Pepita', 0, `${DAY}T13:20`, { guest: true })] }),
+      ];
+      if (w.__sinLennin) pool = pool.filter((v) => v.driverProfileId !== 'd6');
+      return { day, vueltas: r.vueltas.concat(pool), publicado: true };
+    };
+  },
+});
+{
+  const { w, q, qa, click, log, T } = PX;
+  const pegada = (id) => q(`#rv2-list .rv2-row--julian[data-julian="${id}"]`);
+  const filas = () => qa('#rv2-list .rv2-row').filter((r) => !r.closest('.rv2-hechas'));
+  const hora = (el) => el && txt(el.closest('.rv2-gwrap').querySelector('.rv2-hour'));
+  // El orden del tablero desde los pendientes del 26-oct: la PRIMERA hora que se lee.
+  t('la de Jorge (recoge 5:40) va en «05:00 – 06:00», detrás de V-01 (recoge 5:35): en el orden de la primera hora, como el tablero', /^05:00 – 06:00 · 2 vueltas/.test(hora(pegada('pool-x1'))) && pegada('pool-x1').previousElementSibling && pegada('pool-x1').previousElementSibling.dataset.id === 'V-01·V2', hora(pegada('pool-x1')));
+  t('la terminada (3:30) no está en la lista: abajo, con la del tablero («✓ 2 vueltas terminadas»)', !pegada('pool-x2') && /✓ 2 vueltas terminadas/.test(txt(q('.rv2-hechas'))), txt(q('.rv2-hechas')));
+  click(q('[data-act="hechas"]')); await wait(20);
+  t('…y al abrirlas sale en verde, «Terminada 04:05» (como en el tablero), sin botones', pegada('pool-x2') && pegada('pool-x2').closest('.rv2-hechas') && pegada('pool-x2').dataset.fin === 'ok' && /Terminada 04:05/.test(txt(pegada('pool-x2').querySelector('.when'))) && !pegada('pool-x2').querySelector('button'), pegada('pool-x2') && txt(pegada('pool-x2')));
+  click(q('[data-act="hechas"]')); await wait(20);
+  const ult = filas()[filas().length - 1];
+  t('la madrugada siguiente (0:20 del 13) va al final: «00:00 – 01:00 · después de medianoche»', ult && ult.dataset.julian === 'pool-x3' && /^00:00 – 01:00 · después de medianoche · 1 vuelta/.test(hora(ult)), hora(ult));
+  t('…con «Pepe (sin cuenta)»', /Pepe \(sin cuenta\)/.test(txt(pegada('pool-x3'))));
+  const x4 = pegada('pool-x4');
+  t('la llegada de Kevin (de reserva en el Río Verde): «Llegada», «Sale del Hotel Río Verde → casas», «Disponible · nadie la ha tomado»',
+    x4 && /Llegada/.test(txt(x4.querySelector('.rv2-pill'))) && /Sale del Hotel Río Verde → casas/.test(txt(x4)) && /Disponible · nadie la ha tomado/.test(txt(x4)) && x4.dataset.st === 'libre', x4 && txt(x4));
+  t('…con «Cambiar hora», «Asignar conductor» y «Delegar»', /Cambiar hora/.test(txt(x4)) && /Asignar conductor/.test(txt(x4)) && /Delegar/.test(txt(x4)));
+  t('Manuela y Kevin (van en lo pegado) no salen «sin carro»', !/Manuela Franco no tiene carro|Kevin Uribe no tiene carro/.test(txt(q('#rv2-avisos'))), txt(q('#rv2-avisos')));
+  const avs = qa('#rv2-avisos li[data-k="drv"]');
+  const jorge = avs.find((li) => /Jorge Pérez/.test(txt(li)));
+  t('Avisos: «Jorge Pérez tiene dos vueltas a la vez · V-01 de las 05:35 (hasta las 06:39) y la de Julián de las 05:40»', jorge && /Jorge Pérez tiene dos vueltas a la vez/.test(txt(jorge)) && /V-01 de las 05:35 \(hasta las 06:39\) y la de Julián de las 05:40/.test(txt(jorge)) && avs.filter((li) => /Jorge/.test(txt(li))).length === 1, avs.map((li) => txt(li)).join(' | '));
+  t('…y «Cambiar» abre la del TABLERO (V-01 · vuelta 2), que es la que se puede mover', jorge && jorge.querySelector('[data-act="assign"]') && jorge.querySelector('[data-act="assign"]').dataset.id === 'V-01·V2', jorge && jorge.innerHTML);
+  const len = avs.find((li) => /Lennin Vanegas/.test(txt(li)));
+  t('dos pegadas que se cruzan: «Lennin Vanegas tiene dos vueltas a la vez · la de Julián de las 13:00 (hasta las 13:40) y la de Julián de las 13:20»', len && /la de Julián de las 13:00 \(hasta las 13:40\) y la de Julián de las 13:20/.test(txt(len)), len && txt(len));
+  t('…con «Ver», que lleva a la vuelta pegada en la lista', len && len.querySelector('[data-act="verjulian"]') && len.querySelector('[data-act="verjulian"]').dataset.ra === 'pool-x6');
+  click(len.querySelector('[data-act="verjulian"]')); await wait(20);
+  t('…y la marca un momento', pegada('pool-x6').classList.contains('is-flash'));
+  const libres = () => txt(q('#rv2-drivers [data-k="libres"]')) || '';
+  t('Lennin, que solo tiene vueltas pegadas, NO sale «en turno, sin vueltas»', !/Lennin/.test(libres()), libres());
+  w.__sinLennin = true; await PX.V2().cargarDia(DAY); await wait(120);
+  t('…(sin ellas sí sale: la prueba ve la diferencia)', /También en turno, sin vueltas: .*Lennin Vanegas/.test(libres()), libres());
+  w.__sinLennin = false; await PX.V2().cargarDia(DAY); await wait(120);
+  const v4 = PX.V2().pegadas().find((v) => v.id === 'pool-x4');
+  t('el día SOLO de Julián (diaHTML) también trae «Cambiar hora»', v4 && /data-rj-hora="pool-x4"/.test(PX.J().diaHTML([v4], DAY, 0)));
+  t('sin errores de script', PX.errors.length === 0, PX.errors.join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Audio de los jefes, 26-oct 4:22 p. m.: «…o tener la opción de que uno seleccione
+// una ruta como tal y le deje cambiar las horas».
+console.log('\n── D4 · «Cambiar hora» (0145) ──');
+{
+  const { w, q, qa, click, log } = PX;
+  const pegada = (id) => q(`#rv2-list .rv2-row--julian[data-julian="${id}"]`);
+  const ins = () => qa('#rv2-sheet .rj-h-in');
+  const poner = (el, v) => { el.value = v; el.dispatchEvent(new w.Event('input', { bubbles: true })); };
+  log.julian.horas = [];
+  click(pegada('pool-x1').querySelector('[data-rj-hora]')); await wait(20);
+  t('abre «Cambiar hora · salida de las 5:40» con una hora por recogida y el «Deben estar»', /Cambiar hora · salida de las 5:40/.test(txt(q('#rv2-shTitle'))) && ins().map((x) => x.value).join() === '05:40,05:45,06:20', ins().map((x) => x.value).join() + ' · ' + txt(q('#rv2-shTitle')));
+  t('…con los nombres («Primo de Manuela (sin cuenta)»)', /Manuela Franco/.test(txt(q('#rv2-sheet'))) && /Primo de Manuela \(sin cuenta\)/.test(txt(q('#rv2-sheet'))));
+  poner(ins()[0], '05:50');
+  t('mover la primera a 5:50 corre la otra y el «Deben estar» igual (5:55 · 6:30)', ins().map((x) => x.value).join() === '05:50,05:55,06:30', ins().map((x) => x.value).join());
+  poner(ins()[2], '06:40'); poner(ins()[0], '06:00');
+  t('lo que se tocó a mano ya no se corre: 6:00 · 6:05 · «Deben estar» 6:40 (puesto a mano)', ins().map((x) => x.value).join() === '06:00,06:05,06:40', ins().map((x) => x.value).join());
+  poner(ins()[2], '05:50');
+  click(q('#rv2-sheet [data-rj="hora-ok"]')); await wait(40);
+  t('«Deben estar» antes de la última recogida: lo dice y no llama a la base', /«Deben estar» \(5:50\) queda antes de la última recogida \(6:05\)/.test(txt(q('#rj-h-msg'))) && log.julian.horas.length === 0, txt(q('#rj-h-msg')));
+  poner(ins()[2], '06:40');
+  const antes = log.publicados.length;
+  click(q('#rv2-sheet [data-rj="hora-ok"]')); await wait(150);
+  const h1 = log.julian.horas[0];
+  t('guarda ESA vuelta: cada parada con su hora de Colombia y el «Deben estar»', h1 && h1[0] === 'pool-x1' && JSON.stringify(h1[1]) === JSON.stringify({ stops: [{ stop_id: 'px-res-N', at: `${DAY}T06:00:00-05:00` }, { stop_id: 'px-Primo de Manuela', at: `${DAY}T06:05:00-05:00` }], deadline: `${DAY}T06:40:00-05:00` }), JSON.stringify(h1));
+  t('el aviso: «Salida de las 5:40 ahora a las 6:00 · avisamos a 1 tripulante y al conductor.»', PX.toastV2() === 'Salida de las 5:40 ahora a las 6:00 · avisamos a 1 tripulante y al conductor.', PX.toastV2());
+  t('…la hoja se cierra y el día se vuelve a leer', q('#rv2-sheet').hidden && log.publicados.length > antes);
+  click(pegada('pool-x4').querySelector('[data-rj-hora]')); await wait(20);
+  t('la llegada (Kevin): una sola hora, cuando sale el carro (15:40)', ins().length === 1 && ins()[0].value === '15:40' && /Kevin Uribe/.test(txt(q('#rv2-sheet'))) && /llegada de las 15:40/.test(txt(q('#rv2-shTitle'))), ins().map((x) => x.value).join());
+  poner(ins()[0], '16:00');
+  click(q('#rv2-sheet [data-rj="hora-ok"]')); await wait(150);
+  t('…guarda { start } con la hora nueva', JSON.stringify(log.julian.horas[1]) === JSON.stringify(['pool-x4', { start: `${DAY}T16:00:00-05:00` }]), JSON.stringify(log.julian.horas[1]));
+  click(pegada('pool-x3').querySelector('[data-rj-hora]')); await wait(20);
+  poner(ins()[0], '23:55');
+  click(q('#rv2-sheet [data-rj="hora-ok"]')); await wait(150);
+  t('pasada la medianoche: 0:20 del 13 → «23:55» es del 12, y el «Deben estar» corre a 0:25 del 13', JSON.stringify(log.julian.horas[2]) === JSON.stringify(['pool-x3', { stops: [{ stop_id: 'px-Pepe', at: `${DAY}T23:55:00-05:00` }], deadline: `${SIG}T00:25:00-05:00` }]), JSON.stringify(log.julian.horas[2]));
+  w.__horaFalla = 'Para cambiar la hora de una vuelta falta la actualización 0145 de la base. Mientras tanto, usa «Volver a pegar».';
+  click(pegada('pool-x1').querySelector('[data-rj-hora]')); await wait(20);
+  poner(ins()[0], '06:10');
+  click(q('#rv2-sheet [data-rj="hora-ok"]')); await wait(80);
+  t('si la base no la tiene (sin 0137), lo dice en la hoja y se puede reintentar', /No se pudo: Para cambiar la hora de una vuelta falta la actualización 0145/.test(txt(q('#rj-h-msg'))) && !q('#rv2-sheet [data-rj="hora-ok"]').disabled && !q('#rv2-sheet').hidden, txt(q('#rj-h-msg')));
+  w.__horaFalla = null; w.__horaR = { unchanged: true, notified: 0 };
+  click(q('#rv2-sheet [data-rj="hora-ok"]')); await wait(150);
+  t('si no cambió nada: «No cambió ninguna hora.»', PX.toastV2() === 'No cambió ninguna hora.', PX.toastV2());
+  w.__horaR = null;
+  delete w.Api.adminManualRouteSetTimes;
+  await PX.V2().cargarDia(DAY); await wait(120);
+  t('sin la función en la app (versión vieja de api.js) no sale el botón', !q('#rv2-list [data-rj-hora]'));
+  t('sin errores de script', PX.errors.length === 0, PX.errors.join(' | '));
 }
 
 // ══════════════════════════════════════════════════════════════════════════
