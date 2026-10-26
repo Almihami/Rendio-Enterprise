@@ -523,7 +523,9 @@
     else { txt = '<b>Todo listo.</b> Revisa lo que quieras y publica.'; ok = true; }
     el.say.hidden = !txt;
     el.say.classList.toggle('is-ok', ok);
-    el.say.innerHTML = txt ? `<i aria-hidden="true"></i><span>${txt}</span>${live && hayVueltas() ? `<small>${plural(D.routes.length, 'vuelta', 'vueltas')} · ${conCarro} de ${total} tripulantes con carro</small>` : ''}` : '';
+    // Día mezclado: lo pegado se cuenta aparte (sus tripulantes no están en el tablero).
+    const peg = ui.manual && ui.manual.mixto ? ` · además ${plural(ui.manual.vueltas.length, 'vuelta', 'vueltas')} de la ruta de Julián` : '';
+    el.say.innerHTML = txt ? `<i aria-hidden="true"></i><span>${txt}</span>${live && hayVueltas() ? `<small>${plural(D.routes.length, 'vuelta', 'vueltas')} · ${conCarro} de ${total} tripulantes con carro${peg}</small>` : ''}` : '';
     el.pending.textContent = av.length;
     el.pending.hidden = av.length === 0;
     el.pending.setAttribute('aria-label', `${av.length} ${av.length === 1 ? 'aviso' : 'avisos'}`);
@@ -702,17 +704,33 @@
       `<small>${malas ? `${plural(malas, 'con novedad', 'con novedad')} · ` : ''}${ui.verHechas ? 'Ocultar' : 'Ver'}</small></button>` +
       (ui.verHechas ? horasHTML(hechas) : '') + '</div>';
   }
+  // Día mezclado (26-oct-2026): la ruta pegada arriba de la lista, con sus botones
+  // (Volver a pegar, Excel del día, Quitar la ruta y, por vuelta, conductor y
+  // Delegar: admin-ruta-julian.js). Buscando, solo las vueltas donde está.
+  function pegadasHTML(buscando) {
+    const m = ui.manual;
+    if (!m || !m.mixto || ui.cargando || !window.RendioRutaJulian) return '';
+    let vs = m.vueltas;
+    if (buscando) {
+      const q = norm(ui.q);
+      vs = vs.filter((v) => [...(v.pendientes || []), ...(v.atendidas || [])].some((g) => norm(g.name).includes(q))
+        || (v.driverProfileId && norm(v.conductor).includes(q)) || (v.delegateName && norm(v.delegateName).includes(q)));
+      if (!vs.length) return '';
+    }
+    return window.RendioRutaJulian.diaHTML(vs, ui.dia, 0, { mixto: true });
+  }
   function renderList() {
     const vacio = emptyHTML();
-    if (vacio) { el.list.innerHTML = vacio + (ui.cargando ? '' : solasHTML() + madSigHTML()); return; }
-    const todas = D.routes.filter(matchesQ);
-    if (!todas.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
     const buscando = !!(ui.q && ui.q.trim());
+    const peg = pegadasHTML(buscando);
+    if (vacio) { el.list.innerHTML = peg + vacio + (ui.cargando ? '' : solasHTML() + madSigHTML()); return; }
+    const todas = D.routes.filter(matchesQ);
+    if (!todas.length) { el.list.innerHTML = peg || `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
     const hechas = buscando ? [] : todas.filter((r) => r.fija === 'completed');
     const rows = todas.filter((r) => !hechas.includes(r));
-    if (!rows.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Ya terminaron todas las vueltas de ${esc(dayLabel(rt.day || ui.dia).toLowerCase())}</b>Quedan abajo, por si quieres revisarlas.</div>` + hechasHTML(hechas) + madSigHTML(); return; }
+    if (!rows.length) { el.list.innerHTML = peg + `<div class="rv2-empty"><b>Ya terminaron todas las vueltas de ${esc(dayLabel(rt.day || ui.dia).toLowerCase())}</b>Quedan abajo, por si quieres revisarlas.</div>` + hechasHTML(hechas) + madSigHTML(); return; }
     const mad = rows.filter((r) => r.shift === 'mad'), resto = rows.filter((r) => r.shift !== 'mad');
-    let html = buscando ? '' : solasHTML();
+    let html = peg + (buscando ? '' : solasHTML());
     if (mad.length) {
       html += `<section class="rv2-mad" aria-label="Madrugada, turno PM del ${esc(rtDiaAnterior())}"><div class="rv2-madh"><b>☾ Madrugada · cierre del turno PM del ${esc(rtDiaAnterior())}</b>` +
         `<small>De 00:00 a ${rtHHc()} las hace el conductor de la tarde del ${esc(rtDiaAnterior())}. El día ${esc(dayLabel(rt.day || ui.dia).toLowerCase())} arranca a las ${rtHHc()}.</small></div>` +
@@ -935,9 +953,15 @@
   }
   function refrescarMapa() { if (mapa.m) { try { mapa.m.invalidateSize(); } catch (_) { /* */ } if (mapa.actual) dibujarMapa(mapa.actual); } }
 
+  // El día va SOLO con la ruta de Julián (sin vueltas del tablero). Si además hay
+  // tablero (día mezclado, 26-oct-2026) se ve el tablero entero con la ruta pegada arriba.
+  const soloJulian = () => !!(ui.manual && !ui.manual.mixto);
+  const T_JULIAN = 'Este día va con la ruta de Julián';
   function render() {
     if (!root()) return;
-    if (ui.manual && !ui.cargando && window.RendioRutaJulian) { renderManual(); return; }
+    if (soloJulian() && !ui.cargando && window.RendioRutaJulian) { renderManual(); return; }
+    // Lo que dejó un día solo de Julián (el título de los botones apagados).
+    [el.publish, el.publishM, el.reopt].forEach((b) => { if (b && b.title === T_JULIAN) b.title = ''; });
     if (!ui.cargando) autoLlenar();
     D = armarDia();
     if (ui.sel && !D.byId[ui.sel]) { ui.sel = null; ui.moving = null; }
@@ -956,7 +980,7 @@
     el.list.innerHTML = window.RendioRutaJulian.diaHTML(ui.manual.vueltas, ui.dia, ui.manual.otras);
     ui.sel = null;
     if (el.detail) { el.detail.classList.remove('is-open'); if (el.dhead) el.dhead.innerHTML = ''; if (el.dtop) el.dtop.innerHTML = ''; if (el.dbot) el.dbot.innerHTML = ''; if (el.mapwrap) el.mapwrap.hidden = true; }
-    [el.publish, el.publishM, el.reopt].forEach((b) => { if (b) { b.disabled = true; b.title = 'Este día va con la ruta de Julián'; } });
+    [el.publish, el.publishM, el.reopt].forEach((b) => { if (b) { b.disabled = true; b.title = T_JULIAN; } });
     el.publishLabel.textContent = 'Ruta de Julián publicada'; el.pending.hidden = true;
     el.publishM.textContent = 'Ruta de Julián publicada';
   }
@@ -1052,7 +1076,7 @@
   }
 
   async function reoptimizar() {
-    if (ui.manual) { toast('Este día va con la ruta de Julián: quítala para volver al tablero.'); return; }
+    if (soloJulian()) { toast('Este día va con la ruta de Julián: quítala para volver al tablero.'); return; }
     if (rt.source !== 'live' || ui.optimizando || typeof rtOptimize !== 'function') return;
     const enCurso = Object.keys(rt.rv2Fijas || {}).length;
     if (enCurso && !window.confirm(`Hay ${plural(enCurso, 'vuelta', 'vueltas')} en curso o terminada${enCurso > 1 ? 's' : ''}. Re-optimizar arma el día desde cero; lo que el conductor ya atendió no se mueve al publicar. ¿Seguir?`)) return;
@@ -1476,7 +1500,7 @@
   }
 
   function openPublish() {
-    if (ui.manual) { toast('Este día va con la ruta de Julián: los conductores toman las vueltas.'); return; }
+    if (soloJulian()) { toast('Este día va con la ruta de Julián: los conductores toman las vueltas.'); return; }
     if (!hayVueltas()) { toast('No hay vueltas para publicar todavía.'); return; }
     const c = counts(D.routes);
     const unr = (rt.pool || []).length;
@@ -1489,11 +1513,16 @@
     const aviso = yaPub
       ? `<p class="rv2-impact">Este plan ya está publicado: <b>los conductores ya lo tienen</b>. Si publicas otra vez reciben la versión nueva y el aviso «Ruta asignada»; a los tripulantes solo se les avisa si les cambió el conductor. Lo que un conductor ya atendió no se mueve.</p>`
       : '';
+    // Día mezclado (26-oct-2026): lo pegado no cambia al publicar el tablero.
+    const nPeg = ui.manual && ui.manual.mixto ? ui.manual.vueltas.length : 0;
+    const julian = nPeg
+      ? `<p class="rv2-impact" data-k="julian">La ruta de Julián de este día (${plural(nPeg, 'vuelta pegada', 'vueltas pegadas')}) <b>no se toca</b>: publicar solo cambia las vueltas del tablero, y a sus tripulantes no se les mueve nada.</p>`
+      : '';
     const forzarItems = [c.risk ? plural(c.risk, 'vuelta que llega tarde a la presentación', 'vueltas que llegan tarde a la presentación') : '',
       c.nodriver ? plural(c.nodriver, 'vuelta sin conductor (queda en borrador, nadie la ve)', 'vueltas sin conductor (quedan en borrador, nadie las ve)') : '',
       unr ? plural(unr, 'tripulante sin carro', 'tripulantes sin carro') : ''].filter(Boolean);
     openSheet(sheetHead(yaPub ? (conCambios() ? 'Publicar cambios' : 'Volver a publicar') : 'Publicar plan', `${plural(c.all, 'vuelta', 'vueltas')} · se avisa a ${plural(conductoresConVuelta, 'conductor', 'conductores')} y a los tripulantes`) +
-      `<div class="rv2-sh-body">${aviso}` +
+      `<div class="rv2-sh-body">${aviso}${julian}` +
       item(!c.risk, false, c.risk ? `${plural(c.risk, 'vuelta llega', 'vueltas llegan')} tarde` : 'Todas llegan a tiempo', 'Deben llegar antes de la hora de presentación.', 'risk') +
       item(!c.nodriver, false, c.nodriver ? `${plural(c.nodriver, 'vuelta', 'vueltas')} sin conductor` : 'Todos los carros con conductor', 'Cada carro necesita conductor en cada turno con vueltas.', 'nodriver') +
       item(!unr, false, unr ? `${plural(unr, 'tripulante', 'tripulantes')} sin carro` : 'Todos los tripulantes con carro', 'Nadie puede quedar sin carro.', 'unrouted') +
@@ -1612,7 +1641,7 @@
   // número de vuelta, el origen y la hora de aterrizaje.
   async function rearmarPublicado() {
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {}; rt.rv2Fin = {};
-    ui.manual = null; rt.manualDia = false; rt.rv2Solas = [];
+    ui.manual = null; rt.manualDia = false; rt.rv2Solas = []; rt.rv2AuxPegadas = {};
     if (rt.source !== 'live' || !rt.day || !window.Api || typeof Api.getPublishedPlan !== 'function') return false;
     let plan = null;
     try { plan = await Api.getPublishedPlan(rt.day, { estados: ESTADOS_PLAN }); } catch (_) { return false; }
@@ -1633,12 +1662,21 @@
     }));
     const pegadas = todas.filter((v) => v.pool && !v.autoCreated && deEste(v));
     const vueltas = todas.filter((v) => !v.pool);
+    const genteDe = (v) => [...(v.pendientes || []), ...(v.atendidas || [])].map((x) => x.rid).filter(Boolean);
     // La madrugada que Julián pegó con el día ANTERIOR cae en esta ventana: esas
     // personas ya van en una vuelta suya, así que el tablero no las vuelve a rutear.
-    const ajenas = new Set(todas.filter((v) => v.pool && (v.autoCreated || !deEste(v)))
-      .flatMap((v) => [...(v.pendientes || []), ...(v.atendidas || [])].map((x) => x.rid)));
+    const ajenas = new Set(todas.filter((v) => v.pool && (v.autoCreated || !deEste(v))).flatMap(genteDe));
     if (ajenas.size) Object.keys(rt.aux).forEach((k) => { if (ajenas.has(rt.aux[k].reservationId)) delete rt.aux[k]; });
-    ui.manual = pegadas.length ? { vueltas: pegadas, otras: vueltas.length } : null;
+    // Día mezclado (26-oct-2026): quien va en una vuelta pegada de ESTE día tampoco
+    // se rutea en el tablero (saldría «sin carro» y Re-optimizar lo metería en otra
+    // vuelta; saveRoutePlan igual lo saltaría). Salvo que ya vaya en una vuelta del
+    // tablero que arrancó: ahí va de verdad. Se guarda aparte para «Volver a pegar»
+    // y el Excel del día (admin-ruta-julian.js), que sí lo necesitan.
+    const arranco = (v) => v.status === 'in_progress' || v.status === 'completed' || (v.atendidas || []).length > 0;
+    const enCurso = new Set(vueltas.filter(arranco).flatMap(genteDe));
+    const deJulian = new Set(pegadas.flatMap(genteDe).filter((r) => !enCurso.has(r)));
+    if (deJulian.size) Object.keys(rt.aux).forEach((k) => { if (deJulian.has(rt.aux[k].reservationId)) { rt.rv2AuxPegadas[k] = rt.aux[k]; delete rt.aux[k]; } });
+    ui.manual = pegadas.length ? { vueltas: pegadas, otras: vueltas.length, mixto: false } : null;
     rt.manualDia = !!ui.manual;
     if (!vueltas.length) return false;
     const porReserva = {};
@@ -1699,6 +1737,10 @@
       }
     });
     if (!lanes.length) return false;
+    // Día mezclado: hay tablero, así que se ve y se publica como siempre; la ruta
+    // pegada va arriba de la lista con sus botones (renderList → pegadasHTML).
+    // Publicar no la toca: saveRoutePlan no borra vueltas pool ni re-mete a su gente.
+    if (ui.manual) { ui.manual.mixto = true; rt.manualDia = false; }
     // Conductor propio (26-oct-2026): una vuelta guardada con otro conductor que
     // el de su carro en ese turno (o sin conductor, y el carro sí tiene) vuelve
     // con ESE conductor. Si no, se vería el del carro y al re-publicar se perdería
