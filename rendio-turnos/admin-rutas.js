@@ -178,7 +178,7 @@
     }
     // Lo publicado de ESTE día se vuelve a leer en cada carga (Asignación v2):
     // la firma dice si lo que hay en pantalla es lo que ya tienen los conductores.
-    rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {};
+    rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.horasPub = {};
     rt.etaSource = null;
     // 0107: el corte de la madrugada (lectura propia; sin la columna, 02:00).
     if (Api.getRouteNightCutoff) {
@@ -449,6 +449,23 @@
     return min == null || !isFinite(min) ? min : Math.floor(min / RT_PASO_CITA) * RT_PASO_CITA;
   }
 
+  // HORAS PUBLICADAS (25-oct-2026). Un día ya publicado se rearma (Asignación v2,
+  // rearmarPublicado) con la hora que quedó guardada: la de cada parada en las
+  // salidas y la de salida de JMC en las llegadas. Mientras nadie toque esa
+  // vuelta (mismas paradas, mismo orden, mismo arranque) se muestra y se vuelve a
+  // publicar ESA hora, no la que calcula el modelo. Antes la pantalla recalculaba
+  // todo al abrir el día: el plan del jefe del 26-oct (horas puestas a mano) salía
+  // con otras horas y «tarde» aunque el conductor y el tripulante tuvieran las
+  // del jefe, y «Publicar cambios» se las habría cambiado a todos. Una vuelta que
+  // se toca vuelve al modelo, como siempre.
+  function rtHorasPub(laneId) {
+    const a = rt.horasPub && rt.horasPub[laneId];
+    if (!a) return null;
+    const lane = rtLaneOf(laneId);
+    if (!lane || lane.start !== a.start || (rt.order[laneId] || []).join(',') !== a.sig) return null;
+    return a;
+  }
+
   // Evalúa una VUELTA (lane): ETAs por parada, llegada a MDE, holgura y estado.
   // En una salida cada parada lleva además `cita`: la hora redonda que se le da
   // al tripulante (ver rtCita). Las llegadas no llevan cita: ahí no se le da hora
@@ -456,19 +473,22 @@
   function rtCarCompute(laneId) {
     const lane = rtLaneOf(laneId);
     if (lane.type === 'lle') return rtCarComputeLle(lane);
+    const pub = rtHorasPub(laneId);
     let t = rtToMin(lane.start), prev = lane.origin, stops = [], pax = 0, hardDL = Infinity;
     let prevKey = null, eta = Math.round(t);
     rt.order[laneId].forEach(id => {
       const k = rtStopKey(id);
+      const fija = pub && pub.etas[id] != null ? pub.etas[id] : null;   // hora publicada (rtHorasPub)
       if (k !== prevKey) {                  // portería nueva: manejar y frenar
-        if (prev) t += rtLegMin(prev, id);
+        if (fija != null) t = fija;
+        else if (prev) t += rtLegMin(prev, id);
         eta = Math.round(t);                // ETA = cuando el carro LLEGA a la parada
         t += rt.SERVICE_MIN;                // subir gente + maletas antes de arrancar
         prev = id; prevKey = k;
       }
       // Los de la misma portería comparten el frenazo y la misma ETA.
       pax += rt.aux[id].pax;
-      stops.push({ id, eta, cita: rtCita(eta) });
+      stops.push(fija != null ? { id, eta: fija, cita: fija } : { id, eta, cita: rtCita(eta) });
       hardDL = Math.min(hardDL, rtToMin(rt.aux[id].dl));
     });
     const hastaUltima = t - rtToMin(lane.start);   // antes del tramo final
@@ -494,9 +514,12 @@
   function rtCarComputeLle(lane) {
     const ideal = rtToMin(lane.landing) + rtDeplaneOf(rt.order[lane.id], rtToMin(lane.landing)); // cuándo sale la gente del terminal (en tierra, 0092: sin desembarque)
     const inicio = rtToMin(lane.start);
+    // Publicada y sin tocar (rtHorasPub): sale de JMC a la hora guardada, que es
+    // la que tienen el conductor y el tripulante (el jefe puede ponerla a mano).
+    const pub = !!rtHorasPub(lane.id);
     // El carro sale de JMC cuando la gente ya salió: si está antes (la vuelta
     // de las 23:59 de un vuelo que suelta a la gente a las 00:05), espera.
-    let t = Math.max(inicio, ideal), prev = 'airport', stops = [], pax = 0;
+    let t = pub ? inicio : Math.max(inicio, ideal), prev = 'airport', stops = [], pax = 0;
     let prevKey = null, eta = Math.round(t);
     rt.order[lane.id].forEach(id => {
       const k = rtStopKey(id);
@@ -527,7 +550,7 @@
     const tierra = stops.length > 0 && stops.every(x => rt.aux[x.id] && rt.aux[x.id].tierra);
     // reserva (0121): todos de reserva → la hora es la de fin de la asignación.
     const reserva = tierra && stops.every(x => rt.aux[x.id].reserva);
-    return { stops, pax, arrival, hardDL: ideal, holg: -wait, status, depart: ideal, wait, lle: true, tierra, reserva };
+    return { stops, pax, arrival, hardDL: ideal, holg: -wait, status, depart: pub ? inicio : ideal, wait, lle: true, tierra, reserva };
   }
 
   function rtDayStats() {
@@ -1502,6 +1525,7 @@
     // Tiempos reales (OSRM) + un piso de ~900ms para que se vea el proceso.
     const [src] = await Promise.all([rtBuildMatrix(), new Promise(r => setTimeout(r, 900))]);
     rt.etaSource = src; // 'tomtom' = con tráfico | 'osrm' = carretera real | 'haversine' = línea recta
+    rt.horasPub = {};   // el día se arma desde cero: ninguna hora publicada se conserva
     const day = rtSolveDay(); // oleadas → vueltas encadenadas entre los carros
     clearInterval(iv); $('#rt-ovl').classList.remove('show');
     rt.lanes = day.lanes;

@@ -97,13 +97,17 @@
     ['V-03', 'sal', '07:40', ['I', 'J'], 'd3', 'planned'],
     ['V-03', 'lle', '16:30', ['K', 'L'], 'd4', 'planned'],
   ];
-  function vueltas() {
+  // horas = { 'ra-N': { start: 'HH:MM', etas: { K: 'HH:MM' } } }: el plan quedó
+  // publicado con ESAS horas (puestas a mano), no con las del modelo.
+  function vueltas(horas = {}) {
     const drv = DRIVERS();
     return VUELTAS.map(([car, type, start, stops, d, status, hechas], i) => {
-      const map = (k, j) => ({ stopId: 'st-' + i + '-' + j, rid: rid(k), order: j + 1, status: (hechas && hechas[k]) || 'pending' });
+      const h = horas['ra-' + (i + 1)] || {};
+      const map = (k, j) => ({ stopId: 'st-' + i + '-' + j, rid: rid(k), order: j + 1, status: (hechas && hechas[k]) || 'pending',
+        etaAt: h.etas && h.etas[k] ? `${DAY}T${h.etas[k]}:00-05:00` : null });
       const todas = stops.map(map);
       return {
-        id: 'ra-' + (i + 1), type, status, startAt: `${DAY}T${start}:00-05:00`,
+        id: 'ra-' + (i + 1), type, status, startAt: `${DAY}T${h.start || start}:00-05:00`,
         vehicleId: 'veh-' + car.slice(-1), carro: car, cap: 4,
         driverProfileId: d, conductor: d ? drv.find((x) => x.id === d).n : 'Sin conductor',
         pendientes: todas.filter((s) => s.status === 'pending'), atendidas: todas.filter((s) => s.status !== 'pending'),
@@ -156,7 +160,7 @@
     Api.getPublishedPlan = async (day, o) => {
       log.publicados.push({ day, estados: o && o.estados });
       if (!publicado || day !== DAY) return { day, vueltas: [], publicado: false };
-      return { day, vueltas: vueltas(), publicado: true };
+      return { day, vueltas: vueltas(opts.horas), publicado: true };
     };
     Api.trafficMatrix = async (coords) => { log.tomtom++; return matriz(coords); };
     // Como el real (api.js · saveRoutePlan): «notify» trae solo las reservas que

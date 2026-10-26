@@ -56,7 +56,7 @@ const txt = (el) => (el ? el.textContent.replace(/\s+/g, ' ').trim() : null);
 // Texto «como se lee»: un espacio entre elementos (textContent los pega).
 const leer = (el) => { if (!el) return null; const p = []; const walk = (n) => { n.childNodes.forEach((c) => { if (c.nodeType === 3) p.push(c.textContent); else { walk(c); p.push(' '); } }); }; walk(el); return p.join('').replace(/\s+/g, ' ').trim(); };
 
-async function boot({ vista = null, publicado = true, confirm = true, dias } = {}) {
+async function boot({ vista = null, publicado = true, confirm = true, dias, horas } = {}) {
   const dom = new JSDOM(read('index.html'), { runScripts: 'outside-only', pretendToBeVisual: true, url: 'http://localhost/' });
   const w = dom.window;
   const errors = [], toasts = [], confirms = [];
@@ -74,10 +74,10 @@ async function boot({ vista = null, publicado = true, confirm = true, dias } = {
   w.eval(readFileSync(FIX + 'rutas-v2-dia.js', 'utf8'));
   w.RV2Fixture.instalarFetch(w);
   w.Api = {};
-  const log = w.RV2Fixture.instalar(w.Api, { publicado, dias });
+  const log = w.RV2Fixture.instalar(w.Api, { publicado, dias, horas });
   try {
     w.eval(read('admin-consola.js') + '\n' + read('admin-rutas.js') + '\n' + read('admin-rutas-v2.js') +
-      '\n;window.__T = { rt, rtCarCompute, renderRoutes, rtFirmaPlan, rtLoad };');
+      '\n;window.__T = { rt, rtCarCompute, renderRoutes, rtFirmaPlan, rtLoad, rtSavePlan };');
   } catch (e) { errors.push('eval: ' + e.message); }
   w.document.querySelector('section[data-panel="routes"]').classList.remove('hidden');
   const q = (s) => w.document.querySelector(s);
@@ -122,6 +122,49 @@ console.log('\n── 25-oct · turnos abiertos: solo se piden si el día que se
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 25-oct · plan publicado con horas a mano: la pantalla muestra las guardadas ──');
+{
+  // El plan del jefe del 26-oct se publicó con SUS horas (por WhatsApp, no con el
+  // modelo). Asignación las recalculaba al abrir el día (Michell 08:35 → «08:55 ·
+  // 17 min tarde») y «Publicar cambios» se las habría cambiado a todos.
+  const hm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const laneDe = (x, k) => Object.keys(x.T().rt.order).find((l) => x.T().rt.order[l].includes('r' + k));
+  const horasDe = (ru) => ru.stops.map((s) => hm(s.time)).join(',');
+  // Sin horas guardadas: lo de siempre (el modelo).
+  const b0 = await boot();
+  const r0 = b0.rutaDe(laneDe(b0, 'H')), k0 = b0.rutaDe(laneDe(b0, 'K'));
+  // El mismo plan publicado con horas a mano: H/G (ra-5) a las 04:40 y 04:55,
+  // encima de la vuelta de E (04:35) del mismo carro; K/L (ra-9) salen de JMC
+  // 15 min antes de lo que el modelo calcula que salen del terminal.
+  const sK = k0.pickup - 15;
+  const b = await boot({ horas: { 'ra-5': { start: '04:40', etas: { H: '04:40', G: '04:55' } }, 'ra-9': { start: hm(sK) } } });
+  const lH = laneDe(b, 'H'), lK = laneDe(b, 'K');
+  const r = b.rutaDe(lH), k = b.rutaDe(lK);
+  t('salida con horas a mano: cada parada muestra la hora guardada', horasDe(r) === '04:40,04:55' && r.pickup === 280, JSON.stringify({ app: horasDe(r), modelo: horasDe(r0) }));
+  t('…y no se corre aunque el carro venga de otra vuelta', r.retraso === 0 && r.depart === 280, JSON.stringify([r.retraso, r.depart]));
+  t('…y la llegada a JMC sale de la última hora guardada (+ subir + tramo)', r.arrival > 295 && r.arrival < 295 + 60, r.arrival);
+  t('llegada con hora a mano: sale de JMC a la hora guardada', k.pickup === sK, JSON.stringify({ app: k.pickup, guardada: sK, modelo: k0.pickup }));
+  t('las horas guardadas no cuentan como cambio (la etiqueta dice lo mismo que sin ellas)', txt(b.q('#rv2-pubChip')) === txt(b0.q('#rv2-pubChip')), [txt(b.q('#rv2-pubChip')), txt(b0.q('#rv2-pubChip'))].join(' / '));
+  // Volver a publicar sin tocar nada: las horas guardadas se conservan.
+  await b.T().rtSavePlan({ toast() {} });
+  const sv = b.log.saved[b.log.saved.length - 1];
+  const lHG = sv && sv.lanes.find((l) => l.stops.join(',') === 'res-H,res-G');
+  const lKL = sv && sv.lanes.find((l) => l.stops.join(',') === 'res-K,res-L');
+  t('re-publicar sin tocar: salida con las mismas horas y el mismo arranque', !!lHG && lHG.etas['res-H'] === 280 && lHG.etas['res-G'] === 295 && /T04:40:00/.test(lHG.startAt), JSON.stringify(lHG));
+  t('re-publicar sin tocar: la llegada con la misma salida de JMC', !!lKL && lKL.startAt.includes('T' + hm(sK) + ':00'), lKL && lKL.startAt);
+  // Tocar la vuelta (sale G): vuelve al modelo. Deshacerlo: vuelve la hora guardada.
+  const rt = b.T().rt;
+  rt.order[lH] = ['rH'];
+  const tocada = b.T().rtCarCompute(lH).stops[0];
+  t('vuelta tocada: la hora vuelve a ser la del modelo', tocada.cita !== 280, JSON.stringify(tocada));
+  rt.order[lH] = ['rH', 'rG'];
+  t('…y si se deshace, vuelve la hora guardada', b.T().rtCarCompute(lH).stops[0].cita === 280);
+  // Re-optimizar arma el día desde cero: ya no hay horas guardadas que respetar.
+  t('el plan sin horas guardadas (como lo publica la app) se ve igual que antes', horasDe(b0.rutaDe(laneDe(b0, 'H'))) === horasDe(r0));
+  t('sin errores de script', b.errors.length === 0 && b0.errors.length === 0, [...b.errors, ...b0.errors].join(' | '));
+}
+
 console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vueltas y búsqueda ──');
 {
   const b = await boot();

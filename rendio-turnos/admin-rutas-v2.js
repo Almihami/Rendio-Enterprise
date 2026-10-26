@@ -163,11 +163,14 @@
     const start = rtToMin(lane.start);
     const libre = libreDe(lane);
     const d = libre != null ? libre - start : 0;
-    const retraso = d > TOL_CHOQUE ? Math.round(d) : 0;
+    // Publicada y sin tocar (rtHorasPub): se muestra la hora guardada, la que
+    // tienen el conductor y el tripulante, aunque el carro venga de otra vuelta.
+    const fijaPub = typeof rtHorasPub === 'function' && !!rtHorasPub(lane.id);
+    const retraso = !fijaPub && d > TOL_CHOQUE ? Math.round(d) : 0;
     const fija = fijaDe(lane.id);
     // En una salida la hora de cada parada es la REDONDA que se le da al
     // tripulante (rtCita, admin-rutas.js), corrida si el carro viene atrasado.
-    const stops = c.stops.map((s) => ({ crewId: s.id, time: s.cita != null ? rtCita(s.eta + retraso) : s.eta + retraso }));
+    const stops = c.stops.map((s) => ({ crewId: s.id, time: s.cita != null ? (fijaPub ? s.cita : rtCita(s.eta + retraso)) : s.eta + retraso }));
     let arrival, end, pres = null, margin = null, wait = null;
     if (lle) {
       arrival = rtToMin(lane.landing || lane.start);          // aterrizaje (README §6)
@@ -1178,7 +1181,7 @@
   // tablero vacío con todos «sin rutear». Mismas reglas que rtSolveDay para el
   // número de vuelta, el origen y la hora de aterrizaje.
   async function rearmarPublicado() {
-    rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {};
+    rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {};
     if (rt.source !== 'live' || !rt.day || !window.Api || typeof Api.getPublishedPlan !== 'function') return false;
     let plan = null;
     try { plan = await Api.getPublishedPlan(rt.day, { estados: ESTADOS_PLAN }); } catch (_) { return false; }
@@ -1186,7 +1189,7 @@
     if (!vueltas.length) return false;
     const porReserva = {};
     Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
-    const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {};
+    const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {};
     const hm = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false }).slice(0, 5);
     vueltas.slice().sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt)).forEach((v) => {
       let car = rt.cars.find((c) => c.vehicleId && c.vehicleId === v.vehicleId);
@@ -1204,6 +1207,11 @@
       const lane = { id: `${car.id}·V${n}`, car: car.id, vuelta: n, type: v.type === 'lle' ? 'lle' : 'sal', start: hm(v.startAt), origin: null };
       if (lane.type === 'lle') { lane.origin = 'airport'; lane.landing = rtToHM(horaVuelta(ids)); }
       lanes.push(lane); order[lane.id] = ids;
+      // La hora guardada (rtHorasPub, admin-rutas.js): en una salida la de cada
+      // parada; en una llegada basta el arranque (la salida de JMC).
+      const etas = {};
+      if (lane.type !== 'lle') stops.forEach((s) => { const k = porReserva[s.rid]; if (k && s.etaAt) etas[k] = rtToMin(hm(s.etaAt)); });
+      horas[lane.id] = { start: lane.start, sig: ids.join(','), etas };
       // Arrancada = 'in_progress' o con paradas ya atendidas (nada en la app pasa una
       // ruta a 'in_progress'; la que el conductor va haciendo sigue en 'planned').
       if (v.status === 'in_progress' || v.status === 'completed') fijas[lane.id] = v.status;
@@ -1215,7 +1223,7 @@
       }
     });
     if (!lanes.length) return false;
-    rt.lanes = lanes; rt.order = order;
+    rt.lanes = lanes; rt.order = order; rt.horasPub = horas;
     rt.pool = Object.keys(rt.aux).filter((k) => !usados.has(k));
     rt.rv2Fijas = fijas; rt.rv2Atendidas = atendidas;
     rt.cars.forEach((c) => encadenar(c.id));
