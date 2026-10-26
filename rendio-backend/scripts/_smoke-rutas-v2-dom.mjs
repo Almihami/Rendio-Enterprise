@@ -191,7 +191,7 @@ console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vue
     && /^V-01 de las 05:35 llega 19 min tarde ?Llega a JMC 06:39 · presentación 06:30 · con 10 min de entrega/.test(leer(av[2])), av.map(leer).join(' | '));
   t('…cada aviso con UN botón: «Ubicar» (sin carro) y «Ver» (tarde)', av[0].querySelector('[data-act="route"][data-crew="rN"]') && txt(av[0].querySelector('button')) === 'Ubicar' && txt(av[2].querySelector('[data-act="ver"]')) === 'Ver');
   const cel = (car, b2) => q(`#rv2-drivers [data-act="assignslot"][data-car="${car}"][data-shift="${b2}"]`);
-  t('Conductores: carro × turno (AM / PM) con quién maneja', qa('#rv2-drivers .hd').map(txt).join(',') === 'Turno AM,Turno PM' && qa('#rv2-drivers .car').map(txt).join(',') === 'V-01,V-02,V-03', qa('#rv2-drivers .hd').map(txt).join(','));
+  t('Conductores: carro × turno (AM / PM) con quién maneja', qa('#rv2-drivers .hd').map(txt).join(',') === 'Turno AM,Turno PM' && qa('#rv2-drivers .car b').map(txt).join(',') === 'V-01,V-02,V-03', qa('#rv2-drivers .hd').map(txt).join(','));
   t('…V-01 PM «Rubén D. · 1 vuelta · automático»; V-01 AM «Jorge P. · 1 vuelta · elegido» (la terminada ya no cuenta)', leer(cel('V-01', 'pm')) === 'Rubén D. 1 vuelta · automático' && leer(cel('V-01', 'am')) === 'Jorge P. 1 vuelta · elegido', [leer(cel('V-01', 'pm')), leer(cel('V-01', 'am'))].join(' | '));
   t('…V-02 no tiene vueltas PM: «Sin vueltas»', /Sin vueltas/.test(txt(qa('#rv2-drivers .cell.none')[0] || null)));
   // 25-oct-2026: quién más está en turno sin vueltas (la tarjeta va por carro con vueltas).
@@ -1131,6 +1131,48 @@ console.log('\n── 26-oct · 0129: «Guardar y publicar» solo esa vuelta (si
   await abrir(LM);
   t('sin la función nueva: un solo botón, como antes', !q('#rv2-doPub') && /Elige un conductor/.test(txt(q('#rv2-doAssign'))));
   t('sin errores de consola (0129)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 26-oct · 0132: «¿Qué carro es Carro 1?» (el carro de la flota del plan) ──');
+{
+  const b = await boot();
+  const { w, q, qa, click, T, V2 } = b;
+  const rt = T().rt;
+  const FLOTA = [{ id: 'veh-prw', internal_code: 'PRW443', license_plate: 'PRW443', brand: 'Hyundai', model: 'H1', capacity: 4, status: 'available' },
+    { id: 'veh-hyu', internal_code: 'HYU376', license_plate: 'HYU376', brand: 'Hyundai', model: 'H1', capacity: 4, status: 'in_use' },
+    { id: 'veh-zzz', internal_code: 'ZZZ999', license_plate: 'ZZZ999', capacity: 4, status: 'available' }];
+  const guard = [];
+  w.Api.listVehiclesForShift = async () => FLOTA;
+  w.Api.setPlanCarVehicle = async (day, pc, vid) => { guard.push([day, pc, vid]); return 2; };
+  V2().render(); await wait(5);
+  const cb = (id) => q(`#rv2-drivers [data-act="plancar"][data-car="${id}"]`);
+  t('cada carro de la tarjeta es un botón «Elegir»', cb('V-01') && /V-01\s*Elegir/.test(txt(cb('V-01'))), cb('V-01') && txt(cb('V-01')));
+  click(cb('V-01')); await wait(20);
+  t('abre «¿Qué carro es V-01?» con la flota (3) y «Sin definir»', txt(q('#rv2-shTitle')) === '¿Qué carro es V-01?' && qa('#rv2-pcars [data-pcar]').length === 4 && /En uso/.test(txt(q('#rv2-pcars [data-pcar="veh-hyu"]'))), txt(q('#rv2-shTitle')));
+  rt.firmaPublicada = T().rtFirmaPlan(); V2().render(); await wait(5);
+  click(cb('V-01')); await wait(20);
+  click(q('#rv2-pcars [data-pcar="veh-prw"]')); click(q('#rv2-pcar-ok')); await wait(20);
+  const v01 = rt.cars.find((c) => c.id === 'V-01');
+  t('V-01 = PRW443: queda en el carro y la tarjeta lo dice', v01.planVehicleId === 'veh-prw' && /V-01\s*PRW443/.test(txt(cb('V-01'))), txt(cb('V-01')));
+  t('con el día publicado se guarda al momento, sin re-publicar', guard.length === 1 && guard[0][1] === 'V-01' && guard[0][2] === 'veh-prw' && b.log.saved.length === 0, JSON.stringify(guard));
+  t('…y el día sigue publicado sin cambios', rt.firmaPublicada === T().rtFirmaPlan());
+  t('el aviso lo dice', /V-01 es PRW443 · guardado \(no se re-publicó nada\)/.test(b.toastV2()), b.toastV2());
+  // El mismo carro para V-02: V-01 queda sin carro elegido.
+  click(cb('V-02')); await wait(20);
+  t('en V-02, PRW443 dice «Es V-01»', /Es V-01/.test(txt(q('#rv2-pcars [data-pcar="veh-prw"]'))));
+  click(q('#rv2-pcars [data-pcar="veh-prw"]')); click(q('#rv2-pcar-ok')); await wait(20);
+  t('elegirlo para V-02 lo quita de V-01 (en la base también)', rt.cars.find((c) => c.id === 'V-02').planVehicleId === 'veh-prw' && !v01.planVehicleId && guard.some((g) => g[1] === 'V-01' && g[2] === null), JSON.stringify(guard));
+  // Publicar manda el carro del plan en cada vuelta de ese carro.
+  b.log.saved.length = 0;
+  await T().rtSavePlan({ toast() {} }); await wait(20);
+  const sv = b.log.saved.at(-1);
+  const deV02 = sv && sv.lanes.filter((l) => l.planCar === 'V-02');
+  t('publicar manda planVehicleId en las vueltas de V-02 (y nada en las de V-01)', deV02 && deV02.length && deV02.every((l) => l.planVehicleId === 'veh-prw') && sv.lanes.filter((l) => l.planCar === 'V-01').every((l) => !l.planVehicleId), sv && JSON.stringify(sv.lanes.map((l) => [l.planCar, l.planVehicleId])));
+  click(cb('V-02')); await wait(20);
+  click(q('#rv2-pcars [data-pcar=""]')); click(q('#rv2-pcar-ok')); await wait(20);
+  t('«Sin definir» lo deja como antes (sale de la inspección)', !rt.cars.find((c) => c.id === 'V-02').planVehicleId && /queda sin carro elegido: sale de la inspección/.test(b.toastV2()));
+  t('sin errores de consola (0132)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);

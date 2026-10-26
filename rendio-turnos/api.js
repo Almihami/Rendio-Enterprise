@@ -3546,11 +3546,17 @@
       // 0131: a quién se delegó (nombre y teléfono que ve el tripulante).
       if (deleg && lane.delegateName) { fila.delegate_name = lane.delegateName; fila.delegate_phone = lane.delegatePhone || null; }
       if (lane.planCar) fila.plan_car = lane.planCar;
+      if (lane.planVehicleId) fila.plan_vehicle_id = lane.planVehicleId;   // 0132: «Carro 1 = PRW443»
       let { data: ra, error } = await sb.from('route_assignments').insert(fila).select('id').single();
       // Base sin 0131: la delegada se guarda igual, sin nombre (el tripulante ve
       // «te contactaremos por WhatsApp», como antes).
       if (error && fila.delegate_name && (error.code === '42703' || /delegate_(name|phone)/.test(error.message || ''))) {
         delete fila.delegate_name; delete fila.delegate_phone;
+        ({ data: ra, error } = await sb.from('route_assignments').insert(fila).select('id').single());
+      }
+      // Base sin 0132: sin el carro del plan (la placa la sigue poniendo el turno).
+      if (error && fila.plan_vehicle_id && (error.code === '42703' || /plan_vehicle_id/.test(error.message || ''))) {
+        delete fila.plan_vehicle_id;
         ({ data: ra, error } = await sb.from('route_assignments').insert(fila).select('id').single());
       }
       // Base sin 0124 (no tiene plan_car): se guarda igual, sin él.
@@ -4159,8 +4165,11 @@
     const C0126 = C0125 + 'delegated_at, ';
     // 0131: + a quién se delegó.
     const C0131 = C0126 + 'delegate_name, delegate_phone, ';
-    let { data, error } = await sel(C0131);
-    let cols = C0131;
+    // 0132: + el carro físico que el plan le pone a «Carro N».
+    const C0132 = C0131 + 'plan_vehicle_id, ';
+    let { data, error } = await sel(C0132);
+    let cols = C0132;
+    if (error && (error.code === '42703' || /plan_vehicle_id/.test(error.message || ''))) { ({ data, error } = await sel(C0131)); cols = C0131; }
     if (error && (error.code === '42703' || /delegate_(name|phone)/.test(error.message || ''))) { ({ data, error } = await sel(C0126)); cols = C0126; }
     if (error && (error.code === '42703' || /delegated_at/.test(error.message || ''))) { ({ data, error } = await sel(C0125)); cols = C0125; }
     if (!error) {
@@ -4229,6 +4238,7 @@
         delegated: !!ra.delegated_at,
         // 0131: a quién (null = delegada sin nombre, «te contactaremos por WhatsApp»).
         delegateName: ra.delegate_name || null, delegatePhone: ra.delegate_phone || null,
+        planVehicleId: ra.plan_vehicle_id || null,   // 0132
         // La placa del turno si ya la tiene; si no, el carro del plan (0124).
         carro: ra.vehicles?.internal_code || ra.vehicles?.license_plate || ra.plan_car || 'Carro',
         placa: ra.vehicles?.internal_code || ra.vehicles?.license_plate || null,
@@ -4310,6 +4320,36 @@
     }
     return data;
   }
+  // 0132: «Carro 1 = PRW443» en las vueltas YA publicadas de ese carro ese día,
+  // sin re-publicar (no avisa a nadie: es la indicación para el conductor). null =
+  // sin definir. Devuelve cuántas vueltas cambió.
+  async function setPlanCarVehicle(day, planCar, vehicleId) {
+    const d0 = day + 'T00:00:00-05:00', d1 = day + 'T23:59:59-05:00';
+    const { data, error } = await sb.from('route_assignments').update({ plan_vehicle_id: vehicleId || null })
+      .eq('plan_car', planCar).gte('planned_start_at', d0).lte('planned_start_at', d1)
+      .in('status', ['draft', 'planned', 'in_progress']).select('id');
+    if (error) {
+      if (error.code === '42703' || /plan_vehicle_id/.test(error.message || '')) throw new Error('Para elegir el carro falta la actualización 0132 de la base.');
+      throw error;
+    }
+    return (data || []).length;
+  }
+  // 0132: el carro que el plan le pone al conductor hoy (para que salga primero al
+  // iniciar turno). null si no hay o la base no lo tiene.
+  async function myPlanVehicleToday(profileId) {
+    try {
+      const dpid = profileId ? await getMyDriverProfileId(profileId) : null; if (!dpid) return null;
+      const now = Date.now();
+      const { data, error } = await sb.from('route_assignments').select('plan_vehicle_id, planned_start_at')
+        .eq('driver_profile_id', dpid).in('status', ['draft', 'planned', 'in_progress'])
+        .gte('planned_start_at', new Date(now - 3 * 3600000).toISOString())
+        .lte('planned_start_at', new Date(now + 14 * 3600000).toISOString())
+        .order('planned_start_at', { ascending: true }).limit(10);
+      if (error || !Array.isArray(data)) return null;
+      const v = data.find((x) => x.plan_vehicle_id);
+      return v ? v.plan_vehicle_id : null;
+    } catch (_) { return null; }
+  }
   // 0131: delega UNA vuelta publicada a alguien de afuera (nombre + teléfono) o le
   // cambia a quién. La base la anota en la libreta y le avisa a cada tripulante
   // «Te recogerá X · su número es Y».
@@ -4359,7 +4399,7 @@
   }
 
   window.Api = {
-    adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact,
+    adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, setPlanCarVehicle, myPlanVehicleToday,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,

@@ -143,6 +143,10 @@
 #routes-v2 .rv2-dfree b { font-weight: 700; color: var(--ink); }
 #routes-v2 .rv2-dgrid .hd { font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: var(--ink3); text-transform: uppercase; padding: 0 2px; }
 #routes-v2 .rv2-dgrid .car { font-weight: 800; font-size: 13.5px; align-self: center; }
+/* 0132: «Carro 1» se toca para elegir el carro de la flota (debajo, su placa). */
+#routes-v2 .rv2-dgrid .carbtn { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; min-height: 44px; padding: 6px 6px; border: 1px dashed var(--line2); border-radius: 10px; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+#routes-v2 .rv2-dgrid .carbtn b { font-weight: 800; font-size: 13.5px; }
+#routes-v2 .rv2-dgrid .carbtn small { font-size: 11.5px; color: var(--ink2); font-weight: 600; }
 #routes-v2 .rv2-dgrid .cell { border: 1px solid var(--line); border-radius: 9px; padding: 6px 9px; text-align: left; background: var(--panel); display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 42px; min-width: 0; }
 #routes-v2 .rv2-dgrid .cell b { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #routes-v2 .rv2-dgrid .cell small { font-size: 11px; color: var(--ink3); }

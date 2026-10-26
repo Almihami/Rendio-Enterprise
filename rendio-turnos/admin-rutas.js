@@ -255,7 +255,8 @@
     const lanes = (rt.lanes || []).filter(l => rt.order[l.id] && rt.order[l.id].length)
       // 0131: a quién se delegó también es parte del plan.
       .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(','), l.drv === undefined ? null : l.drv, l.deleg ? 1 : 0, l.deleg && l.delegName ? [l.delegName, l.delegPhone || ''] : null]);
-    const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null, c.driverMad || null]);
+    // 0132: el carro de la flota que el plan le pone a «Carro N».
+    const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null, c.driverMad || null, c.planVehicleId || null]);
     return JSON.stringify([lanes, drv]);
   }
   const rtCarOf = (lane) => rt.cars.find(c => c.id === lane.car);
@@ -1585,6 +1586,7 @@
       return {
         vehicleId: car ? car.vehicleId : null,
         planCar: car ? car.id : null,   // 0124: «Carro 1»; la placa la pone el turno del conductor
+        planVehicleId: car ? (car.planVehicleId || null) : null,   // 0132: «Carro 1 = PRW443» (la indicación)
         driverProfileId: l.deleg ? null : rtDriverOf(l), // conductor de la FRANJA de esta vuelta (AM/PM)
         delegated: l.deleg === true,    // 0126: la hace alguien de afuera
         delegateName: l.deleg ? (l.delegName || null) : null,     // 0131: a quién

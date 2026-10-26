@@ -467,6 +467,10 @@
     // Los documentos del carro (0095) se piden a la par de los vehículos. Nunca
     // rechaza: si fallan, el paso 1 queda como antes (chip del SOAT de vehicles).
     const docsListos = cargarDocs();
+    // 0132: el carro que el plan le pone hoy («Carro 1 = PRW443»): sale primero.
+    // Manda lo que elija: si es otro, a los jefes les llega un aviso (la base).
+    sf.planVehicleId = null;
+    try { sf.planVehicleId = (Api.myPlanVehicleToday && sf.profile) ? await Api.myPlanVehicleToday(sf.profile.id) : null; } catch (_) { sf.planVehicleId = null; }
     try {
       sf.vehicles = await Api.listVehiclesForShift();
     } catch (e) {
@@ -1004,7 +1008,8 @@
   // ---------- Paso 1: vehículo ----------
 
   function renderVehicle(wiz) {
-    const rank = v => (v.status === 'available' || v.id === sf.myReservedVehicleId) ? 0 : 1;
+    // 0132: el del plan (si se puede usar) primero; luego los disponibles.
+    const rank = v => (v.status === 'available' || v.id === sf.myReservedVehicleId) ? (v.id === sf.planVehicleId ? -1 : 0) : 1;
     const rows = sf.vehicles
       .slice()
       .sort((a, b) => rank(a) - rank(b))
@@ -1014,6 +1019,7 @@
         const isSel = sf.vehicleId === v.id;
         const chips = [];
         if (isMine) chips.push(chip('emerald', 'Tu reserva'));
+        if (v.id === sf.planVehicleId) chips.push(chip('emerald', 'Según el plan'));
         else if (STATUS_ES[v.status]) chips.push(chip('rose', STATUS_ES[v.status]));
         // El chip de estado ya dice "Cambio de aceite" si está bloqueado; evita duplicar.
         const mi = (v.status === 'blocked') ? null : maintenanceInfo(v); if (mi) chips.push(chip(mi.tone, mi.label));
