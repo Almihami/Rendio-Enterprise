@@ -199,6 +199,7 @@
       id: lane.id, lane, vuelta: lane.vuelta, vehicle: car.id, cap: rtCapOf(car), type,
       depart: start + retraso, pickup, arrival, end, pres, margin, wait, retraso,
       stops, pax: c.pax, driverId, shift, status, fija, etaSource: rt.etaSource || null,
+      propio: lane.drv !== undefined,   // conductor puesto solo a esta vuelta (rtDriverOf)
       hora: ((Math.floor(arrival / 60) % 24) + 24) % 24,
     };
   }
@@ -388,7 +389,7 @@
     });
     const slots = [];
     rt.lanes.forEach((l) => {
-      if (!(rt.order[l.id] || []).length || fijaDe(l.id) === 'completed') return;
+      if (!(rt.order[l.id] || []).length || fijaDe(l.id) === 'completed' || l.drv !== undefined) return;
       const b = rtBandOf(l); const k = l.car + '|' + b;
       if (!slots.some((s) => s.k === k)) slots.push({ k, carId: l.car, b, t: rtToMin(l.start) });
     });
@@ -482,6 +483,22 @@
       const [carId, b] = k.split('|');
       out.push({ k: 'nodriver', html: `<b>${esc(carId)}</b> no tiene conductor · ${esc(turnoTxt(b))}<small>${horarioDe(b) ? 'No queda nadie libre en ese turno según el horario publicado' : 'No hay horario publicado para ese turno'}</small>`, btn: 'Elegir', act: `data-act="assignslot" data-car="${esc(carId)}" data-shift="${esc(b)}"` });
     });
+    // Se le quitó el conductor SOLO a una vuelta: el botón abre la hoja de esa vuelta.
+    D.routes.filter((r) => r.propio && !r.driverId && r.fija !== 'completed').forEach((r) => {
+      out.push({ k: 'nodriver', html: `La vuelta de <b>${esc(r.vehicle)}</b> de las ${hhmm(inicioDe(r).at)} no tiene conductor<small>Se le quitó solo a esa vuelta · ${esc(turnoTxt(r.shift))}</small>`, btn: 'Elegir', act: `data-act="assign" data-id="${esc(r.id)}"` });
+    });
+    // Un conductor con dos vueltas que se cruzan, o que no alcanza a llegar de una
+    // a la siguiente (26-oct-2026). Con el conductor por vuelta se puede armar sin
+    // querer; y en un plan con las horas del jefe (rt.horasPub) el tablero no lo
+    // veía: Julián dejaba a alguien en JMC a las 04:02 y tenía que recoger en
+    // Bosques del Norte a las 04:15. No bloquea publicar: el jefe decide.
+    choquesDeConductor().forEach(({ id, a, b, cruza, e, cambiar }) => {
+      const n = esc(conductor(id).name);
+      const html = cruza
+        ? `<b>${n}</b> tiene dos vueltas a la vez<small>${esc(a.vehicle)} de las ${hhmm(inicioDe(a).at)} (hasta las ${hhmm(finDe(a).at)}) y ${esc(b.vehicle)} de las ${hhmm(inicioDe(b).at)}</small>`
+        : `<b>${n}</b> no alcanza a llegar a la vuelta de las ${hhmm(inicioDe(b).at)} de ${esc(b.vehicle)}<small>Termina la de las ${hhmm(inicioDe(a).at)} ${a.type === 'llegada' ? 'en la última casa' : 'en JMC'} a las ${hhmm(finDe(a).at)}: llegaría a las ${hhmm(e.llega)}, ${e.tarde} min tarde</small>`;
+      out.push({ k: 'drv', html, btn: 'Cambiar', act: `data-act="assign" data-id="${esc(cambiar.id)}"` });
+    });
     return out;
   }
 
@@ -521,10 +538,10 @@
   function renderDrivers() {
     if (rt.source !== 'live' || ui.cargando || !hayVueltas()) { el.drivers.innerHTML = ''; return; }
     const cells = {};
-    D.routes.forEach((r) => { if (r.fija === 'completed') return; const k = r.vehicle + '|' + r.shift; (cells[k] = cells[k] || { n: 0 }).n++; });
+    D.routes.forEach((r) => { if (r.fija === 'completed') return; const k = r.vehicle + '|' + r.shift; const c = (cells[k] = cells[k] || { n: 0, otros: 0 }); if (r.propio) c.otros++; else c.n++; });
     const bands = RT_BANDS.filter((b) => Object.keys(cells).some((k) => k.endsWith('|' + b)));
     const cars = (rt.cars || []).filter((c) => bands.some((b) => cells[c.id + '|' + b]));
-    let h = `<h2>Conductores</h2><p class="sub">Se ponen solos con el horario publicado: uno por carro y turno, para todas sus vueltas. La placa sale del carro con que cada uno inicia turno. Toca uno para cambiarlo.</p>` +
+    let h = `<h2>Conductores</h2><p class="sub">Se ponen solos con el horario publicado: uno por carro y turno, para todas sus vueltas. La placa sale del carro con que cada uno inicia turno. Toca uno para cambiarlo en todo el turno; para cambiar una sola vuelta, ábrela y toca «Cambiar».</p>` +
       `<div class="rv2-dgrid" style="grid-template-columns: 52px repeat(${bands.length}, minmax(0, 1fr))"><span></span>` +
       bands.map((b) => `<span class="hd">${esc(turnoTxt(b))}</span>`).join('');
     cars.forEach((car) => {
@@ -538,7 +555,7 @@
         const placa = id ? placaDeTurno(id) : null;
         const enTurno = placa ? ' · en ' + esc(placa) : (id && Array.isArray(rt.activos) ? ' · sin iniciar turno' : '');
         h += `<button class="cell${id ? '' : ' need'}" data-act="assignslot" data-car="${esc(car.id)}" data-shift="${b}" aria-label="${esc(`${car.id}, ${turnoTxt(b)}: ${d ? d.name : 'sin conductor'}${placa ? ', en ' + placa : ''}. Cambiar`)}">` +
-          `<b>${d ? esc(shortName(d.name)) : 'Sin conductor'}</b><small>${plural(c.n, 'vuelta', 'vueltas')}${id ? (auto ? ' · automático' : ' · elegido') : ''}${enTurno}</small></button>`;
+          `<b>${d ? esc(shortName(d.name)) : 'Sin conductor'}</b><small>${c.n ? plural(c.n, 'vuelta', 'vueltas') + (c.otros ? ` · ${c.otros} con otro conductor` : '') : plural(c.otros, 'vuelta', 'vueltas') + ' con otro conductor'}${id ? (auto ? ' · automático' : ' · elegido') : ''}${enTurno}</small></button>`;
       });
     });
     el.drivers.innerHTML = h + '</div>' + libresHTML(cars, bands, cells);
@@ -555,6 +572,7 @@
   function libresHTML(cars, bands, cells) {
     const usados = new Set();
     cars.forEach((car) => bands.forEach((b) => { if (cells[car.id + '|' + b]) { const id = rtCarDrv(car, b); if (id) usados.add(id); } }));
+    D.routes.forEach((r) => { if (r.driverId && r.fija !== 'completed') usados.add(r.driverId); });
     const libres = new Map();
     // El nombre de la lista de conductores; si no está ahí, el del horario o el del turno.
     const nom = (id, n) => { const d = (rt.drivers || []).find((x) => x.id === id); return (d && d.n) || n || 'Conductor'; };
@@ -593,7 +611,7 @@
     return `<div class="rv2-row" role="button" tabindex="0" data-id="${esc(r.id)}" data-s="${r.status}"${ui.sel === r.id ? ' aria-current="true"' : ''} aria-label="${esc(aria)}">` +
       `<div class="when"><b class="mono">${horas(r)}</b><small>${sub}</small>${estado}</div>` +
       `<div class="main"><div class="l1"><span class="rv2-pill ${r.type}">${TYPE[r.type]}</span><b class="car">${hl(r.vehicle)}</b>` +
-      `<span class="drv${d ? '' : ' none'}">${d ? hl(d.name) : 'Sin conductor'}</span>${enCurso}</div><div class="people">${chips}</div></div></div>`;
+      `<span class="drv${d ? '' : ' none'}">${d ? hl(d.name) : 'Sin conductor'}</span>${r.propio ? ' <span class="tag own" title="Conductor puesto solo a esta vuelta">solo esta vuelta</span>' : ''}${enCurso}</div><div class="people">${chips}</div></div></div>`;
   }
 
   function emptyHTML() {
@@ -770,7 +788,10 @@
       : (r.status === 'risk' && r.type !== 'llegada' && !r.fija ? '<p class="rv2-note">Rendio no encontró a quién mover sin dejar otra vuelta tarde. Mueve a alguien a mano, Re-optimiza o, si no hay cómo, publícala de todos modos.</p>' : '');
     const turno = rtBandName(r.shift);
     const auto = d && rt.rv2Auto && rt.rv2Auto[r.vehicle + '|' + r.shift] === r.driverId;
-    const drvHTML = `<div class="rv2-drv"><span class="rv2-av">${d ? esc(initials(d.name)) : '?'}</span><div>${d ? `<b>${esc(d.name)}</b>Conductor · turno ${turno}${auto ? ' · automático' : ''}` : `<b>Sin conductor</b>Turno ${turno} de ${esc(r.vehicle)}`}</div>` +
+    const quien = r.propio
+      ? (d ? `<b>${esc(d.name)}</b>Conductor solo de esta vuelta` : '<b>Sin conductor</b>Se le quitó solo a esta vuelta')
+      : (d ? `<b>${esc(d.name)}</b>Conductor · turno ${turno}${auto ? ' · automático' : ''}` : `<b>Sin conductor</b>Turno ${turno} de ${esc(r.vehicle)}`);
+    const drvHTML = `<div class="rv2-drv"><span class="rv2-av">${d ? esc(initials(d.name)) : '?'}</span><div>${quien}</div>` +
       (d && d.phone ? `<a class="rv2-ic" href="${esc(telHref(d.phone))}" aria-label="Llamar a ${esc(d.name)}">${IC.phone}</a>` : '') +
       (r.fija === 'completed' ? '' : `<button class="rv2-btn ${d ? '' : 'rv2-btn--soft'} rv2-btn--sm" data-act="assign" data-id="${esc(r.id)}">${d ? 'Cambiar' : 'Asignar'}</button>`) + '</div>';
     el.dtop.innerHTML = `<p class="rv2-alert rv2-alert--${alertCls(r)}">${esc(alertTxt(r))}</p>${sugHTML}`;
@@ -893,9 +914,29 @@
     commit(`${nombre(crewId)} quedó sin carro · aparece en Avisos`);
   }
 
+  // Las vueltas seguidas de un mismo conductor que no cuadran: se cruzan, o la
+  // siguiente empieza antes de que alcance a llegar (mismos tiempos de enlace()).
+  // Si las dos ya arrancaron no se marca: ahí no hay nada que cambiar. Si solo
+  // una arrancó, el aviso apunta a la otra (`cambiar`).
+  function choquesDeConductor() {
+    const out = [], por = {};
+    D.routes.forEach((r) => { if (r.driverId) (por[r.driverId] = por[r.driverId] || []).push(r); });
+    Object.keys(por).forEach((id) => {
+      const rs = por[id].sort((x, y) => inicioDe(x).at - inicioDe(y).at);
+      for (let i = 1; i < rs.length; i++) {
+        const a = rs[i - 1], b = rs[i];
+        if (a.fija && b.fija) continue;
+        const cruza = inicioDe(b).at < finDe(a).at;
+        const e = cruza ? null : enlace(a, b);
+        if (cruza || e.tarde > TOL_CHOQUE) out.push({ id, a, b, cruza, e, cambiar: b.fija ? a : b });
+      }
+    });
+    return out;
+  }
+
   function slotsSinConductor() {
     const slots = new Map();
-    D.routes.forEach((r) => { if (!r.driverId && r.fija !== 'completed') { const k = r.vehicle + '|' + r.shift; if (!slots.has(k)) slots.set(k, r); } });
+    D.routes.forEach((r) => { if (!r.driverId && !r.propio && r.fija !== 'completed') { const k = r.vehicle + '|' + r.shift; if (!slots.has(k)) slots.set(k, r); } });
     return slots;
   }
   const usadoEn = (shift, driverId, exceptCar) => (rt.cars || []).find((c) => c.id !== exceptCar && rtCarDrv(c, shift) === driverId) || null;
@@ -1017,9 +1058,108 @@
     btn.addEventListener('click', () => { if (!sel) return; const to = sel; const fx = pillDe(simular(crewId, null, to)).txt; closeSheet(); moveCrew(crewId, null, to, fx); });
   }
 
-  function openAssign(routeId) {
+  // «Cambiar» en una vuelta = el conductor de ESA vuelta (26-oct-2026). Antes
+  // abría la hoja del carro, que cambia todas sus vueltas del turno: la profa
+  // quiso darle una sola a otro conductor y se le movió toda la programación.
+  function openAssign(routeId) { return openAssignVuelta(routeId); }
+
+  // Dónde y cuándo empieza y termina una vuelta, para saber si un conductor
+  // alcanza a llegar de una a otra. Misma cuenta que libreDe: tras una salida
+  // queda en JMC + TURNAROUND; tras una llegada, en la última casa (+2).
+  const inicioDe = (r) => (r.type === 'llegada' || !r.stops.length
+    ? { at: r.pickup, loc: 'airport' }
+    : { at: r.stops[0].time, loc: r.stops[0].crewId });
+  const finDe = (r) => (r.type === 'llegada'
+    ? { at: r.end, loc: r.stops.length ? r.stops[r.stops.length - 1].crewId : 'airport', colchon: 2 }
+    : { at: r.arrival, loc: 'airport', colchon: rt.TURNAROUND || 8 });
+  const tramoMin = (a, b) => (a === b ? 0 : (typeof rtLegMin === 'function' ? rtLegMin(a, b) : 0));
+  // De la vuelta `a` a la `b`: a qué hora llegaría y cuántos minutos tarde (≤ 0 = alcanza).
+  function enlace(a, b) {
+    const f = finDe(a), i = inicioDe(b);
+    const llega = Math.round(f.at + f.colchon + tramoMin(f.loc, i.loc));
+    return { llega, tarde: llega - i.at };
+  }
+  // Las otras vueltas de un conductor alrededor de `r`: la que se cruza, la de
+  // antes y la de después.
+  function alcanceDe(driverId, r) {
+    const suyas = D.routes.filter((x) => x.id !== r.id && x.driverId === driverId).sort((x, y) => inicioDe(x).at - inicioDe(y).at);
+    const ini = inicioDe(r).at, fin = finDe(r).at;
+    const choque = suyas.find((x) => inicioDe(x).at < fin && ini < finDe(x).at) || null;
+    const antes = suyas.filter((x) => finDe(x).at <= ini).pop() || null;
+    const despues = suyas.find((x) => inicioDe(x).at >= fin) || null;
+    return { choque, antes, despues, a: antes ? enlace(antes, r) : null, d: despues ? enlace(r, despues) : null };
+  }
+  function alcanceTxt(al) {
+    const de = (x) => `${x.type === 'llegada' ? 'su llegada' : 'su vuelta'} de las ${hhmm(inicioDe(x).at)}`;
+    if (al.choque) return { cls: 'st--risk', pill: 'Ocupado', txt: `tiene ${de(al.choque)} (hasta las ${hhmm(finDe(al.choque).at)})` };
+    const partes = []; let peor = 0;
+    if (al.a) {
+      partes.push(al.a.tarde > TOL_CHOQUE ? `viene de ${de(al.antes)}: llegaría a las ${hhmm(al.a.llega)}, ${al.a.tarde} min tarde` : `viene de ${de(al.antes)} y alcanza (llega a las ${hhmm(al.a.llega)})`);
+      peor = Math.max(peor, al.a.tarde);
+    }
+    if (al.d) {
+      partes.push(al.d.tarde > TOL_CHOQUE ? `no alcanza ${de(al.despues)} (${al.d.tarde} min tarde)` : `alcanza ${de(al.despues)}`);
+      peor = Math.max(peor, al.d.tarde);
+    }
+    if (!partes.length) partes.push('no tiene otras vueltas ese día');
+    return peor > TOL_CHOQUE ? { cls: 'st--adj', pill: 'No alcanza', txt: partes.join(' · ') } : { cls: 'st--ok', pill: 'Alcanza', txt: partes.join(' · ') };
+  }
+
+  function openAssignVuelta(routeId) {
     const r = D.byId[routeId]; if (!r) return;
-    openAssignSlot(r.vehicle, r.shift);
+    const car = rt.cars.find((c) => c.id === r.vehicle);
+    const cur = r.driverId || null;
+    const delCarro = car ? rtCarDrv(car, r.shift) : null;
+    const pool = poolTurno(r.shift);
+    const enPool = new Set(pool.map((d) => d.id));
+    const otros = (rt.drivers || []).filter((d) => !enPool.has(d.id));
+    const cargado = r.shift === 'mad' ? rt.shiftPrevLoaded : rt.shiftLoaded;
+    const nota = cargado
+      ? (r.shift === 'mad' ? `En turno PM del ${rtDiaAnterior()} según el horario publicado (las vueltas antes de las ${rtHHc()})` : `En turno ${rtBandName(r.shift)} según el horario publicado`)
+      : 'Sin horario publicado para ese día: se muestran todos los conductores';
+    const turno = rtBandName(r.shift);
+    const opt = (d, fuera) => {
+      const full = (rt.drivers || []).find((x) => x.id === d.id) || {};
+      if (d.id === cur) return `<button class="rv2-opt" role="radio" aria-checked="false" data-pick="${esc(d.id)}" disabled><span class="t"><b>${esc(d.n)}</b></span><span class="st st--ok">Actual</span><small>${esc(['hace esta vuelta', full.tel || ''].filter(Boolean).join(' · '))}</small></button>`;
+      const al = alcanceTxt(alcanceDe(d.id, r));
+      const small = [al.txt, fuera ? 'no está en este turno en el horario' : '', full.tel || ''].filter(Boolean).join(' · ');
+      return `<button class="rv2-opt" role="radio" aria-checked="false" data-pick="${esc(d.id)}"><span class="t"><b>${esc(d.n)}</b></span><span class="st ${al.cls}">${esc(al.pill)}</span><small>${esc(small)}</small></button>`;
+    };
+    const extra = [];
+    if (r.propio) extra.push(`<button class="rv2-opt" role="radio" aria-checked="false" data-pick="__carro"><span class="t"><b>Como el resto de ${esc(r.vehicle)}</b></span><small>${delCarro ? esc(conductor(delCarro).name) + ', el conductor de ' + esc(r.vehicle) + ' en el turno ' + esc(turno) : esc(r.vehicle) + ' no tiene conductor en el turno ' + esc(turno)}</small></button>`);
+    if (cur) extra.push(`<button class="rv2-opt rv2-opt--drop" role="radio" aria-checked="false" data-pick="__none"><span class="t"><b>Quitar el conductor de esta vuelta</b></span><small>Queda sin conductor y nadie la ve hasta que le pongas uno.</small></button>`);
+    let sel = null;
+    openSheet(sheetHead('Conductor de esta vuelta', `${esc(r.vehicle)} · ${esc(TYPE[r.type])} de las ${hhmm(inicioDe(r).at)} · solo cambia esta vuelta: las demás y sus horas quedan igual`) +
+      `<div class="rv2-sh-body"><h3 class="rv2-cap">${esc(nota)}</h3><div id="rv2-dopts" role="radiogroup" aria-label="Conductor de esta vuelta" style="display:flex;flex-direction:column;gap:8px">` +
+      (pool.length ? pool.map((d) => opt(d, false)).join('') : `<p class="rv2-impact">Nadie en turno ${esc(turno)} ese día en el horario publicado. Puedes elegir otro conductor abajo.</p>`) +
+      (cargado && otros.length ? `<h3 class="rv2-cap" style="margin-top:6px">Otros conductores</h3>` + otros.map((d) => opt(d, true)).join('') : '') +
+      (extra.length ? `<h3 class="rv2-cap" style="margin-top:6px">O bien</h3>` + extra.join('') : '') +
+      `</div><button class="rv2-linkbtn rv2-linkbtn--ink" data-act="assignslot" data-car="${esc(r.vehicle)}" data-shift="${esc(r.shift)}">Cambiar el conductor de todas las vueltas de ${esc(r.vehicle)} en el turno ${esc(turno)}</button></div>` +
+      `<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button><button class="rv2-btn rv2-btn--cta" id="rv2-doAssign" disabled>Elige un conductor</button></div>`);
+    setLabel();
+    const btn = $('#rv2-doAssign');
+    $('#rv2-dopts').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-pick]'); if (!b || b.disabled) return; sel = b.dataset.pick;
+      $$('#rv2-dopts [data-pick]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.pick === sel)));
+      btn.disabled = !sel;
+      btn.textContent = sel === '__none' ? 'Quitar de esta vuelta' : 'Asignar a esta vuelta';
+    });
+    btn.addEventListener('click', () => { if (!sel) return; const s = sel; closeSheet(); setVueltaDriver(r.id, s); });
+  }
+  // Pone (o quita) el conductor de UNA vuelta. No re-encadena ni re-programa
+  // nada: las otras vueltas y las horas de todas quedan como estaban.
+  function setVueltaDriver(laneId, pick) {
+    const lane = rtLaneOf(laneId); if (!lane) return;
+    const r = D.byId[laneId];
+    const car = rt.cars.find((c) => c.id === lane.car);
+    const delCarro = car ? rtCarDrv(car, rtBandOf(lane)) : null;
+    snapshot('conductor de una vuelta');
+    const cual = `la vuelta de las ${hhmm(r ? inicioDe(r).at : rtToMin(lane.start))} de ${lane.car}`;
+    let msg;
+    if (pick === '__carro') { delete lane.drv; msg = `${cual} vuelve a ${delCarro ? conductor(delCarro).name : 'quedar sin conductor, como el carro'}`; }
+    else if (pick === '__none') { lane.drv = false; msg = `${cual} quedó sin conductor · las demás no cambian`; }
+    else { if (pick === delCarro) delete lane.drv; else lane.drv = pick; msg = `${conductor(pick).name} hace ${cual} · las demás no cambian`; }
+    commit(msg.charAt(0).toUpperCase() + msg.slice(1));
   }
   function openAssignSlot(carId, shift) {
     const car = rt.cars.find((c) => c.id === carId); if (!car) return;
@@ -1044,7 +1184,8 @@
       const small = [full.tel || '', otro ? `si lo eliges, ${curName ? esc(curName) + ' pasa a ' + esc(otro.id) : esc(otro.id) + ' queda sin conductor'}` : (d.id === cur ? 'asignado a este carro' : fuera ? 'no está en este turno en el horario' : 'sin carro en este turno')].filter(Boolean).join(' · ');
       return `<button class="rv2-opt" role="radio" aria-checked="${d.id === sel}" data-pick="${esc(d.id)}"><span class="t"><b>${esc(d.n)}</b></span>${pill}<small>${small}</small></button>`;
     };
-    openSheet(sheetHead(`Conductor para ${esc(carId)}`, `Turno ${rtBandName(shift)} · aplica a todas sus vueltas de ese turno${curName ? ' · hoy: ' + esc(curName) + (auto ? ' (automático)' : '') : ''}`) +
+    const propias = (D && D.routes ? D.routes : []).filter((x) => x.vehicle === carId && x.shift === shift && x.propio).length;
+    openSheet(sheetHead(`Conductor para ${esc(carId)}`, `Turno ${rtBandName(shift)} · aplica a todas sus vueltas de ese turno${propias ? ` (menos ${propias === 1 ? 'la que tiene' : `las ${propias} que tienen`} conductor propio)` : ''}${curName ? ' · hoy: ' + esc(curName) + (auto ? ' (automático)' : '') : ''}`) +
       `<div class="rv2-sh-body"><h3 class="rv2-cap">${esc(nota)}</h3><div id="rv2-dopts" role="radiogroup" aria-label="Conductores disponibles" style="display:flex;flex-direction:column;gap:8px">` +
       (opts.length ? opts.map((o) => optBtn(o, false)).join('') : `<p class="rv2-impact">Nadie en turno ${rtBandName(shift)} ese día en el horario publicado. Puedes elegir otro conductor abajo.</p>`) +
       (cargado && otros.length ? `<h3 class="rv2-cap" style="margin-top:6px">Otros conductores</h3>` + otros.map((o) => optBtn(o, true)).join('') : '') +
@@ -1197,7 +1338,7 @@
     if (!vueltas.length) return false;
     const porReserva = {};
     Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
-    const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {};
+    const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {}, guardado = {};
     const hm = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false }).slice(0, 5);
     // 0124: cada vuelta vuelve a su carro del plan («Carro 1»). Las publicadas
     // antes de 0124 no lo traen: se reparten por placa en los carros del plan
@@ -1228,6 +1369,7 @@
       const lane = { id: `${car.id}·V${n}`, car: car.id, vuelta: n, type: v.type === 'lle' ? 'lle' : 'sal', start: hm(v.startAt), origin: null };
       if (lane.type === 'lle') { lane.origin = 'airport'; lane.landing = rtToHM(horaVuelta(ids)); }
       lanes.push(lane); order[lane.id] = ids;
+      guardado[lane.id] = v.driverProfileId || null;
       // La hora guardada (rtHorasPub, admin-rutas.js): en una salida la de cada
       // parada; en una llegada basta el arranque (la salida de JMC).
       const etas = {};
@@ -1244,6 +1386,16 @@
       }
     });
     if (!lanes.length) return false;
+    // Conductor propio (26-oct-2026): una vuelta guardada con otro conductor que
+    // el de su carro en ese turno (o sin conductor, y el carro sí tiene) vuelve
+    // con ESE conductor. Si no, se vería el del carro y al re-publicar se perdería
+    // el cambio de una sola vuelta.
+    lanes.forEach((l) => {
+      const car = rt.cars.find((c) => c.id === l.car);
+      const g = guardado[l.id], delCarro = car ? rtCarDrv(car, rtBandOf(l)) : null;
+      if (g && g !== delCarro) l.drv = g;
+      else if (!g && delCarro) l.drv = false;
+    });
     rt.lanes = lanes; rt.order = order; rt.horasPub = horas;
     rt.pool = Object.keys(rt.aux).filter((k) => !usados.has(k));
     rt.rv2Fijas = fijas; rt.rv2Atendidas = atendidas;

@@ -180,6 +180,8 @@
 #routes-v2 .rv2-row .l1 .drv { color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #routes-v2 .rv2-row .l1 .drv.none { color: var(--red-ink); font-weight: 700; }
 #routes-v2 .rv2-row .l1 .tag { font-size: 11.5px; font-weight: 700; color: var(--green); background: var(--green-soft); border-radius: 999px; padding: 2px 8px; }
+/* Conductor puesto solo a esa vuelta (26-oct-2026). */
+#routes-v2 .rv2-row .l1 .tag.own { color: var(--orange-ink); background: var(--orange-soft); white-space: nowrap; }
 #routes-v2 .rv2-pill { font-size: 11.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: var(--orange-soft); color: var(--orange-ink); }
 #routes-v2 .rv2-pill.llegada { background: var(--green-soft); color: var(--green); }
 #routes-v2 .rv2-pill.hotel { background: var(--amber-soft); color: var(--amber-ink); }
@@ -314,6 +316,8 @@
 .rv2-sheet .rv2-force > p { font-size: 12.5px; color: var(--red-ink); font-weight: 700; line-height: 1.45; }
 .rv2-sheet .rv2-force ul { margin: 2px 0 0 18px; padding: 0; font-size: 12.5px; color: var(--ink2); }
 .rv2-sheet .rv2-linkbtn { border: 0; background: transparent; padding: 6px 0; font-size: 12.5px; font-weight: 700; color: var(--red-ink); text-decoration: underline; text-underline-offset: 3px; text-align: left; align-self: flex-start; }
+.rv2-sheet .rv2-linkbtn--ink { color: var(--ink2); margin-top: 6px; }
+.rv2-sheet .rv2-opt--drop .t b { color: var(--red-ink); }
 .rv2-sheet .rv2-btn--danger { background: var(--red-ink); border-color: var(--red-ink); color: #FFF; }
 .rv2-sheet .rv2-btn--danger:hover { background: #A8322A; border-color: #A8322A; }
 .rv2-sheet .rv2-btn--danger:disabled { background: #E7B1AB; border-color: #E7B1AB; opacity: 1; }
