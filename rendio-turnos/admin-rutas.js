@@ -232,6 +232,20 @@
         }
       } catch (e) { /* sin horario de ayer → todos */ }
     }
+    // Turnos ABIERTOS ahora, solo si el día que se planea es hoy: quién tiene qué
+    // carro en la vida real (25-oct-2026, línea «También en turno» de la v2).
+    rt.activos = null;
+    const hoyBog = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    if (rt.source === 'live' && rt.day === hoyBog && Api.listActiveShifts) {
+      try {
+        const rows = await Api.listActiveShifts();
+        rt.activos = (rows || []).map(s => {
+          const p = s && s.driver_profiles && s.driver_profiles.profiles;
+          const v = (s && s.vehicles) || {};
+          return p && p.id ? { id: p.id, n: p.full_name || 'Conductor', car: v.internal_code || v.license_plate || null } : null;
+        }).filter(Boolean);
+      } catch (e) { rt.activos = null; /* sin turnos abiertos → solo el horario */ }
+    }
     rt.cargadoEn = Date.now();
   }
   // Huella del plan EN MEMORIA tal como lo publicaría rtSavePlan: vueltas
