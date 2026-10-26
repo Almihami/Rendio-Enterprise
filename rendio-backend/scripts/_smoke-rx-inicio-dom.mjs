@@ -165,6 +165,13 @@ t('0126: delegada: el pie dice «Servicio delegado · Te contactaremos por Whats
   /Servicio delegado/.test(h.querySelector('.rx-pass-bot').textContent) && /Te contactaremos por WhatsApp/.test(h.querySelector('.rx-pass-bot').textContent) && !/Conductor asignado|Mauricio/.test(h.querySelector('.rx-pass-bot').textContent),
   h.querySelector('.rx-pass-bot').textContent);
 t('0126: …y la hora publicada sigue («Te recogemos 03:48»)', /Te recogemos\s*03:48/.test(h.querySelector('.rx-pass-time').textContent));
+// 0131: delegada A ALGUIEN: el pie dice quién y su número.
+A.state.trips.forEach((x) => { x.delegate = { name: 'Carlos Uber', phone: '300 123 4567' }; });
+A.rerender(); await wait(40);
+h = homeEl();
+t('0131: delegada a alguien: el pie dice «Te recogerá Carlos Uber · Su número: 300 123 4567»',
+  /Te recogerá Carlos Uber/.test(h.querySelector('.rx-pass-bot').textContent) && /Su número: 300 123 4567/.test(h.querySelector('.rx-pass-bot').textContent) && !/WhatsApp/.test(h.querySelector('.rx-pass-bot').textContent),
+  h.querySelector('.rx-pass-bot').textContent);
 
 await montar('en-camino');
 await wait(40);

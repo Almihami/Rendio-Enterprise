@@ -237,6 +237,25 @@ t('★ oculta con 6 calificaciones (< 10)', !q('.rx-drv-st'));
     dele ? dele.textContent : (q('.rx-assign') || { textContent: 'sin .rx-assign' }).textContent);
   t('0126: …sin Llamar ni Mensaje al conductor (no hay conductor de Rendio)', !q('.rx-drv-acts [data-ax="call"]') && !q('.rx-drv-acts [data-ax="chat"]'));
   t('0126: …y la hora publicada sigue a la vista', q('#ax-eta-min') && q('#ax-eta-min').textContent === '03:48', q('#ax-eta-min') && q('#ax-eta-min').textContent);
+  // 0131: delegada A ALGUIEN: «Te recogerá Carlos Uber · Su número de contacto es 300 123 4567» (con el enlace para llamar).
+  d = await abrir('asignado-publicado', (dd) => {
+    const tr = dd.track[dd.principal]; if (tr) { tr.vehicle = null; tr.driver = null; }
+    (w.Auxiliar.state.trips || []).forEach((x) => { if (x && x.id === dd.principal) { x.driver = null; x.vehicle = null; x.driverPending = false; x.delegated = true; x.delegate = { name: 'Carlos Uber', phone: '300 123 4567' }; } });
+  });
+  const quien = q('[data-rx-k="drv-deleg-quien"]');
+  t('0131: delegada a alguien: «Te recogerá Carlos Uber · Su número de contacto es 300 123 4567» (y no «te contactaremos por WhatsApp»)',
+    !!quien && /Te recogerá Carlos Uber/.test(quien.textContent) && /Su número de contacto es 300 123 4567/.test(quien.textContent) && !q('[data-rx-k="drv-deleg"]'),
+    quien ? quien.textContent : (q('.rx-assign') || { textContent: 'sin .rx-assign' }).textContent);
+  const tel = q('[data-rx-k="deleg-tel"]');
+  t('0131: …el número es un enlace para llamar (tel:3001234567)', tel && tel.getAttribute('href') === 'tel:3001234567', tel && tel.getAttribute('href'));
+  t('0131: …y la hora publicada sigue a la vista', q('#ax-eta-min') && q('#ax-eta-min').textContent === '03:48');
+  if (w.ApiAux && typeof w.ApiAux.mapTrip === 'function') {
+    const base = { id: 'x1', direction: 'home_to_airport', required_arrival_at: '2026-10-27T11:00:00Z', raw_status: 'requested', published: true, delegated: true };
+    const m1 = w.ApiAux.mapTrip(Object.assign({}, base, { delegate: { name: 'Carlos Uber', phone: '300 123 4567' } }));
+    const m2 = w.ApiAux.mapTrip(Object.assign({}, base, { delegate: null }));
+    const m3 = w.ApiAux.mapTrip(Object.assign({}, base, { published: false, delegate: { name: 'Carlos Uber', phone: '300' } }));
+    t('0131: mapTrip lee «delegate» de la base; sin nombre o sin publicar, null', m1 && m1.delegate && m1.delegate.name === 'Carlos Uber' && m1.delegate.phone === '300 123 4567' && m2 && m2.delegate === null && m3 && m3.delegate === null, JSON.stringify([m1 && m1.delegate, m2 && m2.delegate, m3 && m3.delegate]));
+  }
   d = await abrir('asignado-publicado');
 }
 t('acciones: Llamar (call), Mensaje (chat), Coordinación (open-coord con el id)', !!q('.rx-drv-acts [data-ax="call"]') && !!q('.rx-drv-acts [data-ax="chat"]')

@@ -171,7 +171,8 @@
       const notify = [];
       lanes.forEach((l) => (l.stops || []).forEach((rid) => {
         // 0126: recién delegada → aviso al tripulante (como el real).
-        if (l.delegated) { if (antes[rid] !== 'deleg') notify.push({ reservationId: rid, delegated: true }); antes[rid] = 'deleg'; return; }
+        // 0131: con nombre, el aviso lleva a quién (y vuelve a avisar si cambia).
+        if (l.delegated) { const k = 'deleg:' + (l.delegateName || ''); if (antes[rid] !== k) notify.push({ reservationId: rid, delegated: true, delegateName: l.delegateName || null, delegatePhone: l.delegatePhone || null }); antes[rid] = k; return; }
         if (l.driverProfileId && antes[rid] !== l.driverProfileId) notify.push({ reservationId: rid, changed: !!antes[rid] && antes[rid] !== 'deleg', driverProfileId: l.driverProfileId });
         antes[rid] = l.driverProfileId || null;
       }));

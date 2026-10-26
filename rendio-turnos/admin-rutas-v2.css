@@ -314,6 +314,11 @@
 .rv2-sheet .rv2-sh-foot .rv2-btn { flex: 1; height: 44px; }
 .rv2-sheet .rv2-handle { display: none; }
 .rv2-sheet .rv2-opt { width: 100%; text-align: left; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+/* 0131: «Delegar a…» — nombre y teléfono escritos a mano (16 px: iOS no hace zoom). */
+.rv2-sheet .rv2-dlg-form { display: flex; flex-direction: column; gap: 6px; padding: 2px 2px 4px; }
+.rv2-sheet .rv2-dlg-form[hidden] { display: none; }
+.rv2-sheet .rv2-inp { font: inherit; font-size: 16px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); width: 100%; box-sizing: border-box; }
+.rv2-sheet .rv2-inp:focus { outline: 2px solid var(--orange, #E2551A); outline-offset: 1px; }
 .rv2-sheet .rv2-opt:hover { border-color: var(--ink3); }
 .rv2-sheet .rv2-opt:disabled { opacity: .6; }
 .rv2-sheet .rv2-opt:disabled:hover { border-color: var(--line); }

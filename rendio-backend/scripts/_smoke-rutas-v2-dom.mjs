@@ -917,6 +917,53 @@ console.log('\n── 26-oct · el conductor de UNA vuelta: cambiarlo no mueve e
   t('sin errores de consola (rearmar con conductor propio)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 
+console.log('\n── 0131 · api.js de verdad: la delegada con nombre y teléfono ──');
+for (const sin0131 of [false, true]) {
+  const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'http://localhost/' });
+  const w = dom.window; const ins = [], selects = [];
+  const bld = (name) => {
+    const st = { op: null, payload: null, sel: '' };
+    const b2 = {
+      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
+      delete() { st.op = 'delete'; return b2; },
+      insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
+      single() { return b2; }, maybeSingle() { return b2; },
+      then(ok2, ko) {
+        let r = { data: [], error: null };
+        if (st.op === 'insert') {
+          ins.push([name, st.payload]);
+          if (name === 'route_assignments' && sin0131 && 'delegate_name' in st.payload) r = { data: null, error: { code: '42703', message: 'column "delegate_name" of relation "route_assignments" does not exist' } };
+          else r = { data: name === 'route_assignments' ? { id: 'ra-' + ins.length } : null, error: null };
+        } else if (name === 'route_assignments' && st.op !== 'delete') {
+          selects.push(st.sel);
+          if (sin0131 && /delegate_(name|phone)/.test(st.sel)) r = { data: null, error: { code: '42703', message: 'column route_assignments.delegate_name does not exist' } };
+          // El plan de antes: res-3 ya iba delegada a «Pedro».
+          else if (/route_stops\(id, reservation_id, status\)/.test(st.sel)) r = { data: [{ id: 'old', status: 'planned', driver_profile_id: null, delegated_at: '2026-10-25T23:00:00Z', delegate_name: sin0131 ? undefined : 'Pedro', driver_profiles: null, route_stops: [{ id: 'st-old', reservation_id: 'res-3', status: 'pending' }] }], error: null };
+          else r = { data: [{ id: 'ra-x', direction: 'home_to_airport', status: 'planned', planned_start_at: '2026-10-26T04:15:00-05:00', driver_profile_id: null, vehicle_id: null, plan_car: 'Carro 2', pool: false, delegated_at: '2026-10-25T23:00:00Z', delegate_name: sin0131 ? undefined : 'Carlos Uber', delegate_phone: sin0131 ? undefined : '300 123 4567', route_stops: [] }], error: null };
+        }
+        return Promise.resolve(r).then(ok2, ko);
+      },
+    };
+    return b2;
+  };
+  w.sb = { from: bld, auth: { getUser: async () => ({ data: { user: null } }), getSession: async () => ({ data: { session: null } }) } };
+  w.RENDIO_CONFIG = {};
+  w.eval(read('api.js'));
+  const r = await w.Api.saveRoutePlan('2026-10-26', [
+    { vehicleId: null, planCar: 'Carro 2', driverProfileId: null, delegated: true, delegateName: 'Carlos Uber', delegatePhone: '300 123 4567', type: 'sal', startAt: '2026-10-26T04:15:00-05:00', stops: ['res-2', 'res-3'], etas: {} }]);
+  const ras = ins.filter((x) => x[0] === 'route_assignments').map((x) => x[1]);
+  if (!sin0131) {
+    t('0131: la delegada se guarda con delegate_name / delegate_phone', r.saved === 1 && ras.length === 1 && ras[0].delegate_name === 'Carlos Uber' && ras[0].delegate_phone === '300 123 4567' && !!ras[0].delegated_at, JSON.stringify(ras));
+    t('0131: avisa a las dos con el nombre: la nueva (res-2) y la que estaba con Pedro (res-3)', JSON.stringify(r.notify.filter((n) => n.delegated).map((n) => [n.reservationId, n.delegateName])) === JSON.stringify([['res-2', 'Carlos Uber'], ['res-3', 'Carlos Uber']]), JSON.stringify(r.notify));
+    const pp = await w.Api.getPublishedPlan('2026-10-26', { estados: ['draft', 'planned'] });
+    t('0131: getPublishedPlan pide y trae a quién (delegateName / delegatePhone)', /delegate_name, delegate_phone/.test(selects.at(-1) || '') && pp.vueltas[0].delegateName === 'Carlos Uber' && pp.vueltas[0].delegatePhone === '300 123 4567', JSON.stringify([selects.at(-1), pp.vueltas[0] && pp.vueltas[0].delegateName]));
+  } else {
+    t('0131: base sin 0131: la delegada se guarda igual, sin nombre (reintenta sin las columnas)', r.saved === 1 && r.failed === 0 && ras.length === 2 && 'delegate_name' in ras[0] && !('delegate_name' in ras[1]) && !!ras[1].delegated_at, JSON.stringify([r, ras]));
+    const pp = await w.Api.getPublishedPlan('2026-10-26', { estados: ['draft', 'planned'] });
+    t('0131: base sin 0131: getPublishedPlan lee igual (delegada, sin nombre)', pp.vueltas.length === 1 && pp.vueltas[0].delegated === true && pp.vueltas[0].delegateName === null, JSON.stringify(pp.vueltas));
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 console.log('\n── 0126 · Delegar UNA vuelta en el tablero (la hace alguien de afuera) ──');
 {
@@ -929,17 +976,25 @@ console.log('\n── 0126 · Delegar UNA vuelta en el tablero (la hace alguien 
   const abrirHoja = async (L) => { click(q(`#rv2-list .rv2-row[data-id="${L}"] .when`)); await wait(10); click(q(`#routes-v2 [data-act="assign"][data-id="${L}"]`)); await wait(10); };
   await abrirHoja(LM);
   const op = q('#rv2-sheet [data-pick="__deleg"]');
-  t('la hoja de la vuelta ofrece «Delegar esta vuelta» y dice qué pasa', op && /Delegar esta vuelta/.test(txt(op)) && /Ningún conductor la ve/.test(txt(op)) && /Tu servicio fue delegado, te contactaremos por WhatsApp/.test(txt(op)), op && txt(op));
+  t('la hoja de la vuelta ofrece «Delegar esta vuelta» y dice qué pasa (0131: después se elige a quién)', op && /Delegar esta vuelta/.test(txt(op)) && /Ningún conductor la ve/.test(txt(op)) && /Después eliges a quién/.test(txt(op)) && /Te recogerá… su número de contacto es…/.test(txt(op)), op && txt(op));
   click(op); await wait(5);
   t('al elegirla, el botón dice «Delegar esta vuelta»', /Delegar esta vuelta/.test(txt(q('#rv2-doAssign'))));
-  click(q('#rv2-doAssign')); await wait(10);
+  click(q('#rv2-doAssign')); await wait(20);
+  // 0131 · «Delegar a…»: sin libreta en esta base, se escribe nombre y teléfono.
+  t('0131: se abre «Delegar a…» con nombre y teléfono (sin libreta: lo dice)', txt(q('#rv2-shTitle')) === 'Delegar a…' && !q('#rv2-dlg-form').hidden && /La libreta todavía no está/.test(txt(q('#rv2-sheet'))), txt(q('#rv2-shTitle')));
+  t('0131: «Delegar en el tablero» apagado hasta que haya nombre y teléfono', q('#rv2-dlg-ok').disabled && /Delegar en el tablero/.test(txt(q('#rv2-dlg-ok'))));
+  b.type(q('#rv2-dlg-n'), 'Carlos Uber'); b.type(q('#rv2-dlg-p'), '12'); await wait(5);
+  t('0131: con un teléfono corto sigue apagado', q('#rv2-dlg-ok').disabled);
+  b.type(q('#rv2-dlg-p'), '300 123 4567'); await wait(5);
+  click(q('#rv2-dlg-ok')); await wait(10);
   const lane = rt.lanes.find((l) => l.id === LM), rM = V2().dia().byId[LM];
+  t('0131: la vuelta guarda a quién (Carlos Uber · 300 123 4567)', lane.delegName === 'Carlos Uber' && lane.delegPhone === '300 123 4567', JSON.stringify(lane));
   t('la vuelta queda delegada: sin conductor y NO «sin conductor» (no pide uno)', lane.deleg === true && lane.drv === false && rM.delegada && rM.driverId === null && rM.status !== 'nodriver', JSON.stringify([lane.deleg, lane.drv, rM.status]));
   t('las otras de V-02 siguen con Luis', V2().dia().byId[LE].driverId === 'd2' && V2().dia().byId[LH].driverId === 'd2');
-  t('el aviso de abajo lo dice', /La vuelta de las \d\d:\d\d de V-02 queda delegada · al publicar se le avisa al tripulante/.test(b.toastV2()), b.toastV2());
+  t('el aviso de abajo lo dice (con el nombre)', /La vuelta de las \d\d:\d\d de V-02 queda delegada a Carlos Uber · al publicar se le avisa al tripulante/.test(b.toastV2()), b.toastV2());
   const fila = q(`#rv2-list .rv2-row[data-id="${LM}"]`);
-  t('la fila dice «Delegada» (no «Sin conductor»)', /Delegada/.test(txt(fila.querySelector('.drv.deleg'))) && !/Sin conductor/.test(txt(fila)), txt(fila));
-  t('el detalle: «Delegada · La hace alguien de afuera…»', /Delegada\s*La hace alguien de afuera/.test(txt(q('#routes-v2 .rv2-drv'))), txt(q('#routes-v2 .rv2-drv')));
+  t('la fila dice «Delegada · Carlos Uber» (no «Sin conductor»)', /Delegada · Carlos Uber/.test(txt(fila.querySelector('.drv.deleg'))) && !/Sin conductor/.test(txt(fila)), txt(fila));
+  t('el detalle: «Delegada a Carlos Uber · 300 123 4567…» con su botón de llamar', /Delegada a Carlos Uber/.test(txt(q('#routes-v2 .rv2-drv'))) && /300 123 4567/.test(txt(q('#routes-v2 .rv2-drv'))) && !!q('#routes-v2 .rv2-drv a[href^="tel:"]'), txt(q('#routes-v2 .rv2-drv')));
   t('Avisos: no la pide como vuelta sin conductor', !V2()._avisos().some((a) => a.k === 'nodriver' && a.act.includes(LM)), JSON.stringify(V2()._avisos().map((a) => a.k)));
   t('Conductores: V-02 AM «2 vueltas · 1 delegada»', /2 vueltas · 1 delegada/.test(txt(q('#rv2-drivers [data-act="assignslot"][data-car="V-02"][data-shift="am"]'))), txt(q('#rv2-drivers [data-act="assignslot"][data-car="V-02"][data-shift="am"]')));
   // Publicar.
@@ -951,19 +1006,20 @@ console.log('\n── 0126 · Delegar UNA vuelta en el tablero (la hace alguien 
   await wait(40);
   const pub = b.log.saved.at(-1), pM = pub && pub.lanes.find((l) => l.stops.includes('res-M'));
   t('publicar manda esa vuelta delegada y sin conductor; las demás con el suyo', !!pM && pM.delegated === true && pM.driverProfileId === null && pub.lanes.filter((l) => l.delegated).length === 1 && pub.lanes.find((l) => l.stops.includes('res-E')).driverProfileId === 'd2', pub && JSON.stringify(pub.lanes.map((l) => [l.stops.join('+'), l.driverProfileId, !!l.delegated])));
-  const pushD = b.log.push.find((p) => /Tu servicio fue delegado/.test(p.title));
-  t('a su tripulante le llega «Tu servicio fue delegado 🤝 · Te contactaremos por WhatsApp…»', pushD && JSON.stringify(pushD.profileIds) === JSON.stringify(['perfil-res-M']) && /WhatsApp/.test(pushD.body), JSON.stringify(b.log.push.map((p) => [p.title, p.profileIds])));
-  t('…y NO «Conductor asignado» para esa reserva', !b.log.push.some((p) => /Conductor asignado|Te cambiamos el conductor/.test(p.title) && (p.profileIds || []).includes('perfil-res-M')));
+  t('0131: …con a quién (delegateName / delegatePhone)', pM && pM.delegateName === 'Carlos Uber' && pM.delegatePhone === '300 123 4567', pM && JSON.stringify([pM.delegateName, pM.delegatePhone]));
+  const pushD = b.log.push.find((p) => /Te recogerá/.test(p.title));
+  t('0131: a su tripulante le llega «Te recogerá Carlos Uber 🤝 · …Su número de contacto es 300 123 4567.»', pushD && JSON.stringify(pushD.profileIds) === JSON.stringify(['perfil-res-M']) && pushD.title === 'Te recogerá Carlos Uber 🤝' && /Su número de contacto es 300 123 4567\./.test(pushD.body), JSON.stringify(b.log.push.map((p) => [p.title, p.profileIds])));
+  t('…y NO «Tu servicio fue delegado» genérico ni «Conductor asignado» para esa reserva', !b.log.push.some((p) => /Tu servicio fue delegado|Conductor asignado|Te cambiamos el conductor/.test(p.title) && (p.profileIds || []).includes('perfil-res-M')));
   t('el aviso del tablero cuenta la delegada', /1 delegada/.test(b.toastV2() || '') || b.toasts.some((m) => /1 delegada/.test(m)), b.toastV2());
   // Volver a publicar sin tocar: no repite el aviso.
   b.log.push.length = 0;
   await T().rtSavePlan({ toast: () => {} }); await wait(20);
-  t('re-publicar igual no le vuelve a avisar', !b.log.push.some((p) => /Tu servicio fue delegado/.test(p.title)), JSON.stringify(b.log.push.map((p) => p.title)));
+  t('re-publicar igual no le vuelve a avisar', !b.log.push.some((p) => /Tu servicio fue delegado|Te recogerá/.test(p.title)), JSON.stringify(b.log.push.map((p) => p.title)));
   // Quitarle lo delegado: «Como el resto de V-02».
   await abrirHoja(LM);
-  t('con la vuelta delegada, la hoja dice «hoy está delegada» y no repite «Delegar»', /hoy está delegada/.test(txt(q('#rv2-sheet .rv2-sh-head p'))) && !q('#rv2-sheet [data-pick="__deleg"]'), txt(q('#rv2-sheet .rv2-sh-head p')));
+  t('con la vuelta delegada, la hoja dice «hoy está delegada» y ofrece «Cambiar a quién se delegó» (hoy Carlos Uber)', /hoy está delegada/.test(txt(q('#rv2-sheet .rv2-sh-head p'))) && /Cambiar a quién se delegó/.test(txt(q('#rv2-sheet [data-pick="__deleg"]'))) && /Hoy la hace Carlos Uber/.test(txt(q('#rv2-sheet [data-pick="__deleg"]'))), txt(q('#rv2-sheet .rv2-sh-head p')));
   click(q('#rv2-sheet [data-pick="__carro"]')); await wait(5); click(q('#rv2-doAssign')); await wait(10);
-  t('«Como el resto» la devuelve a Luis y quita la marca', V2().dia().byId[LM].driverId === 'd2' && !V2().dia().byId[LM].delegada && !('deleg' in rt.lanes.find((l) => l.id === LM)));
+  t('«Como el resto» la devuelve a Luis y quita la marca (y a quién)', V2().dia().byId[LM].driverId === 'd2' && !V2().dia().byId[LM].delegada && !('deleg' in rt.lanes.find((l) => l.id === LM)) && !('delegName' in rt.lanes.find((l) => l.id === LM)));
   click(q('#rv2-toast [data-act="undo"]')); await wait(10);
   t('Deshacer la vuelve a delegada', V2().dia().byId[LM].delegada === true);
   t('sin errores de consola (delegar en el tablero)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
@@ -1035,9 +1091,30 @@ console.log('\n── 26-oct · 0129: «Guardar y publicar» solo esa vuelta (si
   await abrir(LM);
   click(q('#rv2-sheet [data-pick="__deleg"]')); await wait(5);
   t('delegar una publicada: «Guardar y publicar» encendido', !q('#rv2-doPub').disabled && txt(q('#rv2-doPub')) === 'Guardar y publicar');
+  // 0131: antes de publicar se elige A QUIÉN, de la libreta o a mano.
+  const dels = [];
+  let fallaDel = null;
+  w.Api.listDelegateContacts = async () => [{ id: 'c1', name: 'Uber de Camilo', phone: '311 222 3344' }, { id: 'c2', name: 'Pedro Gómez', phone: '310 999 8877' }];
+  w.Api.delegateRoute = async (ra, n, ph) => { dels.push([ra, n, ph]); if (fallaDel) throw new Error(fallaDel); return { id: ra, delegated: true, name: n, phone: ph, notified: 1 }; };
   click(q('#rv2-doPub')); await wait(20);
-  t('…y va por setRouteDelegated(vuelta, true); el tablero la marca delegada', delegs.length === 1 && delegs[0][0] === laneM.raId && delegs[0][1] === true && V2().dia().byId[LM].delegada, JSON.stringify(delegs));
-  t('el aviso dice que quedó delegada', /^Publicado: la vuelta de las \d\d:\d\d de V-02 queda delegada · se avisó a 1 tripulante\./.test(b.toastV2()), b.toastV2());
+  t('0131: se abre «Delegar a…» con la libreta (2) y «Escribir nombre y teléfono»', txt(q('#rv2-shTitle')) === 'Delegar a…' && b.qa('#rv2-dlg [data-dpick]').length === 3 && /Uber de Camilo/.test(txt(q('#rv2-dlg'))) && q('#rv2-dlg-form').hidden && /Delegar y avisar/.test(txt(q('#rv2-dlg-ok'))), txt(q('#rv2-sheet')).slice(0, 200));
+  click(q('#rv2-dlg [data-dpick="0"]')); await wait(5);
+  fallaDel = 'Esa vuelta ya arrancó: no se puede delegar';
+  click(q('#rv2-dlg-ok')); await wait(20);
+  t('0131: si la base no deja, la hoja se queda abierta y lo dice (nada cambió)', !q('#rv2-sheet').hidden && /No se pudo delegar: Esa vuelta ya arrancó/.test(txt(q('#rv2-dlg-msg'))) && !V2().dia().byId[LM].delegada, txt(q('#rv2-dlg-msg')));
+  fallaDel = null;
+  click(q('#rv2-dlg-ok')); await wait(20);
+  t('0131: va por delegateRoute(vuelta, «Uber de Camilo», «311 222 3344»)', dels.length === 2 && dels[1][0] === laneM.raId && dels[1][1] === 'Uber de Camilo' && dels[1][2] === '311 222 3344' && delegs.length === 0, JSON.stringify(dels));
+  t('…el tablero la marca delegada a Uber de Camilo y la hoja se cierra', V2().dia().byId[LM].delegada && V2().dia().byId[LM].delegName === 'Uber de Camilo' && q('#rv2-sheet').hidden);
+  t('el aviso dice a quién quedó delegada', /^Publicado: la vuelta de las \d\d:\d\d de V-02 queda delegada a Uber de Camilo · se avisó a 1 tripulante\./.test(b.toastV2()), b.toastV2());
+  // A mano: alguien nuevo.
+  await abrir(LM);
+  click(q('#rv2-sheet [data-pick="__deleg"]')); await wait(5); click(q('#rv2-doPub')); await wait(20);
+  click(q('#rv2-dlg [data-dpick="nuevo"]')); await wait(5);
+  t('0131: «Escribir nombre y teléfono» muestra los campos', !q('#rv2-dlg-form').hidden);
+  b.type(q('#rv2-dlg-n'), '  Taxi   Rionegro '); b.type(q('#rv2-dlg-p'), '604 555 1234'); await wait(5);
+  click(q('#rv2-dlg-ok')); await wait(20);
+  t('0131: a mano (con los espacios limpios) también va por delegateRoute', dels.at(-1)[1] === 'Taxi Rionegro' && dels.at(-1)[2] === '604 555 1234', JSON.stringify(dels.at(-1)));
   // Un borrador (sin conductor en la base) no se delega por aquí: lo hace «Publicar plan».
   lE.raStatus = 'draft';
   await abrir(LE);

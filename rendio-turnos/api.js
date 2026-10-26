@@ -3458,13 +3458,16 @@
     // quien ya iba a bordo o ya se había entregado (hallazgo 12-oct-2026).
     const prev = {}, locked = new Set();
     const prevDeleg = {};           // 0126: reservas que ya iban en una vuelta delegada
+    const prevDelegName = {};       // 0131: y a quién
     const movableInProgress = [];   // route_stops.id pendientes de rutas ya arrancadas
     const arrancadas = new Set();   // route_assignments.id que NO se borran
     {
       const leerPlan = (extra) => sb.from('route_assignments')
         .select('id, status, driver_profile_id, ' + extra + 'driver_profiles(profile_id), route_stops(id, reservation_id, status)')
         .gte('planned_start_at', d0).lte('planned_start_at', d1);
-      let { data, error } = await leerPlan('delegated_at, ');
+      // 0131: + a quién se delegó (si cambia, se le avisa al tripulante).
+      let { data, error } = await leerPlan('delegated_at, delegate_name, ');
+      if (error && (error.code === '42703' || /delegate_name/.test(error.message || ''))) ({ data, error } = await leerPlan('delegated_at, '));
       // Base sin 0126: se lee como antes (ninguna vuelta delegada).
       if (error && (error.code === '42703' || /delegated_at/.test(error.message || ''))) ({ data, error } = await leerPlan(''));
       if (error) throw new Error('No se pudo leer el plan actual: ' + error.message);
@@ -3475,7 +3478,7 @@
         if (arrancada || ra.status === 'completed') arrancadas.add(ra.id);
         stops.forEach(s => {
           prev[s.reservation_id] = pid;
-          if (ra.delegated_at) prevDeleg[s.reservation_id] = true;
+          if (ra.delegated_at) { prevDeleg[s.reservation_id] = true; prevDelegName[s.reservation_id] = ra.delegate_name || null; }
           const atendida = s.status && s.status !== 'pending';
           if (ra.status === 'completed' || atendida) locked.add(s.reservation_id);
           else if (arrancada) movableInProgress.push({ id: s.id, rid: s.reservation_id });
@@ -3540,8 +3543,16 @@
         status: dpid || deleg ? 'planned' : 'draft', planned_start_at: lane.startAt,
       };
       if (deleg) fila.delegated_at = new Date().toISOString();
+      // 0131: a quién se delegó (nombre y teléfono que ve el tripulante).
+      if (deleg && lane.delegateName) { fila.delegate_name = lane.delegateName; fila.delegate_phone = lane.delegatePhone || null; }
       if (lane.planCar) fila.plan_car = lane.planCar;
       let { data: ra, error } = await sb.from('route_assignments').insert(fila).select('id').single();
+      // Base sin 0131: la delegada se guarda igual, sin nombre (el tripulante ve
+      // «te contactaremos por WhatsApp», como antes).
+      if (error && fila.delegate_name && (error.code === '42703' || /delegate_(name|phone)/.test(error.message || ''))) {
+        delete fila.delegate_name; delete fila.delegate_phone;
+        ({ data: ra, error } = await sb.from('route_assignments').insert(fila).select('id').single());
+      }
       // Base sin 0124 (no tiene plan_car): se guarda igual, sin él.
       if (error && fila.plan_car && (error.code === '42703' || /plan_car/.test(error.message || ''))) {
         delete fila.plan_car;
@@ -3580,7 +3591,12 @@
         failed++; failMsg = failMsg || r2.error.message; continue;
       }
       // 0126: recién delegada → al tripulante se le dice que lo contactan por WhatsApp.
-      if (deleg) stopIds.forEach(rid => { if (!prevDeleg[rid]) notify.push({ reservationId: rid, delegated: true }); });
+      // 0131: con nombre, «Te recogerá X»; también si cambió a quién.
+      if (deleg) stopIds.forEach(rid => {
+        if (!prevDeleg[rid] || (lane.delegateName && prevDelegName[rid] !== lane.delegateName)) {
+          notify.push({ reservationId: rid, delegated: true, delegateName: lane.delegateName || null, delegatePhone: lane.delegatePhone || null });
+        }
+      });
       // Novedad real para el auxiliar: pasó de sin conductor a con conductor, o se lo cambiaron.
       if (dpid) stopIds.forEach(rid => {
         if (prev[rid] !== lane.driverProfileId) notify.push({ reservationId: rid, changed: !!prev[rid], driverProfileId: lane.driverProfileId });
@@ -4141,8 +4157,11 @@
     const C0125 = 'plan_car, pool, deadline_at, manual_note, manual_day, ';
     // 0126: + delegated_at (la vuelta la hace alguien de afuera); sin 0126, sin ella.
     const C0126 = C0125 + 'delegated_at, ';
-    let { data, error } = await sel(C0126);
-    let cols = C0126;
+    // 0131: + a quién se delegó.
+    const C0131 = C0126 + 'delegate_name, delegate_phone, ';
+    let { data, error } = await sel(C0131);
+    let cols = C0131;
+    if (error && (error.code === '42703' || /delegate_(name|phone)/.test(error.message || ''))) { ({ data, error } = await sel(C0126)); cols = C0126; }
     if (error && (error.code === '42703' || /delegated_at/.test(error.message || ''))) { ({ data, error } = await sel(C0125)); cols = C0125; }
     if (!error) {
       // 0125: la madrugada que Julián pegó con ESTE día (0:20 del día siguiente)
@@ -4208,6 +4227,8 @@
         pool: ra.pool === true, deadlineAt: ra.deadline_at || null, nota: ra.manual_note || '', manualDay: ra.manual_day || null,
         // 0126: la hace alguien de afuera (sin conductor a propósito).
         delegated: !!ra.delegated_at,
+        // 0131: a quién (null = delegada sin nombre, «te contactaremos por WhatsApp»).
+        delegateName: ra.delegate_name || null, delegatePhone: ra.delegate_phone || null,
         // La placa del turno si ya la tiene; si no, el carro del plan (0124).
         carro: ra.vehicles?.internal_code || ra.vehicles?.license_plate || ra.plan_car || 'Carro',
         placa: ra.vehicles?.internal_code || ra.vehicles?.license_plate || null,
@@ -4289,6 +4310,29 @@
     }
     return data;
   }
+  // 0131: delega UNA vuelta publicada a alguien de afuera (nombre + teléfono) o le
+  // cambia a quién. La base la anota en la libreta y le avisa a cada tripulante
+  // «Te recogerá X · su número es Y».
+  async function delegateRoute(routeId, name, phone) {
+    const { data, error } = await sb.rpc('admin_route_delegate', { p_route: routeId, p_name: name, p_phone: phone });
+    if (error) {
+      if (error.code === '42883' || error.code === 'PGRST202' || /admin_route_delegate/.test(error.message || '')) throw new Error('Para delegar con nombre falta la actualización 0131 de la base.');
+      throw error;
+    }
+    return data;
+  }
+  // La libreta (0131): los de afuera a quienes se ha delegado, el último primero.
+  // null = la base no tiene la libreta todavía.
+  async function listDelegateContacts() {
+    const { data, error } = await sb.from('delegate_contacts').select('id, name, phone, last_used_at')
+      .is('deleted_at', null).order('last_used_at', { ascending: false, nullsFirst: false }).limit(40);
+    if (error) return null;
+    return (data || []).map((c) => ({ id: c.id, name: c.name, phone: c.phone, lastUsedAt: c.last_used_at || null }));
+  }
+  async function removeDelegateContact(id) {
+    const { error } = await sb.from('delegate_contacts').update({ deleted_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  }
   // 0129: el jefe cambia el conductor de UNA vuelta ya publicada (o la deja sin
   // conductor) sin re-publicar el día. Recibe el id de PERFIL del conductor (el
   // que usa el tablero) o null. La base avisa al nuevo, al anterior y a sus
@@ -4315,7 +4359,7 @@
   }
 
   window.Api = {
-    adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver,
+    adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,

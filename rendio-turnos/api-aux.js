@@ -122,6 +122,9 @@
       driverPending: r.published === true && r.driver_pending === true,
       // 0126: la vuelta la hace alguien de afuera; lo contactan por WhatsApp.
       delegated: r.published === true && r.delegated === true,
+      // 0131: a quién se delegó («Te recogerá X, su número es Y»); null = sin nombre.
+      delegate: r.published === true && r.delegated === true && r.delegate && r.delegate.name
+        ? { name: String(r.delegate.name), phone: r.delegate.phone ? String(r.delegate.phone) : '' } : null,
       pickupAt: r.published ? (r.pickup_at || null) : null,
       meetCode: r.published ? (r.meet_code || '') : '',
       // Orden en el carro (0093), solo publicado: pickupPos de pickupTotal.
