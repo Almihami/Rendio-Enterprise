@@ -1,6 +1,29 @@
 (function () {
   const sb = window.sb;
 
+  // ── Caché corta (Asignación, 26-oct-2026) ─────────────────────────────────
+  // Cada cambio de día en Asignación volvía a pedir, una detrás de otra, cosas
+  // que no cambian de un día a otro: ajustes, flota, conductores, zonas
+  // dibujadas, corte de la madrugada, la tabla de Julián y el horario de la
+  // semana. Se guardan unos minutos; se guarda la PROMESA, así que dos lecturas
+  // a la vez son una sola consulta. Un error no se guarda (ni la respuesta con
+  // `error` de supabase, ni un null: esos se vuelven a pedir). Solo la usa quien
+  // la pide (opción `corta`) y la vacían entrar a la pestaña y «Reintentar»
+  // (limpiarCacheCorta): lo que se cambie en Ajustes o en Flota se ve al volver.
+  const CACHE_CORTA_MS = 3 * 60000;
+  const _corta = new Map();
+  function _cacheCorta(clave, fn) {
+    const hit = _corta.get(clave);
+    if (hit && Date.now() - hit.at < CACHE_CORTA_MS) return hit.p;
+    const p = Promise.resolve().then(fn);
+    _corta.set(clave, { at: Date.now(), p });
+    const soltar = () => { const h = _corta.get(clave); if (h && h.p === p) _corta.delete(clave); };
+    p.then((v) => { if (v == null || v.error) soltar(); }, soltar);
+    return p;
+  }
+  function limpiarCacheCorta() { _corta.clear(); }
+  const _siCorta = (opts, clave, fn) => (opts && opts.corta ? _cacheCorta(clave, fn) : fn());
+
   async function signIn(email, password) {
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
     // Un eliminado tiene la cuenta bloqueada (0081): Supabase contesta en
@@ -887,13 +910,15 @@
   // esa semana. Para rutas: solo se le puede asignar una vuelta a quien está en turno
   // a esa hora. Devuelve { am:[{id,n}], pm:[{id,n}], coordAm, coordPm } o null si no
   // hay horario publicado (el que llama decide el fallback, p.ej. mostrar todos).
-  async function listDriversOnShift(day) {
+  // opts.corta (Asignación): el horario de la semana sale de la caché corta; hoy y
+  // ayer casi siempre son la misma semana, y era la misma consulta dos veces.
+  async function listDriversOnShift(day, opts) {
     if (!day) return null;
     const weekStart = (window.Scheduler && Scheduler.startOfWeekISO)
       ? Scheduler.startOfWeekISO(day)
       : (() => { const d = new Date(day + 'T00:00:00'); const wd = d.getDay(); d.setDate(d.getDate() - wd + (wd === 0 ? -6 : 1)); d.setHours(0, 0, 0, 0); return d.toISOString().slice(0, 10); })();
     let sch = null;
-    try { sch = await getSchedule(weekStart); } catch (e) { return null; }
+    try { sch = await _siCorta(opts, 'horario:' + weekStart, () => getSchedule(weekStart)); } catch (e) { return null; }
     if (!sch || !sch.published || !sch.data) return null;
     const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
     const wd = new Date(day + 'T00:00:00').getDay();
@@ -1176,8 +1201,9 @@
     return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`;
   }
 
-  async function getRouteNightCutoff() {
-    const { data, error } = await sb.from('app_settings').select('route_night_cutoff_min').eq('id', 'singleton').maybeSingle();
+  // opts.corta (Asignación): de la caché corta.
+  async function getRouteNightCutoff(opts) {
+    const { data, error } = await _siCorta(opts, 'corte', () => sb.from('app_settings').select('route_night_cutoff_min').eq('id', 'singleton').maybeSingle());
     if (error || !data || data.route_night_cutoff_min == null) return null;
     return Number(data.route_night_cutoff_min);
   }
@@ -2214,14 +2240,26 @@
   // Devuelve null si la migración no está: el tablero entonces programa como
   // siempre (modelo calculado con OSRM). Nunca tira — que falte la tabla no
   // puede tumbar el tablero.
-  async function getRouteTables(day) {
+  // opts.corta (Asignación, 26-oct-2026): la tabla y los conjuntos sin zona salen
+  // de la caché corta (no cambian de un día a otro; el festivo sí se lee). Y las
+  // tres lecturas van a la vez: eran tres idas y vueltas seguidas.
+  async function getRouteTables(day, opts) {
     const out = { zonas: {}, tramos: [], esFestivo: false, esDomingo: false, sinConfirmar: [] };
+    // Promise.resolve: los select de supabase no salen hasta que alguien los espera.
+    const yaVa = (fn) => { let p; try { p = Promise.resolve(fn()); } catch (e) { p = Promise.reject(e); } p.catch(() => {}); return p; };
+    const pTabla = yaVa(() => _siCorta(opts, 'tablas', () => Promise.all([
+      sb.from('route_zone_times').select('zone, band_from, band_to, min_minutes, max_minutes, asumida'),
+      sb.from('route_leg_times').select('band_from, band_to, min_minutes, max_minutes, asumida'),
+    ]).then((r) => (r[0].error || r[1].error ? null : r))));
+    const pFestivo = day ? yaVa(() => sb.from('holidays').select('day, name').eq('day', day).maybeSingle()) : null;
+    const pSinZona = yaVa(() => _siCorta(opts, 'sinzona', () => Promise.all([
+      sb.from('residences').select('name, zona_jefe, latitude, longitude').eq('is_active', true).order('name'),
+      _siCorta(opts, 'zonas', listRouteZones),
+    ]).then((r) => (r[0].error ? null : r))));
     try {
-      const [z, l] = await Promise.all([
-        sb.from('route_zone_times').select('zone, band_from, band_to, min_minutes, max_minutes, asumida'),
-        sb.from('route_leg_times').select('band_from, band_to, min_minutes, max_minutes, asumida'),
-      ]);
-      if (z.error || l.error) return null;
+      const tabla = await pTabla;
+      if (!tabla) return null;
+      const [z, l] = tabla;
       (z.data || []).forEach(r => { (out.zonas[r.zone] = out.zonas[r.zone] || []).push(r); });
       Object.values(out.zonas).forEach(a => a.sort((x, y) => x.band_from - y.band_from));
       out.tramos = (l.data || []).sort((x, y) => x.band_from - y.band_from);
@@ -2232,7 +2270,7 @@
       // 'YYYY-MM-DD' + T12:00 para que el huso no corra el día.
       out.esDomingo = new Date(day + 'T12:00:00').getDay() === 0;
       try {
-        const { data } = await sb.from('holidays').select('day, name').eq('day', day).maybeSingle();
+        const { data } = await pFestivo;
         if (data) { out.esFestivo = true; out.festivo = data.name; }
       } catch (e) { /* sin tabla de festivos → solo domingos */ }
     }
@@ -2241,10 +2279,7 @@
     // la zona sale del dibujo cuando no está puesta a mano (zonas-dibujo.js), así
     // que «sin zona» ya no es lo mismo que zona_jefe vacía.
     try {
-      const [{ data }, dibujos] = await Promise.all([
-        sb.from('residences').select('name, zona_jefe, latitude, longitude').eq('is_active', true).order('name'),
-        listRouteZones(),
-      ]);
+      const [{ data }, dibujos] = await pSinZona;
       const efectiva = typeof zonaEfectiva === 'function' ? zonaEfectiva : (m) => ({ zona: m || null });
       out.sinConfirmar = (data || []).filter(r => !efectiva(r.zona_jefe, dibujos || [], r.latitude, r.longitude).zona).map(r => r.name);
     } catch (e) { /* sin la columna → nada que reportar */ }
@@ -2528,6 +2563,14 @@
     // al día siguiente (21:10 Col = 02:10 UTC). Agrupamos por America/Bogota.
     const bogDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
     const pedido = (typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day)) ? day : null;
+    // 26-oct-2026: zonas, flota, ajustes y conductores no dependen de las
+    // reservas: salen A LA VEZ que ellas (antes, uno detrás de otro) y de la caché
+    // corta, porque no cambian de un día a otro. Cada uno se espera abajo, en su
+    // mismo try de siempre; si no hay reservas, simplemente no se usan.
+    const pZonas = _cacheCorta('zonas', listRouteZones);
+    const pFlota = _cacheCorta('flota', listVehiclesForShift);
+    const pAjustes = _cacheCorta('ajustes', getSettings);
+    const pConductores = _cacheCorta('conductores', listDrivers);
     let rows = null;
     try {
       // Ventana amplia en UTC (ayer→) para no perder madrugadas de Colombia;
@@ -2592,7 +2635,7 @@
     // vive en casa con pin propio, que no tiene conjunto. Sin la migración la
     // lista llega vacía y queda solo lo puesto a mano, como antes.
     let dibujos = [];
-    try { dibujos = (await listRouteZones()) || []; } catch (e) { dibujos = []; }
+    try { dibujos = (await pZonas) || []; } catch (e) { dibujos = []; }
     const efectiva = typeof zonaEfectiva === 'function' ? zonaEfectiva : (m) => ({ zona: m || null });
 
     const aux = {}, colors = {};
@@ -2654,9 +2697,9 @@
     // plan contra carros que no existen (saveRoutePlan los descarta sin
     // vehicleId, así que el plan se perdía en silencio). Sin vehículos se
     // devuelve `noVehicles` y el tablero lo dice.
-    let cars = [];
+    let cars = [], flota = null;
     try {
-      const vs = await listVehiclesForShift();
+      const vs = flota = await pFlota;
       // CUÁNTOS CARROS PLANEA EL TABLERO. Estaba clavado en 2 y por eso el
       // tercer vehículo de la flota no existía para el planeador. Medido en las
       // correcciones de Julián del 20 y 21 de agosto, **sus propios planes
@@ -2665,7 +2708,7 @@
       // marcados "quizás no haya carro" que en la realidad sí se hacen.
       // Se configura en Ajustes; si la columna no existe todavía se comporta
       // como siempre (2).
-      const nCarros = Math.max(1, Number((await getSettings())?.route_cars_count) || 2);
+      const nCarros = Math.max(1, Number((await pAjustes)?.route_cars_count) || 2);
       // 25-oct-2026 (0124): el plan va por CONDUCTOR. Antes estos carros eran los
       // primeros de la flota en orden alfabético («HYU376») y el plan no sabía
       // cuál iba a salir de verdad: el carro lo define el conductor al iniciar
@@ -2681,10 +2724,12 @@
     if (!cars.length) return { aux: {}, colors: {}, cars: [], drivers: [], plan: {}, source: 'empty', day: day0, noVehicles: true };
     let drivers = [];
     try {
-      const ds = await listDrivers();
+      const ds = await pConductores;
       drivers = (ds || []).map((d, i) => ({ id: d.id, n: d.full_name || d.name || 'Conductor', turno: 'Mañana', c: RT_PALETTE[i % RT_PALETTE.length], tel: d.phone || '' }));
     } catch (_) {}
-    return { aux, colors, cars, drivers, plan: {}, source: 'live', day: day0 };
+    // `flota`: la misma lista de vehículos, para que Asignación ponga la placa de
+    // «Carro 1» (0132) sin volver a pedirla.
+    return { aux, colors, cars, drivers, plan: {}, source: 'live', day: day0, flota: flota || [] };
   }
 
   // ---- Auxiliar (pasajero) ----
@@ -3884,11 +3929,15 @@
     if (!fresh && _reglasFin && Date.now() - _reglasFinAt < 60000) return _reglasFin;
     let r = { ...REGLAS_FIN_DEF };
     try {
-      const { data, error } = await sb.from('app_settings').select('route_done_hide_min, route_unmarked_min').eq('id', 'singleton').maybeSingle();
+      // Las dos lecturas a la vez (26-oct-2026); siguen separadas porque cada una
+      // es de su migración (0137, 0140).
+      const [{ data, error }, h] = await Promise.all([
+        sb.from('app_settings').select('route_done_hide_min, route_unmarked_min').eq('id', 'singleton').maybeSingle(),
+        sb.from('app_settings').select('handover_lead_min, handover_late_min').eq('id', 'singleton').maybeSingle(),
+      ]);
       if (!error && data && data.route_done_hide_min != null) {
         r = { ...r, hide: Number(data.route_done_hide_min), unmarked: Number(data.route_unmarked_min), enBase: true };
       }
-      const h = await sb.from('app_settings').select('handover_lead_min, handover_late_min').eq('id', 'singleton').maybeSingle();
       if (!h.error && h.data && h.data.handover_lead_min != null) {
         r = { ...r, handoverLead: Number(h.data.handover_lead_min), handoverLate: Number(h.data.handover_late_min), handoverEnBase: true };
       }
@@ -4307,6 +4356,17 @@
     const C0132 = C0131 + 'plan_vehicle_id, ';
     // 0134: + auto_created (la vuelta para tomar que armó el sistema al cambiar de vuelo).
     const C0134 = C0132 + 'auto_created, ';
+    // 26-oct-2026: lo que no depende de las vueltas sale A LA VEZ que ellas (antes
+    // eran seis o siete consultas seguidas): los reportes de operación, las reglas
+    // de fin y la madrugada pegada con este día. La madrugada se pide con las
+    // columnas de una base al día; si la base es vieja se repite abajo con las que haya.
+    // Cada una arranca ya; si al armarla o al leerla falla, el error queda guardado
+    // para cuando se espere (en su mismo try de siempre), nunca antes.
+    const yaVa = (fn) => { let p; try { p = Promise.resolve(fn()); } catch (e) { p = Promise.reject(e); } p.catch(() => {}); return p; };
+    const pNov = yaVa(() => _opNovedades(new Date(Date.parse(d0) - 6 * 3600000).toISOString()));
+    const pReglas = yaVa(() => getRouteFinishRules());   // 0137
+    const madDe = (c) => sel(c, (x) => x.eq('pool', true).eq('manual_day', day).gt('planned_start_at', d1));
+    const pMad = yaVa(() => madDe(C0134));
     let { data, error } = await sel(C0134);
     let cols = C0134;
     if (error && (error.code === '42703' || /auto_created/.test(error.message || ''))) { ({ data, error } = await sel(C0132)); cols = C0132; }
@@ -4317,7 +4377,7 @@
       // 0125: la madrugada que Julián pegó con ESTE día (0:20 del día siguiente)
       // se ve aquí, con el resto de su ruta.
       try {
-        const mad = await sel(cols, (x) => x.eq('pool', true).eq('manual_day', day).gt('planned_start_at', d1));
+        const mad = await (cols === C0134 ? pMad : madDe(cols));
         if (!mad.error && mad.data && mad.data.length) data = (data || []).concat(mad.data.filter((r) => !(data || []).some((x) => x.id === r.id)));
       } catch (_) { /* sin la madrugada: el resto del día igual se ve */ }
     }
@@ -4328,23 +4388,23 @@
     const raws = data || [];
     // Cómo terminó cada vuelta (ver _opResultado): la base nunca la cierra, así
     // que Asignación la mostraba «en curso» después de entregar al último.
-    const nov = await _opNovedades(new Date(Date.parse(d0) - 6 * 3600000).toISOString());
-    const reglas = await getRouteFinishRules();   // 0137
-    const nowMs = Date.now();
     // Última posición conocida de cada conductor: si la vuelta ya arrancó, el
     // punto de partida real es donde está el carro, no de donde salió.
+    // 0133: los sin cuenta (paradas sin reserva) se llaman por su nombre.
+    // Las dos dependen de las vueltas, no una de otra: van juntas.
     const drvIds = [...new Set(raws.map(r => r.driver_profile_id).filter(Boolean))];
-    const posOf = {};
-    if (drvIds.length) {
-      const { data: locs } = await sb.from('driver_locations')
+    const [locsRes, guests] = await Promise.all([
+      drvIds.length ? sb.from('driver_locations')
         .select('driver_profile_id, latitude, longitude, recorded_at')
         .in('driver_profile_id', drvIds)
-        .order('recorded_at', { ascending: false }).limit(400);
-      (locs || []).forEach(l => { if (!posOf[l.driver_profile_id]) posOf[l.driver_profile_id] = l; });
-    }
-
-    // 0133: los sin cuenta (paradas sin reserva) se llaman por su nombre.
-    const guests = await _guestStops(raws.filter(ra => (ra.route_stops || []).some(s => !s.reservation_id)).map(ra => ra.id));
+        .order('recorded_at', { ascending: false }).limit(400) : null,
+      _guestStops(raws.filter(ra => (ra.route_stops || []).some(s => !s.reservation_id)).map(ra => ra.id)),
+    ]);
+    const posOf = {};
+    ((locsRes && locsRes.data) || []).forEach(l => { if (!posOf[l.driver_profile_id]) posOf[l.driver_profile_id] = l; });
+    const nov = await pNov;
+    const reglas = await pReglas;
+    const nowMs = Date.now();
     const vueltas = raws.map(ra => {
       const stops = (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order);
       // "Atendida" = ya no se puede mover. Es el mismo candado POR PARADA de
@@ -4678,6 +4738,7 @@
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
     chatUnreadFor,
     getPublishedPlan, getReservationForFit,
+    limpiarCacheCorta,   // 26-oct-2026: Asignación la vacía al entrar y al reintentar
     trafficMatrix, getReservationRisk, listOpenRouteRisks,
     listPartStatus, listPartCatalog, listPartRealLife, listPartHistory,
     setVehiclePartBaseline, registerPartChange, confirmPartChange,

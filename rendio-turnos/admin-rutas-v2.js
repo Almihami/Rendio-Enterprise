@@ -369,7 +369,9 @@
   //     cada opción en ese mismo mapa.
   // El motor (tiempos, simular, sugerencia, publicar, deshacer) es el de arriba.
   // Prototipo aprobado: Visual/prototipo-asignacion-simple-2026-10-14.
-  const ui = { q: '', sel: null, moving: null, todas: false, cargando: false, dia: null, publicando: false, optimizando: false, drag: null, verHechas: false };
+  // cargando: el día no está listo (se está trayendo, o falló: entonces
+  // falloCarga = { dia, motivo }). diaPedido: el día que se está trayendo.
+  const ui = { q: '', sel: null, moving: null, todas: false, cargando: false, falloCarga: null, diaPedido: null, dia: null, publicando: false, optimizando: false, drag: null, verHechas: false };
   const hist = [];
   let D = null;           // último «día» armado
   let bound = false;
@@ -462,7 +464,8 @@
   const turnoTxt = (b) => 'Turno ' + rtBandName(b);   // «Turno AM», «Turno PM del lunes»
 
   function renderBar() {
-    const day = rt.day || ui.dia;
+    // Mientras carga, el día que se pidió (antes seguía la fecha vieja puesta).
+    const day = (ui.cargando && ui.diaPedido) || rt.day || ui.dia;
     el.dayLabel.textContent = dayLabel(day);
     const rel = relDia(day);
     el.dayLabel.title = rel ? `${rel} · ${day}` : (day || '');
@@ -475,7 +478,10 @@
     const live = rt.source === 'live';
     el.reopt.disabled = !live || ui.cargando || ui.optimizando;
     el.reoptLabel.textContent = hayVueltas() ? 'Re-optimizar' : 'Optimizar';
-    $$('[data-act="nav"]', root()).forEach((b) => { b.disabled = ui.cargando; });
+    // ‹ › siempre se pueden usar, también a mitad de una carga o si falló: la
+    // carga vieja se descarta (cargarDia). Antes se apagaban y una consulta
+    // colgada dejaba al jefe atrapado en ese día hasta recargar la página.
+    $$('[data-act="nav"]', root()).forEach((b) => { b.disabled = false; });
   }
 
   // Lo que hay que resolver antes de publicar, en palabras. Nada más: lo que
@@ -538,7 +544,8 @@
     const total = Object.keys(rt.aux || {}).length;
     const conCarro = total - (rt.pool || []).length;
     let txt, ok = false;
-    if (ui.cargando) txt = 'Cargando el día…';
+    if (ui.falloCarga) txt = 'No se pudo cargar el día · <a href="#" data-act="reintentar">Reintentar</a>';
+    else if (ui.cargando) txt = 'Cargando el día…';
     else if (!live) txt = '';
     else if (!hayVueltas()) txt = `${plural((rt.pool || []).length, 'tripulante sin carro', 'tripulantes sin carro')}. Optimiza el día para armar las vueltas.`;
     else if (av.length) txt = `Antes de publicar, <a href="#" data-act="avisos">revisa ${plural(av.length, 'aviso', 'avisos')}</a>.`;
@@ -680,6 +687,10 @@
   }
 
   function emptyHTML() {
+    if (ui.falloCarga) {
+      return `<div class="rv2-empty" role="alert"><b>No se pudo cargar ${esc(dayLabel(ui.falloCarga.dia))}</b>${esc(ui.falloCarga.motivo)}`
+        + '<br>Puedes reintentar o usar ‹ › para ver otro día.<br><button class="rv2-btn rv2-btn--cta" data-act="reintentar">Reintentar</button></div>';
+    }
     if (ui.cargando) return '<div class="rv2-empty"><b>Cargando el día…</b>Trayendo reservas, carros y el plan publicado.</div>';
     if (rt.source === 'empty') {
       return rt.emptyReason === 'vehiculos'
@@ -1205,7 +1216,7 @@
 
   async function reoptimizar() {
     if (soloJulian()) { toast('Este día va con la ruta de Julián: quítala para volver al tablero.'); return; }
-    if (rt.source !== 'live' || ui.optimizando || typeof rtOptimize !== 'function') return;
+    if (rt.source !== 'live' || ui.cargando || ui.optimizando || typeof rtOptimize !== 'function') return;
     const enCurso = Object.keys(rt.rv2Fijas || {}).length;
     if (enCurso && !window.confirm(`Hay ${plural(enCurso, 'vuelta', 'vueltas')} en curso o terminada${enCurso > 1 ? 's' : ''}. Re-optimizar arma el día desde cero; lo que el conductor ya atendió no se mueve al publicar. ¿Seguir?`)) return;
     snapshot('reoptimizar');
@@ -1524,13 +1535,18 @@
     commit(msg.charAt(0).toUpperCase() + msg.slice(1));
     return msg;
   }
-  async function placasDelPlan() {
+  // La flota ya vino con las reservas (rtLoad → rt.flota): no se vuelve a pedir.
+  // Solo si no está (otra puerta de entrada) se lee, con plazo.
+  async function placasDelPlan(vigente) {
     const faltan = (rt.cars || []).filter((c) => c.planVehicleId && !c.planPlate);
-    if (!faltan.length || !window.Api || !Api.listVehiclesForShift) return;
-    try {
-      const flota = await Api.listVehiclesForShift();
-      faltan.forEach((c) => { const v = (flota || []).find((x) => x.id === c.planVehicleId); c.planPlate = v ? (v.license_plate || v.internal_code || null) : null; });
-    } catch (_) { /* sin la flota, «Carro 1» sin placa */ }
+    if (!faltan.length) return;
+    let flota = Array.isArray(rt.flota) && rt.flota.length ? rt.flota : null;
+    if (!flota) {
+      if (!window.Api || !Api.listVehiclesForShift) return;
+      try { flota = await aTiempo(Api.listVehiclesForShift(), 'la flota'); } catch (_) { return; /* sin la flota, «Carro 1» sin placa */ }
+      if (vigente && !vigente()) return;
+    }
+    faltan.forEach((c) => { const v = (flota || []).find((x) => x.id === c.planVehicleId); c.planPlate = v ? (v.license_plate || v.internal_code || null) : null; });
   }
   // ── 0132 · «¿Qué carro es Carro 1?» ─────────────────────────────────────────
   // Lista de los jefes (26-oct): «al hacer click en carro 1 o 2, despliegue el
@@ -1778,12 +1794,24 @@
   // para que la pantalla muestre EL PLAN QUE TIENEN LOS CONDUCTORES y no un
   // tablero vacío con todos «sin rutear». Mismas reglas que rtSolveDay para el
   // número de vuelta, el origen y la hora de aterrizaje.
-  async function rearmarPublicado() {
+  // opts.plan (26-oct-2026): la lectura de lo publicado ya en camino (cargarDia la
+  // lanza a la vez que las reservas); si no viene, se pide aquí. Primero se lee y
+  // DESPUÉS se toca `rt`, y solo si opts.vigente() sigue diciendo que sí. Si lo
+  // publicado no responde a tiempo, el error sube (cargarDia lo dice en pantalla):
+  // mostrar el día «sin publicar» invitaría a re-optimizar encima del plan real.
+  // Cualquier otro error, como siempre: el día se ve sin lo publicado.
+  async function rearmarPublicado(opts = {}) {
+    const vigente = typeof opts.vigente === 'function' ? opts.vigente : () => true;
+    const puede = rt.source === 'live' && rt.day && window.Api && typeof Api.getPublishedPlan === 'function';
+    let plan = null, fallo = false;
+    if (puede) {
+      try { plan = await aTiempo(opts.plan || Api.getPublishedPlan(rt.day, { estados: ESTADOS_PLAN }), 'el plan publicado'); }
+      catch (e) { if (e && e.vencida) throw e; fallo = true; }
+    }
+    if (!vigente()) return false;
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {}; rt.rv2Fin = {};
     ui.manual = null; rt.manualDia = false; rt.rv2Solas = []; rt.rv2AuxPegadas = {};
-    if (rt.source !== 'live' || !rt.day || !window.Api || typeof Api.getPublishedPlan !== 'function') return false;
-    let plan = null;
-    try { plan = await Api.getPublishedPlan(rt.day, { estados: ESTADOS_PLAN }); } catch (_) { return false; }
+    if (!puede || fallo) return false;
     const todas = (plan && plan.vueltas) || [];
     // 0125: las vueltas que pegó Julián (pool) no entran al tablero: el día se
     // muestra con su ruta y los conductores las toman (admin-ruta-julian.js).
@@ -1939,39 +1967,93 @@
     finTimer = setInterval(() => { refrescarFines().catch(() => {}); }, 60000);
   }
 
+  // ── Plazo de cada etapa de la carga (26-oct-2026) ──────────────────────────
+  // supabase-js y fetch esperan sin fin. Ese día, en producción, una consulta
+  // colgada dejó Asignación más de 10 min en «Cargando el día…», con la fecha
+  // vieja puesta y ‹ › apagados: el jefe tuvo que recargar la página. Ahora cada
+  // etapa tiene su plazo; vencido, la pantalla lo dice («No se pudo cargar el día
+  // · Reintentar») y lo que llegue tarde se descarta.
+  let PLAZO_CARGA_MS = 20000;
+  function aTiempo(p, que) {
+    let t = null;
+    const vence = new Promise((_, no) => {
+      t = setTimeout(() => {
+        const e = new Error(`La conexión tardó más de ${Math.round(PLAZO_CARGA_MS / 1000)} s trayendo ${que}.`);
+        e.vencida = true; no(e);
+      }, PLAZO_CARGA_MS);
+    });
+    return Promise.race([Promise.resolve(p), vence]).finally(() => clearTimeout(t));
+  }
+  // Cada carga lleva su número y solo la última pinta: si el jefe cambia de día a
+  // mitad de una carga, la vieja sigue sola hasta terminar, sin tocar nada.
+  let cargaN = 0;
+
   async function cargarDia(day) {
-    ui.cargando = true; ui.sel = null; ui.moving = null; hist.length = 0;
+    const n = ++cargaN;
+    let vencida = false;   // venció un plazo: lo que esta carga traiga después, se bota
+    const vigente = () => n === cargaN && !vencida;
+    ui.cargando = true; ui.falloCarga = null; ui.diaPedido = day || null;
+    ui.sel = null; ui.moving = null; hist.length = 0;
     if (el.detail) el.detail.classList.remove('is-open');
     if (root() && !root().hidden) render();
+    // Con el día pedido, lo publicado se lee A LA VEZ que las reservas: no depende
+    // de ellas (antes esperaba a que terminara todo lo demás).
+    const leerPlan = (d) => { let p; try { p = Promise.resolve(Api.getPublishedPlan(d, { estados: ESTADOS_PLAN })); } catch (e) { p = Promise.reject(e); } p.catch(() => {}); return p; };
+    let pPlan = day && window.Api && typeof Api.getPublishedPlan === 'function' ? leerPlan(day) : null;
+    let fallo = null;
     try {
-      await rtLoad(day || undefined);
+      await aTiempo(rtLoad(day || undefined, { vigente }), 'las reservas');
+      if (!vigente()) return;
       ui.dia = rt.day || day || hoyBog();
       rt.rv2Auto = {};
-      const hay = await rearmarPublicado();
+      if (pPlan && rt.day !== day) pPlan = null;   // el día salió otro: rearmarPublicado pide el que es
+      const hay = await rearmarPublicado({ vigente, plan: pPlan });
+      if (!vigente()) return;
       // 0132: la placa del carro del plan, para que «Carro 1» diga «PRW443».
-      if (hay) await placasDelPlan();
+      if (hay) await placasDelPlan(vigente);
+      if (!vigente()) return;
       // Sin tiempos por carretera las ETAs saldrían en línea recta. Para LEER
       // lo publicado no se gasta TomTom (cobra por celda): caché si la hay, si
-      // no OSRM. Re-optimizar sí pide tráfico, como siempre.
+      // no OSRM. Re-optimizar sí pide tráfico, como siempre. Si no llegan a
+      // tiempo, línea recta, como con cualquier error (no tumba la carga).
       if (hay && typeof rtBuildMatrix === 'function') {
-        try { rt.etaSource = await rtBuildMatrix({ sinTrafico: true }); } catch (_) { /* cae a línea recta */ }
+        let tarde = false, src = null;
+        try { src = await aTiempo(rtBuildMatrix({ sinTrafico: true, vigente: () => vigente() && !tarde }), 'los tiempos por carretera'); }
+        catch (_) { tarde = true; /* cae a línea recta */ }
+        if (!vigente()) return;
+        if (!tarde) rt.etaSource = src;
       }
     } catch (e) {
-      toast('No se pudo cargar el día: ' + ((e && e.message) || 'error'));
-    } finally { ui.cargando = false; }
+      if (n !== cargaN) return;   // ya hay otra carga: esta no dice nada
+      vencida = true; fallo = e;
+    }
+    if (fallo) {
+      // ui.cargando sigue en true (el día no está cargado: nada de lista, avisos
+      // ni Publicar); ‹ › y «Reintentar» sí sirven.
+      ui.falloCarga = { dia: day || null, motivo: (fallo && fallo.message) || 'Error desconocido.' };
+      if (window.Api && typeof Api.limpiarCacheCorta === 'function') Api.limpiarCacheCorta();
+      if (root() && !root().hidden) render();
+      return;
+    }
+    ui.cargando = false; ui.diaPedido = null;
     rotularVieja();
     // La madrugada del día siguiente (es de este turno PM): llega después, como los vuelos.
     const diaPedido = ui.dia;
     if (window.Api && Api.getMadrugadaSiguiente) {
       Api.getMadrugadaSiguiente(diaPedido, rtCut())
-        .then((m) => { if (ui.dia !== diaPedido) return; ui.madSig = m; if (root() && !root().hidden) render(); })
+        .then((m) => { if (ui.dia !== diaPedido || n !== cargaN) return; ui.madSig = m; if (root() && !root().hidden) render(); })
         .catch(() => {});
     }
     // Los vuelos del día (si la integración está encendida) llegan después y
     // solo agregan el chip en el detalle.
-    if (window.RendioVuelos) window.RendioVuelos.cargar(ui.dia).then(() => { if (root() && !root().hidden) render(); }).catch(() => {});
+    if (window.RendioVuelos) window.RendioVuelos.cargar(ui.dia).then(() => { if (n === cargaN && !ui.cargando && root() && !root().hidden) render(); }).catch(() => {});
     if (root() && !root().hidden) { render(); autoSelect(); }
     else if (typeof rtRenderAll === 'function') { rtRenderAll(); syncVieja(); }
+  }
+  function reintentar() {
+    const dia = ui.falloCarga ? ui.falloCarga.dia : (ui.diaPedido || rt.day || ui.dia || null);
+    if (window.Api && typeof Api.limpiarCacheCorta === 'function') Api.limpiarCacheCorta();
+    return cargarDia(dia);
   }
 
   // Lo que la app puso SOLA (conductores automáticos) no cuenta como «cambio sin
@@ -1988,9 +2070,10 @@
   const cambiosPropios = () => rt.source === 'live' && hayVueltas() && firmaSinAuto() !== rt.firmaPublicada;
 
   async function cambiarDia(delta) {
-    if (ui.cargando) return;
-    const base = rt.day || ui.dia || hoyBog();
-    if (cambiosPropios() && !window.confirm(`Hay cambios sin publicar en ${dayLabel(base)}. Si cambias de día se pierden. ¿Cambiar de todos modos?`)) return;
+    // A mitad de una carga (o si falló) se cuenta desde el día que se pidió y no
+    // se pregunta: los cambios del día de antes ya se dejaron al salir de él.
+    const base = (ui.cargando && ui.diaPedido) || rt.day || ui.dia || hoyBog();
+    if (!ui.cargando && cambiosPropios() && !window.confirm(`Hay cambios sin publicar en ${dayLabel(base)}. Si cambias de día se pierden. ¿Cambiar de todos modos?`)) return;
     await cargarDia(sumarDias(base, delta));
   }
 
@@ -2030,7 +2113,8 @@
     medir();
     if (typeof rtBindOnce === 'function') rtBindOnce();   // el overlay «Optimizando…» vive en la vista anterior
     el.sheet.hidden = true; el.scrim.hidden = true; el.detail.classList.remove('is-open');
-    if (ui.cargando) { render(); return; }               // ya hay una carga en curso
+    if (ui.cargando && !ui.falloCarga) { render(); return; }   // ya hay una carga en curso
+    if (ui.falloCarga) return reintentar();               // la última carga falló: se vuelve a intentar
     // Volver a la pestaña no borra lo que se estaba armando: si hay cambios sin
     // publicar del mismo día se quedan (y se dice de cuándo son los datos, por
     // si entró una reserva después). Si no, se carga fresco.
@@ -2151,6 +2235,7 @@
       }
       if (a === 'hechas') { ui.verHechas = !ui.verHechas; return renderList(); }
       if (a === 'nav') return cambiarDia(Number(act.dataset.dir) || 0);
+      if (a === 'reintentar') { e.preventDefault(); return reintentar(); }
       if (a === 'vista') return aVista(act.dataset.v);
       return;
     }
@@ -2208,5 +2293,6 @@
     _ui: ui, _hist: hist, dia: () => D, medir, sugerencia: (id) => sugerencia(D && D.byId[id]), candidatas, _mover: moveCrew,
     _avisos: () => avisosDe(), _sacar: sacarDeRuta,
     _refrescarFines: refrescarFines,   // 0137 (pruebas)
+    _plazoCarga: (ms) => { PLAZO_CARGA_MS = ms; },   // pruebas: el plazo de cada etapa de la carga
   };
 })();
