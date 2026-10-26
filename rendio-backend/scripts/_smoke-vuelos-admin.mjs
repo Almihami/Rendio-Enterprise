@@ -61,6 +61,10 @@ const RES = [{
   ready_confirmed_at: null, ground_ops: false, reserve_place: null,
   auxiliar_profiles: { profiles: { id: 'p-r1', full_name: 'Valentina Ríos', phone: '' } },
 }];
+// Lista de los jefes (26-oct): una llegada SIN vuelo (se ve aparte), una de tierra
+// y una de reserva en hotel (esas no tienen vuelo a propósito: no salen).
+const R2 = (id, hh, nombre, o = {}) => Object.assign({}, RES[0], { id, required_arrival_at: bog(hh), notes: '', auxiliar_profiles: { profiles: { id: 'p-' + id, full_name: nombre, phone: '' } } }, o);
+RES.push(R2('r2', '19:10', 'Marcela Gómez'), R2('r3', '20:00', 'Tierra Pérez', { ground_ops: true }), R2('r4', '20:30', 'Hotel Ruiz', { reserve_place: 'rio_verde' }));
 const W = (id, code, hh, label, dia = '2026-10-25') => ({ id, flight_code: code, flight_date: dia, sched_at: bog(hh, dia), label, source: 'pegado' });
 const WATCHES = [W('w1', 'JA5987', '18:35', 'Paula Londoño'), W('w2', 'AV9563', '18:40', 'Leslie'), W('w3', 'P57617', '21:15', 'Fabiana'), W('w4', 'AV9384', '21:30', 'Lina'),
   W('w9', 'AV231', '18:20', 'Mañana', '2026-10-26')];
@@ -213,6 +217,18 @@ console.log('\n── La pantalla ──');
   t('el aviso de «posición estimada» está a la vista', /Posición estimada/.test(txt(b.q('.vu-maphint'))) && /Último dato de Flightradar24: 20:56/.test(txt(b.q('.vu-maphint'))), txt(b.q('.vu-maphint')));
   const qs = b.log.filter(x => x.table === 'flight_statuses' || x.table === 'flight_watches');
   t('pide los estados y los pegados solo de HOY (2026-10-25)', qs.length >= 2 && qs.every(x => x.ops.some(o => o[0] === 'eq' && o[1] === 'flight_date' && o[2] === '2026-10-25')), JSON.stringify(qs.map(x => x.ops)));
+
+  // Lista de los jefes (26-oct): las llegadas de Reservas sin vuelo se ven aparte.
+  const sv = b.q('#vu-lista .vu-sinvuelo');
+  t('las llegadas de Reservas sin vuelo se ven aparte: «1 llegada sin número de vuelo · 19:10 Marcela Gómez»', sv && /1 llegada sin número de vuelo/.test(txt(sv)) && b.qa('#vu-lista .vu-sinvuelo-r').length === 1 && /19:10 Marcela Gómez/.test(txt(sv)), sv && txt(sv));
+  t('…no salen las de tierra ni las de reserva en hotel', sv && !/Tierra Pérez|Hotel Ruiz/.test(txt(sv)));
+  t('«Pegar la ruta» dice que es opcional y que Vuelos se llena solo', /opcional/.test(txt(b.q('#vu-pegar-card h2'))) && /se llena solo con las llegadas de Reservas y con la ruta de Julián/.test(txt(b.q('#vu-pegar-card'))));
+  // La ruta de Julián (Asignación) pasa sola: seguirDesdeTexto.
+  const nJ = b.log.length;
+  const nV = await b.w.renderVuelos.seguirDesdeTexto(PLAN, '2026-10-25');
+  const upJ = b.log.slice(nJ).find(x => x.upsert);
+  t('seguirDesdeTexto (lo que usa la ruta de Julián): 7 vuelos a flight_watches, igual que pegar', nV === 7 && upJ && upJ.table === 'flight_watches' && upJ.upsert.rows.length === 7 && upJ.upsert.rows[0].source === 'pegado', JSON.stringify([nV, upJ && upJ.upsert.rows.length]));
+  t('…un texto sin llegadas no guarda nada', (await b.w.renderVuelos.seguirDesdeTexto('3:10 Isa (Mota)\nDeben estar 3:40', '2026-10-25')) === 0);
 
   // Pegar → leer → seguir
   b.click(b.q('[data-vu="pegar-toggle"]')); await wait();

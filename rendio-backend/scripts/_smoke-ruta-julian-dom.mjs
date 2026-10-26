@@ -251,6 +251,7 @@ const C = await boot({
   click(pub()); await wait(30);
   t('Cancelar la confirmación no publica nada', log.julian.publicar.length === 0 && C.confirms.length === 1);
   w.__confirma = true;
+  const seguidos = []; C.w.renderVuelos = { seguirDesdeTexto: async (texto, dia) => { seguidos.push([texto, dia]); return 2; } };   // Vuelos (admin-vuelos.js), lista de los jefes 26-oct
   click(pub()); await wait(80);
   t('la confirmación dice el día, cuántas vueltas y cuántos tripulantes', /12 oct\? 6 vueltas, 10 tripulantes/.test(C.confirms[1] || ''), C.confirms[1]);
   const call = log.julian.publicar[0];
@@ -265,6 +266,9 @@ const C = await boot({
   t('la llegada «Av 9420» va como AV9420', B.some((b) => b.flight === 'AV9420' && b.stops.length === 2));
   t('aprende solo lo elegido a mano: «kevin» → el perfil de Kevin', call && JSON.stringify(call.aliases) === JSON.stringify([{ alias: 'kevin', auxiliar_profile_id: 'aux-rO' }]), call && JSON.stringify(call.aliases));
   t('la hoja se cierra y el aviso dice cuántas vueltas y a cuántos se avisó', !q('#rv2-sheet.is-open') && /Ruta publicada: 6 vueltas · avisados 10/.test(C.toastV2() || ''), C.toastV2());
+  t('26-oct: las llegadas del mismo texto pasan solas a Vuelos (el día de la ruta)', seguidos.length === 1 && seguidos[0][1] === DAY && /AV9412/i.test(seguidos[0][0]), JSON.stringify(seguidos.map((x) => x[1])));
+  t('…y el aviso lo dice («· 2 vuelos a Vuelos»)', /· 2 vuelos a Vuelos\./.test(C.toastV2() || ''), C.toastV2());
+  delete C.w.renderVuelos;
 }
 
 // ══════════════════════════════════════════════════════════════════════════

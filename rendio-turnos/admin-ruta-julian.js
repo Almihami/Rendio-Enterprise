@@ -346,7 +346,10 @@
     try {
       const r = await Api.adminManualRoutePublish(st.dia, bloques, apodosNuevos());
       const S = sheet(); if (S) S.close();
-      say(`Ruta publicada: ${r.vueltas} vueltas · avisados ${r.notified}${r.removed ? ` · ${r.removed} vueltas viejas quitadas` : ''}${r.skipped ? ` · ${r.skipped} ya iban en una vuelta en curso` : ''}.`);
+      // Lista de los jefes (26-oct): sus llegadas con vuelo pasan solas a Vuelos.
+      let vuelos = 0;
+      try { vuelos = W.renderVuelos && typeof W.renderVuelos.seguirDesdeTexto === 'function' ? await W.renderVuelos.seguirDesdeTexto(st.texto, st.dia) : 0; } catch (_) { vuelos = 0; }
+      say(`Ruta publicada: ${r.vueltas} vueltas · avisados ${r.notified}${r.removed ? ` · ${r.removed} vueltas viejas quitadas` : ''}${r.skipped ? ` · ${r.skipped} ya iban en una vuelta en curso` : ''}${vuelos ? ` · ${vuelos} ${vuelos === 1 ? 'vuelo' : 'vuelos'} a Vuelos` : ''}.`);
       if (V2() && typeof V2().cargarDia === 'function') await V2().cargarDia(st.dia);
     } catch (e) {
       say('No se pudo publicar: ' + ((e && e.message) || 'error'));
