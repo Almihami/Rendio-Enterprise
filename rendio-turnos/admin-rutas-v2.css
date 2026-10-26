@@ -513,3 +513,5 @@
   #routes-v2 .rj-v-st { grid-column: 1 / -1; justify-self: start; }
   #routes-v2 .rj-v-r { grid-column: 1 / -1; justify-content: space-between; }
 }
+/* 0134: las vueltas para tomar que armó el sistema, arriba de la lista. */
+#routes-v2 .rv2-solas { margin-bottom: 10px; }

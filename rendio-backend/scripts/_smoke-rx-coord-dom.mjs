@@ -362,6 +362,26 @@ t('el servidor dice que no cambió nada → toast, no finge «Actualizamos»', /
 w.ApiAux.changeFlight = () => Promise.resolve(null);
 click(cta()); await wait(60);
 t('sin la RPC (null) → honesto', /Todavía no puedes cambiar el vuelo/.test(lastToast()) && !layer('flight').querySelector('.rx-center-in'), lastToast());
+// 0134: «reassigned» = el sistema la cambió de vuelta solo.
+const reasignar = async (reassign, hm) => {
+  w.ApiAux.changeFlight = (...a) => { E.llamadas.push({ fn: 'ApiAux.changeFlight', args: a }); return Promise.resolve({ mode: 'reassigned', incidentId: 'inc-9', requiredAt: null, unchanged: false, reassign }); };
+  AS.popAll(); await wait(300);
+  AS.push('flight', { reservationId: 'fv-sal' }); await wait(60);
+  type(layer('flight').querySelector('[data-rx-field="fv-time"]'), hm);
+  click(cta()); await wait(60);
+  return layer('flight').querySelector('.rx-center-in');
+};
+const H = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const pk = new Date(Date.now() + 26 * 3600000).toISOString();
+let rr = await reasignar({ kind: 'joined', pickupAt: pk, startAt: pk, driver: 'Juan Andres Mery', tight: false }, '07:20');
+t('0134 · entró en otra vuelta: «Listo: te recogemos a las …» y «te pasamos a la vuelta de Juan»', !!rr && rr.dataset.mode === 'reassigned' && rr.querySelector('h2').textContent === 'Listo: te recogemos a las ' + H(pk)
+  && /te pasamos a la vuelta de Juan\./.test(rr.textContent) && !/Coordinación/.test(rr.textContent), rr && rr.textContent);
+rr = await reasignar({ kind: 'new', pickupAt: pk, startAt: pk, driver: '', tight: false }, '07:25');
+t('0134 · vuelta nueva para tomar: «te armamos una vuelta. Te avisamos quién te recoge»', !!rr && /Listo: te recogemos a las/.test(rr.querySelector('h2').textContent) && /te armamos una vuelta\. Te avisamos quién te recoge/.test(rr.textContent), rr && rr.textContent);
+rr = await reasignar({ kind: 'unplanned', pickupAt: null, startAt: null, driver: '', tight: false }, '07:30');
+t('0134 · día sin ruta: «Actualizamos tu traslado · te avisamos cuando armemos tu ruta»', !!rr && rr.querySelector('h2').textContent === 'Actualizamos tu traslado' && /cuando armemos tu ruta/.test(rr.textContent), rr && rr.textContent);
+rr = await reasignar({ kind: 'new', pickupAt: pk, startAt: pk, driver: '', tight: true }, '07:35');
+t('0134 · muy encima: además dice que Coordinación ya está enterada', !!rr && /Coordinación ya está enterada/.test(rr.textContent), rr && rr.textContent);
 w.ApiAux.changeFlight = origCF;
 AS.popAll(); await wait(300);
 
@@ -383,9 +403,10 @@ AS.popAll(); await wait(300);
 d = await montar('asignado-publicado');
 const pubT = A.state.trips.find(x => x.id === d.principal);
 AS.push('flight', { reservationId: d.principal }); await wait(60);
-t('publicado: la nota ya dice que Coordinación la ajusta (con la recogida real)',
-  /Coordinación la ajusta y te confirma|Coordinación ajusta tu recogida y te confirma/.test(layer('flight').querySelector('.rx-note').textContent)
-  && (!pubT.pickupAt || layer('flight').querySelector('.rx-note b')), layer('flight').querySelector('.rx-note').textContent);
+// 0134: con la ruta publicada ya no espera a Coordinación: el sistema le busca puesto.
+t('0134 · publicado (no privado): la nota dice que le buscamos puesto y confirmamos en el momento',
+  /Con la hora nueva te buscamos puesto y te confirmamos en el momento/.test(layer('flight').querySelector('.rx-note').textContent)
+  && !/Coordinación/.test(layer('flight').querySelector('.rx-note').textContent), layer('flight').querySelector('.rx-note').textContent);
 t('predict() del publicado = needs_ops (misma regla que la RPC)', w.AuxRxVuelo.predict(pubT) === 'needs_ops');
 t('predict() del sin plan a 3 días = updated', w.AuxRxVuelo.predict(sal, { date: sal.date, time: sal.time }) === 'updated');  // f explícito: sin él lee el formulario anterior y depende del reloj
 AS.popAll(); await wait(300);

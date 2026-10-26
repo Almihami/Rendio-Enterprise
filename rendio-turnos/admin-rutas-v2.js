@@ -670,6 +670,14 @@
     });
     return html;
   }
+  // 0134: las vueltas para tomar que armó el sistema ese día (cambios de vuelo).
+  function solasHTML() {
+    const vs = rt.rv2Solas || [];
+    if (!vs.length) return '';
+    return `<div class="rv2-madsig rv2-solas" data-k="solas"><div><b>↻ ${plural(vs.length, 'vuelta para tomar que armó el sistema', 'vueltas para tomar que armó el sistema')}</b>` +
+      `<small>${vs.map((v) => `${esc(v.hora)} ${esc(v.tipo)} · ${esc(v.quienes || '—')} · ${v.conductor ? 'la tomó ' + esc(v.conductor) : 'sin tomar'}`).join(' · ')}. ` +
+      'Alguien cambió de vuelo y no cabía en otra vuelta: los conductores la ven en «Vueltas para tomar» y si nadie la toma les suena a los jefes.</small></div></div>';
+  }
   function madSigHTML() {
     const m = ui.madSig;
     if (!m || m.dia !== sumarDias(rt.day || ui.dia, 1) || !(m.vueltas || m.reservas)) return '';
@@ -696,7 +704,7 @@
   }
   function renderList() {
     const vacio = emptyHTML();
-    if (vacio) { el.list.innerHTML = vacio + (ui.cargando ? '' : madSigHTML()); return; }
+    if (vacio) { el.list.innerHTML = vacio + (ui.cargando ? '' : solasHTML() + madSigHTML()); return; }
     const todas = D.routes.filter(matchesQ);
     if (!todas.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
     const buscando = !!(ui.q && ui.q.trim());
@@ -704,7 +712,7 @@
     const rows = todas.filter((r) => !hechas.includes(r));
     if (!rows.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Ya terminaron todas las vueltas de ${esc(dayLabel(rt.day || ui.dia).toLowerCase())}</b>Quedan abajo, por si quieres revisarlas.</div>` + hechasHTML(hechas) + madSigHTML(); return; }
     const mad = rows.filter((r) => r.shift === 'mad'), resto = rows.filter((r) => r.shift !== 'mad');
-    let html = '';
+    let html = buscando ? '' : solasHTML();
     if (mad.length) {
       html += `<section class="rv2-mad" aria-label="Madrugada, turno PM del ${esc(rtDiaAnterior())}"><div class="rv2-madh"><b>☾ Madrugada · cierre del turno PM del ${esc(rtDiaAnterior())}</b>` +
         `<small>De 00:00 a ${rtHHc()} las hace el conductor de la tarde del ${esc(rtDiaAnterior())}. El día ${esc(dayLabel(rt.day || ui.dia).toLowerCase())} arranca a las ${rtHHc()}.</small></div>` +
@@ -1604,7 +1612,7 @@
   // número de vuelta, el origen y la hora de aterrizaje.
   async function rearmarPublicado() {
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {}; rt.rv2Fin = {};
-    ui.manual = null; rt.manualDia = false;
+    ui.manual = null; rt.manualDia = false; rt.rv2Solas = [];
     if (rt.source !== 'live' || !rt.day || !window.Api || typeof Api.getPublishedPlan !== 'function') return false;
     let plan = null;
     try { plan = await Api.getPublishedPlan(rt.day, { estados: ESTADOS_PLAN }); } catch (_) { return false; }
@@ -1612,11 +1620,22 @@
     // 0125: las vueltas que pegó Julián (pool) no entran al tablero: el día se
     // muestra con su ruta y los conductores las toman (admin-ruta-julian.js).
     const deEste = (v) => !v.manualDay || v.manualDay === rt.day;
-    const pegadas = todas.filter((v) => v.pool && deEste(v));
+    // 0134: la vuelta para tomar que armó el sistema (alguien cambió de vuelo y no
+    // cabía en otra) NO pasa el día a «ruta de Julián»: se cuenta aparte y sus
+    // personas ya van en una vuelta, así que el tablero no las vuelve a rutear.
+    const solas = todas.filter((v) => v.pool && v.autoCreated);
+    const hmSola = (iso) => { try { return new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); } catch (_) { return ''; } };
+    rt.rv2Solas = solas.map((v) => ({
+      hora: hmSola(v.type === 'lle' ? v.startAt : ((v.pendientes || [])[0] || {}).etaAt || v.startAt),
+      tipo: v.type === 'lle' ? 'Llegada' : 'Salida',
+      quienes: [...(v.pendientes || []), ...(v.atendidas || [])].map((x) => String(x.name || '').split(' ')[0]).filter(Boolean).join(', '),
+      conductor: v.driverProfileId ? v.conductor : null,
+    }));
+    const pegadas = todas.filter((v) => v.pool && !v.autoCreated && deEste(v));
     const vueltas = todas.filter((v) => !v.pool);
     // La madrugada que Julián pegó con el día ANTERIOR cae en esta ventana: esas
     // personas ya van en una vuelta suya, así que el tablero no las vuelve a rutear.
-    const ajenas = new Set(todas.filter((v) => v.pool && !deEste(v))
+    const ajenas = new Set(todas.filter((v) => v.pool && (v.autoCreated || !deEste(v)))
       .flatMap((v) => [...(v.pendientes || []), ...(v.atendidas || [])].map((x) => x.rid)));
     if (ajenas.size) Object.keys(rt.aux).forEach((k) => { if (ajenas.has(rt.aux[k].reservationId)) delete rt.aux[k]; });
     ui.manual = pegadas.length ? { vueltas: pegadas, otras: vueltas.length } : null;
