@@ -50,10 +50,12 @@ try {
   if (!(await one(`SELECT to_regprocedure('public.ops_alert_recipients_of(uuid)') IS NOT NULL AS ok`)).ok) await c.query(strip('../supabase/migrations/0117_avisos_desde_el_servidor.sql'));
   for (const m of ['0124_carro_del_turno', '0125_ruta_de_julian', '0126_vuelta_delegada', '0128_aviso_vuelta_terminada', '0129_conductor_de_una_vuelta',
     '0130_corte_de_pedidos', '0131_delegado_con_nombre', '0132_carro_del_plan', '0133_pasajero_sin_cuenta', '0134_reubicar_al_cambiar']) await c.query(strip(`../supabase/migrations/${m}.sql`));
-  const h0134 = { cf: await huella('auxiliar_change_flight'), rr: await huella('reubicar_reserva'), cand: await huella('reub_candidatas') };
+  const h0134 = { cf: await huella('auxiliar_change_flight'), rr: await huella('reubicar_reserva'), cand: await huella('reub_candidatas'), hb: await huella('hm_bog') };
   await c.query(strip('../supabase/migrations/0135_acomodar_eventualidades.sql'));
   await c.query(strip('../supabase/migrations/0135_acomodar_eventualidades.sql'));
   check('0135 se aplica encima de 0134 (y se puede volver a correr)', true);
+  const hb = await one(`SELECT public.hm_bog('2026-10-27T00:00:00-05:00') a, public.hm_bog('2026-10-27T00:35:00-05:00') b, public.hm_bog('2026-10-27T09:05:00-05:00') c, public.hm_bog('2026-10-27T21:45:00-05:00') d`);
+  check('la hora corta: medianoche «0:00» (antes «:00»), «0:35», «9:05», «21:45»', hb.a === '0:00' && hb.b === '0:35' && hb.c === '9:05' && hb.d === '21:45', hb);
   await acomodar(false);   // el armado del plan de prueba no debe disparar el acomodo al pedir
 
   const fx = await fixtures(c);
@@ -285,9 +287,9 @@ try {
   if (cron.hay) check('pg_cron: «acomodar-eventualidades» cada 5 min', !!(await one(`SELECT 1 FROM cron.job WHERE jobname = 'acomodar-eventualidades' AND schedule = '*/5 * * * *'`)));
   await c.query('SAVEPOINT down');
   await c.query(strip('../down_migrations/0135_acomodar_eventualidades.down.sql'));
-  const hd = { cf: await huella('auxiliar_change_flight'), rr: await huella('reubicar_reserva'), cand: await huella('reub_candidatas') };
+  const hd = { cf: await huella('auxiliar_change_flight'), rr: await huella('reubicar_reserva'), cand: await huella('reub_candidatas'), hb: await huella('hm_bog') };
   const tg = await one(`SELECT count(*)::int n FROM pg_trigger WHERE tgname = 'tr_reservations_acomodar'`);
-  check('el down deja el cambio de vuelo y la reubicación EXACTAMENTE como en 0134 y quita el acomodo al pedir', hd.cf === h0134.cf && hd.rr === h0134.rr && hd.cand === h0134.cand && tg.n === 0, { hd, h0134, tg });
+  check('el down deja el cambio de vuelo y la reubicación EXACTAMENTE como en 0134 y quita el acomodo al pedir', hd.cf === h0134.cf && hd.rr === h0134.rr && hd.cand === h0134.cand && hd.hb === h0134.hb && tg.n === 0, { hd, h0134, tg });
   await c.query('ROLLBACK TO SAVEPOINT down');
 } catch (e) {
   fail++; console.log('  ✗ error: ' + e.message + (e.where ? ' · ' + e.where.split('\n')[0] : ''));

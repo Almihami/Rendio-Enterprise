@@ -19,6 +19,15 @@ DROP FUNCTION IF EXISTS public.acomodar_eventualidades(timestamptz);
 DROP FUNCTION IF EXISTS public.reub_rastro(uuid, text, text, jsonb, text, jsonb);
 DROP FUNCTION IF EXISTS public.reubicar_reserva(uuid, timestamptz, text);
 
+-- La hora corta, como la dejó 0125.
+CREATE OR REPLACE FUNCTION public.hm_bog(p timestamptz)
+RETURNS text
+LANGUAGE sql IMMUTABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT CASE WHEN p IS NULL THEN NULL ELSE ltrim(to_char(p AT TIME ZONE 'America/Bogota', 'HH24:MI'), '0') END;
+$$;
+
 -- Las de 0134, tal cual.
 CREATE OR REPLACE FUNCTION public.reub_candidatas(p_res uuid, p_cap int)
 RETURNS TABLE (ra_id uuid, start_at timestamptz, pool boolean, drv uuid, drv_prof uuid, drv_name text,
