@@ -62,6 +62,7 @@
   // ── Estado ────────────────────────────────────────────────────────────────────
   const RT = {
     profile: null, source: 'empty', driverProfileId: null, vueltas: [], loaded: false,
+    libres: [],                // 0125: vueltas de la ruta de Julián que nadie ha tomado
     stack: [],                 // capas sobre Mi día: { id:'detail'|'exec'|'done', vid, key }
     maps: {},                  // key de capa (o 'big') → manejador del mapa
     sheet: null,               // { kind, close, ... }
@@ -342,6 +343,8 @@
     try { if (window.Api && Api.listMyVueltasForDriver && profile && profile.id) vs = await Api.listMyVueltasForDriver(profile.id); } catch (e) { vs = null; }
     RT.source = (vs && vs.length) ? 'live' : 'empty';
     RT.vueltas = rtBuild(vs && vs.length ? vs : []);
+    // 0125: las vueltas pegadas por Julián que todavía no tienen conductor.
+    try { RT.libres = (window.Api && Api.driverOpenRoutes) ? await Api.driverOpenRoutes() : []; } catch (e) { RT.libres = []; }
     const saved = loadSaved();
     RT.vueltas.forEach((v) => initProgress(v, saved));
     if (RT.source === 'live' && window.Api && Api.getMyDriverProfileId) {
@@ -553,6 +556,30 @@
       + '<span class="rt-nb-tx"><em><i></i>' + esc(`${v.n} en curso · ${RT.sharing ? 'ubicación activa' : 'sin GPS'}`) + '</em><b>' + esc(doing(v)) + '</b></span>'
       + ic('ChevronRight', 20) + '</button>';
   }
+  // 0125: «Vueltas para tomar» (la ruta de Julián). El conductor toma la vuelta
+  // completa: es un bloque del WhatsApp, un carro.
+  function libresHTML() {
+    const list = RT.libres || [];
+    if (!list.length) return '';
+    return '<div class="rx-lbl">Vueltas para tomar</div>' + list.map((o, i) => {
+      const lle = o.direction === 'airport_to_home';
+      const st = o.stops || [];
+      const t = lle ? bogHM(o.planned_start_at) : (st[0] && st[0].at ? bogHM(st[0].at) : bogHM(o.planned_start_at));
+      const nombres = st.map((x) => String(x.name || '').split(' ')[0]).join(', ');
+      const lugares = [...new Set(st.map((x) => x.place).filter(Boolean))].join(' · ');
+      const sub = [lle ? 'Recoges en JMC' : (o.deadline_at ? 'Deben estar ' + bogHM(o.deadline_at) : 'Destino JMC'), o.note || '', lugares].filter(Boolean).join(' · ');
+      // Bajo la hora, solo si no es de hoy: «Madrugada» (0:20 de la ruta de esta
+      // noche), «Mañana» o la fecha.
+      const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+      const t0 = lle ? o.planned_start_at : ((st[0] && st[0].at) || o.planned_start_at);
+      const diaT0 = t0 ? new Date(t0).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }) : o.day;
+      const cuando = (o.day && diaT0 > o.day) ? 'Madrugada'
+        : (diaT0 && diaT0 > hoy ? (diaT0 === new Date(Date.parse(hoy + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10) ? 'Mañana' : fmtDay(diaT0)) : '');
+      return '<div class="rt-vc rt-libre rx-in" style="--d:' + i + '"><span class="rt-vc-t"><em>' + (lle ? 'Llegada' : 'Salida') + '</em><b>' + esc(t) + '</b>' + (cuando ? '<em>' + esc(cuando) + '</em>' : '') + '</span>'
+        + '<span class="rt-vc-m"><b>' + esc(`${st.length} ${st.length === 1 ? 'persona' : 'personas'} · ${nombres}`) + '</b><span>' + esc(sub) + '</span></span>'
+        + btn('Tomar', { cls: 'tone', attrs: { 'data-rt': 'take', 'data-id': o.id, 'aria-label': `Tomar la vuelta de las ${t}` } }) + '</div>';
+    }).join('');
+  }
   function liveHTML(on) { return '<span class="rt-live ' + (on ? '' : 'off') + '"><i></i>' + (on ? 'Compartiendo ubicación' : 'Ubicación off') + '</span>'; }
   function dayHTML() {
     const list = RT.vueltas;
@@ -560,7 +587,10 @@
     if (!list.length) {
       return '<div class="rt-scr">' + head + '<div class="rt-body">'
         + '<div class="rt-title"><span>Rutas · ' + esc(fmtDay(null)) + '</span><h1>Mi día</h1><p>Sin vueltas asignadas</p></div>'
-        + '<div class="rt-alldone rx-in"><span class="rt-empty-ic">' + ic('Route', 30) + '</span><b>No tienes ruta asignada</b><span>Cuando coordinación publique el plan con tu nombre, tus vueltas aparecen aquí y te llega una notificación.</span></div>'
+        + '<div class="rt-alldone rx-in"><span class="rt-empty-ic">' + ic('Route', 30) + '</span><b>No tienes ruta asignada</b><span>' + ((RT.libres || []).length
+          ? 'Toma una de las vueltas de abajo: es tuya y los tripulantes saben que los recoges.'
+          : 'Cuando coordinación publique el plan con tu nombre, o haya vueltas para tomar, aparecen aquí y te llega una notificación.') + '</span></div>'
+        + libresHTML()
         + '</div></div>';
     }
     const focus = list.find((v) => !S(v).done);
@@ -573,6 +603,7 @@
       + (focus ? '<div class="rx-lbl">' + (S(focus).started ? 'Ahora' : 'Tu siguiente vuelta') + '</div>' + heroHTML(focus)
         : '<div class="rt-alldone rx-in">' + check(64) + '<b>Terminaste tus rutas de hoy</b><span>' + esc(`Las ${list.length} ${list.length === 1 ? 'vuelta quedó entregada' : 'vueltas quedaron entregadas'}.`) + '</span></div>')
       + (later.length ? '<div class="rx-lbl">Más tarde</div>' + later.map((v, i) => vcardHTML(v, i)).join('') : '')
+      + libresHTML()
       + (done.length ? '<div class="rx-lbl">Completadas</div>' + done.map((v, i) => vcardHTML(v, i)).join('') : '')
       + '</div>' + nowbarHTML() + '</div>';
   }
@@ -631,7 +662,8 @@
       + (v.type === 'llegada' ? '<div class="rx-note">' + ic('Info', 15) + esc('La hora de cada casa es un estimado de entrega.' + (f && /aterrizó/.test(f.st) ? ` El vuelo ${f.st}.` : '')) + '</div>' : '')
       + '</div>'
       + '<div class="rx-foot">' + (s.done ? btn('Vuelta completada · ver resumen', { kind: 'sec', icon: 'Check', attrs: { 'data-rt': 'done', 'data-v': v.id } })
-        : btn(s.started ? `Seguir ruta · parada ${s.idx + 1} de ${v.legs.length}` : `Iniciar ruta · sale ${v.start}`, { cls: 'tone', icon: s.started ? 'Nav' : 'Play', attrs: { 'data-rt': 'start', 'data-v': v.id } })) + '</div>'
+        : (v.pool && !s.started ? btn('Soltar esta vuelta', { kind: 'ghost', attrs: { 'data-rt': 'release', 'data-v': v.id } }) : '')
+          + btn(s.started ? `Seguir ruta · parada ${s.idx + 1} de ${v.legs.length}` : `Iniciar ruta · sale ${v.start}`, { cls: 'tone', icon: s.started ? 'Nav' : 'Play', attrs: { 'data-rt': 'start', 'data-v': v.id } })) + '</div>'
       + nowbarHTML(v.id)
       + '</div>';
   }
@@ -1693,6 +1725,34 @@
     } catch (e) { /* sin vuelos */ }
   }
 
+  // ── 0125: tomar y soltar una vuelta de la ruta de Julián ──────────────────────
+  async function takeRoute(id, b) {
+    if (!id || !window.Api || !Api.driverTakeRoute) return;
+    if (b) b.disabled = true;
+    try {
+      const r = await Api.driverTakeRoute(id);
+      toast('La vuelta es tuya' + (r && r.plate ? ' · carro ' + r.plate : '') + '. Los tripulantes ya saben que los recoges.', 'Check');
+    } catch (e) {
+      toast((e && e.message) || 'No se pudo tomar la vuelta', 'AlertTriangle');
+    }
+    await load(RT.profile);
+    repaintBase();
+  }
+  async function releaseRoute(vid) {
+    const v = vById(vid); if (!v || !v.assignmentId || !window.Api || !Api.driverReleaseRoute) return;
+    if (typeof window.confirm === 'function' && !window.confirm('¿Soltar esta vuelta? Queda disponible para otro conductor y les avisamos a los jefes.')) return;
+    try {
+      await Api.driverReleaseRoute(v.assignmentId);
+      toast('Soltaste la vuelta: quedó disponible para otro conductor.', 'Check');
+    } catch (e) {
+      toast((e && e.message) || 'No se pudo soltar la vuelta', 'AlertTriangle');
+      return;
+    }
+    popAll();
+    await load(RT.profile);
+    repaintBase();
+  }
+
   // ── Eventos (un solo listener delegado) ───────────────────────────────────────
   function bindOnce() {
     if (RT.bound) return;
@@ -1749,6 +1809,8 @@
       if (a === 'bigmap') { bigMapOpen(vid); return; }
       if (a === 'recenter') { const L0 = RT.stack[RT.stack.length - 1]; const h = L0 && RT.maps[L0.key]; if (h) { h.follow = true; mapFit(h); } el.hidden = true; return; }
       if (a === 'sheet-close') { closeSheet(); return; }
+      if (a === 'take') { takeRoute(el.dataset.id, el); return; }
+      if (a === 'release') { releaseRoute(vid); return; }
     });
   }
 })();

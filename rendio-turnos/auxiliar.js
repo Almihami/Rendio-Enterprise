@@ -3388,6 +3388,12 @@
         else if (AUX_FINAL.includes(ns)) o.status = ns;
         else if ((AUX_ORDER[ns] ?? -1) > (AUX_ORDER[o.status] ?? -1)) o.status = ns;
       }
+      // 0125: el conductor soltó la vuelta (la ruta de Julián): sin conductor ni
+      // carro otra vez, y el estado vuelve al que dice el servidor (no ha arrancado).
+      if (n.driverPending === true) {
+        o.driver = null; o.vehicle = null;
+        if (ns && !AUX_FINAL.includes(o.status)) o.status = ns;
+      }
       if (o.status !== antes.status) cambios.push({ t: o, kind: 'status', from: antes.status });
       if (o.privateStatus !== antes.privateStatus && o.privateStatus) cambios.push({ t: o, kind: 'private', from: antes.privateStatus });
       if (o.pickupAt && o.pickupAt !== antes.pickupAt) cambios.push({ t: o, kind: 'pickup', from: antes.pickupAt });

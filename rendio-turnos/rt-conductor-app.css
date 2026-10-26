@@ -138,6 +138,13 @@
   #driver-ruta-ui.rx-phone .rt-cr-ask{ padding-left:0; }
 }
 
+/* 0125 · «Vueltas para tomar» (la ruta de Julián): la tarjeta de vuelta con un
+   botón «Tomar» al lado en vez de la flecha. */
+#driver-ruta-ui.rx-phone .rt-vc.rt-libre{cursor:default;border-style:dashed;border-color:var(--r-border-strong,var(--r-border))}
+#driver-ruta-ui.rx-phone .rt-vc.rt-libre .rx-btn{width:auto;min-width:84px;height:40px;padding:0 16px;font-size:14px}
+#driver-ruta-ui.rx-phone .rt-vc.rt-libre .rt-vc-m span{white-space:normal}
+#driver-ruta-ui.rx-phone .rx-foot .rx-btn.ghost + .rx-btn{margin-top:8px}
+
 /* BEGIN noanim (generado) */
 /* Generado por _portar-css-ruta-conductor.mjs — no editar este tramo a mano.
 

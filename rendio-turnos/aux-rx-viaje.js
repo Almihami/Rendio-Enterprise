@@ -246,6 +246,11 @@
         + '</div>';
     }
     if (isClosed(t)) return '';
+    // 0125: la ruta ya está publicada (la de Julián) y falta que un conductor la tome.
+    if (t.driverPending) {
+      return '<div class="rx-assign rx-in" data-rx-k="drv-pending"><span class="rx-pass-wait"><i></i></span>'
+        + '<div><b>Tu ruta está lista</b><span>Te avisamos quién te recoge apenas un conductor tome tu vuelta.</span></div></div>';
+    }
     return '<div class="rx-assign rx-in"><span class="rx-pass-wait"><i></i></span>'
       + '<div><b>Estamos armando tu ruta</b><span>Te avisamos quién te recoge y a qué hora.</span></div></div>';
   }

@@ -118,6 +118,8 @@
       notesUser: r.notes_user != null ? r.notes_user : '',
       // Solo con plan publicado (el servidor ya lo filtra): nunca se inventa.
       published: r.published === true,
+      // 0125: publicada en la ruta de Julián y sin conductor todavía (lo toma uno).
+      driverPending: r.published === true && r.driver_pending === true,
       pickupAt: r.published ? (r.pickup_at || null) : null,
       meetCode: r.published ? (r.meet_code || '') : '',
       // Orden en el carro (0093), solo publicado: pickupPos de pickupTotal.

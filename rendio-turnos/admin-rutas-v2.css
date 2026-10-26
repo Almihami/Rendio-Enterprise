@@ -430,3 +430,47 @@
 @media (prefers-reduced-motion: reduce) {
   #routes-v2 *, .rv2-sheet *, .rv2-toast * { transition: none !important; animation: none !important; }
 }
+
+/* ── 0125 · La ruta de Julián (admin-ruta-julian.js) ─────────────────────────── */
+/* Más ancha solo en la compu; en el celular la hoja va de borde a borde como todas. */
+@media (min-width: 768px) { .rv2-sheet.rj-wide, .rv2-sheet:has(.rj-body) { width: min(720px, 96vw); } }
+.rv2-sheet .rj-ta { width: 100%; box-sizing: border-box; min-height: 180px; resize: vertical; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font: 13.5px/1.45 var(--mono); color: var(--ink); background: var(--panel2); }
+.rv2-sheet .rj-prev { display: flex; flex-direction: column; gap: 10px; }
+.rv2-sheet .rj-note, #routes-v2 .rj-note { margin: 0; color: var(--ink2); font-size: 13px; }
+.rv2-sheet .rj-warn { color: var(--orange-ink); }
+.rv2-sheet .rj-bad { color: var(--red-ink); font-weight: 700; }
+.rv2-sheet .rj-sum { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--panel2); font-size: 13.5px; }
+.rv2-sheet .rj-b { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.rv2-sheet .rj-bh { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 8px 12px; background: var(--panel2); font-size: 13.5px; }
+.rv2-sheet .rj-bh span { color: var(--ink2); font-size: 12.5px; }
+.rv2-sheet .rj-p { display: grid; grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1.4fr); gap: 4px 10px; align-items: center; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 13.5px; }
+.rv2-sheet .rj-p .rj-t { font-family: var(--mono); font-weight: 700; }
+.rv2-sheet .rj-p .rj-w em { color: var(--ink3); font-style: normal; }
+.rv2-sheet .rj-p select { width: 100%; min-width: 0; height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; font: inherit; font-size: 13px; background: var(--panel); color: var(--ink); }
+.rv2-sheet .rj-p small { grid-column: 2 / -1; color: var(--ink3); font-size: 12px; }
+.rv2-sheet .rj-p[data-st="sin"] select { border-color: var(--orange); }
+.rv2-sheet .rj-p[data-st="rev"] select { border-color: var(--red-ink); }
+.rv2-sheet .rj-p[data-st="man"] select { border-color: var(--green); }
+@media (max-width: 767px) {
+  .rv2-sheet .rj-p { grid-template-columns: 44px minmax(0, 1fr); }
+  .rv2-sheet .rj-p select { grid-column: 1 / -1; }
+}
+#routes-v2 .rj-dia { display: flex; flex-direction: column; gap: 8px; padding: 14px 20px 24px; }
+#routes-v2 .rj-dia-h { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+#routes-v2 .rj-dia-h > div:first-child { display: flex; flex-direction: column; gap: 2px; }
+#routes-v2 .rj-dia-h span { color: var(--ink2); font-size: 13px; }
+#routes-v2 .rj-dia-a { display: flex; gap: 6px; flex-wrap: wrap; }
+#routes-v2 .rj-v { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+#routes-v2 .rj-v-t { display: flex; flex-direction: column; }
+#routes-v2 .rj-v-t b { font-family: var(--mono); font-size: 16px; }
+#routes-v2 .rj-v-t small, #routes-v2 .rj-v-m small { color: var(--ink3); font-size: 12px; }
+#routes-v2 .rj-v-m { display: flex; flex-direction: column; min-width: 0; }
+#routes-v2 .rj-v-m span { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#routes-v2 .rj-v-st { font-size: 12.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--panel2); color: var(--ink2); white-space: nowrap; }
+#routes-v2 .rj-v[data-st="libre"] .rj-v-st { background: var(--orange-soft); color: var(--orange-ink); }
+#routes-v2 .rj-v[data-st="tomada"] .rj-v-st, #routes-v2 .rj-v[data-st="curso"] .rj-v-st { background: var(--green-soft); color: var(--green); }
+@media (max-width: 767px) {
+  #routes-v2 .rj-dia { padding: 12px 16px 24px; }
+  #routes-v2 .rj-v { grid-template-columns: 56px minmax(0, 1fr); }
+  #routes-v2 .rj-v-st { grid-column: 1 / -1; justify-self: start; }
+}
