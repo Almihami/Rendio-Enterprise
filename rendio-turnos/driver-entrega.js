@@ -34,7 +34,10 @@
     const placa = r.plate || r.car || '';
     if (r.role === 'entrega') {
       const a = r.to ? nombre(r.to.name) : (r.to_text || '');
-      const quien = r.to ? `Le entregas el carro a <b>${esc(a)}</b>` : `Dejas el carro: <b>${esc(a)}</b>`;
+      // Sin destinatario (el plan siguiente sin publicar): se dice, y se puede marcar igual.
+      const quien = r.to ? `Le entregas el carro a <b>${esc(a)}</b>`
+        : a ? `Dejas el carro: <b>${esc(a)}</b>`
+        : 'Todavía no está definido a quién le entregas el carro: <b>Coordinación te avisa</b>.';
       const llamar = r.to && tel(r.to.phone) ? `<a class="rc-ent-call" href="tel:${esc(tel(r.to.phone))}">Llamar a ${esc(a.split(' ')[0])}</a>` : '';
       const accion = r.delivered_at
         ? `<div class="rc-ent-ok" role="status">✓ Entregado a las ${esc(hm12(r.delivered_at))}</div><button type="button" class="rc-ent-undo" data-ent="undo" data-dia="${esc(r.op_day)}" data-band="${esc(r.band)}">Deshacer</button>`

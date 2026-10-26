@@ -31,8 +31,8 @@
 --      «Recibido» no pide toque: cuando el que recibe inicia turno, queda recibido.
 --   4. handover_alerts() cada 5 min (pg_cron 'handover-alerts'):
 --      🔑 al que entrega, al abrir la ventana: «Hoy entregas el carro a Daniel a las 2:00 p. m.»
---      ⚠️ a los jefes, handover_late_min (15) después de la hora sin «Entregado».
---      Una vez cada uno (dedupe).
+--      ⚠️ a los jefes, handover_late_min (15) después de la hora sin «Entregado» (solo
+--      si ya se sabía a quién). Una vez cada uno (dedupe).
 --
 -- NO SE TOCA ninguna función ni fila existente. Necesita 0097 (trip_notify), 0107
 -- (route_night_cutoff_min), 0117 (ops_alert_recipients_of), 0124 (plan_car),
@@ -431,8 +431,10 @@ BEGIN
           v_n := v_n + 1;
         END IF;
       END IF;
-      -- A los jefes, si pasó la hora + v_late y nadie marcó.
-      IF p_now >= e.due_at + make_interval(mins => v_late) AND p_now <= e.due_at + interval '3 hours' THEN
+      -- A los jefes, si pasó la hora + v_late y nadie marcó. Solo si ya se sabía a
+      -- quién: sin destinatario (el plan siguiente sin publicar) el conductor no tenía
+      -- a quién entregar, y eso ya se ve en Asignación («Sin definir»).
+      IF v_to IS NOT NULL AND p_now >= e.due_at + make_interval(mins => v_late) AND p_now <= e.due_at + interval '3 hours' THEN
         SELECT public.short_name(full_name) INTO v_from FROM public.profiles WHERE id = e.from_profile;
         FOR j IN SELECT * FROM public.ops_alert_recipients_of(g.id) LOOP
           IF public.trip_notify(j.profile_id, '⚠️ ' || coalesce(v_from, 'Un conductor') || ' no ha marcado la entrega del carro',
