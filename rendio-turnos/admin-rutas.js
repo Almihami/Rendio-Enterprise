@@ -253,7 +253,7 @@
   // último plan publicado/leído, lo que se ve es lo que tienen los conductores.
   function rtFirmaPlan() {
     const lanes = (rt.lanes || []).filter(l => rt.order[l.id] && rt.order[l.id].length)
-      .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(','), l.drv === undefined ? null : l.drv]);
+      .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(','), l.drv === undefined ? null : l.drv, l.deleg ? 1 : 0]);
     const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null, c.driverMad || null]);
     return JSON.stringify([lanes, drv]);
   }
@@ -1584,7 +1584,8 @@
       return {
         vehicleId: car ? car.vehicleId : null,
         planCar: car ? car.id : null,   // 0124: «Carro 1»; la placa la pone el turno del conductor
-        driverProfileId: rtDriverOf(l), // conductor de la FRANJA de esta vuelta (AM/PM)
+        driverProfileId: l.deleg ? null : rtDriverOf(l), // conductor de la FRANJA de esta vuelta (AM/PM)
+        delegated: l.deleg === true,    // 0126: la hace alguien de afuera
         type: l.type || 'sal',
         startAt: rt.day + 'T' + (l.start || '04:00') + ':00-05:00',
         stops: rt.order[l.id].map(k => rt.aux[k] && rt.aux[k].reservationId).filter(Boolean),
@@ -1592,6 +1593,7 @@
       };
     });
     const withDriver = lanes.filter(l => l.driverProfileId).length;
+    const delegadas = lanes.filter(l => l.delegated).length;
     const saveBtn = $('#rt-saveBtn');
     if (saveBtn) saveBtn.innerHTML = '<svg class="icon"><use href="#i-save"/></svg>Publicando…';
     let result = { ok: false };
@@ -1605,7 +1607,7 @@
       say(r.failed
         ? `Ojo: ${r.failed} ${r.failed === 1 ? 'vuelta no se pudo guardar' : 'vueltas no se pudieron guardar'} (${r.failMsg || 'error de la base'}). Se publicaron ${r.saved}. Vuelve a publicar.`
         : withDriver
-          ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado)${r.kept ? ` · ${r.kept} paradas ya en curso quedaron intactas` : ''}. Los conductores ya lo ven.`
+          ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado${delegadas ? `, ${delegadas} delegada${delegadas === 1 ? '' : 's'}` : ''})${r.kept ? ` · ${r.kept} paradas ya en curso quedaron intactas` : ''}. Los conductores ya lo ven.`
           : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.`);
       // Push a los auxiliares cuya asignación CAMBIÓ de verdad. Antes se le
       // avisaba a todos en cada republicación, así que quien ya tenía conductor
@@ -1615,8 +1617,16 @@
       // mismo push puede hablar de varios traslados del tripulante, así que no
       // se abre uno en particular.
       try {
-        const fresh = (r.notify || []).filter(n => !n.changed).map(n => n.reservationId);
-        const moved = (r.notify || []).filter(n => n.changed).map(n => n.reservationId);
+        const fresh = (r.notify || []).filter(n => !n.delegated && !n.changed).map(n => n.reservationId);
+        const moved = (r.notify || []).filter(n => !n.delegated && n.changed).map(n => n.reservationId);
+        // 0126: delegada = la hace alguien de afuera; lo contactan por WhatsApp.
+        const deleg = (r.notify || []).filter(n => n.delegated).map(n => n.reservationId);
+        if (deleg.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
+          const ids = await Api.auxiliarUserIdsForReservations(deleg);
+          if (ids.length) await Api.sendPush({ profileIds: ids,
+            title: 'Tu servicio fue delegado 🤝',
+            body: 'Te contactaremos por WhatsApp para coordinar tu traslado.', url: '/#/viajes' });
+        }
         if (fresh.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
           const ids = await Api.auxiliarUserIdsForReservations(fresh);
           if (ids.length) await Api.sendPush({ profileIds: ids,

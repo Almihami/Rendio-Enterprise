@@ -170,7 +170,9 @@
       log.saved.push({ day, lanes: JSON.parse(JSON.stringify(lanes)) });
       const notify = [];
       lanes.forEach((l) => (l.stops || []).forEach((rid) => {
-        if (l.driverProfileId && antes[rid] !== l.driverProfileId) notify.push({ reservationId: rid, changed: !!antes[rid], driverProfileId: l.driverProfileId });
+        // 0126: recién delegada → aviso al tripulante (como el real).
+        if (l.delegated) { if (antes[rid] !== 'deleg') notify.push({ reservationId: rid, delegated: true }); antes[rid] = 'deleg'; return; }
+        if (l.driverProfileId && antes[rid] !== l.driverProfileId) notify.push({ reservationId: rid, changed: !!antes[rid] && antes[rid] !== 'deleg', driverProfileId: l.driverProfileId });
         antes[rid] = l.driverProfileId || null;
       }));
       return { saved: lanes.length, skipped: 0, kept: 0, failed: 0, failMsg: '', notify };

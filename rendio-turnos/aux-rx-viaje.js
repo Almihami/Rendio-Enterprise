@@ -246,6 +246,11 @@
         + '</div>';
     }
     if (isClosed(t)) return '';
+    // 0126: la vuelta la hace alguien de afuera (el carro del jefe, un Uber).
+    if (t.delegated) {
+      return '<div class="rx-assign rx-in" data-rx-k="drv-deleg"><span class="rx-pass-wait">' + ic('MessageCircle', 16) + '</span>'
+        + '<div><b>Tu servicio fue delegado</b><span>Te contactaremos por WhatsApp para coordinar tu traslado.</span></div></div>';
+    }
     // 0125: la ruta ya está publicada (la de Julián) y falta que un conductor la tome.
     if (t.driverPending) {
       return '<div class="rx-assign rx-in" data-rx-k="drv-pending"><span class="rx-pass-wait"><i></i></span>'

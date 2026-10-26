@@ -107,6 +107,7 @@
       driver: null, vehicle: null,
       // 0125: ruta de Julián publicada y ningún conductor la ha tomado.
       driverPending: false,
+      delegated: false,            // 0126: la vuelta la hace alguien de afuera
       bags: null, quiet: false, meetingPoint: '',
       createdAt: haceMin(60 * 30), stopStatus: null, arrivedAt: null, pickedAt: null, droppedAt: null,
       cancelledAt: null, cancelReason: '',

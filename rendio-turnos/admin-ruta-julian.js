@@ -397,8 +397,9 @@
   // ── 6. El día con la ruta de Julián (Rutas del día, en lugar del tablero) ───
   function diaHTML(vueltas, dia, otras) {
     const vs = (vueltas || []).slice().sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
-    const libres = vs.filter((v) => !v.driverProfileId && v.status !== 'completed').length;
-    let h = `<div class="rj-dia"><div class="rj-dia-h"><div><b>Ruta de Julián · ${esc(diaTxt(dia))}</b><span>${vs.length} vueltas · ${libres ? `${libres} sin tomar` : 'todas tomadas'}</span></div>`
+    const libres = vs.filter((v) => !v.driverProfileId && !v.delegated && v.status !== 'completed').length;
+    const delegadas = vs.filter((v) => v.delegated).length;
+    let h = `<div class="rj-dia"><div class="rj-dia-h"><div><b>Ruta de Julián · ${esc(diaTxt(dia))}</b><span>${vs.length} vueltas · ${libres ? `${libres} sin tomar` : 'todas tomadas'}${delegadas ? ` · ${delegadas} ${delegadas === 1 ? 'delegada' : 'delegadas'}` : ''}</span></div>`
       + '<div class="rj-dia-a"><button class="rv2-btn rv2-btn--sm" data-rj-dia="pegar">Volver a pegar</button><button class="rv2-btn rv2-btn--sm" data-rj-dia="excel">Excel del día</button>'
       + '<button class="rv2-btn rv2-btn--sm" data-rj-dia="quitar">Quitar la ruta</button></div></div>';
     if (otras) h += `<p class="rj-note">Además hay ${otras} ${otras === 1 ? 'vuelta' : 'vueltas'} del tablero publicadas ese día.</p>`;
@@ -407,13 +408,18 @@
       const t0 = v.type === 'lle' ? bogHM(v.startAt) : (gente[0] && gente[0].etaAt ? bogHM(gente[0].etaAt) : bogHM(v.startAt));
       const enCurso = v.status === 'in_progress' || (v.atendidas || []).length > 0;
       const estado = v.status === 'completed' ? ['hecha', 'Terminada']
-        : enCurso ? ['curso', `En curso · ${esc(v.conductor)}`]
-          : v.driverProfileId ? ['tomada', `Tomada por ${esc(v.conductor)}${v.placa ? ' · ' + esc(v.placa) : ''}`]
-            : ['libre', 'Disponible'];
+        : enCurso ? ['curso', v.delegated ? 'En curso · delegada' : `En curso · ${esc(v.conductor)}`]
+          : v.delegated ? ['delegada', 'Delegada · la hace alguien de afuera']
+            : v.driverProfileId ? ['tomada', `Tomada por ${esc(v.conductor)}${v.placa ? ' · ' + esc(v.placa) : ''}`]
+              : ['libre', 'Disponible'];
+      // 0126: delegar (o devolver) mientras no haya arrancado. Aplica al momento.
+      const quienes = gente.map((g) => g.name.split(' ')[0]).join(', ');
+      const btn = v.status === 'completed' || enCurso ? ''
+        : `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="${v.delegated ? 0 : 1}" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="${!v.delegated && v.driverProfileId ? esc(v.conductor) : ''}">${v.delegated ? 'Devolver' : 'Delegar'}</button>`;
       h += `<div class="rj-v" data-st="${estado[0]}"><div class="rj-v-t"><b>${esc(t0)}</b><small>${v.type === 'lle' ? 'Llegada' : 'Salida'}</small></div>`
         + `<div class="rj-v-m"><span>${esc(gente.map((g) => g.name.split(' ')[0]).join(', ') || '—')}</span>`
         + `<small>${esc([v.deadlineAt ? 'Deben estar ' + bogHM(v.deadlineAt) : '', v.nota || '', `${gente.length} ${gente.length === 1 ? 'persona' : 'personas'}`].filter(Boolean).join(' · '))}</small></div>`
-        + `<span class="rj-v-st">${estado[1]}</span></div>`;
+        + `<div class="rj-v-r"><span class="rj-v-st">${estado[1]}</span>${btn}</div></div>`;
     });
     return h + '</div>';
   }
@@ -423,6 +429,23 @@
     const root = document.getElementById('routes-v2'); if (!root) return;
     atadoDia = true;
     root.addEventListener('click', async (e) => {
+      const dl = e.target.closest('[data-rj-deleg]');
+      if (dl) {
+        const on = dl.getAttribute('data-on') === '1';
+        const hora = dl.getAttribute('data-hora'), quienes = dl.getAttribute('data-quienes'), tomada = dl.getAttribute('data-tomada');
+        const pregunta = on
+          ? `¿Delegar la vuelta de las ${hora}${quienes ? ' (' + quienes + ')' : ''}? La hace alguien de afuera: ningún conductor la verá y a cada tripulante le llega «Tu servicio fue delegado, te contactaremos por WhatsApp».${tomada ? ` ${tomada} la había tomado: se le avisa que ya no la hace.` : ''}`
+          : `¿Devolver la vuelta de las ${hora}? Vuelve a la lista para que un conductor la tome, y se le avisa al tripulante.`;
+        if (typeof W.confirm === 'function' && !W.confirm(pregunta)) return;
+        dl.disabled = true;
+        try {
+          const r = await Api.setRouteDelegated(dl.getAttribute('data-rj-deleg'), on);
+          say(on ? `Vuelta de las ${hora} delegada${r && r.notified ? ` · avisamos a ${r.notified} ${r.notified === 1 ? 'tripulante' : 'tripulantes'}` : ''}.` : `Vuelta de las ${hora} devuelta: ya la pueden tomar.`);
+          const dia = diaActual();
+          if (dia && V2() && typeof V2().cargarDia === 'function') await V2().cargarDia(dia);
+        } catch (err) { dl.disabled = false; say('No se pudo: ' + ((err && err.message) || 'error')); }
+        return;
+      }
       const b = e.target.closest('[data-rj-dia]'); if (!b) return;
       const k = b.getAttribute('data-rj-dia');
       if (k === 'pegar') abrir();

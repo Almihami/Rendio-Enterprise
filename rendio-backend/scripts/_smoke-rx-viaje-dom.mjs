@@ -225,6 +225,18 @@ t('★ oculta con 6 calificaciones (< 10)', !q('.rx-drv-st'));
     !!pend && /Tu ruta está lista/.test(pend.textContent) && /apenas un conductor tome tu vuelta/.test(pend.textContent) && !/Estamos armando tu ruta/.test(pend.parentElement.textContent) && !q('.rx-drv'),
     pend ? pend.textContent : (q('.rx-assign') || { textContent: 'sin .rx-assign' }).textContent);
   t('0125: …y la hora de recogida publicada sigue a la vista', q('#ax-eta-min') && q('#ax-eta-min').textContent === '03:48', q('#ax-eta-min') && q('#ax-eta-min').textContent);
+  // 0126: la vuelta la hace alguien de afuera (delegada).
+  d = await abrir('asignado-publicado', (dd) => {
+    const tr = dd.track[dd.principal]; if (tr) { tr.vehicle = null; tr.driver = null; }
+    (w.Auxiliar.state.trips || []).forEach((x) => { if (x && x.id === dd.principal) { x.driver = null; x.vehicle = null; x.driverPending = false; x.delegated = true; } });
+  });
+  const dele = q('[data-rx-k="drv-deleg"]');
+  t('0126: delegada: «Tu servicio fue delegado · Te contactaremos por WhatsApp…» (ni «Tu ruta está lista» ni «Estamos armando»)',
+    !!dele && /Tu servicio fue delegado/.test(dele.textContent) && /Te contactaremos por WhatsApp/.test(dele.textContent)
+      && !q('[data-rx-k="drv-pending"]') && !/Estamos armando tu ruta/.test(dele.parentElement.textContent) && !q('.rx-drv'),
+    dele ? dele.textContent : (q('.rx-assign') || { textContent: 'sin .rx-assign' }).textContent);
+  t('0126: …sin Llamar ni Mensaje al conductor (no hay conductor de Rendio)', !q('.rx-drv-acts [data-ax="call"]') && !q('.rx-drv-acts [data-ax="chat"]'));
+  t('0126: …y la hora publicada sigue a la vista', q('#ax-eta-min') && q('#ax-eta-min').textContent === '03:48', q('#ax-eta-min') && q('#ax-eta-min').textContent);
   d = await abrir('asignado-publicado');
 }
 t('acciones: Llamar (call), Mensaje (chat), Coordinación (open-coord con el id)', !!q('.rx-drv-acts [data-ax="call"]') && !!q('.rx-drv-acts [data-ax="chat"]')

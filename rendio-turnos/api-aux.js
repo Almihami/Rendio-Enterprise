@@ -120,6 +120,8 @@
       published: r.published === true,
       // 0125: publicada en la ruta de Julián y sin conductor todavía (lo toma uno).
       driverPending: r.published === true && r.driver_pending === true,
+      // 0126: la vuelta la hace alguien de afuera; lo contactan por WhatsApp.
+      delegated: r.published === true && r.delegated === true,
       pickupAt: r.published ? (r.pickup_at || null) : null,
       meetCode: r.published ? (r.meet_code || '') : '',
       // Orden en el carro (0093), solo publicado: pickupPos de pickupTotal.
