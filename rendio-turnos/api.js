@@ -3621,7 +3621,7 @@
     // estimated_arrival_at (0003, la escribe saveRoutePlan al publicar) es la hora
     // estimada de CADA parada: en una llegada, la entrega en cada casa («llega aprox.»).
     const rv = (extra) => sb.from('route_assignments')
-      .select(`id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, status, actual_arrival_at, estimated_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, residence_unit${extra}, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))`)
+      .select(`id, direction, planned_start_at, status, route_stops(id, stop_order, reservation_id, status, actual_arrival_at, estimated_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, residence_unit${extra}, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))`)
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true });
     // boarding_check (0097): si subió con código o «sin código», para pintarlo igual tras recargar.
@@ -3633,7 +3633,7 @@
     if (error) ({ data, error } = await rv(''));
     // 0075 puede no estar aplicada: sin el apartamento la ruta se pinta igual.
     if (error) ({ data, error } = await sb.from('route_assignments')
-      .select('id, direction, planned_start_at, status, route_stops(stop_order, reservation_id, status, actual_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
+      .select('id, direction, planned_start_at, status, route_stops(id, stop_order, reservation_id, status, actual_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
       .eq('driver_profile_id', dpid)
       .order('planned_start_at', { ascending: true }));
     if (error) return null;
@@ -3654,9 +3654,13 @@
     } catch (_) { /* sin 0125 */ }
     const day0 = _opDay(active[0].planned_start_at, corte); // vienen ordenadas por planned_start_at
     const rows = active.filter(ra => _opDay(ra.planned_start_at, corte) === day0);
+    // 0133: los pasajeros sin cuenta (Kriss): paradas sin reserva, con nombre y lugar.
+    const guests = await _guestStops(rows.map(ra => ra.id));
     return rows.map((ra, i) => {
       const type = ra.direction === 'airport_to_home' ? 'lle' : 'sal';
       const stops = (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order).map(s => {
+        const g = !s.reservation_id && s.id ? guests[s.id] : null;
+        if (g) return _guestLeg(s, g, type);
         const r = s.reservations || {};
         return { name: r.auxiliar_profiles?.profiles?.full_name || 'Auxiliar', addr: r.pickup_address || '',
           unit: r.residence_unit || '',
@@ -3700,6 +3704,37 @@
       return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at, done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: _bogDay(ra.planned_start_at), opDay: day0,
         pool: ex.pool === true, deadline: ex.deadline_at ? rtHHMM(ex.deadline_at) : '', nota: ex.manual_note || '' };
     });
+  }
+
+  // 0133: las paradas de pasajeros sin cuenta de esas vueltas → { [stopId]: fila }.
+  // Lectura aparte: sin la migración no hay columnas y no hay nada que agregar.
+  async function _guestStops(raIds) {
+    const out = {};
+    if (!raIds || !raIds.length) return out;
+    try {
+      const { data, error } = await sb.from('route_stops').select('id, guest_name, guest_place, guest_phone, guest_lat, guest_lng')
+        .in('route_assignment_id', raIds).is('reservation_id', null);
+      if (!error) (data || []).forEach(g => { if (g.guest_name) out[g.id] = g; });
+    } catch (_) { /* sin 0133 */ }
+    return out;
+  }
+  // La parada de un sin cuenta, con la misma forma que las demás (sin código, sin
+  // chat, sin avisos: no tiene la app).
+  function _guestLeg(s, g, type) {
+    return { name: g.guest_name, addr: g.guest_place || '', unit: '',
+      lat: g.guest_lat != null ? g.guest_lat : null, lng: g.guest_lng != null ? g.guest_lng : null,
+      flight: '', reserva: null, dl: '', kind: type === 'lle' ? 'dropoff' : 'pickup',
+      phone: g.guest_phone || '', notes: 'Sin cuenta en la app: no le llegan avisos.',
+      bags: null, quiet: false, meetCode: '', meetingPoint: '', level: 'shared', privateStatus: null,
+      pickup: s.estimated_arrival_at ? rtHHMM(s.estimated_arrival_at) : '',
+      stopStatus: s.status || 'pending', arrivedAt: s.actual_arrival_at || null,
+      eta: s.estimated_arrival_at ? rtHHMM(s.estimated_arrival_at) : '', etaAt: s.estimated_arrival_at || null,
+      boardedNoCode: false, reservationId: null, auxProfileId: null, guestStopId: s.id, guest: true };
+  }
+  // 0133: el conductor marca la parada de un sin cuenta (mismos estados).
+  async function driverSetGuestStopStatus(stopId, status) {
+    const { error } = await sb.rpc('driver_set_guest_stop_status', { p_stop: stopId, p_status: status });
+    if (error) throw error;
   }
 
   // El conductor marca el avance de una parada (recogí / entregué / no-show / etc.).
@@ -4201,19 +4236,23 @@
       (locs || []).forEach(l => { if (!posOf[l.driver_profile_id]) posOf[l.driver_profile_id] = l; });
     }
 
+    // 0133: los sin cuenta (paradas sin reserva) se llaman por su nombre.
+    const guests = await _guestStops(raws.filter(ra => (ra.route_stops || []).some(s => !s.reservation_id)).map(ra => ra.id));
     const vueltas = raws.map(ra => {
       const stops = (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order);
       // "Atendida" = ya no se puede mover. Es el mismo candado POR PARADA de
       // saveRoutePlan: lo pendiente de una ruta en curso sí se puede reacomodar.
       const atendida = (s) => s.status && s.status !== 'pending';
-      const viva = (s) => s.reservations && !s.reservations.cancelled_at;
+      // 0133: la parada de un sin cuenta no tiene reserva, y también cuenta.
+      const viva = (s) => (s.reservations && !s.reservations.cancelled_at) || (!s.reservation_id && !!guests[s.id]);
       const map = (s) => ({
         stopId: s.id, rid: s.reservation_id, order: s.stop_order, status: s.status || 'pending',
         lat: s.reservations?.pickup_latitude ?? null,
         lng: s.reservations?.pickup_longitude ?? null,
         resId: s.reservations?.residence_id || null,
         address: s.reservations?.pickup_address || '',
-        name: s.reservations?.auxiliar_profiles?.profiles?.full_name || 'Tripulante',
+        name: s.reservations?.auxiliar_profiles?.profiles?.full_name || (guests[s.id] && guests[s.id].guest_name) || 'Tripulante',
+        guest: !s.reservation_id && !!guests[s.id],   // 0133: sin cuenta en la app
         pax: 1,   // una reserva = una persona (no hay pax_count en el schema)
         dueAt: s.reservations?.required_arrival_at || null,
         etaAt: s.estimated_arrival_at || null,
@@ -4399,7 +4438,7 @@
   }
 
   window.Api = {
-    adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, setPlanCarVehicle, myPlanVehicleToday,
+    adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,

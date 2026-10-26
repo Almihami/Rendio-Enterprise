@@ -258,9 +258,26 @@
     L.bloques.forEach((b, bi) => b.lineas.forEach((l, li) => l.personas.forEach((nombre, pi) => pers.push({
       key: `${bi}.${li}.${pi}`, nombre, min: l.min, dia: l.dia, vuelo: l.vuelo, lugar: l.lugar, deadline: b.deadline && !b.deadline.mala ? b.deadline.min : null }))));
     const r = emparejar(pers, st.cands, st.apodos);
+    // 0133: los conjuntos, para ubicar al que no tiene cuenta por lo que dice el paréntesis.
+    st.residencias = [];
+    try { st.residencias = (W.Api && Api.listResidencesAdmin) ? ((await Api.listResidencesAdmin()) || []).filter((x) => x.is_active !== false) : []; } catch (_) { st.residencias = []; }
     st.elegido = {}; st.auto = {}; st.opciones = {};
     Object.keys(r).forEach((k) => { st.elegido[k] = r[k].rid || ''; st.auto[k] = r[k].rid || ''; st.opciones[k] = r[k].opciones; });
+    // 0133 (lista de los jefes, 26-oct): quien no pidió por la app pero Julián lo
+    // puso con lugar (o vuelo) VA en la ruta, sin cuenta (Kriss). Solo si no se
+    // parece a nadie del día: si hay parecidos («Revisa: elige quién es»), decide
+    // el jefe. Siempre se puede cambiar a «No va».
+    pers.forEach((p) => { if (!st.elegido[p.key] && !(st.opciones[p.key] || []).length && (p.lugar || p.vuelo)) { st.elegido[p.key] = GUEST; st.auto[p.key] = GUEST; } });
     pintarPrevia();
+  }
+  // 0133: el pasajero sin cuenta («Va sin cuenta»).
+  const GUEST = '__guest';
+  // El conjunto que dice el paréntesis («Campus Reservado»), si está en el catálogo.
+  function conjuntoDe(lugar) {
+    const n = norm(lugar || ''); if (n.length < 3) return null;
+    const rs = st.residencias || [];
+    return rs.find((x) => norm(x.name) === n)
+      || rs.find((x) => { const m = norm(x.name); return m.length >= 4 && (m.includes(n) || n.includes(m)); }) || null;
   }
   const cand = (rid) => st.cands.find((c) => c.rid === rid) || null;
   const etiqueta = (c) => `${c.n} · ${c.type === 'lle' ? 'llega' : 'sale'} ${c.dl}${c.vuelo ? ' ' + c.vuelo : ''}${c.zona ? ' · ' + c.zona : ''}`;
@@ -268,42 +285,47 @@
     const prev = document.getElementById('rj-prev'); const L = st.lectura;
     if (!prev || !L) return;
     const usados = new Map();
-    Object.entries(st.elegido).forEach(([k, rid]) => { if (rid) usados.set(rid, (usados.get(rid) || []).concat(k)); });
+    Object.entries(st.elegido).forEach(([k, rid]) => { if (rid && rid !== GUEST) usados.set(rid, (usados.get(rid) || []).concat(k)); });
     let h = '';
-    let nOk = 0, nRev = 0, nSin = 0;
+    let nOk = 0, nRev = 0, nSin = 0, nGuest = 0;
     L.bloques.forEach((b, bi) => {
       const lle = b.lineas.every((l) => l.vuelo);
       h += `<div class="rj-b"><div class="rj-bh"><b>${lle ? 'Llegada' : 'Salida'} · ${esc(hmTxt(b.lineas[0].min))}</b>${b.deadline ? (b.deadline.mala ? `<span class="rj-bad">«Deben estar ${esc(hmTxt(b.deadline.min))}» es antes de la última recogida: no se usa</span>` : `<span>Deben estar ${esc(hmTxt(b.deadline.min))}</span>`) : ''}${b.notas.length ? `<span>${esc(b.notas.join(' · '))}</span>` : ''}</div>`;
       b.lineas.forEach((l, li) => l.personas.forEach((nombre, pi) => {
         const k = `${bi}.${li}.${pi}`, rid = st.elegido[k];
-        const c = rid ? cand(rid) : null;
-        const doble = rid && (usados.get(rid) || []).length > 1;
-        const estado = !rid ? 'sin' : (doble ? 'rev' : (st.auto[k] === rid ? 'ok' : 'man'));
-        if (estado === 'ok' || estado === 'man') nOk++; else if (estado === 'rev') nRev++; else nSin++;
+        const esG = rid === GUEST;
+        const c = rid && !esG ? cand(rid) : null;
+        const doble = rid && !esG && (usados.get(rid) || []).length > 1;
+        const estado = esG ? 'guest' : !rid ? 'sin' : (doble ? 'rev' : (st.auto[k] === rid ? 'ok' : 'man'));
+        if (estado === 'ok' || estado === 'man') nOk++; else if (estado === 'rev') nRev++; else if (estado === 'guest') nGuest++; else nSin++;
+        const cj = esG ? conjuntoDe(l.lugar) : null;
         const ops = [...new Set([...(st.opciones[k] || []), ...(rid ? [rid] : [])])].map(cand).filter(Boolean);
         const resto = st.cands.filter((x) => !ops.includes(x)).sort((a, z) => a.n.localeCompare(z.n));
         h += `<div class="rj-p" data-st="${estado}"><span class="rj-t">${esc(hmTxt(l.min))}</span><span class="rj-w">${esc(nombre)}${l.lugar ? ` <em>(${esc(l.lugar)})</em>` : ''}</span>`
           + `<select data-rj-pick="${k}" aria-label="${esc('Quién es ' + nombre)}"><option value="">— No pidió por la app (no se avisa) —</option>`
+          + `<option value="${GUEST}"${esG ? ' selected' : ''}>— Va sin cuenta: en la ruta, sin aviso —</option>`
           + (ops.length ? `<optgroup label="Más probables">${ops.map((x) => `<option value="${esc(x.rid)}"${x.rid === rid ? ' selected' : ''}>${esc(etiqueta(x))}</option>`).join('')}</optgroup>` : '')
           + (resto.length ? `<optgroup label="Todos los del día">${resto.map((x) => `<option value="${esc(x.rid)}">${esc(etiqueta(x))}</option>`).join('')}</optgroup>` : '')
           + `</select>${doble ? '<small class="rj-bad">Está dos veces</small>'
             // Una llegada en una vuelta de salidas (o al revés) se publica aparte.
             : (c && c.type !== (lle ? 'lle' : 'sal') ? `<small class="rj-bad">Es ${c.type === 'lle' ? 'una llegada' : 'una salida'}: va en otra vuelta. Revisa que sea ella</small>`
+              : esG ? `<small>Sin cuenta: va en la ruta${cj ? ' · ' + esc(cj.name) : (l.lugar ? ' · «' + esc(l.lugar) + '» (sin ubicar en el mapa)' : '')}. No le llegan avisos.</small>`
               : (estado === 'sin' ? `<small>${ops.length ? 'Revisa: elige quién es (hay parecidos)' : 'Revisa: no la encontré'}</small>` : (estado === 'man' && c ? '<small>Elegido a mano: se aprende</small>' : '')))}</div>`;
       }));
       h += '</div>';
     });
-    const elegidos = new Set(Object.values(st.elegido).filter(Boolean));
+    const elegidos = new Set(Object.values(st.elegido).filter((x) => x && x !== GUEST));
     const fuera = st.cands.filter((c) => !elegidos.has(c.rid));
     const resumen = `<div class="rj-sum"><b>${L.bloques.length} vueltas · ${nOk} emparejados</b>`
       + (nRev ? `<span class="rj-bad">${nRev} repetidos: corrígelos antes de publicar</span>` : '')
-      + (nSin ? `<span>${nSin} sin pedido en la app (no se les avisa)</span>` : '')
+      + (nGuest ? `<span>${nGuest} sin cuenta: van en la ruta, sin aviso</span>` : '')
+      + (nSin ? `<span>${nSin} sin pedido en la app (no van)</span>` : '')
       + (fuera.length ? `<span class="rj-warn">Pidieron por la app y no están en tu ruta: ${esc(fuera.map((c) => `${c.n.split(' ')[0]} (${c.type === 'lle' ? 'llega' : 'sale'} ${c.dl})`).join(', '))}</span>` : '')
       + (L.raras.length ? `<span class="rj-warn">No entendí: ${esc(L.raras.join(' · '))}</span>` : '')
       + '</div>';
     prev.innerHTML = resumen + h;
     const pub = document.querySelector('#rv2-sheet [data-rj="publicar"]');
-    if (pub) { pub.disabled = !nOk || nRev > 0 || st.ocupado; pub.textContent = nOk ? `Publicar y avisar a ${nOk}` : 'Publicar y avisar'; }
+    if (pub) { pub.disabled = !(nOk + nGuest) || nRev > 0 || st.ocupado; pub.textContent = nOk ? `Publicar y avisar a ${nOk}${nGuest ? ` · ${nGuest} sin cuenta` : ''}` : (nGuest ? `Publicar (${nGuest} sin cuenta)` : 'Publicar y avisar'); }
   }
   // Los bloques para la base: horas resueltas a fecha y hora; un bloque con
   // salidas y llegadas mezcladas se parte en dos (son carros distintos).
@@ -311,14 +333,25 @@
     const out = [];
     st.lectura.bloques.forEach((b, bi) => {
       const grupos = { sal: [], lle: [] };
-      b.lineas.forEach((l, li) => l.personas.forEach((_, pi) => {
-        const rid = st.elegido[`${bi}.${li}.${pi}`]; const c = rid ? cand(rid) : null;
+      // 0133: el sin cuenta va con el tipo de su bloque (el de los que tienen pedido;
+      // si no hay ninguno, llegada si la línea trae vuelo).
+      const tipos = [];
+      b.lineas.forEach((l, li) => l.personas.forEach((_, pi) => { const c = cand(st.elegido[`${bi}.${li}.${pi}`]); if (c) tipos.push(c.type); }));
+      const tipoBloque = (l) => (tipos.length ? (tipos.filter((x) => x === 'lle').length > tipos.length / 2 ? 'lle' : 'sal') : (l.vuelo ? 'lle' : 'sal'));
+      b.lineas.forEach((l, li) => l.personas.forEach((nombre, pi) => {
+        const rid = st.elegido[`${bi}.${li}.${pi}`];
+        if (rid === GUEST) {
+          const cj = conjuntoDe(l.lugar);
+          grupos[tipoBloque(l)].push({ guest: { name: nombre, place: l.lugar || (cj ? cj.name : null), residence_id: cj ? cj.id : null }, at: isoDe(l.dia, l.min), vuelo: l.vuelo });
+          return;
+        }
+        const c = rid ? cand(rid) : null;
         if (!c) return;
         grupos[c.type].push({ reservation_id: rid, at: isoDe(l.dia, l.min), vuelo: l.vuelo });
       }));
       ['sal', 'lle'].forEach((t) => {
         if (!grupos[t].length) return;
-        out.push({ type: t, stops: grupos[t].map(({ reservation_id, at }) => ({ reservation_id, at })),
+        out.push({ type: t, stops: grupos[t].map(({ reservation_id, guest, at }) => (guest ? { guest, at } : { reservation_id, at })),
           deadline_at: t === 'sal' && b.deadline && !b.deadline.mala ? isoDe(b.deadline.dia, b.deadline.min) : null,
           note: b.notas.join(' · ') || null, flight: t === 'lle' ? (grupos[t].find((x) => x.vuelo) || {}).vuelo || null : null });
       });
@@ -341,7 +374,8 @@
     const bloques = bloquesParaBase();
     const n = bloques.reduce((a, b) => a + b.stops.length, 0);
     if (!n) return;
-    if (typeof W.confirm === 'function' && !W.confirm(`¿Publicar la ruta de Julián del ${diaTxt(st.dia)}? ${bloques.length} vueltas, ${n} tripulantes. A cada uno le llega su hora de recogida y los conductores las pueden tomar.`)) return;
+    const nG = bloques.reduce((a, b) => a + b.stops.filter((x) => x.guest).length, 0);
+    if (typeof W.confirm === 'function' && !W.confirm(`¿Publicar la ruta de Julián del ${diaTxt(st.dia)}? ${bloques.length} vueltas, ${n - nG} tripulantes${nG ? ` y ${nG} sin cuenta` : ''}. A cada tripulante le llega su hora de recogida y los conductores las pueden tomar.${nG ? ' A los sin cuenta no les llega nada: van en la ruta del conductor.' : ''}`)) return;
     st.ocupado = true; pintarPrevia();
     try {
       const r = await Api.adminManualRoutePublish(st.dia, bloques, apodosNuevos());
@@ -468,7 +502,7 @@
             : v.driverProfileId ? ['tomada', `Tomada por ${esc(v.conductor)}${v.placa ? ' · ' + esc(v.placa) : ''}`]
               : ['libre', 'Disponible'];
       // 0126: delegar (o devolver) mientras no haya arrancado. Aplica al momento.
-      const quienes = gente.map((g) => g.name.split(' ')[0]).join(', ');
+      const quienes = gente.map((g) => g.name.split(' ')[0] + (g.guest ? ' (sin cuenta)' : '')).join(', ');
       // 0129: el jefe le da la vuelta a un conductor (o se la quita) sin que la tome.
       const asignar = W.Api && W.Api.setVueltaDriver
         ? `<button class="rv2-btn rv2-btn--sm" data-rj-drv="${esc(v.id)}" data-hora="${esc(t0)}" data-actual="${esc(v.driverProfileId || '')}">${v.driverProfileId ? 'Cambiar conductor' : 'Asignar conductor'}</button>`

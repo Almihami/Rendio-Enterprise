@@ -226,13 +226,15 @@ const C = await boot({
   t('«Felipe» → Felipe Vélez · «Natalia (AV9412)» → Natalia Duque · «Tomás y Sara (Av 9420)» → los dos', quien('Felipe') === 'res-M' && quien('Natalia') === 'res-F' && quien('Tomás') === 'res-K' && quien('Sara') === 'res-L');
   t('«Kevin (AV9412)»: Kevin Uribe llega en otro vuelo (AV9414) → no se elige solo, pero sale de primera opción',
     quien('Kevin') === '' && fila('Kevin').dataset.st === 'sin' && fila('Kevin').querySelector('optgroup[label="Más probables"] option').value === 'res-O' && /elige quién es \(hay parecidos\)/.test(txt(fila('Kevin'))), fila('Kevin') && fila('Kevin').innerHTML.slice(0, 200));
-  t('«Pepe (Mota)»: no pidió por la app → «Revisa: no la encontré» y la opción «no se avisa»', quien('Pepe') === '' && /no la encontré/.test(txt(fila('Pepe'))) && /No pidió por la app \(no se avisa\)/.test(txt(fila('Pepe').querySelector('option'))));
+  // 0133 (lista de los jefes, 26-oct): quien no se parece a nadie y trae lugar VA sin cuenta.
+  t('0133: «Pepe (Mota)»: no pidió y no se parece a nadie → «Va sin cuenta» por defecto (en la ruta, sin aviso)', quien('Pepe') === '__guest' && fila('Pepe').dataset.st === 'guest' && /Sin cuenta: va en la ruta/.test(txt(fila('Pepe'))) && /No le llegan avisos/.test(txt(fila('Pepe'))), fila('Pepe') && txt(fila('Pepe')));
+  t('…y se puede elegir «No pidió por la app» (no va)', [...fila('Pepe').querySelectorAll('option')].some((o) => o.value === '' && /No pidió por la app/.test(o.textContent)));
   const sum = () => txt(q('#rj-prev .rj-sum'));
-  t('el resumen: 7 vueltas · 9 emparejados · 2 sin pedido', /7 vueltas · 9 emparejados/.test(sum()) && /2 sin pedido en la app/.test(sum()), sum());
+  t('el resumen: 7 vueltas · 9 emparejados · 1 sin cuenta (Pepe) · 1 sin pedido (Kevin, por revisar)', /7 vueltas · 9 emparejados/.test(sum()) && /1 sin cuenta: van en la ruta, sin aviso/.test(sum()) && /1 sin pedido en la app \(no van\)/.test(sum()), sum());
   t('…y quién pidió por la app y NO está en la ruta (Valentina, Sergio, Paula, Mateo, Juliana, Manuela, Kevin)',
     ['Valentina (sale 06:00)', 'Sergio (sale 07:40)', 'Paula', 'Mateo', 'Juliana', 'Manuela (sale 09:10)', 'Kevin (llega 15:05)'].every((x) => sum().includes(x)), sum());
   const pub = () => q('#rv2-sheet [data-rj="publicar"]');
-  t('«Publicar y avisar a 9», encendido', !pub().disabled && txt(pub()) === 'Publicar y avisar a 9', txt(pub()));
+  t('«Publicar y avisar a 9 · 1 sin cuenta», encendido', !pub().disabled && txt(pub()) === 'Publicar y avisar a 9 · 1 sin cuenta', txt(pub()));
   t('la vuelta con «Deben estar … Va a hotel» muestra la nota', /Deben estar 7:40/.test(txt(qa('#rj-prev .rj-b')[2])) && /Va a hotel/.test(txt(qa('#rj-prev .rj-b')[2])));
 
   pick(fila('Pepe').querySelector('select'), 'res-A'); await wait();
@@ -395,6 +397,39 @@ console.log('\n── D · El día con la ruta de Julián ──');
   t('…y la quita en la base para ese día', JSON.stringify(log.julian.quitar) === JSON.stringify([DAY]));
   t('el día vuelve al tablero (las vueltas del tablero, Publicar de nuevo disponible)', !q('#rv2-list .rj-dia') && qa('#rv2-list .rv2-row').length > 0 && T().rt.manualDia === false && !q('#rv2-reopt').disabled, String(qa('#rv2-list .rv2-row').length));
   t('sin errores de script', C.errors.length === 0, C.errors.join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 0133 · Publicar con un pasajero sin cuenta (Pepe · Kriss) ──');
+{
+  const G = await boot({
+    antes(w, log) {
+      w.Api.adminManualRoutePublish = async (day, blocks, aliases) => {
+        log.julian.publicar.push({ day, blocks: JSON.parse(JSON.stringify(blocks)), aliases });
+        return { created: blocks.length, kept: 0, removed: 0, skipped: 0, notified: 0, drivers: 3, vueltas: blocks.length };
+      };
+      w.Api.listResidencesAdmin = async () => [{ id: 'res-mota', name: 'Mota', is_active: true }, { id: 'res-campus', name: 'Campus Reservado', is_active: true }];
+    },
+  });
+  const { w, q, qa, click, type, pick, log } = G;
+  click(q('#rv2-julian')); await wait();
+  type(q('#rj-ta'), TEXTO + '\n\n8:50 Kriss (Campus reservado)');
+  click(q('#rv2-sheet [data-rj="leer"]')); await wait(60);
+  const fila = (nombre) => qa('#rj-prev .rj-p').find((p) => txt(p.querySelector('.rj-w')).startsWith(nombre));
+  t('Kriss (Campus reservado): «Va sin cuenta» y lo ubica en el conjunto «Campus Reservado»', fila('Kriss') && fila('Kriss').dataset.st === 'guest' && /Sin cuenta: va en la ruta · Campus Reservado/.test(txt(fila('Kriss'))), fila('Kriss') && txt(fila('Kriss')));
+  pick(fila('Kevin').querySelector('select'), 'res-O'); await wait();
+  const pub = q('#rv2-sheet [data-rj="publicar"]');
+  t('el botón cuenta a los sin cuenta aparte («· 2 sin cuenta»)', /Publicar y avisar a 10 · 2 sin cuenta/.test(txt(pub)), txt(pub));
+  G.confirms.length = 0; w.__confirma = true;
+  click(pub); await wait(80);
+  t('la confirmación separa tripulantes y sin cuenta (a ellos no les llega nada)', /10 tripulantes y 2 sin cuenta/.test(G.confirms[0] || '') && /A los sin cuenta no les llega nada/.test(G.confirms[0] || ''), G.confirms[0]);
+  const B = (log.julian.publicar[0] || {}).blocks || [];
+  const g = B.flatMap((b) => b.stops.filter((x) => x.guest).map((x) => [b.type, x]));
+  t('van 8 vueltas: Pepe y Kriss como paradas sin cuenta', B.length === 8 && g.length === 2, JSON.stringify(B.map((b) => b.stops.length)));
+  const pepe = g.find((x) => x[1].guest.name === 'Pepe'), kriss = g.find((x) => x[1].guest.name === 'Kriss');
+  t('Pepe: salida, en Mota (el conjunto), a las 8:20, sin reserva', pepe && pepe[0] === 'sal' && pepe[1].guest.place === 'Mota' && pepe[1].guest.residence_id === 'res-mota' && pepe[1].at === `${DAY}T08:20:00-05:00` && !('reservation_id' in pepe[1]), JSON.stringify(pepe));
+  t('Kriss: el lugar como lo escribió Julián y el conjunto del catálogo', kriss && kriss[1].guest.place === 'Campus reservado' && kriss[1].guest.residence_id === 'res-campus', JSON.stringify(kriss));
+  t('sin errores de script', G.errors.length === 0, G.errors.join(' | '));
 }
 
 // ══════════════════════════════════════════════════════════════════════════
