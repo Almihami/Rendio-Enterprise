@@ -178,7 +178,7 @@
     }
     // Lo publicado de ESTE día se vuelve a leer en cada carga (Asignación v2):
     // la firma dice si lo que hay en pantalla es lo que ya tienen los conductores.
-    rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.horasPub = {};
+    rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.horasPub = {}; rt.rv2Fin = {};
     rt.etaSource = null;
     // 0107: el corte de la madrugada (lectura propia; sin la columna, 02:00).
     if (Api.getRouteNightCutoff) {
