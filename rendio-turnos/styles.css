@@ -1462,6 +1462,15 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #rv-ui .rv-fbtn .n.zero{opacity:.35}
 #rv-ui .rv-fbtn.on .n{opacity:.85}
 #rv-ui .rv-days{display:flex;gap:8px;flex-wrap:wrap}
+/* Salidas / llegadas (25-oct-2026): el mismo naranja ↑ y verde ↓ de Rutas
+   (#routes-ui --h2a / --a2h). En el filtro solo se pinta la flecha: el
+   «elegido» sigue siendo el negro de los otros dos grupos. */
+#rv-ui{--rv-sal:#E2551A;--rv-sal-soft:#FBE5D8;--rv-lle:#16936A;--rv-lle-soft:#E3F1EA}
+#rv-ui .rv-fbtn .rv-ar{width:13px;height:13px;stroke-width:2.4;margin-right:-2px}
+#rv-ui .rv-ar.sal{color:var(--rv-sal)}
+#rv-ui .rv-ar.lle{color:var(--rv-lle)}
+#rv-ui .rv-fbtn.on .rv-ar.sal{color:#FF8A55}
+#rv-ui .rv-fbtn.on .rv-ar.lle{color:#3DD39C}
 @media (min-width:769px){
   #rv-ui .rv-tools{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
   #rv-ui .rv-bar,#rv-ui .rv-days{display:inline-flex;flex-wrap:wrap;gap:2px;margin:0;padding:3px;background:var(--panel);border:1px solid var(--line2);border-radius:11px}
@@ -1474,9 +1483,13 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #rv-ui #rv-list{display:grid;gap:10px}
 #rv-ui .rv-row{display:flex;align-items:flex-start;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
 #rv-ui .rv-row.off{opacity:.62}
-#rv-ui .rv-when{flex:0 0 auto;text-align:center;min-width:64px;padding-top:2px}
+#rv-ui .rv-when{flex:0 0 auto;text-align:center;min-width:84px;padding-top:2px}
 #rv-ui .rv-when b{display:block;font-size:17px;font-weight:800;font-family:var(--mono);color:var(--ink);letter-spacing:-.02em}
 #rv-ui .rv-when span{display:block;font-size:11px;color:var(--ink3);margin-top:2px}
+#rv-ui .rv-dirtag{display:inline-flex;align-items:center;gap:3px;margin-top:6px;padding:2px 8px 2px 6px;border-radius:999px;font-style:normal;font-size:11px;font-weight:800;white-space:nowrap}
+#rv-ui .rv-dirtag .icon{width:11px;height:11px;stroke-width:2.6}
+#rv-ui .rv-dirtag.sal{background:var(--rv-sal-soft);color:var(--rv-sal)}
+#rv-ui .rv-dirtag.lle{background:var(--rv-lle-soft);color:var(--rv-lle)}
 #rv-ui .rv-main{flex:1 1 auto;min-width:0}
 #rv-ui .rv-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #rv-ui .rv-top b{font-size:15px;font-weight:800;color:var(--ink)}
@@ -3731,6 +3744,7 @@ html,body{overflow-x:hidden}
   #rv-ui .rv-row { flex-wrap: wrap; gap: 12px; }
   #rv-ui .rv-when { min-width: 0; text-align: left; display: flex; align-items: baseline; gap: 8px; }
   #rv-ui .rv-when span { margin-top: 0; }
+  #rv-ui .rv-when .rv-dirtag { margin-top: 0; align-self: center; }
   #rv-ui .rv-main { flex: 1 1 100%; }
   #rv-ui .rv-acts { width: 100%; justify-content: flex-end; }
 
