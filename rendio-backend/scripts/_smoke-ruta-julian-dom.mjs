@@ -406,7 +406,46 @@ console.log('\n── E · El Excel del día ──');
   t('una llegada: hora de llegada 15:00 y vuelo AV9412', nat && nat[2] === '' && nat[3] === '15:00' && nat[4] === 'AV9412', nat && nat.join('|'));
   t('la madrugada va con SU fecha (13/10) y de última', filas.at(-1)[0] === 'Mónica Madrugada' && filas.at(-1)[1] === '13/10/2026', filas.at(-1).join('|'));
   t('en orden de hora', filas[0][2] === '05:00' && filas.findIndex((f) => f[0] === 'Natalia Duque') > filas.findIndex((f) => f[0] === 'Felipe Vélez'));
-  t('el aviso dice cuántas filas', /Excel del lun 12 oct: 17 filas \(17 pedidos\)/.test(E.toastV2() || ''), E.toastV2());
+  t('el aviso dice cuántas filas (hasta el corte de las 7:40 p. m.)', /Excel del lun 12 oct: 17 filas \(17 pedidos hasta las 7:40 p\. m\.\)\.$/.test(E.toastV2() || ''), E.toastV2());
+  t('sin Late, no hay hoja LATE', !wb.getWorksheet('LATE'));
+
+  // 0130 (lista de los jefes, 26-oct): lo pedido después del corte (la víspera,
+  // 7:40 p. m.) no va en RESPUESTAS: va en la hoja LATE con la hora del pedido.
+  // Se usan las funciones de verdad de api.js (el corte) con un sb que no responde.
+  const H = (() => { const d = new JSDOM('<!doctype html>', { runScripts: 'outside-only', url: 'http://localhost/' }); d.window.RENDIO_CONFIG = {}; d.window.sb = { from: () => ({}), auth: {} }; d.window.eval(read('api.js')); return d.window.Api; })();
+  E.w.Api.getRequestCutoff = async () => ({ corte: 1180, noche: 120, enBase: true });
+  E.w.Api.isLateRequest = H.isLateRequest; E.w.Api.crewRequestDeadline = H.crewRequestDeadline; E.w.Api.hm12 = H.hm12;
+  const plan2 = E.w.Api.listRoutePlanning;
+  E.w.Api.listRoutePlanning = async (tipo, day) => {
+    const r = await plan2(tipo, day);
+    if (r && r.aux) Object.values(r.aux).forEach((a) => {
+      if (a.n === 'Mónica Madrugada') Object.assign(a, { at: '2026-10-13T00:30:00-05:00', createdAt: '2026-10-11T21:05:00-05:00' });   // del lunes 12: corte dom 11 7:40 p. m.
+      if (a.n === 'Laura Gómez') Object.assign(a, { at: '2026-10-12T05:00:00-05:00', createdAt: '2026-10-11T19:39:00-05:00' });        // a tiempo
+    });
+    return r;
+  };
+  E.T().rt.day = null;   // que el Excel vuelva a leer el día con las fechas de pedido
+  const r2 = await E.J().excel();
+  const wb2 = new ExcelJS.Workbook();
+  await wb2.xlsx.load(Buffer.from(r2.buf));
+  const f2 = [];
+  wb2.getWorksheet('RESPUESTAS').eachRow((row, i) => { if (i > 1) f2.push(row.values.slice(1).map((v) => (v == null ? '' : String(v)))); });
+  t('0130: RESPUESTAS sin la Late (16 filas; Laura, pedida 7:39 p. m., sí va)', f2.length === 16 && !f2.some((f) => f[0] === 'Mónica Madrugada') && f2.some((f) => f[0] === 'Laura Gómez'), String(f2.length));
+  const wl = wb2.getWorksheet('LATE');
+  const fl = [];
+  if (wl) wl.eachRow((row, i) => { if (i > 1) fl.push(row.values.slice(1).map((v) => (v == null ? '' : String(v)))); });
+  const cabL = wl ? wl.getRow(1).values.slice(1) : [];
+  t('0130: hoja LATE con las mismas columnas + «PIDIÓ»', wl && cabL.length === 11 && cabL[0] === 'NOMBRE Y APELLIDO' && cabL[10] === 'PIDIÓ', JSON.stringify(cabL));
+  t('0130: en LATE va Mónica (madrugada, pidió el dom 11 a las 9:05 p. m.)', fl.length === 1 && fl[0][0] === 'Mónica Madrugada' && /9:05/.test(fl[0][10]) && /p\. m\./.test(fl[0][10]), JSON.stringify(fl));
+  t('0130: el aviso cuenta las dos cosas', /16 filas \(16 pedidos hasta las 7:40 p\. m\.\) · 1 Late en su hoja\./.test(E.toastV2() || ''), E.toastV2());
+  // El aviso de las 7:40 p. m. abre #/rutas?excel=día → ofrecer(día).
+  const nDesc = (E.w.__descargas || []).length;
+  await E.J().ofrecer(DAY); await wait(40);
+  t('0130: el aviso abre la hoja «Excel del lun 12 oct» y lo descarga solo', /Excel del lun 12 oct/.test(txt(E.q('#rv2-shTitle'))) && E.w.__descargas.length === nDesc + 1, txt(E.q('#rv2-shTitle')) + ' · ' + E.w.__descargas.length);
+  t('0130: la hoja explica el corte y dice qué salió', /hasta las 7:40 p\. m\. de la víspera/.test(txt(E.q('#rv2-sheet'))) && /Listo: 16 filas · 1 Late en su hoja/.test(txt(E.q('#rj-xl-msg'))), txt(E.q('#rj-xl-msg')));
+  E.click(E.q('#rv2-sheet [data-rj="xl"]')); await wait(60);
+  t('0130: «Descargar» lo baja otra vez', E.w.__descargas.length === nDesc + 2);
+  t('0130: un día mal escrito no hace nada', (await E.J().ofrecer('mañana')) === null);
   t('sin errores de script', E.errors.length === 0, E.errors.join(' | '));
 }
 
