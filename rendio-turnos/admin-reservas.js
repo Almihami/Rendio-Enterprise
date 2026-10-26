@@ -8,7 +8,7 @@
 //   3. Las calificaciones se guardaban (0048) y NO las veía nadie. Aquí salen.
 // Comparte scope global con los demás módulos; el orden de carga está en index.html.
 
-  const rvState = { items: [], filter: 'all', day: 'all', cancelId: null, loading: false, focusChatId: null };
+  const rvState = { items: [], filter: 'all', day: 'all', dir: 'all', cancelId: null, loading: false, focusChatId: null };
 
   const RV_ST = {
     pending:  { cls: 'warn',  label: 'Sin rutear' },
@@ -140,20 +140,28 @@
     cancelled: (r) => r.status === 'cancelled',
     rated:     (r) => r.rating > 0,
   };
+  // Salidas y llegadas (25-oct-2026): los jefes se enredaban con las dos
+  // mezcladas en la misma lista por hora. Arranca en «Todas».
+  const RV_DIR = {
+    all: () => true,
+    sal: (r) => r.type !== 'lle',
+    lle: (r) => r.type === 'lle',
+  };
   const rvOfDay = (items) => rvState.day === 'all' ? items : items.filter(r => rvBogDay(r.when) === rvState.day);
+  const rvOfDir = (items) => items.filter(RV_DIR[rvState.dir] || RV_DIR.all);
 
   function rvFiltered() {
-    return rvOfDay(rvState.items).filter(RV_F[rvState.filter] || RV_F.all);
+    return rvOfDir(rvOfDay(rvState.items)).filter(RV_F[rvState.filter] || RV_F.all);
   }
 
   function renderReservasList() {
     const list = $('#rv-list'); if (!list) return;
     const items = rvFiltered();
-    // Los números se cruzan: los del estado cuentan SOLO el día elegido y los
-    // del día cuentan SOLO el estado elegido. Antes los del estado contaban
+    // Los números se cruzan: cada fila de filtros cuenta con lo elegido en las
+    // OTRAS dos (salida/llegada, estado y día). Antes los del estado contaban
     // todos los días, y con un día puesto la lista y los números no cuadraban.
     const cuenta = (n) => `<span class="n${n ? '' : ' zero'}">${n}</span>`;
-    const delEstado = rvState.items.filter(RV_F[rvState.filter] || RV_F.all);
+    const delEstado = rvOfDir(rvState.items).filter(RV_F[rvState.filter] || RV_F.all);
     const days = [...new Set(rvState.items.map(r => rvBogDay(r.when)))].sort();
     const dayBar = $('#rv-days');
     if (dayBar) {
@@ -161,7 +169,13 @@
         .concat(days.map(d => `<button class="rv-fbtn ${rvState.day === d ? 'on' : ''}" data-rv-day="${d}" title="${escapeHtml(rvDateES(d + 'T12:00:00-05:00'))}">${escapeHtml(rvDayChip(d))} ${cuenta(delEstado.filter(r => rvBogDay(r.when) === d).length)}</button>`))
         .join('');
     }
-    const delDia = rvOfDay(rvState.items);
+    const delDia = rvOfDir(rvOfDay(rvState.items));
+    const delDiaYEstado = rvOfDay(rvState.items).filter(RV_F[rvState.filter] || RV_F.all);
+    $$('#rv-ui [data-rv-dir]').forEach(b => {
+      b.classList.toggle('on', b.dataset.rvDir === rvState.dir);
+      const n = b.querySelector('.n');
+      if (n) { const c = delDiaYEstado.filter(RV_DIR[b.dataset.rvDir] || RV_DIR.all).length; n.textContent = c; n.classList.toggle('zero', !c); }
+    });
     $$('#rv-ui [data-rv-f]').forEach(b => {
       b.classList.toggle('on', b.dataset.rvF === rvState.filter);
       const n = b.querySelector('.n');
@@ -182,6 +196,12 @@
     const RP = r.reservePlace && window.Api && Api.reservePlace ? Api.reservePlace(r.reservePlace) : null;
     const lugar = RP && RP.hotel ? RP.name : 'JMC';
     const dir = r.type === 'lle' ? lugar + ' → casa' : 'casa → ' + lugar;
+    // Que se vea de un vistazo si es salida o llegada, también en «Todas»: los
+    // mismos colores y flechas que Rutas y la app del conductor (naranja ↑ sale
+    // de la casa, verde ↓ llega del aeropuerto).
+    const dirTag = r.type === 'lle'
+      ? '<em class="rv-dirtag lle"><svg class="icon"><use href="#i-down"/></svg>Llegada</em>'
+      : '<em class="rv-dirtag sal"><svg class="icon"><use href="#i-up"/></svg>Salida</em>';
     const chips = [];
     if (RP) chips.push(`<span class="rv-tag" title="De reserva: sin vuelo">${escapeHtml(RP.hotel ? 'Reserva · ' + RP.short : 'Reserva · aeropuerto')}</span>`);
     // Trabajo en tierra (0092): operaciones del aeropuerto, sin vuelo. Se dice,
@@ -205,6 +225,7 @@
       <div class="rv-when">
         <b>${escapeHtml(r.time)}</b>
         <span>${escapeHtml(rvDayShort(r.when))}</span>
+        ${dirTag}
       </div>
       <div class="rv-main">
         <div class="rv-top">
@@ -238,6 +259,8 @@
       if (e.target.closest('#rv-refresh')) { renderReservas(); return; }
       const f = e.target.closest('[data-rv-f]');
       if (f) { rvState.filter = f.dataset.rvF; rvState.cancelId = null; renderReservasList(); return; }
+      const dr = e.target.closest('[data-rv-dir]');
+      if (dr) { rvState.dir = dr.dataset.rvDir; rvState.cancelId = null; renderReservasList(); return; }
       const d = e.target.closest('[data-rv-day]');
       if (d) { rvState.day = d.dataset.rvDay; rvState.cancelId = null; renderReservasList(); return; }
       // Escribirle por el hilo del traslado (0067): le suena al tripulante y a

@@ -1266,13 +1266,20 @@
             <div>
               <h1>Reservas <span class="sh-ct" id="rv-count">0</span></h1>
               <p>Traslados pedidos por los tripulantes.</p>
-              <details class="rd-why"><summary aria-expanded="false">¿Qué se puede hacer acá?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Aquí ves el detalle uno por uno, quién confirmó su recogida, quién pidió tarde y las calificaciones. Si un vuelo se cae, <b>cancela el traslado</b>: sale de la ruta del conductor y les avisamos a los dos.</div></details>
+              <details class="rd-why"><summary aria-expanded="false">¿Qué se puede hacer acá?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Arriba separas las <b>salidas</b> (↑ casa → JMC) de las <b>llegadas</b> (↓ JMC → casa). Aquí ves el detalle uno por uno, quién confirmó su recogida, quién pidió tarde y las calificaciones. Si un vuelo se cae, <b>cancela el traslado</b>: sale de la ruta del conductor y les avisamos a los dos.</div></details>
             </div>
             <button class="set-btn ghost" id="rv-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
           </div>
           <!-- Filtros (14-oct-2026): estado y día en UNA franja y con el mismo
-               «elegido» (antes: dos filas de pastillas, una negra y otra naranja). -->
+               «elegido» (antes: dos filas de pastillas, una negra y otra naranja).
+               25-oct-2026: primero salidas/llegadas, que es lo que el jefe separa
+               antes que nada. -->
           <div class="rv-tools">
+            <div class="rv-bar rv-dirbar" role="group" aria-label="Filtrar por salidas o llegadas">
+              <button class="rv-fbtn on" data-rv-dir="all">Todas <span class="n"></span></button>
+              <button class="rv-fbtn" data-rv-dir="sal"><svg class="icon rv-ar sal"><use href="#i-up"/></svg>Salidas <span class="n"></span></button>
+              <button class="rv-fbtn" data-rv-dir="lle"><svg class="icon rv-ar lle"><use href="#i-down"/></svg>Llegadas <span class="n"></span></button>
+            </div>
             <div class="rv-bar" role="group" aria-label="Filtrar por estado">
               <button class="rv-fbtn on" data-rv-f="all">Todas <span class="n"></span></button>
               <button class="rv-fbtn" data-rv-f="active">En pie <span class="n"></span></button>
