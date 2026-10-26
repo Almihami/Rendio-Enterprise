@@ -414,8 +414,12 @@
               : ['libre', 'Disponible'];
       // 0126: delegar (o devolver) mientras no haya arrancado. Aplica al momento.
       const quienes = gente.map((g) => g.name.split(' ')[0]).join(', ');
+      // 0129: el jefe le da la vuelta a un conductor (o se la quita) sin que la tome.
+      const asignar = W.Api && W.Api.setVueltaDriver
+        ? `<button class="rv2-btn rv2-btn--sm" data-rj-drv="${esc(v.id)}" data-hora="${esc(t0)}" data-actual="${esc(v.driverProfileId || '')}">${v.driverProfileId ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
+        : '';
       const btn = v.status === 'completed' || enCurso ? ''
-        : `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="${v.delegated ? 0 : 1}" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="${!v.delegated && v.driverProfileId ? esc(v.conductor) : ''}">${v.delegated ? 'Devolver' : 'Delegar'}</button>`;
+        : asignar + `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="${v.delegated ? 0 : 1}" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="${!v.delegated && v.driverProfileId ? esc(v.conductor) : ''}">${v.delegated ? 'Devolver' : 'Delegar'}</button>`;
       h += `<div class="rj-v" data-st="${estado[0]}"><div class="rj-v-t"><b>${esc(t0)}</b><small>${v.type === 'lle' ? 'Llegada' : 'Salida'}</small></div>`
         + `<div class="rj-v-m"><span>${esc(gente.map((g) => g.name.split(' ')[0]).join(', ') || '—')}</span>`
         + `<small>${esc([v.deadlineAt ? 'Deben estar ' + bogHM(v.deadlineAt) : '', v.nota || '', `${gente.length} ${gente.length === 1 ? 'persona' : 'personas'}`].filter(Boolean).join(' · '))}</small></div>`
@@ -429,6 +433,45 @@
     const root = document.getElementById('routes-v2'); if (!root) return;
     atadoDia = true;
     root.addEventListener('click', async (e) => {
+      // 0129: «Asignar conductor» → una lista ahí mismo; «Asignar» publica al momento.
+      const dv = e.target.closest('[data-rj-drv]');
+      if (dv) {
+        const actual = dv.getAttribute('data-actual') || '';
+        const lista = ((W.rt && W.rt.drivers) || (typeof rt !== 'undefined' && rt.drivers) || []).slice()
+          .filter((d) => d && d.id && d.id !== actual)
+          .sort((a, b) => String(a.n || '').localeCompare(String(b.n || ''), 'es'));
+        const box = document.createElement('span');
+        box.className = 'rj-pick';
+        box.innerHTML = `<select aria-label="Conductor para la vuelta de las ${esc(dv.getAttribute('data-hora'))}">`
+          + '<option value="">Elige un conductor…</option>'
+          + lista.map((d) => `<option value="${esc(d.id)}">${esc(d.n || 'Conductor')}</option>`).join('')
+          + (actual ? '<option value="__none">Sin conductor (vuelve a la lista para tomar)</option>' : '')
+          + `</select><button class="rv2-btn rv2-btn--sm rv2-btn--cta" data-rj-drv-ok="${esc(dv.getAttribute('data-rj-drv'))}" data-hora="${esc(dv.getAttribute('data-hora'))}" disabled>Asignar</button>`
+          + '<button class="rv2-btn rv2-btn--sm" data-rj-drv-x aria-label="Cancelar">Cancelar</button>';
+        dv.replaceWith(box);
+        const sel = box.querySelector('select'), okb = box.querySelector('[data-rj-drv-ok]');
+        sel.addEventListener('change', () => { okb.disabled = !sel.value; });
+        sel.focus();
+        return;
+      }
+      if (e.target.closest('[data-rj-drv-x]')) { const v = V2(); if (v && typeof v.render === 'function') v.render(); else { const dia = diaActual(); if (dia && V2()) await V2().cargarDia(dia); } return; }
+      const okb = e.target.closest('[data-rj-drv-ok]');
+      if (okb) {
+        const box = okb.closest('.rj-pick'), sel = box && box.querySelector('select');
+        const val = sel ? sel.value : ''; if (!val) return;
+        const hora = okb.getAttribute('data-hora');
+        okb.disabled = true; if (sel) sel.disabled = true;
+        try {
+          const r = await Api.setVueltaDriver(okb.getAttribute('data-rj-drv-ok'), val === '__none' ? null : val);
+          const nombre = val === '__none' ? '' : (sel.options[sel.selectedIndex] || {}).text || 'el conductor';
+          say(val === '__none'
+            ? `La vuelta de las ${hora} quedó sin conductor: vuelve a la lista para que la tomen.`
+            : `${nombre} hace la vuelta de las ${hora}${r && r.notified ? ` · avisamos a ${r.notified} ${r.notified === 1 ? 'tripulante' : 'tripulantes'}` : ''}.`);
+          const dia = diaActual();
+          if (dia && V2() && typeof V2().cargarDia === 'function') await V2().cargarDia(dia);
+        } catch (err) { okb.disabled = false; if (sel) sel.disabled = false; say('No se pudo: ' + ((err && err.message) || 'error')); }
+        return;
+      }
       const dl = e.target.closest('[data-rj-deleg]');
       if (dl) {
         const on = dl.getAttribute('data-on') === '1';

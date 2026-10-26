@@ -971,6 +971,75 @@ console.log('\n── 0126 · Delegar UNA vuelta en el tablero (la hace alguien 
   t('sin errores de consola (rearmar con delegada)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 26-oct · 0129: «Guardar y publicar» solo esa vuelta (sin re-publicar el día) ──');
+{
+  // Lista de los jefes (URGENTE): «Cuando se cambie un conductor asignado a una
+  // ruta, que salga la opción de guardar y publicar, esto para que el sistema no
+  // afecte todo el itinerario completo».
+  const b = await boot();
+  const { w, q, click, T, V2 } = b;
+  const rt = T().rt;
+  const laneDe = (k) => Object.keys(rt.order).find((l) => rt.order[l].includes('r' + k));
+  const LM = laneDe('M'), LE = laneDe('E');
+  const calls = [], delegs = [];
+  let falla = null;
+  w.Api.setVueltaDriver = async (ra, pid) => { calls.push([ra, pid]); if (falla) throw new Error(falla); return { status: pid ? 'planned' : 'draft', notified: 2 }; };
+  w.Api.setRouteDelegated = async (ra, on) => { delegs.push([ra, on]); return { delegated: on, notified: 1 }; };
+  const laneM = rt.lanes.find((l) => l.id === LM);
+  t('la vuelta publicada recuerda su fila de la base (raId)', !!laneM.raId, JSON.stringify(laneM));
+  // Día publicado y sin cambios: así se ve si «Guardar y publicar» lo deja publicado.
+  rt.firmaPublicada = T().rtFirmaPlan(); V2().render(); await wait(5);
+  const abrir = async (id) => { click(q(`#rv2-list .rv2-row[data-id="${id}"]`)); await wait(10); click(q(`#routes-v2 [data-act="assign"][data-id="${id}"]`)); await wait(10); };
+  await abrir(LM);
+  t('la hoja trae «Solo en el tablero» y «Guardar y publicar» (los dos apagados al abrir)', /Solo en el tablero/.test(txt(q('#rv2-doAssign'))) && !!q('#rv2-doPub') && q('#rv2-doAssign').disabled && q('#rv2-doPub').disabled, [txt(q('#rv2-doAssign')), q('#rv2-doPub') && txt(q('#rv2-doPub'))].join(' / '));
+  t('explica qué hace: solo esta vuelta, a quién avisa, el resto no se toca', /cambia solo esta vuelta en la app y avisa al conductor nuevo, al que la tenía y a sus tripulantes\. El resto del día no se toca\./.test(txt(q('#rv2-sheet .rv2-pubone'))));
+  click(q('#rv2-sheet [data-pick="d3"]')); await wait(5);
+  t('al elegir a Carlos: «Guardar y publicar» encendido', !q('#rv2-doPub').disabled && txt(q('#rv2-doPub')) === 'Guardar y publicar');
+  b.log.saved.length = 0;
+  click(q('#rv2-doPub')); await wait(20);
+  t('va a la base SOLO esa vuelta, con Carlos (id de perfil)', calls.length === 1 && calls[0][0] === laneM.raId && calls[0][1] === 'd3', JSON.stringify(calls));
+  t('NO se re-publica el día (saveRoutePlan no se llama)', b.log.saved.length === 0, b.log.saved.length);
+  t('el tablero queda con Carlos en esa vuelta y Luis en la otra de V-02', V2().dia().byId[LM].driverId === 'd3' && V2().dia().byId[LE].driverId === 'd2');
+  t('el día sigue publicado sin cambios pendientes', rt.firmaPublicada === T().rtFirmaPlan());
+  t('el aviso: «Publicado: Carlos Mejía hace la vuelta … · se avisó a 2 tripulantes. El resto del día no se tocó.»', /^Publicado: Carlos Mejía hace la vuelta de las \d\d:\d\d de V-02 · se avisó a 2 tripulantes\. El resto del día no se tocó\.$/.test(b.toastV2()), b.toastV2());
+  t('sin «Deshacer» (lo publicado no se deshace a escondidas)', !q('#rv2-toast [data-act="undo"]'));
+  // Si la base dice que no: nada cambia.
+  falla = 'Esa vuelta ya arrancó: cámbiala en el tablero y publica';
+  await abrir(LE);
+  click(q('#rv2-sheet [data-pick="d3"]')); await wait(5); click(q('#rv2-doPub')); await wait(20);
+  t('si la base no deja: el tablero no cambia y lo dice', V2().dia().byId[LE].driverId === 'd2' && /No se pudo publicar esta vuelta: Esa vuelta ya arrancó.*No cambió nada\./.test(b.toastV2()), b.toastV2());
+  falla = null;
+  // Quitar el conductor y publicar: manda null.
+  await abrir(LE);
+  click(q('#rv2-sheet [data-pick="__none"]')); await wait(5); click(q('#rv2-doPub')); await wait(20);
+  t('«Quitar el conductor» publicado manda null y la vuelta queda sin conductor', calls.at(-1)[0] === rt.lanes.find((l) => l.id === LE).raId && calls.at(-1)[1] === null && V2().dia().byId[LE].driverId === null, JSON.stringify(calls.at(-1)));
+  // Delegar una publicada (planned): va por admin_route_set_delegated.
+  const lE = rt.lanes.find((l) => l.id === LE); lE.raStatus = 'planned';
+  await abrir(LM);
+  click(q('#rv2-sheet [data-pick="__deleg"]')); await wait(5);
+  t('delegar una publicada: «Guardar y publicar» encendido', !q('#rv2-doPub').disabled && txt(q('#rv2-doPub')) === 'Guardar y publicar');
+  click(q('#rv2-doPub')); await wait(20);
+  t('…y va por setRouteDelegated(vuelta, true); el tablero la marca delegada', delegs.length === 1 && delegs[0][0] === laneM.raId && delegs[0][1] === true && V2().dia().byId[LM].delegada, JSON.stringify(delegs));
+  t('el aviso dice que quedó delegada', /^Publicado: la vuelta de las \d\d:\d\d de V-02 queda delegada · se avisó a 1 tripulante\./.test(b.toastV2()), b.toastV2());
+  // Un borrador (sin conductor en la base) no se delega por aquí: lo hace «Publicar plan».
+  lE.raStatus = 'draft';
+  await abrir(LE);
+  click(q('#rv2-sheet [data-pick="__deleg"]')); await wait(5);
+  t('delegar un borrador: «Guardar y publicar» apagado («Delegar: publica el plan»)', q('#rv2-doPub').disabled && /Delegar: publica el plan/.test(txt(q('#rv2-doPub'))), txt(q('#rv2-doPub')));
+  click(q('#rv2-sheet [data-act="sclose"]')); await wait(5);
+  // Una vuelta que ya arrancó: sin «Guardar y publicar».
+  rt.rv2Fijas[LE] = 'in_progress'; V2().render(); await wait(5);
+  await abrir(LE);
+  t('una vuelta en curso no ofrece «Guardar y publicar»', V2().dia().byId[LE].fija === 'in_progress' && !q('#rv2-doPub'), [V2().dia().byId[LE].fija, !!q('#rv2-doPub')]);
+  click(q('#rv2-sheet [data-act="sclose"]')); await wait(5);
+  // Sin 0129 en la app (Api sin setVueltaDriver): como antes.
+  delete w.Api.setVueltaDriver; delete rt.rv2Fijas[LE]; V2().render(); await wait(5);
+  await abrir(LM);
+  t('sin la función nueva: un solo botón, como antes', !q('#rv2-doPub') && /Elige un conductor/.test(txt(q('#rv2-doAssign'))));
+  t('sin errores de consola (0129)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: layout real (puntos de quiebre, cajón, tarjetas, barra fija del celular: ver _capturas-rutas-v2.mjs y revisar en un teléfono), la base real (RLS, saveRoutePlan/getPublishedPlan en producción), TomTom/OSRM reales, el mapa Leaflet real, el push real y el módulo de WhatsApp.');
 process.exit(bad ? 1 : 0);
