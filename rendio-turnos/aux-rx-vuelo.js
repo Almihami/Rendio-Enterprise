@@ -375,6 +375,10 @@
     if (ra.kind === 'joined' && hm) {
       h2 = lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
       p = quien ? `Con tu hora nueva te pasamos a la vuelta de ${quien}.` : 'Con tu hora nueva te pasamos a otra vuelta. Te avisamos quién te recoge.';
+    } else if (ra.kind === 'retimed' && hm) {
+      // 0135: iba sola y su conductor alcanza: su misma vuelta se corrió de hora.
+      h2 = lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
+      p = quien ? `Corrimos tu vuelta a tu hora nueva: te sigue llevando ${quien}.` : 'Corrimos tu vuelta a tu hora nueva. Te avisamos quién te recoge.';
     } else if (ra.kind === 'new' && hm) {
       h2 = lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
       p = 'Con tu hora nueva te armamos una vuelta. Te avisamos quién te recoge.';
