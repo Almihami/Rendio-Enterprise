@@ -535,6 +535,10 @@
       : m[1] === 'puntos' && typeof window.renderPuntos === 'function' ? 'puntos'
       // El aviso de un vuelo retrasado (0122) abre la pantalla Vuelos.
       : m[1] === 'vuelos' && typeof window.renderVuelos === 'function' ? 'vuelos'
+      // «X terminó una vuelta» (0128) abre Operación; «Nadie ha tomado una
+      // vuelta» (0125/0126) apunta a #/rutas, que hasta el 26-oct no abría nada.
+      : m[1] === 'operacion' ? 'oper'
+      : m[1] === 'rutas' ? 'routes'
       // «Pidieron restablecer una contraseña» (0104/0110) abre la pantalla de esa
       // persona, con la solicitud arriba: Personal o Tripulantes. #/usuarios es el
       // enlace de los avisos de antes de 0110 (la sección se quitó el 13-oct): va a
