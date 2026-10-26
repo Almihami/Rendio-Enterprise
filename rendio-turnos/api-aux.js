@@ -221,7 +221,8 @@
   // tierra (groundOps) no hay vuelo (0093; con 0089 sola la RPC lo rechaza).
   // → { mode:'updated'|'needs_ops'|'reassigned', incidentId?, requiredAt?, unchanged?, reassign? }
   // 0134: 'reassigned' = con la ruta publicada el sistema la cambió de vuelta solo
-  // (reassign.kind: 'joined' entró en otra, 'new' vuelta nueva para tomar,
+  // (reassign.kind: 'joined' entró en otra, 'retimed' (0135) se corrió su misma
+  // vuelta, 'new' vuelta nueva para tomar,
   // 'unplanned' el día aún no tiene ruta).
   async function changeFlight(reservationId, f) {
     if (!reservationId) throw new Error('Falta el traslado');

@@ -378,6 +378,9 @@ t('0134 · entró en otra vuelta: «Listo: te recogemos a las …» y «te pasam
   && /te pasamos a la vuelta de Juan\./.test(rr.textContent) && !/Coordinación/.test(rr.textContent), rr && rr.textContent);
 rr = await reasignar({ kind: 'new', pickupAt: pk, startAt: pk, driver: '', tight: false }, '07:25');
 t('0134 · vuelta nueva para tomar: «te armamos una vuelta. Te avisamos quién te recoge»', !!rr && /Listo: te recogemos a las/.test(rr.querySelector('h2').textContent) && /te armamos una vuelta\. Te avisamos quién te recoge/.test(rr.textContent), rr && rr.textContent);
+rr = await reasignar({ kind: 'retimed', pickupAt: pk, startAt: pk, driver: 'Juan Ospina', tight: false }, '07:40');
+t('0135 · se corrió su misma vuelta: «Listo: te recogemos a las …» y «te sigue llevando Juan»', !!rr && rr.querySelector('h2').textContent === 'Listo: te recogemos a las ' + H(pk)
+  && /Corrimos tu vuelta a tu hora nueva: te sigue llevando Juan\./.test(rr.textContent), rr && rr.textContent);
 rr = await reasignar({ kind: 'unplanned', pickupAt: null, startAt: null, driver: '', tight: false }, '07:30');
 t('0134 · día sin ruta: «Actualizamos tu traslado · te avisamos cuando armemos tu ruta»', !!rr && rr.querySelector('h2').textContent === 'Actualizamos tu traslado' && /cuando armemos tu ruta/.test(rr.textContent), rr && rr.textContent);
 rr = await reasignar({ kind: 'new', pickupAt: pk, startAt: pk, driver: '', tight: true }, '07:35');
