@@ -156,6 +156,16 @@ t('publicado: sin «Compartir» (solo en camino o a bordo)', !h.querySelector('[
 t('publicado: «Cambió mi vuelo» → «Coordinación te confirma»', /Coordinación te confirma/.test(h.querySelector('.rx-qa-b[data-rx="open-flight"]').textContent));
 t('publicado: sin carro en ningún mapa (no hay rastreo en curso)', w.L.__markers('rx-lf-car').length === 0 && w.L.__liveMaps().length === 0);
 
+// 0126: la vuelta la hace alguien de afuera (delegada): el pie no inventa conductor.
+await montar('asignado-publicado');
+A.state.trips.forEach((x) => { x.driver = null; x.vehicle = null; x.delegated = true; });
+A.rerender(); await wait(40);
+h = homeEl();
+t('0126: delegada: el pie dice «Servicio delegado · Te contactaremos por WhatsApp» (ni conductor ni «Conductor asignado»)',
+  /Servicio delegado/.test(h.querySelector('.rx-pass-bot').textContent) && /Te contactaremos por WhatsApp/.test(h.querySelector('.rx-pass-bot').textContent) && !/Conductor asignado|Mauricio/.test(h.querySelector('.rx-pass-bot').textContent),
+  h.querySelector('.rx-pass-bot').textContent);
+t('0126: …y la hora publicada sigue («Te recogemos 03:48»)', /Te recogemos\s*03:48/.test(h.querySelector('.rx-pass-time').textContent));
+
 await montar('en-camino');
 await wait(40);
 h = homeEl();

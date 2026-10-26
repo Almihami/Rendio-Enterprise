@@ -657,6 +657,59 @@ for (const sinColumna of [false, true]) {
   }
 }
 
+console.log('\n── 0126 · api.js de verdad: publicar y leer la vuelta delegada ──');
+for (const sin0126 of [false, true]) {
+  const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'http://localhost/' });
+  const w = dom.window; const ins = [], selects = [];
+  const bld = (name) => {
+    const st = { name, op: null, payload: null, sel: '' };
+    const b2 = {
+      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
+      delete() { st.op = 'delete'; return b2; },
+      insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
+      single() { return b2; }, maybeSingle() { return b2; },
+      then(ok2, ko) {
+        let r = { data: [], error: null };
+        const sinCol = { data: null, error: { code: '42703', message: 'column route_assignments.delegated_at does not exist' } };
+        if (st.op === 'insert') {
+          ins.push([name, st.payload]);
+          if (name === 'route_assignments' && sin0126 && 'delegated_at' in st.payload) r = { data: null, error: { code: '42703', message: 'column "delegated_at" of relation "route_assignments" does not exist' } };
+          else r = { data: name === 'route_assignments' ? { id: 'ra-' + ins.length } : null, error: null };
+        } else if (name === 'route_assignments' && st.op !== 'delete') {
+          selects.push(st.sel);
+          if (sin0126 && /delegated_at/.test(st.sel)) r = sinCol;
+          // El plan de antes: res-3 ya iba en una vuelta delegada.
+          else if (/route_stops\(id, reservation_id, status\)/.test(st.sel)) r = { data: [{ id: 'old', status: 'planned', driver_profile_id: null, delegated_at: sin0126 ? undefined : '2026-10-25T23:00:00Z', driver_profiles: null, route_stops: [{ id: 'st-old', reservation_id: 'res-3', status: 'pending' }] }], error: null };
+          else r = { data: [{ id: 'ra-x', direction: 'home_to_airport', status: 'planned', planned_start_at: '2026-10-26T04:15:00-05:00', driver_profile_id: null, vehicle_id: null, plan_car: 'Carro 2', pool: false, delegated_at: sin0126 ? undefined : '2026-10-25T23:00:00Z', route_stops: [] }], error: null };
+        } else if (name === 'driver_profiles') r = { data: [{ id: 'dp-1', profile_id: 'd1' }], error: null };
+        return Promise.resolve(r).then(ok2, ko);
+      },
+    };
+    return b2;
+  };
+  w.sb = { from: bld, auth: { getUser: async () => ({ data: { user: null } }), getSession: async () => ({ data: { session: null } }) } };
+  w.RENDIO_CONFIG = {};
+  w.eval(read('api.js'));
+  const r = await w.Api.saveRoutePlan('2026-10-26', [
+    { vehicleId: 'veh-1', planCar: 'Carro 2', driverProfileId: null, delegated: true, type: 'sal', startAt: '2026-10-26T04:15:00-05:00', stops: ['res-2', 'res-3'], etas: { 'res-2': 255, 'res-3': 265 } },
+    { vehicleId: null, planCar: 'Carro 1', driverProfileId: 'd1', type: 'sal', startAt: '2026-10-26T05:20:00-05:00', stops: ['res-4'], etas: {} }]);
+  const ras = ins.filter((x) => x[0] === 'route_assignments').map((x) => x[1]);
+  if (!sin0126) {
+    const dl = ras.find((x) => x.plan_car === 'Carro 2');
+    t('la delegada se publica: SIN conductor ni carro, «planned» (no borrador) y con delegated_at', r.saved === 2 && r.failed === 0 && dl && dl.driver_profile_id === null && dl.vehicle_id === null && dl.status === 'planned' && typeof dl.delegated_at === 'string', JSON.stringify([r, ras]));
+    t('…con sus paradas y sus horas', ins.some((x) => x[0] === 'route_stops' && Array.isArray(x[1]) && x[1].length === 2 && x[1][0].reservation_id === 'res-2' && !!x[1][0].estimated_arrival_at));
+    t('avisa solo a la recién delegada (res-2); la que ya iba delegada (res-3) no', JSON.stringify(r.notify.filter((n) => n.delegated).map((n) => n.reservationId)) === JSON.stringify(['res-2']), JSON.stringify(r.notify));
+    t('la otra vuelta sale con su conductor, sin la marca', ras.find((x) => x.plan_car === 'Carro 1').driver_profile_id === 'dp-1' && !('delegated_at' in ras.find((x) => x.plan_car === 'Carro 1')));
+    const pp = await w.Api.getPublishedPlan('2026-10-26', { estados: ['draft', 'planned'] });
+    t('getPublishedPlan pide delegated_at y la marca la vuelta («delegated»); cuenta como publicado', /delegated_at/.test(selects.at(-1) || '') && pp.vueltas[0].delegated === true && pp.publicado === true, JSON.stringify([selects.at(-1), pp.vueltas[0] && pp.vueltas[0].delegated, pp.publicado]));
+  } else {
+    t('base sin 0126: la delegada NO se guarda como borrador a escondidas: falla y dice por qué', r.failed === 1 && /para delegar falta la actualización 0126/.test(r.failMsg) && ras.filter((x) => x.plan_car === 'Carro 2').length === 1, JSON.stringify([r, ras]));
+    t('…la otra vuelta sí se publica, y leer el plan de antes reintenta sin la columna', r.saved === 1 && selects.some((x) => /delegated_at/.test(x)) && selects.some((x) => !/delegated_at/.test(x) && /route_stops\(id, reservation_id, status\)/.test(x)), JSON.stringify(selects));
+    const pp = await w.Api.getPublishedPlan('2026-10-26', { estados: ['draft', 'planned'] });
+    t('getPublishedPlan sin 0126: reintenta sin delegated_at y lee igual (nada delegado)', pp.vueltas.length === 1 && pp.vueltas[0].delegated === false, JSON.stringify(pp.vueltas));
+  }
+}
+
 console.log('\n── 0124 · rearmar por carro del plan y la placa del turno ──');
 {
   const b = await boot();
@@ -846,6 +899,76 @@ console.log('\n── 26-oct · el conductor de UNA vuelta: cambiarlo no mueve e
   await V2().cambiarDia(1); await wait(20);
   t('recién abierto no cuenta como cambio sin publicar (cambiar de día no pregunta)', b.confirms.length === n0, b.confirms.slice(n0).join(' | '));
   t('sin errores de consola (rearmar con conductor propio)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 0126 · Delegar UNA vuelta en el tablero (la hace alguien de afuera) ──');
+{
+  const b = await boot();
+  const { w, q, qa, click, T, V2, log } = b;
+  const rt = T().rt;
+  const laneDe = (k) => Object.keys(rt.order).find((l) => rt.order[l].includes('r' + k));
+  const LM = laneDe('M'), LE = laneDe('E'), LH = laneDe('H');
+  w.Api.auxiliarUserIdsForReservations = async (ids) => ids.map((x) => 'perfil-' + x);
+  const abrirHoja = async (L) => { click(q(`#rv2-list .rv2-row[data-id="${L}"] .when`)); await wait(10); click(q(`#routes-v2 [data-act="assign"][data-id="${L}"]`)); await wait(10); };
+  await abrirHoja(LM);
+  const op = q('#rv2-sheet [data-pick="__deleg"]');
+  t('la hoja de la vuelta ofrece «Delegar esta vuelta» y dice qué pasa', op && /Delegar esta vuelta/.test(txt(op)) && /Ningún conductor la ve/.test(txt(op)) && /Tu servicio fue delegado, te contactaremos por WhatsApp/.test(txt(op)), op && txt(op));
+  click(op); await wait(5);
+  t('al elegirla, el botón dice «Delegar esta vuelta»', /Delegar esta vuelta/.test(txt(q('#rv2-doAssign'))));
+  click(q('#rv2-doAssign')); await wait(10);
+  const lane = rt.lanes.find((l) => l.id === LM), rM = V2().dia().byId[LM];
+  t('la vuelta queda delegada: sin conductor y NO «sin conductor» (no pide uno)', lane.deleg === true && lane.drv === false && rM.delegada && rM.driverId === null && rM.status !== 'nodriver', JSON.stringify([lane.deleg, lane.drv, rM.status]));
+  t('las otras de V-02 siguen con Luis', V2().dia().byId[LE].driverId === 'd2' && V2().dia().byId[LH].driverId === 'd2');
+  t('el aviso de abajo lo dice', /La vuelta de las \d\d:\d\d de V-02 queda delegada · al publicar se le avisa al tripulante/.test(b.toastV2()), b.toastV2());
+  const fila = q(`#rv2-list .rv2-row[data-id="${LM}"]`);
+  t('la fila dice «Delegada» (no «Sin conductor»)', /Delegada/.test(txt(fila.querySelector('.drv.deleg'))) && !/Sin conductor/.test(txt(fila)), txt(fila));
+  t('el detalle: «Delegada · La hace alguien de afuera…»', /Delegada\s*La hace alguien de afuera/.test(txt(q('#routes-v2 .rv2-drv'))), txt(q('#routes-v2 .rv2-drv')));
+  t('Avisos: no la pide como vuelta sin conductor', !V2()._avisos().some((a) => a.k === 'nodriver' && a.act.includes(LM)), JSON.stringify(V2()._avisos().map((a) => a.k)));
+  t('Conductores: V-02 AM «2 vueltas · 1 delegada»', /2 vueltas · 1 delegada/.test(txt(q('#rv2-drivers [data-act="assignslot"][data-car="V-02"][data-shift="am"]'))), txt(q('#rv2-drivers [data-act="assignslot"][data-car="V-02"][data-shift="am"]')));
+  // Publicar.
+  click(q('#rv2-publish')); await wait(10);
+  t('la hoja de Publicar la cuenta: «1 vuelta delegada» y qué le llega al tripulante', /1 vuelta delegada/.test(txt(q('#rv2-sheet'))) && /Ningún conductor las ve/.test(txt(q('#rv2-sheet'))), txt(q('#rv2-sheet')).slice(0, 300));
+  b.log.saved.length = 0; b.log.push.length = 0;
+  const go = q('#rv2-doPublish:not([hidden])');
+  if (go && !go.disabled) click(go); else { click(q('#rv2-forceOpen')); await wait(5); ['#rv2-forceRisk', '#rv2-forceUnr'].forEach((s) => { const x = q(s); if (x) { x.checked = true; x.dispatchEvent(new w.Event('change')); } }); click(q('#rv2-doForce')); }
+  await wait(40);
+  const pub = b.log.saved.at(-1), pM = pub && pub.lanes.find((l) => l.stops.includes('res-M'));
+  t('publicar manda esa vuelta delegada y sin conductor; las demás con el suyo', !!pM && pM.delegated === true && pM.driverProfileId === null && pub.lanes.filter((l) => l.delegated).length === 1 && pub.lanes.find((l) => l.stops.includes('res-E')).driverProfileId === 'd2', pub && JSON.stringify(pub.lanes.map((l) => [l.stops.join('+'), l.driverProfileId, !!l.delegated])));
+  const pushD = b.log.push.find((p) => /Tu servicio fue delegado/.test(p.title));
+  t('a su tripulante le llega «Tu servicio fue delegado 🤝 · Te contactaremos por WhatsApp…»', pushD && JSON.stringify(pushD.profileIds) === JSON.stringify(['perfil-res-M']) && /WhatsApp/.test(pushD.body), JSON.stringify(b.log.push.map((p) => [p.title, p.profileIds])));
+  t('…y NO «Conductor asignado» para esa reserva', !b.log.push.some((p) => /Conductor asignado|Te cambiamos el conductor/.test(p.title) && (p.profileIds || []).includes('perfil-res-M')));
+  t('el aviso del tablero cuenta la delegada', /1 delegada/.test(b.toastV2() || '') || b.toasts.some((m) => /1 delegada/.test(m)), b.toastV2());
+  // Volver a publicar sin tocar: no repite el aviso.
+  b.log.push.length = 0;
+  await T().rtSavePlan({ toast: () => {} }); await wait(20);
+  t('re-publicar igual no le vuelve a avisar', !b.log.push.some((p) => /Tu servicio fue delegado/.test(p.title)), JSON.stringify(b.log.push.map((p) => p.title)));
+  // Quitarle lo delegado: «Como el resto de V-02».
+  await abrirHoja(LM);
+  t('con la vuelta delegada, la hoja dice «hoy está delegada» y no repite «Delegar»', /hoy está delegada/.test(txt(q('#rv2-sheet .rv2-sh-head p'))) && !q('#rv2-sheet [data-pick="__deleg"]'), txt(q('#rv2-sheet .rv2-sh-head p')));
+  click(q('#rv2-sheet [data-pick="__carro"]')); await wait(5); click(q('#rv2-doAssign')); await wait(10);
+  t('«Como el resto» la devuelve a Luis y quita la marca', V2().dia().byId[LM].driverId === 'd2' && !V2().dia().byId[LM].delegada && !('deleg' in rt.lanes.find((l) => l.id === LM)));
+  click(q('#rv2-toast [data-act="undo"]')); await wait(10);
+  t('Deshacer la vuelve a delegada', V2().dia().byId[LM].delegada === true);
+  t('sin errores de consola (delegar en el tablero)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+{
+  // Un plan publicado con una vuelta delegada: al abrir el día vuelve delegada.
+  const b = await boot();
+  const { w, T, V2 } = b;
+  const vs = w.RV2Fixture.vueltas();
+  const vM = vs.find((v) => v.pendientes.some((s) => s.rid === 'res-M'));
+  Object.assign(vM, { driverProfileId: null, conductor: 'Sin conductor', delegated: true });
+  w.Api.getPublishedPlan = async () => ({ vueltas: vs, publicado: true });
+  await V2().cargarDia(T().rt.day); await wait(30);
+  const rt = T().rt;
+  const lM = Object.keys(rt.order).find((l) => rt.order[l].includes('rM'));
+  const r = V2().dia().byId[lM];
+  t('al abrir el día la vuelta de M vuelve delegada; V-02 AM sigue de Luis', r.delegada && r.driverId === null && rt.cars.find((c) => c.id === 'V-02').driverAM === 'd2', JSON.stringify([r.delegada, r.driverId]));
+  const n0 = b.confirms.length;
+  await V2().cambiarDia(1); await wait(20);
+  t('recién abierto no cuenta como cambio sin publicar', b.confirms.length === n0, b.confirms.slice(n0).join(' | '));
+  t('sin errores de consola (rearmar con delegada)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);

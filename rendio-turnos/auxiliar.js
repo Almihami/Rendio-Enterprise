@@ -3390,7 +3390,8 @@
       }
       // 0125: el conductor soltó la vuelta (la ruta de Julián): sin conductor ni
       // carro otra vez, y el estado vuelve al que dice el servidor (no ha arrancado).
-      if (n.driverPending === true) {
+      // 0126: delegada (la hace alguien de afuera): tampoco hay conductor de Rendio.
+      if (n.driverPending === true || n.delegated === true) {
         o.driver = null; o.vehicle = null;
         if (ns && !AUX_FINAL.includes(o.status)) o.status = ns;
       }

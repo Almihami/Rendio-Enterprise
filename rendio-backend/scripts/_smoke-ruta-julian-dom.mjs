@@ -291,6 +291,34 @@ console.log('\n── D · El día con la ruta de Julián ──');
   t('«Volver a pegar» abre la hoja con lo que se pegó', q('#rj-ta') && q('#rj-ta').value.startsWith('3:50 Laura G'));
   C.V2()._sheet.close(); await wait();
 
+  // 0126 · Delegar una vuelta pegada (la hace alguien de afuera) y devolverla.
+  const deleg = new Set(), llamadas = [];
+  w.Api.setRouteDelegated = async (id, on) => { llamadas.push([id, on]); if (on) deleg.add(id); else deleg.delete(id); return { id, delegated: on, notified: 2 }; };
+  const pub1 = w.Api.getPublishedPlan;
+  w.Api.getPublishedPlan = async (...a) => { const r = await pub1(...a); (r.vueltas || []).forEach((v) => { if (deleg.has(v.id)) Object.assign(v, { delegated: true, driverProfileId: null, conductor: 'Sin conductor', placa: null }); }); return r; };
+  const btnDe = (v) => v && v.querySelector('[data-rj-deleg]');
+  let vs0 = qa('.rj-dia .rj-v');
+  t('0126: la libre y la tomada tienen «Delegar»; la que va en curso no', !btnDe(vs0[0]) && /Delegar/.test(txt(btnDe(vs0[1]))) && /Delegar/.test(txt(btnDe(vs0[2]))), vs0.map((v) => txt(btnDe(v)) || '—').join(' | '));
+  C.confirms.length = 0; w.__confirma = true;
+  click(btnDe(vs0[1])); await wait(80);
+  t('0126: pregunta antes y avisa que Jorge la había tomado', /¿Delegar la vuelta de las \d{1,2}:\d\d/.test(C.confirms[0] || '') && /Jorge Pérez la había tomado: se le avisa que ya no la hace/.test(C.confirms[0] || '') && /Tu servicio fue delegado, te contactaremos por WhatsApp/.test(C.confirms[0] || ''), C.confirms[0]);
+  t('0126: la delega en la base (esa vuelta, sí)', JSON.stringify(llamadas) === JSON.stringify([['pool-1', true]]), JSON.stringify(llamadas));
+  t('0126: el aviso dice a cuántos avisó', /Vuelta de las \d{1,2}:\d\d delegada · avisamos a 2 tripulantes/.test(C.toastV2() || ''), C.toastV2());
+  vs0 = qa('.rj-dia .rj-v');
+  t('0126: el día se recarga: «Delegada · la hace alguien de afuera» y el botón «Devolver»', vs0[1] && vs0[1].dataset.st === 'delegada' && /Delegada · la hace alguien de afuera/.test(txt(vs0[1])) && /Devolver/.test(txt(btnDe(vs0[1]))), vs0[1] && txt(vs0[1]));
+  t('0126: el encabezado la cuenta aparte («6 vueltas · 4 sin tomar · 1 delegada»)', /6 vueltas · 4 sin tomar · 1 delegada/.test(txt(q('.rj-dia-h'))), txt(q('.rj-dia-h')));
+  C.confirms.length = 0;
+  w.__confirma = false;
+  click(btnDe(vs0[1])); await wait(40);
+  t('0126: si no confirma, no se devuelve', llamadas.length === 1 && /¿Devolver la vuelta/.test(C.confirms[0] || ''));
+  w.__confirma = true;
+  click(btnDe(qa('.rj-dia .rj-v')[1])); await wait(80);
+  t('0126: «Devolver» la quita de delegada y vuelve a la lista', JSON.stringify(llamadas[1]) === JSON.stringify(['pool-1', false]) && qa('.rj-dia .rj-v')[1].dataset.st !== 'delegada' && /devuelta: ya la pueden tomar/.test(C.toastV2() || ''), JSON.stringify(llamadas) + ' · ' + C.toastV2());
+  w.Api.setRouteDelegated = async () => { throw new Error('Para delegar falta la actualización 0126 de la base.'); };
+  click(btnDe(qa('.rj-dia .rj-v')[2])); await wait(60);
+  t('0126: sin la base al día lo dice (y el botón vuelve a servir)', /No se pudo: Para delegar falta la actualización 0126/.test(C.toastV2() || '') && !btnDe(qa('.rj-dia .rj-v')[2]).disabled, C.toastV2());
+  w.Api.getPublishedPlan = pub1;
+
   C.confirms.length = 0; w.__confirma = true;
   click(q('[data-rj-dia="quitar"]')); await wait(80);
   t('«Quitar la ruta» pregunta (avisa que también se van las tomadas)', /también las ya tomadas/.test(C.confirms[0] || ''), C.confirms[0]);

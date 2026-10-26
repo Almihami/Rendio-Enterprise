@@ -208,6 +208,9 @@
       const veh = vehLine(t);
       const avatar = u && u.av ? u.av(d.initials || initials(d.name, 'C'), 'sm', 'lt', { src: d.avatarUrl || '' }) : '';
       bot = avatar + '<span class="rx-pass-drv"><b>' + esc(d.name) + '</b>' + (veh ? '<span>' + esc(veh) + '</span>' : '') + '</span>';
+    } else if (t.delegated) {
+      // 0126: la hace alguien de afuera; no hay conductor de Rendio que mostrar.
+      bot = '<span class="rx-pass-wait">' + ic('MessageCircle', 16) + '</span><span class="rx-pass-drv"><b>Servicio delegado</b><span>Te contactaremos por WhatsApp</span></span>';
     } else if (L.asked) {
       bot = '<span class="rx-pass-wait"><i></i></span><span class="rx-pass-drv"><b>Coordinación confirma tu privado</b></span>';
     } else if (pub) {
