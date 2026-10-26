@@ -166,6 +166,26 @@
 #routes-v2 .rv2-madh small, #routes-v2 .rv2-madsig small { display: block; font-size: 12.5px; line-height: 1.4; color: var(--ink2); margin-top: 2px; }
 #routes-v2 .rv2-dayh { font-size: 13px; font-weight: 700; color: var(--ink); padding: 6px 2px 0; border-top: 1px solid var(--line); }
 /* Lista de los jefes 26-oct: las vueltas terminadas se recogen al final. */
+/* 0140: Entregas de turno (admin-entregas.js). */
+#routes-v2 .rv2-entregas { margin: 0 0 14px; }
+#routes-v2 .rv2-ents { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+#routes-v2 .rv2-ent { display: grid; grid-template-columns: 132px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+#routes-v2 .rv2-ent-t { display: flex; flex-direction: column; }
+#routes-v2 .rv2-ent-t b { font-family: var(--mono); font-size: 14px; }
+#routes-v2 .rv2-ent-t small, #routes-v2 .rv2-ent-st { font-size: 12px; color: var(--ink3); }
+#routes-v2 .rv2-ent-m { display: flex; flex-direction: column; min-width: 0; }
+#routes-v2 .rv2-ent-m span { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
+#routes-v2 .rv2-ent[data-k="ok"] .rv2-ent-st { color: var(--green); font-weight: 700; }
+#routes-v2 .rv2-ent[data-k="warn"] { border-color: var(--orange); }
+#routes-v2 .rv2-ent[data-k="warn"] .rv2-ent-st { color: var(--orange-ink); font-weight: 700; }
+#routes-v2 .rv2-ent[data-k="bad"] { border-color: var(--red); }
+#routes-v2 .rv2-ent[data-k="bad"] .rv2-ent-st { color: var(--red); font-weight: 700; }
+#routes-v2 .rv2-ent-edit { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+#routes-v2 .rv2-ent-edit select, #routes-v2 .rv2-ent-txt { font: inherit; font-size: 16px; min-height: 36px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); max-width: 100%; }
+@media (max-width: 767px) {
+  #routes-v2 .rv2-ent { grid-template-columns: minmax(0, 1fr) auto; }
+  #routes-v2 .rv2-ent-t { grid-column: 1 / -1; flex-direction: row; gap: 8px; align-items: baseline; }
+}
 #routes-v2 .rv2-hechas { display: flex; flex-direction: column; gap: 8px; }
 #routes-v2 .rv2-hechas-b { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; padding: 10px 14px; border: 1px dashed var(--line2); border-radius: 12px; background: var(--panel2); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 #routes-v2 .rv2-hechas-b b { font-size: 13.5px; color: var(--green); }
@@ -507,6 +527,13 @@
 /* 0126: delegada (la hace alguien de afuera) y su botón Delegar / Devolver. */
 #routes-v2 .rj-v-r { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 #routes-v2 .rj-v[data-st="delegada"] .rj-v-st { background: #EEF2FF; color: #4338CA; }
+/* 0137: terminada (verde, degradada) y pasada sin marcar (gris); el renglón que las guarda. */
+#routes-v2 .rj-v[data-st="hecha"] { opacity: .72; }
+#routes-v2 .rj-v[data-st="hecha"] .rj-v-st { background: var(--green-soft); color: var(--green); }
+#routes-v2 .rj-v[data-st="pasada"] { opacity: .72; }
+#routes-v2 .rj-hechas { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; margin-top: 4px; padding: 10px 14px; border: 1px dashed var(--line2); border-radius: 12px; background: var(--panel2); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+#routes-v2 .rj-hechas b { font-size: 13.5px; color: var(--green); }
+#routes-v2 .rj-hechas small { font-size: 12.5px; color: var(--ink2); white-space: nowrap; }
 /* 0129: «Asignar conductor» en una vuelta de la ruta de Julián: la lista sale ahí mismo. */
 #routes-v2 .rj-pick { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 #routes-v2 .rj-pick select { font: inherit; font-size: 16px; min-height: 34px; max-width: 220px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); }

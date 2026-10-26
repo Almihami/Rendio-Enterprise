@@ -76,6 +76,7 @@
     report: null, busy: false, keySeq: 0,
     flPoll: null,              // relee el estado de los vuelos cada 2 min con la ruta abierta
     showDone: false,           // «Completadas» abierta (se cierra cada vez que se entra a la ruta)
+    showPast: false,           // 0137: «Pasaron sin marcar» abierta (igual)
     fl: null,                  // la hoja «Ver avión» abierta: { vid, map, plane, timer }
   };
   window.DriverRutas = { open: rtOpen, close: rtClose, background: rtBackground, deepLink: rtDeepLink };
@@ -416,7 +417,7 @@
     const root = host(); if (!root) return;
     ensureIcons();
     RT.open = true;
-    RT.showDone = false;
+    RT.showDone = false; RT.showPast = false;
     root.classList.remove('hidden');
     root.classList.add('rt-v2');
     root.innerHTML = shellHTML('<div class="rt-scr"><div class="rt-body rt-loading"><div class="rt-title"><span>Rutas</span><h1>Mi día</h1><p>Cargando tu ruta…</p></div></div></div>');
@@ -647,9 +648,14 @@
       const diaT0 = t0 ? new Date(t0).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }) : o.day;
       const cuando = (o.day && diaT0 > o.day) ? 'Madrugada'
         : (diaT0 && diaT0 > hoy ? (diaT0 === new Date(Date.parse(hoy + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10) ? 'Mañana' : fmtDay(diaT0)) : '');
-      return '<div class="rt-vc rt-libre rx-in" style="--d:' + i + '"><span class="rt-vc-t"><em>' + (lle ? 'Llegada' : 'Salida') + '</em><b>' + esc(t) + '</b>' + (cuando ? '<em>' + esc(cuando) + '</em>' : '') + '</span>'
+      // 0138: si se cruza con una vuelta suya no se ofrece «Tomar» (la base tampoco
+      // dejaría): se dice por qué, y que Coordinación se la puede dar si de verdad alcanza.
+      const accion = o.cruza === true
+        ? '<span class="rt-libre-x" role="note">Se cruza con otra vuelta tuya</span>'
+        : btn('Tomar', { cls: 'tone', attrs: { 'data-rt': 'take', 'data-id': o.id, 'aria-label': `Tomar la vuelta de las ${t}` } });
+      return '<div class="rt-vc rt-libre rx-in' + (o.cruza === true ? ' is-cruza' : '') + '" style="--d:' + i + '"><span class="rt-vc-t"><em>' + (lle ? 'Llegada' : 'Salida') + '</em><b>' + esc(t) + '</b>' + (cuando ? '<em>' + esc(cuando) + '</em>' : '') + '</span>'
         + '<span class="rt-vc-m"><b>' + esc(`${st.length} ${st.length === 1 ? 'persona' : 'personas'} · ${nombres}`) + '</b><span>' + esc(sub) + '</span></span>'
-        + btn('Tomar', { cls: 'tone', attrs: { 'data-rt': 'take', 'data-id': o.id, 'aria-label': `Tomar la vuelta de las ${t}` } }) + '</div>';
+        + accion + '</div>';
     }).join('');
   }
   function liveHTML(on) { return '<span class="rt-live ' + (on ? '' : 'off') + '"><i></i>' + (on ? 'Compartiendo ubicación' : 'Ubicación off') + '</span>'; }
@@ -665,19 +671,38 @@
         + libresHTML()
         + '</div></div>';
     }
-    const focus = list.find((v) => !S(v).done);
-    const later = list.filter((v) => v !== focus && !S(v).done);
+    // 0137: la que pasó su hora sin que nadie la iniciara no se queda de «siguiente»
+    // (tapaba la que de verdad seguía): baja con las hechas y se puede abrir para marcarla.
+    const focus = list.find((v) => !S(v).done && !pasada(v));
+    const later = list.filter((v) => v !== focus && !S(v).done && !pasada(v));
     const done = list.filter((v) => S(v).done);
+    const pasadas = list.filter((v) => pasada(v));
     const crewN = list.reduce((a, v) => a + crew(v).length, 0);
     return '<div class="rt-scr">' + head + '<div class="rt-body">'
       + '<div class="rt-title"><span>' + esc(`Rutas · ${fmtDay(list[0].opDay || list[0].day)}`) + '</span><h1>Mi día</h1><p>' + esc(`${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'} · ${crewN} auxiliares · JMC`) + '</p></div>'
       + '<div class="rt-dayprog"><div>' + list.map((v) => '<i class="' + (S(v).done ? 'on' : v === focus ? 'now' : '') + '"></i>').join('') + '</div><span>' + esc(`${done.length} de ${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'}`) + '</span></div>'
       + (focus ? '<div class="rx-lbl">' + (S(focus).started ? 'Ahora' : 'Tu siguiente vuelta') + '</div>' + heroHTML(focus)
-        : '<div class="rt-alldone rx-in">' + check(64) + '<b>Terminaste tus rutas de hoy</b><span>' + esc(`Las ${list.length} ${list.length === 1 ? 'vuelta quedó entregada' : 'vueltas quedaron entregadas'}.`) + '</span></div>')
+        : pasadas.length
+          ? '<div class="rt-alldone rx-in">' + check(64) + '<b>No te quedan vueltas por delante</b><span>' + esc(`${pasadas.length === 1 ? 'Una pasó' : pasadas.length + ' pasaron'} sin marcar: ábrela${pasadas.length === 1 ? '' : 's'} abajo y marca cómo salió${pasadas.length === 1 ? '' : 'ron'}.`) + '</span></div>'
+          : '<div class="rt-alldone rx-in">' + check(64) + '<b>Terminaste tus rutas de hoy</b><span>' + esc(`Las ${list.length} ${list.length === 1 ? 'vuelta quedó entregada' : 'vueltas quedaron entregadas'}.`) + '</span></div>')
       + (later.length ? '<div class="rx-lbl">Más tarde</div>' + later.map((v, i) => vcardHTML(v, i)).join('') : '')
       + libresHTML()
+      + pasadasHTML(pasadas)
       + completadasHTML(done)
       + '</div>' + nowbarHTML() + '</div>';
+  }
+  // 0137: nadie la inició y ya pasó su fin esperado + los minutos de Calibración.
+  // Si el conductor la arrancó en este teléfono, sigue siendo suya (no se esconde).
+  const pasada = (v) => !!v.vencida && !S(v).started && !S(v).done;
+  // Las que pasaron sin marcar (pendientes de los jefes, 26-oct): un renglón propio,
+  // cerrado, para que no estorben; abrir una deja marcarla como siempre.
+  function pasadasHTML(list) {
+    if (!list.length) return '';
+    const open = !!RT.showPast;
+    return '<button type="button" class="rt-donetg" data-rt="toggle-past" aria-expanded="' + open + '">'
+      + '<span>' + esc(`Pasaron sin marcar · ${list.length}`) + '</span>'
+      + '<em>' + (open ? 'Ocultar' : 'Ver') + ic('ChevronDown', 16, open ? 'transform:rotate(180deg)' : '') + '</em></button>'
+      + (open ? list.map((v, i) => vcardHTML(v, i)).join('') : '');
   }
   // Las vueltas hechas quedan guardadas (26-oct-2026, pedido de la profa): no
   // estorban para ver lo que falta y están a un toque si el conductor las quiere ver.
@@ -2018,6 +2043,7 @@
       if (a === 'chat') { chatOpen(vid, rid); return; }
       if (a === 'flight') { flightOpen(vid); return; }
       if (a === 'toggle-done') { RT.showDone = !RT.showDone; repaintBase(); return; }
+      if (a === 'toggle-past') { RT.showPast = !RT.showPast; repaintBase(); return; }
       if (a === 'qr') { chatSend(el.dataset.q); return; }
       if (a === 'send') { const i = document.getElementById('rt-chat-in'); if (i) chatSend(i.value); return; }
       if (a === 'push-tap') { document.getElementById('rt-push-host').innerHTML = ''; if (vid && rid) chatOpen(vid, rid); return; }

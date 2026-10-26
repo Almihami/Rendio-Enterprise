@@ -227,7 +227,16 @@ console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vue
   t('la vuelta terminada no es un aviso', b.rutaDe('V-01·V1').fija === 'completed' && b.rutaDe('V-01·V1').status === 'ok');
   const horas = qa('#rv2-list .rv2-hour strong').map((x) => txt(x).slice(0, 2));
   // Lista de los jefes (26-oct): las terminadas se recogen al final.
-  t('vueltas agrupadas por hora de llegada a JMC / aterrizaje: 05,06,07,08,11,15,16 — las 8 que faltan a la vista; la terminada (04) recogida', horas.join(',') === '05,06,07,08,11,15,16' && rows().length === 8 && !rowIds().includes('V-01·V1'), horas.join(',') + ' / ' + rows().length);
+  // Pendientes de los jefes (26-oct): por la PRIMERA hora que se lee, como el WhatsApp de
+  // Julián (la recogida en una salida, el aterrizaje en una llegada), ya no por la
+  // llegada a JMC: la salida de las 04:45 que llega 06:39 va con las 04, no con las 06.
+  t('vueltas agrupadas por la primera hora (recogida / aterrizaje): 04,05,06,07,08,10,15,16 — las 8 que faltan a la vista; la terminada recogida', horas.join(',') === '04,05,06,07,08,10,15,16' && rows().length === 8 && !rowIds().includes('V-01·V1'), horas.join(',') + ' / ' + rows().length);
+  {
+    // Dentro de cada hora, en el orden en que se leen: nunca una llegada antes de una
+    // salida que recoge más temprano.
+    const ord = rows().map((x) => b.rutaDe(x.dataset.id)).filter(Boolean).map((r) => r.orden);
+    t('en cada hora, en orden de la primera hora que se lee (no por la llegada a JMC)', ord.every((m, i) => i === 0 || ord[i - 1] <= m), ord.join(','));
+  }
   const hb = q('#rv2-list .rv2-hechas-b');
   t('al final: «✓ 1 vuelta terminada · Ver» (cerrado)', hb && /✓ 1 vuelta terminada/.test(txt(hb)) && /Ver/.test(txt(hb)) && hb.getAttribute('aria-expanded') === 'false', hb && txt(hb));
   b.click(hb); await wait(5);
@@ -239,7 +248,7 @@ console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vue
   t('buscando a alguien de una terminada, sale (la búsqueda la encuentra)', rowIds().includes('V-01·V1') && !q('#rv2-list .rv2-hechas-b'), nomHecha + ' → ' + rowIds().join(','));
   type(q('#rv2-q'), ''); await wait(160);
   t('al abrir el día se elige la primera que falta, no la terminada', V2()._ui.sel !== 'V-01·V1', V2()._ui.sel);
-  t('encabezado con aviso: «06:00 – 07:00 · 1 vuelta · 1 con aviso»', /06:00 – 07:00 · 1 vuelta · 1 con aviso/.test(txt(qa('#rv2-list .rv2-hour').find((h) => /^06/.test(txt(h))))));
+  t('encabezado con aviso: la que llega tarde (recoge 05:35, llega a JMC 06:39) va con las 05 «05:00 – 06:00 · 1 vuelta · 1 con aviso»', /05:00 – 06:00 · 1 vuelta · 1 con aviso/.test(txt(qa('#rv2-list .rv2-hour').find((h) => /^05/.test(txt(h))))), txt(qa('#rv2-list .rv2-hour').find((h) => /^05/.test(txt(h)))));
   const row = rows().find((x) => x.dataset.id === 'V-02·V2');
   t('la fila: horas, «Recoge → llega a JMC», tipo, carro, conductor y los tripulantes por nombre',
     txt(row.querySelector('.when b')) === '06:55 → 07:23' && /Recoge → llega a JMC/.test(txt(row.querySelector('.when'))) && txt(row.querySelector('.rv2-pill')) === 'Hotel'

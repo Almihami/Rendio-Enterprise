@@ -487,24 +487,45 @@
   }
 
   // ── 6. El día con la ruta de Julián (Rutas del día, en lugar del tablero) ───
+  // 0137: la hora que se lee de cada vuelta (la de Julián): la salida de JMC en una
+  // llegada, la primera recogida en una salida.
+  const horaDe = (v) => {
+    const gente = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
+    return v.type === 'lle' ? v.startAt : ((gente[0] && gente[0].etaAt) || v.startAt);
+  };
+  // Pendientes de los jefes (26-oct): lo terminado baja a un renglón al final (10 min
+  // después de su última entrega; la que pasó su hora sin marcar y la delegada
+  // pasada, también). fin.ocultaDesde lo calcula Api._opResultado.
+  const bajaDeLista = (v) => (v.fin && v.fin.ocultaDesde ? Date.now() >= v.fin.ocultaDesde
+    : v.status === 'completed' || !!(v.fin && (v.fin.estado === 'ok' || v.fin.estado === 'bad')));
+  const diaUi = { verHechas: false };
   // o.mixto (26-oct-2026): el día también tiene vueltas del tablero. El bloque va
   // ARRIBA de la lista del tablero (admin-rutas-v2.js · pegadasHTML), no en su lugar.
   function diaHTML(vueltas, dia, otras, o) {
     const mixto = !!(o && o.mixto);
-    const vs = (vueltas || []).slice().sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+    const todas = (vueltas || []).slice().sort((a, b) => Date.parse(horaDe(a)) - Date.parse(horaDe(b)));
+    const hechas = todas.filter(bajaDeLista);
+    const vs = todas.filter((v) => !bajaDeLista(v));
     const libres = vs.filter((v) => !v.driverProfileId && !v.delegated && v.status !== 'completed').length;
     const delegadas = vs.filter((v) => v.delegated).length;
-    const n = mixto ? `${vs.length} ${vs.length === 1 ? 'vuelta pegada' : 'vueltas pegadas'}` : `${vs.length} vueltas`;
-    let h = `<div class="rj-dia${mixto ? ' is-mixto' : ''}" data-k="julian"><div class="rj-dia-h"><div><b>Ruta de Julián · ${esc(diaTxt(dia))}</b><span>${n} · ${libres ? `${libres} sin tomar` : 'todas tomadas'}${delegadas ? ` · ${delegadas} ${delegadas === 1 ? 'delegada' : 'delegadas'}` : ''}</span></div>`
+    const n = mixto ? `${todas.length} ${todas.length === 1 ? 'vuelta pegada' : 'vueltas pegadas'}` : `${todas.length} vueltas`;
+    let h = `<div class="rj-dia${mixto ? ' is-mixto' : ''}" data-k="julian"><div class="rj-dia-h"><div><b>Ruta de Julián · ${esc(diaTxt(dia))}</b><span>${n} · ${libres ? `${libres} sin tomar` : 'todas tomadas'}${delegadas ? ` · ${delegadas} ${delegadas === 1 ? 'delegada' : 'delegadas'}` : ''}${hechas.length ? ` · ${hechas.length} ${hechas.length === 1 ? 'terminada' : 'terminadas'}` : ''}</span></div>`
       + '<div class="rj-dia-a"><button class="rv2-btn rv2-btn--sm" data-rj-dia="pegar">Volver a pegar</button><button class="rv2-btn rv2-btn--sm" data-rj-dia="excel">Excel del día</button>'
       + `<button class="rv2-btn rv2-btn--sm" data-rj-dia="quitar"${mixto ? ' data-mixto="1"' : ''}>Quitar la ruta</button></div></div>`;
     if (mixto) h += '<p class="rj-note">Van aparte del tablero: los conductores las toman en su app. Publicar el tablero no las toca.</p>';
     else if (otras) h += `<p class="rj-note">Además hay ${otras} ${otras === 1 ? 'vuelta' : 'vueltas'} del tablero publicadas ese día.</p>`;
-    vs.forEach((v) => {
+    if (!vs.length && hechas.length) h += '<p class="rj-note">Ya terminaron todas las vueltas de este día. Quedan abajo, por si quieres revisarlas.</p>';
+    const fila = (v) => {
       const gente = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
       const t0 = v.type === 'lle' ? bogHM(v.startAt) : (gente[0] && gente[0].etaAt ? bogHM(gente[0].etaAt) : bogHM(v.startAt));
-      const enCurso = v.status === 'in_progress' || (v.atendidas || []).length > 0;
-      const estado = v.status === 'completed' ? ['hecha', 'Terminada']
+      // El resultado de la vuelta (0137): antes «En curso» salía con cualquier parada
+      // marcada y se quedaba así todo el día, porque la base nunca la cierra.
+      const fe = (v.fin && v.fin.estado) || '';
+      const enCurso = fe === 'curso' || (!fe && (v.status === 'in_progress' || (v.atendidas || []).length > 0));
+      const estado = v.status === 'completed' || fe === 'ok' ? ['hecha', `Terminada${v.fin && v.fin.at ? ' ' + esc(v.fin.at) : ''}`]
+        : fe === 'bad' ? ['hecha', `Terminada · ${esc((v.fin.motivos || []).join(' · '))}`]
+        : fe === 'sinmarcar' ? ['pasada', `Pasó su hora · ${v.fin.faltan === 1 ? '1 parada' : `${v.fin.faltan} paradas`} sin marcar`]
+        : fe === 'delegada' ? ['delegada', `Delegada${v.delegateName ? ' · ' + esc(v.delegateName) : ''} · ya pasó su hora`]
         : enCurso ? ['curso', v.delegated ? 'En curso · delegada' : `En curso · ${esc(v.conductor)}`]
           : v.delegated ? ['delegada', v.delegateName ? `Delegada · ${esc(v.delegateName)}${v.delegatePhone ? ' · ' + esc(v.delegatePhone) : ''}` : 'Delegada · la hace alguien de afuera']
             : v.driverProfileId ? ['tomada', `Tomada por ${esc(v.conductor)}${v.placa ? ' · ' + esc(v.placa) : ''}`]
@@ -515,16 +536,21 @@
       const asignar = W.Api && W.Api.setVueltaDriver
         ? `<button class="rv2-btn rv2-btn--sm" data-rj-drv="${esc(v.id)}" data-hora="${esc(t0)}" data-actual="${esc(v.driverProfileId || '')}">${v.driverProfileId ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
         : '';
-      const btn = v.status === 'completed' || enCurso ? ''
+      const btn = v.status === 'completed' || enCurso || ['ok', 'bad', 'sinmarcar', 'delegada'].includes(fe) ? ''
         : asignar
           // 0131: a quién se delegó (de la libreta o a mano); una delegada lo puede cambiar.
           + (v.delegated && W.Api && W.Api.delegateRoute ? `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="1" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="" data-dn="${esc(v.delegateName || '')}" data-dp="${esc(v.delegatePhone || '')}">${v.delegateName ? 'Cambiar a quién' : 'A quién'}</button>` : '')
           + `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="${v.delegated ? 0 : 1}" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="${!v.delegated && v.driverProfileId ? esc(v.conductor) : ''}">${v.delegated ? 'Devolver' : 'Delegar'}</button>`;
-      h += `<div class="rj-v" data-st="${estado[0]}"><div class="rj-v-t"><b>${esc(t0)}</b><small>${v.type === 'lle' ? 'Llegada' : 'Salida'}</small></div>`
+      return `<div class="rj-v" data-st="${estado[0]}"><div class="rj-v-t"><b>${esc(t0)}</b><small>${v.type === 'lle' ? 'Llegada' : 'Salida'}</small></div>`
         + `<div class="rj-v-m"><span>${esc(gente.map((g) => g.name.split(' ')[0]).join(', ') || '—')}</span>`
         + `<small>${esc([v.deadlineAt ? 'Deben estar ' + bogHM(v.deadlineAt) : '', v.nota || '', `${gente.length} ${gente.length === 1 ? 'persona' : 'personas'}`].filter(Boolean).join(' · '))}</small></div>`
         + `<div class="rj-v-r"><span class="rj-v-st">${estado[1]}</span>${btn}</div></div>`;
-    });
+    };
+    vs.forEach((v) => { h += fila(v); });
+    if (hechas.length) {
+      h += `<button class="rj-hechas" data-rj-dia="hechas" aria-expanded="${diaUi.verHechas}"><b>✓ ${hechas.length} ${hechas.length === 1 ? 'vuelta terminada' : 'vueltas terminadas'}</b><small>${diaUi.verHechas ? 'Ocultar' : 'Ver'}</small></button>`;
+      if (diaUi.verHechas) hechas.forEach((v) => { h += fila(v); });
+    }
     return h + '</div>';
   }
   let atadoDia = false;
@@ -608,6 +634,7 @@
       }
       const b = e.target.closest('[data-rj-dia]'); if (!b) return;
       const k = b.getAttribute('data-rj-dia');
+      if (k === 'hechas') { diaUi.verHechas = !diaUi.verHechas; const v2 = V2(); if (v2 && typeof v2.render === 'function') v2.render(); return; }
       if (k === 'pegar') abrir();
       else if (k === 'excel') excel();
       else if (k === 'quitar') {

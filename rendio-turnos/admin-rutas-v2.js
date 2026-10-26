@@ -209,7 +209,15 @@
       delegada: lane.deleg === true,    // 0126: la hace alguien de afuera (sin conductor a propósito)
       delegName: lane.deleg ? (lane.delegName || null) : null,   // 0131: a quién
       delegPhone: lane.deleg ? (lane.delegPhone || null) : null,
-      hora: ((Math.floor(arrival / 60) % 24) + 24) % 24,
+      // Pendientes de los jefes (26-oct): «está saliendo al revés, primero las
+      // llegadas y después las salidas; que lo organice en orden de horas como se ha
+      // hecho siempre». La lista se ordenaba por la llegada a JMC de cada salida, que
+      // es 30-40 min después de su primera recogida: la salida de las 9:05 quedaba
+      // detrás de la llegada de las 9:10. Ahora manda la PRIMERA hora que se lee,
+      // como en el WhatsApp de Julián (rwaOrden): la recogida en una salida, el
+      // aterrizaje en una llegada.
+      orden: lle ? arrival : pickup,
+      hora: ((Math.floor((lle ? arrival : pickup) / 60) % 24) + 24) % 24,
     };
   }
 
@@ -482,10 +490,11 @@
         + (rtToMin(a.dl) < rtCut() ? ` (madrugada, turno PM del ${rtDiaAnterior()})` : '');
       out.push({ k: 'unrouted', html: `<b>${esc(a.n)}</b> no tiene carro<small>${a.type === 'lle' ? 'Llegada' : 'Salida'} · ${esc(cuando)} · ${esc(lugar(id))}</small>`, btn: 'Ubicar', act: `data-act="route" data-crew="${esc(id)}"` });
     });
-    D.routes.filter((r) => r.status === 'risk').sort((a, b) => a.arrival - b.arrival).forEach((r) => {
+    // 0137: lo que ya bajó de la lista (terminada, pasó su hora) no pide nada.
+    D.routes.filter((r) => r.status === 'risk' && !ocultaFila(r)).sort((a, b) => a.arrival - b.arrival).forEach((r) => {
       out.push({ k: 'risk', html: `<b>${esc(r.vehicle)}</b> de las ${hhmm(r.pickup)} llega <b>${Math.abs(r.margin)} min tarde</b><small>Llega a JMC ${hhmm(r.arrival)} · presentación ${hhmm(r.pres)} · con ${BUF()} min de entrega</small>`, btn: 'Ver', act: `data-act="ver" data-id="${esc(r.id)}"` });
     });
-    D.routes.filter((r) => r.type === 'llegada' && r.fija !== 'completed' && (r.wait || 0) > LLE_ESPERA_LARGA).forEach((r) => {
+    D.routes.filter((r) => r.type === 'llegada' && r.fija !== 'completed' && !ocultaFila(r) && (r.wait || 0) > LLE_ESPERA_LARGA).forEach((r) => {
       out.push({ k: 'wait', html: `En <b>${esc(r.vehicle)}</b> esperan <b>${r.wait} min</b> el carro en JMC<small>Aterrizan ${hhmm(r.arrival)} · el carro los recoge ${hhmm(r.pickup)}</small>`, btn: 'Ver', act: `data-act="ver" data-id="${esc(r.id)}"` });
     });
     slotsSinConductor().forEach((r, k) => {
@@ -493,7 +502,7 @@
       out.push({ k: 'nodriver', html: `<b>${esc(carId)}</b> no tiene conductor · ${esc(turnoTxt(b))}<small>${horarioDe(b) ? 'No queda nadie libre en ese turno según el horario publicado' : 'No hay horario publicado para ese turno'}</small>`, btn: 'Elegir', act: `data-act="assignslot" data-car="${esc(carId)}" data-shift="${esc(b)}"` });
     });
     // Se le quitó el conductor SOLO a una vuelta: el botón abre la hoja de esa vuelta.
-    D.routes.filter((r) => r.propio && !r.driverId && !r.delegada && r.fija !== 'completed').forEach((r) => {
+    D.routes.filter((r) => r.propio && !r.driverId && !r.delegada && r.fija !== 'completed' && !ocultaFila(r)).forEach((r) => {
       out.push({ k: 'nodriver', html: `La vuelta de <b>${esc(r.vehicle)}</b> de las ${hhmm(inicioDe(r).at)} no tiene conductor<small>Se le quitó solo a esa vuelta · ${esc(turnoTxt(r.shift))}</small>`, btn: 'Elegir', act: `data-act="assign" data-id="${esc(r.id)}"` });
     });
     // Un conductor con dos vueltas que se cruzan, o que no alcanza a llegar de una
@@ -604,10 +613,22 @@
       + [...libres.values()].map((x) => '<b>' + esc(x.n) + '</b>' + (x.car ? ' (turno abierto en ' + esc(x.car) + ')' : '')).join(', ') + '.</p>';
   }
 
-  // 'ok' | 'bad' para una terminada, 'sinmarcar' si pasó su hora sin marcas; '' si no.
+  // 'ok' | 'bad' para una terminada, 'sinmarcar' si pasó su hora sin marcas (o la
+  // delegada que pasó su hora: nadie la marca); '' si no.
   function finFila(r) {
     if (r.fija === 'completed') return r.fin && r.fin.estado === 'bad' ? 'bad' : 'ok';
-    return r.fin && r.fin.estado === 'sinmarcar' ? 'sinmarcar' : '';
+    return r.fin && (r.fin.estado === 'sinmarcar' || r.fin.estado === 'delegada') ? 'sinmarcar' : '';
+  }
+  // 0137 (pendientes de los jefes, 26-oct): «que una vez finalice el servicio a los
+  // 10 minutos desaparezca del listado». Baja al renglón de abajo la terminada 10 min
+  // después de su última entrega, la delegada a su hora y la que pasó sin marcar
+  // (Api._opResultado → fin.ocultaDesde, con los minutos de Calibración).
+  function ocultaFila(r) {
+    const d = r.fin && r.fin.ocultaDesde;
+    if (d) return Date.now() >= d;
+    // Sin la hora (un resultado viejo, sin 0137 en la pantalla): como antes, la
+    // terminada baja de una.
+    return r.fija === 'completed';
   }
 
   function rowHTML(r) {
@@ -619,11 +640,14 @@
     if (r.fija === 'completed') estado = fin === 'bad'
       ? `<small class="late">Terminada · ${esc(r.fin.motivos.join(' · '))}</small>`
       : `<small class="done">Terminada${r.fin && r.fin.at ? ' ' + esc(r.fin.at) : ''}${r.fin ? ' · sin novedad' : ''}</small>`;
+    else if (fin === 'sinmarcar' && r.fin.estado === 'delegada') estado = `<small>Delegada${r.delegName ? ' · ' + esc(r.delegName) : ''} · ya pasó su hora</small>`;
     else if (fin === 'sinmarcar') estado = `<small>Pasó su hora · ${plural(r.fin.faltan, 'parada', 'paradas')} sin marcar</small>`;
     else if (r.status === 'risk') estado = `<small class="late">${Math.abs(r.margin)} min tarde · presentación ${hhmm(r.pres)}</small>`;
     else if (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA) estado = `<small class="late">Esperan ${r.wait} min el carro</small>`;
     else estado = r.type === 'llegada' ? `<small>Recoge en JMC ${hhmm(r.pickup)}</small>` : `<small>Presentación ${hhmm(r.pres)}</small>`;
-    const enCurso = r.fija === 'in_progress' ? ' <span class="tag">en curso</span>' : '';
+    // «en curso» solo mientras de verdad puede ir en curso: la que pasó su hora sin
+    // marcar no lo dice (antes se quedaba «en curso» horas después de terminar).
+    const enCurso = r.fija === 'in_progress' && !finFila(r) ? ' <span class="tag">en curso</span>' : '';
     const chips = r.stops.map((st) => {
       const a = aux(st.crewId) || {};
       const fijo = atendida(st.crewId) || r.fija === 'completed';
@@ -664,7 +688,7 @@
     rows.forEach((r) => { if (!groups.has(r.hora)) groups.set(r.hora, []); groups.get(r.hora).push(r); });
     let html = '';
     [...groups.keys()].sort((a, b) => a - b).forEach((h) => {
-      const g = groups.get(h).sort((a, b) => a.arrival - b.arrival || a.pickup - b.pickup);
+      const g = groups.get(h).sort((a, b) => a.orden - b.orden || a.arrival - b.arrival);
       const malas = g.filter((r) => r.status === 'risk' || (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA)).length;
       html += `<div class="rv2-gwrap"><div class="rv2-hour"><strong>${pad(h)}:00 – ${pad((h + 1) % 24)}:00</strong> · ${plural(g.length, 'vuelta', 'vueltas')}${malas ? ` · <span class="t-risk">${plural(malas, 'con aviso', 'con aviso')}</span>` : ''}</div>`;
       g.forEach((r) => { html += rowHTML(r); });
@@ -699,8 +723,15 @@
   function hechasHTML(hechas) {
     if (!hechas.length) return '';
     const malas = hechas.filter((r) => finFila(r) === 'bad').length;
+    // 0137: también bajan las que pasaron su hora sin marcar y las delegadas pasadas.
+    const sinMarcar = hechas.filter((r) => r.fin && r.fin.estado === 'sinmarcar').length;
+    const delegadas = hechas.filter((r) => r.fin && r.fin.estado === 'delegada').length;
+    const term = hechas.length - sinMarcar - delegadas;
+    const titulo = [term ? `✓ ${plural(term, 'vuelta terminada', 'vueltas terminadas')}` : '',
+      sinMarcar ? plural(sinMarcar, 'pasó sin marcar', 'pasaron sin marcar') : '',
+      delegadas ? plural(delegadas, 'delegada', 'delegadas') : ''].filter(Boolean).join(' · ');
     return `<div class="rv2-hechas"><button class="rv2-hechas-b" data-act="hechas" aria-expanded="${ui.verHechas}">` +
-      `<b>✓ ${plural(hechas.length, 'vuelta terminada', 'vueltas terminadas')}</b>` +
+      `<b>${titulo}</b>` +
       `<small>${malas ? `${plural(malas, 'con novedad', 'con novedad')} · ` : ''}${ui.verHechas ? 'Ocultar' : 'Ver'}</small></button>` +
       (ui.verHechas ? horasHTML(hechas) : '') + '</div>';
   }
@@ -726,7 +757,7 @@
     if (vacio) { el.list.innerHTML = peg + vacio + (ui.cargando ? '' : solasHTML() + madSigHTML()); return; }
     const todas = D.routes.filter(matchesQ);
     if (!todas.length) { el.list.innerHTML = peg || `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
-    const hechas = buscando ? [] : todas.filter((r) => r.fija === 'completed');
+    const hechas = buscando ? [] : todas.filter(ocultaFila);
     const rows = todas.filter((r) => !hechas.includes(r));
     if (!rows.length) { el.list.innerHTML = peg + `<div class="rv2-empty"><b>Ya terminaron todas las vueltas de ${esc(dayLabel(rt.day || ui.dia).toLowerCase())}</b>Quedan abajo, por si quieres revisarlas.</div>` + hechasHTML(hechas) + madSigHTML(); return; }
     const mad = rows.filter((r) => r.shift === 'mad'), resto = rows.filter((r) => r.shift !== 'mad');
@@ -843,7 +874,7 @@
       return;
     }
     el.mapwrap.hidden = false;
-    const fijaTxt = r.fija === 'in_progress' ? ' · en curso' : r.fija === 'completed' ? ' · terminada' : '';
+    const fijaTxt = r.fija === 'completed' ? ' · terminada' : finFila(r) === 'sinmarcar' ? ' · pasó su hora' : r.fija === 'in_progress' ? ' · en curso' : '';
     const dur = Math.max(0, Math.round((r.type === 'llegada' ? ultima(r) : r.end) - r.pickup));
     el.dhead.innerHTML = `<button class="rv2-ic rv2-back" data-act="close" aria-label="Volver a la lista">${IC.back}</button>` +
       `<div><h2>${esc(r.vehicle)} · Vuelta ${r.vuelta}</h2><p>${TYPE_LONG[r.type]} · ${horas(r)} · ${plural(r.pax, 'persona', 'personas')} · ${dur} min${fijaTxt}</p></div>` +
@@ -966,7 +997,12 @@
     D = armarDia();
     if (ui.sel && !D.byId[ui.sel]) { ui.sel = null; ui.moving = null; }
     const av = avisosDe();
-    renderBar(); renderSay(av); renderAvisos(av); renderDrivers(); renderList(); renderDetail();
+    renderBar(); renderSay(av); renderAvisos(av); renderDrivers(); pintarEntregas(); renderList(); renderDetail();
+  }
+  // 0140: «Entregas de turno» (admin-entregas.js) del día que se ve.
+  function pintarEntregas() {
+    if (!el.entregas || !window.RendioEntregas) return;
+    window.RendioEntregas.pintar(el.entregas, rt.source === 'live' && !ui.cargando ? (rt.day || ui.dia) : null);
   }
 
   // 0125: el día va con la ruta de Julián. El tablero (Avisos, Conductores, mover,
@@ -975,6 +1011,7 @@
     D = armarDia();
     renderBar();
     el.summary.hidden = true; el.avisos.innerHTML = ''; el.drivers.innerHTML = '';
+    pintarEntregas();
     el.say.hidden = false; el.say.classList.add('is-ok');
     el.say.innerHTML = '<i aria-hidden="true"></i><span><b>Este día va con la ruta de Julián.</b> Los conductores toman las vueltas en su app; aquí ves cuáles faltan.</span>';
     el.list.innerHTML = window.RendioRutaJulian.diaHTML(ui.manual.vueltas, ui.dia, ui.manual.otras);
@@ -1585,8 +1622,9 @@
   // primera del día): el mapa nunca queda vacío.
   function autoSelect() {
     if (esCajon() || ui.sel || !D) return;
-    // Las terminadas van recogidas al final: se abre la primera que todavía falta.
-    const vivas = D.routes.filter((r) => r.fija !== 'completed');
+    // Las terminadas van recogidas al final: se abre la primera que todavía falta
+    // (0137: tampoco una que ya bajó por pasar su hora sin marcar).
+    const vivas = D.routes.filter((r) => r.fija !== 'completed' && !ocultaFila(r));
     const base = vivas.length ? vivas : D.routes;
     const first = base.filter((r) => r.status === 'risk').sort((a, b) => a.arrival - b.arrival)[0]
       || base.slice().sort((a, b) => a.pickup - b.pickup)[0];
@@ -1761,6 +1799,45 @@
     return true;
   }
 
+  // 0137 · CÓMO VA CADA VUELTA, SIN RECARGAR. Asignación solo leía el día al
+  // entrar: una vuelta que terminaba seguía en la lista hasta que el jefe recargaba
+  // («aún veo servicios de la mañana»). Cada minuto, si el jefe no está moviendo
+  // nada, se vuelve a leer el resultado de lo publicado (terminada, sin marcar,
+  // quién va a bordo) y se repinta. El tablero (vueltas, horas, conductores) no se
+  // toca: lo que el jefe tenga sin publicar queda igual.
+  let finTimer = null;
+  async function refrescarFines() {
+    const r = root();
+    if (!r || r.hidden || (typeof document !== 'undefined' && document.hidden)) return false;
+    if (ui.cargando || ui.publicando || ui.optimizando || ui.drag || ui.moving) return false;
+    if (el.sheet && el.sheet.hidden === false) return false;   // una hoja abierta (mover, asignar, publicar…)
+    if (rt.source !== 'live' || !rt.day || !window.Api || typeof Api.getPublishedPlan !== 'function') return false;
+    const dia = rt.day;
+    let plan = null;
+    try { plan = await Api.getPublishedPlan(dia, { estados: ESTADOS_PLAN }); } catch (_) { return false; }
+    if (rt.day !== dia || ui.cargando || ui.moving || ui.drag) return false;   // cambió algo mientras se leía
+    const porId = new Map(((plan && plan.vueltas) || []).map((v) => [v.id, v]));
+    if (ui.manual && Array.isArray(ui.manual.vueltas)) ui.manual.vueltas = ui.manual.vueltas.map((v) => porId.get(v.id) || v);
+    const porReserva = {};
+    Object.keys(rt.aux || {}).forEach((k) => { const x = rt.aux[k].reservationId; if (x) porReserva[x] = k; });
+    rt.rv2Fin = rt.rv2Fin || {}; rt.rv2Fijas = rt.rv2Fijas || {}; rt.rv2Atendidas = rt.rv2Atendidas || {};
+    (rt.lanes || []).forEach((l) => {
+      const v = l.raId && porId.get(l.raId); if (!v) return;
+      if (v.fin) rt.rv2Fin[l.id] = v.fin;
+      (v.atendidas || []).forEach((st) => { const k = porReserva[st.rid]; if (k) rt.rv2Atendidas[k] = st.status; });
+      if (v.fin && (v.fin.estado === 'ok' || v.fin.estado === 'bad')) rt.rv2Fijas[l.id] = 'completed';
+      else if (!rt.rv2Fijas[l.id] && (v.atendidas || []).length) rt.rv2Fijas[l.id] = 'in_progress';
+    });
+    // Con una vuelta abierta no se rehace el detalle (el mapa parpadearía): solo la lista.
+    if (ui.sel && !ui.manual) { D = armarDia(); renderList(); renderDrivers(); pintarEntregas(); }
+    else render();
+    return true;
+  }
+  function arrancarRefresco() {
+    if (finTimer || typeof setInterval !== 'function') return;
+    finTimer = setInterval(() => { refrescarFines().catch(() => {}); }, 60000);
+  }
+
   async function cargarDia(day) {
     ui.cargando = true; ui.sel = null; ui.moving = null; hist.length = 0;
     if (el.detail) el.detail.classList.remove('is-open');
@@ -1885,7 +1962,7 @@
     bound = true;
     Object.assign(el, {
       list: $('#rv2-list'), listwrap: $('#rv2-listwrap'), detail: $('#rv2-detail'), summary: $('#rv2-summary'),
-      avisos: $('#rv2-avisos'), drivers: $('#rv2-drivers'), say: $('#rv2-say'),
+      avisos: $('#rv2-avisos'), drivers: $('#rv2-drivers'), say: $('#rv2-say'), entregas: $('#rv2-entregas'),
       scrim: $('#rv2-scrim'), sheet: $('#rv2-sheet'), toast: $('#rv2-toast'),
       dayLabel: $('#rv2-dayLabel'), pubChip: $('#rv2-pubChip'), reopt: $('#rv2-reopt'), reoptLabel: $('#rv2-reoptLabel'),
       publish: $('#rv2-publish'), publishLabel: $('#rv2-publishLabel'), pending: $('#rv2-pending'), publishM: $('#rv2-publishM'),
@@ -1908,6 +1985,7 @@
     if ($('#rv2-julian')) $('#rv2-julian').addEventListener('click', () => { if (window.RendioRutaJulian) window.RendioRutaJulian.abrir(); });
     if ($('#rv2-xlsx')) $('#rv2-xlsx').addEventListener('click', () => { if (window.RendioRutaJulian) window.RendioRutaJulian.excel(); });
     document.addEventListener('keydown', onKey);
+    arrancarRefresco();   // 0137
     r.addEventListener('dragstart', onDragStart);
     r.addEventListener('dragover', onDragOver);
     r.addEventListener('drop', onDrop);
@@ -2025,5 +2103,6 @@
     delegar: openDelegar,   // 0131: «Delegar a…» (lo usa la ruta de Julián)
     _ui: ui, _hist: hist, dia: () => D, medir, sugerencia: (id) => sugerencia(D && D.byId[id]), candidatas, _mover: moveCrew,
     _avisos: () => avisosDe(), _sacar: sacarDeRuta,
+    _refrescarFines: refrescarFines,   // 0137 (pruebas)
   };
 })();

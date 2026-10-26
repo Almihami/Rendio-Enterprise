@@ -49,6 +49,8 @@
       sub.textContent = hoy.charAt(0).toUpperCase() + hoy.slice(1) + (placa ? ` · ${placa}` : '');
     }
     renderDriverHomeNudge();
+    // 0140: la entrega de turno va arriba de «Tu día» (no frena lo demás si falla).
+    if (window.DriverEntrega) window.DriverEntrega.render().catch(() => {});
     await renderDriverHomeRuta();
   }
 
@@ -97,7 +99,8 @@
     // La primera vuelta sin terminar lleva su «Iniciar ruta» aquí mismo: un toque
     // abre la ruta en ejecución y la base le avisa al primer tripulante (0097).
     // Antes eran 3–4 toques (Ruta → la vuelta → Iniciar ruta).
-    const primera = vueltas.find(v => !v.done);
+    // 0137: la que pasó su hora sin que nadie la iniciara no se queda de primera.
+    const primera = vueltas.find(v => !v.done && !v.vencida);
     const tarjeta = (v) => {
       const salida = v.type !== 'lle';
       const tono = salida ? 'var(--r-h2a)' : 'var(--r-a2h)';
@@ -109,7 +112,7 @@
                 style="border-left:4px solid ${tono};margin-bottom:8px">
           <span style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <span style="font-size:11.5px;font-weight:700;color:${tono};letter-spacing:.5px;text-transform:uppercase">${salida ? 'Salida' : 'Llegada'}</span>
-            <span style="margin-left:auto;font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;background:${fondo};color:${tono}">${v.done ? 'Terminada' : 'Asignada'}</span>
+            <span style="margin-left:auto;font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;background:${v.vencida && !v.done ? 'var(--r-surface-2, #f1f1f1)' : fondo};color:${v.vencida && !v.done ? 'var(--r-text-2)' : tono}">${v.done ? 'Terminada' : v.vencida ? 'Sin marcar' : 'Asignada'}</span>
           </span>
           <span style="display:block;font-size:16px;font-weight:650;letter-spacing:-.3px">${salida ? 'Casas → Aeropuerto JMC' : 'Aeropuerto JMC → Casas'}</span>
           <span style="display:block;font-size:13px;color:var(--r-text-2);margin-top:3px">
@@ -127,15 +130,17 @@
     // Las que ya hizo se guardan (26-oct-2026, pedido de la profa): arriba queda lo
     // que falta, y las hechas aparecen con un toque. Cada vez que se entra a Inicio
     // vuelven a estar guardadas.
-    const pendientes = vueltas.filter(v => !v.done), hechas = vueltas.filter(v => v.done);
+    // 0137: las que pasaron sin marcar bajan con las hechas (se pueden abrir y marcar).
+    const pendientes = vueltas.filter(v => !v.done && !v.vencida), hechas = vueltas.filter(v => v.done || v.vencida);
+    const sinMarcar = hechas.filter(v => !v.done).length, hechasOk = hechas.length - sinMarcar;
     const pintar = (verHechas) => {
       box.innerHTML = `<div class="rc-sechd">Tu día</div>`
         + (pendientes.length ? pendientes.map(tarjeta).join('')
-          : `<div class="rc-empty rc-in d2" style="margin-bottom:8px"><span class="rc-empty-ic">${avIcon('check', 20, 1.8)}</span><b>Terminaste tus vueltas de hoy</b></div>`)
+          : `<div class="rc-empty rc-in d2" style="margin-bottom:8px"><span class="rc-empty-ic">${avIcon('check', 20, 1.8)}</span><b>${sinMarcar ? 'No te quedan vueltas por delante' : 'Terminaste tus vueltas de hoy'}</b></div>`)
         + (hechas.length ? `
         <button type="button" class="rc-link-row rc-in d2" data-vuelta-hechas aria-expanded="${verHechas}" style="margin:2px 0 ${verHechas ? '10px' : '0'}">
           <span class="rc-link-ic" style="background:var(--r-a2h-soft);color:var(--r-a2h)">${avIcon('check', 15, 1.8)}</span>
-          <span class="t"><b>${hechas.length} ${hechas.length === 1 ? 'vuelta hecha' : 'vueltas hechas'}</b><span>${verHechas ? 'Toca para ocultarlas' : 'Toca para verlas'}</span></span>
+          <span class="t"><b>${[hechasOk ? `${hechasOk} ${hechasOk === 1 ? 'vuelta hecha' : 'vueltas hechas'}` : '', sinMarcar ? `${sinMarcar} sin marcar` : ''].filter(Boolean).join(' · ')}</b><span>${verHechas ? 'Toca para ocultarlas' : (sinMarcar ? 'Toca para verlas y marcar las que faltan' : 'Toca para verlas')}</span></span>
           <span class="rc-link-chev" style="transform:rotate(${verHechas ? -90 : 90}deg)">${avIcon('chevronRight', 16)}</span>
         </button>${verHechas ? hechas.map(tarjeta).join('') : ''}` : '');
       box.querySelector('[data-vuelta-hechas]')?.addEventListener('click', () => pintar(!verHechas));

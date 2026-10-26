@@ -218,8 +218,8 @@
       <div class="tp-row${editando ? ' open' : ''}${a.active && !a.deleted ? '' : ' sus'}">
         <div class="tp-main">
           <div class="tp-who">
-            <b>${esc(a.name)}${a.deleted ? ' <span class="tp-tag tp-sus">Eliminada</span>' : a.active ? '' : ' <span class="tp-tag tp-sus">Suspendida</span>'}</b>
-            <span>${esc(a.email)}${a.phone ? ' · ' + esc(a.phone) : ' · <i>sin teléfono</i>'}</span>
+            <b>${esc(a.name)}${a.external ? ' <span class="tp-tag tp-ext" title="Lo cargó Coordinación: no entra a la app, no le llegan avisos y no se le cobra">Externo · sin app</span>' : ''}${a.deleted ? ' <span class="tp-tag tp-sus">Eliminada</span>' : a.active ? '' : ' <span class="tp-tag tp-sus">Suspendida</span>'}</b>
+            <span>${a.external ? '<i>sin correo (no usa la app)</i>' : esc(a.email)}${a.phone ? ' · ' + esc(a.phone) : ' · <i>sin teléfono</i>'}</span>
           </div>
           <div class="tp-air">${a.groundStaff ? '<span class="tp-tag tp-tierra">Personal de tierra</span>' : a.airline ? esc(a.airline) : '<i>sin aerolínea</i>'}</div>
           <div class="tp-punto">

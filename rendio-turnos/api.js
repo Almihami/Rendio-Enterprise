@@ -118,7 +118,9 @@
       + 'res2:residences!auxiliar_profiles_residence_id_2_fkey(id, name, sector), '
       + 'profiles(id, full_name, email, phone, is_active, deleted_at, suspended_reason, created_at)';
     // 0106: personal de tierra. Sin la migración, lo mismo sin esa columna.
-    let { data, error } = await sb.from('auxiliar_profiles').select(COLS.replace('airline_id, ', 'airline_id, ground_staff, '));
+    // 0139: externo sin app, encima de todo.
+    let { data, error } = await sb.from('auxiliar_profiles').select(COLS.replace('airline_id, ', 'airline_id, ground_staff, external, '));
+    if (error) ({ data, error } = await sb.from('auxiliar_profiles').select(COLS.replace('airline_id, ', 'airline_id, ground_staff, ')));
     if (error) ({ data, error } = await sb.from('auxiliar_profiles').select(COLS));
     // Sin 0081 no hay motivo de suspensión: se pide lo mismo sin esa columna.
     if (error) ({ data, error } = await sb.from('auxiliar_profiles')
@@ -145,6 +147,7 @@
         airlineId: a.airline_id || null,
         airline: a.airlines?.name || '',
         groundStaff: a.ground_staff === true,
+        external: a.external === true,   // 0139: sin app (lo cargó el jefe)
         res1: a.residences ? { name: a.residences.name, sector: a.residences.sector } : null,
         unit1: a.residence_unit || '',
         res2: a.res2 ? { name: a.res2.name, sector: a.res2.sector } : null,
@@ -1123,6 +1126,15 @@
       ({ error } = await upd({ crew_request_cutoff_min: s.crew_request_cutoff_min }));
       if (error) throw error;
     }
+    // 0137: vueltas terminadas / sin marcar · 0140: entrega de turno. Aparte, y
+    // solo lo que Calibración mande (sus campos se apagan sin la columna).
+    const fin = {};
+    ['route_done_hide_min', 'route_unmarked_min'].forEach((k) => { if (s[k] != null) fin[k] = s[k]; });
+    if (Object.keys(fin).length) { ({ error } = await upd(fin)); if (error) throw error; }
+    const ent = {};
+    ['handover_lead_min', 'handover_late_min'].forEach((k) => { if (s[k] != null) ent[k] = s[k]; });
+    if (Object.keys(ent).length) { ({ error } = await upd(ent)); if (error) throw error; }
+    if (Object.keys(fin).length || Object.keys(ent).length) _reglasFin = null;
   }
 
   // 0107: hasta qué hora (min desde medianoche) las vueltas son del turno PM del
@@ -3662,6 +3674,9 @@
     const rows = active.filter(ra => _opDay(ra.planned_start_at, corte) === day0);
     // 0133: los pasajeros sin cuenta (Kriss): paradas sin reserva, con nombre y lugar.
     const guests = await _guestStops(rows.map(ra => ra.id));
+    // 0137: cuándo una vuelta que nunca arrancó se da por pasada (sin marcar).
+    const reglas = await getRouteFinishRules();
+    const nowMs = Date.now();
     return rows.map((ra, i) => {
       const type = ra.direction === 'airport_to_home' ? 'lle' : 'sal';
       const stops = (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order).map(s => {
@@ -3707,7 +3722,15 @@
       // con ella); opDay = el día de turno al que pertenece. Si difieren, es la
       // madrugada después de medianoche.
       const ex = extra[ra.id] || {};
-      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at, done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: _bogDay(ra.planned_start_at), opDay: day0,
+      // VENCIDA (pendientes de los jefes, 26-oct): nadie la inició y ya pasó su fin
+      // esperado + route_unmarked_min. Antes se quedaba de «Tu siguiente vuelta» todo
+      // el día (la de las 8:35 de Julián) y tapaba la que de verdad seguía. Sale de
+      // la lista con las hechas; se puede abrir para marcarla. Una que ya arrancó no
+      // se esconde nunca: a esa le llega el recordatorio (0137).
+      const arranco = stops.some(x => x.stopStatus && x.stopStatus !== 'pending');
+      const res = !todasResueltas && !arranco ? _opResultado(ra, null, nowMs, reglas) : null;
+      const vencida = !!(res && res.estado === 'sinmarcar');
+      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at, done: ra.status === 'completed' || todasResueltas, vencida, legs, assignmentId: ra.id, day: _bogDay(ra.planned_start_at), opDay: day0,
         pool: ex.pool === true, deadline: ex.deadline_at ? rtHHMM(ex.deadline_at) : '', nota: ex.manual_note || '' };
     });
   }
@@ -3827,6 +3850,7 @@
   //   'bad'       todas resueltas, con novedad             → rojo, degradada
   //   'sinmarcar' pasó su hora con paradas sin marcar      → gris: no sabemos si
   //               se hizo, y pintarla verde sería inventarlo
+  //   'delegada'  la hacía alguien de afuera y ya pasó su hora (nadie la marca)
   //   'curso'     ya tiene alguna parada atendida
   //   'falta'     todavía no arranca
   // Novedad = alguien no se presentó, una salida dejó al tripulante en el
@@ -3834,6 +3858,18 @@
   // vuelta (incidents de operación). Los avisos automáticos (reserva tardía,
   // tercer carro) y los cambios de vuelo NO cuentan: son pronósticos o
   // información, no algo que salió mal.
+  //
+  // CUÁNDO SALE DE LA LISTA (pendientes de los jefes, 26-oct-2026: «a los 10
+  // minutos desaparezca del listado tanto para administrativo como conductores»).
+  // `ocultaDesde` (ms) y `oculta`, con los minutos de Calibración (0137):
+  //   terminada (ok/bad)  → su última entrega + route_done_hide_min (10);
+  //   delegada            → su fin esperado + route_done_hide_min;
+  //   sin marcar          → su fin esperado + route_unmarked_min (30). Antes de eso
+  //                         sigue a la vista: puede ser una vuelta que va tarde.
+  // FIN ESPERADO (la misma cuenta que route_expected_end, 0137): salida = la
+  // presentación más tardía; llegada = la entrega estimada más tardía (lo que
+  // escribe Publicar) o la salida de JMC + 90 min; solo sin cuenta en una salida =
+  // la última recogida estimada + 40 min.
   // ════════════════════════════════════════════════════════════════════
   const OP_NOVEDAD_TXT = Object.freeze({
     cant_leave_on_time: 'no podía salir a tiempo', driver_late: 'el conductor iba tarde',
@@ -3841,8 +3877,27 @@
     aux_not_ready: 'el tripulante no estaba listo', wrong_address: 'dirección equivocada',
     vehicle_problem: 'problema con el carro', aux_emergency: 'emergencia del tripulante', other: 'reporte',
   });
-  // Cuánto después del fin esperado de la vuelta se da por «sin marcar».
-  const OP_SIN_MARCAR_MIN = 60;
+  // Los minutos de Calibración (0137, 0140). Sin la migración: los de siempre.
+  const REGLAS_FIN_DEF = Object.freeze({ hide: 10, unmarked: 30, handoverLead: 120, handoverLate: 15, enBase: false });
+  let _reglasFin = null, _reglasFinAt = 0;
+  async function getRouteFinishRules(fresh) {
+    if (!fresh && _reglasFin && Date.now() - _reglasFinAt < 60000) return _reglasFin;
+    let r = { ...REGLAS_FIN_DEF };
+    try {
+      const { data, error } = await sb.from('app_settings').select('route_done_hide_min, route_unmarked_min').eq('id', 'singleton').maybeSingle();
+      if (!error && data && data.route_done_hide_min != null) {
+        r = { ...r, hide: Number(data.route_done_hide_min), unmarked: Number(data.route_unmarked_min), enBase: true };
+      }
+      const h = await sb.from('app_settings').select('handover_lead_min, handover_late_min').eq('id', 'singleton').maybeSingle();
+      if (!h.error && h.data && h.data.handover_lead_min != null) {
+        r = { ...r, handoverLead: Number(h.data.handover_lead_min), handoverLate: Number(h.data.handover_late_min), handoverEnBase: true };
+      }
+    } catch (_) { /* sin 0137/0140: los de siempre */ }
+    _reglasFin = r; _reglasFinAt = Date.now();
+    return r;
+  }
+  // Para _opResultado, que es síncrona: lo último leído (o los de siempre).
+  const reglasFinYa = () => _reglasFin || REGLAS_FIN_DEF;
   // Una llegada sale de JMC a su hora y entrega en menos de esto.
   const OP_LLEGADA_DURA_MIN = 90;
 
@@ -3870,11 +3925,39 @@
     return out;
   }
 
+  // El fin esperado de una vuelta en ms (ver arriba), o null si no tiene paradas vivas.
+  function _opFinEsperado(ra, vivas) {
+    if (!vivas.length) return null;
+    const start = Date.parse(ra.planned_start_at);
+    const dues = vivas.map((s) => Date.parse(s.reservations?.required_arrival_at || '')).filter(isFinite);
+    const etas = vivas.map((s) => Date.parse(s.estimated_arrival_at || '')).filter(isFinite);
+    if (ra.direction !== 'airport_to_home') {
+      if (dues.length) return Math.max(...dues);
+      if (etas.length) return Math.max(...etas) + 40 * 60000;
+      return isFinite(start) ? start + 60 * 60000 : null;
+    }
+    if (etas.length) return Math.max(...etas);
+    return isFinite(start) ? start + OP_LLEGADA_DURA_MIN * 60000 : null;
+  }
+
   // ra: la fila de route_assignments con sus route_stops (y reservations).
-  // Devuelve { estado, motivos[], reportes[], faltan, finAt }.
-  function _opResultado(ra, nov, nowMs) {
+  // Devuelve { estado, motivos[], reportes[], faltan, finAt, finEsperado, ocultaDesde, oculta }.
+  function _opResultado(ra, nov, nowMs, reglas) {
+    const R = reglas || reglasFinYa();
+    const r = _opResultadoBase(ra, nov, nowMs, R);
+    const fe = r.finEsperado;
+    const desde = (r.estado === 'ok' || r.estado === 'bad') ? (Date.parse(r.finAt || '') || fe || nowMs) + R.hide * 60000
+      : r.estado === 'delegada' ? fe + R.hide * 60000
+      : r.estado === 'sinmarcar' ? fe + R.unmarked * 60000
+      : null;
+    r.ocultaDesde = desde;
+    r.oculta = desde != null && nowMs >= desde;
+    return r;
+  }
+  function _opResultadoBase(ra, nov, nowMs, R) {
     const type = ra.direction === 'airport_to_home' ? 'lle' : 'sal';
-    const vivas = (ra.route_stops || []).filter((s) => !(s.reservations && s.reservations.cancelled_at));
+    // 0133: la parada de un sin cuenta no tiene reserva y también cuenta.
+    const vivas = (ra.route_stops || []).filter((s) => !(s.reservations && s.reservations.cancelled_at) && (s.reservations || !s.reservation_id));
     const resuelta = (s) => s.status === 'delivered' || s.status === 'no_show';
     const motivos = [];
     const noShow = vivas.filter((s) => s.status === 'no_show').length;
@@ -3893,19 +3976,24 @@
     [...new Set(reportes.map((n) => n.txt))].forEach((t) => motivos.push(t));
 
     const faltan = vivas.filter((s) => !resuelta(s)).length;
-    if (!vivas.length) return { estado: 'vacia', motivos, reportes, faltan: 0, finAt: null };
+    if (!vivas.length) return { estado: 'vacia', motivos, reportes, faltan: 0, finAt: null, finEsperado: null };
+    const finEsperado = _opFinEsperado(ra, vivas);
     if (!faltan) {
       const fin = vivas.map((s) => s.actual_dropoff_at || s.actual_arrival_at).filter(Boolean).sort().pop() || null;
-      return { estado: motivos.length ? 'bad' : 'ok', motivos, reportes, faltan: 0, finAt: fin };
+      return { estado: motivos.length ? 'bad' : 'ok', motivos, reportes, faltan: 0, finAt: fin, finEsperado };
     }
-    // Fin esperado: en una salida, la hora más tardía que pidió alguien de la
-    // vuelta; en una llegada, la salida de JMC más lo que tarda en entregar.
-    const start = Date.parse(ra.planned_start_at);
-    const dues = vivas.map((s) => Date.parse(s.reservations?.required_arrival_at || '')).filter(isFinite);
-    const finEsperado = type === 'sal' && dues.length ? Math.max(...dues) : start + OP_LLEGADA_DURA_MIN * 60000;
-    if (nowMs > finEsperado + OP_SIN_MARCAR_MIN * 60000) return { estado: 'sinmarcar', motivos, reportes, faltan, finAt: null };
     const empezada = vivas.some((s) => s.status && s.status !== 'pending');
-    return { estado: empezada ? 'curso' : 'falta', motivos, reportes, faltan, finAt: null };
+    // 0126: la delegada la hace alguien de afuera y nadie la marca. Pasada su hora
+    // se da por hecha afuera (sin pintarla verde: no sabemos cómo salió).
+    if (ra.delegated_at && !empezada && finEsperado != null && nowMs > finEsperado) {
+      return { estado: 'delegada', motivos, reportes, faltan, finAt: null, finEsperado };
+    }
+    // Pasó su fin esperado + route_unmarked_min con paradas sin marcar (antes era
+    // 60 fijo y en una llegada contaba 90 min desde JMC: «en curso» 2 h y media).
+    if (finEsperado != null && nowMs > finEsperado + R.unmarked * 60000) {
+      return { estado: 'sinmarcar', motivos, reportes, faltan, finAt: null, finEsperado };
+    }
+    return { estado: empezada ? 'curso' : 'falta', motivos, reportes, faltan, finAt: null, finEsperado };
   }
 
   // Operación en vivo para el admin: los CARROS del día operativo más próximo,
@@ -3925,6 +4013,7 @@
   // creerle ciegamente a un punto viejo.
   async function listLiveOperation() {
     const corte = await _corteMadrugada();
+    const reglas = await getRouteFinishRules();   // 0137: cuándo una vuelta se da por pasada
     const nowMs = Date.now();
     const today = _opDay(new Date(nowMs).toISOString(), corte);
     // Solo desde el inicio del día de turno: como ninguna vuelta pasa a
@@ -3936,7 +4025,7 @@
     // arriba: sin ellas se cae al select de siempre.
     const sel = (extra) => sb
       .from('route_assignments')
-      .select(`id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profiles(full_name, phone)), route_stops(stop_order, status, reservation_id, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, cancelled_at${extra}, residences(name), auxiliar_profiles(profiles(full_name)), flights(flight_number)))`)
+      .select(`id, direction, planned_start_at, status, driver_profile_id, vehicle_id, vehicles(license_plate, internal_code, capacity), driver_profiles(profile_id, profiles(full_name, phone)), route_stops(stop_order, status, reservation_id, estimated_arrival_at, actual_arrival_at, actual_pickup_at, actual_dropoff_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, cancelled_at${extra}, residences(name), auxiliar_profiles(profiles(full_name)), flights(flight_number)))`)
       .in('status', ['planned', 'in_progress', 'completed'])
       .gte('planned_start_at', desde)
       .order('planned_start_at');
@@ -4011,12 +4100,12 @@
       const plate = v.license_plate || v.internal_code || '';
 
       const vueltas = ras.map(ra => {
-        const r = _opResultado(ra, nov, nowMs);
+        const r = _opResultado(ra, nov, nowMs, reglas);
         const stops = stopsOf(ra);
         const type = ra.direction === 'airport_to_home' ? 'lle' : 'sal';
         return {
           id: ra.id, ra, type, stops, hora: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at,
-          estado: r.estado, motivos: r.motivos, reportes: r.reportes, faltan: r.faltan,
+          estado: r.estado, motivos: r.motivos, reportes: r.reportes, faltan: r.faltan, oculta: r.oculta,
           fin: r.finAt ? rtHHMM(r.finAt) : '',
           driverProfileId: ra.driver_profile_id,
           conductor: ra.driver_profiles?.profiles?.full_name || 'Sin conductor',
@@ -4122,6 +4211,7 @@
         driver: driverName,
         driverPhone: ref.driver_profiles?.profiles?.phone || '',
         driverProfileId: ref.driver_profile_id,
+        driverUid: ref.driver_profiles?.profile_id || null,   // 0140: su perfil (entrega de turno)
         turno: turnoEstado,
         type,
         cap: v.capacity || 4,
@@ -4239,6 +4329,7 @@
     // Cómo terminó cada vuelta (ver _opResultado): la base nunca la cierra, así
     // que Asignación la mostraba «en curso» después de entregar al último.
     const nov = await _opNovedades(new Date(Date.parse(d0) - 6 * 3600000).toISOString());
+    const reglas = await getRouteFinishRules();   // 0137
     const nowMs = Date.now();
     // Última posición conocida de cada conductor: si la vuelta ya arrancó, el
     // punto de partida real es donde está el carro, no de donde salió.
@@ -4277,13 +4368,15 @@
       const pend = vivos.filter(s => !atendida(s)).map(map);
       const hechas = vivos.filter(atendida).map(map);
       const pos = posOf[ra.driver_profile_id];
-      const res = _opResultado(ra, nov, nowMs);
+      const res = _opResultado(ra, nov, nowMs, reglas);
       return {
         id: ra.id,
         type: ra.direction === 'airport_to_home' ? 'lle' : 'sal',
         status: ra.status,
         // 'ok' | 'bad' | 'sinmarcar' | 'curso' | 'falta' | 'vacia' + por qué.
-        fin: { estado: res.estado, motivos: res.motivos, faltan: res.faltan, at: res.finAt ? rtHHMM(res.finAt) : '' },
+        // 0137: oculta/ocultaDesde = cuándo baja de la lista; esperado = su fin esperado.
+        fin: { estado: res.estado, motivos: res.motivos, faltan: res.faltan, at: res.finAt ? rtHHMM(res.finAt) : '',
+          finAt: res.finAt || null, esperado: res.finEsperado || null, ocultaDesde: res.ocultaDesde || null, oculta: !!res.oculta },
         startAt: ra.planned_start_at,
         vehicleId: ra.vehicle_id,
         planCar: ra.plan_car || null,
@@ -4367,6 +4460,75 @@
     if (error) throw error;
     return data;
   }
+  // ---------------------------------------------------------------------------
+  // 0139 · Externos sin app y pedidos que hace el jefe (26-oct-2026)
+  // ---------------------------------------------------------------------------
+  const _falta = (error, fn) => error && (error.code === '42883' || error.code === 'PGRST202' || new RegExp(fn).test(error.message || ''));
+  // El jefe crea a un externo (sin app). Devuelve { auxiliar_profile_id, profile_id, name, existed }.
+  async function createExternal(f) {
+    const { data, error } = await sb.rpc('admin_create_external', {
+      p_full_name: f.name, p_phone: f.phone || null, p_residence_id: f.residenceId || null, p_unit: f.unit || null,
+    });
+    if (error) { if (_falta(error, 'admin_create_external')) throw new Error('Para agregar externos falta la actualización 0139 de la base.'); throw error; }
+    _auxExternosCache = null;
+    return data;
+  }
+  // El jefe pide un traslado a nombre de un tripulante (con app o sin ella).
+  // type 'sal'|'lle'; whenIso = presentación en JMC (salida) o aterrizaje (llegada).
+  async function adminCreateReservation(f) {
+    const { data, error } = await sb.rpc('admin_create_reservation', {
+      p_aux: f.auxId, p_type: f.type, p_when: f.whenIso, p_flight: f.flight || null, p_note: f.note || null,
+    });
+    if (error) { if (_falta(error, 'admin_create_reservation')) throw new Error('Para pedir a nombre de otro falta la actualización 0139 de la base.'); throw error; }
+    return data;
+  }
+  // Quiénes son externos sin app: { aux: Set(auxiliar_profiles.id), profiles: Set(profiles.id) }.
+  // Sin 0139: ninguno.
+  let _auxExternosCache = null, _auxExternosAt = 0;
+  async function listExternalAuxIds() {
+    if (_auxExternosCache && Date.now() - _auxExternosAt < 60000) return _auxExternosCache;
+    const out = { aux: new Set(), profiles: new Set() };
+    try {
+      const { data, error } = await sb.from('auxiliar_profiles').select('id, profile_id').eq('external', true);
+      if (!error) (data || []).forEach((x) => { out.aux.add(x.id); out.profiles.add(x.profile_id); });
+    } catch (_) { /* sin 0139 */ }
+    _auxExternosCache = out; _auxExternosAt = Date.now();
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 0140 · Entrega de turno (26-oct-2026)
+  // ---------------------------------------------------------------------------
+  // Jefe: las entregas de un día (automáticas + las que cambió), con su estado.
+  // null = la base no tiene 0140 (la pantalla no muestra la tarjeta).
+  async function listHandovers(day) {
+    const { data, error } = await sb.rpc('admin_handovers', { p_day: day });
+    if (error) { if (_falta(error, 'admin_handovers')) return null; throw error; }
+    return Array.isArray(data) ? data : [];
+  }
+  // Jefe: a quién entrega `fromProfile` al final de la franja ('am'|'pm') de `day`.
+  // to = profile id; text = «En casa de Julián»; auto = volver a lo automático.
+  async function setHandover(day, band, fromProfile, o) {
+    const x = o || {};
+    const { data, error } = await sb.rpc('admin_set_handover', {
+      p_day: day, p_band: band, p_from: fromProfile, p_to: x.to || null, p_text: x.text || null, p_auto: !!x.auto,
+    });
+    if (error) { if (_falta(error, 'admin_set_handover')) throw new Error('Para la entrega de turno falta la actualización 0140 de la base.'); throw error; }
+    return data;
+  }
+  // Conductor: las entregas que le tocan ahora (la tarjeta de Inicio). [] sin 0140.
+  async function driverMyHandovers() {
+    const { data, error } = await sb.rpc('driver_my_handovers');
+    if (error) { if (_falta(error, 'driver_my_handovers')) return []; throw error; }
+    return Array.isArray(data) ? data : [];
+  }
+  // Conductor: «Entregado» (undo = «Deshacer»).
+  async function driverHandoverDelivered(day, band, undo) {
+    const { data, error } = await sb.rpc('driver_handover_delivered', { p_day: day, p_band: band, p_undo: !!undo });
+    if (error) throw error;
+    return data;
+  }
+
   // 0126: el jefe delega (o devuelve) una vuelta ya publicada. Avisa al
   // tripulante y, si un conductor la había tomado, a ese conductor.
   async function setRouteDelegated(routeId, on) {
@@ -4456,6 +4618,9 @@
   }
 
   window.Api = {
+    getRouteFinishRules, _opResultado, _opFinEsperado,   // 0137 (las dos últimas, para las pruebas)
+    createExternal, adminCreateReservation, listExternalAuxIds,   // 0139
+    listHandovers, setHandover, driverMyHandovers, driverHandoverDelivered,   // 0140
     adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,

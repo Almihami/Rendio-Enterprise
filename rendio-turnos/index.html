@@ -372,6 +372,9 @@
           <!-- Tarjeta de turno (iniciar / continuar / en curso) -->
           <div id="driver-shift-container"></div>
 
+          <!-- 0140: entrega de turno (a quién le entrega el carro), desde 2 h antes -->
+          <div id="driver-home-entrega"></div>
+
           <!-- Tu día: la vuelta asignada, si hay -->
           <div id="driver-home-ruta"></div>
 
@@ -1009,6 +1012,24 @@
                 </div>
               </details>
 
+              <!-- 0137 + 0140: cuándo baja de la lista una vuelta y la entrega de turno. -->
+              <details class="set-sec" data-guarda="btn" data-secval="setting-done-hide,setting-unmarked,setting-handover-lead,setting-handover-late">
+                <summary><span class="set-sec-dot"></span><span class="set-sec-t">Vueltas terminadas y entrega de turno</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
+                <div class="set-sec-body">
+                <p class="set-hint" style="margin:0 0 10px 2px">Pedido de los jefes: «que una vez finalice el servicio, a los 10 minutos desaparezca del listado». Vale para Asignación, la ruta de Julián y la app del conductor.</p>
+              <div class="set-row2" style="margin-top:0">
+                <div class="set-field"><label>Una vuelta terminada baja de la lista a los (min)</label><input id="setting-done-hide" class="set-input" type="number" min="0" max="120" /><div class="set-hint">Después de su última entrega (la delegada, después de su hora). Queda en «✓ vueltas terminadas», al final. Default 10.</div></div>
+                <div class="set-field"><label>Sin marcar: se da por pasada a los (min)</label><input id="setting-unmarked" class="set-input" type="number" min="5" max="240" /><div class="set-hint">Después de su hora de fin (presentación en una salida, última entrega en una llegada), si le faltan paradas por marcar. Antes de eso sigue a la vista: puede ir tarde. Al conductor le llega «¿Ya terminaste la vuelta?». Default 30.</div></div>
+              </div>
+              <div class="set-hint" id="setting-finish-off" hidden>Falta la actualización 0137 de la base: se usan 10 y 30 min.</div>
+              <div class="set-row2" style="margin-top:14px">
+                <div class="set-field"><label>La tarjeta de entrega sale antes (min)</label><input id="setting-handover-lead" class="set-input" type="number" min="15" max="360" /><div class="set-hint">Antes de la entrega de turno (2:00 p. m. y 2:00 a. m.): con 120 sale a las 12. Al conductor le llega «Hoy entregas el carro a…».</div></div>
+                <div class="set-field"><label>Avisar a los jefes si no marca «Entregado» (min)</label><input id="setting-handover-late" class="set-input" type="number" min="5" max="120" /><div class="set-hint">Después de la hora de entrega. Default 15.</div></div>
+              </div>
+              <div class="set-hint" id="setting-handover-off" hidden>Falta la actualización 0140 de la base: la entrega de turno todavía no existe.</div>
+                </div>
+              </details>
+
               <details class="set-sec" data-guarda="btn" data-secval="setting-holiday-shift">
                 <summary><span class="set-sec-dot"></span><span class="set-sec-t">Domingos y festivos</span><span class="set-sec-val"></span><svg class="icon details-chevron"><use href="#i-chev"/></svg></summary>
                 <div class="set-sec-body">
@@ -1267,11 +1288,16 @@
           <div class="sh-phead">
             <div>
               <h1>Reservas <span class="sh-ct" id="rv-count">0</span></h1>
-              <p>Traslados pedidos por los tripulantes.</p>
+              <p>Traslados pedidos por los tripulantes (y los que pide Coordinación a nombre de alguien).</p>
               <details class="rd-why"><summary aria-expanded="false">¿Qué se puede hacer acá?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Arriba separas las <b>salidas</b> (↑ casa → JMC) de las <b>llegadas</b> (↓ JMC → casa). Aquí ves el detalle uno por uno, quién confirmó su recogida, quién pidió tarde y las calificaciones. Si un vuelo se cae, <b>cancela el traslado</b>: sale de la ruta del conductor y les avisamos a los dos.</div></details>
             </div>
-            <button class="set-btn ghost" id="rv-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+            <div class="rv-hacts">
+              <!-- 0139: pedir a nombre de un tripulante o de un externo sin app (admin-pedido-externo.js). -->
+              <button class="set-btn" id="rv-new" type="button">+ Nuevo pedido</button>
+              <button class="set-btn ghost" id="rv-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
+            </div>
           </div>
+          <div id="rv-new-box" hidden></div>
           <!-- Filtros (14-oct-2026): estado y día en UNA franja y con el mismo
                «elegido» (antes: dos filas de pastillas, una negra y otra naranja).
                25-oct-2026: primero salidas/llegadas, que es lo que el jefe separa
@@ -1382,6 +1408,8 @@
                 <section class="rv2-card" id="rv2-avisos" aria-label="Avisos"></section>
                 <section class="rv2-card" id="rv2-drivers" aria-label="Conductores"></section>
               </div>
+              <!-- 0140: a quién le entrega el carro cada conductor (admin-entregas.js). -->
+              <section class="rv2-card rv2-entregas" id="rv2-entregas" aria-label="Entregas de turno" hidden></section>
               <div class="rv2-list" id="rv2-list"></div>
             </div>
             <aside class="rv2-detail" id="rv2-detail" aria-label="Detalle de la vuelta"></aside>
@@ -1670,13 +1698,16 @@
   <script src="driver-perfil.js"></script>
   <script src="driver-celular.js"></script>
   <script src="driver-disponibilidad.js"></script>
+  <script src="driver-entrega.js"></script>
   <script src="driver-tabs.js"></script>
   <!-- Rutas de auxiliares (feat/rutas-modular): consola/sidebar + asignación + operación -->
   <script src="admin-consola.js"></script>
   <script src="admin-rutas.js"></script>
   <script src="admin-rutas-v2.js"></script>
   <script src="admin-ruta-julian.js"></script>
+  <script src="admin-entregas.js"></script>
   <script src="admin-reservas.js"></script>
+  <script src="admin-pedido-externo.js"></script>
   <script src="admin-tripulantes.js"></script>
   <script src="admin-privados.js"></script>
   <script src="admin-vuelos.js"></script>

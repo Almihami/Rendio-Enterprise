@@ -96,6 +96,9 @@
       const first = opState.source !== 'live';
       opState.source = 'live';
       opState.day = data.day;
+      // 0140: las entregas de turno del día (cada 60 s como mucho); al llegar, se repinta.
+      { const E = window.RendioEntregas, c0 = E && data.day ? E._st.porDia[data.day] : null;
+        if (E && data.day && (!c0 || Date.now() - c0.at >= 60000)) E.leer(data.day).then(() => { try { renderOperCars(); } catch (_) { /* */ } }).catch(() => {}); }
       opState.clockT = opNowSec();
       const prevById = {};
       opState.cars.forEach(c => { prevById[c.id] = c; });
@@ -409,9 +412,21 @@
       </div>
       <div class="op-cc-now"><svg class="icon"><use href="#i-pin"/></svg><span>${opEsc(c.ahora || '')}</span>${eta}</div>
       ${tira ? `<div class="op-cc-strip"><span class="op-vds">${tira}</span><span class="op-cc-cuenta">${cuenta}</span></div>` : ''}
+      ${opEntregaHTML(c)}
       ${fresh}
       ${open ? opCarDetail(c) : ''}
     </div>`;
+  }
+
+  // 0140: la entrega de turno del conductor de este carro (si ya se leyó; la lee
+  // loadRealOps). «Entrega 2:00 p. m. → Daniel · ✓ entregado 2:05».
+  function opEntregaHTML(c) {
+    const E = window.RendioEntregas;
+    const r = E && c.driverUid ? E.deConductor(c.driverUid) : null;
+    if (!r) return '';
+    const e = E.estado(r);
+    const a = r.to ? String(r.to.name || '').split(/\s+/).slice(0, 2).join(' ') : (r.to_text || 'sin definir');
+    return `<div class="op-cc-ent ${e.k}"><span>🔑 Entrega ${opEsc(E.hm12(r.due_at))} → ${opEsc(a)}</span><small>${opEsc(e.t)}</small></div>`;
   }
 
   // Una parada en palabras: dónde y qué pasó (sin «a/o»: es un sustantivo).
