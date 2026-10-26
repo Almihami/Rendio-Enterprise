@@ -18,7 +18,10 @@
 //   { code:'AV9563', day:'2026-10-11', direction:'airport_to_home', type:'lle',
 //     status:'scheduled'|'delayed'|'in_air'|'landed'|'cancelled'|'diverted'|'unknown',
 //     schedAt, estimatedAt, actualAt (ISO o null), delayMin (número o null),
-//     terminal, gate, source:'aerodatabox'|'mock'|'manual', fetchedAt }
+//     terminal, gate, source:'aerodatabox'|'mock'|'manual', fetchedAt,
+//     departedAt, originIcao, live }   ← de 0118 (FR24); null sin la migración.
+//   live = la última posición que dio FR24 {lat, lon, alt (pies), gspeed (nudos),
+//   track, timestamp, type} o null. Es lo que usa RendioVuelos.posicion.
 //   schedAt es la hora del lado MDE: aterrizaje en una llegada, despegue en una
 //   salida. day es el día de Bogotá de la RESERVA (required_arrival_at): así
 //   casa con la reserva, no con el vuelo.
@@ -29,6 +32,9 @@
   'use strict';
 
   const COLS = 'flight_code, flight_date, direction, sched_at, estimated_at, actual_at, status, delay_min, terminal, gate, source, fetched_at';
+  // 0118: de dónde viene, cuándo despegó y la última posición de FR24 (solo ese
+  // pedazo de raw, no todo lo que devolvió el proveedor).
+  const COLS_FR24 = COLS + ', departed_at, origin_icao, vuelo:raw->vuelo';
 
   const normCode = (c) => String(c || '').replace(/[\s-]/g, '').toUpperCase();
   const normDir = (d) => (d === 'lle' || d === 'airport_to_home') ? 'airport_to_home'
@@ -51,7 +57,14 @@
       gate: r.gate || null,
       source: r.source || null,
       fetchedAt: r.fetched_at || null,
+      departedAt: r.departed_at || null,
+      originIcao: r.origin_icao || (r.vuelo && r.vuelo.orig_icao) || null,
+      live: liveOf(r.vuelo),
     };
+  }
+  function liveOf(v) {
+    if (!v || num(v.lat) == null || num(v.lon) == null) return null;
+    return { lat: num(v.lat), lon: num(v.lon), alt: num(v.alt), gspeed: num(v.gspeed), track: num(v.track), timestamp: v.timestamp || null, type: v.type || null };
   }
 
   async function flightApiEnabled() {
@@ -69,7 +82,9 @@
     const cli = window.sb;
     if (!days.length || !cli || typeof cli.from !== 'function') return [];
     try {
-      const { data, error } = await cli.from('flight_statuses').select(COLS).in('flight_date', [...new Set(days)]);
+      const q = (cols) => cli.from('flight_statuses').select(cols).in('flight_date', [...new Set(days)]);
+      let { data, error } = await q(COLS_FR24);
+      if (error) ({ data, error } = await q(COLS));   // sin 0118
       if (error || !Array.isArray(data)) return [];
       return data.map(mapRow).filter(Boolean);
     } catch (_) { return []; }

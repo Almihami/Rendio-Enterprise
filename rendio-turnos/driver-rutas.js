@@ -74,6 +74,8 @@
     nc: {},                    // rid → true  («No tiene el código» elegido)
     ask: {},                   // rid → 'nocode'|'notarrived'  (confirmación en la fila)
     report: null, busy: false, keySeq: 0,
+    flPoll: null,              // relee el estado de los vuelos cada 2 min con la ruta abierta
+    fl: null,                  // la hoja «Ver avión» abierta: { vid, map, plane, timer }
   };
   window.DriverRutas = { open: rtOpen, close: rtClose, background: rtBackground, deepLink: rtDeepLink };
 
@@ -192,19 +194,61 @@
     if (m > 0) return `Arranca en ${m} min`;
     return `Salía a las ${v.start}`;
   }
-  // Vuelo de la vuelta: uno solo si todos comparten el mismo. { code, st, tone } | null
+  // Vuelo de la vuelta: uno solo si todos comparten el mismo.
+  //   { code, st, tone, e, quienes, reqAt } | null
+  // e = el estado que guardó la base (Flightradar24), o null. Se busca con el día
+  // de la HORA PEDIDA del tripulante (reqDay = el flight_date con que se guarda),
+  // no con el de la vuelta: el mismo vuelo sale todos los días, y una llegada de
+  // las 23:50 que se recoge a las 00:10 no debe leer el vuelo de mañana.
+  // Hasta el 26-oct-2026 solo se veía el código: describir no estaba exportado.
+  const flCode = (c) => String(c || '').replace(/[\s-]/g, '').toUpperCase();
   function flightOf(v, leg) {
-    const codes = leg ? [leg.flight].filter(Boolean) : [...new Set(crew(v).map((l) => l.flight).filter(Boolean))];
+    const codes = leg ? [flCode(leg.flight)].filter(Boolean) : [...new Set(crew(v).map((l) => flCode(l.flight)).filter(Boolean))];
     if (codes.length !== 1) return null;
     const code = codes[0];
-    let st = '', tn = '';
+    const con = crew(v).filter((l) => flCode(l.flight) === code);
+    const ref = con.find((l) => l.reqDay) || {};
+    let st = '', tn = '', e = null;
     try {
       if (window.RendioVuelos && RendioVuelos.describir) {
-        const d = RendioVuelos.describir(RendioVuelos.para(code, v.day, v.type === 'llegada' ? 'lle' : 'sal'), Date.now());
-        if (d) { st = d.text.replace(/^[^·]*·\s*/, ''); tn = d.tone === 'ok' ? 'ok' : d.tone === 'warn' ? 'warn' : d.tone === 'bad' ? 'err' : ''; }
+        e = RendioVuelos.para(code, ref.reqDay || v.day, v.type === 'llegada' ? 'lle' : 'sal');
+        const d = RendioVuelos.describir(e, Date.now());
+        if (d) {
+          st = d.text.replace(/^[^·]*·\s*/, '');
+          // «a tiempo» sin hora no le dice al conductor cuándo aterriza.
+          if (/^a tiempo/.test(st) && (e.estimatedAt || e.schedAt)) st = st.replace(/^a tiempo/, 'a tiempo · ' + bogHM(e.estimatedAt || e.schedAt));
+          tn = d.tone === 'ok' ? 'ok' : d.tone === 'warn' ? 'warn' : d.tone === 'bad' ? 'err' : '';
+        }
       }
-    } catch (e) { /* sin dato de vuelo: solo el código */ }
-    return { code, st, tone: tn };
+    } catch (e2) { /* sin dato de vuelo: solo el código */ }
+    return { code, st, tone: tn, e: e || null, quienes: con.map((l) => l.name), reqAt: ref.reqAt || null };
+  }
+  // «Ver avión» solo en llegadas (Flightradar24 sigue las llegadas a JMC) y solo con
+  // el seguimiento encendido: apagado, la hoja diría siempre lo mismo.
+  const flSeguible = (v, f) => !!(f && v.type === 'llegada' && window.RendioVuelos && RendioVuelos.habilitada && RendioVuelos.habilitada() === true);
+  // Cómo va el vuelo, para el conductor: { t (título), s (detalle), tone }.
+  function flSituacion(f, now) {
+    const e = f && f.e, ref = f && f.reqAt ? Date.parse(f.reqAt) : null, H = 3600000;
+    const origen = e && window.RendioVuelos && RendioVuelos.aeropuerto ? RendioVuelos.aeropuerto(e.originIcao) : null;
+    const desde = origen ? origen.city : (e && e.originIcao) || '';
+    const d = e ? e.delayMin : null;
+    const atraso = d == null ? '' : d >= 5 ? `${d} min tarde` : d <= -5 ? `${-d} min antes` : 'a tiempo';
+    const atTone = d == null ? '' : d >= 30 ? 'err' : d >= 5 ? 'warn' : 'ok';
+    if (!e) {
+      if (ref && now < ref - 2 * H) return { t: 'Todavía no se sigue', s: `Flightradar24 lo empieza a seguir 2 horas antes: desde las ${bogHM(ref - 2 * H)}.`, tone: '' };
+      if (ref && now > ref + 3 * H) return { t: 'Sin datos del vuelo', s: 'Flightradar24 no lo vio.', tone: 'err' };
+      return { t: 'Esperando a Flightradar24', s: 'Todavía no hay datos de este vuelo.', tone: '' };
+    }
+    if (e.status === 'unknown') {
+      if (ref && now > ref + 3 * H) return { t: 'No apareció en Flightradar24', s: 'Pregúntale a coordinación por este vuelo.', tone: 'err' };
+      return { t: 'Flightradar24 todavía no lo ve', s: 'Puede que no haya despegado o que la aerolínea use otro número.', tone: '' };
+    }
+    if (e.status === 'cancelled') return { t: 'Vuelo cancelado', s: 'Pregúntale a coordinación qué hacer.', tone: 'err' };
+    if (e.status === 'diverted') return { t: 'Vuelo desviado', s: 'No va a llegar a JMC. Pregúntale a coordinación.', tone: 'err' };
+    if (e.status === 'landed') return { t: `Aterrizó ${bogHM(e.actualAt || e.estimatedAt || e.schedAt)}`, s: atraso ? `Llegó ${atraso}` : 'Ya está en JMC', tone: 'ok' };
+    if (e.status === 'in_air') return { t: 'En el aire', s: [e.estimatedAt ? `Llega ${bogHM(e.estimatedAt)}` : '', atraso].filter(Boolean).join(' · '), tone: atTone || 'ok' };
+    if (e.status === 'delayed') return { t: 'Retrasado', s: [desde ? `En tierra en ${desde}` : '', e.estimatedAt ? `llegaría ${bogHM(e.estimatedAt)}` : ''].filter(Boolean).join(' · '), tone: 'warn' };
+    return { t: desde ? `En tierra en ${desde}` : 'Todavía no despega', s: (e.estimatedAt || e.schedAt) ? `Previsto en JMC a las ${bogHM(e.estimatedAt || e.schedAt)}` : '', tone: '' };
   }
   function rtBuild(list) {
     return (list || []).map((v) => {
@@ -374,6 +418,9 @@
     if (RT.unreadPoll) clearInterval(RT.unreadPoll);
     RT.unreadPoll = setInterval(syncUnread, 15000);
     if (!RT.tick) RT.tick = setInterval(tick, 1000);
+    // Cómo vienen los vuelos (la base los consulta cada 15 min en la última hora).
+    if (RT.flPoll) clearInterval(RT.flPoll);
+    RT.flPoll = setInterval(loadFlights, 120000);
     const pedida = opts && opts.startAssignment ? RT.vueltas.find((v) => v.assignmentId === opts.startAssignment && !S(v).done) : null;
     if (pedida) start(pedida.id);
   }
@@ -384,6 +431,7 @@
     if (RT.unreadPoll) { clearInterval(RT.unreadPoll); RT.unreadPoll = null; }
     if (RT.chatPoll) { clearInterval(RT.chatPoll); RT.chatPoll = null; }
     if (RT.tick) { clearInterval(RT.tick); RT.tick = null; }
+    if (RT.flPoll) { clearInterval(RT.flPoll); RT.flPoll = null; }
     // La ubicación sigue si hay una vuelta en curso (cambio 1 de la entrega).
     if (!active()) gpsStop();
     const root = host();
@@ -531,6 +579,7 @@
         ? 'sale hacia la 1.ª casa<br>' + (end ? 'llega a JMC ' + esc(end) : 'destino JMC')
         : 'recoges en JMC<br>' + (end ? 'última casa ~' + esc(end) : 'reparte en las casas')) + '</span></div>'
       + '<div class="rt-hero-route"><span>' + v.from.toUpperCase() + '</span><i></i><span class="rt-hero-pl">' + ic(v.type === 'salida' ? 'Plane' : 'Home', 15) + '</span><i></i><span>' + v.to.toUpperCase() + '</span></div>'
+      + heroFlightHTML(v)
       + '<button type="button" class="rt-crew" data-rt="detail" data-v="' + esc(v.id) + '">'
       + '<span class="rt-stack">' + c.map((l) => '<span>' + esc(l.ini) + '</span>').join('') + '</span>'
       + '<span class="rt-crew-tx"><b>' + c.length + ' auxiliares</b><span>' + esc(s.started ? doing(v) : names(v)) + '</span></span>'
@@ -539,11 +588,22 @@
       + btn(s.started ? `Seguir ruta · parada ${s.idx + 1}` : `Iniciar ruta · ${v.start}`, { cls: 'tone', icon: s.started ? 'Nav' : 'Play', attrs: { 'data-rt': 'start', 'data-v': v.id } })
       + '</div>';
   }
+  // El vuelo en la tarjeta de Mi día (26-oct-2026): cómo viene y un toque para verlo.
+  function heroFlightHTML(v) {
+    const f = flightOf(v);
+    if (!flSeguible(v, f)) return '';
+    const x = flSituacion(f, Date.now());
+    return '<button type="button" class="rt-hero-fl" data-rt="flight" data-v="' + esc(v.id) + '" aria-label="' + esc(`Ver avión ${f.code}`) + '">'
+      + '<span class="rt-hero-fl-ic ' + x.tone + '">' + ic('Plane', 15) + '</span>'
+      + '<span class="rt-hero-fl-tx"><b>' + esc(`${f.code} · ${x.t}`) + '</b>' + (x.s ? '<span>' + esc(x.s) + '</span>' : '') + '</span>'
+      + '<em>Ver avión</em>' + ic('ChevronRight', 16) + '</button>';
+  }
   function vcardHTML(v, i) {
     const s = S(v), t = tone(v), c = crew(v), end = endOf(v);
+    const f = v.type === 'llegada' && !s.done ? flightOf(v) : null;
     return '<button type="button" class="rt-vc rx-in ' + (s.done ? 'done' : '') + '" style="--tone:' + t.c + ';--d:' + i + '" data-rt="' + (s.done ? 'done' : 'detail') + '" data-v="' + esc(v.id) + '">'
       + '<span class="rt-vc-t"><em>' + esc(`${v.n} · ${t.l}`) + '</em><b>' + esc(v.start) + '</b>' + (madrugadaDe(v) ? '<em title="' + esc(madrugadaDe(v)) + '">Madrugada</em>' : '') + '</span>'
-      + '<span class="rt-vc-m"><b>' + esc(`${v.from} → ${v.to}`) + '</b><span>' + esc(`${c.length} auxiliares · ${v.type === 'salida' ? (end ? `llega ${end}` : 'destino JMC') : 'recoge en JMC'}`) + '</span></span>'
+      + '<span class="rt-vc-m"><b>' + esc(`${v.from} → ${v.to}`) + '</b><span>' + esc(`${c.length} auxiliares · ${v.type === 'salida' ? (end ? `llega ${end}` : 'destino JMC') : (f && f.st ? `${f.code} ${f.st}` : 'recoge en JMC')}`) + '</span></span>'
       + (s.done ? chip('Check', 'ok', 'Hecha') : ic('ChevronRight', 18, 'color: var(--r-text-3);'))
       + '</button>';
   }
@@ -655,7 +715,8 @@
       + '<div class="rt-body">'
       + '<div class="rt-sum"><div class="rt-sum-t"><b>' + esc(v.start) + '</b>' + (end ? '<i></i><b class="lt">' + esc(end) + '</b>' : '') + '</div>'
       + '<div class="rt-chips">' + chip('Users', '', `${c.length} ${v.type === 'salida' ? 'auxiliares' : 'entregas'}`) + chip('MapPin', '', `${v.legs.length} paradas`) + chip('Clock', '', `~${minsOf(v)} min`)
-      + (f ? chip('Plane', f.tone, `${f.code}${f.st ? ' · ' + f.st : ''}`) : '') + '</div></div>'
+      + (f && !flSeguible(v, f) ? chip('Plane', f.tone, `${f.code}${f.st ? ' · ' + f.st : ''}`) : '') + '</div></div>'
+      + flightCardHTML(v, f)
       + '<button type="button" class="rt-mapcard" data-rt="bigmap" data-v="' + esc(v.id) + '" aria-label="Abrir mapa grande"><div class="rx-map rt-map rt-lf"></div><span class="rt-mapcard-x">' + ic('Expand', 15) + '</span></button>'
       + '<div class="rx-lbl">Paradas en orden</div>'
       + '<div class="rt-stops">' + v.legs.map((_, i) => stopRowHTML(v, i)).join('') + '</div>'
@@ -667,6 +728,18 @@
       + nowbarHTML(v.id)
       + '</div>';
   }
+  // El vuelo en el Detalle: de dónde viene, cómo va y «Ver avión».
+  function flightCardHTML(v, f) {
+    if (!flSeguible(v, f)) return '';
+    const x = flSituacion(f, Date.now());
+    const e = f.e, RV = window.RendioVuelos;
+    const origen = e && RV.aeropuerto ? RV.aeropuerto(e.originIcao) : null;
+    const top = [f.code, origen ? `desde ${origen.city}` : (RV.aerolinea ? RV.aerolinea(f.code) : '')].filter(Boolean).join(' · ');
+    return '<button type="button" class="rt-flcard" data-rt="flight" data-v="' + esc(v.id) + '">'
+      + '<span class="rt-flcard-ic ' + x.tone + '">' + ic('Plane', 20) + '</span>'
+      + '<span class="rt-flcard-tx"><em>' + esc(top) + '</em><b>' + esc(x.t) + '</b>' + (x.s ? '<span>' + esc(x.s) + '</span>' : '') + '</span>'
+      + '<span class="rt-flcard-go">Ver avión' + ic('ChevronRight', 16) + '</span></button>';
+  }
   // Repinta el Detalle sin tocar su mapa (Leaflet vive en .rt-mapcard).
   function paintDetail(el, v) {
     const scr = el.querySelector('.rt-scr'); if (!scr) return;
@@ -676,6 +749,11 @@
       const a = scr.querySelector(sel), b = fresh.querySelector(sel);
       if (a && b) a.replaceWith(b);
     });
+    // La tarjeta del vuelo aparece cuando llega el dato de que el seguimiento está encendido.
+    const fa = scr.querySelector('.rt-flcard'), fb = fresh.querySelector('.rt-flcard');
+    if (fa && fb) fa.replaceWith(fb);
+    else if (fa && !fb) fa.remove();
+    else if (!fa && fb) { const sum = scr.querySelector('.rt-sum'); if (sum) sum.after(fb); }
     const oldNb = scr.querySelector('.rt-nowbar'), newNb = fresh.querySelector('.rt-nowbar');
     if (oldNb && !newNb) oldNb.remove();
     else if (!oldNb && newNb) scr.appendChild(newNb);
@@ -770,8 +848,10 @@
   }
   function footHTML(v, leg, noShow) {
     const f = flightOf(v, leg && leg.k !== 'apt' ? leg : null);
+    const fIn = f ? ic('Plane', 15) + esc(f.code) + (f.st ? '<em class="' + f.tone + '">' + esc(f.st) + '</em>' : '') : '';
     return '<div class="rt-foot">'
-      + (f ? '<span class="rt-foot-f">' + ic('Plane', 15) + esc(f.code) + (f.st ? '<em class="' + f.tone + '">' + esc(f.st) + '</em>' : '') + '</span>' : '<span class="rt-foot-f"></span>')
+      + (f && flSeguible(v, f) ? '<button type="button" class="rt-foot-f rt-foot-fb" data-rt="flight" data-v="' + esc(v.id) + '" aria-label="' + esc(`Ver avión ${f.code}`) + '">' + fIn + '</button>'
+        : '<span class="rt-foot-f">' + fIn + '</span>')
       + '<span class="rt-foot-r">'
       + (noShow ? '<button type="button" class="rt-link err" data-rt="noshow" data-v="' + esc(v.id) + '"' + (noShow.left > 0 ? ' disabled' : '') + '>' + (noShow.left > 0 ? ic('Lock', 13) + esc(`No se presentó · ${fmtSec(noShow.left)}`) : 'No se presentó') + '</button>' : '')
       + '<button type="button" class="rt-link" data-rt="report" data-v="' + esc(v.id) + '">Reportar novedad</button>'
@@ -1213,6 +1293,7 @@
     if (RT.sheet && RT.sheet.kind === kind) RT.sheet = null;
     if (kind === 'chat') { RT.chat = null; RT.chatMsgs = []; if (RT.chatPoll) { clearInterval(RT.chatPoll); RT.chatPoll = null; } refreshVisible(); }
     if (kind === 'big') mapDrop('big');
+    if (kind === 'flight') flightGone();
     if (kind === 'report') RT.report = null;
   }
   function openGpsConfirm(v, st, km) {
@@ -1416,6 +1497,112 @@
       r.sending = false; reportPaint();
       toast('No se pudo enviar: ' + ((e && e.message) || 'revisa la señal'), 'AlertTriangle');
     }
+  }
+
+  // ── «Ver avión» (26-oct-2026) ───────────────────────────────────────────────
+  // Lo mismo que ve el jefe en Rutas › Vuelos, para el vuelo de esta vuelta: cómo
+  // va, a qué hora llega y dónde viene. La posición es ESTIMADA (RendioVuelos.
+  // posicion, el mismo cálculo de la pantalla del jefe): no gasta créditos de
+  // Flightradar24, sale de lo que la base ya guardó.
+  const FL_PLANE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg>';
+  function flTopHTML(v, f, now) {
+    const x = flSituacion(f, now), e = f.e, RV = window.RendioVuelos;
+    const origen = e && RV.aeropuerto ? RV.aeropuerto(e.originIcao) : null;
+    const air = RV.aerolinea ? RV.aerolinea(f.code) : '';
+    return '<div class="rt-bm-h"><b>' + esc(f.code + (air ? ' · ' + air : '')) + '</b><span>' + esc(origen ? `${origen.city} (${origen.iata}) → JMC` : 'Llega a JMC') + '</span></div>'
+      + '<div class="rt-fl-st ' + x.tone + '"><span class="rt-fl-st-ic">' + ic('Plane', 22) + '</span><span><b>' + esc(x.t) + '</b>' + (x.s ? '<em>' + esc(x.s) + '</em>' : '') + '</span></div>';
+  }
+  function flInfoHTML(v, f, now, pos) {
+    const e = f.e, rows = [];
+    const row = (icn, k, val) => rows.push('<div>' + ic(icn, 17) + '<span><em>' + esc(k) + '</em>' + esc(val) + '</span></div>');
+    if (e && e.departedAt) row('Plane', 'Despegó', bogHM(e.departedAt));
+    if (e && e.status === 'landed' && e.actualAt) row('Check', 'Aterrizó', bogHM(e.actualAt));
+    else if (e && e.estimatedAt) row('Clock', 'Llega (estimado)', bogHM(e.estimatedAt));
+    if (e && e.schedAt) row('Clock', 'Hora prevista', bogHM(e.schedAt));
+    row('Users', f.quienes.length === 1 ? 'Viene en este vuelo' : 'Vienen en este vuelo', f.quienes.join(', '));
+    row('MapPin', 'Los recoges', `${v.start} · ${aptMeet(v)}`);
+    const lv = e && e.live, fresco = lv && lv.timestamp && now - Date.parse(lv.timestamp) < 40 * 60000;
+    if (fresco && (lv.alt || lv.gspeed)) {
+      const alt = lv.alt ? `${Math.round(lv.alt * 0.3048).toLocaleString('es-CO')} m` : '', vel = lv.gspeed ? `${Math.round(lv.gspeed * 1.852)} km/h` : '';
+      row('Nav', `Flightradar24 a las ${bogHM(lv.timestamp)}`, [alt, vel, lv.type || ''].filter(Boolean).join(' · '));
+    }
+    let nota = '';
+    if (pos && pos.en === 'aire') nota = pos.real
+      ? `Última posición de Flightradar24 a las ${bogHM(lv.timestamp)}, avanzada sobre la línea recta hasta JMC. El avión real no va en línea recta.`
+      : 'Posición estimada con la hora de despegue y la hora de llegada que da Flightradar24, sobre la línea recta hasta JMC. El avión real no va en línea recta.';
+    const act = e && e.fetchedAt ? ` Actualizado ${bogHM(e.fetchedAt)}.` : '';
+    return '<div class="rt-info">' + rows.join('') + '</div>'
+      + (nota || act ? '<div class="rx-note">' + ic('Info', 15) + esc((nota + act).trim()) + '</div>' : '');
+  }
+  function flightOpen(vid) {
+    const v = vById(vid); if (!v) return;
+    const f = flightOf(v); if (!f) return;
+    const now = Date.now(), RV = window.RendioVuelos;
+    const pos = RV && RV.posicion ? RV.posicion(f.e, now) : null;
+    const origen = f.e && RV && RV.aeropuerto ? RV.aeropuerto(f.e.originIcao) : null;
+    const conMapa = !!(pos || origen) && typeof L !== 'undefined';
+    openSheet('flight', '<div class="rt-big-map rt-fl" style="--tone:' + tone(v).c + '">'
+      + '<div class="rt-fl-top">' + flTopHTML(v, f, now) + '</div>'
+      + (conMapa ? '<div class="rt-bm-map rt-fl-map"><div class="rx-map rt-lf"></div></div>' : '')
+      + '<div class="rt-fl-info">' + flInfoHTML(v, f, now, pos) + '</div>'
+      + '</div>', { tall: true });
+    RT.fl = { vid, map: null, plane: null, timer: null };
+    if (conMapa) {
+      const el = document.querySelector('#rt-sheet-host .rt-fl-map .rt-lf');
+      if (el) flMapMount(el, f, pos, origen);
+    }
+    // El avión se mueve con la hora (estimado) y el dato se relee cada 2 min.
+    RT.fl.timer = setInterval(flightTick, 30000);
+  }
+  function flMapMount(el, f, pos, origen) {
+    const RV = window.RendioVuelos, J = RV.JMC;
+    // preferCanvas como los otros mapas de la ruta: .rx-map svg (CSS del diseño) estira
+    // a 100 % el svg de Leaflet y la línea quedaba con 0 px de alto.
+    const map = L.map(el, { zoomControl: false, attributionControl: false, preferCanvas: true, tap: false, boxZoom: false, keyboard: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    const pill = (txt, cls) => L.divIcon({ className: 'rt-fl-pill ' + (cls || ''), html: '<span>' + esc(txt) + '</span>', iconSize: [46, 22], iconAnchor: [23, 11] });
+    L.marker([J.lat, J.lon], { icon: pill('JMC', 'jmc'), keyboard: false, interactive: false }).addTo(map);
+    const pts = [[J.lat, J.lon]];
+    if (origen) {
+      L.marker([origen.lat, origen.lon], { icon: pill(origen.iata), keyboard: false, interactive: false }).addTo(map);
+      const linea = []; for (let i = 0; i <= 32; i++) { const q = RV.enCamino(origen, J, i / 32); linea.push([q.lat, q.lon]); }
+      L.polyline(linea, { color: cssVar(el.closest('.rt-fl') || el, '--tone', '#10B981'), weight: 3, opacity: 0.85, dashArray: '6 8', interactive: false }).addTo(map);
+      pts.push([origen.lat, origen.lon]);
+    }
+    RT.fl.map = map;
+    flPlane(pos);
+    const encuadre = () => { try { map.invalidateSize(); if (pts.length > 1) map.fitBounds(pts, { padding: [36, 36], maxZoom: 10 }); else map.setView(pos ? [pos.lat, pos.lon] : [J.lat, J.lon], 9); } catch (e) { /* */ } };
+    encuadre();
+    // La hoja sube animada (rxUp .34 s): Leaflet midió a medio camino.
+    setTimeout(() => { if (RT.fl && RT.fl.map === map) encuadre(); }, 380);
+  }
+  function flPlane(pos) {
+    const h = RT.fl; if (!h || !h.map) return;
+    if (!pos) { if (h.plane) { try { h.map.removeLayer(h.plane); } catch (e) { /* */ } h.plane = null; } return; }
+    const icon = L.divIcon({ className: 'rt-fl-plane ' + pos.en, html: '<span style="transform:rotate(' + Math.round(pos.rumbo) + 'deg)">' + FL_PLANE + '</span>', iconSize: [34, 34], iconAnchor: [17, 17] });
+    if (h.plane) { h.plane.setLatLng([pos.lat, pos.lon]); h.plane.setIcon(icon); }
+    else h.plane = L.marker([pos.lat, pos.lon], { icon, keyboard: false, interactive: false, zIndexOffset: 800 }).addTo(h.map);
+  }
+  // Repinta lo que dice la hoja sin rehacer el mapa.
+  function flightPaint() {
+    const h = RT.fl; if (!h || !RT.sheet || RT.sheet.kind !== 'flight') return;
+    const v = vById(h.vid), f = v && flightOf(v); if (!f) return;
+    const now = Date.now(), pos = window.RendioVuelos.posicion(f.e, now);
+    const top = document.querySelector('#rt-sheet-host .rt-fl-top'), info = document.querySelector('#rt-sheet-host .rt-fl-info');
+    if (top) top.innerHTML = flTopHTML(v, f, now);
+    if (info) info.innerHTML = flInfoHTML(v, f, now, pos);
+    flPlane(pos);
+  }
+  async function flightTick() {
+    if (!RT.fl || !RT.sheet || RT.sheet.kind !== 'flight') return;
+    await loadFlights();
+    flightPaint();
+  }
+  function flightGone() {
+    const h = RT.fl; if (!h) return;
+    if (h.timer) clearInterval(h.timer);
+    if (h.map) { try { h.map.remove(); } catch (e) { /* ya no está */ } }
+    RT.fl = null;
   }
 
   // Mapa grande (RtBigMap).
@@ -1719,9 +1906,12 @@
   async function loadFlights() {
     try {
       if (!window.RendioVuelos || !RT.vueltas.length) return;
-      const days = [...new Set(RT.vueltas.map((v) => v.day).filter(Boolean))];
+      const days = [...new Set(RT.vueltas.flatMap((v) => [v.day].concat(crew(v).map((l) => l.reqDay))).filter(Boolean))];
       await RendioVuelos.cargar(days);
-      if (RT.open && RT.vueltas.some((v) => crew(v).some((l) => l.flight))) refreshVisible();
+      if (RT.open && RT.vueltas.some((v) => crew(v).some((l) => l.flight))) {
+        refreshVisible();
+        if (RT.fl) flightPaint();
+      }
     } catch (e) { /* sin vuelos */ }
   }
 
@@ -1797,6 +1987,7 @@
         return;
       }
       if (a === 'chat') { chatOpen(vid, rid); return; }
+      if (a === 'flight') { flightOpen(vid); return; }
       if (a === 'qr') { chatSend(el.dataset.q); return; }
       if (a === 'send') { const i = document.getElementById('rt-chat-in'); if (i) chatSend(i.value); return; }
       if (a === 'push-tap') { document.getElementById('rt-push-host').innerHTML = ''; if (vid && rid) chatOpen(vid, rid); return; }

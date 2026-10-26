@@ -3595,6 +3595,10 @@
           unit: r.residence_unit || '',
           lat: r.pickup_latitude, lng: r.pickup_longitude,
           flight: reserveKey(r.reserve_place) ? '' : (r.flights?.flight_number || _flightFromNotes(r.notes)),
+          // Día de Bogotá de la hora pedida: es el flight_date con que se guarda el
+          // estado del vuelo (0099). Con el día de la vuelta, una llegada de las
+          // 23:50 que se recoge a las 00:10 buscaría el vuelo del día siguiente.
+          reqDay: r.required_arrival_at ? _bogDay(r.required_arrival_at) : '', reqAt: r.required_arrival_at || null,
           // 0121: de reserva. En una salida lo deja en ese hotel (o en JMC); en
           // una llegada lo recoge ahí. El conductor lo ve en la parada.
           reserva: reserveKey(r.reserve_place),
