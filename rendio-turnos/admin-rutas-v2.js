@@ -517,6 +517,19 @@
         : `<b>${n}</b> no alcanza a llegar a la vuelta de las ${hhmm(inicioDe(b).at)} de ${esc(b.vehicle)}<small>Termina la de las ${hhmm(inicioDe(a).at)} ${a.type === 'llegada' ? 'en la última casa' : 'en JMC'} a las ${hhmm(finDe(a).at)}: llegaría a las ${hhmm(e.llega)}, ${e.tarde} min tarde</small>`;
       out.push({ k: 'drv', html, btn: 'Cambiar', act: `data-act="assign" data-id="${esc(cambiar.id)}"` });
     });
+    // …y con una vuelta de la ruta de Julián que tomó (o que el jefe le asignó).
+    choquesConPegadas().forEach(({ id, a, b, cruza, llega, tarde }) => {
+      const n = esc(conductor(id).name);
+      const nom = (x) => (x.julian ? `la de Julián de las ${hhmm(x.ini)}` : `${esc(x.r.vehicle)} de las ${hhmm(x.ini)}`);
+      const html = cruza
+        ? `<b>${n}</b> tiene dos vueltas a la vez<small>${nom(a)} (hasta las ${hhmm(a.fin)}) y ${nom(b)}</small>`
+        : `<b>${n}</b> no alcanza a llegar a ${nom(b)}<small>Termina ${nom(a)} ${a.julian ? (a.julian.type === 'llegada' ? 'en la última casa' : 'en JMC') : (a.r.type === 'llegada' ? 'en la última casa' : 'en JMC')} hacia las ${hhmm(a.fin)}: llegaría a las ${hhmm(llega)}, ${tarde} min tarde</small>`;
+      // Se cambia la del tablero si no ha arrancado; si no, se va a la pegada (sus botones están en la lista).
+      const tab = [b, a].find((x) => !x.julian && !x.fija);
+      const peg = (b.julian && !b.fija ? b : a).julian;
+      out.push(tab ? { k: 'drv', html, btn: 'Cambiar', act: `data-act="assign" data-id="${esc(tab.r.id)}"` }
+        : { k: 'drv', html, btn: 'Ver', act: `data-act="verjulian" data-ra="${esc(peg.v.id)}"` });
+    });
     return out;
   }
 
@@ -594,6 +607,8 @@
     const usados = new Set();
     cars.forEach((car) => bands.forEach((b) => { if (cells[car.id + '|' + b]) { const id = rtCarDrv(car, b); if (id) usados.add(id); } }));
     D.routes.forEach((r) => { if (r.driverId && r.fija !== 'completed') usados.add(r.driverId); });
+    // Quien tomó una vuelta de la ruta de Julián tampoco está «sin vueltas».
+    pegadasLista(false).forEach((p) => { if (p.v.driverProfileId && !p.v.delegated && p.fija !== 'completed') usados.add(p.v.driverProfileId); });
     const libres = new Map();
     // El nombre de la lista de conductores; si no está ahí, el del horario o el del turno.
     const nom = (id, n) => { const d = (rt.drivers || []).find((x) => x.id === id); return (d && d.n) || n || 'Conductor'; };
@@ -683,6 +698,8 @@
   // primera hora del día, igual a las demás, y parecía la primera ruta de este
   // día. Ahora va aparte y con su nombre; y al final del día se avisa de la
   // madrugada siguiente, que es de este turno PM pero vive en el plan de mañana.
+  // Las vueltas pegadas (r.julian, pegadasLista) van en su hora junto a las del
+  // tablero. Una hora 24 o más es la madrugada siguiente que Julián pegó con este día.
   function horasHTML(rows) {
     const groups = new Map();
     rows.forEach((r) => { if (!groups.has(r.hora)) groups.set(r.hora, []); groups.get(r.hora).push(r); });
@@ -690,8 +707,8 @@
     [...groups.keys()].sort((a, b) => a - b).forEach((h) => {
       const g = groups.get(h).sort((a, b) => a.orden - b.orden || a.arrival - b.arrival);
       const malas = g.filter((r) => r.status === 'risk' || (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA)).length;
-      html += `<div class="rv2-gwrap"><div class="rv2-hour"><strong>${pad(h)}:00 – ${pad((h + 1) % 24)}:00</strong> · ${plural(g.length, 'vuelta', 'vueltas')}${malas ? ` · <span class="t-risk">${plural(malas, 'con aviso', 'con aviso')}</span>` : ''}</div>`;
-      g.forEach((r) => { html += rowHTML(r); });
+      html += `<div class="rv2-gwrap"><div class="rv2-hour"><strong>${pad(h % 24)}:00 – ${pad((h + 1) % 24)}:00</strong>${h >= 24 ? ' · después de medianoche' : ''} · ${plural(g.length, 'vuelta', 'vueltas')}${malas ? ` · <span class="t-risk">${plural(malas, 'con aviso', 'con aviso')}</span>` : ''}</div>`;
+      g.forEach((r) => { html += r.julian ? filaPegada(r) : rowHTML(r); });
       html += '</div>';
     });
     return html;
@@ -735,28 +752,58 @@
       `<small>${malas ? `${plural(malas, 'con novedad', 'con novedad')} · ` : ''}${ui.verHechas ? 'Ocultar' : 'Ver'}</small></button>` +
       (ui.verHechas ? horasHTML(hechas) : '') + '</div>';
   }
-  // Día mezclado (26-oct-2026): la ruta pegada arriba de la lista, con sus botones
-  // (Volver a pegar, Excel del día, Quitar la ruta y, por vuelta, conductor y
-  // Delegar: admin-ruta-julian.js). Buscando, solo las vueltas donde está.
-  function pegadasHTML(buscando) {
-    const m = ui.manual;
-    if (!m || !m.mixto || ui.cargando || !window.RendioRutaJulian) return '';
-    let vs = m.vueltas;
-    if (buscando) {
-      const q = norm(ui.q);
-      vs = vs.filter((v) => [...(v.pendientes || []), ...(v.atendidas || [])].some((g) => norm(g.name).includes(q))
-        || (v.driverProfileId && norm(v.conductor).includes(q)) || (v.delegateName && norm(v.delegateName).includes(q)));
-      if (!vs.length) return '';
-    }
-    return window.RendioRutaJulian.diaHTML(vs, ui.dia, 0, { mixto: true });
+  // Día mezclado (26-oct-2026). Primero la ruta pegada iba arriba de la lista, en
+  // un recuadro aparte; los jefes (audios de las 4:22 p. m.) la quieren «en el
+  // listado normal completo, organizado por horas». Ahora arriba queda solo la barra
+  // (Volver a pegar, Excel del día, Quitar la ruta) y cada vuelta pegada va en la
+  // lista, en su hora, con la etiqueta «Ruta de Julián» y sus botones (conductor,
+  // Delegar, Cambiar hora: admin-ruta-julian.js · filaLista).
+  const hayPegadas = () => !!(ui.manual && ui.manual.mixto && !ui.cargando && window.RendioRutaJulian && typeof window.RendioRutaJulian.filaLista === 'function');
+  const minDelDia = (iso) => (Date.parse(iso) - Date.parse((rt.day || ui.dia) + 'T00:00:00-05:00')) / 60000;
+  // Quien va en una vuelta pegada salió de rt.aux (rearmarPublicado): su pedido está en rt.rv2AuxPegadas.
+  function auxPegada(rid) {
+    if (!rid) return null;
+    const ks = [rt.rv2AuxPegadas || {}, rt.aux || {}];
+    for (const m of ks) { const k = Object.keys(m).find((x) => m[x].reservationId === rid); if (k) return m[k]; }
+    return null;
+  }
+  function pegadaCoincide(v, q) {
+    return [...(v.pendientes || []), ...(v.atendidas || [])].some((g) => norm(g.name).includes(q) || norm((auxPegada(g.rid) || {}).zona).includes(q))
+      || (v.driverProfileId && norm(v.conductor).includes(q)) || (v.delegateName && norm(v.delegateName).includes(q)) || norm('ruta de julian').includes(q);
+  }
+  // Cada vuelta pegada como fila de la lista. El orden es el del tablero (pendientes
+  // de los jefes, 26-oct): manda la PRIMERA hora que se lee, la primera recogida en
+  // una salida y la salida de JMC en una llegada. En una salida el «Deben estar» hace
+  // de llegada a JMC (para los choques del conductor).
+  function pegadasLista(buscando) {
+    if (!hayPegadas()) return [];
+    const q = norm(ui.q);
+    return ui.manual.vueltas.filter((v) => !buscando || pegadaCoincide(v, q)).map((v) => {
+      const g = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
+      const lle = v.type === 'lle';
+      const pickup = minDelDia(lle ? v.startAt : ((g[0] && g[0].etaAt) || v.startAt));
+      const ultima = lle ? pickup : Math.max(...g.map((x) => (x.etaAt ? minDelDia(x.etaAt) : pickup)), pickup);
+      const arrival = lle ? pickup : (v.deadlineAt ? minDelDia(v.deadlineAt) : ultima + 20);
+      const hecha = v.status === 'completed' || (v.fin && (v.fin.estado === 'ok' || v.fin.estado === 'bad'));
+      return { julian: true, id: 'jl:' + v.id, v, type: lle ? 'llegada' : 'salida', pickup, arrival, orden: pickup, hora: Math.floor(pickup / 60),
+        shift: pickup < rtCut() ? 'mad' : 'dia', fija: hecha ? 'completed' : null, fin: v.fin || null, stops: [] };
+    });
+  }
+  function filaPegada(p) {
+    return window.RendioRutaJulian.filaLista(p.v, { hl, aux: auxPegada, fin: finFila(p) });
+  }
+  function barraPegadas(buscando) {
+    return !buscando && hayPegadas() && typeof window.RendioRutaJulian.barraHTML === 'function'
+      ? window.RendioRutaJulian.barraHTML(ui.manual.vueltas, ui.dia) : '';
   }
   function renderList() {
     const vacio = emptyHTML();
     const buscando = !!(ui.q && ui.q.trim());
-    const peg = pegadasHTML(buscando);
+    const peg = barraPegadas(buscando);
+    const pegs = vacio ? [] : pegadasLista(buscando);
     if (vacio) { el.list.innerHTML = peg + vacio + (ui.cargando ? '' : solasHTML() + madSigHTML()); return; }
-    const todas = D.routes.filter(matchesQ);
-    if (!todas.length) { el.list.innerHTML = peg || `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
+    const todas = D.routes.filter(matchesQ).concat(pegs);
+    if (!todas.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
     const hechas = buscando ? [] : todas.filter(ocultaFila);
     const rows = todas.filter((r) => !hechas.includes(r));
     if (!rows.length) { el.list.innerHTML = peg + `<div class="rv2-empty"><b>Ya terminaron todas las vueltas de ${esc(dayLabel(rt.day || ui.dia).toLowerCase())}</b>Quedan abajo, por si quieres revisarlas.</div>` + hechasHTML(hechas) + madSigHTML(); return; }
@@ -1066,6 +1113,50 @@
         const cruza = inicioDe(b).at < finDe(a).at;
         const e = cruza ? null : enlace(a, b);
         if (cruza || e.tarde > TOL_CHOQUE) out.push({ id, a, b, cruza, e, cambiar: b.fija ? a : b });
+      }
+    });
+    return out;
+  }
+
+  // Día mezclado (26-oct-2026): un conductor que tomó una vuelta de la ruta de Julián
+  // también está ocupado a esa hora. El tablero no la veía (no es suya) y le podía
+  // cruzar otra sin avisar. Aquí se mide cada par en que al menos una es pegada; los
+  // pares del tablero solo los sigue midiendo choquesDeConductor.
+  const legC = (a, b, aero) => (typeof rtHaversineMin === 'function' ? rtHaversineMin(a, b) : 8) * (rt.TRAFFIC_FACTOR || 1) * (aero ? (rt.AIRPORT_FACTOR || 1) : 1);
+  const AERO = () => (typeof RT_AIRPORT !== 'undefined' ? RT_AIRPORT : null);
+  function tramoTablero(r) {
+    const i = inicioDe(r), f = finDe(r);
+    const c = (k) => (typeof rtCoordsOf === 'function' ? rtCoordsOf(k) : null);
+    return { r, driverId: r.driverId, ini: i.at, iniLoc: c(i.loc), fin: f.at, finLoc: c(f.loc), colchon: f.colchon, fija: !!r.fija };
+  }
+  function tramosPegados() {
+    const xy = (g) => (g && g.lat != null ? { lat: g.lat, lng: g.lng } : null);
+    return pegadasLista(false).filter((p) => p.v.driverProfileId && !p.v.delegated && p.fija !== 'completed').map((p) => {
+      const g = [...(p.v.atendidas || []), ...(p.v.pendientes || [])].sort((a, b) => a.order - b.order);
+      const fija = p.v.status === 'in_progress' || (p.v.atendidas || []).length > 0;
+      if (p.type === 'llegada') {
+        // Sale de JMC y reparte: lo que tarda, con el tiempo de respaldo (no hay ruta del tablero).
+        let t = p.pickup, at = AERO();
+        g.forEach((x, i) => { const c = xy(x); t += legC(at, c, i === 0) + 2; at = c || at; });
+        return { julian: p, driverId: p.v.driverProfileId, ini: p.pickup, iniLoc: AERO(), fin: Math.round(t), finLoc: at, colchon: 2, fija };
+      }
+      return { julian: p, driverId: p.v.driverProfileId, ini: p.pickup, iniLoc: xy(g[0]), fin: p.arrival, finLoc: AERO(), colchon: rt.TURNAROUND || 8, fija };
+    });
+  }
+  function choquesConPegadas() {
+    const peg = tramosPegados();
+    if (!peg.length) return [];
+    const por = {}, out = [];
+    peg.forEach((x) => (por[x.driverId] = por[x.driverId] || []).push(x));
+    D.routes.forEach((r) => { if (r.driverId && por[r.driverId]) por[r.driverId].push(tramoTablero(r)); });
+    Object.keys(por).forEach((id) => {
+      const xs = por[id].sort((a, b) => a.ini - b.ini);
+      for (let i = 1; i < xs.length; i++) {
+        const a = xs[i - 1], b = xs[i];
+        if ((!a.julian && !b.julian) || (a.fija && b.fija)) continue;
+        const cruza = b.ini < a.fin;
+        const llega = Math.round(a.fin + a.colchon + legC(a.finLoc, b.iniLoc, a.finLoc === AERO() || b.iniLoc === AERO()));
+        if (cruza || llega - b.ini > TOL_CHOQUE) out.push({ id, a, b, cruza, llega, tarde: llega - b.ini });
       }
     });
     return out;
@@ -1601,7 +1692,7 @@
   }
   function select(id, { open = true, moving = null } = {}) {
     ui.sel = id; ui.moving = moving; ui.todas = false;
-    $$('.rv2-row', root()).forEach((row) => { if (row.dataset.id === id) row.setAttribute('aria-current', 'true'); else row.removeAttribute('aria-current'); });
+    $$('.rv2-row[data-id]', root()).forEach((row) => { if (row.dataset.id === id) row.setAttribute('aria-current', 'true'); else row.removeAttribute('aria-current'); });
     renderDetail();
     if (open && esCajon()) {
       el.detail.classList.add('is-open'); el.scrim.hidden = false;
@@ -1620,6 +1711,15 @@
   }
   // En PC el detalle se abre solo con la primera vuelta que llega tarde (o la
   // primera del día): el mapa nunca queda vacío.
+  // Ir a una vuelta pegada de la lista (desde Avisos): se busca y se marca un momento.
+  function verPegada(id) {
+    if (ui.q) { ui.q = ''; if (el.q) el.q.value = ''; renderList(); }
+    const row = $$('.rv2-row--julian', root()).find((x) => x.dataset.julian === id);
+    if (!row) return;
+    if (row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    row.classList.add('is-flash');
+    setTimeout(() => row.classList.remove('is-flash'), 1600);
+  }
   function autoSelect() {
     if (esCajon() || ui.sel || !D) return;
     // Las terminadas van recogidas al final: se abre la primera que todavía falta
@@ -1650,7 +1750,8 @@
     ui.drag = { crewId, fromId };
     try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', crewId); } catch (_) { /* */ }
     root().classList.add('is-dragging');
-    $$('.rv2-row', root()).forEach((row) => row.classList.toggle('is-drop', puedeRecibir(row.dataset.id, crewId, fromId)));
+    // Las vueltas pegadas (sin data-id) no reciben: no son del tablero.
+    $$('.rv2-row[data-id]', root()).forEach((row) => row.classList.toggle('is-drop', puedeRecibir(row.dataset.id, crewId, fromId)));
   }
   function onDragOver(e) {
     if (!ui.drag) return;
@@ -2034,6 +2135,7 @@
       if (a === 'apply') return moveCrew(act.dataset.crew, act.dataset.from, act.dataset.to);
       if (a === 'autoassign') { closeSheet(); return autoAssign(); }
       if (a === 'ver') return verRuta(act.dataset.id);
+      if (a === 'verjulian') return verPegada(act.dataset.ra);
       if (a === 'avisos') { e.preventDefault(); if (el.avisos.scrollIntoView) el.avisos.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
       if (a === 'sclose') return closeSheet();
       if (a === 'close') return closeDetail();
@@ -2052,7 +2154,8 @@
       if (a === 'vista') return aVista(act.dataset.v);
       return;
     }
-    const row = t.closest('.rv2-row');
+    // Una vuelta pegada (sin data-id) no se abre en el detalle: sus botones son suyos.
+    const row = t.closest('.rv2-row[data-id]');
     if (row) return select(row.dataset.id);
     if (t === el.scrim) { if (!el.sheet.hidden) closeSheet(); else closeDetail(); }
   }
@@ -2074,16 +2177,16 @@
     }
     if (!el.sheet.hidden) return;
     if (e.key === '/' && !typing) { e.preventDefault(); el.q.focus(); return; }
-    const row = ae.closest && ae.closest('.rv2-row');
+    const row = ae.closest && ae.closest('.rv2-row[data-id]');
     if (row && ae === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(row.dataset.id); return; }
     if (!typing && (e.key === 'ArrowDown' || e.key === 'ArrowUp') && !el.detail.classList.contains('is-open')) {
-      const rows = $$('.rv2-row', r); if (!rows.length) return;
+      const rows = $$('.rv2-row[data-id]', r); if (!rows.length) return;
       e.preventDefault();
       let i = rows.findIndex((x) => x.dataset.id === ui.sel);
       i = e.key === 'ArrowDown' ? Math.min(rows.length - 1, i + 1) : Math.max(0, i - 1);
       const id = rows[i].dataset.id;
       select(id, { open: false });
-      const nr = $$('.rv2-row', r).find((x) => x.dataset.id === id); if (nr) { nr.focus(); if (nr.scrollIntoView) nr.scrollIntoView({ block: 'nearest' }); }
+      const nr = $$('.rv2-row[data-id]', r).find((x) => x.dataset.id === id); if (nr) { nr.focus(); if (nr.scrollIntoView) nr.scrollIntoView({ block: 'nearest' }); }
     }
   }
 
@@ -2101,6 +2204,7 @@
     // 0125: la ruta de Julián (admin-ruta-julian.js) usa la hoja, el aviso y el día.
     _sheet: { open: openSheet, close: closeSheet, head: sheetHead }, toast, diaActual: () => ui.dia,
     delegar: openDelegar,   // 0131: «Delegar a…» (lo usa la ruta de Julián)
+    pegadas: () => (ui.manual && ui.manual.vueltas) || [],   // 0145: «Cambiar hora» busca aquí su vuelta
     _ui: ui, _hist: hist, dia: () => D, medir, sugerencia: (id) => sugerencia(D && D.byId[id]), candidatas, _mover: moveCrew,
     _avisos: () => avisosDe(), _sacar: sacarDeRuta,
     _refrescarFines: refrescarFines,   // 0137 (pruebas)

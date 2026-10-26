@@ -30,9 +30,10 @@ Deben estar 3:40                ← hora de presentación en el aeropuerto (dead
 |---|---|
 | `3:20 gloria (Cambulo)` | **salida**: recoger a Gloria en Cámbulo a las 3:20 |
 | `12:00 Jessica y Erika (av9563)` | **llegada**: aterriza el vuelo AV9563 a las 12:00 |
-| `11:30 Lau idarraga (hotel)` | recogida **en el hotel** |
+| `11:30 Lau idarraga (hotel)` / `23:59 Fernando (Hotel R)` | **llegada**: lo recoge **en el hotel** y lo lleva a la casa (`R` = de reserva) |
 | `17:10 Pau londo (Terra)` + `Va a hotel` | casa → **hotel** (el aeropuerto ni se toca) |
-| `16:00 kris (Aero)` | va al aeropuerto **sin vuelo asignado**; se trata igual que cualquier tripulante |
+| `16:00 kris (Aero)` / `16:00 lesmes (Aero r)` | **llegada**: lo recoge **en JMC** sin vuelo (de tierra, o de reserva con `r`) y lo lleva a la casa |
+| `18:00 Lina (Río Verde)` / `(Hotel Movich)` | **llegada** desde ese hotel (de reserva, 0121) |
 | `Deben estar 3:40` / `Debe estar 4:45` / `Estar 10:40` | deadline del bloque, las tres formas valen |
 | `Estar 11:20 y hotel` | cumple el deadline en el aeropuerto **y después** deja en el hotel |
 | `Hotel y aero` | pasa por el hotel y sigue al aeropuerto |
@@ -41,7 +42,13 @@ Deben estar 3:40                ← hora de presentación en el aeropuerto (dead
 
 - **La hora de la izquierda cambia de significado según el tipo**: en salidas es la
   hora de **recogida en la casa**; en llegadas es la hora en que **aterriza el vuelo**.
-- **Las llegadas no llevan deadline**, solo el vuelo.
+- **Las llegadas no llevan deadline**, solo el vuelo (o `Aero`, `Aero r`, `Hotel`, `Río Verde`…).
+- **`(Aero)`, `(Aero r)`, `(Hotel)`, `(Hotel R)`, `(Río Verde)`, `(Movich)` = de ahí a la casa.**
+  Corregido el 26-oct-2026 (audio de los jefes: «si uno coloca aero que sepa que es desde
+  el JMC»). Antes este archivo decía que `(Aero)` «va al aeropuerto». En los planes
+  guardados hay 75 líneas así, TODAS en bloques de llegadas, ninguna con «Deben estar»
+  ni junto a una recogida en casa. Con «Deben estar» el bloque sería una salida y el
+  paréntesis, solo dónde lo recoge (`desdeDe` en admin-ruta-julian.js).
 - **Una línea puede ser varias personas**: `Erika, Jolene y Juanita (Olivar)` son 3,
   `Sánchez y Michel (Río vivo)` son 2. **Cuentan para el cupo.**
 - **Viajan familiares sin perfil en el sistema**: `papa Melina (Cerezos)`,

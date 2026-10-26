@@ -19,9 +19,10 @@
 // no pidió por la app (un familiar, alguien sin cuenta) no se avisa.
 //
 // Contrato (todo con guarda): window.RendioRutaJulian = { abrir(), excel(),
-//   diaHTML(vueltas, dia), _leer(texto, dia), _emparejar(personas, candidatos, apodos), _st }.
-// Lo usa admin-rutas-v2.js (botones «Ruta de Julián» y «Excel del día», y la vista
-// del día cuando ya hay una ruta pegada).
+//   diaHTML(vueltas, dia), barraHTML(vueltas, dia), filaLista(vuelta, o),
+//   abrirHora(id), _leer(texto, dia), _emparejar(personas, candidatos, apodos), _st }.
+// Lo usa admin-rutas-v2.js (botones «Ruta de Julián» y «Excel del día», la vista
+// del día solo de Julián y, en el día mezclado, cada vuelta pegada en la lista).
 (function () {
   'use strict';
   const W = window;
@@ -62,6 +63,24 @@
     if (pre === 'P') pre = 'P5';
     return pre + m[2];
   }
+  // De dónde lo recogen (audios del 26-oct-2026, 4:26 p. m.: «si uno coloca aero que
+  // sepa que es desde el JMC, aero r que es desde el JMC, Río Verde que es desde el
+  // hotel Río Verde»). Ese día «(aero r)» se leyó como una salida desde la casa y la
+  // vuelta quedó al revés. Así escribe Julián las llegadas de reserva (0121) y las
+  // de tierra: «16:00 lesmes (Aero r)», «11:30 juan y Juanita (Hotel)», «23:59
+  // Fernando (Hotel R)», en un bloque de llegadas, sin «Deben estar». Con «Deben
+  // estar» es una salida y el paréntesis es solo dónde lo recogen.
+  // → 'aero' | 'hotel' (cualquiera de los dos) | 'rio_verde' | 'movich' | null.
+  function desdeDe(lugar) {
+    const n = norm(lugar);
+    if (!n) return null;
+    if (/^(aero|aeropuerto|aerop|jmc)( ?r| reserva)?$/.test(n)) return 'aero';
+    if (/^(hotel )?rio ?verde( ?r| reserva)?$/.test(n)) return 'rio_verde';
+    if (/^(hotel )?movich( ?r| reserva)?$/.test(n)) return 'movich';
+    if (/^hotel( ?r| reserva)?$/.test(n)) return 'hotel';
+    return null;
+  }
+  const DESDE_TXT = { aero: 'JMC', hotel: 'el hotel', rio_verde: 'el Hotel Río Verde', movich: 'el Hotel Movich' };
   // «Juanita y Pacho», «Erika, Jolene y Juanita» → una por persona.
   const personas = (quien) => String(quien || '').split(/\s*,\s*|\s+y\s+|\s*&\s*/i).map((x) => x.trim()).filter(Boolean);
 
@@ -88,7 +107,7 @@
         // día siguiente (los turnos van de 2 a 2).
         const dd = (min < 240 && vioTarde) ? sumarDia(dia, 1) : dia;
         if (min >= 720) vioTarde = true;
-        cur.lineas.push({ min, dia: dd, quien, lugar, vuelo: vueloDe(lugar), personas: personas(quien), texto: l });
+        cur.lineas.push({ min, dia: dd, quien, lugar, vuelo: vueloDe(lugar), desde: desdeDe(lugar), personas: personas(quien), texto: l });
         continue;
       }
       const d = RE_DEAD.test(l) ? RE_ALGUNA.exec(l) : null;
@@ -118,6 +137,10 @@
     return { bloques: bloques.filter((b) => b.lineas.length), raras };
   }
 
+  // Una vuelta de llegadas: cada línea trae vuelo o dice que lo recogen en JMC / el
+  // hotel («(Aero r)», «(Río Verde)»), y no tiene «Deben estar».
+  const esLlegada = (b) => b.lineas.every((l) => l.vuelo || (l.desde && !b.deadline));
+
   // ── 2. Emparejar ────────────────────────────────────────────────────────────
   // candidato: { rid, auxId, n, type: 'sal'|'lle', dia, dl: 'HH:MM', vuelo, zona, sector }
   function puntaje(p, c, apodos) {
@@ -139,6 +162,15 @@
       if (c.type !== 'lle') return 0;
       if (c.vuelo && dig(c.vuelo) === dig(p.vuelo)) s += 40;
       if (dl != null && Math.abs(dl - p.min) <= 10) s += 15;
+    } else if (p.desde) {
+      // «(Aero r)», «(Río Verde)»: de JMC o del hotel a la casa, una LLEGADA. Su
+      // salida (de la casa a JMC) queda de opción pero nunca se elige sola: así
+      // salió la vuelta al revés el 26-oct.
+      if (c.type !== 'lle') return 1;
+      const lugar = p.desde === 'hotel' ? (c.reserva === 'rio_verde' || c.reserva === 'movich' || c.hotel) : c.reserva === p.desde;
+      if (lugar) s += 40;
+      else if (p.desde === 'aero' && c.tierra && !c.reserva) s += 25;   // solo por tierra: sale del terminal
+      if (dl != null && Math.abs(dl - p.min) <= 10) s += 15; else if (dl != null && Math.abs(dl - p.min) > 120) s -= 15;
     } else if (p.deadline != null) {
       s += c.type === 'sal' ? 10 : -10;
       if (c.type === 'sal' && dl != null) {
@@ -188,7 +220,7 @@
       const a = aux[k];
       return { rid: a.reservationId, auxId: a.auxId || null, n: a.n || 'Tripulante', type: a.type === 'lle' ? 'lle' : 'sal', dia,
         dl: a.dl || '', vuelo: a.vuelo || '', zona: a.zona || '', sector: a.sector || '', tel: a.tel || '',
-        reserva: a.reserva || null, hotel: !!a.hotel, pernocta: !!a.pernocta,
+        reserva: a.reserva || null, hotel: !!a.hotel, pernocta: !!a.pernocta, tierra: !!a.tierra,
         creada: a.createdAt || null, at: a.at || null };   // 0130: para el corte de las 7:40 p. m.
     }).filter((c) => c.rid);
   }
@@ -236,6 +268,7 @@
       const k = b.getAttribute('data-rj');
       if (k === 'leer') leerYMostrar();
       else if (k === 'publicar') publicar();
+      else if (k === 'hora-ok') guardarHora();   // 0145
       else if (k === 'xl') descargarDelAviso(b.getAttribute('data-dia'));
     });
     sh.addEventListener('change', (e) => {
@@ -245,6 +278,7 @@
     });
     sh.addEventListener('input', (e) => {
       if (e.target && e.target.id === 'rj-ta') { st.texto = e.target.value; try { localStorage.setItem(LS(st.dia), st.texto); } catch (_) { /* */ } }
+      if (e.target && e.target.classList && e.target.classList.contains('rj-h-in')) correrHora(e.target);   // 0145
     });
   }
   async function leerYMostrar() {
@@ -259,7 +293,8 @@
     try { ((W.Api && Api.listCrewAliases) ? await Api.listCrewAliases() : []).forEach((a) => { st.apodos[norm(a.alias)] = a.auxId; }); } catch (_) { /* */ }
     const pers = [];
     L.bloques.forEach((b, bi) => b.lineas.forEach((l, li) => l.personas.forEach((nombre, pi) => pers.push({
-      key: `${bi}.${li}.${pi}`, nombre, min: l.min, dia: l.dia, vuelo: l.vuelo, lugar: l.lugar, deadline: b.deadline && !b.deadline.mala ? b.deadline.min : null }))));
+      key: `${bi}.${li}.${pi}`, nombre, min: l.min, dia: l.dia, vuelo: l.vuelo, lugar: l.lugar, deadline: b.deadline && !b.deadline.mala ? b.deadline.min : null,
+      desde: b.deadline ? null : l.desde }))));
     const r = emparejar(pers, st.cands, st.apodos);
     // 0133: los conjuntos, para ubicar al que no tiene cuenta por lo que dice el paréntesis.
     st.residencias = [];
@@ -292,10 +327,14 @@
     let h = '';
     let nOk = 0, nRev = 0, nSin = 0, nGuest = 0;
     L.bloques.forEach((b, bi) => {
-      const lle = b.lineas.every((l) => l.vuelo);
-      h += `<div class="rj-b"><div class="rj-bh"><b>${lle ? 'Llegada' : 'Salida'} · ${esc(hmTxt(b.lineas[0].min))}</b>${b.deadline ? (b.deadline.mala ? `<span class="rj-bad">«Deben estar ${esc(hmTxt(b.deadline.min))}» es antes de la última recogida: no se usa</span>` : `<span>Deben estar ${esc(hmTxt(b.deadline.min))}</span>`) : ''}${b.notas.length ? `<span>${esc(b.notas.join(' · '))}</span>` : ''}</div>`;
+      const lle = esLlegada(b);
+      // Dónde los recoge una llegada que no es (solo) de vuelos: «Recoge en JMC», «…en el Hotel Río Verde».
+      const donde = lle && b.lineas.some((l) => l.desde)
+        ? [...new Set(b.lineas.map((l) => (l.desde ? DESDE_TXT[l.desde] : 'JMC')))].join(' y ') : '';
+      h += `<div class="rj-b"><div class="rj-bh"><b>${lle ? 'Llegada' : 'Salida'} · ${esc(hmTxt(b.lineas[0].min))}</b>${donde ? `<span>Recoge en ${esc(donde)} y los lleva a la casa</span>` : ''}${b.deadline ? (b.deadline.mala ? `<span class="rj-bad">«Deben estar ${esc(hmTxt(b.deadline.min))}» es antes de la última recogida: no se usa</span>` : `<span>Deben estar ${esc(hmTxt(b.deadline.min))}</span>`) : ''}${b.notas.length ? `<span>${esc(b.notas.join(' · '))}</span>` : ''}</div>`;
       b.lineas.forEach((l, li) => l.personas.forEach((nombre, pi) => {
         const k = `${bi}.${li}.${pi}`, rid = st.elegido[k];
+        const desde = b.deadline ? null : l.desde;
         const esG = rid === GUEST;
         const c = rid && !esG ? cand(rid) : null;
         const doble = rid && !esG && (usados.get(rid) || []).length > 1;
@@ -311,9 +350,13 @@
           + (resto.length ? `<optgroup label="Todos los del día">${resto.map((x) => `<option value="${esc(x.rid)}">${esc(etiqueta(x))}</option>`).join('')}</optgroup>` : '')
           + `</select>${doble ? '<small class="rj-bad">Está dos veces</small>'
             // Una llegada en una vuelta de salidas (o al revés) se publica aparte.
-            : (c && c.type !== (lle ? 'lle' : 'sal') ? `<small class="rj-bad">Es ${c.type === 'lle' ? 'una llegada' : 'una salida'}: va en otra vuelta. Revisa que sea ella</small>`
+            : (c && c.type !== (lle ? 'lle' : 'sal') ? (desde && c.type === 'sal'
+                ? `<small class="rj-bad">Pidió una salida (de la casa a JMC), no el regreso desde ${esc(DESDE_TXT[desde])}: va en otra vuelta. Revisa que sea ella</small>`
+                : `<small class="rj-bad">Es ${c.type === 'lle' ? 'una llegada' : 'una salida'}: va en otra vuelta. Revisa que sea ella</small>`)
               : esG ? `<small>Sin cuenta: va en la ruta${cj ? ' · ' + esc(cj.name) : (l.lugar ? ' · «' + esc(l.lugar) + '» (sin ubicar en el mapa)' : '')}. No le llegan avisos.</small>`
-              : (estado === 'sin' ? `<small>${ops.length ? 'Revisa: elige quién es (hay parecidos)' : 'Revisa: no la encontré'}</small>` : (estado === 'man' && c ? '<small>Elegido a mano: se aprende</small>' : '')))}</div>`;
+              : (estado === 'sin' ? `<small>${!ops.length ? 'Revisa: no la encontré'
+                : (desde && ops.every((x) => x.type === 'sal') ? `Revisa: pidió una salida, no el regreso desde ${esc(DESDE_TXT[desde])}` : 'Revisa: elige quién es (hay parecidos)')}</small>`
+                : (estado === 'man' && c ? '<small>Elegido a mano: se aprende</small>' : '')))}</div>`;
       }));
       h += '</div>';
     });
@@ -340,7 +383,7 @@
       // si no hay ninguno, llegada si la línea trae vuelo).
       const tipos = [];
       b.lineas.forEach((l, li) => l.personas.forEach((_, pi) => { const c = cand(st.elegido[`${bi}.${li}.${pi}`]); if (c) tipos.push(c.type); }));
-      const tipoBloque = (l) => (tipos.length ? (tipos.filter((x) => x === 'lle').length > tipos.length / 2 ? 'lle' : 'sal') : (l.vuelo ? 'lle' : 'sal'));
+      const tipoBloque = (l) => (tipos.length ? (tipos.filter((x) => x === 'lle').length > tipos.length / 2 ? 'lle' : 'sal') : (l.vuelo || (l.desde && !b.deadline) ? 'lle' : 'sal'));
       b.lineas.forEach((l, li) => l.personas.forEach((nombre, pi) => {
         const rid = st.elegido[`${bi}.${li}.${pi}`];
         if (rid === GUEST) {
@@ -486,7 +529,11 @@
     return r;
   }
 
-  // ── 6. El día con la ruta de Julián (Rutas del día, en lugar del tablero) ───
+  // ── 6. El día con la ruta de Julián ────────────────────────────────────────
+  // Cada vuelta pegada se ve en dos lugares: en el día SOLO de Julián (diaHTML, en
+  // lugar del tablero) y en el día MEZCLADO, dentro de la lista del tablero en su
+  // hora (filaLista; arriba queda solo la barra: barraHTML). Su estado y sus botones
+  // son los mismos en los dos.
   // 0137: la hora que se lee de cada vuelta (la de Julián): la salida de JMC en una
   // llegada, la primera recogida en una salida.
   const horaDe = (v) => {
@@ -499,52 +546,71 @@
   const bajaDeLista = (v) => (v.fin && v.fin.ocultaDesde ? Date.now() >= v.fin.ocultaDesde
     : v.status === 'completed' || !!(v.fin && (v.fin.estado === 'ok' || v.fin.estado === 'bad')));
   const diaUi = { verHechas: false };
-  // o.mixto (26-oct-2026): el día también tiene vueltas del tablero. El bloque va
-  // ARRIBA de la lista del tablero (admin-rutas-v2.js · pegadasHTML), no en su lugar.
-  function diaHTML(vueltas, dia, otras, o) {
-    const mixto = !!(o && o.mixto);
-    const todas = (vueltas || []).slice().sort((a, b) => Date.parse(horaDe(a)) - Date.parse(horaDe(b)));
-    const hechas = todas.filter(bajaDeLista);
-    const vs = todas.filter((v) => !bajaDeLista(v));
+  const gentePeg = (v) => [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
+  // El resultado de la vuelta (0137): antes «En curso» salía con cualquier parada
+  // marcada y se quedaba así todo el día, porque la base nunca la cierra.
+  const finPeg = (v) => (v.fin && v.fin.estado) || '';
+  const arrancoPeg = (v) => finPeg(v) === 'curso' || (!finPeg(v) && (v.status === 'in_progress' || (v.atendidas || []).length > 0));
+  function horaPeg(v) {
+    const g = gentePeg(v);
+    return v.type === 'lle' ? bogHM(v.startAt) : (g[0] && g[0].etaAt ? bogHM(g[0].etaAt) : bogHM(v.startAt));
+  }
+  // [clave, texto] — el texto va sin escapar: se escapa donde se pinta.
+  function estadoPeg(v) {
+    const fe = finPeg(v);
+    return v.status === 'completed' || fe === 'ok' ? ['hecha', `Terminada${v.fin && v.fin.at ? ' ' + v.fin.at : ''}`]
+      : fe === 'bad' ? ['hecha', `Terminada · ${(v.fin.motivos || []).join(' · ')}`]
+      : fe === 'sinmarcar' ? ['pasada', `Pasó su hora · ${v.fin.faltan === 1 ? '1 parada' : `${v.fin.faltan} paradas`} sin marcar`]
+      : fe === 'delegada' ? ['delegada', `Delegada${v.delegateName ? ' · ' + v.delegateName : ''} · ya pasó su hora`]
+      : arrancoPeg(v) ? ['curso', v.delegated ? 'En curso · delegada' : `En curso · ${v.conductor}`]
+        : v.delegated ? ['delegada', v.delegateName ? `Delegada · ${v.delegateName}${v.delegatePhone ? ' · ' + v.delegatePhone : ''}` : 'Delegada · la hace alguien de afuera']
+          : v.driverProfileId ? ['tomada', `Tomada por ${v.conductor}${v.placa ? ' · ' + v.placa : ''}`]
+            : ['libre', 'Disponible'];
+  }
+  function botonesPeg(v) {
+    if (v.status === 'completed' || arrancoPeg(v) || ['ok', 'bad', 'sinmarcar', 'delegada'].includes(finPeg(v))) return '';
+    const t0 = horaPeg(v);
+    // 0126: delegar (o devolver) mientras no haya arrancado. Aplica al momento.
+    const quienes = gentePeg(v).map((g) => g.name.split(' ')[0] + (g.guest ? ' (sin cuenta)' : '')).join(', ');
+    // 0145: correr la hora de ESTA vuelta sin volver a pegar el día.
+    const hora = W.Api && W.Api.adminManualRouteSetTimes
+      ? `<button class="rv2-btn rv2-btn--sm" data-rj-hora="${esc(v.id)}">Cambiar hora</button>` : '';
+    // 0129: el jefe le da la vuelta a un conductor (o se la quita) sin que la tome.
+    const asignar = W.Api && W.Api.setVueltaDriver
+      ? `<button class="rv2-btn rv2-btn--sm" data-rj-drv="${esc(v.id)}" data-hora="${esc(t0)}" data-actual="${esc(v.driverProfileId || '')}">${v.driverProfileId ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
+      : '';
+    return hora + asignar
+      // 0131: a quién se delegó (de la libreta o a mano); una delegada lo puede cambiar.
+      + (v.delegated && W.Api && W.Api.delegateRoute ? `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="1" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="" data-dn="${esc(v.delegateName || '')}" data-dp="${esc(v.delegatePhone || '')}">${v.delegateName ? 'Cambiar a quién' : 'A quién'}</button>` : '')
+      + `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="${v.delegated ? 0 : 1}" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="${!v.delegated && v.driverProfileId ? esc(v.conductor) : ''}">${v.delegated ? 'Devolver' : 'Delegar'}</button>`;
+  }
+  // El encabezado del día pegado: cuántas, cuántas sin tomar o delegadas, y
+  // «Volver a pegar», «Excel del día» y «Quitar la ruta».
+  // Libres y delegadas se cuentan entre las que siguen en la lista; aparte, las terminadas.
+  function cabezaPeg(todas, dia, mixto) {
+    const vs = todas.filter((v) => !bajaDeLista(v)), hechas = todas.length - vs.length;
     const libres = vs.filter((v) => !v.driverProfileId && !v.delegated && v.status !== 'completed').length;
     const delegadas = vs.filter((v) => v.delegated).length;
     const n = mixto ? `${todas.length} ${todas.length === 1 ? 'vuelta pegada' : 'vueltas pegadas'}` : `${todas.length} vueltas`;
-    let h = `<div class="rj-dia${mixto ? ' is-mixto' : ''}" data-k="julian"><div class="rj-dia-h"><div><b>Ruta de Julián · ${esc(diaTxt(dia))}</b><span>${n} · ${libres ? `${libres} sin tomar` : 'todas tomadas'}${delegadas ? ` · ${delegadas} ${delegadas === 1 ? 'delegada' : 'delegadas'}` : ''}${hechas.length ? ` · ${hechas.length} ${hechas.length === 1 ? 'terminada' : 'terminadas'}` : ''}</span></div>`
+    return `<div class="rj-dia-h"><div><b>Ruta de Julián · ${esc(diaTxt(dia))}</b><span>${n} · ${libres ? `${libres} sin tomar` : 'todas tomadas'}${delegadas ? ` · ${delegadas} ${delegadas === 1 ? 'delegada' : 'delegadas'}` : ''}${hechas ? ` · ${hechas} ${hechas === 1 ? 'terminada' : 'terminadas'}` : ''}</span></div>`
       + '<div class="rj-dia-a"><button class="rv2-btn rv2-btn--sm" data-rj-dia="pegar">Volver a pegar</button><button class="rv2-btn rv2-btn--sm" data-rj-dia="excel">Excel del día</button>'
       + `<button class="rv2-btn rv2-btn--sm" data-rj-dia="quitar"${mixto ? ' data-mixto="1"' : ''}>Quitar la ruta</button></div></div>`;
-    if (mixto) h += '<p class="rj-note">Van aparte del tablero: los conductores las toman en su app. Publicar el tablero no las toca.</p>';
-    else if (otras) h += `<p class="rj-note">Además hay ${otras} ${otras === 1 ? 'vuelta' : 'vueltas'} del tablero publicadas ese día.</p>`;
+  }
+  // Día SOLO de Julián: la lista de sus vueltas en lugar del tablero, en el orden de
+  // la hora que se lee; lo terminado baja a un renglón al final (pendientes, 26-oct).
+  function diaHTML(vueltas, dia, otras) {
+    const todas = (vueltas || []).slice().sort((a, b) => Date.parse(horaDe(a)) - Date.parse(horaDe(b)));
+    const hechas = todas.filter(bajaDeLista);
+    const vs = todas.filter((v) => !bajaDeLista(v));
+    let h = `<div class="rj-dia" data-k="julian">${cabezaPeg(todas, dia, false)}`;
+    if (otras) h += `<p class="rj-note">Además hay ${otras} ${otras === 1 ? 'vuelta' : 'vueltas'} del tablero publicadas ese día.</p>`;
     if (!vs.length && hechas.length) h += '<p class="rj-note">Ya terminaron todas las vueltas de este día. Quedan abajo, por si quieres revisarlas.</p>';
     const fila = (v) => {
-      const gente = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
-      const t0 = v.type === 'lle' ? bogHM(v.startAt) : (gente[0] && gente[0].etaAt ? bogHM(gente[0].etaAt) : bogHM(v.startAt));
-      // El resultado de la vuelta (0137): antes «En curso» salía con cualquier parada
-      // marcada y se quedaba así todo el día, porque la base nunca la cierra.
-      const fe = (v.fin && v.fin.estado) || '';
-      const enCurso = fe === 'curso' || (!fe && (v.status === 'in_progress' || (v.atendidas || []).length > 0));
-      const estado = v.status === 'completed' || fe === 'ok' ? ['hecha', `Terminada${v.fin && v.fin.at ? ' ' + esc(v.fin.at) : ''}`]
-        : fe === 'bad' ? ['hecha', `Terminada · ${esc((v.fin.motivos || []).join(' · '))}`]
-        : fe === 'sinmarcar' ? ['pasada', `Pasó su hora · ${v.fin.faltan === 1 ? '1 parada' : `${v.fin.faltan} paradas`} sin marcar`]
-        : fe === 'delegada' ? ['delegada', `Delegada${v.delegateName ? ' · ' + esc(v.delegateName) : ''} · ya pasó su hora`]
-        : enCurso ? ['curso', v.delegated ? 'En curso · delegada' : `En curso · ${esc(v.conductor)}`]
-          : v.delegated ? ['delegada', v.delegateName ? `Delegada · ${esc(v.delegateName)}${v.delegatePhone ? ' · ' + esc(v.delegatePhone) : ''}` : 'Delegada · la hace alguien de afuera']
-            : v.driverProfileId ? ['tomada', `Tomada por ${esc(v.conductor)}${v.placa ? ' · ' + esc(v.placa) : ''}`]
-              : ['libre', 'Disponible'];
-      // 0126: delegar (o devolver) mientras no haya arrancado. Aplica al momento.
-      const quienes = gente.map((g) => g.name.split(' ')[0] + (g.guest ? ' (sin cuenta)' : '')).join(', ');
-      // 0129: el jefe le da la vuelta a un conductor (o se la quita) sin que la tome.
-      const asignar = W.Api && W.Api.setVueltaDriver
-        ? `<button class="rv2-btn rv2-btn--sm" data-rj-drv="${esc(v.id)}" data-hora="${esc(t0)}" data-actual="${esc(v.driverProfileId || '')}">${v.driverProfileId ? 'Cambiar conductor' : 'Asignar conductor'}</button>`
-        : '';
-      const btn = v.status === 'completed' || enCurso || ['ok', 'bad', 'sinmarcar', 'delegada'].includes(fe) ? ''
-        : asignar
-          // 0131: a quién se delegó (de la libreta o a mano); una delegada lo puede cambiar.
-          + (v.delegated && W.Api && W.Api.delegateRoute ? `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="1" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="" data-dn="${esc(v.delegateName || '')}" data-dp="${esc(v.delegatePhone || '')}">${v.delegateName ? 'Cambiar a quién' : 'A quién'}</button>` : '')
-          + `<button class="rv2-btn rv2-btn--sm" data-rj-deleg="${esc(v.id)}" data-on="${v.delegated ? 0 : 1}" data-hora="${esc(t0)}" data-quienes="${esc(quienes)}" data-tomada="${!v.delegated && v.driverProfileId ? esc(v.conductor) : ''}">${v.delegated ? 'Devolver' : 'Delegar'}</button>`;
-      return `<div class="rj-v" data-st="${estado[0]}"><div class="rj-v-t"><b>${esc(t0)}</b><small>${v.type === 'lle' ? 'Llegada' : 'Salida'}</small></div>`
+      const gente = gentePeg(v), estado = estadoPeg(v);
+      return `<div class="rj-v" data-st="${estado[0]}" data-julian="${esc(v.id)}"><div class="rj-v-t"><b>${esc(horaPeg(v))}</b><small>${v.type === 'lle' ? 'Llegada' : 'Salida'}</small></div>`
         + `<div class="rj-v-m"><span>${esc(gente.map((g) => g.name.split(' ')[0]).join(', ') || '—')}</span>`
         + `<small>${esc([v.deadlineAt ? 'Deben estar ' + bogHM(v.deadlineAt) : '', v.nota || '', `${gente.length} ${gente.length === 1 ? 'persona' : 'personas'}`].filter(Boolean).join(' · '))}</small></div>`
-        + `<div class="rj-v-r"><span class="rj-v-st">${estado[1]}</span>${btn}</div></div>`;
+        + `<div class="rj-v-r"><span class="rj-v-st">${esc(estado[1])}</span>${botonesPeg(v)}</div></div>`;
     };
     vs.forEach((v) => { h += fila(v); });
     if (hechas.length) {
@@ -553,12 +619,151 @@
     }
     return h + '</div>';
   }
+  // Día MEZCLADO (audios de los jefes, 26-oct-2026, 4:22 p. m.: «no lo está montando
+  // en el listado con el resto del itinerario poniéndolo en orden de horas, sino que
+  // lo deja aparte, arriba»). Arriba queda solo esta barra; cada vuelta va en la lista
+  // del tablero, en su hora (admin-rutas-v2.js · renderList → filaLista).
+  function barraHTML(vueltas, dia) {
+    return `<div class="rj-dia rj-barra is-mixto" data-k="julian">${cabezaPeg(vueltas || [], dia, true)}`
+      + '<p class="rj-note">Van en la lista, en su hora, con la etiqueta «Ruta de Julián»: los conductores las toman en su app y Publicar el tablero no las toca.</p></div>';
+  }
+  // Una vuelta pegada como fila de la lista del tablero: la misma forma que las del
+  // tablero (hora a la izquierda; tipo, quién la hace y la gente a la derecha), con
+  // los nombres completos (los jefes no sabían si «Paula» era Paula Londoño) y sus
+  // botones. No se abre en el detalle ni recibe gente arrastrada: no es del tablero.
+  // o: { hl(texto) para resaltar lo buscado, aux(rid) → el pedido (conjunto, reserva),
+  //      fin: 'ok' | 'bad' | 'sinmarcar' | '' }.
+  function filaLista(v, o) {
+    o = o || {};
+    const hl = typeof o.hl === 'function' ? o.hl : esc;
+    const aux = typeof o.aux === 'function' ? o.aux : () => null;
+    const gente = gentePeg(v), estado = estadoPeg(v), lle = v.type === 'lle';
+    const t0 = horaPeg(v), dl = !lle && v.deadlineAt ? bogHM(v.deadlineAt) : '';
+    const pad2 = (hm) => (/^\d:/.test(hm) ? '0' + hm : hm);
+    // Una llegada de reserva en el hotel sale del hotel (0121); si no, de JMC.
+    const lugares = [...new Set(gente.map((g) => { const a = aux(g.rid); const P = a && a.reserva && W.Api && Api.reservePlace ? Api.reservePlace(a.reserva) : null; return P && P.hotel ? 'del ' + P.name : 'de JMC'; }))];
+    const sub = lle ? `Sale ${lugares.join(' y ')} → casas` : (dl ? 'Recoge → deben estar en JMC' : 'Primera recogida');
+    const que = [v.nota || '', `${gente.length} ${gente.length === 1 ? 'persona' : 'personas'}`].filter(Boolean).join(' · ');
+    // Cómo terminó (0137 de los pendientes: «Terminada 4:05», «Pasó su hora · …»), como en el tablero.
+    const resultado = estado[0] === 'hecha' || estado[0] === 'pasada'
+      ? `<small${finPeg(v) === 'bad' ? ' class="late"' : (estado[0] === 'hecha' ? ' class="done"' : '')}>${esc(estado[1])}</small>` : '';
+    const quien = estado[0] === 'libre' ? '<span class="drv none">Disponible · nadie la ha tomado</span>'
+      : estado[0] === 'delegada' ? `<span class="drv deleg">${hl(estado[1])}</span>`
+        : estado[0] === 'tomada' ? `<span class="drv">${hl(estado[1])}</span>`
+          : `<span class="drv">${v.delegated ? 'Delegada' + (v.delegateName ? ' · ' + hl(v.delegateName) : '') : hl(v.conductor)}</span>`;
+    const chips = gente.map((g) => {
+      const a = aux(g.rid) || {};
+      const lugar = a.zona || '';
+      return `<span class="rv2-p is-fijo">${!lle && g.etaAt ? `<span class="mono">${esc(pad2(bogHM(g.etaAt)))}</span>` : ''}<span class="nm">${hl(g.name)}${g.guest ? ' <em>(sin cuenta)</em>' : ''}</span>${lugar ? `<span class="pl">${hl(lugar)}</span>` : ''}</span>`;
+    }).join('');
+    const btns = botonesPeg(v);
+    const aria = `Ruta de Julián, ${lle ? 'llegada' : 'salida'} de las ${t0}, ${estado[1]}, ${gente.map((g) => g.name).join(', ')}`;
+    return `<div class="rv2-row rv2-row--julian" data-julian="${esc(v.id)}" data-st="${estado[0]}" data-s="${estado[0] === 'libre' ? 'nodriver' : 'ok'}"${o.fin ? ` data-fin="${o.fin}"` : ''} aria-label="${esc(aria)}">`
+      + `<div class="when"><b class="mono">${esc(pad2(t0))}${dl ? ' → ' + esc(pad2(dl)) : ''}</b><small>${esc(sub)}</small><small>${esc(que)}</small>${resultado}</div>`
+      + `<div class="main"><div class="l1"><span class="rv2-pill ${lle ? 'llegada' : 'salida'}">${lle ? 'Llegada' : 'Salida'}</span>`
+      + '<span class="tag rj-tag" title="La pegó Julián: la toman los conductores en su app y Publicar el tablero no la toca">Ruta de Julián</span>'
+      + `${quien}${estado[0] === 'curso' ? ' <span class="tag">en curso</span>' : ''}</div>`
+      + `<div class="people">${chips}</div>${btns ? `<div class="rj-acts">${btns}</div>` : ''}</div></div>`;
+  }
+
+  // ── 7. «Cambiar hora» de UNA vuelta pegada (0145) ───────────────────────────
+  // Pedido de los jefes (audio del 26-oct, 4:22 p. m.): «que uno seleccione una ruta
+  // y le deje cambiar las horas». En una salida, la hora de cada recogida y el «Deben
+  // estar»; en una llegada, cuando sale el carro. Mover la primera corre las demás y
+  // el «Deben estar» igual (lo que no se haya tocado a mano). La base avisa a cada
+  // tripulante su hora nueva y al conductor que la tomó; nadie más se toca.
+  const hm24 = (iso) => { try { return iso ? new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : ''; } catch (_) { return ''; } };
+  const diaBog = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+  // «16:50» → la fecha y hora más cercana a `ref` (23:50 → 0:10 es del día siguiente).
+  function isoCerca(hm, ref) {
+    const m = toMin(hm); if (m == null || !ref) return null;
+    const d = diaBog(ref);
+    const ops = [-1, 0, 1].map((n) => isoDe(sumarDia(d, n), m));
+    return ops.sort((a, b) => Math.abs(Date.parse(a) - Date.parse(ref)) - Math.abs(Date.parse(b) - Date.parse(ref)))[0];
+  }
+  const pegadaPorId = (id) => { const v2 = V2(); const vs = (v2 && typeof v2.pegadas === 'function' && v2.pegadas()) || []; return vs.find((x) => x.id === id) || null; };
+  function abrirHora(id) {
+    const S = sheet(); const v = pegadaPorId(id);
+    if (!S || !v) return;
+    const lle = v.type === 'lle';
+    const gente = gentePeg(v).filter((g) => g.stopId);
+    st.hora = { id, lle, antes: horaPeg(v) };
+    const fila = (attrs, txt, valor) => `<label class="rj-h-p"><input type="time" class="rj-h-in" ${attrs} value="${esc(valor)}"><span>${txt}</span></label>`;
+    const cuerpo = lle
+      ? fila(`data-rj-h="start" data-orig="${esc(v.startAt || '')}"`, `Sale a recogerlos · ${esc(gente.map((g) => g.name).join(', ') || '—')}`, hm24(v.startAt))
+      : gente.map((g, i) => fila(`data-rj-h="stop" data-i="${i}" data-stop="${esc(g.stopId)}" data-orig="${esc(g.etaAt || v.startAt || '')}"`, `${esc(g.name)}${g.guest ? ' <em>(sin cuenta)</em>' : ''}`, hm24(g.etaAt || v.startAt))).join('')
+        + fila(`data-rj-h="dl" data-orig="${esc(v.deadlineAt || '')}"`, '<b>Deben estar</b> en JMC', hm24(v.deadlineAt));
+    S.open(S.head(`Cambiar hora · ${lle ? 'llegada' : 'salida'} de las ${esc(st.hora.antes)}`, lle
+      ? 'La hora en que el carro sale a recogerlos. A cada tripulante le llega su hora nueva y al conductor que la tomó, que la vuelta cambió.'
+      : 'Si mueves la primera recogida, las demás y el «Deben estar» se corren igual. A cada tripulante le llega su hora nueva y al conductor que la tomó, que la vuelta cambió.')
+      + `<div class="rv2-sh-body rj-hora">${cuerpo}<p class="rj-warn" id="rj-h-msg" hidden></p></div>`
+      + '<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button><button class="rv2-btn rv2-btn--cta" data-rj="hora-ok">Guardar y avisar</button></div>');
+    atar();
+  }
+  // Mover la primera (o la salida de una llegada) corre lo que no se tocó a mano.
+  function correrHora(inp) {
+    inp.setAttribute('data-tocado', '1');
+    const sh = document.getElementById('rv2-sheet'); if (!sh) return;
+    if (!(inp.getAttribute('data-rj-h') === 'stop' && inp.getAttribute('data-i') === '0')) return;
+    const orig = inp.getAttribute('data-orig'), nuevo = isoCerca(inp.value, orig);
+    if (!orig || !nuevo) return;
+    const delta = Date.parse(nuevo) - Date.parse(orig);
+    sh.querySelectorAll('.rj-h-in').forEach((x) => {
+      if (x === inp || x.getAttribute('data-tocado') === '1') return;
+      const o = x.getAttribute('data-orig'); if (!o) return;
+      x.value = hm24(new Date(Date.parse(o) + delta).toISOString());
+    });
+  }
+  async function guardarHora() {
+    const sh = document.getElementById('rv2-sheet'); if (!sh || !st.hora || st.ocupado) return;
+    const msg = sh.querySelector('#rj-h-msg');
+    const decir = (t) => { if (msg) { msg.textContent = t; msg.hidden = !t; } };
+    const ins = [...sh.querySelectorAll('.rj-h-in')];
+    const de = (k) => ins.filter((x) => x.getAttribute('data-rj-h') === k);
+    let args, nueva;
+    if (st.hora.lle) {
+      const x = de('start')[0];
+      const at = x && isoCerca(x.value, x.getAttribute('data-orig'));
+      if (!at) { decir('Pon la hora en que sale el carro.'); return; }
+      args = { start: at }; nueva = bogHM(at);
+    } else {
+      const stops = de('stop').map((x) => ({ stop_id: x.getAttribute('data-stop'), at: isoCerca(x.value, x.getAttribute('data-orig')) }));
+      if (!stops.length || stops.some((p) => !p.at)) { decir('Cada recogida necesita su hora.'); return; }
+      const ultima = stops.reduce((m, p) => Math.max(m, Date.parse(p.at)), 0);
+      const dx = de('dl')[0];
+      let deadline = null;
+      if (dx && dx.value) {
+        deadline = isoCerca(dx.value, dx.getAttribute('data-orig') || new Date(ultima).toISOString());
+        if (Date.parse(deadline) < ultima) { decir(`«Deben estar» (${bogHM(deadline)}) queda antes de la última recogida (${bogHM(new Date(ultima).toISOString())}).`); return; }
+      }
+      args = { stops, deadline };
+      nueva = bogHM(stops.slice().sort((a, b) => Date.parse(a.at) - Date.parse(b.at))[0].at);
+    }
+    decir('');
+    st.ocupado = true;
+    const ok = sh.querySelector('[data-rj="hora-ok"]'); if (ok) { ok.disabled = true; ok.textContent = 'Guardando…'; }
+    try {
+      const r = await Api.adminManualRouteSetTimes(st.hora.id, args);
+      const S = sheet(); if (S) S.close();
+      const n = (r && r.notified) || 0;
+      say(r && r.unchanged ? 'No cambió ninguna hora.'
+        : `${st.hora.lle ? 'Llegada' : 'Salida'} de las ${st.hora.antes}${nueva && nueva !== st.hora.antes ? ` ahora a las ${nueva}` : ': horas cambiadas'}${n ? ` · avisamos a ${n} ${n === 1 ? 'tripulante' : 'tripulantes'}` : ''}${r && r.driver_notified ? ' y al conductor' : ''}.`);
+      const dia = diaActual();
+      if (dia && V2() && typeof V2().cargarDia === 'function') await V2().cargarDia(dia);
+    } catch (e) {
+      decir('No se pudo: ' + ((e && e.message) || 'error'));
+      if (ok) { ok.disabled = false; ok.textContent = 'Guardar y avisar'; }
+    } finally { st.ocupado = false; }
+  }
   let atadoDia = false;
   function atarDia() {
     if (atadoDia) return;
     const root = document.getElementById('routes-v2'); if (!root) return;
     atadoDia = true;
     root.addEventListener('click', async (e) => {
+      // 0145: «Cambiar hora» → la hoja con las horas de esa vuelta.
+      const hb = e.target.closest('[data-rj-hora]');
+      if (hb) { abrirHora(hb.getAttribute('data-rj-hora')); return; }
       // 0129: «Asignar conductor» → una lista ahí mismo; «Asignar» publica al momento.
       const dv = e.target.closest('[data-rj-drv]');
       if (dv) {
@@ -653,5 +858,6 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', atarDia); else atarDia();
 
-  W.RendioRutaJulian = { abrir, excel, ofrecer, diaHTML, _leer: leer, _emparejar: emparejar, _filasExcel: filasExcel, _st: st, _norm: norm };
+  W.RendioRutaJulian = { abrir, excel, ofrecer, diaHTML, barraHTML, filaLista, abrirHora,
+    _leer: leer, _emparejar: emparejar, _filasExcel: filasExcel, _st: st, _norm: norm, _isoCerca: isoCerca };
 })();
