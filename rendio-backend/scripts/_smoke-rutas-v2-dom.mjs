@@ -98,6 +98,30 @@ async function boot({ vista = null, publicado = true, confirm = true, dias } = {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 25-oct · turnos abiertos: solo se piden si el día que se planea es hoy ──');
+{
+  const b = await boot();
+  const { w, T } = b;
+  const HOY = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+  let pedidos = 0;
+  w.Api.listActiveShifts = async () => { pedidos++; return [
+    { id: 's1', status: 'active', vehicles: { internal_code: null, license_plate: 'HYU376' }, driver_profiles: { profiles: { id: 'd9', full_name: 'Daniel Alvarez Torres' } } },
+    { id: 's2', status: 'active', vehicles: { internal_code: 'V-07', license_plate: 'PRW443' }, driver_profiles: { profiles: { id: 'd10', full_name: 'Juan Andres Mery' } } },
+    { id: 's3', status: 'active', vehicles: null, driver_profiles: null }]; };
+  t('el día del fixture (no es hoy): no se piden', pedidos === 0 && T().rt.activos === null, JSON.stringify([pedidos, T().rt.activos]));
+  // El mismo día de prueba, pero con la fecha de HOY.
+  const orig = w.Api.listRoutePlanning;
+  w.Api.listRoutePlanning = async (tipo) => { const r = await orig(tipo, undefined); return r && { ...r, day: HOY }; };
+  await T().rtLoad(HOY); await wait(10);
+  const act = T().rt.activos;
+  t('cargando HOY: se piden y quedan con nombre y carro (placa si no hay código; sin conductor no entra)',
+    pedidos === 1 && Array.isArray(act) && act.length === 2 && act[0].id === 'd9' && act[0].car === 'HYU376' && act[1].car === 'V-07' && act[1].n === 'Juan Andres Mery', JSON.stringify(act));
+  w.Api.listActiveShifts = async () => { throw new Error('sin permiso'); };
+  await T().rtLoad(HOY); await wait(10);
+  t('si falla la lectura: sin turnos abiertos, el día carga igual', T().rt.activos === null && b.errors.length === 0, b.errors.join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vueltas y búsqueda ──');
 {
   const b = await boot();
@@ -127,6 +151,32 @@ console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vue
   t('Conductores: carro × turno (AM / PM) con quién maneja', qa('#rv2-drivers .hd').map(txt).join(',') === 'Turno AM,Turno PM' && qa('#rv2-drivers .car').map(txt).join(',') === 'V-01,V-02,V-03', qa('#rv2-drivers .hd').map(txt).join(','));
   t('…V-01 PM «Rubén D. · 1 vuelta · automático»; V-01 AM «Jorge P. · 1 vuelta · elegido» (la terminada ya no cuenta)', leer(cel('V-01', 'pm')) === 'Rubén D. 1 vuelta · automático' && leer(cel('V-01', 'am')) === 'Jorge P. 1 vuelta · elegido', [leer(cel('V-01', 'pm')), leer(cel('V-01', 'am'))].join(' | '));
   t('…V-02 no tiene vueltas PM: «Sin vueltas»', /Sin vueltas/.test(txt(qa('#rv2-drivers .cell.none')[0] || null)));
+  // 25-oct-2026: quién más está en turno sin vueltas (la tarjeta va por carro con vueltas).
+  {
+    const usados = new Set();
+    rt.cars.forEach((c) => ['am', 'pm'].forEach((k) => { const id = k === 'am' ? c.driverAM : c.driverPM; if (id) usados.add(id); }));
+    const esperados = [...rt.shift.am, ...rt.shift.pm].filter((d) => !usados.has(d.id)).map((d) => d.n);
+    const lib = q('#rv2-drivers .rv2-dfree');
+    t('«También en turno, sin vueltas»: los del horario de esos turnos que no manejan ningún carro (' + (esperados.join(', ') || 'nadie') + ')',
+      esperados.length ? (!!lib && leer(lib) === 'También en turno, sin vueltas: ' + esperados.join(', ') + '.') : !lib, lib ? leer(lib) : '(sin línea)');
+    t('…sin «turno abierto»: el día que se mira no es hoy (no se piden los turnos abiertos)', !lib || !/turno abierto/.test(txt(lib)));
+    // Si el día fuera hoy: los turnos abiertos (uno que no está en el horario, en V-02;
+    // uno que ya maneja un carro del plan no sale).
+    const conCarro = [...usados][0];
+    rt.activos = [{ id: 'd9', n: 'Daniel Alvarez', car: 'V-02' }, { id: conCarro, n: 'Ya maneja', car: 'V-03' }];
+    V2().render(); await wait(10);
+    const lib2 = q('#rv2-drivers .rv2-dfree');
+    t('con turnos abiertos: «Daniel Alvarez (turno abierto en V-02)», y quien ya maneja un carro del plan no sale',
+      !!lib2 && /Daniel Alvarez \(turno abierto en V-02\)/.test(leer(lib2)) && !/Ya maneja/.test(leer(lib2)), lib2 && leer(lib2));
+    rt.activos = null;
+    // Uno más en el horario PM sin carro: sale por su nombre, sin «turno abierto».
+    rt.shift.pm.push({ id: 'd8', n: 'Pedro Libre' });
+    V2().render(); await wait(10);
+    const lib3 = q('#rv2-drivers .rv2-dfree');
+    t('uno del horario PM sin carro: «También en turno, sin vueltas: Pedro Libre.»', !!lib3 && txt(lib3) === 'También en turno, sin vueltas: Pedro Libre.', lib3 && leer(lib3));
+    rt.shift.pm.pop();
+    V2().render(); await wait(10);
+  }
   const r = b.rutaDe('V-01·V2');
   t('modelo real: V-01·V2 sale 04:45, llega 06:39, margen −19 (con 10 min de entrega)', r && r.arrival === 399 && r.margin === -19 && r.status === 'risk', r && JSON.stringify([r.arrival, r.margin, r.status]));
   t('V-02·V2 es «Hotel» (pernocta) con +7 de margen (ya no se anuncia como «Ajustada»)', b.rutaDe('V-02·V2').type === 'hotel' && b.rutaDe('V-02·V2').margin === 7 && !/Ajustada/.test(txt(q('#routes-v2'))));

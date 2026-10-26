@@ -139,6 +139,8 @@
 #routes-v2 .rv2-al li small { display: block; color: var(--ink2); font-size: 12px; margin-top: 2px; }
 #routes-v2 .rv2-al li.is-ok { background: var(--green-soft); border-color: #C9E6D7; color: #0F6E4F; font-weight: 700; }
 #routes-v2 .rv2-dgrid { display: grid; gap: 6px; align-items: stretch; }
+#routes-v2 .rv2-dfree { margin: 10px 0 0; }
+#routes-v2 .rv2-dfree b { font-weight: 700; color: var(--ink); }
 #routes-v2 .rv2-dgrid .hd { font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: var(--ink3); text-transform: uppercase; padding: 0 2px; }
 #routes-v2 .rv2-dgrid .car { font-weight: 800; font-size: 13.5px; align-self: center; }
 #routes-v2 .rv2-dgrid .cell { border: 1px solid var(--line); border-radius: 9px; padding: 6px 9px; text-align: left; background: var(--panel); display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 42px; min-width: 0; }

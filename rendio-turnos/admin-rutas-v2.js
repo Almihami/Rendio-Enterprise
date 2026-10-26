@@ -535,7 +535,32 @@
           `<b>${d ? esc(shortName(d.name)) : 'Sin conductor'}</b><small>${plural(c.n, 'vuelta', 'vueltas')}${id ? (auto ? ' · automático' : ' · elegido') : ''}</small></button>`;
       });
     });
-    el.drivers.innerHTML = h + '</div>';
+    el.drivers.innerHTML = h + '</div>' + libresHTML(cars, bands, cells);
+  }
+  // 25-oct-2026: la tarjeta va por carro con vueltas, así que quien está en turno
+  // sin ninguna no salía («¿y Daniel?»). Del horario publicado de los turnos que
+  // tienen vueltas y, si el día es hoy, de los turnos abiertos (con el carro en
+  // que lo abrió: así se ve si el carro del plan lo tiene otro).
+  function libresHTML(cars, bands, cells) {
+    const usados = new Set();
+    cars.forEach((car) => bands.forEach((b) => { if (cells[car.id + '|' + b]) { const id = rtCarDrv(car, b); if (id) usados.add(id); } }));
+    const libres = new Map();
+    // El nombre de la lista de conductores; si no está ahí, el del horario o el del turno.
+    const nom = (id, n) => { const d = (rt.drivers || []).find((x) => x.id === id); return (d && d.n) || n || 'Conductor'; };
+    bands.forEach((b) => {
+      const cargado = b === 'mad' ? rt.shiftPrevLoaded : rt.shiftLoaded;
+      if (!cargado) return;
+      poolTurno(b).forEach((d) => { if (!usados.has(d.id) && !libres.has(d.id)) libres.set(d.id, { n: nom(d.id, d.n), car: null }); });
+    });
+    (rt.activos || []).forEach((a) => {
+      if (usados.has(a.id)) return;
+      const x = libres.get(a.id) || { n: nom(a.id, a.n), car: null };
+      x.car = a.car;
+      libres.set(a.id, x);
+    });
+    if (!libres.size) return '';
+    return '<p class="sub rv2-dfree" data-k="libres">También en turno, sin vueltas: '
+      + [...libres.values()].map((x) => '<b>' + esc(x.n) + '</b>' + (x.car ? ' (turno abierto en ' + esc(x.car) + ')' : '')).join(', ') + '.</p>';
   }
 
   function rowHTML(r) {
