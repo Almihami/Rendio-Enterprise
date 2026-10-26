@@ -1459,13 +1459,19 @@
 
       <!-- ===================== RUTAS: OPERACIÓN EN VIVO (mapa real OSM) ===================== -->
       <section data-panel="oper" class="hidden">
-        <div id="oper-ui" data-theme="light">
+        <div id="oper-ui" data-theme="light" data-op-vista="cars">
           <div class="op-top">
             <h1>Operación en vivo</h1>
             <span class="op-live"><span class="op-pulse"></span>En vivo</span>
             <span class="op-clock" id="oper-clock">--:--:--</span>
             <span class="op-spacer"></span>
             <span class="op-stub" title="El tráfico en vivo (TomTom) requiere API key de pago. Los vuelos ya se siguen con Flightradar24: Rutas › Vuelos."><svg class="icon" style="width:13px;height:13px"><use href="#i-warn"/></svg>Tráfico: pendiente API key</span>
+          </div>
+          <!-- Solo en el teléfono (≤768 px): las tres columnas no caben y se ve una a la vez. -->
+          <div class="op-tabs" role="tablist" aria-label="Qué ver">
+            <button class="on" data-op-tab="cars" role="tab" aria-selected="true">Carros<span class="n" id="oper-tabN"></span></button>
+            <button data-op-tab="map" role="tab" aria-selected="false">Mapa</button>
+            <button data-op-tab="feed" role="tab" aria-selected="false">Actividad</button>
           </div>
           <div class="op-stage">
             <!-- IZQUIERDA: lista de carros -->

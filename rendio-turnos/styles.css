@@ -2379,8 +2379,8 @@ details[open] .details-chevron { transform: rotate(180deg); }
 
 /* layout 3 columnas */
 #oper-ui .op-stage{flex:1;min-height:0;display:grid;grid-template-columns:320px 1fr 300px;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
-@media(max-width:1180px){#oper-ui .op-stage{grid-template-columns:280px 1fr}#oper-ui .op-feed{display:none}}
-@media(max-width:760px){#oper-ui .op-stage{grid-template-columns:1fr;grid-template-rows:auto 1fr}#oper-ui .op-cars{max-height:38%}}
+/* Los cortes de ≤1180 y del teléfono van DESPUÉS de la base de .op-feed (al
+   final de este bloque): escritos aquí perdían contra ella. */
 
 /* IZQUIERDA: lista de carros */
 #oper-ui .op-cars{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
@@ -2555,6 +2555,25 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #oper-ui .op-ev .op-evtx p{font-size:12.5px;color:var(--ink);line-height:1.4}
 #oper-ui .op-ev .op-evtx p b{font-weight:700}
 #oper-ui .op-ev .op-evtx .op-evt{font-size:10.5px;color:var(--ink3);font-family:var(--mono);margin-top:3px}
+
+/* Pestañas y «Ver en el mapa»: solo en el teléfono (OLA 1, ≤768px). */
+#oper-ui .op-tabs{display:none}
+#oper-ui .op-det-acts{display:flex;flex-wrap:wrap;gap:8px}
+#oper-ui .op-det-map{display:none}
+
+/* ≤1180px — tres columnas → dos (el canon de RESPONSIVE DEL ADMIN).
+   Hasta el 26-oct-2026 esto apagaba la actividad, pero estaba escrito ANTES que
+   la base de .op-feed (display:flex, misma especificidad) y perdía: la actividad
+   caía en una segunda fila de la grilla y partía en dos la lista y el mapa, con
+   un hueco en blanco debajo del mapa. Ahora no se apaga —trae los avisos del
+   vigilante, que no salen en ninguna tarjeta—: va debajo del mapa, en la misma
+   columna, y la lista usa el alto entero. */
+@media(max-width:1180px){
+  #oper-ui .op-stage{grid-template-columns:280px minmax(0,1fr);grid-template-rows:minmax(0,3fr) minmax(0,2fr)}
+  #oper-ui .op-cars{grid-column:1;grid-row:1 / 3}
+  #oper-ui .op-mapwrap{grid-column:2;grid-row:1}
+  #oper-ui .op-feed{grid-column:2;grid-row:2;border-left:0;border-top:1px solid var(--line)}
+}
 
 /* ---- Rutas: previsualización del trayecto (mapa OSRM) ---- */
 #routes-ui .mapbtn {height:34px;padding:0 13px;border-radius:9px;border:1.5px solid var(--line2);background:var(--panel);color:var(--ink2);font-family:var(--font);font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.14s;margin-right:8px}
@@ -3630,8 +3649,9 @@ html,body{overflow-x:hidden}
    EL CANON. No se agrega el número 17. Se declaran TRES líneas, y las tres ya
    existían y ya significaban algo en el proyecto:
 
-     1180px — "tres columnas → dos". Ya la usan #oper-ui .op-stage (apaga el
-              feed, línea 2145) y #routes-ui .lanes (el reloj se baja, 2310).
+     1180px — "tres columnas → dos". Ya la usan #oper-ui .op-stage (la
+              actividad baja debajo del mapa) y #routes-ui .lanes (el reloj se
+              baja, 2310).
      900px  — "dos columnas → una". Es la línea que documentó Tripulantes en
               rc-auxiliar.css:1024 ("cinco datos no caben en 360px sin letra de
               9 puntos") y la que usa .pc .md (línea 486).
@@ -4112,15 +4132,51 @@ html,body{overflow-x:hidden}
         propio PELEÁNDOSE con el gesto de arrastrar el mapa. Se mueve un dedo y
         no se sabe si se movió el mapa o la página. 210 es la cuenta correcta. */
   #oper-ui { height: calc(100dvh - 210px); min-height: 420px; margin: 0; }
+  /* (26-oct-2026) Pero el admin no tiene barra inferior: esos 96 px de pb-24
+     eran una franja en blanco al pie, más los 38 de holgura del 210 — 134 px de
+     un teléfono de 860. Y con el inset de arriba de un iPhone instalado (47 px)
+     el 210 se quedaba CORTO y volvía el scroll que pelea con el mapa. Mientras
+     Operación está a la vista, #app-main deja solo el inset del pie y el panel
+     mide exactamente lo que sobra (100 % del contenido de #app-main), sea cual
+     sea su relleno de arriba. Sin :has queda la cuenta de 210 de arriba. Es la
+     misma salida que tomó Asignación (admin-rutas-v2.css, #routes-v2). */
+  #app-main:has(> section[data-panel="oper"]:not(.hidden)) { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  #app-shell.admin-shell section[data-panel="oper"],
+  #app-shell.admin-shell #oper-ui { height: 100%; }
   #oper-ui .op-top { height: auto; flex-wrap: wrap; row-gap: 8px; gap: 10px; padding: 0 0 10px; }
   #oper-ui .op-top h1 { font-size: 17px; }
   #oper-ui .op-spacer { display: none; }
   #oper-ui .op-clock { margin-left: auto; }
   #oper-ui .op-stub { flex: 1 1 100%; font-size: 10.5px; line-height: 1.35; }
 
-  /* La lista de carros arriba, el mapa abajo. 38% de la altura es media
-     pantalla de tarjetas: suficiente para ver dos carros y decidir. */
-  #oper-ui .op-stage { border-radius: 14px; }
+  /* Carros · Mapa · Actividad: una a la vez, cada una con el alto entero
+     (26-oct-2026). Antes era la lista arriba (38 %) y el mapa abajo, y en un
+     teléfono de 390 se veían 35 px de lista —el borde de la primera tarjeta—, el
+     mapa en 0 px (un bloque en blanco) y la actividad, que debía estar apagada,
+     ocupando su lugar: la grilla tenía dos filas y TRES hijos. Desde la tarjeta
+     por carro (v214) cada tarjeta mide ~170 px; a media pantalla no cabe una.
+     La actividad en su pestaña no pelea con el dedo que arrastra el mapa: el
+     panel nunca se desplaza, solo la lista que se está mirando.
+     Las pestañas que no se ven quedan visibility:hidden y NO display:none: el
+     mapa conserva su tamaño (Leaflet no se queda en 0×0, en blanco) y cada
+     lista conserva hasta dónde se había bajado. La alerta de atraso vive en el
+     mapa; si hay un carro tarde, la pestaña «Mapa» lleva un punto rojo. */
+  #oper-ui .op-tabs { display: flex; flex: 0 0 auto; gap: 2px; padding: 3px; margin: 0 0 8px; background: var(--panel); border: 1px solid var(--line2); border-radius: 11px; }
+  #oper-ui .op-tabs button { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ink2); font-family: var(--font); font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  #oper-ui .op-tabs button.on { background: var(--ink); color: #fff; }
+  #oper-ui .op-tabs .n { font-family: var(--mono); font-size: 11px; opacity: .8; }
+  #oper-ui .op-tabs .n:empty { display: none; }
+  #oper-ui .op-tabs button.alerta::after { content: ""; width: 8px; height: 8px; border-radius: 99px; background: var(--red); flex: 0 0 auto; }
+  #oper-ui .op-stage { display: block; position: relative; border-radius: 14px; }
+  #oper-ui .op-stage > .op-cars,
+  #oper-ui .op-stage > .op-mapwrap,
+  #oper-ui .op-stage > .op-feed { position: absolute; inset: 0; border: 0; visibility: hidden; }
+  #oper-ui[data-op-vista="cars"] .op-stage > .op-cars,
+  #oper-ui[data-op-vista="map"] .op-stage > .op-mapwrap,
+  #oper-ui[data-op-vista="feed"] .op-stage > .op-feed { visibility: visible; }
+  /* En el detalle, el mapa está en otra pestaña: un botón lleva a ese carro. */
+  #oper-ui .op-det-map { display: inline-flex; }
+  #oper-ui .op-det-acts .op-det-call { height: 40px; }
   #oper-ui .op-kpis { gap: 6px; }
   #oper-ui .op-kpi { padding: 7px 6px; }
   #oper-ui .op-kpi b { font-size: 16px; }
@@ -4134,12 +4190,16 @@ html,body{overflow-x:hidden}
   #oper-ui .op-delay { left: 8px; right: 8px; top: 8px; transform: none; width: auto; }
   #oper-ui .op-delay.show { animation: none; }
   #oper-ui .op-delay-acts { flex-direction: column; gap: 7px; }
-  #oper-ui .op-dact { width: 100%; min-width: 0; }
+  /* flex:none — el flex:1 de la base, en columna, les quitaba la altura y
+     quedaban de ~20 px (no se veía: el mapa medía 0 px hasta el 26-oct-2026). */
+  #oper-ui .op-dact { width: 100%; min-width: 0; flex: none; height: 42px; }
 
   /* La leyenda flotaba sobre la esquina del mapa y en pantalla chica tapaba
      carros. Se vuelve una tira horizontal pegada abajo. */
+  /* (26-oct-2026) A 8 px del borde tapaba el «© OpenStreetMap», que la
+     licencia de los mapas pide dejar a la vista: sube por encima. */
   #oper-ui .op-legend {
-    right: 8px; left: 8px; bottom: 8px;
+    right: 8px; left: 8px; bottom: 24px;
     flex-direction: row; justify-content: space-around;
     gap: 4px; padding: 7px 8px;
   }
