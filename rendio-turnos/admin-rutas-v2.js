@@ -878,11 +878,28 @@
 
   function render() {
     if (!root()) return;
+    if (ui.manual && !ui.cargando && window.RendioRutaJulian) { renderManual(); return; }
     if (!ui.cargando) autoLlenar();
     D = armarDia();
     if (ui.sel && !D.byId[ui.sel]) { ui.sel = null; ui.moving = null; }
     const av = avisosDe();
     renderBar(); renderSay(av); renderAvisos(av); renderDrivers(); renderList(); renderDetail();
+  }
+
+  // 0125: el día va con la ruta de Julián. El tablero (Avisos, Conductores, mover,
+  // Publicar, Re-optimizar) no aplica: los conductores toman las vueltas.
+  function renderManual() {
+    D = armarDia();
+    renderBar();
+    el.summary.hidden = true; el.avisos.innerHTML = ''; el.drivers.innerHTML = '';
+    el.say.hidden = false; el.say.classList.add('is-ok');
+    el.say.innerHTML = '<i aria-hidden="true"></i><span><b>Este día va con la ruta de Julián.</b> Los conductores toman las vueltas en su app; aquí ves cuáles faltan.</span>';
+    el.list.innerHTML = window.RendioRutaJulian.diaHTML(ui.manual.vueltas, ui.dia, ui.manual.otras);
+    ui.sel = null;
+    if (el.detail) { el.detail.classList.remove('is-open'); if (el.dhead) el.dhead.innerHTML = ''; if (el.dtop) el.dtop.innerHTML = ''; if (el.dbot) el.dbot.innerHTML = ''; if (el.mapwrap) el.mapwrap.hidden = true; }
+    [el.publish, el.publishM, el.reopt].forEach((b) => { if (b) { b.disabled = true; b.title = 'Este día va con la ruta de Julián'; } });
+    el.publishLabel.textContent = 'Ruta de Julián publicada'; el.pending.hidden = true;
+    el.publishM.textContent = 'Ruta de Julián publicada';
   }
 
   /* ---------- 6. Acciones ---------- */
@@ -976,6 +993,7 @@
   }
 
   async function reoptimizar() {
+    if (ui.manual) { toast('Este día va con la ruta de Julián: quítala para volver al tablero.'); return; }
     if (rt.source !== 'live' || ui.optimizando || typeof rtOptimize !== 'function') return;
     const enCurso = Object.keys(rt.rv2Fijas || {}).length;
     if (enCurso && !window.confirm(`Hay ${plural(enCurso, 'vuelta', 'vueltas')} en curso o terminada${enCurso > 1 ? 's' : ''}. Re-optimizar arma el día desde cero; lo que el conductor ya atendió no se mueve al publicar. ¿Seguir?`)) return;
@@ -1201,6 +1219,7 @@
   }
 
   function openPublish() {
+    if (ui.manual) { toast('Este día va con la ruta de Julián: los conductores toman las vueltas.'); return; }
     if (!hayVueltas()) { toast('No hay vueltas para publicar todavía.'); return; }
     const c = counts(D.routes);
     const unr = (rt.pool || []).length;
@@ -1331,10 +1350,23 @@
   // número de vuelta, el origen y la hora de aterrizaje.
   async function rearmarPublicado() {
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {};
+    ui.manual = null; rt.manualDia = false;
     if (rt.source !== 'live' || !rt.day || !window.Api || typeof Api.getPublishedPlan !== 'function') return false;
     let plan = null;
     try { plan = await Api.getPublishedPlan(rt.day, { estados: ESTADOS_PLAN }); } catch (_) { return false; }
-    const vueltas = (plan && plan.vueltas) || [];
+    const todas = (plan && plan.vueltas) || [];
+    // 0125: las vueltas que pegó Julián (pool) no entran al tablero: el día se
+    // muestra con su ruta y los conductores las toman (admin-ruta-julian.js).
+    const deEste = (v) => !v.manualDay || v.manualDay === rt.day;
+    const pegadas = todas.filter((v) => v.pool && deEste(v));
+    const vueltas = todas.filter((v) => !v.pool);
+    // La madrugada que Julián pegó con el día ANTERIOR cae en esta ventana: esas
+    // personas ya van en una vuelta suya, así que el tablero no las vuelve a rutear.
+    const ajenas = new Set(todas.filter((v) => v.pool && !deEste(v))
+      .flatMap((v) => [...(v.pendientes || []), ...(v.atendidas || [])].map((x) => x.rid)));
+    if (ajenas.size) Object.keys(rt.aux).forEach((k) => { if (ajenas.has(rt.aux[k].reservationId)) delete rt.aux[k]; });
+    ui.manual = pegadas.length ? { vueltas: pegadas, otras: vueltas.length } : null;
+    rt.manualDia = !!ui.manual;
     if (!vueltas.length) return false;
     const porReserva = {};
     Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
@@ -1546,6 +1578,9 @@
     el.publishM.addEventListener('click', openPublish);
     el.reopt.addEventListener('click', reoptimizar);
     $('#rv2-wa').addEventListener('click', abrirWhatsApp);
+    // 0125: la ruta de Julián y el Excel del día (con la estructura del Formulario).
+    if ($('#rv2-julian')) $('#rv2-julian').addEventListener('click', () => { if (window.RendioRutaJulian) window.RendioRutaJulian.abrir(); });
+    if ($('#rv2-xlsx')) $('#rv2-xlsx').addEventListener('click', () => { if (window.RendioRutaJulian) window.RendioRutaJulian.excel(); });
     document.addEventListener('keydown', onKey);
     r.addEventListener('dragstart', onDragStart);
     r.addEventListener('dragover', onDragOver);
@@ -1657,6 +1692,8 @@
   window.RendioRutasV2 = {
     activa, entrar, ocultar, mostrar, aVista, cambiarDia, cargarDia, rotularVieja, render,
     // Para las pruebas y para depurar desde la consola (no lo usa la app).
+    // 0125: la ruta de Julián (admin-ruta-julian.js) usa la hoja, el aviso y el día.
+    _sheet: { open: openSheet, close: closeSheet, head: sheetHead }, toast, diaActual: () => ui.dia,
     _ui: ui, _hist: hist, dia: () => D, medir, sugerencia: (id) => sugerencia(D && D.byId[id]), candidatas, _mover: moveCrew,
     _avisos: () => avisosDe(), _sacar: sacarDeRuta,
   };

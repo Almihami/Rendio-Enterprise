@@ -2486,7 +2486,8 @@
       // admin tenía que abrir Reservas en otra pestaña. Se traen también vuelo,
       // teléfono, notas y pernocta. Defensivo igual que listMyReservations: si
       // 0050 no está aplicada, se reintenta sin las columnas nuevas.
-      const COLS = 'id, direction, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)';
+      // 0125: + auxiliar_profile_id (los apodos de la ruta de Julián van por tripulante).
+      const COLS = 'id, direction, auxiliar_profile_id, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)';
       const q = cols => {
         let b = sb.from('reservations').select(cols)
           .is('cancelled_at', null)
@@ -2561,7 +2562,7 @@
         dir: r.pickup_address || '',
         lat: r.pickup_latitude, lng: r.pickup_longitude,
         dl: rtHHMM(r.required_arrival_at),
-        pax: 1, type, reservationId: r.id,
+        pax: 1, type, reservationId: r.id, auxId: r.auxiliar_profile_id || null,
         // Contexto para decidir sin salir del tablero.
         tel: r.auxiliar_profiles?.profiles?.phone || '',
         // El número de vuelo decide cuánto tarda el desembarque (0058), así que
@@ -3447,11 +3448,17 @@
 
     // Borra lo que aún no arranca (draft/planned SIN paradas atendidas) entero…
     {
-      let del = sb.from('route_assignments').delete()
-        .in('status', ['draft', 'planned'])
-        .gte('planned_start_at', d0).lte('planned_start_at', d1);
-      if (arrancadas.size) del = del.not('id', 'in', `(${[...arrancadas].join(',')})`);
-      const { error } = await del;
+      // 0125: las vueltas que pegó Julián (pool) no son del tablero: no se tocan.
+      const borrar = (conPool) => {
+        let del = sb.from('route_assignments').delete()
+          .in('status', ['draft', 'planned'])
+          .gte('planned_start_at', d0).lte('planned_start_at', d1);
+        if (conPool) del = del.eq('pool', false);
+        if (arrancadas.size) del = del.not('id', 'in', `(${[...arrancadas].join(',')})`);
+        return del;
+      };
+      let { error } = await borrar(true);
+      if (error && (error.code === '42703' || /pool/.test(error.message || ''))) ({ error } = await borrar(false));
       if (error) throw new Error('No se pudo reemplazar el plan: ' + error.message);
     }
     // …y de las rutas en curso, solo las paradas que cambian de carro. La ruta
@@ -3554,6 +3561,13 @@
     const MDE = { name: 'Aeropuerto JMC', addr: 'Terminal de pasajeros · José María Córdova', lat: 6.1715, lng: -75.4270 };
     const active = (data || []).filter(ra => ra.planned_start_at && ra.status !== 'completed' && _opDay(ra.planned_start_at, corte) >= today);
     if (!active.length) return [];
+    // 0125: cuáles son vueltas pegadas (se pueden soltar) y su «Deben estar». Sin
+    // la migración no hay nada que leer y la vuelta se pinta como siempre.
+    const extra = {};
+    try {
+      const { data: ex, error: exErr } = await sb.from('route_assignments').select('id, pool, deadline_at, manual_note').in('id', active.map(ra => ra.id));
+      if (!exErr) (ex || []).forEach(x => { extra[x.id] = x; });
+    } catch (_) { /* sin 0125 */ }
     const day0 = _opDay(active[0].planned_start_at, corte); // vienen ordenadas por planned_start_at
     const rows = active.filter(ra => _opDay(ra.planned_start_at, corte) === day0);
     return rows.map((ra, i) => {
@@ -3594,7 +3608,9 @@
       // day = fecha de CALENDARIO de la vuelta (la presentación y el vuelo se leen
       // con ella); opDay = el día de turno al que pertenece. Si difieren, es la
       // madrugada después de medianoche.
-      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at, done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: _bogDay(ra.planned_start_at), opDay: day0 };
+      const ex = extra[ra.id] || {};
+      return { id: 'V' + (i + 1), type, start: rtHHMM(ra.planned_start_at), startAt: ra.planned_start_at, done: ra.status === 'completed' || todasResueltas, legs, assignmentId: ra.id, day: _bogDay(ra.planned_start_at), opDay: day0,
+        pool: ex.pool === true, deadline: ex.deadline_at ? rtHHMM(ex.deadline_at) : '', nota: ex.manual_note || '' };
     });
   }
 
@@ -3830,17 +3846,26 @@
     const d0 = day + 'T00:00:00-05:00', d1 = day + 'T23:59:59-05:00';
     const estados = (opts && Array.isArray(opts.estados) && opts.estados.length) ? opts.estados : ['planned', 'in_progress'];
     // 0124: + plan_car (el carro del plan); con una base sin 0124, sin él.
-    const sel = (extra) => sb.from('route_assignments')
+    const sel = (extra, q) => (q || ((x) => x.gte('planned_start_at', d0).lte('planned_start_at', d1)))(sb.from('route_assignments')
       .select('id, direction, status, planned_start_at, driver_profile_id, vehicle_id, ' + extra +
         'vehicles(license_plate, internal_code, capacity), ' +
         'driver_profiles(profile_id, profiles(full_name)), ' +
         'route_stops(id, stop_order, status, estimated_arrival_at, reservation_id, ' +
         'reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, ' +
         'residence_id, cancelled_at, auxiliar_profiles(profiles(full_name))))')
-      .in('status', estados)
-      .gte('planned_start_at', d0).lte('planned_start_at', d1)
+      .in('status', estados))
       .order('planned_start_at');
-    let { data, error } = await sel('plan_car, ');
+    const C0125 = 'plan_car, pool, deadline_at, manual_note, manual_day, ';
+    let { data, error } = await sel(C0125);
+    if (!error) {
+      // 0125: la madrugada que Julián pegó con ESTE día (0:20 del día siguiente)
+      // se ve aquí, con el resto de su ruta.
+      try {
+        const mad = await sel(C0125, (x) => x.eq('pool', true).eq('manual_day', day).gt('planned_start_at', d1));
+        if (!mad.error && mad.data && mad.data.length) data = (data || []).concat(mad.data.filter((r) => !(data || []).some((x) => x.id === r.id)));
+      } catch (_) { /* sin la madrugada: el resto del día igual se ve */ }
+    }
+    if (error && (error.code === '42703' || /pool|deadline_at|manual_note|manual_day/.test(error.message || ''))) ({ data, error } = await sel('plan_car, '));
     if (error && (error.code === '42703' || /plan_car/.test(error.message || ''))) ({ data, error } = await sel(''));
     if (error) throw error;
 
@@ -3885,6 +3910,8 @@
         startAt: ra.planned_start_at,
         vehicleId: ra.vehicle_id,
         planCar: ra.plan_car || null,
+        // 0125: la vuelta que pegó Julián (los conductores la toman).
+        pool: ra.pool === true, deadlineAt: ra.deadline_at || null, nota: ra.manual_note || '', manualDay: ra.manual_day || null,
         // La placa del turno si ya la tiene; si no, el carro del plan (0124).
         carro: ra.vehicles?.internal_code || ra.vehicles?.license_plate || ra.plan_car || 'Carro',
         placa: ra.vehicles?.internal_code || ra.vehicles?.license_plate || null,
@@ -3926,7 +3953,44 @@
     };
   }
 
+  // ── 0125 · La ruta de Julián ──────────────────────────────────────────────
+  // El jefe pega su ruta del WhatsApp; la pantalla la lee y empareja nombres, y
+  // la base la publica sin conductor (los conductores la toman).
+  async function adminManualRoutePublish(day, blocks, aliases) {
+    const { data, error } = await sb.rpc('admin_manual_route_publish', { p_day: day, p_blocks: blocks || [], p_aliases: aliases || [] });
+    if (error) throw error;
+    return data;
+  }
+  async function adminManualRouteClear(day) {
+    const { data, error } = await sb.rpc('admin_manual_route_clear', { p_day: day });
+    if (error) throw error;
+    return data;
+  }
+  // Cómo escribe Julián a cada tripulante (lo aprendido). Sin 0125: vacío.
+  async function listCrewAliases() {
+    const { data, error } = await sb.from('crew_aliases').select('alias_norm, auxiliar_profile_id');
+    if (error) return [];
+    return (data || []).map(a => ({ alias: a.alias_norm, auxId: a.auxiliar_profile_id }));
+  }
+  // El conductor: las vueltas pegadas que nadie ha tomado, tomar y soltar.
+  async function driverOpenRoutes() {
+    const { data, error } = await sb.rpc('driver_open_routes');
+    if (error) { if (error.code === '42883' || /driver_open_routes/.test(error.message || '')) return []; throw error; }
+    return Array.isArray(data) ? data : [];
+  }
+  async function driverTakeRoute(routeId) {
+    const { data, error } = await sb.rpc('driver_take_route', { p_route: routeId });
+    if (error) throw error;
+    return data;
+  }
+  async function driverReleaseRoute(routeId) {
+    const { data, error } = await sb.rpc('driver_release_route', { p_route: routeId });
+    if (error) throw error;
+    return data;
+  }
+
   window.Api = {
+    adminManualRoutePublish, adminManualRouteClear, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,

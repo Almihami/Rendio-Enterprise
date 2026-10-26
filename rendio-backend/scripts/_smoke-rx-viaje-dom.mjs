@@ -215,6 +215,16 @@ t('★ oculta con 6 calificaciones (< 10)', !q('.rx-drv-st'));
   const tbd = q('[data-rx-k="car-tbd"]');
   t('0124: con conductor y sin placa: «Carro por confirmar» (el nombre del conductor sigue)', !!tbd && tbd.textContent === 'Carro por confirmar' && /Mauricio Arango Pérez/.test(q('.rx-drv').textContent) && !q('.rx-plate'),
     q('.rx-drv') && q('.rx-drv').textContent);
+  // 0125: la ruta de Julián ya publicó su hora, pero ningún conductor ha tomado la vuelta.
+  d = await abrir('asignado-publicado', (dd) => {
+    const tr = dd.track[dd.principal]; if (tr) { tr.vehicle = null; tr.driver = null; }
+    (w.Auxiliar.state.trips || []).forEach((x) => { if (x && x.id === dd.principal) { x.driver = null; x.vehicle = null; x.driverPending = true; } });
+  });
+  const pend = q('[data-rx-k="drv-pending"]');
+  t('0125: publicada y sin conductor: «Tu ruta está lista · Te avisamos quién te recoge…» (no «Estamos armando»)',
+    !!pend && /Tu ruta está lista/.test(pend.textContent) && /apenas un conductor tome tu vuelta/.test(pend.textContent) && !/Estamos armando tu ruta/.test(pend.parentElement.textContent) && !q('.rx-drv'),
+    pend ? pend.textContent : (q('.rx-assign') || { textContent: 'sin .rx-assign' }).textContent);
+  t('0125: …y la hora de recogida publicada sigue a la vista', q('#ax-eta-min') && q('#ax-eta-min').textContent === '03:48', q('#ax-eta-min') && q('#ax-eta-min').textContent);
   d = await abrir('asignado-publicado');
 }
 t('acciones: Llamar (call), Mensaje (chat), Coordinación (open-coord con el id)', !!q('.rx-drv-acts [data-ax="call"]') && !!q('.rx-drv-acts [data-ax="chat"]')

@@ -549,6 +549,7 @@ console.log('\n── H · api.js de verdad (sb falso) ──');
       const bld = {
         select(c) { qd.ops.push(['select', c]); return bld; }, eq(c, v) { qd.ops.push(['eq', c, v]); return bld; },
         gte(c, v) { qd.ops.push(['gte', c, v]); return bld; }, lte(c, v) { qd.ops.push(['lte', c, v]); return bld; }, lt(c, v) { qd.ops.push(['lt', c, v]); return bld; },
+        gt(c, v) { qd.ops.push(['gt', c, v]); return bld; },
         in(c, v) { qd.ops.push(['in', c, v]); return bld; }, is(c, v) { qd.ops.push(['is', c, v]); return bld; },
         order(c, o) { qd.ops.push(['order', c, o || {}]); return bld; }, limit(n) { qd.ops.push(['limit', n]); return bld; },
         maybeSingle() { one = 'maybe'; return bld; }, single() { one = 'single'; return bld; },
@@ -559,6 +560,7 @@ console.log('\n── H · api.js de verdad (sb falso) ──');
             else if (op === 'gte') rows = rows.filter((r) => val(r[c]) >= val(v));
             else if (op === 'lte') rows = rows.filter((r) => val(r[c]) <= val(v));
             else if (op === 'lt') rows = rows.filter((r) => val(r[c]) < val(v));
+            else if (op === 'gt') rows = rows.filter((r) => val(r[c]) > val(v));
             else if (op === 'in') rows = rows.filter((r) => v.includes(r[c]));
             else if (op === 'is') rows = rows.filter((r) => (r[c] ?? null) === v);
             else if (op === 'order') rows.sort((a, z) => (val(a[c]) > val(z[c]) ? 1 : -1));
@@ -603,6 +605,19 @@ console.log('\n── H · api.js de verdad (sb falso) ──');
   const v1 = pp2.vueltas.find((v) => v.id === 'ra1'), v2 = pp2.vueltas.find((v) => v.id === 'ra2');
   t('0124: getPublishedPlan trae el carro del plan (planCar) y, sin placa, lo usa de nombre', v1.planCar === 'Carro 2' && v1.carro === 'Carro 2' && v1.placa === null && v2.planCar === null && v2.carro === 'Carro', JSON.stringify([v1.planCar, v1.carro, v2.carro]));
   t('0124: getPublishedPlan pide plan_car', /plan_car/.test(log.filter((x) => x.table === 'route_assignments').at(-1).ops.find((o) => o[0] === 'select')[1]));
+  // 0125: la ruta de Julián del día trae su madrugada (0:20 del día siguiente),
+  // y lo que Julián pegó con el día ANTERIOR viene marcado con ese día.
+  const SIG = new Date(Date.parse(MAN + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+  const ANT = new Date(Date.parse(MAN + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
+  tablas.route_assignments.push(
+    { id: 'ra-mad', status: 'planned', pool: true, manual_day: MAN, planned_start_at: `${SIG}T00:20:00-05:00`, direction: 'home_to_airport', deadline_at: `${SIG}T00:50:00-05:00`, manual_note: 'Va a hotel', route_stops: [] },
+    { id: 'ra-ant', status: 'planned', pool: true, manual_day: ANT, planned_start_at: `${MAN}T01:10:00-05:00`, direction: 'airport_to_home', route_stops: [] },
+    { id: 'ra-otro', status: 'planned', pool: true, manual_day: SIG, planned_start_at: `${SIG}T03:00:00-05:00`, direction: 'home_to_airport', route_stops: [] });
+  const pp3 = await A.getPublishedPlan(MAN, { estados: ['draft', 'planned'] });
+  const mad = pp3.vueltas.find((v) => v.id === 'ra-mad'), ant = pp3.vueltas.find((v) => v.id === 'ra-ant');
+  t('0125: trae la madrugada que Julián pegó con este día (pool, su «Deben estar» y su nota)', mad && mad.pool === true && mad.manualDay === MAN && mad.deadlineAt && mad.nota === 'Va a hotel', JSON.stringify(mad));
+  t('0125: lo del día anterior viene con su día (el tablero no lo vuelve a rutear) y lo de mañana no entra', ant && ant.manualDay === ANT && !pp3.vueltas.some((v) => v.id === 'ra-otro'), JSON.stringify(pp3.vueltas.map((v) => v.id)));
+  tablas.route_assignments.splice(-3);
 }
 
 console.log('\n── 0124 · publicar sin placa (saveRoutePlan con sb falso) ──');

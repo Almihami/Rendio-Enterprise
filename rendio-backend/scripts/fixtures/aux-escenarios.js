@@ -105,6 +105,8 @@
       pickupPos: null, pickupTotal: null, groundOps: false,
       status: 'pending', rawStatus: 'requested',
       driver: null, vehicle: null,
+      // 0125: ruta de Julián publicada y ningún conductor la ha tomado.
+      driverPending: false,
       bags: null, quiet: false, meetingPoint: '',
       createdAt: haceMin(60 * 30), stopStatus: null, arrivedAt: null, pickedAt: null, droppedAt: null,
       cancelledAt: null, cancelReason: '',

@@ -1563,6 +1563,8 @@
   async function rtSavePlan(opts = {}) {
     const say = typeof opts.toast === 'function' ? opts.toast : toast;
     if (rt.source !== 'live' || !rt.day) { say('Solo se publica con reservas reales.'); return { ok: false }; }
+    // 0125: el día va con la ruta de Julián: el tablero no publica encima.
+    if (rt.manualDia) { say('Este día va con la ruta de Julián: quítala para publicar el tablero.'); return { ok: false }; }
     const lanes = rt.lanes.filter(l => rt.order[l.id] && rt.order[l.id].length).map(l => {
       const car = rt.cars.find(c => c.id === l.car);
       // La hora a la que el carro llega a CADA parada ya está calculada: es la

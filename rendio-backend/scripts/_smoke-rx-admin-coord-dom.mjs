@@ -621,6 +621,82 @@ console.log('\n── admin-rutas.js · avisos al tripulante a /#/viajes ──'
   t('«Ruta asignada» (al conductor) sigue en «/»', /url: '\/'/.test(bloque3.split('\n').slice(0, 4).join('\n')));
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+console.log('\n── driver-rutas.js · 0125 «Vueltas para tomar» (la ruta de Julián): tomar y soltar ──');
+{
+  const { w, errores } = boot();
+  const at = (hm) => `${HOY}T${hm}:00-05:00`;
+  const LIBRES = () => [
+    { id: 'POOL1', direction: 'home_to_airport', planned_start_at: at('03:40'), deadline_at: at('04:20'), note: 'Va a hotel', day: HOY,
+      stops: [{ order: 1, at: at('03:50'), name: 'Laura G.', place: 'Olivar', sector: 'Llanogrande' }, { order: 2, at: at('04:00'), name: 'Andrés R.', place: 'Río Vivo' }] },
+    { id: 'POOL2', direction: 'airport_to_home', planned_start_at: at('14:55'), deadline_at: null, note: null, day: HOY,
+      stops: [{ order: 1, at: null, name: 'Natalia D.', place: 'Mirador', flight: 'AV9412' }] },
+  ];
+  const leg = (o) => Object.assign({ kind: 'pickup', lat: 6.15, lng: -75.37, addr: 'Olivar', unit: '', flight: '', dl: '05:00', phone: '', notes: '', bags: null, quiet: false,
+    meetCode: '', meetingPoint: '', level: 'shared', privateStatus: null, stopStatus: 'pending', pickup: '03:50', eta: '' }, o);
+  const MIA = (pool) => ({ id: 'VP', type: 'sal', start: '03:40', startAt: at('03:40'), done: false, assignmentId: 'POOL1', day: HOY, pool, legs: [
+    leg({ name: 'Laura Gómez', reservationId: 'R1', auxProfileId: 'P1' }), leg({ name: 'Andrés Ruiz', reservationId: 'R2', auxProfileId: 'P2', pickup: '04:00' }),
+    { kind: 'airport', name: 'Aeropuerto JMC', addr: 'Terminal', lat: 6.17, lng: -75.42 }] });
+  const MAN = new Date(Date.parse(HOY + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+  const EXTRA = [
+    { id: 'POOL3', direction: 'home_to_airport', planned_start_at: `${MAN}T00:10:00-05:00`, day: HOY, stops: [{ order: 1, at: `${MAN}T00:20:00-05:00`, name: 'Sara T.', place: 'Mota' }] },
+    { id: 'POOL4', direction: 'home_to_airport', planned_start_at: `${MAN}T09:00:00-05:00`, day: MAN, stops: [{ order: 1, at: `${MAN}T09:10:00-05:00`, name: 'Eva S.', place: 'Mota' }] }];
+  let libres = LIBRES().concat(EXTRA), mias = [];
+  const tomadas = [], soltadas = [];
+  w.Api = {
+    listMyVueltasForDriver: async () => JSON.parse(JSON.stringify(mias)),
+    driverOpenRoutes: async () => JSON.parse(JSON.stringify(libres)),
+    driverTakeRoute: async (id) => {
+      tomadas.push(id);
+      if (id === 'POOL2') throw new Error('Esta vuelta ya la tomó otro conductor');
+      libres = libres.filter((x) => x.id !== id); mias = [MIA(true)];
+      return { id, vehicle_id: 'veh-1', plate: 'HYU376' };
+    },
+    driverReleaseRoute: async (id) => { soltadas.push(id); mias = []; libres = LIBRES(); return true; },
+    getMyDriverProfileId: async () => 'DP1', countUnreadMessages: async () => ({}), sendDriverLocation: async () => {}, driverSetStopStatus: async () => {},
+  };
+  w.state = { settings: { aux_wait_minutes: 5 }, profile: { role: 'driver' } };
+  const confirms = []; w.confirm = (m) => { confirms.push(m); return true; };
+  w.eval(read('driver-rutas.js'));
+  const root = () => w.document.getElementById('driver-ruta-root');
+  const tx = (e) => (e ? e.textContent.replace(/\s+/g, ' ').trim() : '');
+  const toastTx = () => tx(w.document.getElementById('rt-toast-host'));
+  const click = async (sel, ms = 80) => { const el = root().querySelector(sel); if (el) el.click(); await wait(ms); return !!el; };
+  await w.DriverRutas.open({ id: 'pD', full_name: 'Jorge Arango', role: 'driver' }); await wait(80);
+  const cards = () => [...root().querySelectorAll('.rt-vc.rt-libre')];
+  t('sin vueltas propias: «No tienes ruta asignada» invita a tomar una', /No tienes ruta asignada/.test(tx(root())) && /Toma una de las vueltas de abajo/.test(tx(root())));
+  t('«Vueltas para tomar»: las cuatro de la ruta de Julián', /Vueltas para tomar/.test(tx(root())) && cards().length === 4, String(cards().length));
+  t('la salida: hora de la primera recogida (03:50), 2 personas por nombre corto, «deben estar», la nota y los lugares',
+    /03:50/.test(tx(cards()[0])) && /2 personas · Laura, Andrés/.test(tx(cards()[0])) && /Salida/.test(tx(cards()[0].querySelector('.rt-vc-t'))) && /Deben estar 04:20 · Va a hotel · Olivar · Río Vivo/.test(tx(cards()[0])), tx(cards()[0]));
+  t('la llegada: «Llegada» a las 14:55 · «Recoges en JMC»', /14:55/.test(tx(cards()[1])) && /Llegada/.test(tx(cards()[1].querySelector('.rt-vc-t'))) && /Recoges en JMC/.test(tx(cards()[1])), tx(cards()[1]));
+  t('de hoy: sin fecha bajo la hora', cards().slice(0, 2).every((c) => c.querySelectorAll('.rt-vc-t em').length === 1));
+  const bajo = (id) => { const c = cards().find((x) => x.querySelector(`[data-id="${id}"]`)); const e = c && c.querySelectorAll('.rt-vc-t em'); return e && e.length > 1 ? tx(e[1]) : ''; };
+  t('la de 0:20 de la ruta de esta noche dice «Madrugada»; la de mañana a las 9:10, «Mañana»', bajo('POOL3') === 'Madrugada' && bajo('POOL4') === 'Mañana', JSON.stringify([bajo('POOL3'), bajo('POOL4')]));
+  libres = LIBRES();
+  await w.DriverRutas.open({ id: 'pD', full_name: 'Jorge Arango', role: 'driver' }); await wait(80);
+  t('cada una con su botón «Tomar»', cards().every((c) => c.querySelector('[data-rt="take"]') && /Tomar/.test(tx(c.querySelector('[data-rt="take"]')))));
+
+  await click('[data-rt="take"][data-id="POOL2"]', 120);
+  t('si otro la tomó primero: lo dice y no se queda colgado', tomadas.join() === 'POOL2' && /ya la tomó otro conductor/.test(toastTx()), toastTx());
+  await click('[data-rt="take"][data-id="POOL1"]', 150);
+  t('tomar: «La vuelta es tuya · carro HYU376» (el carro del turno)', tomadas.at(-1) === 'POOL1' && /La vuelta es tuya · carro HYU376/.test(toastTx()), toastTx());
+  t('…y pasa a «Tu siguiente vuelta»; en «para tomar» queda solo la otra', /Tu siguiente vuelta/.test(tx(root())) && cards().length === 2 - 1 && !root().querySelector('[data-id="POOL1"]'), String(cards().length));
+
+  await click('.rt-hero [data-rt="detail"][data-v="VP"]', 150);
+  const rel = () => [...root().querySelectorAll('#rt-layers [data-rt="release"]')].pop();
+  t('en el detalle de una vuelta tomada (sin arrancar): «Soltar esta vuelta»', rel() && /Soltar esta vuelta/.test(tx(rel())));
+  await click('#rt-layers .rx-foot [data-rt="release"]', 200);
+  t('soltar pregunta (y avisa que los jefes se enteran)', /les avisamos a los jefes/.test(confirms[0] || ''), confirms[0]);
+  t('…suelta ESA vuelta y vuelve a «Mi día» con las dos para tomar', soltadas.join() === 'POOL1' && /Soltaste la vuelta/.test(toastTx()) && cards().length === 2 && /No tienes ruta asignada/.test(tx(root())), toastTx());
+
+  // Una vuelta del tablero (no la pegó Julián) no se suelta.
+  mias = [MIA(false)]; libres = [];
+  await w.DriverRutas.open({ id: 'pD', full_name: 'Jorge Arango', role: 'driver' }); await wait(80);
+  await click('.rt-hero [data-rt="detail"][data-v="VP"]', 150);
+  t('una vuelta del tablero no tiene «Soltar» y sin vueltas libres no sale la sección', !root().querySelector('#rt-layers [data-rt="release"]') && !/Vueltas para tomar/.test(tx(root())));
+  t('sin errores de script', errores.length === 0, errores.join(' | '));
+}
+
 if (rechazos.length) console.log('\n  ⚠ rechazos sin atender:\n    ' + rechazos.join('\n    '));
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: layout (bandeja/hilo lado a lado, 390 px, chips del conductor), Leaflet, push real, Supabase/RLS real, animaciones (no hay nuevas).');
