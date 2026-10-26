@@ -2608,7 +2608,17 @@
       // Se configura en Ajustes; si la columna no existe todavía se comporta
       // como siempre (2).
       const nCarros = Math.max(1, Number((await getSettings())?.route_cars_count) || 2);
-      cars = (vs || []).slice(0, nCarros).map((v, i) => ({ id: v.internal_code || v.license_plate || ('Carro ' + (i + 1)), avail0: '00:00', driver: null, capacity: v.capacity || 4, vehicleId: v.id }));
+      // 25-oct-2026 (0124): el plan va por CONDUCTOR. Antes estos carros eran los
+      // primeros de la flota en orden alfabético («HYU376») y el plan no sabía
+      // cuál iba a salir de verdad: el carro lo define el conductor al iniciar
+      // turno (elige e inspecciona) y la base se lo pone a sus vueltas. Aquí son
+      // «Carro 1…N»; el cupo es el más común de la flota (empate: el menor).
+      if ((vs || []).length) {
+        const cuenta = {};
+        vs.forEach(v => { const c = Number(v.capacity) || 4; cuenta[c] = (cuenta[c] || 0) + 1; });
+        const cupo = Number(Object.keys(cuenta).sort((a, b) => (cuenta[b] - cuenta[a]) || (a - b))[0]) || 4;
+        cars = Array.from({ length: nCarros }, (_, i) => ({ id: 'Carro ' + (i + 1), avail0: '00:00', driver: null, capacity: cupo, vehicleId: null }));
+      }
     } catch (_) {}
     if (!cars.length) return { aux: {}, colors: {}, cars: [], drivers: [], plan: {}, source: 'empty', day: day0, noVehicles: true };
     let drivers = [];
@@ -3456,17 +3466,25 @@
     let saved = 0, skipped = 0, kept = 0, failed = 0, failMsg = '';
     const notify = [];
     for (const lane of lanes) {
-      if (!lane.vehicleId || !lane.stops || !lane.stops.length) { skipped++; continue; }
+      // 0124: sin placa también: la pone el turno del conductor (la base).
+      if (!lane.stops || !lane.stops.length) { skipped++; continue; }
       // Las paradas ya en curso no se re-planean: siguen donde están.
       const stopIds = lane.stops.filter(rid => !locked.has(rid));
       kept += lane.stops.length - stopIds.length;
       if (!stopIds.length) { skipped++; continue; }
       const dpid = lane.driverProfileId ? dpMap[lane.driverProfileId] : null;
-      const { data: ra, error } = await sb.from('route_assignments').insert({
-        driver_profile_id: dpid, vehicle_id: lane.vehicleId,
+      const fila = {
+        driver_profile_id: dpid, vehicle_id: lane.vehicleId || null,
         direction: lane.type === 'lle' ? 'airport_to_home' : 'home_to_airport',
         status: dpid ? 'planned' : 'draft', planned_start_at: lane.startAt,
-      }).select('id').single();
+      };
+      if (lane.planCar) fila.plan_car = lane.planCar;
+      let { data: ra, error } = await sb.from('route_assignments').insert(fila).select('id').single();
+      // Base sin 0124 (no tiene plan_car): se guarda igual, sin él.
+      if (error && fila.plan_car && (error.code === '42703' || /plan_car/.test(error.message || ''))) {
+        delete fila.plan_car;
+        ({ data: ra, error } = await sb.from('route_assignments').insert(fila).select('id').single());
+      }
       if (error) { failed++; failMsg = failMsg || error.message; continue; }
       // La ETA por parada viaja desde el tablero (lane.etas: minutos desde
       // medianoche). Sin ella, `route_stops.estimated_arrival_at` quedaba NULL
@@ -3710,7 +3728,9 @@
     // las vueltas del día, no solo de la que el carro tiene ahora.
     const feed = [];
     rows.forEach(ra => {
-      const plate = ra.vehicles?.license_plate || ra.vehicles?.internal_code || 'Carro';
+      // 0124: sin placa todavía (el conductor no ha iniciado turno), su nombre.
+      const plate = ra.vehicles?.license_plate || ra.vehicles?.internal_code
+        || (ra.driver_profiles?.profiles?.full_name ? shortName(ra.driver_profiles.profiles.full_name) : '') || 'Carro';
       stopsOf(ra).forEach(s => {
         const who = shortName(nameOf(s));
         if (s.actual_pickup_at) feed.push({ at: s.actual_pickup_at, k: 'ok', h: `<b>${plate}</b> recogió a ${who}.` });
@@ -3809,8 +3829,9 @@
   async function getPublishedPlan(day, opts) {
     const d0 = day + 'T00:00:00-05:00', d1 = day + 'T23:59:59-05:00';
     const estados = (opts && Array.isArray(opts.estados) && opts.estados.length) ? opts.estados : ['planned', 'in_progress'];
-    const { data, error } = await sb.from('route_assignments')
-      .select('id, direction, status, planned_start_at, driver_profile_id, vehicle_id, ' +
+    // 0124: + plan_car (el carro del plan); con una base sin 0124, sin él.
+    const sel = (extra) => sb.from('route_assignments')
+      .select('id, direction, status, planned_start_at, driver_profile_id, vehicle_id, ' + extra +
         'vehicles(license_plate, internal_code, capacity), ' +
         'driver_profiles(profile_id, profiles(full_name)), ' +
         'route_stops(id, stop_order, status, estimated_arrival_at, reservation_id, ' +
@@ -3819,6 +3840,8 @@
       .in('status', estados)
       .gte('planned_start_at', d0).lte('planned_start_at', d1)
       .order('planned_start_at');
+    let { data, error } = await sel('plan_car, ');
+    if (error && (error.code === '42703' || /plan_car/.test(error.message || ''))) ({ data, error } = await sel(''));
     if (error) throw error;
 
     const raws = data || [];
@@ -3861,7 +3884,10 @@
         status: ra.status,
         startAt: ra.planned_start_at,
         vehicleId: ra.vehicle_id,
-        carro: ra.vehicles?.internal_code || ra.vehicles?.license_plate || 'Carro',
+        planCar: ra.plan_car || null,
+        // La placa del turno si ya la tiene; si no, el carro del plan (0124).
+        carro: ra.vehicles?.internal_code || ra.vehicles?.license_plate || ra.plan_car || 'Carro',
+        placa: ra.vehicles?.internal_code || ra.vehicles?.license_plate || null,
         cap: ra.vehicles?.capacity || 4,
         driverProfileId: ra.driver_profiles?.profile_id || null,
         conductor: ra.driver_profiles?.profiles?.full_name || 'Sin conductor',
