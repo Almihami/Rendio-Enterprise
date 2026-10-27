@@ -287,7 +287,7 @@
   function rtFirmaPlan() {
     const lanes = (rt.lanes || []).filter(l => rt.order[l.id] && rt.order[l.id].length)
       // 0131: a quién se delegó también es parte del plan.
-      .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(','), l.drv === undefined ? null : l.drv, l.deleg ? 1 : 0, l.deleg && l.delegName ? [l.delegName, l.delegPhone || ''] : null]);
+      .map(l => [l.car, l.type || 'sal', l.start, rt.order[l.id].join(','), l.drv === undefined ? null : l.drv, l.deleg ? 1 : 0, l.deleg && l.delegName ? [l.delegName, l.delegPhone || ''] : null, l.tomar ? 1 : 0]);   // 0151: + para tomar
     // 0132: el carro de la flota que el plan le pone a «Carro N».
     const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null, c.driverMad || null, c.planVehicleId || null]);
     return JSON.stringify([lanes, drv]);
@@ -1646,6 +1646,7 @@
         delegated: l.deleg === true,    // 0126: la hace alguien de afuera
         delegateName: l.deleg ? (l.delegName || null) : null,     // 0131: a quién
         delegatePhone: l.deleg ? (l.delegPhone || null) : null,
+        paraTomar: !l.deleg && l.tomar === true,   // 0151: Coordinación la dejó para tomar
         type: l.type || 'sal',
         startAt: rt.day + 'T' + (l.start || '04:00') + ':00-05:00',
         stops: rt.order[l.id].map(k => rt.aux[k] && rt.aux[k].reservationId).filter(Boolean),
@@ -1748,6 +1749,8 @@
         if (condHora.length && Api.sendPush) await Api.sendPush({ profileIds: condHora,
           title: 'Cambió la hora de una vuelta 🕒', body: 'Coordinación cambió la hora de una de tus vueltas. Revísala en Ruta.', url: '/#/ruta' });
       } catch (_) {}
+      // 0151: «Hay una vuelta para tomar» a los del turno (solo las nuevas).
+      try { if (r.ofrecer && r.ofrecer.length && Api.offerRoutes) await Api.offerRoutes(r.ofrecer); } catch (_) { /* el reloj de 60 min avisa igual */ }
       // Push "ruta asignada" al CONDUCTOR de cada vuelta con conductor. Su
       // driverProfileId aquí es el id de PERFIL (lo que indexa las suscripciones
       // push), no el de driver_profiles. Best-effort, igual que el de arriba.

@@ -299,7 +299,7 @@
     let status;
     if (fija === 'completed') status = 'ok';
     else if (margin != null && margin < 0) status = 'risk';
-    else if (!driverId && !lane.deleg) status = 'nodriver';   // 0126: la delegada no pide conductor
+    else if (!driverId && !lane.deleg && !lane.tomar) status = 'nodriver';   // 0126: la delegada no pide conductor · 0151: la para tomar tampoco
     else if ((margin != null && margin < ADJ_MIN) || (wait != null && wait > LLE_ESPERA_LARGA)) status = 'adj';
     else status = 'ok';
     // En una llegada recoge cuando la gente ya salió: la vuelta de las 23:59 de
@@ -313,6 +313,7 @@
       delegada: lane.deleg === true,    // 0126: la hace alguien de afuera (sin conductor a propósito)
       delegName: lane.deleg ? (lane.delegName || null) : null,   // 0131: a quién
       delegPhone: lane.deleg ? (lane.delegPhone || null) : null,
+      tomar: lane.tomar === true,       // 0151: dejada para que un conductor la tome
       // Pendientes de los jefes (26-oct): «está saliendo al revés, primero las
       // llegadas y después las salidas; que lo organice en orden de horas como se ha
       // hecho siempre». La lista se ordenaba por la llegada a JMC de cada salida, que
@@ -630,7 +631,7 @@
       out.push({ k: 'nodriver', html: `<b>${esc(carId)}</b> no tiene conductor · ${esc(turnoTxt(b))}<small>${horarioDe(b) ? 'No queda nadie libre en ese turno según el horario publicado' : 'No hay horario publicado para ese turno'}</small>`, btn: 'Elegir', act: `data-act="assignslot" data-car="${esc(carId)}" data-shift="${esc(b)}"` });
     });
     // Se le quitó el conductor SOLO a una vuelta: el botón abre la hoja de esa vuelta.
-    D.routes.filter((r) => r.propio && !r.driverId && !r.delegada && r.fija !== 'completed' && !ocultaFila(r)).forEach((r) => {
+    D.routes.filter((r) => r.propio && !r.driverId && !r.delegada && !r.tomar && r.fija !== 'completed' && !ocultaFila(r)).forEach((r) => {
       out.push({ k: 'nodriver', html: `La vuelta de <b>${esc(r.vehicle)}</b> de las ${hhmm(inicioDe(r).at)} no tiene conductor<small>Se le quitó solo a esa vuelta · ${esc(turnoTxt(r.shift))}</small>`, btn: 'Elegir', act: `data-act="assign" data-id="${esc(r.id)}"` });
     });
     // Un conductor con dos vueltas que se cruzan, o que no alcanza a llegar de una
@@ -702,7 +703,7 @@
   function renderDrivers() {
     if (rt.source !== 'live' || ui.cargando || !hayVueltas()) { el.drivers.innerHTML = ''; return; }
     const cells = {};
-    D.routes.forEach((r) => { if (r.fija === 'completed') return; const k = r.vehicle + '|' + r.shift; const c = (cells[k] = cells[k] || { n: 0, otros: 0, deleg: 0 }); if (r.delegada) c.deleg++; else if (r.propio) c.otros++; else c.n++; });
+    D.routes.forEach((r) => { if (r.fija === 'completed') return; const k = r.vehicle + '|' + r.shift; const c = (cells[k] = cells[k] || { n: 0, otros: 0, deleg: 0, tomar: 0 }); if (r.delegada) c.deleg++; else if (r.tomar && !r.driverId) c.tomar++; else if (r.propio) c.otros++; else c.n++; });
     const bands = RT_BANDS.filter((b) => Object.keys(cells).some((k) => k.endsWith('|' + b)));
     const cars = (rt.cars || []).filter((c) => bands.some((b) => cells[c.id + '|' + b]));
     // 27-oct (Camilo): sin la descripción, para que la tarjeta no ocupe tanto.
@@ -721,7 +722,7 @@
         const placa = id ? placaDeTurno(id) : null;
         const enTurno = placa ? ' · en ' + esc(placa) : (id && Array.isArray(rt.activos) ? ' · sin iniciar turno' : '');
         h += `<button class="cell${id ? '' : ' need'}" data-act="assignslot" data-car="${esc(car.id)}" data-shift="${b}" aria-label="${esc(`${car.id}, ${turnoTxt(b)}: ${d ? d.name : 'sin conductor'}${placa ? ', en ' + placa : ''}. Cambiar`)}">` +
-          `<b>${d ? esc(shortName(d.name)) : 'Sin conductor'}</b><small>${[c.n ? plural(c.n, 'vuelta', 'vueltas') : '', c.otros ? (c.n ? `${c.otros} con otro conductor` : `${plural(c.otros, 'vuelta', 'vueltas')} con otro conductor`) : '', c.deleg ? (c.deleg === 1 ? '1 delegada' : `${c.deleg} delegadas`) : ''].filter(Boolean).join(' · ')}${id ? (auto ? ' · automático' : ' · elegido') : ''}${enTurno}</small></button>`;
+          `<b>${d ? esc(shortName(d.name)) : 'Sin conductor'}</b><small>${[c.n ? plural(c.n, 'vuelta', 'vueltas') : '', c.otros ? (c.n ? `${c.otros} con otro conductor` : `${plural(c.otros, 'vuelta', 'vueltas')} con otro conductor`) : '', c.deleg ? (c.deleg === 1 ? '1 delegada' : `${c.deleg} delegadas`) : '', c.tomar ? `${c.tomar} para tomar` : ''].filter(Boolean).join(' · ')}${id ? (auto ? ' · automático' : ' · elegido') : ''}${enTurno}</small></button>`;
       });
     });
     el.drivers.innerHTML = h + '</div>' + libresHTML(cars, bands, cells);
@@ -822,6 +823,9 @@
       `<div class="main"><div class="l1"><span class="rv2-pill ${r.type}">${TYPE[r.type]}</span><b class="car">${hl(r.vehicle)}</b>` +
       (r.delegada
         ? `<span class="drv deleg" title="La hace alguien de afuera: ningún conductor la ve">Delegada${r.delegName ? ' · ' + hl(r.delegName) : ''}</span>`
+        : r.tomar
+        ? (d ? `<span class="drv">${hl(d.name)}</span> <span class="tag tomar" title="La dejaste para tomar y este conductor la tomó">la tomó</span>`
+          : '<span class="drv tomar" title="La ven los conductores del turno en «Vueltas para tomar»">Para tomar · nadie la ha tomado</span>')
         : `<span class="drv${d ? '' : ' none'}">${d ? hl(d.name) : 'Sin conductor'}</span>${r.propio ? ' <span class="tag own" title="Conductor puesto solo a esta vuelta">solo esta vuelta</span>' : ''}`) +
       `${enCurso}${horaEditable(r) ? `<button class="rv2-btn rv2-btn--sm rv2-hbtn" data-act="hora" data-id="${esc(r.id)}" aria-label="Cambiar la hora de ${esc(r.vehicle)} de las ${horas(r)}">Cambiar hora</button>` : ''}</div><div class="people">${chips}</div></div></div>`;
   }
@@ -1105,7 +1109,9 @@
       : (r.status === 'risk' && r.type !== 'llegada' && !r.fija ? '<p class="rv2-note">Rendio no encontró a quién mover sin dejar otra vuelta tarde. Mueve a alguien a mano, Re-optimiza o, si no hay cómo, publícala de todos modos.</p>' : '');
     const turno = rtBandName(r.shift);
     const auto = d && rt.rv2Auto && rt.rv2Auto[r.vehicle + '|' + r.shift] === r.driverId;
-    const quien = r.delegada
+    const quien = r.tomar
+      ? (d ? `<b>${esc(d.name)}</b>La tomó de «Vueltas para tomar»` : '<b>Para tomar</b>La ven los conductores del turno en su app. Si nadie la toma, te avisamos 60 min antes')
+      : r.delegada
       ? (r.delegName
         ? `<b>Delegada a ${esc(r.delegName)}</b>${r.delegPhone ? esc(r.delegPhone) + ' · ' : ''}al tripulante le llega «Te recogerá ${esc(r.delegName.split(' ')[0])}» con este número`
         : '<b>Delegada</b>La hace alguien de afuera. Ningún conductor la ve; al publicar, al tripulante le llega que lo contactan por WhatsApp')
@@ -1819,11 +1825,17 @@
     extra.push(`<button class="rv2-opt rv2-opt--deleg" role="radio" aria-checked="false" data-pick="__deleg"><span class="t"><b>${r.delegada ? 'Cambiar a quién se delegó' : 'Delegar esta vuelta'}</b></span><small>${r.delegada
       ? (r.delegName ? `Hoy la hace ${esc(r.delegName)}${r.delegPhone ? ' · ' + esc(r.delegPhone) : ''}.` : 'Hoy está delegada sin nombre: al tripulante le dice que lo contactan por WhatsApp.') + ' Elige a otra persona o escribe una nueva.'
       : 'La hace alguien de afuera (tu carro, un Uber). Ningún conductor la ve. Después eliges a quién (de la libreta o a mano) y al tripulante le llega «Te recogerá… su número de contacto es…».'}</small></button>`);
+    // 0151 (Camilo, 27-oct): «que los servicios de llegada queden sin conductor, en una
+    // lista que verán los conductores… y ellos mismos se lo asignan». Coordinación elige cuáles.
+    extra.push(`<button class="rv2-opt" role="radio" aria-checked="false" data-pick="__tomar"><span class="t"><b>${r.tomar ? 'Sigue para tomar' : 'Dejarla para tomar'}</b></span><small>${r.tomar && r.driverId
+      ? `Hoy la tiene ${esc(conductor(r.driverId).name)}, que la tomó. Elige esta opción para que siga en la lista.`
+      : 'Sale sin conductor y la ven los conductores del turno en «Vueltas para tomar». Si a uno se le cruza, la toma igual y te avisamos. Si nadie la toma, te avisamos 60 min antes.'}</small></button>`);
     if (cur) extra.push(`<button class="rv2-opt rv2-opt--drop" role="radio" aria-checked="false" data-pick="__none"><span class="t"><b>Quitar el conductor de esta vuelta</b></span><small>Queda sin conductor y nadie la ve hasta que le pongas uno.</small></button>`);
     let sel = null;
     // 0129: una vuelta ya publicada que no ha arrancado se puede publicar sola.
     const lane = rtLaneOf(r.id);
     const sePublica = (p) => !!(lane && lane.raId && !r.fija && rt.source === 'live' && window.Api && Api.setVueltaDriver
+      && p !== '__tomar'   // 0151: para tomar va con «Publicar» (crea su fila de la lista)
       && !(p === '__deleg' && lane.raStatus !== 'planned'));
     const conPub = sePublica(null);
     openSheet(sheetHead('Conductor de esta vuelta', `${esc(r.vehicle)} · ${esc(TYPE[r.type])} de las ${hhmm(inicioDe(r).at)}${r.delegada ? ' · hoy está delegada' : ''} · solo cambia esta vuelta: las demás y sus horas quedan igual`) +
@@ -1846,8 +1858,8 @@
       btn.disabled = !sel;
       if (pub) {
         pub.disabled = !sel || !sePublica(sel);
-        pub.textContent = !sel ? 'Elige un conductor' : sePublica(sel) ? 'Guardar y publicar' : 'Delegar: publica el plan';
-      } else btn.textContent = sel === '__none' ? 'Quitar de esta vuelta' : sel === '__deleg' ? 'Delegar esta vuelta' : 'Asignar a esta vuelta';
+        pub.textContent = !sel ? 'Elige un conductor' : sePublica(sel) ? 'Guardar y publicar' : sel === '__tomar' ? 'Para tomar: publica el plan' : 'Delegar: publica el plan';
+      } else btn.textContent = sel === '__none' ? 'Quitar de esta vuelta' : sel === '__deleg' ? 'Delegar esta vuelta' : sel === '__tomar' ? 'Dejarla para tomar' : 'Asignar a esta vuelta';
     });
     // 0131: «Delegar» sigue en la hoja «Delegar a…» (a quién), en el tablero o publicando.
     btn.addEventListener('click', () => { if (!sel) return; const s = sel; closeSheet(); if (s === '__deleg') return delegarVuelta(r.id, false); setVueltaDriver(r.id, s); });
@@ -2002,10 +2014,14 @@
     if (!callado) snapshot('conductor de una vuelta');
     const cual = `la vuelta de las ${hhmm(r ? inicioDe(r).at : rtToMin(lane.start))} de ${lane.car}`;
     let msg;
-    delete lane.deleg;
+    delete lane.deleg; delete lane.tomar;   // 0151
     if (pick !== '__deleg') { delete lane.delegName; delete lane.delegPhone; }
     if (pick === '__carro') { delete lane.drv; msg = `${cual} vuelve a ${delCarro ? conductor(delCarro).name : 'quedar sin conductor, como el carro'}`; }
     else if (pick === '__none') { lane.drv = false; msg = `${cual} quedó sin conductor · las demás no cambian`; }
+    else if (pick === '__tomar') {   // 0151: Coordinación la deja para que un conductor la tome
+      lane.drv = false; lane.tomar = true;
+      msg = `${cual} queda para tomar · al publicar la ven los conductores del turno en su app`;
+    }
     else if (pick === '__deleg') {
       lane.drv = false; lane.deleg = true;
       if (quien && quien.name) { lane.delegName = quien.name; lane.delegPhone = quien.phone || ''; }
@@ -2302,7 +2318,7 @@
     // 0134: la vuelta para tomar que armó el sistema (alguien cambió de vuelo y no
     // cabía en otra) NO pasa el día a «ruta de Julián»: se cuenta aparte y sus
     // personas ya van en una vuelta, así que el tablero no las vuelve a rutear.
-    const solas = todas.filter((v) => v.pool && v.autoCreated);
+    const solas = todas.filter((v) => v.pool && v.autoCreated && !v.paraTomar);
     const hmSola = (iso) => { try { return new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); } catch (_) { return ''; } };
     rt.rv2Solas = solas.map((v) => ({
       hora: hmSola(v.type === 'lle' ? v.startAt : ((v.pendientes || [])[0] || {}).etaAt || v.startAt),
@@ -2310,12 +2326,13 @@
       quienes: [...(v.pendientes || []), ...(v.atendidas || [])].map((x) => String(x.name || '').split(' ')[0]).filter(Boolean).join(', '),
       conductor: v.driverProfileId ? v.conductor : null,
     }));
-    const pegadas = todas.filter((v) => v.pool && !v.autoCreated && deEste(v));
-    const vueltas = todas.filter((v) => !v.pool);
+    // 0151: la «para tomar» del tablero ES del tablero (pool solo para que la tomen).
+    const pegadas = todas.filter((v) => v.pool && !v.autoCreated && !v.paraTomar && deEste(v));
+    const vueltas = todas.filter((v) => !v.pool || v.paraTomar);
     const genteDe = (v) => [...(v.pendientes || []), ...(v.atendidas || [])].map((x) => x.rid).filter(Boolean);
     // La madrugada que Julián pegó con el día ANTERIOR cae en esta ventana: esas
     // personas ya van en una vuelta suya, así que el tablero no las vuelve a rutear.
-    const ajenas = new Set(todas.filter((v) => v.pool && (v.autoCreated || !deEste(v))).flatMap(genteDe));
+    const ajenas = new Set(todas.filter((v) => v.pool && !v.paraTomar && (v.autoCreated || !deEste(v))).flatMap(genteDe));
     if (ajenas.size) Object.keys(rt.aux).forEach((k) => { if (ajenas.has(rt.aux[k].reservationId)) delete rt.aux[k]; });
     // Día mezclado (26-oct-2026): quien va en una vuelta pegada de ESTE día tampoco
     // se rutea en el tablero (saldría «sin carro» y Re-optimizar lo metería en otra
@@ -2331,7 +2348,7 @@
     if (!vueltas.length) return false;
     const porReserva = {};
     Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
-    const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {}, guardado = {}, fines = {}, delegQuien = {};
+    const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {}, guardado = {}, fines = {}, delegQuien = {}, tomarDe = {};
     const hm = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false }).slice(0, 5);
     // 0124: cada vuelta vuelve a su carro del plan («Carro 1»). Las publicadas
     // antes de 0124 no lo traen: se reparten por placa en los carros del plan
@@ -2369,6 +2386,7 @@
       if (lane.type === 'lle') { lane.origin = 'airport'; lane.landing = rtToHM(horaVuelta(ids)); }
       lanes.push(lane); order[lane.id] = ids;
       guardado[lane.id] = v.delegated ? 'deleg' : (v.driverProfileId || null);
+      if (v.paraTomar) tomarDe[lane.id] = true;   // 0151
       if (v.delegated && v.delegateName) delegQuien[lane.id] = { name: v.delegateName, phone: v.delegatePhone || '' };   // 0131
       // La hora guardada (rtHorasPub, admin-rutas.js): en una salida la de cada
       // parada; en una llegada basta el arranque (la salida de JMC).
@@ -2385,7 +2403,8 @@
       if (v.driverProfileId) {
         if (!(rt.drivers || []).some((d) => d.id === v.driverProfileId)) rt.drivers.push({ id: v.driverProfileId, n: v.conductor || 'Conductor', c: '#8895a7' });
         const banda = rtBandOf(lane);
-        rtSetCarDrv(car, banda, rtCarDrv(car, banda) || v.driverProfileId);
+        // 0151: quien tomó una «para tomar» no pasa a ser el conductor del carro.
+        if (!v.paraTomar) rtSetCarDrv(car, banda, rtCarDrv(car, banda) || v.driverProfileId);
       }
     });
     if (!lanes.length) return false;
@@ -2401,6 +2420,7 @@
       const car = rt.cars.find((c) => c.id === l.car);
       const g = guardado[l.id], delCarro = car ? rtCarDrv(car, rtBandOf(l)) : null;
       if (g === 'deleg') { l.drv = false; l.deleg = true; if (delegQuien[l.id]) { l.delegName = delegQuien[l.id].name; l.delegPhone = delegQuien[l.id].phone; } return; }   // 0126 · 0131
+      if (tomarDe[l.id]) { l.tomar = true; l.drv = g || false; return; }   // 0151: para tomar (y quién la tomó)
       if (g && g !== delCarro) l.drv = g;
       else if (!g && delCarro) l.drv = false;
     });

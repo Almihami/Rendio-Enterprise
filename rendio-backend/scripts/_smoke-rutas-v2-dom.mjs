@@ -795,7 +795,7 @@ for (const sinColumna of [false, true]) {
   const bld = (name) => {
     const st = { name, op: null, payload: null };
     const b2 = {
-      select() { return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, not() { return b2; }, order() { return b2; },
+      select() { return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, or() { return b2; }, not() { return b2; }, order() { return b2; },
       delete() { st.op = 'delete'; return b2; },
       insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
       single() { return b2; }, maybeSingle() { return b2; },
@@ -832,7 +832,7 @@ for (const sin0126 of [false, true]) {
   const bld = (name) => {
     const st = { name, op: null, payload: null, sel: '' };
     const b2 = {
-      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
+      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, or() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
       delete() { st.op = 'delete'; return b2; },
       insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
       single() { return b2; }, maybeSingle() { return b2; },
@@ -1077,7 +1077,7 @@ for (const sin0131 of [false, true]) {
   const bld = (name) => {
     const st = { op: null, payload: null, sel: '' };
     const b2 = {
-      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
+      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, or() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
       delete() { st.op = 'delete'; return b2; },
       insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
       single() { return b2; }, maybeSingle() { return b2; },
@@ -1118,6 +1118,82 @@ for (const sin0131 of [false, true]) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 0151 · «Dejarla para tomar» (Coordinación elige qué vueltas toman los conductores) ──');
+{
+  const b = await boot();
+  const { q, click, T, V2 } = b;
+  const rt = T().rt;
+  const laneDe = (k) => Object.keys(rt.order).find((l) => rt.order[l].includes('r' + k));
+  const LK = laneDe('K');   // una llegada
+  const firma0 = T().rtFirmaPlan();
+  click(q(`#rv2-list .rv2-row[data-id="${LK}"] .when`)); await wait(10); click(q(`#routes-v2 [data-act="assign"][data-id="${LK}"]`)); await wait(10);
+  const op = q('#rv2-sheet [data-pick="__tomar"]');
+  t('la hoja de la vuelta ofrece «Dejarla para tomar» y dice qué pasa', op && /Dejarla para tomar/.test(txt(op)) && /Vueltas para tomar/.test(txt(op)) && /la toma igual y te avisamos/.test(txt(op)), op && txt(op));
+  click(op); await wait(5);
+  t('…el botón dice «Dejarla para tomar»', /Dejarla para tomar/.test(txt(q('#rv2-doAssign'))), txt(q('#rv2-doAssign')));
+  click(q('#rv2-doAssign')); await wait(10);
+  const L = rt.lanes.find((l) => l.id === LK), r = V2().dia().byId[LK];
+  t('queda para tomar: sin conductor y sin aviso de «no tiene conductor»', L.tomar === true && L.drv === false && r.tomar === true && !r.driverId && r.status !== 'nodriver' && !V2()._avisos().some((a) => a.act.includes(LK)), JSON.stringify([L.tomar, L.drv, r.status]));
+  t('la fila dice «Para tomar · nadie la ha tomado»', /Para tomar · nadie la ha tomado/.test(txt(q(`#rv2-list .rv2-row[data-id="${LK}"]`))), txt(q(`#rv2-list .rv2-row[data-id="${LK}"]`)));
+  t('es un cambio para publicar (la firma cambió)', T().rtFirmaPlan() !== firma0);
+  const ofrecidas = []; b.w.Api.offerRoutes = async (ids) => { ofrecidas.push(ids); return ids.length; };
+  const saveOrig = b.w.Api.saveRoutePlan, enviados = [];
+  b.w.Api.saveRoutePlan = async (day, lanes) => { enviados.push(lanes); const x = await saveOrig(day, lanes); return Object.assign({}, x, { ofrecer: ['ra-nueva'] }); };
+  await T().rtSavePlan({ toast() {} });
+  const sv = enviados[enviados.length - 1] || [];
+  const lt = sv.find((l) => l.paraTomar);
+  t('Publicar la manda con paraTomar y sin conductor', !!lt && lt.driverProfileId === null && sv.filter((l) => l.paraTomar).length === 1, JSON.stringify(lt));
+  t('…y anuncia las nuevas a los del turno (admin_routes_offer)', ofrecidas.length === 1 && ofrecidas[0][0] === 'ra-nueva', JSON.stringify(ofrecidas));
+  b.w.Api.saveRoutePlan = saveOrig;
+  // Volver a elegir un conductor la saca de «para tomar».
+  click(q(`#routes-v2 [data-act="assign"][data-id="${LK}"]`)); await wait(10);
+  click(q('#rv2-sheet [data-pick="__carro"]') || q('#rv2-sheet [data-pick]:not([disabled]):not([data-pick^="__"])')); await wait(5);
+  click(q('#rv2-doAssign')); await wait(10);
+  t('elegir otro conductor la saca de «para tomar»', !rt.lanes.find((l) => l.id === LK).tomar);
+  t('sin errores de script', b.errors.length === 0, b.errors.join(' | '));
+}
+// api.js de verdad: saveRoutePlan con una «para tomar».
+for (const tomada of [false, true]) {
+  const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'http://localhost/' });
+  const w = dom.window; const ins = [], dels = [];
+  const bld = (name) => {
+    const st = { name, op: null, payload: null, sel: '', or: null };
+    const b2 = {
+      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
+      or(x) { st.or = x; return b2; },
+      delete() { st.op = 'delete'; return b2; },
+      insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
+      single() { return b2; }, maybeSingle() { return b2; },
+      then(ok2, ko) {
+        let r = { data: [], error: null };
+        if (st.op === 'insert') { ins.push([name, st.payload]); r = { data: name === 'route_assignments' ? { id: 'ra-' + ins.length } : null, error: null }; }
+        else if (st.op === 'delete') dels.push([name, st.or]);
+        else if (name === 'route_assignments' && /para_tomar/.test(st.sel)) {
+          // Lo publicado antes: res-A en una «para tomar» (tomada por dp-2 o libre).
+          r = { data: [{ id: 'old', status: 'planned', direction: 'airport_to_home', planned_start_at: '2026-10-26T19:55:00-05:00', pool: true, para_tomar: true,
+            driver_profile_id: tomada ? 'dp-2' : null, driver_profiles: tomada ? { profile_id: 'd2' } : null, delegated_at: null,
+            route_stops: [{ id: 's1', reservation_id: 'res-A', status: 'pending', estimated_arrival_at: null }] }], error: null };
+        } else if (name === 'driver_profiles') r = { data: [{ id: 'dp-1', profile_id: 'd1' }, { id: 'dp-2', profile_id: 'd2' }], error: null };
+        return Promise.resolve(r).then(ok2, ko);
+      },
+    };
+    return b2;
+  };
+  w.sb = { from: bld, auth: { getUser: async () => ({ data: { user: null } }), getSession: async () => ({ data: { session: null } }) } };
+  w.RENDIO_CONFIG = {};
+  w.eval('var state = { profile: { organization_id: "org-1" } };');
+  w.eval(read('api.js'));
+  const r = await w.Api.saveRoutePlan('2026-10-26', [
+    { vehicleId: null, planCar: 'Carro 2', driverProfileId: null, paraTomar: true, type: 'lle', startAt: '2026-10-26T19:55:00-05:00', stops: ['res-A'], etas: {} },
+    { vehicleId: null, planCar: 'Carro 2', driverProfileId: null, paraTomar: true, type: 'lle', startAt: '2026-10-26T20:30:00-05:00', stops: ['res-B'], etas: {} }]);
+  const ras = ins.filter((x) => x[0] === 'route_assignments').map((x) => x[1]);
+  const [a, bb] = ras;
+  t(`0151${tomada ? ' (ya tomada)' : ''}: se guarda como «para tomar»: pool + para_tomar + organización, planned`, ras.length === 2 && ras.every((x) => x.pool === true && x.para_tomar === true && x.organization_id === 'org-1' && x.status === 'planned'), JSON.stringify(ras));
+  t(tomada ? '0151: la que ya había tomado un conductor la sigue teniendo él al republicar' : '0151: la libre sigue sin conductor', tomada ? a.driver_profile_id === 'dp-2' : a.driver_profile_id === null, JSON.stringify(a));
+  t('0151: borra las del tablero y las «para tomar» (no las pegadas)', dels.some((x) => x[0] === 'route_assignments' && x[1] === 'pool.eq.false,para_tomar.eq.true'), JSON.stringify(dels));
+  t('0151: solo se anuncia la nueva (la de res-A ya estaba para tomar)', JSON.stringify(r.ofrecer) === JSON.stringify(['ra-' + (ins.findIndex((x) => x[1] === bb) + 1)]), JSON.stringify(r.ofrecer));
+}
+
 console.log('\n── 0126 · Delegar UNA vuelta en el tablero (la hace alguien de afuera) ──');
 {
   const b = await boot();
@@ -1352,6 +1428,31 @@ console.log('\n── 26-oct · 0132: «¿Qué carro es Carro 1?» (el carro de 
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 0151 · releer el día: la «para tomar» vuelve como vuelta del tablero ──');
+for (const tomo of [null, 'd2']) {
+  const b = await boot();
+  const { w, q, T, V2 } = b;
+  const DAY = w.RV2Fixture.DAY;
+  const vs = w.RV2Fixture.vueltas().filter((v) => !v.pendientes.some((x) => x.rid === 'res-M'));
+  vs.push({ id: 'ra-tomar', type: 'sal', status: 'planned', startAt: `${DAY}T09:40:00-05:00`, pool: true, paraTomar: true, autoCreated: false, manualDay: null,
+    vehicleId: null, planCar: 'V-01', carro: 'Carro', placa: null, cap: 4, driverProfileId: tomo, conductor: tomo ? 'Rubén Díaz' : 'Sin conductor', delegated: false,
+    pendientes: [{ stopId: 'st-t', rid: 'res-M', order: 1, status: 'pending', etaAt: `${DAY}T09:40:00-05:00`, name: 'Felipe Vélez' }], atendidas: [] });
+  w.Api.getPublishedPlan = async () => ({ vueltas: vs, publicado: true });
+  await V2().cargarDia(T().rt.day); await wait(30);
+  const rt = T().rt;
+  const L = rt.lanes.find((l) => (rt.order[l.id] || []).includes('rM'));
+  t(`0151${tomo ? ' (la tomó Rubén)' : ''}: es una vuelta del tablero con Felipe (no una pegada ni «armada sola»)`, !!L && rt.manualDia === false && !q('#rv2-list .rj-dia') && !q('#rv2-list .rv2-solas'), JSON.stringify([!!L, rt.manualDia]));
+  t(tomo ? '…marcada para tomar y con Rubén, que la tomó (sin volverlo conductor del carro)' : '…marcada para tomar y sin conductor',
+    L && L.tomar === true && (tomo ? L.drv === 'd2' && V2().dia().byId[L.id].driverId === 'd2' : L.drv === false), L && JSON.stringify([L.tomar, L.drv]));
+  t('…y su fila lo dice', L && (tomo ? /la tomó/.test(txt(q(`#rv2-list .rv2-row[data-id="${L.id}"]`))) : /Para tomar · nadie la ha tomado/.test(txt(q(`#rv2-list .rv2-row[data-id="${L.id}"]`)))));
+  const env = []; const so = w.Api.saveRoutePlan; w.Api.saveRoutePlan = async (d, lanes) => { env.push(lanes); return so(d, lanes); };
+  await T().rtSavePlan({ toast() {} });
+  w.Api.saveRoutePlan = so;
+  const lt = (env[0] || []).find((x) => (x.stops || []).includes('res-M'));
+  t('…y al republicar sale otra vez «para tomar»' + (tomo ? ', con Rubén' : ', sin conductor'), !!lt && lt.paraTomar === true && (tomo ? lt.driverProfileId === 'd2' : lt.driverProfileId === null), JSON.stringify(lt));
+  t('sin errores de consola', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
 console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio de vuelo) ──');
 {
   // El día es del tablero; el sistema creó una vuelta para tomar para Felipe (M)
@@ -1381,7 +1482,7 @@ console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio 
   const bld = (name) => {
     const st = { name, op: null, payload: null, sel: '' };
     const b2 = {
-      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
+      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, or() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
       delete() { st.op = 'delete'; return b2; },
       insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
       single() { return b2; }, maybeSingle() { return b2; },
@@ -1412,7 +1513,7 @@ console.log('\n── 27-oct · Publicar avisa a quien le cambió la hora («Cam
   const bld = (name) => {
     const st = { name, op: null, payload: null, sel: '' };
     const b2 = {
-      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
+      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, or() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
       delete() { st.op = 'delete'; return b2; },
       insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
       single() { return b2; }, maybeSingle() { return b2; },
