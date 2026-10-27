@@ -72,6 +72,17 @@
   const resP = (a) => (a && a.reserva && typeof Api !== 'undefined' && Api && typeof Api.reservePlace === 'function' ? Api.reservePlace(a.reserva) : null);
   const resTxt = (a) => { const P = resP(a); return P ? (P.hotel ? P.name : 'Reserva JMC') : ''; };
   const horaTxt = (a) => (a.reserva ? 'termina la asignación' : (a.tierra ? 'sale del terminal' : 'aterriza'));
+  // DE DÓNDE SALE cada uno en una llegada (27-oct-2026, Camilo y la profa: «está
+  // como si estuviera al revés»). Como lo escribe el jefe en su lista: «12:00
+  // Jessica (av9563)», «11:30 Lau (hotel)», «16:00 Kris (Aero)». `par` va entre
+  // paréntesis junto al nombre; `desde` abre el trayecto «desde → casa».
+  const salidaLle = (a) => {
+    const P = resP(a);
+    if (P) return P.hotel ? { par: P.name, desde: P.name } : { par: 'Reserva JMC', desde: 'JMC (reserva)' };
+    if (a && a.tierra) return { par: 'tierra', desde: 'JMC (tierra)' };
+    const v = a && a.vuelo ? String(a.vuelo).replace(/[\s-]/g, '').toUpperCase() : '';
+    return v ? { par: v, desde: `JMC (${v})`, vuelo: a.vuelo } : { par: '', desde: 'JMC' };
+  };
   // El hotel de la vuelta si TODOS van/vienen del mismo (para el renglón final).
   const hotelDe = (ids) => { const ps = ids.map((id) => resP(aux(id))); return ps.length && ps.every((P) => P && P.hotel && P.key === ps[0].key) ? ps[0] : null; };
   const algunHotel = (ids) => { const P = ids.map((id) => resP(aux(id))).find((x) => x && x.hotel); return P || null; };
@@ -215,9 +226,11 @@
       // es 30-40 min después de su primera recogida: la salida de las 9:05 quedaba
       // detrás de la llegada de las 9:10. Ahora manda la PRIMERA hora que se lee,
       // como en el WhatsApp de Julián (rwaOrden): la recogida en una salida, el
-      // aterrizaje en una llegada.
-      orden: lle ? arrival : pickup,
-      hora: ((Math.floor((lle ? arrival : pickup) / 60) % 24) + 24) % 24,
+      // aterrizaje en una llegada. 27-oct: la llegada ya se lee desde la recogida
+      // en JMC (horas), así que manda esa. La de las 23:45 que recoge a las 00:05
+      // queda al final del día («después de medianoche»), no arriba.
+      orden: pickup,
+      hora: pickup < 0 ? ((Math.floor(pickup / 60) % 24) + 24) % 24 : Math.floor(pickup / 60),
     };
   }
 
@@ -460,7 +473,10 @@
   // La última entrega de una llegada es la hora de la última parada (r.end le
   // suma el rato de bajarse: daba 10:52 contra un 10:50 en la lista).
   const ultima = (r) => (r.stops.length ? Math.max(...r.stops.map((s) => s.time)) : r.end);
-  const horas = (r) => (r.type === 'llegada' ? `${hhmm(r.arrival)} → ${hhmm(ultima(r))}` : `${hhmm(r.pickup)} → ${hhmm(r.arrival)}`);
+  // 27-oct-2026 (Camilo): «arriba debería decir la hora que debe recoger en
+  // aeropuerto». La llegada se lee desde la recogida, no desde el aterrizaje
+  // (el aterrizaje de cada uno va junto a su nombre).
+  const horas = (r) => (r.type === 'llegada' ? `${hhmm(r.pickup)} → ${hhmm(ultima(r))}` : `${hhmm(r.pickup)} → ${hhmm(r.arrival)}`);
   const turnoTxt = (b) => 'Turno ' + rtBandName(b);   // «Turno AM», «Turno PM del lunes»
 
   function renderBar() {
@@ -656,7 +672,9 @@
 
   function rowHTML(r) {
     const d = conductor(r.driverId);
-    const sub = r.type === 'llegada' ? 'Aterriza → última entrega' : 'Recoge → llega a JMC';
+    const lle = r.type === 'llegada';
+    const Hr = lle ? hotelDe(r.stops.map((s) => s.crewId)) : null;
+    const sub = lle ? `${Hr ? 'Recoge en el ' + esc(Hr.name) : 'Recoge en JMC'} → última entrega` : 'Recoge → llega a JMC';
     let estado;
     // Terminada (verde o roja) o pasada sin marcar (gris): la fila va degradada.
     const fin = finFila(r);
@@ -667,7 +685,11 @@
     else if (fin === 'sinmarcar') estado = `<small>Pasó su hora · ${plural(r.fin.faltan, 'parada', 'paradas')} sin marcar</small>`;
     else if (r.status === 'risk') estado = `<small class="late">${Math.abs(r.margin)} min tarde · presentación ${hhmm(r.pres)}</small>`;
     else if (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA) estado = `<small class="late">Esperan ${r.wait} min el carro</small>`;
-    else estado = r.type === 'llegada' ? `<small>Recoge en JMC ${hhmm(r.pickup)}</small>` : `<small>Presentación ${hhmm(r.pres)}</small>`;
+    else if (lle) {
+      const tierra = r.stops.every((s) => aux(s.crewId) && aux(s.crewId).tierra);
+      const reserva = tierra && r.stops.every((s) => aux(s.crewId).reserva);
+      estado = `<small>${reserva ? 'Termina la asignación' : (tierra ? 'Salen del terminal' : 'Aterriza')} ${hhmm(r.arrival)}</small>`;
+    } else estado = `<small>Presentación ${hhmm(r.pres)}</small>`;
     // «en curso» solo mientras de verdad puede ir en curso: la que pasó su hora sin
     // marcar no lo dice (antes se quedaba «en curso» horas después de terminar).
     const enCurso = r.fija === 'in_progress' && !finFila(r) ? ' <span class="tag">en curso</span>' : '';
@@ -675,6 +697,15 @@
       const a = aux(st.crewId) || {};
       const fijo = atendida(st.crewId) || r.fija === 'completed';
       const attrs = fijo ? 'disabled title="Ya atendido: no se mueve"' : `draggable="true" data-drag="${esc(st.crewId)}" data-act="move" data-crew="${esc(st.crewId)}" data-from="${esc(r.id)}" title="Arrástralo a otra vuelta o tócalo para moverlo"`;
+      // Llegada (27-oct, Camilo: «¿al lado del nombre esa hora es la de aterrizaje?»):
+      // la hora de la izquierda ES la de aterrizaje (o la del hotel), con el vuelo
+      // entre paréntesis como en la lista del jefe, y a la derecha a dónde va.
+      // Antes era la hora de entrega en la casa y nadie sabía qué era.
+      if (lle) {
+        const o = salidaLle(a);
+        return `<button class="rv2-p rv2-p--lle" ${attrs}><span class="mono">${esc(a.dl || '—')}</span><span class="nm">${hl(a.n || 'Tripulante')}</span>` +
+          `${o.par ? `<span class="org">(${hl(o.par)})</span>` : ''}<span class="pl">→ ${hl(a.zona || '—')}</span></button>`;
+      }
       return `<button class="rv2-p" ${attrs}><span class="mono">${hhmm(st.time)}</span><span class="nm">${hl(a.n || 'Tripulante')}</span><span class="pl">${hl(a.zona || '')}</span></button>`;
     }).join('');
     const aria = `${r.vehicle}, ${TYPE[r.type]}, ${horas(r)}${r.status === 'risk' ? ', llega tarde' : ''}, ${r.stops.map((s) => nombre(s.crewId)).join(', ')}`;
@@ -856,8 +887,14 @@
       // En la llegada la hora de la izquierda es cuando lo deja en la casa; sin
       // decirlo, los jefes la leían como la hora que había puesto el tripulante
       // (audio del 14-oct-2026: «¿por qué salen dos horas?»).
-      const casa = r.type === 'llegada' ? 'Llega a casa · ' : '';
-      return `<li draggable="${at || fija ? 'false' : 'true'}"${at || fija ? '' : ` data-drag="${esc(st.crewId)}" data-from="${esc(r.id)}"`}><span class="mono">${hhmm(st.time)}</span><div><b>${esc(a.n)}</b>${casa}${esc(lugar(st.crewId))}${extra}${at ? ' · ya atendido' : ''}</div>${tel}${mv}</li>`;
+      // 27-oct-2026 (Camilo): «dice llega a casa · Origen · Hotel, debería ser hotel ·
+      // Origen · llega a casa». Se lee como se recorre: de dónde sale (el vuelo, el
+      // hotel o JMC) → a dónde va, y al final qué es la hora de la izquierda.
+      const o = r.type === 'llegada' ? salidaLle(a) : null;
+      const que = o
+        ? `${esc(o.desde)}${o.vuelo ? chipVuelo(o.vuelo, 'lle') : ''} → ${esc(lugar(st.crewId))} · llega a casa`
+        : `${esc(lugar(st.crewId))}${extra}`;
+      return `<li draggable="${at || fija ? 'false' : 'true'}"${at || fija ? '' : ` data-drag="${esc(st.crewId)}" data-from="${esc(r.id)}"`}><span class="mono">${hhmm(st.time)}</span><div><b>${esc(a.n)}</b>${que}${at ? ' · ya atendido' : ''}</div>${tel}${mv}</li>`;
     }).join('');
     const m = r.margin;
     let end;

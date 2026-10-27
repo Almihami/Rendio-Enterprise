@@ -146,6 +146,10 @@ console.log('\n── C · La ruta del conductor: el vuelo en la tarjeta y «Ver
   const card = det() && det().querySelector('.rt-flcard');
   t('Detalle: la tarjeta del vuelo con «desde Bogotá», cómo va y «Ver avión»', card && /AV9306 · desde Bogotá/.test(tx(card)) && /En el aire/.test(tx(card)) && /Ver avión/.test(tx(card)), tx(card));
   t('…y no repite el vuelo como pastilla en el resumen', det() && !/AV9306/.test(tx(det().querySelector('.rt-sum'))));
+  // 27-oct-2026 (la profa): cada entrega de la llegada dice de dónde sale y a dónde
+  // va, como el jefe; el código del vuelo sale limpio aunque venga «av 9306».
+  const entregas = det() ? [...det().querySelectorAll('.rt-stops .rt-stop')].slice(1).map((s) => tx(s.querySelector('.rt-stop-a'))) : [];
+  t('…cada entrega: «JMC (AV9306) → Olivar»', entregas.length === 2 && entregas.every((x) => x === 'JMC (AV9306) → Olivar'), entregas.join(' | '));
   t('la parada del aeropuerto muestra el estado (antes solo el código)', det() && /AV9306 8 min tarde/.test(tx(det().querySelector('.rt-stops'))), det() && tx(det().querySelector('.rt-stops')).slice(0, 120));
 
   const L = w.L;

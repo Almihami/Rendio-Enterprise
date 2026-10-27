@@ -120,7 +120,8 @@ console.log('\n── A · Asignación: la madrugada aparte, la llegada de las 2
   t('al final: «Sigue después de medianoche · madrugada del mié 21 oct» con lo que hay', sig && lista.lastElementChild === sig && /Sigue después de medianoche · madrugada del mié 21 oct/.test(leer(sig)) && /2 vueltas \(1 sin conductor\)/.test(leer(sig)), sig && leer(sig));
   t('… con un botón que lleva al día siguiente', sig && sig.querySelector('[data-act="nav"][data-dir="1"]'));
   const yRow = lista.querySelector(`.rv2-row[data-id="${lY.id}"]`);
-  t('la fila de la 23:45 dice cuándo recoge de verdad («Recoge en JMC 00:05»)', yRow && /Recoge en JMC 00:0\d/.test(leer(yRow)), yRow && leer(yRow));
+  // 27-oct-2026: la hora grande de la llegada ya es la recogida en JMC (Camilo).
+  t('la fila de la 23:45 dice cuándo recoge de verdad (arriba «00:05 → …», «Recoge en JMC»)', yRow && /^00:0\d → \d\d:\d\d Recoge en JMC → última entrega Aterriza 23:45/.test(leer(yRow)), yRow && leer(yRow));
   const cond = leer(q('#rv2-drivers')) || leer(q('#routes-v2'));
   t('Conductores: la columna dice «Turno PM del lunes»', /Turno PM del lunes/.test(cond), cond && cond.slice(0, 200));
   // WhatsApp

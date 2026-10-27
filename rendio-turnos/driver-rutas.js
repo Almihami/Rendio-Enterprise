@@ -737,18 +737,24 @@
     const pinIn = apt ? ic('Plane', 16) : ps === 'done' ? ic('Check', 16) : ps === 'no' ? ic('X', 15) : legNum(v, i);
     const aptName = 'Aeropuerto JMC';
     const aptAddr = v.type === 'salida' ? 'José María Córdova · Salidas' : 'José María Córdova · Llegadas';
+    // 27-oct-2026 (la profa): en una llegada cada entrega dice de dónde sale y a
+    // dónde va, como lo escribe el jefe: «JMC (AV9374) → casa» o «Hotel Río Verde
+    // → casa». El hotel ya va ahí, así que no se repite en el chip.
+    const P = !apt && st.reserva && window.Api && Api.reservePlace ? Api.reservePlace(st.reserva) : null;
+    const desde = !apt && v.type === 'llegada' ? (P ? (P.hotel ? P.name : 'JMC (reserva)') : flCode(st.flight) ? `JMC (${flCode(st.flight)})` : 'JMC') : '';
+    const dir = desde ? desde + (st.addr ? ' → ' + st.addr : '') : st.addr;
     return '<div class="rt-stop ' + ps + '">'
       + '<span class="rt-pin ' + (apt ? 'apt' : '') + ' ' + ps + '">' + pinIn + '</span>'
       + '<div class="rt-stop-tx">'
       + '<div class="rt-stop-h"><b>' + esc(apt ? aptName : st.name) + '</b>' + (lt[1] ? '<span><em>' + lt[0] + '</em>' + esc(lt[1]) + '</span>' : '') + '</div>'
-      + '<span class="rt-stop-a">' + esc(apt ? aptAddr : st.addr) + (!apt && unitTxt(st) ? ' · ' + esc(unitTxt(st)) : '') + '</span>'
+      + '<span class="rt-stop-a">' + esc(apt ? aptAddr : dir) + (!apt && unitTxt(st) ? ' · ' + esc(unitTxt(st)) : '') + '</span>'
       + '<div class="rt-chips">'
       + (r ? chip('', RT_RES[r][1], v.type === 'llegada' && r === 'onboard' && s.done ? 'Entregado' : RT_RES[r][0]) : '')
       + (f ? chip('Plane', f.tone || 'ok', `${f.code}${f.st ? ' ' + f.st : ''}`) : '')
       + (!apt && st.bags > 0 ? chip('Bag', '', String(st.bags)) : '')
       + (!apt && quiet(st) ? chip('Quiet', 'plus', 'Silencio') : '')
       + (!apt && st.meetingPoint ? chip('Door', '', st.meetingPoint) : '')
-      + (!apt && st.reserva && window.Api && Api.reservePlace && Api.reservePlace(st.reserva) ? chip('Door', 'plus', Api.reservePlace(st.reserva).hotel ? Api.reservePlace(st.reserva).name : 'Reserva JMC') : '')
+      + (P && !desde ? chip('Door', 'plus', P.hotel ? P.name : 'Reserva JMC') : '')
       + '</div></div>'
       + (!apt && st.rid && !st.guest ? '<button type="button" class="rt-act sm" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(st.rid) + '" aria-label="' + esc('Escribir a ' + st.name) + '">' + ic('MessageCircle', 18) + (u > 0 ? '<span class="rt-badge">' + u + '</span>' : '') + '</button>' : '')
       + '</div>';
