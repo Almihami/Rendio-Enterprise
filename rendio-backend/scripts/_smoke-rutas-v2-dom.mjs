@@ -259,7 +259,16 @@ console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vue
   const tarde = rows().find((x) => x.dataset.id === 'V-01·V2');
   t('la que llega tarde lo dice: «19 min tarde · presentación 06:30» (y queda marcada)', tarde.dataset.s === 'risk' && txt(tarde.querySelector('.late')) === '19 min tarde · presentación 06:30');
   const lle = rows().find((x) => x.dataset.id === 'V-01·V3');
-  t('llegada: «15:00 → …» (aterriza → última entrega) y el conductor puesto solo', /^15:00 → \d\d:\d\d$/.test(txt(lle.querySelector('.when b'))) && /Aterriza → última entrega/.test(txt(lle)) && txt(lle.querySelector('.l1 .drv')) === 'Rubén Díaz');
+  // 27-oct-2026 (Camilo): arriba la hora de recoger en JMC; junto a cada nombre su
+  // aterrizaje y el vuelo entre paréntesis (como la lista del jefe) y a dónde va.
+  const rL = b.rutaDe('V-01·V3'), hm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(Math.round(m) % 60).padStart(2, '0');
+  t('llegada: arriba la recogida en JMC (ya no el aterrizaje de las 15:00) y el conductor puesto solo',
+    rL.pickup > rL.arrival && txt(lle.querySelector('.when b')).startsWith(hm(rL.pickup) + ' → ') && /Recoge en JMC → última entrega/.test(txt(lle))
+    && /Aterriza 15:00/.test(txt(lle.querySelector('.when'))) && txt(lle.querySelector('.l1 .drv')) === 'Rubén Díaz', txt(lle.querySelector('.when')));
+  const chipsL = [...lle.querySelectorAll('.rv2-p')];
+  t('…cada tripulante: «aterriza (VUELO) → a dónde va»; la hora es la del aterrizaje, no la de la casa',
+    chipsL.length > 0 && chipsL.every((c) => /^15:00 .+ \([A-Z0-9]+\) → \S/.test(leer(c))), chipsL.map(leer).join(' | '));
+  t('…y la lista se ordena por esa misma hora de arriba (la recogida)', b.rutaDe('V-01·V3').orden === rL.pickup);
   t('cada tripulante se puede arrastrar (draggable) o tocar para moverlo', tarde.querySelectorAll('.rv2-p[draggable="true"][data-drag][data-act="move"]').length === 2);
   b.click(q('#rv2-list .rv2-hechas-b')); await wait(5);   // las terminadas, a la vista
   t('…menos los de una vuelta terminada', [...rows().find((x) => x.dataset.id === 'V-01·V1').querySelectorAll('.rv2-p')].every((p) => p.disabled && !p.getAttribute('draggable')));
@@ -494,8 +503,10 @@ console.log('\n── F · teclado, WhatsApp, llegadas en el detalle ──');
   click(q('.rv2-row[data-id="V-03·V3"]'));
   t('tocar una vuelta abre su detalle', V2()._ui.sel === 'V-03·V3' && /V-03 · Vuelta 3/.test(txt(q('#rv2-detail h2'))) && q('.rv2-row[data-id="V-03·V3"]').getAttribute('aria-current') === 'true');
   t('detalle de una llegada: recogida en JMC primero, aterrizaje', /^16:30 Recogida en JMC Aterriza 16:10/.test(leer(q('#rv2-detail .rv2-stops li'))), leer(q('#rv2-detail .rv2-stops li')));
-  t('…cada hora dice qué es: «20 min para salir del aeropuerto» y «Llega a casa» en las entregas (14-oct)',
-    /Aterriza 16:10 · 20 min para salir del aeropuerto/.test(leer(q('#rv2-detail .rv2-stops li'))) && qa('#rv2-detail .rv2-stops li:not(.end)').every((li) => /Llega a casa · /.test(leer(li))),
+  // 27-oct-2026 (Camilo): «dice llega a casa · Origen · Hotel, debería ser hotel ·
+  // Origen · llega a casa»: de dónde sale → a dónde va, y al final qué es la hora.
+  t('…cada hora dice qué es: «20 min para salir del aeropuerto» y en las entregas «JMC (vuelo) → casa · llega a casa»',
+    /Aterriza 16:10 · 20 min para salir del aeropuerto/.test(leer(q('#rv2-detail .rv2-stops li'))) && qa('#rv2-detail .rv2-stops li:not(.end)').every((li) => /^\d\d:\d\d .+ JMC \([A-Z0-9]+\).* → .+ · llega a casa/.test(leer(li)) && !/Llega a casa · /.test(leer(li))),
     leer(q('#rv2-detail .rv2-stops')));
   t('…y «última entrega» es la hora de la última parada, la misma de abajo',
     (txt(q('#rv2-detail .rv2-alert')).match(/última entrega (\d\d:\d\d)/) || [])[1] === leer(qa('#rv2-detail .rv2-stops li:not(.end)').pop()).slice(0, 5),

@@ -237,6 +237,11 @@
 #routes-v2 .rv2-p .mono { font-size: 11.5px; color: var(--ink3); }
 #routes-v2 .rv2-p .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #routes-v2 .rv2-p .pl { color: var(--ink3); font-size: 12px; white-space: nowrap; }
+/* Llegada (27-oct): «11:35 Leslie Acosta (AV9374) → Ébano». El vuelo o el hotel
+   entre paréntesis como en la lista del jefe; si no cabe, el destino baja de renglón
+   en vez de cortar el nombre. */
+#routes-v2 .rv2-p--lle { flex-wrap: wrap; row-gap: 2px; text-align: left; }
+#routes-v2 .rv2-p .org { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink2); white-space: nowrap; }
 /* Arrastrando: las vueltas que lo pueden recibir se marcan; las demás se apagan */
 #routes-v2.is-dragging .rv2-row:not(.is-drop) { opacity: .45; }
 #routes-v2 .rv2-row.is-drop { border: 1.5px dashed var(--green); }
