@@ -129,14 +129,18 @@
 #routes-v2 .rv2-listwrap { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding: 0 2px 8px 0; }
 #routes-v2 .rv2-summary { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 #routes-v2 .rv2-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 14px 16px; min-width: 0; }
+#routes-v2 .rv2-summary .rv2-card { padding: 10px 14px; }   /* 27-oct: Avisos y Conductores más bajos */
 #routes-v2 .rv2-card h2 { font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
 #routes-v2 .rv2-card h2 .n { font-family: var(--mono); font-size: 11px; background: var(--red-soft); color: var(--red-ink); border-radius: 999px; padding: 2px 8px; }
 #routes-v2 .rv2-card .sub { margin: 3px 0 10px; font-size: 12.5px; color: var(--ink2); line-height: 1.45; }
-#routes-v2 .rv2-al { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; max-height: 260px; overflow: auto; }
+/* 27-oct (Camilo): «reduce el tamaño del cuadro de avisos». Renglones más bajos y
+   la caja tope en ~3 avisos (el resto se ve deslizando dentro de la caja). */
+#routes-v2 .rv2-al { list-style: none; margin: 8px 0 0; padding: 0 2px 0 0; display: flex; flex-direction: column; gap: 5px; max-height: 172px; overflow: auto; overscroll-behavior: contain; }
 #routes-v2 .rv2-card .sub + .rv2-al { margin-top: 0; }
-#routes-v2 .rv2-al li { display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 12px; border-radius: 10px; background: #FFF6F4; border: 1px solid #F6D6D1; font-size: 13.5px; line-height: 1.35; }
+#routes-v2 .rv2-al li { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 10px; border-radius: 9px; background: #FFF6F4; border: 1px solid #F6D6D1; font-size: 12.5px; line-height: 1.3; }
 #routes-v2 .rv2-al li .t { flex: 1; min-width: 0; }
-#routes-v2 .rv2-al li small { display: block; color: var(--ink2); font-size: 12px; margin-top: 2px; }
+#routes-v2 .rv2-al li small { display: block; color: var(--ink2); font-size: 11.5px; margin-top: 1px; }
+#routes-v2 .rv2-al li .rv2-btn--sm { height: 30px; padding: 0 10px; flex: 0 0 auto; }
 #routes-v2 .rv2-al li.is-ok { background: var(--green-soft); border-color: #C9E6D7; color: #0F6E4F; font-weight: 700; }
 #routes-v2 .rv2-dgrid { display: grid; gap: 6px; align-items: stretch; }
 #routes-v2 .rv2-dfree { margin: 10px 0 0; }
@@ -218,6 +222,10 @@
 #routes-v2 .rv2-row .when small.done { color: var(--green); font-weight: 700; }
 #routes-v2 .rv2-row .l1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; min-width: 0; }
 #routes-v2 .rv2-row .l1 .car { font-weight: 800; }
+/* 27-oct (Camilo): «Cambiar hora» en todas las vueltas, a la derecha de la fila. */
+#routes-v2 .rv2-row .l1 .rv2-hbtn { margin-left: auto; height: 28px; padding: 0 10px; font-size: 12px; flex: 0 0 auto; }
+#routes-v2 .rv2-caprow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+#routes-v2 .rv2-caprow .rv2-cap { margin: 0; }
 #routes-v2 .rv2-row .l1 .drv { color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #routes-v2 .rv2-row .l1 .drv.none { color: var(--red-ink); font-weight: 700; }
 #routes-v2 .rv2-row .l1 .tag { font-size: 11.5px; font-weight: 700; color: var(--green); background: var(--green-soft); border-radius: 999px; padding: 2px 8px; }
@@ -226,6 +234,12 @@
 /* 0126: la vuelta delegada (la hace alguien de afuera). */
 #routes-v2 .rv2-row .l1 .drv.deleg { color: var(--orange-ink); font-weight: 700; }
 .rv2-sheet .rv2-opt--deleg .t b { color: var(--orange-ink); }
+/* 27-oct: conductores de confianza (libreta) con «Quitar», y la casilla para guardar uno nuevo. */
+.rv2-sheet .rv2-dlg-row { display: flex; align-items: center; gap: 8px; }
+.rv2-sheet .rv2-dlg-row .rv2-opt { flex: 1; min-width: 0; }
+.rv2-sheet .rv2-dlg-row .rv2-btn--sm { flex: 0 0 auto; height: 44px; }
+.rv2-sheet .rv2-dlg-save { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; color: var(--ink); }
+.rv2-sheet .rv2-dlg-save input { width: 20px; height: 20px; accent-color: var(--orange); }
 #routes-v2 .rv2-pill { font-size: 11.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: var(--orange-soft); color: var(--orange-ink); }
 #routes-v2 .rv2-pill.llegada { background: var(--green-soft); color: var(--green); }
 #routes-v2 .rv2-pill.hotel { background: var(--amber-soft); color: var(--amber-ink); }
@@ -443,9 +457,11 @@
   #routes-v2 .rv2-say small { margin-left: 0; width: 100%; }
   #routes-v2 .rv2-listwrap { padding: 12px 0 0; }
   #routes-v2 .rv2-dgrid .cell { min-height: 48px; }
-  #routes-v2 .rv2-al { max-height: none; }
-  #routes-v2 .rv2-al li { flex-wrap: wrap; }
-  #routes-v2 .rv2-al li .rv2-btn--sm { height: 44px; }
+  /* En el teléfono también tiene tope (antes crecía sin fin y empujaba la lista). */
+  #routes-v2 .rv2-al { max-height: 200px; }
+  #routes-v2 .rv2-al li { flex-wrap: nowrap; }
+  #routes-v2 .rv2-al li .rv2-btn--sm { height: 40px; }
+  #routes-v2 .rv2-row .l1 .rv2-hbtn { height: 36px; }
   #routes-v2 .rv2-p { min-height: 40px; align-items: center; }
   #routes-v2 .rv2-map { height: 38vh; }
   #routes-v2 .rv2-stops .rv2-mv { height: 44px; }
@@ -503,7 +519,8 @@
 .rv2-sheet .rj-p .rj-w em { color: var(--ink3); font-style: normal; }
 .rv2-sheet .rj-p select { width: 100%; min-width: 0; height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; font: inherit; font-size: 13px; background: var(--panel); color: var(--ink); }
 .rv2-sheet .rj-p small { grid-column: 2 / -1; color: var(--ink3); font-size: 12px; }
-.rv2-sheet .rj-p[data-st="sin"] select { border-color: var(--orange); }
+.rv2-sheet .rj-p[data-st="sin"] select { border-color: var(--line2); color: var(--ink2); }   /* 27-oct: «No va», elegido */
+.rv2-sheet .rj-p[data-st="falta"] select { border: 1.5px solid var(--red-ink); background: #FFF6F4; }   /* 27-oct: falta elegir */
 .rv2-sheet .rj-p[data-st="rev"] select { border-color: var(--red-ink); }
 .rv2-sheet .rj-p[data-st="man"] select { border-color: var(--green); }
 /* 0133: «Va sin cuenta» (en la ruta, sin aviso). */

@@ -243,21 +243,23 @@ const C = await boot({
   t('«La flaca»: el apodo aprendido → Daniela Cano', quien('La flaca') === 'res-H' && fila('La flaca').dataset.st === 'ok');
   t('«Felipe» → Felipe Vélez · «Natalia (AV9412)» → Natalia Duque · «Tomás y Sara (Av 9420)» → los dos', quien('Felipe') === 'res-M' && quien('Natalia') === 'res-F' && quien('Tomás') === 'res-K' && quien('Sara') === 'res-L');
   t('«Kevin (AV9412)»: Kevin Uribe llega en otro vuelo (AV9414) → no se elige solo, pero sale de primera opción',
-    quien('Kevin') === '' && fila('Kevin').dataset.st === 'sin' && fila('Kevin').querySelector('optgroup[label="Más probables"] option').value === 'res-O' && /elige quién es \(hay parecidos\)/.test(txt(fila('Kevin'))), fila('Kevin') && fila('Kevin').innerHTML.slice(0, 200));
+    quien('Kevin') === '' && fila('Kevin').dataset.st === 'falta' && fila('Kevin').querySelector('optgroup[label="Más probables"] option').value === 'res-O' && /Hay pedidos parecidos: elige quién es/.test(txt(fila('Kevin'))), fila('Kevin') && fila('Kevin').innerHTML.slice(0, 200));
   // 0133 (lista de los jefes, 26-oct): quien no se parece a nadie y trae lugar VA sin cuenta.
   t('0133: «Pepe (Mota)»: no pidió y no se parece a nadie → «Va sin cuenta» por defecto (en la ruta, sin aviso)', quien('Pepe') === '__guest' && fila('Pepe').dataset.st === 'guest' && /Sin cuenta: va en la ruta/.test(txt(fila('Pepe'))) && /No le llegan avisos/.test(txt(fila('Pepe'))), fila('Pepe') && txt(fila('Pepe')));
-  t('…y se puede elegir «No pidió por la app» (no va)', [...fila('Pepe').querySelectorAll('option')].some((o) => o.value === '' && /No pidió por la app/.test(o.textContent)));
+  t('…y se puede elegir «No va en esta ruta» (27-oct: antes «No pidió por la app», que nadie entendía)', [...fila('Pepe').querySelectorAll('option')].some((o) => o.value === '__nova' && /No va en esta ruta/.test(o.textContent)) && [...fila('Pepe').querySelectorAll('option')].some((o) => o.value === '__guest' && /no tiene la app/.test(o.textContent)));
+  t('27-oct: quien no está elegido arranca en «— Elige quién es —» (no en «no va» callado)', fila('Kevin').querySelector('select option[value=""]') && /Elige quién es/.test(fila('Kevin').querySelector('select option[value=""]').textContent) && !fila('Pepe').querySelector('select option[value=""]'));
   const sum = () => txt(q('#rj-prev .rj-sum'));
-  t('el resumen: 7 vueltas · 9 emparejados · 1 sin cuenta (Pepe) · 1 sin pedido (Kevin, por revisar)', /7 vueltas · 9 emparejados/.test(sum()) && /1 sin cuenta: van en la ruta, sin aviso/.test(sum()) && /1 sin pedido en la app \(no van\)/.test(sum()), sum());
+  t('el resumen: 7 vueltas · 9 emparejados · 1 sin cuenta (Pepe) · 1 sin elegir (Kevin)', /7 vueltas · 9 emparejados/.test(sum()) && /1 sin cuenta: van en la ruta, sin aviso/.test(sum()) && /1 sin elegir: elige quién es \(o «No va»\) antes de pasar al tablero/.test(sum()), sum());
   t('…y quién pidió por la app y NO está en la ruta (Valentina, Sergio, Paula, Mateo, Juliana, Manuela, Kevin)',
     ['Valentina (sale 06:00)', 'Sergio (sale 07:40)', 'Paula', 'Mateo', 'Juliana', 'Manuela (sale 09:10)', 'Kevin (llega 15:05)'].every((x) => sum().includes(x)), sum());
   const pub = () => q('#rv2-sheet [data-rj="publicar"]');
-  t('«Pasar al tablero · 9 y 1 sin cuenta», encendido', !pub().disabled && txt(pub()) === 'Pasar al tablero · 9 y 1 sin cuenta', txt(pub()));
+  t('27-oct: con alguien sin elegir NO deja pasar al tablero: «Falta elegir 1»', pub().disabled && txt(pub()) === 'Falta elegir 1', txt(pub()));
   t('la vuelta con «Deben estar … Va a hotel» muestra la nota', /Deben estar 7:40/.test(txt(qa('#rj-prev .rj-b')[2])) && /Va a hotel/.test(txt(qa('#rj-prev .rj-b')[2])));
 
   pick(fila('Pepe').querySelector('select'), 'res-A'); await wait();
   t('elegir a Laura también para Pepe: «Está dos veces» en los dos y Publicar se apaga', /Está dos veces/.test(txt(fila('Pepe'))) && /Está dos veces/.test(txt(fila('Laura G'))) && pub().disabled && /1 repetidos|2 repetidos/.test(sum()), sum());
-  pick(fila('Pepe').querySelector('select'), ''); await wait();
+  pick(fila('Pepe').querySelector('select'), '__nova'); await wait();
+  t('27-oct: «No va» elegido a mano: «No va: no entra a la ruta» y cuenta en el resumen', fila('Pepe').dataset.st === 'sin' && /No va: no entra a la ruta/.test(txt(fila('Pepe'))) && /1 no van/.test(sum()), txt(fila('Pepe')));
   pick(fila('Andres').querySelector('select'), 'res-O'); await wait();
   t('elegir una LLEGADA (Kevin) en una vuelta de salidas: lo advierte («va en otra vuelta»)', /Es una llegada: va en otra vuelta/.test(txt(fila('Andres'))));
   pick(fila('Andres').querySelector('select'), 'res-B'); await wait();
@@ -616,6 +618,21 @@ console.log('\n── A2 · «(Aero r)», «(Hotel)», «(Río Verde)»: de JMC 
   t('«Andrea Núñez (aero r)» con salida Y regreso ese día: el REGRESO (de reserva en JMC), sola', r.a.auto && r.a.rid === 'q2', JSON.stringify(r.a));
   t('«Lesmes (Hotel R)»: su regreso de reserva en el hotel', r.b.auto && r.b.rid === 'q3', JSON.stringify(r.b));
   t('«Paula (aero r)» que solo pidió salida: NO se elige sola, su salida queda de opción', !r.c.auto && r.c.opciones.includes('q4'), JSON.stringify(r.c));
+  // 27-oct (Camilo, foto de las 12:39 a. m.): «2:50 Leslie» y «3:00 Henry» en una salida
+  // SIN «Deben estar»; Leslie pidió salida 03:30 y llegada 11:35 → «Revisa: hay parecidos».
+  {
+    const C3 = [
+      { rid: 'l1', auxId: 'la', n: 'Leslie Acosta Arango', type: 'sal', dia: DAY, dl: '03:30', zona: 'Ébano' },
+      { rid: 'l2', auxId: 'la', n: 'Leslie Acosta Arango', type: 'lle', dia: DAY, dl: '11:35', vuelo: 'AV9123' },
+      { rid: 'h1', auxId: 'ha', n: 'Henry Gómez', type: 'sal', dia: DAY, dl: '03:40' },
+      { rid: 'h2', auxId: 'ha', n: 'Henry Gómez', type: 'lle', dia: DAY, dl: '15:10', vuelo: 'AV9001' },
+    ];
+    const r3 = J._emparejar([P('x', 'Leslie', { min: 170 }), P('y', 'Henry', { min: 180 })], C3, {});
+    t('27-oct: «2:50 Leslie» sin «Deben estar» → su SALIDA (03:30), sola; no su llegada de las 11:35', r3.x.auto && r3.x.rid === 'l1', JSON.stringify(r3.x));
+    t('…y «3:00 Henry» → su salida (03:40)', r3.y.auto && r3.y.rid === 'h1', JSON.stringify(r3.y));
+    const r4 = J._emparejar([P('z', 'Leslie', { min: 695, vuelo: 'AV9123' })], C3, {});
+    t('…con vuelo en el paréntesis sigue siendo la LLEGADA', r4.z.auto && r4.z.rid === 'l2', JSON.stringify(r4.z));
+  }
 
   let pub = null;
   const H = await boot({
@@ -640,10 +657,10 @@ console.log('\n── A2 · «(Aero r)», «(Hotel)», «(Río Verde)»: de JMC 
   const bs = H.qa('#rj-prev .rj-b');
   t('la hoja: «Llegada · 16:20 · Recoge en JMC y los lleva a la casa» (antes decía «Salida»)', /^Llegada · 16:20/.test(txt(bs[0].querySelector('.rj-bh'))) && /Recoge en JMC y los lleva a la casa/.test(txt(bs[0])), txt(bs[0]));
   t('…y elige el regreso de Andrea (res-Q), no su salida', bs[0].querySelector('select').value === 'res-Q', bs[0].querySelector('select').value);
-  t('«Paula (aero r)», que solo pidió salida: «Revisa: pidió una salida, no el regreso desde JMC»', /Revisa: pidió una salida, no el regreso desde JMC/.test(txt(bs[1])) && bs[1].querySelector('select').value === '', txt(bs[1]));
+  t('«Paula (aero r)», que solo pidió salida: «Pidió una salida, no el regreso desde JMC: elige quién es»', /Pidió una salida, no el regreso desde JMC: elige quién es/.test(txt(bs[1])) && bs[1].querySelector('select').value === '', txt(bs[1]));
   H.pick(bs[1].querySelector('select'), 'res-P'); await wait();
   t('…y si el jefe la elige igual, lo advierte en palabras', /Pidió una salida \(de la casa a JMC\), no el regreso desde JMC/.test(txt(H.qa('#rj-prev .rj-b')[1])), txt(H.qa('#rj-prev .rj-b')[1]));
-  H.pick(H.qa('#rj-prev .rj-b')[1].querySelector('select'), ''); await wait();
+  H.pick(H.qa('#rj-prev .rj-b')[1].querySelector('select'), '__nova'); await wait();
   H.w.__confirma = true;
   H.click(H.q('#rv2-sheet [data-rj="publicar"]')); await wait(80);
   {
@@ -843,6 +860,20 @@ console.log('\n── 0133 · Un pasajero sin cuenta en el tablero (Pepe · Kris
   t('al releer el día, Kriss vuelve en su vuelta del tablero (8:50), con su parada de la base', kK2 === 'gstopkris' && lK2 && lK2.start === '08:50' && G.T().rt.aux[kK2].guest.stopId === 'stopkris-0000', JSON.stringify([kK2, lK2 && lK2.start]));
   const rK2 = lK2 && G.V2().dia().byId[lK2.id];
   t('…y su hora es la publicada (8:50), no la del modelo', rK2 && rK2.stops[0].time === 530, rK2 && JSON.stringify(rK2.stops));
+  // 27-oct (Camilo): «Sara dice AV9358» debajo del nombre en la app del conductor. En
+  // una llegada el paréntesis es el vuelo: el sin cuenta va SIN dirección, no con el vuelo.
+  {
+    const S2 = G.J()._st;
+    const antes = { lectura: S2.lectura, elegido: S2.elegido };
+    S2.lectura = G.J()._leer('19:55 Zoe (av9358)\n\n20:10 Ana (Aero r)\n\n6:00 Lia (Mota)\nDeben estar 6:40', DAY);
+    S2.elegido = { '0.0.0': '__guest', '1.0.0': '__guest', '2.0.0': '__guest' };
+    const bs = G.J()._bloques();
+    const g = (i) => bs[i] && bs[i].stops[0] && bs[i].stops[0].guest;
+    t('27-oct: sin cuenta en una llegada «(av9358)»: el vuelo NO queda de dirección (lugar vacío) y va de llegada', g(0) && g(0).place === null && g(0).vuelo === 'AV9358' && bs[0].type === 'lle', JSON.stringify(bs[0]));
+    t('…«(Aero r)» tampoco es su casa', g(1) && g(1).place === null, JSON.stringify(bs[1]));
+    t('…y en una salida el paréntesis SÍ es la casa («Mota»)', g(2) && g(2).place === 'Mota' && bs[2].type === 'sal', JSON.stringify(bs[2]));
+    S2.lectura = antes.lectura; S2.elegido = antes.elegido;
+  }
   t('sin errores de script', G.errors.length === 0, G.errors.join(' | '));
 }
 
@@ -922,7 +953,7 @@ console.log('\n── E · El Excel del día ──');
   const nDesc = (E.w.__descargas || []).length;
   await E.J().ofrecer(DAY); await wait(40);
   t('0130: el aviso abre la hoja «Excel del lun 12 oct» y lo descarga solo', /Excel del lun 12 oct/.test(txt(E.q('#rv2-shTitle'))) && E.w.__descargas.length === nDesc + 1, txt(E.q('#rv2-shTitle')) + ' · ' + E.w.__descargas.length);
-  t('0130: la hoja explica el corte y dice qué salió', /hasta las 7:40 p\. m\. de la víspera/.test(txt(E.q('#rv2-sheet'))) && /Listo: 16 filas · 1 Late en su hoja/.test(txt(E.q('#rj-xl-msg'))), txt(E.q('#rj-xl-msg')));
+  t('0130: la hoja explica el corte y dice qué salió', /hasta las 7:40 p\. m\. de la víspera/.test(txt(E.q('#rv2-sheet'))) && /Listo: lun 12 oct · 16 filas · 1 Late en su hoja/.test(txt(E.q('#rj-xl-msg'))), txt(E.q('#rj-xl-msg')));
   E.click(E.q('#rv2-sheet [data-rj="xl"]')); await wait(60);
   t('0130: «Descargar» lo baja otra vez', E.w.__descargas.length === nDesc + 2);
   t('0130: un día mal escrito no hace nada', (await E.J().ofrecer('mañana')) === null);

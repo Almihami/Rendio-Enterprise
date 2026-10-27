@@ -160,9 +160,130 @@ console.log('\n── 25-oct · plan publicado con horas a mano: la pantalla mue
   t('vuelta tocada: la hora vuelve a ser la del modelo', tocada.cita !== 280, JSON.stringify(tocada));
   rt.order[lH] = ['rH', 'rG'];
   t('…y si se deshace, vuelve la hora guardada', b.T().rtCarCompute(lH).stops[0].cita === 280);
+  // 27-oct (Camilo): «cuando los permite mover el sistema no respeta las horas sino
+  // que les aumenta 30 minutos a una hora». Mover gente por la pantalla (no a mano en
+  // rt.order) conserva las horas de los que se quedan.
+  {
+    const V = b.V2();
+    V._sacar('rG', lH); await wait(5);
+    const rH = b.rutaDe(laneDe(b, 'H'));
+    t('27-oct: sacar a G de la vuelta con horas del jefe: H se queda a las 04:40 (no vuelve al modelo)', rH && horasDe(rH) === '04:40' && rH.pickup === 280, rH && JSON.stringify([horasDe(rH), rH.pickup, horasDe(r0)]));
+    b.click(b.q('#rv2-toast [data-act="undo"]')); await wait(5);
+    t('…«Deshacer» la deja como estaba (04:40 y 04:55)', horasDe(b.rutaDe(laneDe(b, 'H'))) === '04:40,04:55');
+    // Meter a alguien de otra salida: los que ya iban conservan su hora y el nuevo
+    // toma la suya en su puesto del recorrido.
+    const otroLane = Object.keys(rt.order).find((l) => l !== lH && !rt.rv2Fijas[l] && rt.lanes.find((x) => x.id === l && x.type === 'sal') && rt.order[l].length);
+    const nuevo = rt.order[otroLane][0];
+    V._mover(nuevo, otroLane, lH); await wait(5);
+    const r2 = b.rutaDe(laneDe(b, 'H'));
+    const hora = (k) => { const st = r2.stops.find((x) => x.crewId === k); return st ? st.time : null; };
+    t('27-oct: meter a otro en esa vuelta: H y G conservan 04:40 y 04:55 (o más tarde solo si el carro no alcanza)',
+      r2 && hora('rH') >= 280 && hora('rG') >= 295 && hora('rH') <= 280 + 30 && r2.stops.length === 3 && hora(nuevo) != null && hora(nuevo) % 5 === 0,
+      r2 && JSON.stringify(r2.stops.map((x) => [x.crewId, hm(x.time)])));
+    const orden = rt.order[laneDe(b, 'H')];
+    t('…sin reordenar a los que ya iban (H antes que G)', orden.indexOf('rH') < orden.indexOf('rG'), orden.join());
+    b.click(b.q('#rv2-toast [data-act="undo"]')); await wait(5);
+  }
   // Re-optimizar arma el día desde cero: ya no hay horas guardadas que respetar.
   t('el plan sin horas guardadas (como lo publica la app) se ve igual que antes', horasDe(b0.rutaDe(laneDe(b0, 'H'))) === horasDe(r0));
   t('sin errores de script', b.errors.length === 0 && b0.errors.length === 0, [...b.errors, ...b0.errors].join(' | '));
+}
+
+console.log('\n── 27-oct · Re-optimizar solo lo pendiente (Camilo) ──');
+{
+  // «Cuando doy optimizar en sistema, el me toma la programación completa de todo
+  // el día, incluyendo servicios que ya se finalizaron.»
+  const b = await boot();
+  const { q, T } = b;
+  const rt = T().rt;
+  const L = (id) => rt.lanes.find((l) => l.id === id);
+  const aMin = (hm) => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
+  const genteHecha = (rt.order['V-01·V1'] || []).slice();
+  const enCurso = Object.keys(rt.rv2Fijas).filter((id) => rt.rv2Fijas[id] === 'in_progress');
+  const genteCurso = enCurso.flatMap((id) => rt.order[id] || []);
+  const antes = { start: L('V-01·V1').start, fin: JSON.stringify(rt.rv2Fin['V-01·V1'] || null) };
+  // Una delegada también se queda (la hace alguien de afuera): V-02·V2.
+  const dId = 'V-02·V2';
+  Object.assign(L(dId), { deleg: true, delegName: 'Carlos Uber', delegPhone: '3001234567' });
+  const genteDeleg = (rt.order[dId] || []).slice();
+  const finHecha = T().rtCarCompute('V-01·V1').arrival + rt.TURNAROUND;
+  const todos = Object.keys(rt.aux).length;
+  const quietas = 1 + enCurso.length + 1;
+  b.click(q('#rv2-reopt')); await wait(1300);
+  t('la vuelta terminada sigue igual: mismo id, misma gente, misma hora y sigue «terminada»',
+    !!L('V-01·V1') && (rt.order['V-01·V1'] || []).join() === genteHecha.join() && L('V-01·V1').start === antes.start && rt.rv2Fijas['V-01·V1'] === 'completed',
+    JSON.stringify([rt.order['V-01·V1'], L('V-01·V1') && L('V-01·V1').start, rt.rv2Fijas]));
+  t('…con su resultado (cómo terminó)', JSON.stringify(rt.rv2Fin['V-01·V1'] || null) === antes.fin);
+  t('la en curso sigue en curso, con su gente', enCurso.length > 0 && enCurso.every((id) => rt.rv2Fijas[id] === 'in_progress' && !!L(id)), JSON.stringify(enCurso));
+  t('la delegada sigue delegada, con la misma gente y a quién', !!L(dId) && L(dId).deleg === true && L(dId).delegName === 'Carlos Uber' && (rt.order[dId] || []).join() === genteDeleg.join(), JSON.stringify([rt.order[dId]]));
+  const fijasIds = new Set(['V-01·V1', dId, ...enCurso]);
+  const quietos = new Set([...genteHecha, ...genteDeleg, ...genteCurso]);
+  const nuevas = rt.lanes.filter((l) => !fijasIds.has(l.id));
+  t('nadie de lo hecho, en curso o delegado quedó también en una vuelta nueva', nuevas.every((l) => (rt.order[l.id] || []).every((k) => !quietos.has(k))));
+  t('las vueltas nuevas de V-01 arrancan después de que terminó la hecha', nuevas.filter((l) => l.car === 'V-01' && (rt.order[l.id] || []).length).every((l) => aMin(l.start) >= finHecha - 60),
+    JSON.stringify(nuevas.filter((l) => l.car === 'V-01').map((l) => l.start)));
+  t('ningún id repetido y cada carro numerado en orden de hora', new Set(rt.lanes.map((l) => l.id)).size === rt.lanes.length
+    && ['V-01', 'V-02', 'V-03'].every((c) => rt.lanes.filter((l) => l.car === c && (rt.order[l.id] || []).length).sort((x, y) => x.vuelta - y.vuelta).every((l, i, a) => l.vuelta === i + 1 && (!i || aMin(a[i - 1].start) <= aMin(l.start)))));
+  const enVueltas = new Set(rt.lanes.flatMap((l) => rt.order[l.id] || []));
+  t('todos siguen en una vuelta o en «sin carro» (no se pierde nadie)', Object.keys(rt.aux).every((k) => enVueltas.has(k) || rt.pool.includes(k)) && Object.keys(rt.aux).length === todos);
+  t(`el aviso dice que ${quietas} vueltas hechas, en curso o delegadas se quedaron como estaban`, new RegExp(quietas + ' vueltas ya hechas, en curso o delegadas se quedaron como estaban').test(b.toastV2() || ''), b.toastV2());
+  b.click(q('#rv2-toast [data-act="undo"]')); await wait(10);
+  t('«Deshacer» deja el día como estaba, con el resultado de la terminada', rt.lanes.length === 9 && JSON.stringify(rt.rv2Fin['V-01·V1'] || null) === antes.fin && L(dId) && L(dId).deleg === true);
+  t('sin errores de script', b.errors.length === 0, b.errors.join(' | '));
+}
+
+console.log('\n── 27-oct · «Cambiar hora» en cualquier vuelta del tablero (Camilo) ──');
+{
+  // «El botón de cambio de hora … solo aparece cuando uno monta la ruta por la opción
+  // de pegar ruta Julián. Debería aparecer siempre en el listado en todos los servicios.»
+  const b = await boot();
+  const { q, qa, click, type, T, V2, sheet } = b;
+  const rt = T().rt;
+  const fijas = Object.keys(rt.rv2Fijas || {});
+  const conBoton = qa('#rv2-list .rv2-row [data-act="hora"]').map((x) => x.dataset.id);
+  t('cada vuelta que no arrancó tiene «Cambiar hora» en la fila; la terminada y la en curso no', conBoton.length > 0 && fijas.every((id) => !conBoton.includes(id)) && rt.lanes.filter((l) => (rt.order[l.id] || []).length && !fijas.includes(l.id)).every((l) => conBoton.includes(l.id)), JSON.stringify({ conBoton, fijas }));
+  // Una salida de dos: H y G (V-01·V2 según el fixture: la que llega tarde).
+  const id = 'V-01·V2';
+  const r0 = b.rutaDe(id);
+  click(q(`#rv2-list .rv2-row [data-act="hora"][data-id="${id}"]`)); await wait(5);
+  const ins = qa('#rv2-sheet .rj-h-in');
+  t('abre «Cambiar hora · V-01» con una hora por recogida, en orden', !sheet().hidden && /Cambiar hora · V-01/.test(txt(sheet().querySelector('h2'))) && ins.length === r0.stops.length && ins.every((x, i) => x.getAttribute('data-crew') === r0.stops[i].crewId), txt(sheet().querySelector('h2')));
+  const hm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  // Adelantar la primera 20 min: las demás se corren igual.
+  type(ins[0], hm(r0.stops[0].time - 20));
+  t('mover la primera corre las demás 20 min', ins.slice(1).every((x, i) => x.value === hm(r0.stops[i + 1].time - 20)), ins.map((x) => x.value).join(','));
+  click(q('#rv2-h-ok')); await wait(5);
+  const r1 = b.rutaDe(id);
+  t('guardar: la vuelta muestra las horas nuevas (20 min antes) y ya no llega tarde', sheet().hidden && r1.stops.every((s, i) => s.time === r0.stops[i].time - 20) && r1.margin > r0.margin, JSON.stringify([r0.stops.map((s) => s.time), r1.stops.map((s) => s.time), r0.margin, r1.margin]));
+  t('…quedan como horas puestas (rt.horasPub) y el aviso dice que se avisan al publicar', !!rt.horasPub[id] && /cambiadas · se avisan al publicar/.test(b.toastV2()), b.toastV2());
+  // Publicar manda esas horas.
+  await T().rtSavePlan({ toast() {} });
+  const sv = b.log.saved[b.log.saved.length - 1];
+  const ln = sv && sv.lanes.find((l) => l.stops.join() === r1.stops.map((s) => 'res-' + s.crewId.slice(1)).join());
+  t('«Publicar» guarda las horas nuevas de cada parada', !!ln && r1.stops.every((s) => ln.etas['res-' + s.crewId.slice(1)] === s.time), ln && JSON.stringify(ln.etas));
+  // Una hora fuera de orden no se acepta.
+  click(q(`#rv2-list .rv2-row [data-act="hora"][data-id="${id}"]`)); await wait(5);
+  const ins2 = qa('#rv2-sheet .rj-h-in');
+  if (ins2.length > 1) {
+    ins2[1].setAttribute('data-tocado', '1'); ins2[1].value = hm(r1.stops[0].time - 30);
+    click(q('#rv2-h-ok')); await wait(5);
+    t('una recogida antes de la anterior: lo dice y no guarda', !sheet().hidden && /van en el orden del recorrido/.test(txt(q('#rv2-h-msg'))));
+  }
+  click(q('#rv2-sheet [data-act="sclose"]'));
+  // Una llegada: la hora a la que sale el carro.
+  const lle = rt.lanes.find((l) => l.type === 'lle' && !fijas.includes(l.id) && (rt.order[l.id] || []).length);
+  const k0 = b.rutaDe(lle.id);
+  click(q(`#rv2-list .rv2-row [data-act="hora"][data-id="${lle.id}"]`)); await wait(5);
+  const i3 = qa('#rv2-sheet .rj-h-in');
+  t('en una llegada: una sola hora, la de salir a recogerlos', i3.length === 1 && i3[0].getAttribute('data-h') === 'start' && i3[0].value === hm(k0.pickup), i3.map((x) => x.value).join());
+  type(i3[0], hm(k0.pickup + 15)); click(q('#rv2-h-ok')); await wait(5);
+  t('…y se guarda: el carro sale 15 min después', b.rutaDe(lle.id).pickup === k0.pickup + 15, JSON.stringify([k0.pickup, b.rutaDe(lle.id).pickup]));
+  click(q('#rv2-toast [data-act="undo"]')); await wait(5);
+  t('«Deshacer» devuelve la hora', b.rutaDe(lle.id).pickup === k0.pickup);
+  // El detalle también tiene el botón.
+  click(q(`.rv2-row[data-id="${id}"]`)); await wait(5);
+  t('el detalle de la vuelta también tiene «Cambiar hora»', !!q('#rv2-detail [data-act="hora"]'));
+  t('sin errores de script', b.errors.length === 0, b.errors.join(' | '));
 }
 
 console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vueltas y búsqueda ──');
@@ -715,7 +836,7 @@ for (const sin0126 of [false, true]) {
           selects.push(st.sel);
           if (sin0126 && /delegated_at/.test(st.sel)) r = sinCol;
           // El plan de antes: res-3 ya iba en una vuelta delegada.
-          else if (/route_stops\(id, reservation_id, status\)/.test(st.sel)) r = { data: [{ id: 'old', status: 'planned', driver_profile_id: null, delegated_at: sin0126 ? undefined : '2026-10-25T23:00:00Z', driver_profiles: null, route_stops: [{ id: 'st-old', reservation_id: 'res-3', status: 'pending' }] }], error: null };
+          else if (/route_stops\(id, reservation_id, status(, estimated_arrival_at)?\)/.test(st.sel)) r = { data: [{ id: 'old', status: 'planned', driver_profile_id: null, delegated_at: sin0126 ? undefined : '2026-10-25T23:00:00Z', driver_profiles: null, route_stops: [{ id: 'st-old', reservation_id: 'res-3', status: 'pending' }] }], error: null };
           else r = { data: [{ id: 'ra-x', direction: 'home_to_airport', status: 'planned', planned_start_at: '2026-10-26T04:15:00-05:00', driver_profile_id: null, vehicle_id: null, plan_car: 'Carro 2', pool: false, delegated_at: sin0126 ? undefined : '2026-10-25T23:00:00Z', route_stops: [] }], error: null };
         } else if (name === 'driver_profiles') r = { data: [{ id: 'dp-1', profile_id: 'd1' }], error: null };
         return Promise.resolve(r).then(ok2, ko);
@@ -740,7 +861,7 @@ for (const sin0126 of [false, true]) {
     t('getPublishedPlan pide delegated_at y la marca la vuelta («delegated»); cuenta como publicado', /delegated_at/.test(selects.at(-1) || '') && pp.vueltas[0].delegated === true && pp.publicado === true, JSON.stringify([selects.at(-1), pp.vueltas[0] && pp.vueltas[0].delegated, pp.publicado]));
   } else {
     t('base sin 0126: la delegada NO se guarda como borrador a escondidas: falla y dice por qué', r.failed === 1 && /para delegar falta la actualización 0126/.test(r.failMsg) && ras.filter((x) => x.plan_car === 'Carro 2').length === 1, JSON.stringify([r, ras]));
-    t('…la otra vuelta sí se publica, y leer el plan de antes reintenta sin la columna', r.saved === 1 && selects.some((x) => /delegated_at/.test(x)) && selects.some((x) => !/delegated_at/.test(x) && /route_stops\(id, reservation_id, status\)/.test(x)), JSON.stringify(selects));
+    t('…la otra vuelta sí se publica, y leer el plan de antes reintenta sin la columna', r.saved === 1 && selects.some((x) => /delegated_at/.test(x)) && selects.some((x) => !/delegated_at/.test(x) && /route_stops\(id, reservation_id, status(, estimated_arrival_at)?\)/.test(x)), JSON.stringify(selects));
     const pp = await w.Api.getPublishedPlan('2026-10-26', { estados: ['draft', 'planned'] });
     t('getPublishedPlan sin 0126: reintenta sin delegated_at y lee igual (nada delegado)', pp.vueltas.length === 1 && pp.vueltas[0].delegated === false, JSON.stringify(pp.vueltas));
   }
@@ -762,7 +883,8 @@ console.log('\n── 0124 · rearmar por carro del plan y la placa del turno �
   rt.activos = null;
   V2().render(); await wait(10);
   t('0124: un día que no es hoy no dice nada del turno', !/sin iniciar turno|· en /.test(txt(q('#rv2-drivers'))));
-  t('0124: la nota de la tarjeta explica de dónde sale la placa', /La placa sale del carro con que cada uno inicia turno/.test(txt(q('#rv2-drivers .sub'))));
+  // 27-oct (Camilo): «quítame esa descripción de conductores» → la tarjeta va sin el párrafo.
+  t('27-oct: la tarjeta Conductores ya no trae la descripción larga', !/Se ponen solos con el horario publicado|La placa sale del carro/.test(txt(q('#rv2-drivers'))) && !!q('#rv2-drivers h2'));
   // Rearmar un plan publicado: una vuelta con su carro del plan y una vieja (antes
   // de 0124) que solo trae una placa que el tablero no tiene.
   const keys = Object.keys(rt.aux).filter((k) => rt.aux[k].reservationId);
@@ -958,7 +1080,7 @@ for (const sin0131 of [false, true]) {
           selects.push(st.sel);
           if (sin0131 && /delegate_(name|phone)/.test(st.sel)) r = { data: null, error: { code: '42703', message: 'column route_assignments.delegate_name does not exist' } };
           // El plan de antes: res-3 ya iba delegada a «Pedro».
-          else if (/route_stops\(id, reservation_id, status\)/.test(st.sel)) r = { data: [{ id: 'old', status: 'planned', driver_profile_id: null, delegated_at: '2026-10-25T23:00:00Z', delegate_name: sin0131 ? undefined : 'Pedro', driver_profiles: null, route_stops: [{ id: 'st-old', reservation_id: 'res-3', status: 'pending' }] }], error: null };
+          else if (/route_stops\(id, reservation_id, status(, estimated_arrival_at)?\)/.test(st.sel)) r = { data: [{ id: 'old', status: 'planned', driver_profile_id: null, delegated_at: '2026-10-25T23:00:00Z', delegate_name: sin0131 ? undefined : 'Pedro', driver_profiles: null, route_stops: [{ id: 'st-old', reservation_id: 'res-3', status: 'pending' }] }], error: null };
           else r = { data: [{ id: 'ra-x', direction: 'home_to_airport', status: 'planned', planned_start_at: '2026-10-26T04:15:00-05:00', driver_profile_id: null, vehicle_id: null, plan_car: 'Carro 2', pool: false, delegated_at: '2026-10-25T23:00:00Z', delegate_name: sin0131 ? undefined : 'Carlos Uber', delegate_phone: sin0131 ? undefined : '300 123 4567', route_stops: [] }], error: null };
         }
         return Promise.resolve(r).then(ok2, ko);
@@ -1114,8 +1236,15 @@ console.log('\n── 26-oct · 0129: «Guardar y publicar» solo esa vuelta (si
   // 0131: antes de publicar se elige A QUIÉN, de la libreta o a mano.
   const dels = [];
   let fallaDel = null;
-  w.Api.listDelegateContacts = async () => [{ id: 'c1', name: 'Uber de Camilo', phone: '311 222 3344' }, { id: 'c2', name: 'Pedro Gómez', phone: '310 999 8877' }];
-  w.Api.delegateRoute = async (ra, n, ph) => { dels.push([ra, n, ph]); if (fallaDel) throw new Error(fallaDel); return { id: ra, delegated: true, name: n, phone: ph, notified: 1 }; };
+  // La libreta de prueba: admin_route_delegate (0131) anota SIEMPRE a quien se delega.
+  const libreta = [{ id: 'c1', name: 'Uber de Camilo', phone: '311 222 3344' }, { id: 'c2', name: 'Pedro Gómez', phone: '310 999 8877' }];
+  const quitados = [], guardados = [];
+  w.Api.listDelegateContacts = async () => libreta.slice();
+  w.Api.removeDelegateContact = async (id) => { quitados.push(id); const i = libreta.findIndex((c) => c.id === id); if (i >= 0) libreta.splice(i, 1); };
+  w.Api.saveDelegateContact = async (n, ph) => { guardados.push([n, ph]); return 'c-new'; };
+  w.Api.delegateRoute = async (ra, n, ph) => { dels.push([ra, n, ph]); if (fallaDel) throw new Error(fallaDel);
+    if (!libreta.some((c) => c.phone.replace(/\D/g, '') === ph.replace(/\D/g, ''))) libreta.push({ id: 'c-auto-' + dels.length, name: n, phone: ph });
+    return { id: ra, delegated: true, name: n, phone: ph, notified: 1 }; };
   click(q('#rv2-doPub')); await wait(20);
   t('0131: se abre «Delegar a…» con la libreta (2) y «Escribir nombre y teléfono»', txt(q('#rv2-shTitle')) === 'Delegar a…' && b.qa('#rv2-dlg [data-dpick]').length === 3 && /Uber de Camilo/.test(txt(q('#rv2-dlg'))) && q('#rv2-dlg-form').hidden && /Delegar y avisar/.test(txt(q('#rv2-dlg-ok'))), txt(q('#rv2-sheet')).slice(0, 200));
   click(q('#rv2-dlg [data-dpick="0"]')); await wait(5);
@@ -1135,6 +1264,22 @@ console.log('\n── 26-oct · 0129: «Guardar y publicar» solo esa vuelta (si
   b.type(q('#rv2-dlg-n'), '  Taxi   Rionegro '); b.type(q('#rv2-dlg-p'), '604 555 1234'); await wait(5);
   click(q('#rv2-dlg-ok')); await wait(20);
   t('0131: a mano (con los espacios limpios) también va por delegateRoute', dels.at(-1)[1] === 'Taxi Rionegro' && dels.at(-1)[2] === '604 555 1234', JSON.stringify(dels.at(-1)));
+  // 27-oct (Camilo): «si es un conductor que no está en la lista, uno llena los datos
+  // manual, pero que el sistema no guarde eso».
+  t('27-oct: a mano SIN la casilla: no queda en los conductores de confianza (se quita lo que anotó la base)', quitados.length === 1 && /^c-auto-/.test(quitados[0]) && !libreta.some((c) => /Taxi/.test(c.name)) && guardados.length === 0, JSON.stringify({ quitados, libreta }));
+  await abrir(LM);
+  click(q('#rv2-sheet [data-pick="__deleg"]')); await wait(5); click(q('#rv2-doPub')); await wait(20);
+  t('27-oct: la lista se llama «Conductores de confianza» y cada uno tiene «Quitar»', /Conductores de confianza/.test(txt(q('#rv2-dlg'))) && b.qa('#rv2-dlg [data-dquitar]').length === libreta.length && !!q('#rv2-dlg-g'), txt(q('#rv2-dlg')).slice(0, 160));
+  click(q('#rv2-dlg [data-dpick="nuevo"]')); await wait(5);
+  b.type(q('#rv2-dlg-n'), 'Don Mario'); b.type(q('#rv2-dlg-p'), '312 000 1111'); q('#rv2-dlg-g').checked = true; await wait(5);
+  click(q('#rv2-dlg-ok')); await wait(20);
+  t('27-oct: a mano CON la casilla: queda guardado (y no se quita)', guardados.length === 1 && guardados[0][0] === 'Don Mario' && quitados.length === 1 && libreta.some((c) => c.name === 'Don Mario'), JSON.stringify({ guardados, quitados }));
+  await abrir(LM);
+  click(q('#rv2-sheet [data-pick="__deleg"]')); await wait(5); click(q('#rv2-doPub')); await wait(20);
+  const iPedro = libreta.findIndex((c) => c.name === 'Pedro Gómez');
+  click(q(`#rv2-dlg [data-dquitar="${iPedro}"]`)); await wait(10);
+  t('27-oct: «Quitar» saca a Pedro de los conductores de confianza (sin delegar nada)', quitados.includes('c2') && !/Pedro Gómez/.test(txt(q('#rv2-dlg'))) && !q('#rv2-sheet').hidden, JSON.stringify(quitados));
+  click(q('#rv2-sheet [data-act="sclose"]')); await wait(5);
   // Un borrador (sin conductor en la base) no se delega por aquí: lo hace «Publicar plan».
   lE.raStatus = 'draft';
   await abrir(LE);
@@ -1232,7 +1377,7 @@ console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio 
       then(ok2, ko) {
         let r = { data: [], error: null };
         if (st.op === 'insert') { ins.push([name, st.payload]); r = { data: name === 'route_assignments' ? { id: 'ra-' + ins.length } : null, error: null }; }
-        else if (name === 'route_assignments' && st.op !== 'delete' && /route_stops\(id, reservation_id, status\)/.test(st.sel)) {
+        else if (name === 'route_assignments' && st.op !== 'delete' && /route_stops\(id, reservation_id, status(, estimated_arrival_at)?\)/.test(st.sel)) {
           r = { data: [{ id: 'pool-1', status: 'planned', pool: true, driver_profile_id: null, delegated_at: null, driver_profiles: null, route_stops: [{ id: 'st-p', reservation_id: 'res-M', status: 'pending' }] }], error: null };
         } else if (name === 'driver_profiles') r = { data: [{ id: 'dp-1', profile_id: 'd1' }], error: null };
         return Promise.resolve(r).then(ok2, ko);
@@ -1249,6 +1394,52 @@ console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio 
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 27-oct · Publicar avisa a quien le cambió la hora («Cambiar hora» del tablero) ──');
+{
+  const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'http://localhost/' });
+  const w = dom.window; const ins = [];
+  const bld = (name) => {
+    const st = { name, op: null, payload: null, sel: '' };
+    const b2 = {
+      select(x) { st.sel = String(x || ''); return b2; }, eq() { return b2; }, in() { return b2; }, gte() { return b2; }, lte() { return b2; }, gt() { return b2; }, not() { return b2; }, order() { return b2; }, limit() { return b2; },
+      delete() { st.op = 'delete'; return b2; },
+      insert(p) { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; },
+      single() { return b2; }, maybeSingle() { return b2; },
+      then(ok2, ko) {
+        let r = { data: [], error: null };
+        if (st.op === 'insert') { ins.push([name, st.payload]); r = { data: name === 'route_assignments' ? { id: 'ra-' + ins.length } : null, error: null }; }
+        else if (name === 'route_assignments' && st.op !== 'delete' && /estimated_arrival_at\)/.test(st.sel)) {
+          // Lo publicado antes: una salida con conductor (Ana 04:30, Beto 04:40) y una
+          // llegada con conductor que salía de JMC a las 15:20 (Caro); y Dani en un
+          // borrador sin conductor (nunca le dijeron una hora).
+          r = { data: [
+            { id: 'o1', status: 'planned', direction: 'home_to_airport', planned_start_at: '2026-10-26T04:30:00-05:00', driver_profile_id: 'dp-1', driver_profiles: { profile_id: 'd1' },
+              route_stops: [{ id: 's1', reservation_id: 'res-A', status: 'pending', estimated_arrival_at: '2026-10-26T04:30:00-05:00' }, { id: 's2', reservation_id: 'res-B', status: 'pending', estimated_arrival_at: '2026-10-26T04:40:00-05:00' }] },
+            { id: 'o2', status: 'planned', direction: 'airport_to_home', planned_start_at: '2026-10-26T15:20:00-05:00', driver_profile_id: 'dp-1', driver_profiles: { profile_id: 'd1' },
+              route_stops: [{ id: 's3', reservation_id: 'res-C', status: 'pending', estimated_arrival_at: '2026-10-26T15:50:00-05:00' }] },
+            { id: 'o3', status: 'draft', direction: 'home_to_airport', planned_start_at: '2026-10-26T06:00:00-05:00', driver_profile_id: null, driver_profiles: null,
+              route_stops: [{ id: 's4', reservation_id: 'res-D', status: 'pending', estimated_arrival_at: '2026-10-26T06:00:00-05:00' }] }], error: null };
+        } else if (name === 'driver_profiles') r = { data: [{ id: 'dp-1', profile_id: 'd1' }], error: null };
+        return Promise.resolve(r).then(ok2, ko);
+      },
+    };
+    return b2;
+  };
+  w.sb = { from: bld, auth: { getUser: async () => ({ data: { user: null } }), getSession: async () => ({ data: { session: null } }) } };
+  w.RENDIO_CONFIG = {};
+  w.eval(read('api.js'));
+  // Ana se movió a las 04:10 (20 min antes), Beto 04:42 (2 min: redondeo, no cuenta);
+  // la llegada de Caro sale 15:40; Dani ahora tiene conductor a las 06:20.
+  const r = await w.Api.saveRoutePlan('2026-10-26', [
+    { vehicleId: null, planCar: 'Carro 1', driverProfileId: 'd1', type: 'sal', startAt: '2026-10-26T04:10:00-05:00', stops: ['res-A', 'res-B'], etas: { 'res-A': 250, 'res-B': 282 } },
+    { vehicleId: null, planCar: 'Carro 1', driverProfileId: 'd1', type: 'lle', startAt: '2026-10-26T15:40:00-05:00', stops: ['res-C'], etas: {} },
+    { vehicleId: null, planCar: 'Carro 2', driverProfileId: 'd1', type: 'sal', startAt: '2026-10-26T06:20:00-05:00', stops: ['res-D'], etas: { 'res-D': 380 } }]);
+  const hs = r.notify.filter((n) => n.hora);
+  t('a Ana (20 min antes) y a Caro (sale 15:40) se les avisa la hora nueva', hs.length === 2 && hs.some((n) => n.reservationId === 'res-A' && !n.lle && /T09:10:00/.test(n.hora)) && hs.some((n) => n.reservationId === 'res-C' && n.lle), JSON.stringify(hs));
+  t('…a Beto no (2 min: es el redondeo) y a Dani tampoco (nunca le habían dado hora: le llega «Conductor asignado»)', !hs.some((n) => n.reservationId === 'res-B' || n.reservationId === 'res-D') && r.notify.some((n) => n.reservationId === 'res-D' && !n.hora && n.changed === false), JSON.stringify(r.notify));
+  t('…y el aviso de hora sabe el conductor de la vuelta', hs.every((n) => n.conductorHora === 'd1'));
+}
+
 console.log('\n── 26-oct · carga del día: consulta colgada, plazo, Reintentar y cambiar de día a mitad ──');
 {
   const b = await boot();
