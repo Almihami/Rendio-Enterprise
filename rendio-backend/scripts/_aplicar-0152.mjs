@@ -111,8 +111,13 @@ try {
       // Juan (D): una llegada que debía arrancar hace 10 min y no ha arrancado → termina tarde; luego la de Enrique (V) en 12 min.
       const P = await vuelta(D.id, 'airport_to_home', -10);
       const V = await vuelta(D.id, 'airport_to_home', 12);
-      // Daniel (C): viene con una salida hacia JMC (arrancó hace 30 min, recogió hace 25) y tiene el turno abierto.
-      const Q = await vuelta(C.id, 'home_to_airport', -30, 'in_progress', { etaMin: -25, stop: 'picked_up' });
+      // Daniel (C): acaba de dejar su salida en JMC. Como en producción: la vuelta sigue
+      // 'planned' y lo que cambió son las paradas (entregada, con sus horas).
+      const Q = await vuelta(C.id, 'home_to_airport', -40, 'planned', { etaMin: -35, stop: 'delivered' });
+      await c.query(`UPDATE public.route_stops SET actual_arrival_at = now() - interval '36 minutes', actual_pickup_at = now() - interval '35 minutes',
+          actual_dropoff_at = now() - interval '3 minutes' WHERE route_assignment_id = $1`, [Q]);
+      // Juan tiene otra antes de la de -10 que ya hizo (entregada): no cuenta, la que manda es la última.
+      const P0 = await vuelta(D.id, 'home_to_airport', -90, 'planned', { etaMin: -90, stop: 'delivered' });
       await c.query(`INSERT INTO public.shifts (organization_id, driver_id, vehicle_id, start_at) VALUES ($1, $2, $3, now() - interval '2 hours')`, [org, C.id, veh.id]);
       await c.query(`SET LOCAL session_replication_role = origin`);
       await c.query(`UPDATE public.app_settings SET cadena_activa = true, cadena_min_tarde = 10, cadena_max_hora = 6 WHERE id = 'singleton'`);
@@ -122,6 +127,8 @@ try {
       const ev = (await one(`SELECT public.cadena_evaluar($1, true) j`, [V])).j;
       t('Juan no alcanza la de Enrique (10+ min tarde)', ev && ev.known && ev.late_min >= 10, ev);
       t('…y el recomendado es Daniel', ev && ev.best && ev.best.dp === C.id, ev && ev.best);
+      t('…Daniel cuenta como libre en JMC aunque su vuelta siga «planned» (terminó por sus paradas)', ev && ev.best && /^terminó a las/.test(ev.best.why), ev && ev.best && ev.best.why);
+      t('…y de Juan se dice que su vuelta no ha arrancado', ev && /no ha arrancado/.test(ev.why), ev && ev.why);
       const evQ = (await one(`SELECT public.cadena_evaluar($1, false) j`, [P])).j;
       t('la vuelta anterior de Juan no se marca (no tiene nada antes)', !evQ || evQ.known === false || evQ.late_min < 10, evQ);
 
