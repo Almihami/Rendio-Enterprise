@@ -140,10 +140,18 @@ try {
       const e2 = await falla(`SELECT public.driver_llegada_candidatos($1)`, [R3.id]);
       t('en una salida no: «Solo se agrega o se suelta gente en una llegada»', e2 && /llegada/.test(e2.message), e2 && e2.message);
       await comoDb();
-      await c.query(`UPDATE public.route_stops SET status = 'picked_up' WHERE route_assignment_id = $1 AND stop_order = (SELECT min(stop_order) FROM public.route_stops WHERE route_assignment_id = $1)`, [R1]);
+      // En el aeropuerto con alguien ya a bordo: sí se puede (es cuando ve «ya llegó»), pero no soltar al que subió.
+      const subio = (await one(`UPDATE public.route_stops SET status = 'picked_up' WHERE route_assignment_id = $1 AND stop_order = (SELECT min(stop_order) FROM public.route_stops WHERE route_assignment_id = $1) RETURNING id`, [R1])).id;
+      await como(d1.profile_id);
+      const e5 = await falla(`SELECT public.driver_llegada_candidatos($1)`, [R1]);
+      t('con alguien ya a bordo en JMC: todavía puede agregar', !e5, e5 && e5.message);
+      const e6 = await falla(`SELECT public.driver_llegada_soltar($1, $2)`, [R1, subio]);
+      t('…pero no soltar al que ya se subió', e6 && /ya se subió/.test(e6.message), e6 && e6.message);
+      await comoDb();
+      await c.query(`UPDATE public.route_stops SET status = 'delivered' WHERE id = $1`, [subio]);
       await como(d1.profile_id);
       const e3 = await falla(`SELECT public.driver_llegada_candidatos($1)`, [R1]);
-      t('ya salió de JMC (alguien a bordo): no se le agrega ni se suelta', e3 && /ya salió de JMC/.test(e3.message), e3 && e3.message);
+      t('ya entregó a alguien (salió de JMC): no se le agrega ni se suelta', e3 && /ya salió de JMC/.test(e3.message), e3 && e3.message);
       const e4 = await falla(`SELECT public.admin_routes_offer(ARRAY[$1]::uuid[])`, [so.id]);
       t('admin_routes_offer: un conductor no la puede llamar', e4 && e4.code === '42501', e4 && e4.message);
       await comoDb();

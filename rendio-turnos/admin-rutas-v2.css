@@ -233,6 +233,9 @@
 #routes-v2 .rv2-row .l1 .tag.own { color: var(--orange-ink); background: var(--orange-soft); white-space: nowrap; }
 /* 0126: la vuelta delegada (la hace alguien de afuera). */
 #routes-v2 .rv2-row .l1 .drv.deleg { color: var(--orange-ink); font-weight: 700; }
+/* 0151: dejada para tomar (sin conductor, a propósito) y la que ya tomó un conductor. */
+#routes-v2 .rv2-row .l1 .drv.tomar { color: #4338CA; font-weight: 700; }
+#routes-v2 .rv2-row .l1 .tag.tomar { color: #4338CA; background: #EEF0FF; white-space: nowrap; }
 .rv2-sheet .rv2-opt--deleg .t b { color: var(--orange-ink); }
 /* 27-oct: conductores de confianza (libreta) con «Quitar», y la casilla para guardar uno nuevo. */
 .rv2-sheet .rv2-dlg-row { display: flex; align-items: center; gap: 8px; }

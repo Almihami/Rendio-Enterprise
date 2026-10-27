@@ -130,7 +130,9 @@ $$;
 -- 3. El conductor arma su llegada (Camilo, 27-oct: «que el conductor diga, tal
 --    persona ya llegó, me la monto a mi combo, y suelto a esta que no me da»)
 -- -----------------------------------------------------------------------------
--- Solo en una LLEGADA suya que todavía no sale de JMC (ninguna parada marcada).
+-- Solo en una LLEGADA suya que todavía no sale de JMC: nadie entregado todavía.
+-- En el aeropuerto puede haber gente ya a bordo (eso es justo cuando el conductor
+-- ve «tal persona ya llegó»); soltar solo a quien no se ha subido.
 CREATE OR REPLACE FUNCTION public.llegada_editable(p_route uuid, p_dp uuid)
 RETURNS public.route_assignments
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER
@@ -145,7 +147,7 @@ BEGIN
   IF ra.direction <> 'airport_to_home' OR ra.status NOT IN ('planned', 'in_progress') THEN
     RAISE EXCEPTION 'Solo se agrega o se suelta gente en una llegada que no ha terminado' USING ERRCODE = 'P0001';
   END IF;
-  IF EXISTS (SELECT 1 FROM public.route_stops x WHERE x.route_assignment_id = ra.id AND x.status <> 'pending') THEN
+  IF EXISTS (SELECT 1 FROM public.route_stops x WHERE x.route_assignment_id = ra.id AND x.status = 'delivered') THEN
     RAISE EXCEPTION 'Esa vuelta ya salió de JMC: ya no se le agrega ni se le suelta gente' USING ERRCODE = 'P0001';
   END IF;
   RETURN ra;
@@ -290,8 +292,8 @@ BEGIN
   IF v_dp IS NULL OR v_org IS NULL THEN RAISE EXCEPTION 'Solo un conductor' USING ERRCODE = '42501'; END IF;
   ra := public.llegada_editable(p_route, v_dp);
   SELECT rs.reservation_id INTO v_res FROM public.route_stops rs
-   WHERE rs.id = p_stop AND rs.route_assignment_id = ra.id AND rs.status = 'pending' AND rs.reservation_id IS NOT NULL;
-  IF v_res IS NULL THEN RAISE EXCEPTION 'Esa parada no es de tu vuelta' USING ERRCODE = 'P0002'; END IF;
+   WHERE rs.id = p_stop AND rs.route_assignment_id = ra.id AND rs.status IN ('pending', 'arrived') AND rs.reservation_id IS NOT NULL;
+  IF v_res IS NULL THEN RAISE EXCEPTION 'Esa persona no es de tu vuelta o ya se subió' USING ERRCODE = 'P0002'; END IF;
   SELECT ap.profile_id, pr.full_name INTO v_crew, v_name FROM public.reservations r
     JOIN public.auxiliar_profiles ap ON ap.id = r.auxiliar_profile_id JOIN public.profiles pr ON pr.id = ap.profile_id
    WHERE r.id = v_res;

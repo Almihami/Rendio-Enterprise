@@ -209,8 +209,19 @@ function conductor() {
   const pv = [...root().querySelectorAll('#rt-base .rt-vc')].find((x) => x.dataset.v === 'V2');
   t('al abrirla, la vencida se puede abrir para marcarla (detalle, no «hecha»)', pv && pv.dataset.rt === 'detail');
   const libres = [...root().querySelectorAll('.rt-libre')];
-  t('«Vueltas para tomar»: la que se cruza dice «Se cruza con otra vuelta tuya» y no tiene «Tomar»', libres[0] && /Se cruza con otra vuelta tuya/.test(tx(libres[0])) && !libres[0].querySelector('[data-rt="take"]'), libres[0] && tx(libres[0]));
-  t('la otra sí, y nombra a Kriss (sin cuenta)', libres[1] && libres[1].querySelector('[data-rt="take"]') && /Kriss/.test(tx(libres[1])));
+  // 0151 (Camilo, 27-oct): se puede tomar igual; pide confirmar y a Coordinación le llega el aviso.
+  t('«Vueltas para tomar»: la que se cruza dice «Se cruza con otra vuelta tuya» y AHORA sí tiene «Tomar» (marcado para confirmar)', libres[0] && /Se cruza con otra vuelta tuya/.test(tx(libres[0])) && libres[0].querySelector('[data-rt="take"][data-cruza="1"]'), libres[0] && tx(libres[0]));
+  {
+    const tomadas = []; const conf = [];
+    w.Api.driverTakeRoute = async (id) => { tomadas.push(id); return { id, plate: 'HYU376', cruza: '11:05' }; };
+    w.confirm = (m) => { conf.push(m); return false; };
+    libres[0].querySelector('[data-rt="take"]').click(); await wait(20);
+    t('…al tocar «Tomar» pregunta antes (se te cruza) y si dice que no, no la toma', conf.length === 1 && /Se te cruza con otra vuelta tuya/.test(conf[0]) && tomadas.length === 0, JSON.stringify(conf));
+    w.confirm = (m) => { conf.push(m); return true; };
+    const b0 = root().querySelector('.rt-libre [data-rt="take"][data-cruza="1"]'); if (b0) b0.click(); await wait(60);
+    t('…si dice que sí, la toma y el aviso dice con cuál se cruza y que Coordinación ya sabe', tomadas.length === 1 && /Se te cruza con la de las 11:05: Coordinación ya sabe/.test(tx(w.document.body)), tx(w.document.querySelector('#rt-toast-host') || w.document.body).slice(-200));
+  }
+  t('la otra también, sin marca de cruce, y nombra a Kriss (sin cuenta)', libres[1] && libres[1].querySelector('[data-rt="take"]:not([data-cruza="1"])') && /Kriss/.test(tx(libres[1])));
   w.DriverRutas.close();
   t('sin errores de script', errores.length === 0, errores.join(' | '));
 }

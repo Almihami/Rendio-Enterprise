@@ -648,11 +648,10 @@
       const diaT0 = t0 ? new Date(t0).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }) : o.day;
       const cuando = (o.day && diaT0 > o.day) ? 'Madrugada'
         : (diaT0 && diaT0 > hoy ? (diaT0 === new Date(Date.parse(hoy + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10) ? 'Mañana' : fmtDay(diaT0)) : '');
-      // 0138: si se cruza con una vuelta suya no se ofrece «Tomar» (la base tampoco
-      // dejaría): se dice por qué, y que Coordinación se la puede dar si de verdad alcanza.
-      const accion = o.cruza === true
-        ? '<span class="rt-libre-x" role="note">Se cruza con otra vuelta tuya</span>'
-        : btn('Tomar', { cls: 'tone', attrs: { 'data-rt': 'take', 'data-id': o.id, 'aria-label': `Tomar la vuelta de las ${t}` } });
+      // 0151 (Camilo, 27-oct): si se cruza con una vuelta suya se puede tomar igual;
+      // se dice y a Coordinación le llega el aviso para decidir (antes no dejaba).
+      const accion = (o.cruza === true ? '<span class="rt-libre-x" role="note">Se cruza con otra vuelta tuya</span>' : '')
+        + btn('Tomar', { cls: 'tone', attrs: { 'data-rt': 'take', 'data-id': o.id, 'data-cruza': o.cruza === true ? '1' : '', 'aria-label': `Tomar la vuelta de las ${t}` } });
       return '<div class="rt-vc rt-libre rx-in' + (o.cruza === true ? ' is-cruza' : '') + '" style="--d:' + i + '"><span class="rt-vc-t"><em>' + (lle ? 'Llegada' : 'Salida') + '</em><b>' + esc(t) + '</b>' + (cuando ? '<em>' + esc(cuando) + '</em>' : '') + '</span>'
         + '<span class="rt-vc-m"><b>' + esc(`${st.length} ${st.length === 1 ? 'persona' : 'personas'} · ${nombres}`) + '</b><span>' + esc(sub) + '</span></span>'
         + accion + '</div>';
@@ -755,6 +754,8 @@
       + (!apt && quiet(st) ? chip('Quiet', 'plus', 'Silencio') : '')
       + (!apt && st.meetingPoint ? chip('Door', '', st.meetingPoint) : '')
       + (P && !desde ? chip('Door', 'plus', P.hotel ? P.name : 'Reserva JMC') : '')
+      // 0151: «Soltar» va con las etiquetas (debajo del nombre): el chat sigue a la derecha.
+      + (!apt && armaLlegada(v) && st.reservationId && st.stopId && !yaSubio(v, st) ? '<button type="button" class="rt-soltar" data-rt="droppax" data-v="' + esc(v.id) + '" data-stop="' + esc(st.stopId) + '" aria-label="' + esc('Soltar a ' + st.name) + '">Soltar</button>' : '')
       + '</div></div>'
       + (!apt && st.rid && !st.guest ? '<button type="button" class="rt-act sm" data-rt="chat" data-v="' + esc(v.id) + '" data-rid="' + esc(st.rid) + '" aria-label="' + esc('Escribir a ' + st.name) + '">' + ic('MessageCircle', 18) + (u > 0 ? '<span class="rt-badge">' + u + '</span>' : '') + '</button>' : '')
       + '</div>';
@@ -777,6 +778,8 @@
       + '</div>'
       + '<div class="rx-foot">' + (s.done ? btn('Vuelta completada · ver resumen', { kind: 'sec', icon: 'Check', attrs: { 'data-rt': 'done', 'data-v': v.id } })
         : (v.pool && !s.started ? btn('Soltar esta vuelta', { kind: 'ghost', attrs: { 'data-rt': 'release', 'data-v': v.id } }) : '')
+          // 0151: en una llegada que no ha salido de JMC, el conductor arma su carro.
+          + (armaLlegada(v) ? btn('Agregar a alguien', { kind: 'ghost', icon: 'Users', attrs: { 'data-rt': 'addpax', 'data-v': v.id } }) : '')
           + btn(s.started ? `Seguir ruta · parada ${s.idx + 1} de ${v.legs.length}` : `Iniciar ruta · sale ${v.start}`, { cls: 'tone', icon: s.started ? 'Nav' : 'Play', attrs: { 'data-rt': 'start', 'data-v': v.id } })) + '</div>'
       + nowbarHTML(v.id)
       + '</div>';
@@ -1975,13 +1978,60 @@
     } catch (e) { /* sin vuelos */ }
   }
 
+  // ── 0151: el conductor arma su llegada (agregar / soltar a alguien) ───────────
+  // Camilo (27-oct): «que el conductor diga, tal persona ya llegó, me la monto a mi
+  // combo, y suelto a esta que no me da». Cambia al momento; la base avisa al
+  // tripulante, al conductor que la llevaba y a Coordinación (0151).
+  // Mientras no haya entregado a nadie (todavía en JMC); puede haber gente a bordo.
+  const armaLlegada = (v) => !!(v && v.type === 'llegada' && v.assignmentId && !S(v).done
+    && !v.legs.some((l) => l.stopStatus === 'delivered' || S(v).res[l.rid] === 'delivered') && (S(v).idx || 0) === 0
+    && window.Api && Api.driverLlegadaAgregar);
+  const yaSubio = (v, st) => ['picked_up', 'delivered', 'no_show'].includes(st.stopStatus) || ['onboard', 'nocode', 'noshow', 'notarrived', 'delivered'].includes(S(v).res[st.rid]);
+  async function openAddPax(vid) {
+    const v = vById(vid); if (!armaLlegada(v)) return;
+    openSheet('addpax', '<div class="rx-sh"><h3>Agregar a tu llegada</h3><p>Buscando quién aterriza cerca de tu hora…</p></div>', { tall: true });
+    let list = [];
+    try { list = await Api.driverLlegadaCandidatos(v.assignmentId); }
+    catch (e) { openSheet('addpax', '<div class="rx-sh"><h3>Agregar a tu llegada</h3><p>' + esc((e && e.message) || 'No se pudo buscar') + '</p>' + btn('Cerrar', { kind: 'ghost', attrs: { 'data-rt': 'sheet-close' } }) + '</div>'); return; }
+    const fila = (c) => '<button type="button" class="rt-addpax" data-rt="addpax-pick" data-v="' + esc(v.id) + '" data-rid="' + esc(c.rid) + '" data-n="' + esc(first(c.name)) + '">'
+      + '<b>' + esc(c.name) + '</b><span>' + esc(['llega ' + (c.hora || '—'), c.vuelo || '', c.destino ? '→ ' + c.destino : ''].filter(Boolean).join(' · ')) + '</span>'
+      + '<em>' + esc(c.actual === 'Sin carro' ? 'Sin carro' : c.actual === 'Para tomar' ? 'Para tomar' : 'Va con ' + c.actual) + '</em></button>';
+    openSheet('addpax', '<div class="rx-sh"><h3>Agregar a tu llegada</h3>'
+      + '<p>' + esc(list.length ? 'Toca a quien vas a llevar. Le avisamos a la persona, a su conductor y a Coordinación.' : 'No hay más llegadas cerca de tu hora que se puedan mover.') + '</p>'
+      + '<div class="rt-addpax-l">' + list.map(fila).join('') + '</div>'
+      + btn('Cerrar', { kind: 'ghost', attrs: { 'data-rt': 'sheet-close' } }) + '</div>', { tall: true });
+  }
+  async function addPax(vid, rid, b) {
+    const v = vById(vid); if (!armaLlegada(v) || !rid) return;
+    if (b) b.disabled = true;
+    try {
+      const r = await Api.driverLlegadaAgregar(v.assignmentId, rid);
+      closeSheet();
+      toast(`${(b && b.dataset.n) || 'Listo'}: va en tu llegada${r && r.prev_driver ? ` (iba con ${r.prev_driver})` : ''}. Coordinación ya sabe.`, 'Check');
+    } catch (e) { if (b) b.disabled = false; toast((e && e.message) || 'No se pudo agregar', 'AlertTriangle'); return; }
+    await load(RT.profile);
+    repaintBase();
+  }
+  async function dropPax(vid, stopId) {
+    const v = vById(vid); if (!armaLlegada(v) || !stopId) return;
+    const leg = v.legs.find((l) => l.stopId === stopId); const n = leg ? first(leg.name) : 'esta persona';
+    if (typeof window.confirm === 'function' && !window.confirm(`¿Soltar a ${n}? Queda en «Vueltas para tomar» y le avisamos a Coordinación.`)) return;
+    try { await Api.driverLlegadaSoltar(v.assignmentId, stopId); toast(`Soltaste a ${n}: quedó para tomar. Coordinación ya sabe.`, 'Check'); }
+    catch (e) { toast((e && e.message) || 'No se pudo soltar', 'AlertTriangle'); return; }
+    await load(RT.profile);
+    repaintBase();
+  }
+
   // ── 0125: tomar y soltar una vuelta de la ruta de Julián ──────────────────────
   async function takeRoute(id, b) {
     if (!id || !window.Api || !Api.driverTakeRoute) return;
+    if (b && b.dataset.cruza === '1' && typeof window.confirm === 'function'
+        && !window.confirm('Se te cruza con otra vuelta tuya. ¿La tomas igual? Le avisamos a Coordinación para que decida.')) return;
     if (b) b.disabled = true;
     try {
       const r = await Api.driverTakeRoute(id);
-      toast('La vuelta es tuya' + (r && r.plate ? ' · carro ' + r.plate : '') + '. Los tripulantes ya saben que los recoges.', 'Check');
+      toast('La vuelta es tuya' + (r && r.plate ? ' · carro ' + r.plate : '')
+        + (r && r.cruza ? `. Se te cruza con la de las ${r.cruza}: Coordinación ya sabe.` : '. Los tripulantes ya saben que los recoges.'), r && r.cruza ? 'AlertTriangle' : 'Check');
     } catch (e) {
       toast((e && e.message) || 'No se pudo tomar la vuelta', 'AlertTriangle');
     }
@@ -2063,6 +2113,9 @@
       if (a === 'recenter') { const L0 = RT.stack[RT.stack.length - 1]; const h = L0 && RT.maps[L0.key]; if (h) { h.follow = true; mapFit(h); } el.hidden = true; return; }
       if (a === 'sheet-close') { closeSheet(); return; }
       if (a === 'take') { takeRoute(el.dataset.id, el); return; }
+      if (a === 'addpax') { openAddPax(vid); return; }                       // 0151
+      if (a === 'addpax-pick') { addPax(vid, el.dataset.rid, el); return; }  // 0151
+      if (a === 'droppax') { dropPax(vid, el.dataset.stop); return; }       // 0151
       if (a === 'release') { releaseRoute(vid); return; }
     });
   }

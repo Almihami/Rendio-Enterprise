@@ -55,8 +55,8 @@ const leg = (o) => Object.assign({ kind: 'dropoff', lat: 6.15, lng: -75.37, addr
 const APT = { kind: 'airport', name: 'Aeropuerto JMC', addr: 'Terminal', lat: 6.1715, lng: -75.427 };
 const VUELTAS = () => [
   { id: 'V1', type: 'lle', start: hm(50), startAt: iso(50), done: false, assignmentId: 'A1', day: dia(50), opDay: dia(50), legs: [APT,
-    leg({ name: 'Laura Prueba Gómez', reservationId: 'R1', auxProfileId: 'P1', flight: 'AV9306', reqDay: dia(40), reqAt: iso(40) }),
-    leg({ name: 'Andrés Prueba Ruiz', reservationId: 'R2', auxProfileId: 'P2', flight: 'av 9306', reqDay: dia(40), reqAt: iso(40) })] },
+    leg({ name: 'Laura Prueba Gómez', reservationId: 'R1', auxProfileId: 'P1', flight: 'AV9306', reqDay: dia(40), reqAt: iso(40), stopId: 'S1' }),
+    leg({ name: 'Andrés Prueba Ruiz', reservationId: 'R2', auxProfileId: 'P2', flight: 'av 9306', reqDay: dia(40), reqAt: iso(40), stopId: 'S2' })] },
   { id: 'V2', type: 'lle', start: hm(200), startAt: iso(200), done: false, assignmentId: 'A2', day: dia(200), opDay: dia(50), legs: [APT,
     leg({ name: 'Sara Prueba Toro', reservationId: 'R3', auxProfileId: 'P3', flight: 'LA4021', reqDay: dia(190), reqAt: iso(190) })] },
   { id: 'V3', type: 'sal', start: hm(260), startAt: iso(260), done: false, assignmentId: 'A3', day: dia(260), opDay: dia(50), legs: [
@@ -131,6 +131,44 @@ console.log('\n── B · api-vuelos.js: origen, despegue y la última posició
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+console.log('\n── 0151 · El conductor arma su llegada: «Agregar a alguien» y «Soltar» ──');
+{
+  // Camilo (27-oct): «que el conductor diga, tal persona ya llegó, me la monto a mi
+  // combo, y suelto a esta que no me da». Lo hace y Coordinación recibe el aviso.
+  const { w, errores, q, qa, click } = boot();
+  const log = { cands: [], add: [], drop: [] };
+  w.Api.driverLlegadaCandidatos = async (ra) => { log.cands.push(ra); return [
+    { rid: 'R9', name: 'Ana Prueba Ríos', hora: hm(55), vuelo: 'AV9384', destino: 'Ébano', actual: 'Lennin V.' },
+    { rid: 'R8', name: 'Tomás Prueba Gil', hora: hm(60), vuelo: '', destino: 'Mota', actual: 'Sin carro' }]; };
+  w.Api.driverLlegadaAgregar = async (ra, rid) => { log.add.push([ra, rid]); return { id: ra, prev_driver: 'Lennin V.' }; };
+  w.Api.driverLlegadaSoltar = async (ra, st) => { log.drop.push([ra, st]); return { id: 'nueva' }; };
+  await w.DriverRutas.open({ id: 'pD', full_name: 'Jorge Prueba', role: 'driver' }); await wait(120);
+  const abrir = async (v) => { const c = [...w.document.querySelectorAll('#driver-ruta-root [data-v]')].find((x) => x.dataset.v === v && x.dataset.rt === 'detail'); await click(c, 120); };
+  await abrir('V1');
+  const add = q('[data-rt="addpax"]');
+  t('en su llegada que no ha salido de JMC: botón «Agregar a alguien»', !!add && /Agregar a alguien/.test(tx(add)), add && tx(add));
+  const sueltas = qa('[data-rt="droppax"]');
+  t('…y «Soltar» en cada persona (las dos)', sueltas.length === 2 && sueltas.every((b) => b.dataset.stop), sueltas.map((b) => b.dataset.stop).join());
+  await click(add, 120);
+  const hoja = () => w.document.querySelector('#rt-sheet-host');
+  t('la hoja lista quién aterriza cerca, con su hora, vuelo, destino y con quién va', /Agregar a tu llegada/.test(tx(hoja())) && /Ana Prueba Ríos/.test(tx(hoja())) && /AV9384/.test(tx(hoja())) && /Va con Lennin V\./.test(tx(hoja())) && /Sin carro/.test(tx(hoja())) && log.cands[0] === 'A1', tx(hoja()).slice(0, 200));
+  await click(hoja().querySelector('[data-rt="addpax-pick"][data-rid="R9"]'), 150);
+  t('tocar a Ana la monta en su llegada (vuelta A1)', JSON.stringify(log.add) === JSON.stringify([['A1', 'R9']]), JSON.stringify(log.add));
+  t('…y le dice que iba con Lennin y que Coordinación ya sabe', /Ana: va en tu llegada \(iba con Lennin V\.\)\. Coordinación ya sabe/.test(tx(w.document.body)), tx(w.document.body).slice(-240));
+  await abrir('V1');
+  const conf = []; w.confirm = (m) => { conf.push(m); return true; };
+  await click(q('[data-rt="droppax"][data-stop="S2"]'), 150);
+  t('«Soltar» a Andrés pregunta y lo suelta (queda para tomar)', conf.length === 1 && /¿Soltar a Andrés\? Queda en «Vueltas para tomar»/.test(conf[0]) && JSON.stringify(log.drop) === JSON.stringify([['A1', 'S2']]), JSON.stringify([conf, log.drop]));
+  // En una salida no hay nada de esto.
+  w.DriverRutas.close(); await wait(40);
+  await w.DriverRutas.open({ id: 'pD', full_name: 'Jorge Prueba', role: 'driver' }); await wait(120);
+  await abrir('V3');
+  t('(abrió el detalle de la salida)', /Recoges en casa/.test(tx(w.document.getElementById('driver-ruta-root'))));
+  t('en una salida no sale «Agregar a alguien» ni «Soltar»', !q('[data-rt="addpax"]') && !q('[data-rt="droppax"]'));
+  w.DriverRutas.close();
+  t('sin errores de script', errores.length === 0, errores.join(' | '));
+}
+
 console.log('\n── C · La ruta del conductor: el vuelo en la tarjeta y «Ver avión» ──');
 {
   const { w, errores, q, qa, click } = boot();

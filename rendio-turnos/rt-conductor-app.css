@@ -593,3 +593,13 @@
 #driver-ruta-ui.rx-phone .rx-noanim .rx-sheet-bg.out .rx-sheet,#driver-ruta-ui.rx-phone .rx-sheet-bg.out.rx-noanim .rx-sheet,#driver-ruta-ui.rx-phone .rx-sheet-bg.out .rx-sheet.rx-noanim{animation-duration:1ms;animation-delay:0s}
 }
 /* END noanim (generado) */
+
+/* 0151 (27-oct): el conductor arma su llegada. «Soltar» en cada parada y la lista
+   «Agregar a tu llegada» (la hoja sale en #rt-sheet-host, fuera de #driver-ruta-ui). */
+#driver-ruta-ui.rx-phone .rt-soltar{height:28px;padding:0 12px;border:1px solid var(--r-border-strong,var(--r-border));border-radius:999px;background:transparent;font:inherit;font-size:12.5px;font-weight:700;color:var(--r-text-2);cursor:pointer}
+#rt-sheet-host .rt-addpax-l{display:flex;flex-direction:column;gap:8px;margin:12px 0 14px;max-height:52vh;overflow:auto}
+#rt-sheet-host .rt-addpax{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;width:100%;text-align:left;padding:12px 14px;border:1px solid var(--r-line,#E7E5E4);border-radius:14px;background:var(--r-card,#fff);font:inherit;color:inherit;cursor:pointer;min-height:56px}
+#rt-sheet-host .rt-addpax b{font-size:15px;font-weight:700;grid-column:1}
+#rt-sheet-host .rt-addpax span{font-size:13px;color:var(--r-text-2,#57534E);grid-column:1}
+#rt-sheet-host .rt-addpax em{grid-column:2;grid-row:1 / span 2;font-style:normal;font-size:12px;font-weight:700;color:var(--r-text-3,#78716C);text-align:right;max-width:110px}
+#rt-sheet-host .rt-addpax:disabled{opacity:.5}

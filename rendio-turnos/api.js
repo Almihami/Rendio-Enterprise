@@ -3525,13 +3525,20 @@
     // 27-oct: la hora que ya tenía cada tripulante al que se le había avisado (con
     // conductor o delegada): si al publicar cambia, se le avisa («Cambió tu hora»).
     const prevHora = {};
+    // 0151: las «para tomar» del tablero: quién la tomó (se conserva al republicar) y
+    // quién ya estaba en una (no se le vuelve a anunciar a los conductores).
+    let conParaTomar = false;
+    const prevTomada = {}, prevEnTomar = new Set();
     {
       const leerPlan = (extra) => sb.from('route_assignments')
         .select('id, status, direction, planned_start_at, driver_profile_id, ' + extra + 'driver_profiles(profile_id), route_stops(id, reservation_id, status, estimated_arrival_at)')
         .gte('planned_start_at', d0).lte('planned_start_at', d1);
       // 0131: + a quién se delegó (si cambia, se le avisa al tripulante).
       // 0134: + pool, para no volver a meter a quien ya va en una vuelta para tomar.
-      let { data, error } = await leerPlan('pool, delegated_at, delegate_name, ');
+      // 0151: + para_tomar (las del tablero dejadas para tomar SÍ se reemplazan).
+      let { data, error } = await leerPlan('pool, para_tomar, delegated_at, delegate_name, ');
+      if (!error) conParaTomar = true;
+      if (error && (error.code === '42703' || /para_tomar/.test(error.message || ''))) ({ data, error } = await leerPlan('pool, delegated_at, delegate_name, '));
       if (error && (error.code === '42703' || /pool/.test(error.message || ''))) ({ data, error } = await leerPlan('delegated_at, delegate_name, '));
       if (error && (error.code === '42703' || /delegate_name/.test(error.message || ''))) ({ data, error } = await leerPlan('delegated_at, '));
       // Base sin 0126: se lee como antes (ninguna vuelta delegada).
@@ -3545,12 +3552,13 @@
         stops.forEach(s => {
           // 0133: el sin cuenta no tiene reserva. Si su vuelta no se borra (arrancó, o
           // es una vuelta pegada), su parada sigue ahí y no se vuelve a crear.
-          if (!s.reservation_id) { if (arrancada || ra.status === 'completed' || ra.pool) sinCuentaQueda.add(s.id); return; }
+          if (!s.reservation_id) { if (arrancada || ra.status === 'completed' || (ra.pool && !ra.para_tomar)) sinCuentaQueda.add(s.id); return; }
           prev[s.reservation_id] = pid;
           if (pid || ra.delegated_at) prevHora[s.reservation_id] = ra.direction === 'airport_to_home' ? ra.planned_start_at : s.estimated_arrival_at;
           // 0134: va en una vuelta para tomar (la de Julián o una que armó el sistema
           // al cambiar de vuelo): el tablero no la vuelve a poner en otra.
-          if (ra.pool && (ra.status === 'planned' || ra.status === 'in_progress')) enPool.add(s.reservation_id);
+          if (ra.pool && !ra.para_tomar && (ra.status === 'planned' || ra.status === 'in_progress')) enPool.add(s.reservation_id);
+          if (ra.para_tomar) { prevEnTomar.add(s.reservation_id); if (ra.driver_profile_id) prevTomada[s.reservation_id] = ra.driver_profile_id; }
           if (ra.delegated_at) { prevDeleg[s.reservation_id] = true; prevDelegName[s.reservation_id] = ra.delegate_name || null; }
           const atendida = s.status && s.status !== 'pending';
           if (ra.status === 'completed' || atendida) locked.add(s.reservation_id);
@@ -3579,7 +3587,8 @@
         let del = sb.from('route_assignments').delete()
           .in('status', ['draft', 'planned'])
           .gte('planned_start_at', d0).lte('planned_start_at', d1);
-        if (conPool) del = del.eq('pool', false);
+        // 0151: las pegadas (pool) no se tocan; las «para tomar» del tablero sí.
+        if (conPool) del = conParaTomar ? del.or('pool.eq.false,para_tomar.eq.true') : del.eq('pool', false);
         if (arrancadas.size) del = del.not('id', 'in', `(${[...arrancadas].join(',')})`);
         return del;
       };
@@ -3598,6 +3607,12 @@
     // skipped = carril vacío o ya todo en curso (normal); failed = la base dijo que no.
     let saved = 0, skipped = 0, kept = 0, failed = 0, failMsg = '';
     const notify = [];
+    const ofrecer = [];   // 0151: «para tomar» nuevas → se les anuncia a los del turno
+    let orgTomar = null;
+    if (lanes.some(l => l.paraTomar)) {
+      orgTomar = (typeof state !== 'undefined' && state.profile) ? state.profile.organization_id : null;
+      if (!orgTomar) orgTomar = (await getCurrentProfile())?.organization_id || null;
+    }
     for (const lane of lanes) {
       // 0133: los sin cuenta de la vuelta (los que no siguen en una vuelta que se queda).
       const sinCuenta = (lane.paradas || []).filter(p => p.guest && p.guest.name && !(p.guest.stopId && sinCuentaQueda.has(p.guest.stopId)));
@@ -3611,12 +3626,20 @@
       // conductor y con delegated_at: ningún conductor la ve y el tripulante
       // conserva su hora. Sin conductor y sin delegar = borrador, como siempre.
       const deleg = lane.delegated === true;
-      const dpid = !deleg && lane.driverProfileId ? dpMap[lane.driverProfileId] : null;
+      let dpid = !deleg && lane.driverProfileId ? dpMap[lane.driverProfileId] : null;
+      // 0151: dejada para tomar. Si un conductor ya la había tomado (y nadie la cambió
+      // en la pantalla), la sigue teniendo él.
+      const tomar = !deleg && lane.paraTomar === true;
+      if (tomar && !dpid && stopIds.length && stopIds.every(rid => prevTomada[rid] && prevTomada[rid] === prevTomada[stopIds[0]])) dpid = prevTomada[stopIds[0]];
       const fila = {
         driver_profile_id: dpid, vehicle_id: deleg ? null : (lane.vehicleId || null),
         direction: lane.type === 'lle' ? 'airport_to_home' : 'home_to_airport',
-        status: dpid || deleg ? 'planned' : 'draft', planned_start_at: lane.startAt,
+        status: dpid || deleg || tomar ? 'planned' : 'draft', planned_start_at: lane.startAt,
       };
+      if (tomar) {
+        if (!conParaTomar || !orgTomar) { failed++; failMsg = failMsg || 'para dejar vueltas para tomar falta la actualización 0151 de la base'; continue; }
+        fila.pool = true; fila.para_tomar = true; fila.organization_id = orgTomar;
+      }
       if (deleg) fila.delegated_at = new Date().toISOString();
       // 0131: a quién se delegó (nombre y teléfono que ve el tripulante).
       if (deleg && lane.delegateName) { fila.delegate_name = lane.delegateName; fila.delegate_phone = lane.delegatePhone || null; }
@@ -3645,6 +3668,7 @@
         failed++; failMsg = failMsg || 'para delegar falta la actualización 0126 de la base'; continue;
       }
       if (error) { failed++; failMsg = failMsg || error.message; continue; }
+      if (tomar && !dpid && stopIds.some(rid => !prevEnTomar.has(rid))) ofrecer.push(ra.id);
       // La ETA por parada viaja desde el tablero (lane.etas: minutos desde
       // medianoche). Sin ella, `route_stops.estimated_arrival_at` quedaba NULL
       // siempre y el vigilante de 0053 caía a `required_arrival_at`, que en una
@@ -3701,7 +3725,7 @@
       });
       saved++;
     }
-    return { saved, skipped, kept, failed, failMsg, notify };
+    return { saved, skipped, kept, failed, failMsg, notify, ofrecer };
   }
 
   // El conductor lee SU ruta del día (route_assignments asignadas a él) → vueltas.
@@ -3783,7 +3807,8 @@
           // Hora estimada de esta parada según el plan publicado (null si no la hay).
           eta: s.estimated_arrival_at ? rtHHMM(s.estimated_arrival_at) : '', etaAt: s.estimated_arrival_at || null,
           boardedNoCode: r.boarding_check === 'sin_codigo',
-          reservationId: s.reservation_id, auxProfileId: r.auxiliar_profiles?.profiles?.id || null };
+          reservationId: s.reservation_id, auxProfileId: r.auxiliar_profiles?.profiles?.id || null,
+          stopId: s.id || null };   // 0151: «Soltar» a esta persona de la llegada
       });
       // La ruta nunca pasa a 'completed' en la base (nadie la cierra), así que una
       // vuelta con todas las paradas resueltas se da por hecha aquí: si no, al
@@ -4387,6 +4412,8 @@
     const C0132 = C0131 + 'plan_vehicle_id, ';
     // 0134: + auto_created (la vuelta para tomar que armó el sistema al cambiar de vuelo).
     const C0134 = C0132 + 'auto_created, ';
+    // 0151: + para_tomar (la vuelta del tablero que Coordinación dejó para tomar).
+    const C0151 = C0134 + 'para_tomar, ';
     // 26-oct-2026: lo que no depende de las vueltas sale A LA VEZ que ellas (antes
     // eran seis o siete consultas seguidas): los reportes de operación, las reglas
     // de fin y la madrugada pegada con este día. La madrugada se pide con las
@@ -4398,8 +4425,9 @@
     const pReglas = yaVa(() => getRouteFinishRules());   // 0137
     const madDe = (c) => sel(c, (x) => x.eq('pool', true).eq('manual_day', day).gt('planned_start_at', d1));
     const pMad = yaVa(() => madDe(C0134));
-    let { data, error } = await sel(C0134);
-    let cols = C0134;
+    let { data, error } = await sel(C0151);
+    let cols = C0151;
+    if (error && (error.code === '42703' || /para_tomar/.test(error.message || ''))) { ({ data, error } = await sel(C0134)); cols = C0134; }
     if (error && (error.code === '42703' || /auto_created/.test(error.message || ''))) { ({ data, error } = await sel(C0132)); cols = C0132; }
     if (error && (error.code === '42703' || /plan_vehicle_id/.test(error.message || ''))) { ({ data, error } = await sel(C0131)); cols = C0131; }
     if (error && (error.code === '42703' || /delegate_(name|phone)/.test(error.message || ''))) { ({ data, error } = await sel(C0126)); cols = C0126; }
@@ -4408,7 +4436,7 @@
       // 0125: la madrugada que Julián pegó con ESTE día (0:20 del día siguiente)
       // se ve aquí, con el resto de su ruta.
       try {
-        const mad = await (cols === C0134 ? pMad : madDe(cols));
+        const mad = await ((cols === C0134 || cols === C0151) ? pMad : madDe(cols));
         if (!mad.error && mad.data && mad.data.length) data = (data || []).concat(mad.data.filter((r) => !(data || []).some((x) => x.id === r.id)));
       } catch (_) { /* sin la madrugada: el resto del día igual se ve */ }
     }
@@ -4479,6 +4507,7 @@
         delegated: !!ra.delegated_at,
         // 0134: vuelta para tomar que armó el sistema (cambio de vuelo sin puesto).
         autoCreated: ra.auto_created === true,
+        paraTomar: ra.para_tomar === true,   // 0151
         // 0131: a quién (null = delegada sin nombre, «te contactaremos por WhatsApp»).
         delegateName: ra.delegate_name || null, delegatePhone: ra.delegate_phone || null,
         planVehicleId: ra.plan_vehicle_id || null,   // 0132
@@ -4695,6 +4724,22 @@
   }
   // La libreta (0131): los de afuera a quienes se ha delegado, el último primero.
   // null = la base no tiene la libreta todavía.
+  // 0151 · El conductor arma su llegada (Camilo, 27-oct: «tal persona ya llegó, me la
+  // monto a mi combo, y suelto a esta que no me da»). Solo en una llegada suya que no
+  // ha salido de JMC; la base avisa al tripulante, al otro conductor y a Coordinación.
+  const _rpc0151 = async (fn, args) => {
+    const { data, error } = await sb.rpc(fn, args);
+    if (error) {
+      if (error.code === '42883' || error.code === 'PGRST202') throw new Error('Falta la actualización 0151 de la base.');
+      throw error;
+    }
+    return data;
+  };
+  const driverLlegadaCandidatos = (routeId) => _rpc0151('driver_llegada_candidatos', { p_route: routeId }).then((d) => d || []);
+  const driverLlegadaAgregar = (routeId, resId) => _rpc0151('driver_llegada_agregar', { p_route: routeId, p_res: resId });
+  const driverLlegadaSoltar = (routeId, stopId) => _rpc0151('driver_llegada_soltar', { p_route: routeId, p_stop: stopId });
+  // Al publicar: «Hay una vuelta para tomar» a los del turno (las que se dejaron para tomar).
+  const offerRoutes = (ids) => (ids && ids.length ? _rpc0151('admin_routes_offer', { p_routes: ids }) : Promise.resolve(0));
   async function listDelegateContacts() {
     const { data, error } = await sb.from('delegate_contacts').select('id, name, phone, last_used_at')
       .is('deleted_at', null).order('last_used_at', { ascending: false, nullsFirst: false }).limit(40);
@@ -4755,7 +4800,7 @@
     getRouteFinishRules, _opResultado, _opFinEsperado,   // 0137 (las dos últimas, para las pruebas)
     createExternal, adminCreateReservation, listExternalAuxIds,   // 0139
     listHandovers, setHandover, driverMyHandovers, driverHandoverDelivered,   // 0140
-    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, saveDelegateContact, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
+    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, saveDelegateContact, driverLlegadaCandidatos, driverLlegadaAgregar, driverLlegadaSoltar, offerRoutes, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,
