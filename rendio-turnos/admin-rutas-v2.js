@@ -689,8 +689,10 @@
 
   function emptyHTML() {
     if (ui.falloCarga) {
-      return `<div class="rv2-empty" role="alert"><b>No se pudo cargar ${esc(dayLabel(ui.falloCarga.dia))}</b>${esc(ui.falloCarga.motivo)}`
-        + '<br>Puedes reintentar o usar ‹ › para ver otro día.<br><button class="rv2-btn rv2-btn--cta" data-act="reintentar">Reintentar</button></div>';
+      return `<div class="rv2-empty" role="alert"><b>No se pudo cargar ${ui.falloCarga.dia ? esc(dayLabel(ui.falloCarga.dia)) : 'el día'}</b>${esc(ui.falloCarga.motivo)}`
+        + '<br>Puedes reintentar o usar ‹ › para ver otro día.<br><button class="rv2-btn rv2-btn--cta" data-act="reintentar">Reintentar</button>'
+        + (ui.falloCarga.detalle ? `<br><small style="display:block;margin-top:12px;font-size:11px;opacity:.75;word-break:break-word">Detalle técnico (mándale una captura a soporte): ${esc(ui.falloCarga.detalle)}</small>` : '')
+        + '</div>';
     }
     if (ui.cargando) return '<div class="rv2-empty"><b>Cargando el día…</b>Trayendo reservas, carros y el plan publicado.</div>';
     if (rt.source === 'empty') {
@@ -1049,6 +1051,7 @@
   const T_JULIAN = 'Este día va con la ruta de Julián';
   function render() {
     if (!root()) return;
+    if (ui.falloCarga) { pintarFallo(); return; }
     if (soloJulian() && !ui.cargando && window.RendioRutaJulian) { renderManual(); return; }
     // Lo que dejó un día solo de Julián (el título de los botones apagados).
     [el.publish, el.publishM, el.reopt].forEach((b) => { if (b && b.title === T_JULIAN) b.title = ''; });
@@ -1057,6 +1060,25 @@
     if (ui.sel && !D.byId[ui.sel]) { ui.sel = null; ui.moving = null; }
     const av = avisosDe();
     renderBar(); renderSay(av); renderAvisos(av); renderDrivers(); pintarEntregas(); renderList(); renderDetail();
+  }
+  // El día no se pudo cargar o mostrar (26-oct-2026): se pinta el aviso SIN armar
+  // el día (armarDia, avisos, conductores), porque pudo ser justo eso lo que falló.
+  function pintarFallo() {
+    try { renderBar(); } catch (_) { /* la barra con ‹ › es lo último que se pierde */ }
+    el.say.hidden = false; el.say.classList.remove('is-ok');
+    el.say.innerHTML = '<i aria-hidden="true"></i><span>No se pudo cargar el día · <a href="#" data-act="reintentar">Reintentar</a></span>';
+    el.pending.hidden = true;
+    el.summary.hidden = true; el.avisos.innerHTML = ''; el.drivers.innerHTML = '';
+    try { pintarEntregas(); } catch (_) { /* sin entregas */ }
+    el.list.innerHTML = emptyHTML();
+    [el.publish, el.publishM, el.reopt].forEach((b) => { if (b) b.disabled = true; });
+    if (el.dhead) { el.dhead.innerHTML = ''; el.dtop.innerHTML = ''; el.dbot.innerHTML = ''; el.mapwrap.hidden = true; }
+  }
+  // Para el aviso: qué falló y dónde (en Safari «armarDia@…/admin-rutas-v2.js:812:33»).
+  function detalleDe(e) {
+    const msg = e ? `${e.name || 'Error'}: ${e.message || e}` : 'Error desconocido';
+    const pila = String((e && e.stack) || '').split('\n').map((x) => x.trim()).filter((x) => x && x !== msg).slice(0, 3).join(' ← ');
+    return (msg + (pila ? ' · ' + pila : '')).slice(0, 400);
   }
   // 0140: «Entregas de turno» (admin-entregas.js) del día que se ve.
   function pintarEntregas() {
@@ -1996,7 +2018,7 @@
     ui.cargando = true; ui.falloCarga = null; ui.diaPedido = day || null;
     ui.sel = null; ui.moving = null; hist.length = 0;
     if (el.detail) el.detail.classList.remove('is-open');
-    if (root() && !root().hidden) render();
+    try { if (root() && !root().hidden) render(); } catch (_) { /* lo que se veía antes; la carga sigue */ }
     // Con el día pedido, lo publicado se lee A LA VEZ que las reservas: no depende
     // de ellas (antes esperaba a que terminara todo lo demás).
     const leerPlan = (d) => { let p; try { p = Promise.resolve(Api.getPublishedPlan(d, { estados: ESTADOS_PLAN })); } catch (e) { p = Promise.reject(e); } p.catch(() => {}); return p; };
@@ -2031,25 +2053,50 @@
     if (fallo) {
       // ui.cargando sigue en true (el día no está cargado: nada de lista, avisos
       // ni Publicar); ‹ › y «Reintentar» sí sirven.
-      ui.falloCarga = { dia: day || null, motivo: (fallo && fallo.message) || 'Error desconocido.' };
+      ui.falloCarga = { dia: day || null, motivo: (fallo && fallo.vencida && fallo.message) || 'Falló al traer el día.', detalle: fallo && fallo.vencida ? '' : detalleDe(fallo) };
+      if (!fallo.vencida && window.console) console.error('[Asignación] falló al traer el día', fallo);
       if (window.Api && typeof Api.limpiarCacheCorta === 'function') Api.limpiarCacheCorta();
-      if (root() && !root().hidden) render();
+      if (root() && !root().hidden) pintarFallo();
       return;
     }
     ui.cargando = false; ui.diaPedido = null;
+    try { pintarDia(n); }
+    catch (e) {
+      // Un error al PINTAR el día (no al traerlo) dejaba la pantalla en «Cargando
+      // el día…» para siempre, sin decir nada: lo último que alcanzó a dibujar.
+      if (n !== cargaN) return;
+      ui.cargando = true; ui.diaPedido = day || rt.day || null;
+      ui.falloCarga = { dia: day || rt.day || null, motivo: 'Los datos llegaron, pero falló al mostrar el día.', detalle: detalleDe(e) };
+      if (window.console) console.error('[Asignación] falló al mostrar el día', e);
+      if (root() && !root().hidden) pintarFallo();
+    }
+  }
+  // Lo que se hace con el día ya cargado: rótulos, lo que llega después y pintar.
+  function pintarDia(n) {
     rotularVieja();
     // La madrugada del día siguiente (es de este turno PM): llega después, como los vuelos.
     const diaPedido = ui.dia;
     if (window.Api && Api.getMadrugadaSiguiente) {
       Api.getMadrugadaSiguiente(diaPedido, rtCut())
-        .then((m) => { if (ui.dia !== diaPedido || n !== cargaN) return; ui.madSig = m; if (root() && !root().hidden) render(); })
+        .then((m) => { if (ui.dia !== diaPedido || n !== cargaN) return; ui.madSig = m; if (root() && !root().hidden) pintarSeguro(n); })
         .catch(() => {});
     }
     // Los vuelos del día (si la integración está encendida) llegan después y
     // solo agregan el chip en el detalle.
-    if (window.RendioVuelos) window.RendioVuelos.cargar(ui.dia).then(() => { if (n === cargaN && !ui.cargando && root() && !root().hidden) render(); }).catch(() => {});
+    if (window.RendioVuelos) window.RendioVuelos.cargar(ui.dia).then(() => { if (n === cargaN && !ui.cargando && root() && !root().hidden) pintarSeguro(n); }).catch(() => {});
     if (root() && !root().hidden) { render(); autoSelect(); }
     else if (typeof rtRenderAll === 'function') { rtRenderAll(); syncVieja(); }
+  }
+  // Repintar con lo que llega después (madrugada, vuelos): si falla, se dice.
+  function pintarSeguro(n) {
+    try { render(); }
+    catch (e) {
+      if (n !== cargaN) return;
+      ui.cargando = true; ui.diaPedido = rt.day || ui.dia || null;
+      ui.falloCarga = { dia: rt.day || ui.dia || null, motivo: 'Los datos llegaron, pero falló al mostrar el día.', detalle: detalleDe(e) };
+      if (window.console) console.error('[Asignación] falló al mostrar el día', e);
+      pintarFallo();
+    }
   }
   function reintentar() {
     const dia = ui.falloCarga ? ui.falloCarga.dia : (ui.diaPedido || rt.day || ui.dia || null);
