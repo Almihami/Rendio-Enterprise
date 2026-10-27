@@ -470,7 +470,8 @@
     const rel = relDia(day);
     el.dayLabel.title = rel ? `${rel} · ${day}` : (day || '');
     el.dayLabel.setAttribute('aria-label', `Día: ${dayLabel(day)}${rel ? ' (' + rel.toLowerCase() + ')' : ''}`);
-    const pub = publicado();
+    // Mientras carga no se sabe: el chip era del día anterior y salía junto a la fecha nueva.
+    const pub = publicado() && !ui.cargando;
     el.pubChip.hidden = !pub;
     el.pubChip.classList.toggle('is-changed', pub && conCambios());
     el.pubChip.textContent = pub ? (conCambios() ? 'Publicado · con cambios' : 'Publicado') : '';

@@ -1248,6 +1248,7 @@ console.log('\n── 26-oct · carga del día: consulta colgada, plazo, Reinten
   click(q('#routes-v2 [data-act="nav"][data-dir="1"]')); await wait(30);
   t('mientras carga, la barra ya dice el día pedido (no el viejo)', txt(q('#rv2-dayLabel')) === 'Mar 13 oct', txt(q('#rv2-dayLabel')));
   t('…y ‹ › siguen activos', [...b.qa('#routes-v2 [data-act="nav"]')].every((x) => !x.disabled));
+  t('…y no dice «Publicado» (eso era del día anterior)', q('#rv2-pubChip').hidden, txt(q('#rv2-pubChip')));
   await wait(250);
   t('vencido el plazo sale de «Cargando»: «No se pudo cargar Mar 13 oct» con Reintentar', /No se pudo cargar Mar 13 oct/.test(txt(q('#rv2-list'))) && !!q('#rv2-list [data-act="reintentar"]') && !/Cargando/.test(txt(q('#rv2-list'))), txt(q('#rv2-list')));
   t('la frase de arriba: «No se pudo cargar el día · Reintentar»', /No se pudo cargar el día · Reintentar/.test(txt(q('#rv2-say'))), txt(q('#rv2-say')));
