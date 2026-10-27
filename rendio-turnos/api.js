@@ -3519,6 +3519,7 @@
     const movableInProgress = [];   // route_stops.id pendientes de rutas ya arrancadas
     const arrancadas = new Set();   // route_assignments.id que NO se borran
     const enPool = new Set();       // 0134: reservas que ya van en una vuelta para tomar
+    const sinCuentaQueda = new Set(); // 0133: paradas de sin cuenta en vueltas que no se borran
     {
       const leerPlan = (extra) => sb.from('route_assignments')
         .select('id, status, driver_profile_id, ' + extra + 'driver_profiles(profile_id), route_stops(id, reservation_id, status)')
@@ -3537,6 +3538,9 @@
         const arrancada = ra.status === 'in_progress' || stops.some(s => s.status && s.status !== 'pending');
         if (arrancada || ra.status === 'completed') arrancadas.add(ra.id);
         stops.forEach(s => {
+          // 0133: el sin cuenta no tiene reserva. Si su vuelta no se borra (arrancó, o
+          // es una vuelta pegada), su parada sigue ahí y no se vuelve a crear.
+          if (!s.reservation_id) { if (arrancada || ra.status === 'completed' || ra.pool) sinCuentaQueda.add(s.id); return; }
           prev[s.reservation_id] = pid;
           // 0134: va en una vuelta para tomar (la de Julián o una que armó el sistema
           // al cambiar de vuelo): el tablero no la vuelve a poner en otra.
@@ -3589,12 +3593,14 @@
     let saved = 0, skipped = 0, kept = 0, failed = 0, failMsg = '';
     const notify = [];
     for (const lane of lanes) {
+      // 0133: los sin cuenta de la vuelta (los que no siguen en una vuelta que se queda).
+      const sinCuenta = (lane.paradas || []).filter(p => p.guest && p.guest.name && !(p.guest.stopId && sinCuentaQueda.has(p.guest.stopId)));
       // 0124: sin placa también: la pone el turno del conductor (la base).
-      if (!lane.stops || !lane.stops.length) { skipped++; continue; }
+      if ((!lane.stops || !lane.stops.length) && !sinCuenta.length) { skipped++; continue; }
       // Las paradas ya en curso no se re-planean: siguen donde están.
-      const stopIds = lane.stops.filter(rid => !locked.has(rid) && !enPool.has(rid));
-      kept += lane.stops.length - stopIds.length;
-      if (!stopIds.length) { skipped++; continue; }
+      const stopIds = (lane.stops || []).filter(rid => !locked.has(rid) && !enPool.has(rid));
+      kept += (lane.stops || []).length - stopIds.length;
+      if (!stopIds.length && !sinCuenta.length) { skipped++; continue; }
       // 0126: la vuelta DELEGADA (la hace alguien de afuera) se publica sin
       // conductor y con delegated_at: ningún conductor la ve y el tripulante
       // conserva su hora. Sin conductor y sin delegar = borrador, como siempre.
@@ -3643,10 +3649,19 @@
         if (min == null || !isFinite(min)) return null;
         return new Date(new Date(day + 'T00:00:00-05:00').getTime() + min * 60000).toISOString();
       };
-      const stops = stopIds.map((rid, i) => ({
+      let stops = stopIds.map((rid, i) => ({
         route_assignment_id: ra.id, reservation_id: rid, stop_order: i + 1,
         estimated_arrival_at: etaIso(lane.etas ? lane.etas[rid] : null),
       }));
+      // 0133: con sin cuenta, el orden es el de la vuelta completa (lane.paradas).
+      if (sinCuenta.length) {
+        const vale = new Set(stopIds);
+        stops = lane.paradas.filter(p => (p.rid && vale.has(p.rid)) || sinCuenta.includes(p)).map((p, i) => (p.rid
+          ? { route_assignment_id: ra.id, reservation_id: p.rid, stop_order: i + 1, estimated_arrival_at: etaIso(lane.etas ? lane.etas[p.rid] : null) }
+          : { route_assignment_id: ra.id, reservation_id: null, stop_order: i + 1, estimated_arrival_at: etaIso(p.eta),
+              guest_name: p.guest.name, guest_place: p.guest.place || null, guest_phone: p.guest.phone || null,
+              guest_residence_id: p.guest.residence_id || null, guest_lat: p.guest.lat ?? null, guest_lng: p.guest.lng ?? null }));
+      }
       let r2 = await sb.from('route_stops').insert(stops);
       // Si la columna no estuviera disponible, se guarda el plan igual: perder la
       // ETA degrada el vigilante, pero no publicar la ruta deja al conductor sin nada.
@@ -3786,8 +3801,10 @@
     const out = {};
     if (!raIds || !raIds.length) return out;
     try {
-      const { data, error } = await sb.from('route_stops').select('id, guest_name, guest_place, guest_phone, guest_lat, guest_lng')
-        .in('route_assignment_id', raIds).is('reservation_id', null);
+      const sel = (cols) => sb.from('route_stops').select(cols).in('route_assignment_id', raIds).is('reservation_id', null);
+      // + su conjunto, para que el tablero agrupe y mida su parada (27-oct-2026).
+      let { data, error } = await sel('id, guest_name, guest_place, guest_phone, guest_lat, guest_lng, guest_residence_id');
+      if (error) ({ data, error } = await sel('id, guest_name, guest_place, guest_phone, guest_lat, guest_lng'));
       if (!error) (data || []).forEach(g => { if (g.guest_name) out[g.id] = g; });
     } catch (_) { /* sin 0133 */ }
     return out;
@@ -4414,10 +4431,12 @@
       const viva = (s) => (s.reservations && !s.reservations.cancelled_at) || (!s.reservation_id && !!guests[s.id]);
       const map = (s) => ({
         stopId: s.id, rid: s.reservation_id, order: s.stop_order, status: s.status || 'pending',
-        lat: s.reservations?.pickup_latitude ?? null,
-        lng: s.reservations?.pickup_longitude ?? null,
-        resId: s.reservations?.residence_id || null,
-        address: s.reservations?.pickup_address || '',
+        // 0133: el sin cuenta trae su punto en la parada (el tablero lo pinta y lo mide).
+        lat: s.reservations?.pickup_latitude ?? (guests[s.id] ? guests[s.id].guest_lat ?? null : null),
+        lng: s.reservations?.pickup_longitude ?? (guests[s.id] ? guests[s.id].guest_lng ?? null : null),
+        resId: s.reservations?.residence_id || (guests[s.id] && guests[s.id].guest_residence_id) || null,
+        address: s.reservations?.pickup_address || (guests[s.id] && guests[s.id].guest_place) || '',
+        guestPhone: (!s.reservation_id && guests[s.id] && guests[s.id].guest_phone) || null,
         name: s.reservations?.auxiliar_profiles?.profiles?.full_name || (guests[s.id] && guests[s.id].guest_name) || 'Tripulante',
         guest: !s.reservation_id && !!guests[s.id],   // 0133: sin cuenta en la app
         pax: 1,   // una reserva = una persona (no hay pax_count en el schema)
@@ -4514,6 +4533,14 @@
       throw error;
     }
     return data;
+  }
+  // 0149: los apodos que el jefe eligió a mano al pegar ([{ alias, auxiliar_profile_id }]).
+  // Sin 0149 no se aprenden (la ruta igual entra al tablero).
+  async function saveCrewAliases(aliases) {
+    if (!aliases || !aliases.length) return 0;
+    const { data, error } = await sb.rpc('admin_crew_aliases_save', { p_aliases: aliases });
+    if (error) throw error;
+    return data || 0;
   }
   // Cómo escribe Julián a cada tripulante (lo aprendido). Sin 0125: vacío.
   async function listCrewAliases() {
@@ -4693,7 +4720,7 @@
     getRouteFinishRules, _opResultado, _opFinEsperado,   // 0137 (las dos últimas, para las pruebas)
     createExternal, adminCreateReservation, listExternalAuxIds,   // 0139
     listHandovers, setHandover, driverMyHandovers, driverHandoverDelivered,   // 0140
-    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, listCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
+    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,

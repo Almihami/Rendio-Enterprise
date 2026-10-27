@@ -93,6 +93,40 @@
   const resultadoDe = (laneId) => (rt.rv2Fin && rt.rv2Fin[laneId]) || null;
   const lanesDeCarro = (carId) => rt.lanes.filter((l) => l.car === carId && (rt.order[l.id] || []).length).sort((a, b) => a.vuelta - b.vuelta);
 
+  // EL PASAJERO SIN CUENTA EN EL TABLERO (0133 · 26-oct-2026). Kriss no pidió por
+  // la app, pero el jefe la pone en su ruta: va en la vuelta como una parada más,
+  // con su nombre y su conjunto. Vive en rt.aux con `guest` (sin reserva) y
+  // saveRoutePlan la publica así. No le llegan avisos.
+  //   g: { name, place, phone, residence_id, lat, lng, zona, vuelo, stopId }
+  //   dlMin: en una llegada, la hora a la que la recogen; en una salida, el «Deben
+  //   estar» del jefe (sin él, una hora después de recogerla: no tiene presentación).
+  function auxSinCuenta(g, type, dlMin) {
+    const lle = type === 'lle';
+    return {
+      n: g.name, zona: g.place || '—', resId: g.residence_id || null, zonaJefe: g.zona || null, sector: '',
+      dir: g.place || '', lat: g.lat != null ? g.lat : null, lng: g.lng != null ? g.lng : null,
+      dl: rtToHM(((Math.round(dlMin) % 1440) + 1440) % 1440), pax: 1, type: lle ? 'lle' : 'sal',
+      reservationId: null, auxId: null, tel: g.phone || '', vuelo: g.vuelo || '',
+      // Sin vuelo la hora del jefe es la de recogerla en JMC o en el hotel: sin desembarque.
+      tierra: lle && !g.vuelo, notas: 'Sin cuenta en la app: no le llegan avisos.',
+      reserva: null, hotel: false, pernocta: false,
+      guest: { name: g.name, place: g.place || null, phone: g.phone || null, residence_id: g.residence_id || null,
+        lat: g.lat != null ? g.lat : null, lng: g.lng != null ? g.lng : null, stopId: g.stopId || null },
+    };
+  }
+  // El sin cuenta de una vuelta publicada (rearmarPublicado): su llave sale de la parada.
+  function sinCuentaPublicado(s, v) {
+    const k = 'g' + String(s.stopId || '').slice(0, 8);
+    if (rt.aux[k]) return k;
+    const min = (iso) => { const x = iso ? new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false }).slice(0, 5) : null; return x ? rtToMin(x) : null; };
+    const lle = v.type === 'lle';
+    const dl = lle ? min(v.startAt) : (min(v.deadlineAt) ?? ((min(s.etaAt) ?? min(v.startAt) ?? 0) + 60));
+    rt.aux[k] = auxSinCuenta({ name: s.name, place: s.address || null, phone: s.guestPhone || null, residence_id: s.resId || null,
+      lat: s.lat, lng: s.lng, stopId: s.stopId }, v.type, dl == null ? 0 : dl);
+    if (rt.colors && !rt.colors[k]) rt.colors[k] = '#8895a7';
+    return k;
+  }
+
   // Cuándo puede empezar el carro ESTA vuelta, con la misma cuenta que el
   // solver (rtSolveDay, paso 3): tras una salida queda en MDE + TURNAROUND;
   // tras una llegada queda en la última casa (+2) y, si lo que sigue es otra
@@ -242,7 +276,7 @@
     const crew = {};
     Object.keys(rt.aux || {}).forEach((id) => {
       const a = rt.aux[id];
-      crew[id] = { id, name: a.n, phone: a.tel || '', barrio: a.zona || '', sector: a.sector || a.zonaJefe || '', presentation: a.type === 'lle' ? null : a.dl, type: a.type };
+      crew[id] = { id, name: a.n, phone: a.tel || '', barrio: a.zona || '', sector: a.sector || a.zonaJefe || '', presentation: a.type === 'lle' || a.guest ? null : a.dl, type: a.type };
     });
     return {
       date: rt.day || ui.dia,
@@ -266,10 +300,16 @@
   const conCambios = () => publicado() && firmaActual() !== rt.firmaPublicada;
 
   /* ---------- 3. Mover / simular (con el modelo de tiempos real) ---------- */
-  const foto = () => ({ lanes: clone(rt.lanes), order: clone(rt.order), pool: rt.pool.slice(), drv: rt.cars.map((c) => [c.driverAM || null, c.driverPM || null, c.driverMad || null]), optimized: rt.optimized, fijas: clone(rt.rv2Fijas || {}), auto: clone(rt.rv2Auto || {}) });
+  // Pegar la ruta del jefe (meterPegado) también pone horas (rt.horasPub), carros
+  // y pasajeros sin cuenta (rt.aux): «Deshacer» los quita.
+  const foto = () => ({ lanes: clone(rt.lanes), order: clone(rt.order), pool: rt.pool.slice(), drv: rt.cars.map((c) => [c.driverAM || null, c.driverPM || null, c.driverMad || null]), optimized: rt.optimized, fijas: clone(rt.rv2Fijas || {}), auto: clone(rt.rv2Auto || {}),
+    horas: clone(rt.horasPub || {}), nCars: rt.cars.length, sinCuenta: Object.keys(rt.aux || {}).filter((k) => rt.aux[k].guest) });
   function restaurar(f) {
     rt.lanes = clone(f.lanes); rt.order = clone(f.order); rt.pool = f.pool.slice(); rt.optimized = f.optimized;
     rt.rv2Fijas = clone(f.fijas || {}); rt.rv2Auto = clone(f.auto || {});
+    if (f.horas) rt.horasPub = clone(f.horas);
+    if (f.nCars != null && rt.cars.length > f.nCars) rt.cars.length = f.nCars;
+    if (f.sinCuenta) Object.keys(rt.aux || {}).forEach((k) => { if (rt.aux[k].guest && !f.sinCuenta.includes(k)) delete rt.aux[k]; });
     rt.cars.forEach((c, i) => { const d = f.drv[i] || [null, null, null]; c.driverAM = d[0]; c.driverPM = d[1]; c.driverMad = d[2] || null; });
   }
   function aplicarMovida(crewId, fromId, toId) {
@@ -768,11 +808,15 @@
   }
   function madSigHTML() {
     const m = ui.madSig;
-    if (!m || m.dia !== sumarDias(rt.day || ui.dia, 1) || !(m.vueltas || m.reservas)) return '';
-    const que = m.vueltas
-      ? `${plural(m.vueltas, 'vuelta', 'vueltas')}${m.sinConductor ? ` (${m.sinConductor} sin conductor)` : ''}`
-      : `${plural(m.reservas, 'tripulante', 'tripulantes')}, todavía sin plan publicado`;
-    return `<div class="rv2-madsig"><div><b>☾ Sigue después de medianoche · madrugada del ${esc(dayLabel(m.dia).toLowerCase())}</b>` +
+    const sig = sumarDias(rt.day || ui.dia, 1);
+    const pend = (pegadoPendiente[sig] || []).length;
+    if (!pend && (!m || m.dia !== sig || !(m.vueltas || m.reservas))) return '';
+    const que = pend
+      ? `${plural(pend, 'vuelta pegada espera', 'vueltas pegadas esperan')}: entran al tablero de ese día cuando lo abras, y ahí se publican`
+      : m.vueltas
+        ? `${plural(m.vueltas, 'vuelta', 'vueltas')}${m.sinConductor ? ` (${m.sinConductor} sin conductor)` : ''}`
+        : `${plural(m.reservas, 'tripulante', 'tripulantes')}, todavía sin plan publicado`;
+    return `<div class="rv2-madsig"><div><b>☾ Sigue después de medianoche · madrugada del ${esc(dayLabel(sig).toLowerCase())}</b>` +
       `<small>${esc(que)}. De 00:00 a ${rtHHc()} también son de este turno PM, pero se planean y publican en el día siguiente.</small></div>` +
       `<button class="rv2-btn rv2-btn--sm" data-act="nav" data-dir="1">Ver la madrugada</button></div>`;
   }
@@ -877,7 +921,7 @@
       const a = aux(st.crewId) || {};
       const extra = r.type === 'llegada'
         ? (a.tierra ? ' · ' + esc(resTxt(a) || 'tierra') : (a.vuelo ? ' · vuelo ' + esc(a.vuelo) + chipVuelo(a.vuelo, 'lle') : ''))
-        : (a.dl ? ' · pres. ' + esc(a.dl) : '') + (resTxt(a) ? ' · ' + esc(resTxt(a)) : '') + (a.vuelo ? chipVuelo(a.vuelo, 'sal') : '');
+        : (a.guest ? ' · sin cuenta' : (a.dl ? ' · pres. ' + esc(a.dl) : '')) + (resTxt(a) ? ' · ' + esc(resTxt(a)) : '') + (a.vuelo ? chipVuelo(a.vuelo, 'sal') : '');
       const at = atendida(st.crewId);
       const tel = a.tel ? `<a class="rv2-ic" href="${esc(telHref(a.tel))}" aria-label="Llamar a ${esc(a.n)}">${IC.phone}</a>`
         : `<button class="rv2-ic" disabled aria-label="${esc(a.n)} no tiene teléfono registrado" title="Sin teléfono registrado">${IC.phone}</button>`;
@@ -1167,6 +1211,148 @@
     encadenar(from.car); reprogramar(from);
     ui.moving = null;
     commit(`${nombre(crewId)} quedó sin carro · aparece en Avisos`);
+  }
+
+  // PEGAR = LLENAR EL TABLERO (27-oct-2026). La profa: «lo único que debería
+  // cambiar es cuando alguien suba». La ruta que pega el jefe (admin-ruta-julian.js)
+  // era otra clase de vuelta: otra tarjeta, sin trayecto, sin mapa, otra forma de
+  // publicar y de avisar. Ahora cada bloque del WhatsApp entra como una vuelta del
+  // tablero, igual que si la hubiera armado el optimizador. Lo único suyo son LAS
+  // HORAS: las del jefe, con la regla de lo publicado (rt.horasPub: mientras nadie
+  // toque la vuelta se ve y se publica esa hora; si se toca, vuelve al modelo).
+  //   Carro: el primero que esté libre a esa hora; si ninguno, uno más (sus planes
+  //   piden un tercero en el pico). Conductor: el del turno de ese carro
+  //   (autoLlenar). Se publica con «Publicar», como siempre.
+  //   vueltas: [{ type: 'sal'|'lle', deadline: min|null,
+  //               stops: [{ rid, min } | { guest: { name, place, residence_id, lat, lng, zona, vuelo }, min }] }]
+  //   min = minutos del día del tablero (su madrugada va de 0 al corte).
+  // Quien va en una vuelta que ya arrancó se queda donde va (enCurso).
+  function meterPegado(vueltas) {
+    if (!Array.isArray(vueltas) || !vueltas.length || !rt.cars || !rt.aux) return null;
+    snapshot('pegar');
+    rt.lanes = rt.lanes || []; rt.order = rt.order || {}; rt.pool = rt.pool || []; rt.horasPub = rt.horasPub || {};
+    const porReserva = {};
+    Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
+    const laneDe = (k) => rt.lanes.find((l) => (rt.order[l.id] || []).includes(k)) || null;
+    const enCurso = [], tocadas = new Set(), nuevas = [];
+    let sinCuenta = 0, gN = 0;
+    // El sin cuenta que ya iba en el tablero (volver a pegar) es el mismo: se mueve.
+    const llaveSinCuenta = (g, type, min) => {
+      const n = norm(g.name);
+      const ya = Object.keys(rt.aux).filter((k) => rt.aux[k].guest && rt.aux[k].type === type && norm(rt.aux[k].n) === n)
+        .sort((a, b) => Math.abs(rtToMin(rt.aux[a].dl) - min) - Math.abs(rtToMin(rt.aux[b].dl) - min))[0];
+      if (ya) return ya;
+      let k; do { k = 'gp' + (++gN); } while (rt.aux[k]);
+      return k;
+    };
+    vueltas.forEach((v) => {
+      const type = v.type === 'lle' ? 'lle' : 'sal';
+      const ids = [], horas = {};
+      (v.stops || []).forEach((s) => {
+        if (s.min == null || !isFinite(s.min)) return;
+        let k = null;
+        if (s.rid) k = porReserva[s.rid] || null;
+        else if (s.guest && s.guest.name) {
+          k = llaveSinCuenta(s.guest, type, s.min);
+          const de = laneDe(k);
+          if (!(de && (fijaDe(de.id) || atendida(k)))) {
+            const stopId = rt.aux[k] && rt.aux[k].guest ? rt.aux[k].guest.stopId : null;
+            rt.aux[k] = auxSinCuenta(Object.assign({}, s.guest, { stopId }), type,
+              type === 'lle' ? s.min : (v.deadline != null ? v.deadline : s.min + 60));
+            if (rt.colors && !rt.colors[k]) rt.colors[k] = '#8895a7';
+            sinCuenta++;
+          }
+        }
+        if (!k || ids.includes(k)) return;
+        const de = laneDe(k);
+        if (de && (fijaDe(de.id) || atendida(k))) { enCurso.push(nombre(k)); return; }
+        if (de) { rt.order[de.id] = rt.order[de.id].filter((x) => x !== k); tocadas.add(de.id); }
+        rt.pool = rt.pool.filter((x) => x !== k);
+        ids.push(k); horas[k] = s.min;
+      });
+      if (ids.length) nuevas.push({ type, ids, horas });
+    });
+    if (!nuevas.length) { hist.pop(); return { vueltas: 0, carros: [], nuevosCarros: [], enCurso, sinCuenta: 0 }; }
+    // La vuelta del tablero que se quedó sin nadie sobra.
+    [...tocadas].forEach((id) => {
+      if ((rt.order[id] || []).length || fijaDe(id)) return;
+      rt.lanes = rt.lanes.filter((l) => l.id !== id);
+      delete rt.order[id]; delete rt.horasPub[id]; tocadas.delete(id);
+    });
+    // Las horas del jefe. Salida: la primera recogida (y cada recogida la suya).
+    // Llegada: sale de JMC cuando ya salió el último (su hora + desembarque), la
+    // misma cuenta del tablero (reprogramar), y reparte en el orden del tablero.
+    nuevas.forEach((n) => {
+      if (n.type === 'lle') {
+        n.ids = rtBestOrder(n.ids, 'airport', false);
+        n.landing = Math.max(...n.ids.map((k) => n.horas[k]));
+        n.t = n.landing + rtDeplaneOf(n.ids, n.landing);
+        n.start = rtInicioLle(n.t);
+      } else {
+        n.t = Math.min(...n.ids.map((k) => n.horas[k]));
+        n.start = rtToHM(n.t);
+      }
+    });
+    const renumerar = (carId) => {
+      rt.lanes.filter((l) => l.car === carId && (rt.order[l.id] || []).length)
+        .sort((a, b) => rtToMin(a.start) - rtToMin(b.start) || a.vuelta - b.vuelta)
+        .forEach((l, i) => { l.vuelta = i + 1; });
+      encadenar(carId);
+    };
+    // Cuándo tiene que estar libre el carro: en una llegada, a la salida de JMC; en
+    // una salida, la primera recogida menos lo que tarda en llegar ahí.
+    const hacePorLaFalta = (l) => {
+      if (l.type === 'lle') return rtToMin(l.start);
+      const ids = rt.order[l.id] || [];
+      const s0 = (rtCarCompute(l.id).stops || [])[0];
+      return s0 ? s0.eta - (l.origin && ids[0] ? rtLegMin(l.origin, ids[0]) : 0) : rtToMin(l.start);
+    };
+    const cabe = (lane) => {
+      const l0 = libreDe(lane);
+      if (l0 != null && l0 > hacePorLaFalta(lane) + TOL_CHOQUE) return false;
+      const sig = siguienteDe(lane.id);
+      const l1 = sig ? libreDe(sig) : null;
+      return !(sig && l1 != null && l1 > hacePorLaFalta(sig) + TOL_CHOQUE);
+    };
+    const idLibre = (carId) => { let i = 1; while (rt.order[`${carId}·V${i}`] || rt.lanes.some((l) => l.id === `${carId}·V${i}`)) i++; return `${carId}·V${i}`; };
+    const nuevosCarros = [], carros = new Set();
+    const carroNuevo = () => {
+      let i = rt.cars.length + 1, id; do { id = 'Carro ' + i++; } while (rt.cars.some((c) => c.id === id));
+      const car = { id, avail0: '00:00', driver: null, capacity: rt.CAP, vehicleId: null };
+      rt.cars.push(car); nuevosCarros.push(id); return car;
+    };
+    nuevas.sort((a, b) => a.t - b.t).forEach((n) => {
+      const lane = { id: null, car: null, vuelta: 0, type: n.type, start: n.start, origin: n.type === 'lle' ? 'airport' : null };
+      if (n.type === 'lle') lane.landing = rtToHM(n.landing);
+      const poner = (car) => {
+        lane.car = car.id; lane.id = idLibre(car.id);
+        rt.lanes.push(lane); rt.order[lane.id] = n.ids.slice();
+        rt.horasPub[lane.id] = { start: lane.start, sig: n.ids.join(','), etas: n.type === 'lle' ? {} : Object.assign({}, n.horas) };
+        renumerar(car.id);
+      };
+      const quitar = () => {
+        rt.lanes = rt.lanes.filter((l) => l !== lane);
+        delete rt.order[lane.id]; delete rt.horasPub[lane.id]; renumerar(lane.car);
+      };
+      let car = rt.cars.find((c) => { poner(c); if (cabe(lane)) return true; quitar(); return false; });
+      if (!car) { car = carroNuevo(); poner(car); }
+      carros.add(car.id);
+    });
+    // Las del tablero que perdieron gente se reprograman, como al mover a alguien.
+    tocadas.forEach((id) => { const l = rtLaneOf(id); if (l) reprogramar(l); });
+    // Un día que iba solo con la ruta pegada (0125) ya tiene tablero.
+    if (ui.manual && !ui.manual.mixto) { ui.manual.mixto = true; rt.manualDia = false; }
+    rt.optimized = true;
+    ui.sel = null; ui.moving = null;
+    render();
+    return { vueltas: nuevas.length, carros: [...carros], nuevosCarros, enCurso, sinCuenta };
+  }
+  // La madrugada del día siguiente que el jefe pega con este día (después de la
+  // noche) es del plan de ESE día: queda aquí y entra sola cuando se abre ese día.
+  const pegadoPendiente = {};
+  function guardarPegado(dia, vueltas) {
+    if (!dia || !Array.isArray(vueltas) || !vueltas.length) return;
+    pegadoPendiente[dia] = (pegadoPendiente[dia] || []).concat(vueltas);
   }
 
   // Las vueltas seguidas de un mismo conductor que no cuadran: se cruzan, o la
@@ -1871,6 +2057,8 @@
     if (!vigente()) return false;
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {}; rt.rv2Fin = {};
     ui.manual = null; rt.manualDia = false; rt.rv2Solas = []; rt.rv2AuxPegadas = {};
+    // Los sin cuenta salen de las vueltas publicadas: se vuelven a leer de ahí.
+    Object.keys(rt.aux || {}).forEach((k) => { if (rt.aux[k] && rt.aux[k].guest) delete rt.aux[k]; });
     if (!puede || fallo) return false;
     const todas = (plan && plan.vueltas) || [];
     // 0125: las vueltas que pegó Julián (pool) no entran al tablero: el día se
@@ -1933,10 +2121,12 @@
       // 0132: «Carro 1 = PRW443» (lo que decía el plan publicado).
       if (v.planVehicleId && !car.planVehicleId) car.planVehicleId = v.planVehicleId;
       const stops = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
-      const ids = stops.map((s) => porReserva[s.rid]).filter((k) => k && !usados.has(k));
+      // 0133: el sin cuenta (Kriss) es una parada más de la vuelta (auxSinCuenta).
+      const keyDe = (s) => (s.rid ? porReserva[s.rid] : (s.guest ? sinCuentaPublicado(s, v) : null));
+      const ids = stops.map(keyDe).filter((k) => k && !usados.has(k));
       if (!ids.length) return;
       ids.forEach((k) => usados.add(k));
-      (v.atendidas || []).forEach((s) => { const k = porReserva[s.rid]; if (k) atendidas[k] = s.status; });
+      (v.atendidas || []).forEach((s) => { const k = keyDe(s); if (k) atendidas[k] = s.status; });
       const n = (nCarro[car.id] || 0) + 1; nCarro[car.id] = n;
       const lane = { id: `${car.id}·V${n}`, car: car.id, vuelta: n, type: v.type === 'lle' ? 'lle' : 'sal', start: hm(v.startAt), origin: null };
       // 0129: la fila publicada de esta vuelta, para «Guardar y publicar» solo ella.
@@ -1948,7 +2138,7 @@
       // La hora guardada (rtHorasPub, admin-rutas.js): en una salida la de cada
       // parada; en una llegada basta el arranque (la salida de JMC).
       const etas = {};
-      if (lane.type !== 'lle') stops.forEach((s) => { const k = porReserva[s.rid]; if (k && s.etaAt) etas[k] = rtToMin(hm(s.etaAt)); });
+      if (lane.type !== 'lle') stops.forEach((s) => { const k = keyDe(s); if (k && s.etaAt) etas[k] = rtToMin(hm(s.etaAt)); });
       horas[lane.id] = { start: lane.start, sig: ids.join(','), etas };
       // Arrancada = 'in_progress' o con paradas ya atendidas (nada en la app pasa una
       // ruta a 'in_progress'; la que el conductor va haciendo sigue en 'planned').
@@ -2097,7 +2287,16 @@
       return;
     }
     ui.cargando = false; ui.diaPedido = null;
-    try { pintarDia(n); }
+    try {
+      pintarDia(n);
+      // La madrugada que se pegó con el día anterior (guardarPegado) entra ahora.
+      const pend = rt.source === 'live' && pegadoPendiente[ui.dia];
+      if (pend) {
+        delete pegadoPendiente[ui.dia];
+        const r = meterPegado(pend);
+        if (r && r.vueltas) toast(`Entró la madrugada que pegaste con el día anterior: ${plural(r.vueltas, 'vuelta', 'vueltas')}. Revísala y publica.`, true);
+      }
+    }
     catch (e) {
       // Un error al PINTAR el día (no al traerlo) dejaba la pantalla en «Cargando
       // el día…» para siempre, sin decir nada: lo último que alcanzó a dibujar.
@@ -2375,6 +2574,8 @@
     _sheet: { open: openSheet, close: closeSheet, head: sheetHead }, toast, diaActual: () => ui.dia,
     delegar: openDelegar,   // 0131: «Delegar a…» (lo usa la ruta de Julián)
     pegadas: () => (ui.manual && ui.manual.vueltas) || [],   // 0145: «Cambiar hora» busca aquí su vuelta
+    // 27-oct-2026: la ruta pegada entra al tablero (meterPegado) y se publica con la hoja de siempre.
+    meterPegado, guardarPegado, abrirPublicar: () => openPublish(), _pegadoPendiente: pegadoPendiente,
     _ui: ui, _hist: hist, dia: () => D, medir, sugerencia: (id) => sugerencia(D && D.byId[id]), candidatas, _mover: moveCrew,
     _avisos: () => avisosDe(), _sacar: sacarDeRuta,
     _refrescarFines: refrescarFines,   // 0137 (pruebas)

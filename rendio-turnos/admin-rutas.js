@@ -1622,12 +1622,13 @@
       // tarde de la que toca. Con esto, la alerta de "va tarde" por fin mide
       // contra el compromiso real de esa parada.
       const comp = rtCarCompute(l.id);
-      const etas = {};
+      const etas = {}, etaDe = {};
       (comp.stops || []).forEach(s => {
         const a = rt.aux[s.id];
         // Se publica la hora REDONDA (cita): es la que leen el conductor, el
         // tripulante y el aviso «Te recogen a las…». Ver rtCita.
         if (a && a.reservationId) etas[a.reservationId] = s.cita ?? s.eta;
+        etaDe[s.id] = s.cita ?? s.eta;
       });
       return {
         vehicleId: car ? car.vehicleId : null,
@@ -1641,6 +1642,14 @@
         startAt: rt.day + 'T' + (l.start || '04:00') + ':00-05:00',
         stops: rt.order[l.id].map(k => rt.aux[k] && rt.aux[k].reservationId).filter(Boolean),
         etas,
+        // 0133 en el tablero (27-oct-2026): el sin cuenta (Kriss) va en su lugar de
+        // la vuelta. `paradas` es el orden completo; `stops` sigue siendo el de las reservas.
+        paradas: rt.order[l.id].map(k => {
+          const a = rt.aux[k];
+          if (!a) return null;
+          if (a.reservationId) return { rid: a.reservationId };
+          return a.guest ? { guest: a.guest, eta: etaDe[k] ?? null } : null;
+        }).filter(Boolean),
       };
     });
     const withDriver = lanes.filter(l => l.driverProfileId).length;
