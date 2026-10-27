@@ -1282,6 +1282,17 @@ console.log('\n── 26-oct · carga del día: consulta colgada, plazo, Reinten
   await V2().cargarDia('2026-10-12');
   t('lo publicado se pide a la vez que las reservas', planMientras && V2().dia().routes.length === 9);
   t('sin errores de script (carga del día)', b.errors.length === 0, b.errors.join(' | '));
+  // Falla al PINTAR (no al traer): antes quedaba «Cargando el día…» para siempre.
+  w.Api.listRoutePlanning = orig; w.Api.getPublishedPlan = gp;
+  w.RendioEntregas = { pintar: (_, dia) => { if (dia) throw new Error('falla de prueba al pintar'); } };
+  b.errors.length = 0;
+  await V2().cargarDia('2026-10-12');
+  t('falla al mostrar el día: lo dice («Los datos llegaron, pero falló al mostrar el día») con el detalle y Reintentar', /No se pudo cargar Lun 12 oct/.test(txt(q('#rv2-list'))) && /falló al mostrar el día/.test(txt(q('#rv2-list'))) && /falla de prueba al pintar/.test(txt(q('#rv2-list'))) && !!q('#rv2-list [data-act="reintentar"]'), txt(q('#rv2-list')));
+  t('…queda anotado en la consola', b.errors.some((x) => /falló al mostrar el día/.test(x)), b.errors.join(' | '));
+  t('…‹ › siguen activos y Publicar apagado', [...b.qa('#routes-v2 [data-act="nav"]')].every((x) => !x.disabled) && q('#rv2-publish').disabled);
+  delete w.RendioEntregas;
+  click(q('#rv2-list [data-act="reintentar"]')); await wait(80);
+  t('…arreglado lo que fallaba, «Reintentar» lo muestra', T().rt.day === '2026-10-12' && V2().dia().routes.length === 9 && !V2()._ui.falloCarga && /vueltas/.test(txt(q('#rv2-say'))));
 }
 
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
