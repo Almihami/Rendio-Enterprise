@@ -200,17 +200,17 @@
   // tenía horas (rt.horasPub: las que pegó el jefe o las ya publicadas):
   //   · salida: cada uno conserva su hora; al que llega se le calcula la suya en su
   //     puesto del recorrido, y el de después se corre SOLO si el carro no alcanza.
-  //   · llegada: sale de JMC a la misma hora, salvo que el que llega aterrice después.
+  //   · llegada: sale de JMC a la misma hora, aunque el que llega aterrice después.
+  //     Camilo (27-oct, 9 a. m.): «que me deje meter a una persona en un combo de
+  //     recogida en puerto sin que me afecte horas»: él sabe si ya salió.
   // Devuelve false si no hay horas que respetar (la vuelta va con el modelo).
   function conservarHoras(lane) {
     const pub = rt.horasPub && rt.horasPub[lane.id];
     const ids = rt.order[lane.id] || [];
     if (!pub || !ids.length) return false;
     if (lane.type === 'lle') {
-      const landing = horaVuelta(ids);
-      lane.landing = rtToHM(landing);
-      const sale = rtInicioLle(landing + rtDeplaneOf(ids, landing));
-      lane.start = rtToMin(sale) > rtToMin(pub.start) ? sale : pub.start;
+      lane.landing = rtToHM(horaVuelta(ids));
+      lane.start = pub.start;
       rt.horasPub[lane.id] = { start: lane.start, sig: ids.join(','), etas: {} };
       return true;
     }
