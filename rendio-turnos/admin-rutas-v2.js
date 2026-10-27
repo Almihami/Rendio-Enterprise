@@ -2831,6 +2831,29 @@
     // 0125: la ruta de Julián (admin-ruta-julian.js) usa la hoja, el aviso y el día.
     _sheet: { open: openSheet, close: closeSheet, head: sheetHead }, toast, diaActual: () => ui.dia,
     delegar: openDelegar,   // 0131: «Delegar a…» (lo usa la ruta de Julián)
+    // 0152: «Ver otras opciones» de la tarjeta del detector de cadena: la hoja
+    // «Conductor de esta vuelta» de la vuelta publicada (raId), si está en el día cargado.
+    abrirVuelta: (raId) => {
+      if (!D || !D.byId || !raId) return false;
+      const r = Object.values(D.byId).find((x) => { const l = x && rtLaneOf(x.id); return l && l.raId === raId; });
+      if (!r) return false;
+      openAssignVuelta(r.id);
+      return true;
+    },
+    // 0152: «Pasar a X» desde la tarjeta ya publicó esa vuelta en la base: el tablero
+    // abierto lo refleja como lo hace «Guardar y publicar» (publicarVuelta), para que
+    // un «Publicar» después no le devuelva la vuelta al conductor de antes.
+    reflejar: (raId, pid) => {
+      if (!D || !D.byId || !raId || !pid) return false;
+      const r = Object.values(D.byId).find((x) => { const l = x && rtLaneOf(x.id); return l && l.raId === raId; });
+      if (!r) return false;
+      const limpio = publicado() && firmaActual() === rt.firmaPublicada;
+      setVueltaDriver(r.id, pid, true);
+      if (limpio) rt.firmaPublicada = firmaActual();
+      hist.length = 0;
+      render();
+      return true;
+    },
     pegadas: () => (ui.manual && ui.manual.vueltas) || [],   // 0145: «Cambiar hora» busca aquí su vuelta
     // 27-oct-2026: la ruta pegada entra al tablero (meterPegado) y se publica con la hoja de siempre.
     meterPegado, guardarPegado, abrirPublicar: () => openPublish(), _pegadoPendiente: pegadoPendiente,
