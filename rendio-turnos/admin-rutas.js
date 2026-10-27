@@ -991,7 +991,15 @@
     return { ord, dur: t, last };
   }
 
-  function rtSolveDay() {
+  // opts (27-oct-2026, Camilo: «cuando doy optimizar me toma la programación completa
+  // de todo el día, incluyendo servicios que ya se finalizaron»):
+  //   solo:  Set de tripulantes a programar (los demás no se tocan: ya van en una
+  //          vuelta terminada, en curso o delegada). Sin él, todos, como siempre.
+  //   libre: { carro: minuto } desde cuándo está libre cada carro (después de lo que
+  //          ya hizo o está haciendo). Sin él, desde su avail0, como siempre.
+  function rtSolveDay(opts = {}) {
+    const soloIds = opts.solo instanceof Set ? opts.solo : null;
+    const libreDe = (c) => Math.max(rtToMin(c.avail0 || '00:00'), (opts.libre && opts.libre[c.id]) || 0);
     // TABLERO GENERAL: salidas y llegadas conviven — el carro que deja en el
     // puerto ahí mismo recoge. 1) OLEADAS: agrupar por tipo + hora (salidas:
     // "deben estar"; llegadas: hora en que aterriza el vuelo), cronológico.
@@ -1001,7 +1009,7 @@
     // decir que salgan juntos (el de vuelo sale un desembarque después). La
     // fusión de oleadas cercanas puede juntarlas, pero midiendo cuándo SALE cada
     // uno y no su hora escrita (ver `juntableLle`).
-    Object.keys(rt.aux).forEach(id => { const a = rt.aux[id]; const k = a.type + '|' + a.dl + (a.type === 'lle' && a.tierra ? '|tierra' : ''); (byKey[k] = byKey[k] || []).push(id); });
+    Object.keys(rt.aux).filter(id => !soloIds || soloIds.has(id)).forEach(id => { const a = rt.aux[id]; const k = a.type + '|' + a.dl + (a.type === 'lle' && a.tierra ? '|tierra' : ''); (byKey[k] = byKey[k] || []).push(id); });
     const waves = Object.entries(byKey).map(([k, ids]) => ({ type: k.split('|')[0], dlMin: rtToMin(k.split('|')[1]), ids }))
       .sort((a, b) => a.dlMin - b.dlMin);
     const capMax = Math.max(...rt.cars.map(rtCapOf));
@@ -1204,7 +1212,7 @@
     // Los carros están desde la medianoche: lo que arranca antes del corte lo hace
     // el turno PM del día anterior (0107). Antes arrancaban a la 01:30 y una llegada
     // de las 00:40 quedaba sin carro en todos los días.
-    const cs = rt.cars.map((c, idx) => ({ car: c, idx, avail: rtToMin(c.avail0 || '00:00'), vuelta: 0, pos: null }));
+    const cs = rt.cars.map((c, idx) => ({ car: c, idx, avail: libreDe(c), vuelta: 0, pos: null }));
     const lanes = [], order = {}, unassigned = [];
     // rtCarCompute busca la vuelta en rt.lanes: se apunta al arreglo que se está
     // llenando para poder evaluar una vuelta apenas queda armada (ver el ajuste
@@ -1322,7 +1330,7 @@
           if (r.arrival != null && r.depart != null) {
             const prev = anteriorDelCarro(lane);
             const libre = prev ? (rtCarCompute(prev.id).arrival ?? rtToMin(prev.start)) + rt.TURNAROUND
-                               : rtToMin((rt.cars.find(c => c.id === lane.car) || {}).avail0 || '00:00');
+                               : libreDe(rt.cars.find(c => c.id === lane.car) || {});
             arranque = rtRedondea5(Math.max(libre, r.depart));
             lane.start = rtToHM(arranque);
             const r2 = rtCarCompute(lane.id);
@@ -1581,7 +1589,7 @@
     const [src] = await Promise.all([rtBuildMatrix(), new Promise(r => setTimeout(r, 900))]);
     rt.etaSource = src; // 'tomtom' = con tráfico | 'osrm' = carretera real | 'haversine' = línea recta
     rt.horasPub = {};   // el día se arma desde cero: ninguna hora publicada se conserva
-    const day = rtSolveDay(); // oleadas → vueltas encadenadas entre los carros
+    const day = rtSolveDay({ solo: opts.solo, libre: opts.libre }); // oleadas → vueltas encadenadas entre los carros
     clearInterval(iv); $('#rt-ovl').classList.remove('show');
     rt.lanes = day.lanes;
     rt.order = day.order;
@@ -1677,10 +1685,11 @@
       // mismo push puede hablar de varios traslados del tripulante, así que no
       // se abre uno en particular.
       try {
-        const fresh = (r.notify || []).filter(n => !n.delegated && !n.changed).map(n => n.reservationId);
-        const moved = (r.notify || []).filter(n => !n.delegated && n.changed).map(n => n.reservationId);
+        // 27-oct: `hora` = solo le cambió la hora (va aparte, abajo).
+        const fresh = (r.notify || []).filter(n => !n.hora && !n.delegated && !n.changed).map(n => n.reservationId);
+        const moved = (r.notify || []).filter(n => !n.hora && !n.delegated && n.changed).map(n => n.reservationId);
         // 0126: delegada = la hace alguien de afuera; lo contactan por WhatsApp.
-        const deleg = (r.notify || []).filter(n => n.delegated && !n.delegateName).map(n => n.reservationId);
+        const deleg = (r.notify || []).filter(n => !n.hora && n.delegated && !n.delegateName).map(n => n.reservationId);
         if (deleg.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
           const ids = await Api.auxiliarUserIdsForReservations(deleg);
           if (ids.length) await Api.sendPush({ profileIds: ids,
@@ -1689,7 +1698,7 @@
         }
         // 0131: delegada A ALGUIEN: «Te recogerá X · su número es Y» (un push por persona).
         const porQuien = {};
-        (r.notify || []).filter(n => n.delegated && n.delegateName).forEach(n => {
+        (r.notify || []).filter(n => !n.hora && n.delegated && n.delegateName).forEach(n => {
           const k = n.delegateName + '|' + (n.delegatePhone || '');
           (porQuien[k] = porQuien[k] || { name: n.delegateName, phone: n.delegatePhone || '', rids: [] }).rids.push(n.reservationId);
         });
@@ -1713,6 +1722,31 @@
             title: 'Te cambiamos el conductor 🔄',
             body: 'Tu traslado sigue en pie, pero lo atiende otro conductor. Ábrelo para ver quién es.', url: '/#/viajes' });
         }
+        // 27-oct («Cambiar hora» en cualquier vuelta): a quien le cambió la hora, su
+        // hora nueva, con los mismos textos que «Cambiar hora» de la ruta pegada (0147).
+        // Un push por hora y lugar (los de la misma vuelta van juntos).
+        const porHora = {};
+        (r.notify || []).filter(n => n.hora).forEach(n => {
+          const h = new Date(n.hora).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit', hour12: false });
+          const a = Object.values(rt.aux || {}).find(x => x.reservationId === n.reservationId) || {};
+          const P = a.reserva && Api.reservePlace ? Api.reservePlace(a.reserva) : null;
+          const body = !n.lle ? `Ahora te recogemos a las ${h}.`
+            : P ? `Te recogemos ${P.hotel ? 'en el ' + P.name : 'en JMC'} hacia las ${h}.`
+              : a.tierra ? `Te recogemos en JMC hacia las ${h}.`
+                : `Cuando aterrices te esperamos en JMC (sale hacia las ${h}).`;
+          const k = (n.lle ? 'l' : 's') + '|' + body;
+          (porHora[k] = porHora[k] || { lle: n.lle, body, rids: [] }).rids.push(n.reservationId);
+        });
+        for (const g of Object.values(porHora)) {
+          if (!Api.auxiliarUserIdsForReservations || !Api.sendPush) break;
+          const ids = await Api.auxiliarUserIdsForReservations(g.rids);
+          if (ids.length) await Api.sendPush({ profileIds: ids,
+            title: g.lle ? 'Cambió la hora de tu regreso 🕒' : 'Cambió tu hora de recogida 🕒', body: g.body, url: '/#/viajes' });
+        }
+        // …y al conductor de esas vueltas, una vez.
+        const condHora = [...new Set((r.notify || []).filter(n => n.hora && n.conductorHora).map(n => n.conductorHora))];
+        if (condHora.length && Api.sendPush) await Api.sendPush({ profileIds: condHora,
+          title: 'Cambió la hora de una vuelta 🕒', body: 'Coordinación cambió la hora de una de tus vueltas. Revísala en Ruta.', url: '/#/ruta' });
       } catch (_) {}
       // Push "ruta asignada" al CONDUCTOR de cada vuelta con conductor. Su
       // driverProfileId aquí es el id de PERFIL (lo que indexa las suscripciones

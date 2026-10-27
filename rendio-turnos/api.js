@@ -2585,7 +2585,8 @@
       // 0125: + auxiliar_profile_id (los apodos de la ruta de Julián van por tripulante).
       // 0130: + created_at (existe desde 0003): el Excel del día separa lo que se
       // pidió después del corte de las 7:40 p. m. («Late»).
-      const COLS = 'id, direction, auxiliar_profile_id, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, created_at, auxiliar_profiles(profiles(full_name, phone)), flights(flight_number)';
+      // 27-oct: + profiles.id, para abrir «Datos» del tripulante desde Asignación.
+      const COLS = 'id, direction, auxiliar_profile_id, pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, status_h2a, status_a2h, notes, created_at, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)';
       const q = cols => {
         let b = sb.from('reservations').select(cols)
           .is('cancelled_at', null)
@@ -2661,6 +2662,7 @@
         lat: r.pickup_latitude, lng: r.pickup_longitude,
         dl: rtHHMM(r.required_arrival_at),
         pax: 1, type, reservationId: r.id, auxId: r.auxiliar_profile_id || null,
+        profileId: r.auxiliar_profiles?.profiles?.id || null,
         // Contexto para decidir sin salir del tablero.
         tel: r.auxiliar_profiles?.profiles?.phone || '',
         // El número de vuelo decide cuánto tarda el desembarque (0058), así que
@@ -3520,9 +3522,12 @@
     const arrancadas = new Set();   // route_assignments.id que NO se borran
     const enPool = new Set();       // 0134: reservas que ya van en una vuelta para tomar
     const sinCuentaQueda = new Set(); // 0133: paradas de sin cuenta en vueltas que no se borran
+    // 27-oct: la hora que ya tenía cada tripulante al que se le había avisado (con
+    // conductor o delegada): si al publicar cambia, se le avisa («Cambió tu hora»).
+    const prevHora = {};
     {
       const leerPlan = (extra) => sb.from('route_assignments')
-        .select('id, status, driver_profile_id, ' + extra + 'driver_profiles(profile_id), route_stops(id, reservation_id, status)')
+        .select('id, status, direction, planned_start_at, driver_profile_id, ' + extra + 'driver_profiles(profile_id), route_stops(id, reservation_id, status, estimated_arrival_at)')
         .gte('planned_start_at', d0).lte('planned_start_at', d1);
       // 0131: + a quién se delegó (si cambia, se le avisa al tripulante).
       // 0134: + pool, para no volver a meter a quien ya va en una vuelta para tomar.
@@ -3542,6 +3547,7 @@
           // es una vuelta pegada), su parada sigue ahí y no se vuelve a crear.
           if (!s.reservation_id) { if (arrancada || ra.status === 'completed' || ra.pool) sinCuentaQueda.add(s.id); return; }
           prev[s.reservation_id] = pid;
+          if (pid || ra.delegated_at) prevHora[s.reservation_id] = ra.direction === 'airport_to_home' ? ra.planned_start_at : s.estimated_arrival_at;
           // 0134: va en una vuelta para tomar (la de Julián o una que armó el sistema
           // al cambiar de vuelo): el tablero no la vuelve a poner en otra.
           if (ra.pool && (ra.status === 'planned' || ra.status === 'in_progress')) enPool.add(s.reservation_id);
@@ -3684,6 +3690,14 @@
       // Novedad real para el auxiliar: pasó de sin conductor a con conductor, o se lo cambiaron.
       if (dpid) stopIds.forEach(rid => {
         if (prev[rid] !== lane.driverProfileId) notify.push({ reservationId: rid, changed: !!prev[rid], driverProfileId: lane.driverProfileId });
+      });
+      // 27-oct: le cambió la hora a quien ya la tenía (el jefe la movió con «Cambiar
+      // hora», o la vuelta se reprogramó). 4 min o más: el redondeo no cuenta.
+      if (dpid || deleg) stopIds.forEach(rid => {
+        const antes = prevHora[rid];
+        const ahora = lane.type === 'lle' ? lane.startAt : etaIso(lane.etas ? lane.etas[rid] : null);
+        if (!antes || !ahora || Math.abs(Date.parse(ahora) - Date.parse(antes)) < 4 * 60000) return;
+        notify.push({ reservationId: rid, hora: ahora, lle: lane.type === 'lle', driverProfileId: null, conductorHora: dpid ? lane.driverProfileId : null });
       });
       saved++;
     }
@@ -4691,6 +4705,27 @@
     const { error } = await sb.from('delegate_contacts').update({ deleted_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
   }
+  // 27-oct (Camilo): «una opción para uno registrar los conductores de confianza…
+  // Si es un conductor que no está en la lista, uno llena los datos manual, pero que
+  // el sistema no guarde eso». Guardar es a propósito: un teléfono es una persona
+  // (si ya estaba, se le actualiza el nombre).
+  async function saveDelegateContact(name, phone) {
+    const dig = (x) => String(x || '').replace(/\D/g, '');
+    const n = String(name || '').trim().replace(/\s+/g, ' '), p = String(phone || '').trim();
+    if (n.length < 2 || dig(p).length < 7 || dig(p).length > 15) throw new Error('Escribe nombre y un teléfono válido.');
+    const ya = ((await listDelegateContacts()) || []).find((c) => dig(c.phone) === dig(p));
+    if (ya) {
+      const { error } = await sb.from('delegate_contacts').update({ name: n, phone: p, last_used_at: new Date().toISOString() }).eq('id', ya.id);
+      if (error) throw error;
+      return ya.id;
+    }
+    let org = (typeof state !== 'undefined' && state.profile) ? state.profile.organization_id : null;
+    if (!org) org = (await getCurrentProfile())?.organization_id;
+    if (!org) throw new Error('No pudimos determinar la organización');
+    const { data, error } = await sb.from('delegate_contacts').insert({ organization_id: org, name: n, phone: p, last_used_at: new Date().toISOString() }).select('id').single();
+    if (error) throw error;
+    return data && data.id;
+  }
   // 0129: el jefe cambia el conductor de UNA vuelta ya publicada (o la deja sin
   // conductor) sin re-publicar el día. Recibe el id de PERFIL del conductor (el
   // que usa el tablero) o null. La base avisa al nuevo, al anterior y a sus
@@ -4720,7 +4755,7 @@
     getRouteFinishRules, _opResultado, _opFinEsperado,   // 0137 (las dos últimas, para las pruebas)
     createExternal, adminCreateReservation, listExternalAuxIds,   // 0139
     listHandovers, setHandover, driverMyHandovers, driverHandoverDelivered,   // 0140
-    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
+    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, saveDelegateContact, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,

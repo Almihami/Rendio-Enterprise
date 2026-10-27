@@ -178,6 +178,11 @@
         if (d >= -5 && d <= 40) s += 25; else if (d >= -15 && d <= 75) s += 12; else if (Math.abs(d) > 150) s -= 25;
       }
     } else if (dl != null) {
+      // 27-oct (Camilo, «Leslie» a las 2:50 sin «Deben estar»): sin vuelo, sin lugar
+      // de llegada y sin «Deben estar» la línea es una SALIDA. Sin este empujón la
+      // salida de Leslie (03:30) y su llegada (11:35) quedaban «parecidos» y ninguna se
+      // elegía sola.
+      s += c.type === 'sal' ? 10 : -10;
       const ref = c.type === 'sal' ? dl - 40 : dl;
       if (Math.abs(ref - p.min) <= 30) s += 12; else if (Math.abs(ref - p.min) > 180) s -= 20;
     }
@@ -310,6 +315,11 @@
   }
   // 0133: el pasajero sin cuenta («Va sin cuenta»).
   const GUEST = '__guest';
+  // 27-oct (Camilo): «no entiendo qué significan esas dos opciones», y si no elegía
+  // nada la persona no entraba y «nunca aparece en el listado». Ahora '' es FALTA
+  // ELEGIR (no deja pasar al tablero) y «No va» es una opción que se elige.
+  const NOVA = '__nova';
+  const esPersona = (rid) => !!rid && rid !== GUEST && rid !== NOVA;
   // El conjunto que dice el paréntesis («Campus Reservado»), si está en el catálogo.
   function conjuntoDe(lugar) {
     const n = norm(lugar || ''); if (n.length < 3) return null;
@@ -318,14 +328,18 @@
       || rs.find((x) => { const m = norm(x.name); return m.length >= 4 && (m.includes(n) || n.includes(m)); }) || null;
   }
   const cand = (rid) => st.cands.find((c) => c.rid === rid) || null;
+  // 27-oct (Camilo: a Sara le salía «AV9358» debajo del nombre en la app del
+  // conductor): en una llegada el paréntesis es el vuelo («(av9358)») o de dónde la
+  // recogen («(Aero r)», «(Río Verde)»), no su casa. Solo es la casa si no es eso.
+  const casaDe = (l) => (l.vuelo || l.desde ? '' : (l.lugar || ''));
   const etiqueta = (c) => `${c.n} · ${c.type === 'lle' ? 'llega' : 'sale'} ${c.dl}${c.vuelo ? ' ' + c.vuelo : ''}${c.zona ? ' · ' + c.zona : ''}`;
   function pintarPrevia() {
     const prev = document.getElementById('rj-prev'); const L = st.lectura;
     if (!prev || !L) return;
     const usados = new Map();
-    Object.entries(st.elegido).forEach(([k, rid]) => { if (rid && rid !== GUEST) usados.set(rid, (usados.get(rid) || []).concat(k)); });
+    Object.entries(st.elegido).forEach(([k, rid]) => { if (esPersona(rid)) usados.set(rid, (usados.get(rid) || []).concat(k)); });
     let h = '';
-    let nOk = 0, nRev = 0, nSin = 0, nGuest = 0;
+    let nOk = 0, nRev = 0, nSin = 0, nGuest = 0, nFalta = 0;
     L.bloques.forEach((b, bi) => {
       const lle = esLlegada(b);
       // Dónde los recoge una llegada que no es (solo) de vuelos: «Recoge en JMC», «…en el Hotel Río Verde».
@@ -336,16 +350,18 @@
         const k = `${bi}.${li}.${pi}`, rid = st.elegido[k];
         const desde = b.deadline ? null : l.desde;
         const esG = rid === GUEST;
-        const c = rid && !esG ? cand(rid) : null;
-        const doble = rid && !esG && (usados.get(rid) || []).length > 1;
-        const estado = esG ? 'guest' : !rid ? 'sin' : (doble ? 'rev' : (st.auto[k] === rid ? 'ok' : 'man'));
-        if (estado === 'ok' || estado === 'man') nOk++; else if (estado === 'rev') nRev++; else if (estado === 'guest') nGuest++; else nSin++;
-        const cj = esG ? conjuntoDe(l.lugar) : null;
-        const ops = [...new Set([...(st.opciones[k] || []), ...(rid ? [rid] : [])])].map(cand).filter(Boolean);
+        const c = esPersona(rid) ? cand(rid) : null;
+        const doble = esPersona(rid) && (usados.get(rid) || []).length > 1;
+        const estado = esG ? 'guest' : rid === NOVA ? 'sin' : !rid ? 'falta' : (doble ? 'rev' : (st.auto[k] === rid ? 'ok' : 'man'));
+        if (estado === 'ok' || estado === 'man') nOk++; else if (estado === 'rev') nRev++; else if (estado === 'guest') nGuest++; else if (estado === 'falta') nFalta++; else nSin++;
+        const casa = casaDe(l);
+        const cj = esG ? conjuntoDe(casa) : null;
+        const ops = [...new Set([...(st.opciones[k] || []), ...(esPersona(rid) ? [rid] : [])])].map(cand).filter(Boolean);
         const resto = st.cands.filter((x) => !ops.includes(x)).sort((a, z) => a.n.localeCompare(z.n));
         h += `<div class="rj-p" data-st="${estado}"><span class="rj-t">${esc(hmTxt(l.min))}</span><span class="rj-w">${esc(nombre)}${l.lugar ? ` <em>(${esc(l.lugar)})</em>` : ''}</span>`
-          + `<select data-rj-pick="${k}" aria-label="${esc('Quién es ' + nombre)}"><option value="">— No pidió por la app (no se avisa) —</option>`
-          + `<option value="${GUEST}"${esG ? ' selected' : ''}>— Va sin cuenta: en la ruta, sin aviso —</option>`
+          + `<select data-rj-pick="${k}" aria-label="${esc('Quién es ' + nombre)}">${!rid ? '<option value="" selected disabled>— Elige quién es —</option>' : ''}`
+          + `<option value="${NOVA}"${rid === NOVA ? ' selected' : ''}>— No va en esta ruta —</option>`
+          + `<option value="${GUEST}"${esG ? ' selected' : ''}>— Va, pero no tiene la app (no le llega aviso) —</option>`
           + (ops.length ? `<optgroup label="Más probables">${ops.map((x) => `<option value="${esc(x.rid)}"${x.rid === rid ? ' selected' : ''}>${esc(etiqueta(x))}</option>`).join('')}</optgroup>` : '')
           + (resto.length ? `<optgroup label="Todos los del día">${resto.map((x) => `<option value="${esc(x.rid)}">${esc(etiqueta(x))}</option>`).join('')}</optgroup>` : '')
           + `</select>${doble ? '<small class="rj-bad">Está dos veces</small>'
@@ -353,25 +369,30 @@
             : (c && c.type !== (lle ? 'lle' : 'sal') ? (desde && c.type === 'sal'
                 ? `<small class="rj-bad">Pidió una salida (de la casa a JMC), no el regreso desde ${esc(DESDE_TXT[desde])}: va en otra vuelta. Revisa que sea ella</small>`
                 : `<small class="rj-bad">Es ${c.type === 'lle' ? 'una llegada' : 'una salida'}: va en otra vuelta. Revisa que sea ella</small>`)
-              : esG ? `<small>Sin cuenta: va en la ruta${cj ? ' · ' + esc(cj.name) : (l.lugar ? ' · «' + esc(l.lugar) + '» (sin ubicar en el mapa)' : '')}. No le llegan avisos.</small>`
-              : (estado === 'sin' ? `<small>${!ops.length ? 'Revisa: no la encontré'
-                : (desde && ops.every((x) => x.type === 'sal') ? `Revisa: pidió una salida, no el regreso desde ${esc(DESDE_TXT[desde])}` : 'Revisa: elige quién es (hay parecidos)')}</small>`
+              : esG ? `<small>Sin cuenta: va en la ruta${cj ? ' · ' + esc(cj.name) : (casa ? ' · «' + esc(casa) + '» (sin ubicar en el mapa)' : ' sin dirección: el conductor no sabrá dónde es')}. No le llegan avisos.</small>`
+              : estado === 'sin' ? '<small>No va: no entra a la ruta.</small>'
+              : (estado === 'falta' ? `<small class="rj-bad">${!ops.length ? 'No la encontré en los pedidos del día: búscala abajo en la lista, o elige «No tiene la app» o «No va»'
+                : (desde && ops.every((x) => x.type === 'sal') ? `Pidió una salida, no el regreso desde ${esc(DESDE_TXT[desde])}: elige quién es` : 'Hay pedidos parecidos: elige quién es')}</small>`
                 : (estado === 'man' && c ? '<small>Elegido a mano: se aprende</small>' : '')))}</div>`;
       }));
       h += '</div>';
     });
-    const elegidos = new Set(Object.values(st.elegido).filter((x) => x && x !== GUEST));
+    const elegidos = new Set(Object.values(st.elegido).filter(esPersona));
     const fuera = st.cands.filter((c) => !elegidos.has(c.rid));
     const resumen = `<div class="rj-sum"><b>${L.bloques.length} vueltas · ${nOk} emparejados</b>`
+      + (nFalta ? `<span class="rj-bad">${nFalta} sin elegir: elige quién es (o «No va») antes de pasar al tablero</span>` : '')
       + (nRev ? `<span class="rj-bad">${nRev} repetidos: corrígelos antes de publicar</span>` : '')
       + (nGuest ? `<span>${nGuest} sin cuenta: van en la ruta, sin aviso</span>` : '')
-      + (nSin ? `<span>${nSin} sin pedido en la app (no van)</span>` : '')
+      + (nSin ? `<span>${nSin} no van</span>` : '')
       + (fuera.length ? `<span class="rj-warn">Pidieron por la app y no están en tu ruta: ${esc(fuera.map((c) => `${c.n.split(' ')[0]} (${c.type === 'lle' ? 'llega' : 'sale'} ${c.dl})`).join(', '))}</span>` : '')
       + (L.raras.length ? `<span class="rj-warn">No entendí: ${esc(L.raras.join(' · '))}</span>` : '')
       + '</div>';
     prev.innerHTML = resumen + h;
     const pub = document.querySelector('#rv2-sheet [data-rj="publicar"]');
-    if (pub) { pub.disabled = !(nOk + nGuest) || nRev > 0 || st.ocupado; pub.textContent = nOk ? `Pasar al tablero · ${nOk}${nGuest ? ` y ${nGuest} sin cuenta` : ''}` : (nGuest ? `Pasar al tablero · ${nGuest} sin cuenta` : 'Pasar al tablero'); }
+    if (pub) {
+      pub.disabled = !(nOk + nGuest) || nRev > 0 || nFalta > 0 || st.ocupado;
+      pub.textContent = nFalta ? `Falta elegir ${nFalta}` : nOk ? `Pasar al tablero · ${nOk}${nGuest ? ` y ${nGuest} sin cuenta` : ''}` : (nGuest ? `Pasar al tablero · ${nGuest} sin cuenta` : 'Pasar al tablero');
+    }
   }
   // Los bloques para la base: horas resueltas a fecha y hora; un bloque con
   // salidas y llegadas mezcladas se parte en dos (son carros distintos).
@@ -387,14 +408,15 @@
       b.lineas.forEach((l, li) => l.personas.forEach((nombre, pi) => {
         const rid = st.elegido[`${bi}.${li}.${pi}`];
         if (rid === GUEST) {
-          const cj = conjuntoDe(l.lugar);
+          const casa = casaDe(l);
+          const cj = conjuntoDe(casa);
           // Su punto y su zona, para que el tablero la ubique y la mida como a los demás.
-          grupos[tipoBloque(l)].push({ guest: { name: nombre, place: l.lugar || (cj ? cj.name : null), residence_id: cj ? cj.id : null,
+          grupos[tipoBloque(l)].push({ guest: { name: nombre, place: casa || (cj ? cj.name : null), residence_id: cj ? cj.id : null,
             lat: cj && cj.latitude != null ? cj.latitude : null, lng: cj && cj.longitude != null ? cj.longitude : null,
             zona: cj ? cj.zona_jefe || null : null, vuelo: l.vuelo || '' }, at: isoDe(l.dia, l.min), vuelo: l.vuelo });
           return;
         }
-        const c = rid ? cand(rid) : null;
+        const c = esPersona(rid) ? cand(rid) : null;
         if (!c) return;
         grupos[c.type].push({ reservation_id: rid, at: isoDe(l.dia, l.min), vuelo: l.vuelo });
       }));
@@ -567,12 +589,36 @@
     }
     return descargarDelAviso(dia);
   }
+  // 27-oct (Camilo): «no lo deja descargar sino una sola vez. Ayer cuando descargué
+  // solo me mostró el del 27 una vez, después me descargaba era lo del 26». El aviso
+  // de la noche baja el de MAÑANA (ofrecer), pero el botón «Excel del día» bajaba
+  // siempre el día que está en pantalla, que de noche es el de hoy. Ahora, si son
+  // distintos, pregunta cuál: mañana primero.
+  const hoyBog = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+  function elegirExcel() {
+    const enPantalla = diaActual();
+    const hoy = hoyBog(), manana = sumarDia(hoy, 1);
+    const dias = [...new Set([manana, enPantalla].filter(Boolean))];
+    const S = sheet();
+    if (dias.length <= 1 || !S) return excel(enPantalla || manana);
+    const que = (d) => { const t = [d === manana ? 'Mañana' : d === hoy ? 'Hoy' : '', d === enPantalla ? 'el que estás viendo' : ''].filter(Boolean).join(' · '); return t.charAt(0).toUpperCase() + t.slice(1); };
+    S.open(S.head('¿El Excel de qué día?', 'Lo pedido hasta el corte de la víspera, como el Formulario. Lo que llegó después va en la hoja LATE.')
+      + '<div class="rv2-sh-body"><div style="display:flex;flex-direction:column;gap:8px">'
+      + dias.map((d) => `<button class="rv2-opt" data-rj="xl" data-dia="${esc(d)}"><span class="t"><b>${esc(diaTxt(d))}</b></span><small>${esc(que(d))}</small></button>`).join('')
+      + '</div><p class="rv2-impact" id="rj-xl-msg" hidden></p></div>'
+      + '<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cerrar</button></div>');
+    atar();
+    return null;
+  }
   async function descargarDelAviso(dia) {
     const r = await excel(dia);
     const m = document.getElementById('rj-xl-msg');
+    if (m) m.hidden = false;
+    // En la hoja del aviso hay un botón «Descargar»; en la de elegir, se toca el día otra vez.
+    const otraVez = document.querySelector('#rv2-sheet .rv2-btn[data-rj="xl"]') ? 'toca «Descargar»' : 'toca el día otra vez';
     if (m) m.textContent = r
-      ? `Listo: ${r.filas} ${r.filas === 1 ? 'fila' : 'filas'}${r.late ? ` · ${r.late} Late en su hoja` : ''}. Si no se descargó solo, toca «Descargar».`
-      : 'No se pudo armar el Excel. Toca «Descargar» para intentar otra vez.';
+      ? `Listo: ${diaTxt(dia)} · ${r.filas} ${r.filas === 1 ? 'fila' : 'filas'}${r.late ? ` · ${r.late} Late en su hoja` : ''}. Si no se descargó solo, ${otraVez}.`
+      : `No se pudo armar el Excel. ${otraVez[0].toUpperCase() + otraVez.slice(1)} para intentar otra vez.`;
     return r;
   }
 
@@ -888,7 +934,7 @@
       const k = b.getAttribute('data-rj-dia');
       if (k === 'hechas') { diaUi.verHechas = !diaUi.verHechas; const v2 = V2(); if (v2 && typeof v2.render === 'function') v2.render(); return; }
       if (k === 'pegar') abrir();
-      else if (k === 'excel') excel();
+      else if (k === 'excel') elegirExcel();
       else if (k === 'quitar') {
         const dia = diaActual(); if (!dia) return;
         const pregunta = b.getAttribute('data-mixto') === '1'
@@ -905,7 +951,7 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', atarDia); else atarDia();
 
-  W.RendioRutaJulian = { abrir, excel, ofrecer, diaHTML, barraHTML, filaLista, abrirHora,
+  W.RendioRutaJulian = { abrir, excel, elegirExcel, ofrecer, diaHTML, barraHTML, filaLista, abrirHora,
     _leer: leer, _emparejar: emparejar, _filasExcel: filasExcel, _st: st, _norm: norm, _isoCerca: isoCerca,
     _bloques: () => bloquesParaBase(), _paraTablero: () => vueltasParaTablero() };
 })();
