@@ -183,6 +183,17 @@ console.log('\n── 25-oct · plan publicado con horas a mano: la pantalla mue
     const orden = rt.order[laneDe(b, 'H')];
     t('…sin reordenar a los que ya iban (H antes que G)', orden.indexOf('rH') < orden.indexOf('rG'), orden.join());
     b.click(b.q('#rv2-toast [data-act="undo"]')); await wait(5);
+    // Camilo (27-oct, 9 a. m.): «que me deje meter a una persona en un combo de
+    // recogida en puerto sin que me afecte horas». La llegada K/L sale a su hora
+    // guardada aunque el que llega aterrice más tarde.
+    const otraLle = Object.keys(rt.order).find((l) => l !== lK && !rt.rv2Fijas[l] && rt.lanes.find((x) => x.id === l && x.type === 'lle') && rt.order[l].length);
+    if (otraLle) {
+      const quien = rt.order[otraLle][0];
+      V._mover(quien, otraLle, lK); await wait(5);
+      const k2 = b.rutaDe(laneDe(b, 'K'));
+      t('27-oct: meter a alguien en una llegada con hora: el carro sale de JMC a la misma hora', k2 && k2.pickup === sK && k2.stops.some((x) => x.crewId === quien), k2 && JSON.stringify([k2.pickup, sK, quien, rt.aux[quien].dl]));
+      b.click(b.q('#rv2-toast [data-act="undo"]')); await wait(5);
+    } else t('27-oct: hay otra llegada para la prueba', false);
   }
   // Re-optimizar arma el día desde cero: ya no hay horas guardadas que respetar.
   t('el plan sin horas guardadas (como lo publica la app) se ve igual que antes', horasDe(b0.rutaDe(laneDe(b0, 'H'))) === horasDe(r0));
