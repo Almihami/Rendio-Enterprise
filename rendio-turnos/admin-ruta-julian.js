@@ -251,11 +251,11 @@
     if (!st.dia) { say('Elige primero el día en Rutas del día.'); return; }
     try { st.texto = localStorage.getItem(LS(st.dia)) || ''; } catch (_) { st.texto = ''; }
     st.lectura = null;
-    S.open(S.head(`Ruta de Julián · ${esc(diaTxt(st.dia))}`, 'Pega el mismo mensaje que mandas al grupo. Se emparejan los nombres con los pedidos del día y, al publicar, a cada tripulante le llega su hora.')
+    S.open(S.head(`Ruta de Julián · ${esc(diaTxt(st.dia))}`, 'Pega el mismo mensaje que mandas al grupo. Se emparejan los nombres con los pedidos del día y cada vuelta entra al tablero con tus horas; se publica con «Publicar», como siempre.')
       + `<div class="rv2-sh-body rj-body"><textarea class="rj-ta" id="rj-ta" rows="12" spellcheck="false" placeholder="3:10 Isa rivera (Mota)&#10;3:15 Karol L (Viverdi)&#10;Deben estar 3:40&#10;&#10;12:00 Jessica y Erika (av9563)">${esc(st.texto)}</textarea>`
       + '<div class="rj-prev" id="rj-prev"></div></div>'
       + '<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button><button class="rv2-btn" data-rj="leer">Leer la ruta</button>'
-      + '<button class="rv2-btn rv2-btn--cta" data-rj="publicar" disabled>Publicar y avisar</button></div>');
+      + '<button class="rv2-btn rv2-btn--cta" data-rj="publicar" disabled>Pasar al tablero</button></div>');
     atar();
   }
   let atado = false;
@@ -371,7 +371,7 @@
       + '</div>';
     prev.innerHTML = resumen + h;
     const pub = document.querySelector('#rv2-sheet [data-rj="publicar"]');
-    if (pub) { pub.disabled = !(nOk + nGuest) || nRev > 0 || st.ocupado; pub.textContent = nOk ? `Publicar y avisar a ${nOk}${nGuest ? ` · ${nGuest} sin cuenta` : ''}` : (nGuest ? `Publicar (${nGuest} sin cuenta)` : 'Publicar y avisar'); }
+    if (pub) { pub.disabled = !(nOk + nGuest) || nRev > 0 || st.ocupado; pub.textContent = nOk ? `Pasar al tablero · ${nOk}${nGuest ? ` y ${nGuest} sin cuenta` : ''}` : (nGuest ? `Pasar al tablero · ${nGuest} sin cuenta` : 'Pasar al tablero'); }
   }
   // Los bloques para la base: horas resueltas a fecha y hora; un bloque con
   // salidas y llegadas mezcladas se parte en dos (son carros distintos).
@@ -388,7 +388,10 @@
         const rid = st.elegido[`${bi}.${li}.${pi}`];
         if (rid === GUEST) {
           const cj = conjuntoDe(l.lugar);
-          grupos[tipoBloque(l)].push({ guest: { name: nombre, place: l.lugar || (cj ? cj.name : null), residence_id: cj ? cj.id : null }, at: isoDe(l.dia, l.min), vuelo: l.vuelo });
+          // Su punto y su zona, para que el tablero la ubique y la mida como a los demás.
+          grupos[tipoBloque(l)].push({ guest: { name: nombre, place: l.lugar || (cj ? cj.name : null), residence_id: cj ? cj.id : null,
+            lat: cj && cj.latitude != null ? cj.latitude : null, lng: cj && cj.longitude != null ? cj.longitude : null,
+            zona: cj ? cj.zona_jefe || null : null, vuelo: l.vuelo || '' }, at: isoDe(l.dia, l.min), vuelo: l.vuelo });
           return;
         }
         const c = rid ? cand(rid) : null;
@@ -415,25 +418,64 @@
     })));
     return out;
   }
+  // PEGAR = LLENAR EL TABLERO (27-oct-2026). La profa: «lo único que debería
+  // cambiar es cuando alguien suba». Antes esto publicaba por su lado
+  // (admin_manual_route_publish): vueltas «para tomar», sin carro ni conductor, con
+  // otra tarjeta, sin trayecto y con sus propios avisos. Ahora cada bloque entra al
+  // tablero como una vuelta más (RendioRutasV2.meterPegado), con las horas del
+  // jefe, en un carro libre y con el conductor del turno; y se publica con la hoja
+  // de siempre, que es la que avisa. Lo que arranca en la madrugada SIGUIENTE (las
+  // últimas líneas, después de medianoche) es del plan de ese día: entra a su
+  // tablero cuando se abre.
+  const minDesde = (dia, iso) => Math.round((Date.parse(iso) - Date.parse(dia + 'T00:00:00-05:00')) / 60000);
+  function vueltasParaTablero() {
+    const sig = sumarDia(st.dia, 1);
+    const out = { hoy: [], sig: [] };
+    bloquesParaBase().forEach((b) => {
+      if (!b.stops.length) return;
+      const ats = b.stops.map((s) => Date.parse(s.at));
+      const primera = new Date(Math.min(...ats)).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+      const dia = primera === sig ? sig : st.dia;
+      (dia === sig ? out.sig : out.hoy).push({
+        type: b.type,
+        deadline: b.deadline_at ? minDesde(dia, b.deadline_at) : null,
+        stops: b.stops.map((s) => (s.guest ? { guest: s.guest, min: minDesde(dia, s.at) } : { rid: s.reservation_id, min: minDesde(dia, s.at) })),
+      });
+    });
+    return out;
+  }
   async function publicar() {
     if (st.ocupado || !st.lectura) return;
-    const bloques = bloquesParaBase();
-    const n = bloques.reduce((a, b) => a + b.stops.length, 0);
-    if (!n) return;
-    const nG = bloques.reduce((a, b) => a + b.stops.filter((x) => x.guest).length, 0);
-    if (typeof W.confirm === 'function' && !W.confirm(`¿Publicar la ruta de Julián del ${diaTxt(st.dia)}? ${bloques.length} vueltas, ${n - nG} tripulantes${nG ? ` y ${nG} sin cuenta` : ''}. A cada tripulante le llega su hora de recogida y los conductores las pueden tomar.${nG ? ' A los sin cuenta no les llega nada: van en la ruta del conductor.' : ''}`)) return;
+    const v2 = V2();
+    if (!v2 || typeof v2.meterPegado !== 'function') { say('No se pudo pasar al tablero: recarga la página.'); return; }
+    if (typeof rt !== 'undefined' && rt.day && rt.day !== st.dia) { say('El tablero está en otro día: vuelve al ' + diaTxt(st.dia) + ' y pega otra vez.'); return; }
+    const { hoy, sig } = vueltasParaTablero();
+    if (!hoy.length && !sig.length) return;
     st.ocupado = true; pintarPrevia();
     try {
-      const r = await Api.adminManualRoutePublish(st.dia, bloques, apodosNuevos());
-      const S = sheet(); if (S) S.close();
+      // Los apodos que el jefe eligió a mano se aprenden (0149). Si falla, igual se pega.
+      const ap = apodosNuevos();
+      if (ap.length && W.Api && typeof Api.saveCrewAliases === 'function') { try { await Api.saveCrewAliases(ap); } catch (_) { /* la próxima vez se elige otra vez */ } }
       // Lista de los jefes (26-oct): sus llegadas con vuelo pasan solas a Vuelos.
       let vuelos = 0;
       try { vuelos = W.renderVuelos && typeof W.renderVuelos.seguirDesdeTexto === 'function' ? await W.renderVuelos.seguirDesdeTexto(st.texto, st.dia) : 0; } catch (_) { vuelos = 0; }
-      say(`Ruta publicada: ${r.vueltas} vueltas · avisados ${r.notified}${r.removed ? ` · ${r.removed} vueltas viejas quitadas` : ''}${r.skipped ? ` · ${r.skipped} ya iban en una vuelta en curso` : ''}${vuelos ? ` · ${vuelos} ${vuelos === 1 ? 'vuelo' : 'vuelos'} a Vuelos` : ''}.`);
-      if (V2() && typeof V2().cargarDia === 'function') await V2().cargarDia(st.dia);
+      const S = sheet(); if (S) S.close();
+      const r = hoy.length ? v2.meterPegado(hoy) : null;
+      if (sig.length && typeof v2.guardarPegado === 'function') v2.guardarPegado(sumarDia(st.dia, 1), sig);
+      const partes = [];
+      if (r && r.vueltas) partes.push(`${r.vueltas} ${r.vueltas === 1 ? 'vuelta quedó' : 'vueltas quedaron'} en el tablero (${r.carros.join(', ')})`);
+      if (r && r.nuevosCarros && r.nuevosCarros.length) partes.push(`no cabían en los carros del día: se agregó ${r.nuevosCarros.join(', ')}`);
+      if (r && r.enCurso && r.enCurso.length) partes.push(`${r.enCurso.join(', ')} ya ${r.enCurso.length === 1 ? 'va' : 'van'} en una vuelta en curso y ${r.enCurso.length === 1 ? 'se queda' : 'se quedan'} ahí`);
+      if (sig.length) partes.push(`la madrugada del ${diaTxt(sumarDia(st.dia, 1))} (${sig.length} ${sig.length === 1 ? 'vuelta' : 'vueltas'}) entra cuando abras ese día`);
+      if (vuelos) partes.push(`${vuelos} ${vuelos === 1 ? 'vuelo' : 'vuelos'} a Vuelos`);
+      // Con «Deshacer», como cualquier cambio del tablero.
+      const msg = (partes.length ? partes.join(' · ') : 'No entró ninguna vuelta') + '. Nadie ha recibido aviso: revisa y dale Publicar.';
+      if (r && r.vueltas && typeof v2.toast === 'function') v2.toast(msg, true); else say(msg);
+      // La hoja de siempre: lo que falta, y el botón que publica y avisa.
+      if (r && r.vueltas && typeof v2.abrirPublicar === 'function') v2.abrirPublicar();
     } catch (e) {
-      say('No se pudo publicar: ' + ((e && e.message) || 'error'));
-    } finally { st.ocupado = false; pintarPrevia(); }
+      say('No se pudo pasar al tablero: ' + ((e && e.message) || 'error'));
+    } finally { st.ocupado = false; }
   }
 
   // ── 5. El Excel del día (la estructura del Formulario) ──────────────────────
@@ -864,5 +906,6 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', atarDia); else atarDia();
 
   W.RendioRutaJulian = { abrir, excel, ofrecer, diaHTML, barraHTML, filaLista, abrirHora,
-    _leer: leer, _emparejar: emparejar, _filasExcel: filasExcel, _st: st, _norm: norm, _isoCerca: isoCerca };
+    _leer: leer, _emparejar: emparejar, _filasExcel: filasExcel, _st: st, _norm: norm, _isoCerca: isoCerca,
+    _bloques: () => bloquesParaBase(), _paraTablero: () => vueltasParaTablero() };
 })();
