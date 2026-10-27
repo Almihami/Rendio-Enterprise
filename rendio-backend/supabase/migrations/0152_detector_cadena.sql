@@ -93,9 +93,10 @@ COMMENT ON TABLE public.route_chain_alerts IS
 -- 3. ¿Cuándo y dónde queda libre un conductor antes de una hora?
 --    known = se sabe; fresh = el dato es de ahora (no una vuelta de hace horas).
 -- -----------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.cadena_libre(uuid, uuid, timestamptz);   -- cambió su salida (busy) el mismo 27-oct en dev
 CREATE OR REPLACE FUNCTION public.cadena_libre(p_drv uuid, p_skip uuid, p_antes timestamptz,
   OUT known boolean, OUT fresh boolean, OUT free_at timestamptz, OUT res uuid,
-  OUT lat double precision, OUT lng double precision, OUT air boolean, OUT why text)
+  OUT lat double precision, OUT lng double precision, OUT air boolean, OUT why text, OUT busy boolean)
 LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
@@ -104,32 +105,48 @@ DECLARE
   v_turn int; v_fin timestamptz; v_atraso interval;
   v_ap_lat double precision; v_ap_lng double precision;
 BEGIN
-  known := false; fresh := false;
+  known := false; fresh := false; busy := false;
   IF p_drv IS NULL THEN RETURN; END IF;
   SELECT route_turnaround_min INTO v_turn FROM public.app_settings WHERE id = 'singleton';
   v_turn := coalesce(v_turn, 8);
 
   -- Su vuelta inmediatamente anterior (la última que empieza antes de esa hora).
-  SELECT ra.id, ra.status, ra.actual_start_at, ra.actual_end_at INTO o
+  -- OJO (visto en producción el 27-oct): route_assignments.status se queda en
+  -- 'planned' aunque el conductor ya haya entregado a todos; lo que cambia son las
+  -- PARADAS (status + actual_*). El estado se lee de ahí.
+  SELECT ra.id, ra.status, ra.actual_start_at, ra.actual_end_at,
+         count(rs.id) AS total,
+         count(rs.id) FILTER (WHERE rs.status IN ('delivered', 'no_show')) AS hechas,
+         count(rs.id) FILTER (WHERE rs.status <> 'pending') AS tocadas,
+         max(coalesce(rs.actual_dropoff_at, rs.actual_pickup_at, rs.actual_arrival_at)) AS ultima,
+         (array_agg(coalesce(rs.actual_dropoff_at, rs.actual_pickup_at, rs.actual_arrival_at) - coalesce(rs.estimated_arrival_at, ra.planned_start_at)
+                    ORDER BY coalesce(rs.actual_dropoff_at, rs.actual_pickup_at, rs.actual_arrival_at) DESC NULLS LAST))[1] AS desfase
+    INTO o
     FROM public.route_assignments ra
+    JOIN public.route_stops rs ON rs.route_assignment_id = ra.id
+    LEFT JOIN public.reservations r ON r.id = rs.reservation_id
    WHERE ra.driver_profile_id = p_drv AND ra.id IS DISTINCT FROM p_skip
      AND ra.status IN ('planned', 'in_progress', 'completed')
      AND ra.planned_start_at < p_antes AND ra.planned_start_at > p_antes - interval '12 hours'
-     AND EXISTS (SELECT 1 FROM public.route_stops rs WHERE rs.route_assignment_id = ra.id)
+     AND (rs.reservation_id IS NULL OR r.cancelled_at IS NULL)
+   GROUP BY ra.id
    ORDER BY ra.planned_start_at DESC LIMIT 1;
   IF o.id IS NOT NULL THEN
     SELECT * INTO e FROM public.reub_extremos(o.id);
     IF e.fin_at IS NOT NULL THEN
-      IF o.status = 'completed' THEN
-        v_fin := coalesce(o.actual_end_at, least(e.fin_at, now()));
+      IF o.status = 'completed' OR (o.total > 0 AND o.hechas = o.total) THEN
+        v_fin := coalesce(o.actual_end_at, o.ultima, least(e.fin_at, now()));
         why := 'terminó a las ' || public.hm_bog(v_fin);
-      ELSIF o.status = 'in_progress' THEN
-        -- Lo que arrancó tarde, termina tarde; y si ya debía haber terminado, le faltan ~5 min.
-        v_atraso := greatest(interval '0', coalesce(o.actual_start_at, now()) - e.ini_at);
+        o.status := 'completed';
+      ELSIF o.status = 'in_progress' OR o.tocadas > 0 THEN
+        -- En curso: lo que lleva de atraso en la última parada marcada se le suma
+        -- al final; y si ya debía haber terminado, le faltan ~5 min.
+        v_atraso := greatest(interval '0', coalesce(o.desfase, coalesce(o.actual_start_at, now()) - e.ini_at));
         v_fin := greatest(e.fin_at + v_atraso, now() + interval '5 minutes');
         why := 'termina ~' || public.hm_bog(v_fin) || ' la vuelta de las ' || public.hm_bog(e.ini_at);
+        o.status := 'in_progress';
       ELSE
-        -- Planeada: si ya debía haber arrancado y no lo ha hecho, todo se corre.
+        -- Sin tocar: si ya debía haber arrancado y no lo ha hecho, todo se corre.
         v_atraso := greatest(interval '0', now() - e.ini_at);
         v_fin := e.fin_at + v_atraso;
         why := 'termina ~' || public.hm_bog(v_fin) || ' la vuelta de las ' || public.hm_bog(e.ini_at)
@@ -139,6 +156,7 @@ BEGIN
       free_at := v_fin + make_interval(mins => CASE WHEN e.fin_air THEN v_turn ELSE 2 END);
       res := e.fin_res; lat := e.fin_lat; lng := e.fin_lng; air := e.fin_air;
       fresh := o.status <> 'completed' OR v_fin > now() - interval '60 minutes';
+      busy := o.status <> 'completed';   -- todavía tiene esa vuelta encima
     END IF;
   END IF;
 
@@ -153,7 +171,7 @@ BEGIN
         JOIN public.driver_profiles dp ON dp.profile_id = pr.id
        WHERE dp.id = p_drv ORDER BY a.created_at LIMIT 1;
       v_ap_lat := coalesce(v_ap_lat, 6.1715); v_ap_lng := coalesce(v_ap_lng, -75.4270);
-      known := true; fresh := true; free_at := now(); res := NULL; lat := g.latitude; lng := g.longitude;
+      known := true; fresh := true; busy := false; free_at := now(); res := NULL; lat := g.latitude; lng := g.longitude;
       air := abs(g.latitude - v_ap_lat) < 0.012 AND abs(g.longitude - v_ap_lng) < 0.012;   -- ~1,3 km
       why := CASE WHEN air THEN 'está libre en JMC' ELSE 'está libre' END || ' (GPS de las ' || public.hm_bog(g.recorded_at) || ')';
     END IF;
@@ -207,7 +225,7 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   ra public.route_assignments; v_org uuid; e record; l record; c record; k record;
-  v_eta timestamptz; v_late int; v_quien text; v_n int; v_actual text;
+  v_eta timestamptz; v_late int; v_leg int; v_quien text; v_n int; v_actual text;
   b_dp uuid; b_name text; b_eta timestamptz; b_free timestamptz; b_why text;
 BEGIN
   SELECT * INTO ra FROM public.route_assignments WHERE id = p_ra;
@@ -228,9 +246,14 @@ BEGIN
   IF NOT coalesce(l.known, false) THEN
     RETURN jsonb_build_object('known', false, 'need_at', e.ini_at, 'org', v_org);
   END IF;
-  v_eta := greatest(l.free_at, now())
-           + make_interval(mins => ceil(public.reub_leg(l.res, l.lat, l.lng, l.air, e.ini_res, e.ini_lat, e.ini_lng, e.ini_air))::int);
+  v_leg := ceil(public.reub_leg(l.res, l.lat, l.lng, l.air, e.ini_res, e.ini_lat, e.ini_lng, e.ini_air))::int;
+  v_eta := greatest(l.free_at, now()) + make_interval(mins => v_leg);
   v_late := ceil(extract(epoch FROM (v_eta - e.ini_at)) / 60)::int;
+  -- Libre y ya en el punto (p. ej. en JMC esperando un vuelo atrasado): que la
+  -- vuelta no haya arrancado no es un problema de CADENA. No se marca.
+  IF NOT coalesce(l.busy, false) AND v_leg < 10 THEN
+    v_late := least(v_late, 0); v_eta := least(v_eta, e.ini_at);
+  END IF;
 
   IF p_candidatos THEN
     FOR c IN
