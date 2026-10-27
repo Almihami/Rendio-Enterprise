@@ -4796,8 +4796,23 @@
     return data;
   }
 
+  // 0152: el detector de cadena (en sombra). La tarjeta del aviso «X no alcanza».
+  const _rpc0152 = async (fn, args) => {
+    const { data, error } = await sb.rpc(fn, args);
+    if (error) {
+      if (error.code === '42883' || error.code === 'PGRST202') throw new Error('Falta la actualización 0152 de la base.');
+      throw error;
+    }
+    return data;
+  };
+  const cadenaVer = (id) => _rpc0152('admin_cadena_ver', { p_alert: id });
+  const cadenaAplicar = (id) => _rpc0152('admin_cadena_aplicar', { p_alert: id });
+  const cadenaDescartar = (id) => _rpc0152('admin_cadena_descartar', { p_alert: id });
+  const cadenaEncender = (on) => _rpc0152('admin_cadena_encender', { p_on: !!on });
+
   window.Api = {
     getRouteFinishRules, _opResultado, _opFinEsperado,   // 0137 (las dos últimas, para las pruebas)
+    cadenaVer, cadenaAplicar, cadenaDescartar, cadenaEncender,   // 0152
     createExternal, adminCreateReservation, listExternalAuxIds,   // 0139
     listHandovers, setHandover, driverMyHandovers, driverHandoverDelivered,   // 0140
     adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, saveDelegateContact, driverLlegadaCandidatos, driverLlegadaAgregar, driverLlegadaSoltar, offerRoutes, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,

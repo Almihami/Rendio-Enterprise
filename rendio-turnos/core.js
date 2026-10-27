@@ -559,6 +559,12 @@
     setTab(tab);
     // «📋 El Excel de mañana está listo» (0130): `#/rutas?excel=AAAA-MM-DD` abre
     // Asignación y descarga el Excel de ese día (admin-ruta-julian.js).
+    // «⚠️ X no alcanza» (0152): `#/rutas?cadena=<id>` abre Asignación con la
+    // tarjeta de la recomendación encima (admin-cadena.js).
+    const cad = params.get('cadena');
+    if (tab === 'routes' && cad && window.RendioCadena && typeof window.RendioCadena.abrir === 'function') {
+      setTimeout(() => { try { window.RendioCadena.abrir(cad); } catch (e) { /* */ } }, 0);
+    }
     const xl = params.get('excel');
     if (tab === 'routes' && xl && window.RendioRutaJulian && typeof window.RendioRutaJulian.ofrecer === 'function') {
       setTimeout(() => { try { window.RendioRutaJulian.ofrecer(xl); } catch (e) { /* */ } }, 0);

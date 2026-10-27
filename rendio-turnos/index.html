@@ -1633,6 +1633,21 @@
     </div>
   </div>
 
+  <!-- 0152 · La tarjeta del detector de cadena: «X no alcanza · Recomendado: Y».
+       La abre el aviso (#/rutas?cadena=<id>). Lo maneja admin-cadena.js -->
+  <div class="ac-sheet hidden" id="cadena" role="dialog" aria-modal="true" aria-labelledby="cd-title">
+    <div class="ac-card">
+      <div class="ac-head">
+        <div class="ac-who">
+          <b id="cd-title">Recomendación</b>
+          <span id="cd-sub"></span>
+        </div>
+        <button class="ac-btn" id="cd-close">Cerrar</button>
+      </div>
+      <div class="ac-body" id="cd-body"></div>
+    </div>
+  </div>
+
   <!-- "¿Dónde acomodo esta reserva?" (bloque D). Vive suelto por lo mismo que
        #jefe-chat: se abre desde la bandeja y desde Operación sin desmontar la
        pantalla de abajo. Lo maneja admin-acomodar.js -->
@@ -1718,6 +1733,7 @@
   <script src="admin-cobro.js"></script>
   <script src="admin-puntos.js"></script>
   <script src="admin-acomodar.js"></script>
+  <script src="admin-cadena.js"></script>
   <script src="admin-whatsapp.js"></script>
   <!-- Rol auxiliar (pasajero) -->
   <!-- Rediseño (27-sep-2026): el sistema visual y el shell ANTES de aux-registro:
