@@ -603,3 +603,33 @@
 .rv2-sheet .rj-h-p input[data-tocado="1"] { border-color: var(--orange); }
 .rv2-sheet .rj-h-p em { font-style: normal; color: var(--ink3); }
 .rv2-sheet .rj-hora .rj-warn { margin: 4px 0 0; font-size: 13px; }
+
+/* ── 28-oct · «Cambios» de los tripulantes (admin-cambios.js) y «Enrutar» ─────── */
+#routes-v2 #rv2-cambios { position: relative; }
+#routes-v2 #rv2-cambios .rv2-badge { background: var(--orange); color: #FFF; }
+#routes-v2 #rv2-cambios.is-new { border-color: var(--orange); color: var(--orange-ink); }
+.rv2-sheet .rc-body { display: flex; flex-direction: column; gap: 10px; }
+.rv2-sheet .rc-sum { margin: 0; font-size: 13.5px; color: var(--ink2); }
+.rv2-sheet .rc-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.rv2-sheet .rc-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 3px 10px; align-items: center; padding: 9px 12px; border-top: 1px solid var(--line); font-size: 13.5px; }
+.rv2-sheet .rc-row:first-child { border-top: 0; }
+.rv2-sheet .rc-row.is-new { background: var(--orange-soft); }
+.rv2-sheet .rc-at { font-family: var(--mono); font-size: 12px; color: var(--ink3); display: flex; flex-direction: column; gap: 2px; }
+.rv2-sheet .rc-at em { font-style: normal; font-weight: 700; color: var(--orange-ink); text-transform: uppercase; font-size: 10.5px; letter-spacing: .05em; }
+.rv2-sheet .rc-que { min-width: 0; color: var(--ink); line-height: 1.35; }
+.rv2-sheet .rc-ahora { grid-column: 2 / 3; font-size: 12.5px; color: var(--ink2); }
+.rv2-sheet .rc-row .rv2-btn--sm { grid-column: 3; grid-row: 1 / span 2; }
+.rv2-sheet .rc-ahora--ok { color: var(--green); }
+.rv2-sheet .rc-ahora--warn { color: var(--orange-ink); font-weight: 600; }
+.rv2-sheet .rc-ahora--bad { color: var(--red-ink); font-weight: 700; }
+.rv2-sheet .rc-list--antes { opacity: .8; }
+/* El pegado: «tiene cuenta y no pidió» (se le crea el pedido al pasar). */
+.rv2-sheet .rj-p[data-st="crear"] select { border-color: var(--amber); background: var(--amber-soft); }
+@media (max-width: 767px) {
+  .rv2-sheet .rc-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .rv2-sheet .rc-at { flex-direction: row; gap: 8px; grid-column: 1 / -1; }
+  .rv2-sheet .rc-ahora { grid-column: 1 / 2; }
+  .rv2-sheet .rc-row .rv2-btn--sm { grid-column: 2; grid-row: 2 / span 2; }
+  #routes-v2 #rv2-cambios span:not(.rv2-badge), #routes-v2 #rv2-enrutar span { display: none; }
+  #routes-v2 #rv2-cambios, #routes-v2 #rv2-enrutar { width: 44px; height: 44px; padding: 0; justify-content: center; }
+}

@@ -3608,11 +3608,18 @@
     let saved = 0, skipped = 0, kept = 0, failed = 0, failMsg = '';
     const notify = [];
     const ofrecer = [];   // 0151: «para tomar» nuevas → se les anuncia a los del turno
-    let orgTomar = null;
-    if (lanes.some(l => l.paraTomar)) {
-      orgTomar = (typeof state !== 'undefined' && state.profile) ? state.profile.organization_id : null;
-      if (!orgTomar) orgTomar = (await getCurrentProfile())?.organization_id || null;
-    }
+    // 28-oct (Camilo, «Esa vuelta no existe»): TODA vuelta lleva su organización.
+    // Las del tablero no la llevaban (se deducía de sus paradas), y una vuelta con
+    // solo gente sin cuenta no tiene paradas con reserva: «Guardar y publicar» de
+    // esa vuelta (admin_route_set_driver) no la encontraba. 0151 ya la ponía en
+    // las «para tomar».
+    let orgTomar = (typeof state !== 'undefined' && state.profile) ? state.profile.organization_id : null;
+    if (!orgTomar) { try { orgTomar = (await getCurrentProfile())?.organization_id || null; } catch (_) { orgTomar = null; } }
+    // 28-oct: la fila nueva de cada vuelta del tablero (laneId → route_assignments.id).
+    // Publicar borra y vuelve a crear las vueltas que no han arrancado: sin esto el
+    // tablero se quedaba con el id viejo y «Guardar y publicar» de UNA vuelta decía
+    // «Esa vuelta no existe».
+    const ids = {};
     for (const lane of lanes) {
       // 0133: los sin cuenta de la vuelta (los que no siguen en una vuelta que se queda).
       const sinCuenta = (lane.paradas || []).filter(p => p.guest && p.guest.name && !(p.guest.stopId && sinCuentaQueda.has(p.guest.stopId)));
@@ -3640,6 +3647,7 @@
         if (!conParaTomar || !orgTomar) { failed++; failMsg = failMsg || 'para dejar vueltas para tomar falta la actualización 0151 de la base'; continue; }
         fila.pool = true; fila.para_tomar = true; fila.organization_id = orgTomar;
       }
+      if (orgTomar) fila.organization_id = orgTomar;
       if (deleg) fila.delegated_at = new Date().toISOString();
       // 0131: a quién se delegó (nombre y teléfono que ve el tripulante).
       if (deleg && lane.delegateName) { fila.delegate_name = lane.delegateName; fila.delegate_phone = lane.delegatePhone || null; }
@@ -3668,6 +3676,7 @@
         failed++; failMsg = failMsg || 'para delegar falta la actualización 0126 de la base'; continue;
       }
       if (error) { failed++; failMsg = failMsg || error.message; continue; }
+      if (lane.laneId) ids[lane.laneId] = { id: ra.id, status: fila.status };
       if (tomar && !dpid && stopIds.some(rid => !prevEnTomar.has(rid))) ofrecer.push(ra.id);
       // La ETA por parada viaja desde el tablero (lane.etas: minutos desde
       // medianoche). Sin ella, `route_stops.estimated_arrival_at` quedaba NULL
@@ -3702,6 +3711,7 @@
       if (r2.error) {
         // La vuelta quedó sin paradas: se quita para no dejarle al conductor una vuelta vacía.
         await sb.from('route_assignments').delete().eq('id', ra.id);
+        if (lane.laneId) delete ids[lane.laneId];
         failed++; failMsg = failMsg || r2.error.message; continue;
       }
       // 0126: recién delegada → al tripulante se le dice que lo contactan por WhatsApp.
@@ -3725,7 +3735,7 @@
       });
       saved++;
     }
-    return { saved, skipped, kept, failed, failMsg, notify, ofrecer };
+    return { saved, skipped, kept, failed, failMsg, notify, ofrecer, ids };
   }
 
   // El conductor lee SU ruta del día (route_assignments asignadas a él) → vueltas.
@@ -4617,12 +4627,25 @@
   }
   // El jefe pide un traslado a nombre de un tripulante (con app o sin ella).
   // type 'sal'|'lle'; whenIso = presentación en JMC (salida) o aterrizaje (llegada).
+  // f.acomodar === false (0153): lo mete el jefe en su vuelta (ruta pegada); el
+  // sistema no lo acomoda solo en otra.
   async function adminCreateReservation(f) {
-    const { data, error } = await sb.rpc('admin_create_reservation', {
-      p_aux: f.auxId, p_type: f.type, p_when: f.whenIso, p_flight: f.flight || null, p_note: f.note || null,
-    });
-    if (error) { if (_falta(error, 'admin_create_reservation')) throw new Error('Para pedir a nombre de otro falta la actualización 0139 de la base.'); throw error; }
+    const args = { p_aux: f.auxId, p_type: f.type, p_when: f.whenIso, p_flight: f.flight || null, p_note: f.note || null };
+    if (f.acomodar === false) args.p_acomodar = false;
+    const { data, error } = await sb.rpc('admin_create_reservation', args);
+    if (error) {
+      if (f.acomodar === false && _falta(error, 'admin_create_reservation')) throw new Error('Para crearle el pedido desde la ruta falta la actualización 0153 de la base.');
+      if (_falta(error, 'admin_create_reservation')) throw new Error('Para pedir a nombre de otro falta la actualización 0139 de la base.');
+      throw error;
+    }
     return data;
+  }
+  // 0153 · Lo que cambiaron los tripulantes en los pedidos de una ventana (el día
+  // de Asignación). null = la base no tiene 0153.
+  async function listCrewChanges(desdeIso, hastaIso) {
+    const { data, error } = await sb.rpc('admin_cambios_tripulantes', { p_desde: desdeIso, p_hasta: hastaIso });
+    if (error) { if (_falta(error, 'admin_cambios_tripulantes')) return null; throw error; }
+    return Array.isArray(data) ? data : [];
   }
   // Quiénes son externos sin app: { aux: Set(auxiliar_profiles.id), profiles: Set(profiles.id) }.
   // Sin 0139: ninguno.
@@ -4814,6 +4837,7 @@
     getRouteFinishRules, _opResultado, _opFinEsperado,   // 0137 (las dos últimas, para las pruebas)
     cadenaVer, cadenaAplicar, cadenaDescartar, cadenaEncender,   // 0152
     createExternal, adminCreateReservation, listExternalAuxIds,   // 0139
+    listCrewChanges,   // 0153
     listHandovers, setHandover, driverMyHandovers, driverHandoverDelivered,   // 0140
     adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, saveDelegateContact, driverLlegadaCandidatos, driverLlegadaAgregar, driverLlegadaSoltar, offerRoutes, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,

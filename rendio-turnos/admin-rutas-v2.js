@@ -608,6 +608,7 @@
     const live = rt.source === 'live';
     el.reopt.disabled = !live || ui.cargando || ui.optimizando;
     el.reoptLabel.textContent = hayVueltas() ? 'Re-optimizar' : 'Optimizar';
+    if (el.enrutar) { el.enrutar.disabled = !live || ui.cargando || ui.optimizando || !hayVueltas(); el.enrutar.hidden = !hayVueltas() && !ui.cargando; }
     // ‹ › siempre se pueden usar, también a mitad de una carga o si falló: la
     // carga vieja se descarta (cargarDia). Antes se apagaban y una consulta
     // colgada dejaba al jefe atrapado en ese día hasta recargar la página.
@@ -1298,7 +1299,7 @@
     if (ui.falloCarga) { pintarFallo(); return; }
     if (soloJulian() && !ui.cargando && window.RendioRutaJulian) { renderManual(); return; }
     // Lo que dejó un día solo de Julián (el título de los botones apagados).
-    [el.publish, el.publishM, el.reopt].forEach((b) => { if (b && b.title === T_JULIAN) b.title = ''; });
+    [el.publish, el.publishM, el.reopt, el.enrutar].forEach((b) => { if (b && b.title === T_JULIAN) b.title = ''; });
     if (!ui.cargando) autoLlenar();
     D = armarDia();
     if (ui.sel && !D.byId[ui.sel]) { ui.sel = null; ui.moving = null; }
@@ -1315,7 +1316,7 @@
     el.summary.hidden = true; el.avisos.innerHTML = ''; el.drivers.innerHTML = '';
     try { pintarEntregas(); } catch (_) { /* sin entregas */ }
     el.list.innerHTML = emptyHTML();
-    [el.publish, el.publishM, el.reopt].forEach((b) => { if (b) b.disabled = true; });
+    [el.publish, el.publishM, el.reopt, el.enrutar].forEach((b) => { if (b) b.disabled = true; });
     if (el.dhead) { el.dhead.innerHTML = ''; el.dtop.innerHTML = ''; el.dbot.innerHTML = ''; el.mapwrap.hidden = true; }
   }
   // Para el aviso: qué falló y dónde (en Safari «armarDia@…/admin-rutas-v2.js:812:33»).
@@ -1326,6 +1327,8 @@
   }
   // 0140: «Entregas de turno» (admin-entregas.js) del día que se ve.
   function pintarEntregas() {
+    // 0153: el botón «Cambios» de los tripulantes (admin-cambios.js) va con el día que se ve.
+    if (window.RendioCambios && rt.source === 'live' && !ui.cargando && (rt.day || ui.dia)) { try { window.RendioCambios.pintar(rt.day || ui.dia); } catch (_) { /* el botón es lo de menos */ } }
     if (!el.entregas || !window.RendioEntregas) return;
     window.RendioEntregas.pintar(el.entregas, rt.source === 'live' && !ui.cargando ? (rt.day || ui.dia) : null);
   }
@@ -1342,7 +1345,7 @@
     el.list.innerHTML = window.RendioRutaJulian.diaHTML(ui.manual.vueltas, ui.dia, ui.manual.otras);
     ui.sel = null;
     if (el.detail) { el.detail.classList.remove('is-open'); if (el.dhead) el.dhead.innerHTML = ''; if (el.dtop) el.dtop.innerHTML = ''; if (el.dbot) el.dbot.innerHTML = ''; if (el.mapwrap) el.mapwrap.hidden = true; }
-    [el.publish, el.publishM, el.reopt].forEach((b) => { if (b) { b.disabled = true; b.title = T_JULIAN; } });
+    [el.publish, el.publishM, el.reopt, el.enrutar].forEach((b) => { if (b) { b.disabled = true; b.title = T_JULIAN; } });
     el.publishLabel.textContent = 'Ruta de Julián publicada'; el.pending.hidden = true;
     el.publishM.textContent = 'Ruta de Julián publicada';
   }
@@ -1800,6 +1803,88 @@
     } finally { ui.optimizando = false; }
     ui.sel = null; ui.moving = null; render(); autoSelect();
   }
+  // ── 28-oct · «Enrutar»: solo los conductores ─────────────────────────────────
+  // Camilo (7:49 a. m.): «otro botón en asignación que sea de enrutar, que uno le dé
+  // click y re optimice solo la asignación de conductor sin cambiar nada del
+  // tablero». Las vueltas, su gente, sus horas y su carro quedan iguales: solo se
+  // decide QUIÉN hace cada vuelta que todavía no arranca (lane.drv, «conductor de
+  // esta vuelta»), con la misma cuenta de «alcanza / no alcanza» de la hoja del
+  // conductor (enlace: fin + 8 min en JMC o 2 en una casa + el tramo).
+  // Quietas, con su conductor: terminadas, en curso, pasadas sin marcar, delegadas,
+  // para tomar y las que ya debían haber arrancado (hora pasada).
+  // Cómo reparte, en orden de hora: si el que la tiene llega a tiempo, se queda con
+  // ella (cada cambio es un aviso al tripulante y a dos conductores: solo se cambia
+  // lo que no cuadra). Si no llega, o la vuelta no tiene conductor, el del turno que
+  // llega a tiempo y queda MENOS rato esperando (así los demás quedan libres para lo
+  // que sigue). Si nadie alcanza, el que llega menos tarde, y se dice cuál.
+  function ahoraEnDia() {
+    if (!rt.day) return -Infinity;
+    return Math.round((Date.now() - Date.parse(rt.day + 'T00:00:00-05:00')) / 60000);
+  }
+  function planEnrutar() {
+    const dia = armarDia();
+    const yaDebia = ahoraEnDia() + 5;
+    const movible = (r) => r.stops.length && !r.fija && !r.delegada && !r.tomar && finFila(r) !== 'sinmarcar' && inicioDe(r).at > yaDebia;
+    const movibles = dia.routes.filter(movible).sort((a, b) => inicioDe(a).at - inicioDe(b).at || a.id.localeCompare(b.id));
+    const agenda = {};   // conductor → sus vueltas (las quietas primero; se van sumando las que se le dan)
+    const poner = (id, r) => { (agenda[id] = agenda[id] || []).push(r); };
+    dia.routes.filter((r) => !movible(r) && r.driverId && !r.delegada).forEach((r) => poner(r.driverId, r));
+    const cambios = [], tarde = [], sinTurno = [];
+    movibles.forEach((r) => {
+      const pool = poolTurno(r.shift).map((d) => d.id);
+      if (!pool.length) { if (r.driverId) poner(r.driverId, r); sinTurno.push(r); return; }
+      const ini = inicioDe(r).at, fin = finDe(r).at;
+      const opciones = pool.map((id) => {
+        const suyas = (agenda[id] || []).slice().sort((x, y) => inicioDe(x).at - inicioDe(y).at);
+        if (suyas.some((x) => inicioDe(x).at < fin && ini < finDe(x).at)) return { id, peor: Infinity, espera: Infinity };
+        const antes = suyas.filter((x) => inicioDe(x).at <= ini).pop() || null;
+        const despues = suyas.find((x) => inicioDe(x).at > ini) || null;
+        const a = antes ? enlace(antes, r) : null, d = despues ? enlace(r, despues) : null;
+        const peor = Math.max(a ? a.tarde : -Infinity, d ? d.tarde : -Infinity);
+        return { id, peor, espera: a ? Math.max(0, ini - a.llega) : 24 * 60 };
+      });
+      const llegan = opciones.filter((o) => o.peor <= TOL_CHOQUE).sort((x, y) => x.espera - y.espera);
+      let elegido;
+      if (llegan.length) {
+        elegido = llegan.find((o) => o.id === r.driverId) || llegan[0];
+      } else {
+        const menos = opciones.filter((o) => o.peor < Infinity).sort((x, y) => x.peor - y.peor)[0];
+        const actual = opciones.find((o) => o.id === r.driverId && o.peor < Infinity);
+        elegido = actual && menos && actual.peor <= menos.peor ? actual : (menos || null);
+        if (elegido) tarde.push({ r, id: elegido.id, min: Math.round(elegido.peor) });
+        else { if (r.driverId) poner(r.driverId, r); tarde.push({ r, id: r.driverId, min: null }); return; }
+      }
+      poner(elegido.id, r);
+      if (elegido.id !== r.driverId) cambios.push({ r, de: r.driverId, a: elegido.id });
+    });
+    return { movibles, cambios, tarde, sinTurno };
+  }
+  function enrutar() {
+    if (soloJulian()) { toast('Este día va con la ruta de Julián: quítala para volver al tablero.'); return; }
+    if (rt.source !== 'live' || ui.cargando || ui.optimizando) return;
+    if (!hayVueltas()) { toast('Todavía no hay vueltas: arma el día (Ruta de Julián u Optimizar) y luego enruta.'); return; }
+    const p = planEnrutar();
+    if (!p.movibles.length) { toast('No hay vueltas por enrutar: todo está terminado, en curso, delegado o para tomar.'); return; }
+    const malas = p.tarde.map((x) => `${x.r.vehicle} ${hhmm(inicioDe(x.r).at)}${x.id ? ` (${conductor(x.id).name.split(' ')[0]}${x.min != null ? `, ${x.min} min tarde` : ''})` : ' (nadie del turno puede)'}`);
+    if (!p.cambios.length) {
+      toast(`Ya estaba bien enrutado: ${plural(p.movibles.length, 'vuelta', 'vueltas')} por hacer, nadie cambia de conductor${malas.length ? ` · ojo, nadie llega a tiempo a: ${malas.join(', ')} (delégala o córrele la hora)` : ''}.`, true);
+      return;
+    }
+    snapshot('enrutar');
+    p.cambios.forEach(({ r, a }) => {
+      const lane = rtLaneOf(r.id); if (!lane) return;
+      const car = rt.cars.find((c) => c.id === lane.car);
+      const delCarro = car ? rtCarDrv(car, rtBandOf(lane)) : null;
+      if (a === delCarro) delete lane.drv; else lane.drv = a;
+    });
+    const porQuien = {};
+    p.cambios.forEach(({ a }) => { const n = conductor(a).name.split(' ')[0]; porQuien[n] = (porQuien[n] || 0) + 1; });
+    commit(`Enrutado: ${plural(p.cambios.length, 'vuelta cambia', 'vueltas cambian')} de conductor (${Object.entries(porQuien).map(([n, k]) => `${k} a ${n}`).join(', ')}). Las horas, la gente y los carros no cambiaron`
+      + (malas.length ? ` · nadie llega a tiempo a: ${malas.join(', ')} (delégala o córrele la hora)` : '')
+      + (p.sinTurno.length ? ` · ${plural(p.sinTurno.length, 'vuelta', 'vueltas')} sin conductores en el horario: quedan como estaban` : '')
+      + '. Revisa y dale Publicar');
+  }
+
   // Después de optimizar lo pendiente: las vueltas quietas vuelven tal cual. Las
   // nuevas no pueden llamarse como una quieta (el optimizador numera desde V1), y
   // cada carro se numera otra vez en orden de hora.
@@ -2127,10 +2212,21 @@
     publicandoVuelta = true;
     toast('Publicando esta vuelta…');
     try {
+      const enviar = () => (pick === '__deleg' && quien && quien.name && Api.delegateRoute) ? Api.delegateRoute(lane.raId, quien.name, quien.phone)
+        : pick === '__deleg' ? Api.setRouteDelegated(lane.raId, true)
+          : Api.setVueltaDriver(lane.raId, pick === '__none' ? null : pick === '__carro' ? delCarro : pick);
       let resp;
-      if (pick === '__deleg' && quien && quien.name && Api.delegateRoute) resp = await Api.delegateRoute(lane.raId, quien.name, quien.phone);
-      else if (pick === '__deleg') resp = await Api.setRouteDelegated(lane.raId, true);
-      else resp = await Api.setVueltaDriver(lane.raId, pick === '__none' ? null : pick === '__carro' ? delCarro : pick);
+      try { resp = await enviar(); }
+      catch (e) {
+        // 28-oct (Camilo): «Esa vuelta no existe». Otro jefe (u otro equipo) publicó
+        // el día y la vuelta se volvió a crear con otro id: se busca la misma (misma
+        // gente, mismo sentido) y se intenta una vez más.
+        if (!noExiste(e)) throw e;
+        const id = await filaDeLaVuelta(lane);
+        if (!id || id === lane.raId) throw new Error('esa vuelta ya no está publicada así: vuelve a publicar el día');
+        lane.raId = id;
+        resp = await enviar();
+      }
       const msg = setVueltaDriver(laneId, pick, true, resp && resp.name ? { name: resp.name, phone: resp.phone } : quien);
       if (resp && resp.status) lane.raStatus = resp.status;
       if (limpio) rt.firmaPublicada = firmaActual();
@@ -2147,6 +2243,21 @@
       if (lanzar) { publicandoVuelta = false; throw e; }
       toast('No se pudo publicar esta vuelta: ' + ((e && e.message) || 'error') + '. No cambió nada.');
     } finally { publicandoVuelta = false; }
+  }
+  const noExiste = (e) => !!e && (e.code === 'P0002' || /vuelta no existe/i.test(e.message || ''));
+  // La fila publicada de una vuelta del tablero, buscada por su gente (las reservas)
+  // y su sentido. null si no hay una sola que cuadre.
+  async function filaDeLaVuelta(lane) {
+    if (!window.Api || typeof Api.getPublishedPlan !== 'function' || !rt.day) return null;
+    const mias = (rt.order[lane.id] || []).map((k) => rt.aux[k] && rt.aux[k].reservationId).filter(Boolean);
+    if (!mias.length) return null;
+    let plan = null;
+    try { plan = await Api.getPublishedPlan(rt.day, { estados: ESTADOS_PLAN }); } catch (_) { return null; }
+    const tipo = lane.type === 'lle' ? 'lle' : 'sal';
+    const gente = (v) => [...(v.pendientes || []), ...(v.atendidas || [])].map((x) => x.rid).filter(Boolean);
+    const igual = ((plan && plan.vueltas) || []).filter((v) => (v.type === 'lle' ? 'lle' : 'sal') === tipo
+      && v.status !== 'completed' && (!v.pool || v.paraTomar) && gente(v).length === mias.length && mias.every((r) => gente(v).includes(r)));
+    return igual.length === 1 ? igual[0].id : null;
   }
   // Pone (o quita) el conductor de UNA vuelta. No re-encadena ni re-programa
   // nada: las otras vueltas y las horas de todas quedan como estaban.
@@ -2840,7 +2951,7 @@
       list: $('#rv2-list'), listwrap: $('#rv2-listwrap'), detail: $('#rv2-detail'), summary: $('#rv2-summary'),
       avisos: $('#rv2-avisos'), drivers: $('#rv2-drivers'), say: $('#rv2-say'), entregas: $('#rv2-entregas'),
       scrim: $('#rv2-scrim'), sheet: $('#rv2-sheet'), toast: $('#rv2-toast'),
-      dayLabel: $('#rv2-dayLabel'), pubChip: $('#rv2-pubChip'), reopt: $('#rv2-reopt'), reoptLabel: $('#rv2-reoptLabel'),
+      dayLabel: $('#rv2-dayLabel'), pubChip: $('#rv2-pubChip'), reopt: $('#rv2-reopt'), reoptLabel: $('#rv2-reoptLabel'), enrutar: $('#rv2-enrutar'),
       publish: $('#rv2-publish'), publishLabel: $('#rv2-publishLabel'), pending: $('#rv2-pending'), publishM: $('#rv2-publishM'),
       q: $('#rv2-q'),
     });
@@ -2856,6 +2967,7 @@
     el.publish.addEventListener('click', openPublish);
     el.publishM.addEventListener('click', openPublish);
     el.reopt.addEventListener('click', reoptimizar);
+    if (el.enrutar) el.enrutar.addEventListener('click', enrutar);   // 28-oct
     $('#rv2-wa').addEventListener('click', abrirWhatsApp);
     // 0125: la ruta de Julián y el Excel del día (con la estructura del Formulario).
     if ($('#rv2-julian')) $('#rv2-julian').addEventListener('click', () => { if (window.RendioRutaJulian) window.RendioRutaJulian.abrir(); });
@@ -2984,6 +3096,7 @@
     // 0125: la ruta de Julián (admin-ruta-julian.js) usa la hoja, el aviso y el día.
     _sheet: { open: openSheet, close: closeSheet, head: sheetHead }, toast, diaActual: () => ui.dia,
     delegar: openDelegar,   // 0131: «Delegar a…» (lo usa la ruta de Julián)
+    enrutar, _planEnrutar: planEnrutar,   // 28-oct
     // 0152: «Ver otras opciones» de la tarjeta del detector de cadena: la hoja
     // «Conductor de esta vuelta» de la vuelta publicada (raId), si está en el día cargado.
     abrirVuelta: (raId) => {

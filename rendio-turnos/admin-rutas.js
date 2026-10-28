@@ -1662,6 +1662,7 @@
         etaDe[s.id] = s.cita ?? s.eta;
       });
       return {
+        laneId: l.id,   // 28-oct: para quedarse con la fila nueva de la vuelta (r.ids)
         vehicleId: car ? car.vehicleId : null,
         planCar: car ? car.id : null,   // 0124: «Carro 1»; la placa la pone el turno del conductor
         planVehicleId: car ? (car.planVehicleId || null) : null,   // 0132: «Carro 1 = PRW443» (la indicación)
@@ -1692,6 +1693,14 @@
     try {
       const firma = rtFirmaPlan();
       const r = await Api.saveRoutePlan(rt.day, lanes);
+      // 28-oct (Camilo, «No deja cambiar conductor · Esa vuelta no existe»): publicar
+      // vuelve a crear las vueltas que no han arrancado, con id nuevo. El tablero se
+      // queda con el nuevo; la que no se volvió a crear y no arrancó ya no existe.
+      if (r && r.ids) rt.lanes.forEach(l => {
+        const x = r.ids[l.id];
+        if (x) { l.raId = x.id; l.raStatus = x.status; }
+        else if (l.raId && !(rt.rv2Fijas && rt.rv2Fijas[l.id])) { delete l.raId; delete l.raStatus; }
+      });
       // Si alguna vuelta no entró, el plan NO queda como publicado: el botón sigue
       // pidiendo publicar y el jefe lo ve (antes se contaba en silencio como «skipped»).
       if (!r.failed) rt.firmaPublicada = firma;
