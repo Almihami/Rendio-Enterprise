@@ -1483,6 +1483,59 @@ console.log('\n── 28-oct · «Enrutar»: solo los conductores, el tablero no
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 28-oct · 0154: lo que el SISTEMA corrió no se deshace al publicar ──');
+{
+  // A Fernando el sistema le corrió la vuelta tres veces el 28-oct: el tablero seguía
+  // con la hora vieja y cada Publicar se la devolvía.
+  const b = await boot();
+  const { w, q, click, T, V2 } = b;
+  const R = () => T().rt;
+  // El tablero rearma sus vueltas al cargar: siempre la de ahora, por su id.
+  const idDe = (k) => R().lanes.find((l) => (R().order[l.id] || []).includes('r' + k)).id;
+  const L = (id) => R().lanes.find((l) => l.id === id);
+  const K = idDe('K'), M = idDe('M');
+  t('la llegada de Tomás y Sara (V-03, 16:30, Diego) se abrió con su hora y conductor de la base', L(K).start === '16:30' && L(K).raDbDrv === 'd4' && L(K).raHm === '16:30', JSON.stringify({ s: L(K).start, d: L(K).raDbDrv, h: L(K).raHm }));
+  const raK = L(K).raId, raM = L(M).raId;
+  // La base: el acomodo la corrió a las 16:50 y se la pasó a Rubén; y la salida de
+  // Felipe (10:00) la corrió a las 10:20, pero el jefe ya le había cambiado la hora.
+  const plan0 = w.Api.getPublishedPlan;
+  w.Api.getPublishedPlan = async (day, o) => {
+    const p = await plan0(day, o);
+    if (p && p.vueltas) p.vueltas.forEach((v) => {
+      if (v.id === raK) { v.startAt = `${w.RV2Fixture.DAY}T16:50:00-05:00`; v.driverProfileId = 'd5'; }
+      if (v.id === raM) { v.startAt = `${w.RV2Fixture.DAY}T10:20:00-05:00`; }
+    });
+    return p;
+  };
+  // El jefe le cambió la hora a la de Felipe en la pantalla (como «Cambiar hora»).
+  L(M).start = '10:05'; R().horasPub[M] = { start: '10:05', sig: (R().order[M] || []).join(','), etas: { rM: 605 } };
+  V2().render(); await wait(5);
+  await V2()._refrescarFines(); await wait(10);
+  t('cada minuto: el tablero toma la hora nueva (16:50) y el conductor (Rubén) que puso el sistema', L(K).start === '16:50' && V2().dia().byId[K].driverId === 'd5', JSON.stringify({ s: L(K).start, d: V2().dia().byId[K].driverId }));
+  t('…y lo dice: «El sistema cambió 1 vuelta (vuelo que viene tarde): V-03 16:30 → 16:50 con Rubén»', /El sistema cambió 1 vuelta \(vuelo que viene tarde\): V-03 16:30 → 16:50 con Rubén\. El tablero ya lo tiene\./.test(b.toastV2() || ''), b.toastV2());
+  t('la que el jefe había tocado (Felipe, 10:05) se queda con lo del jefe', L(M).start === '10:05', L(M).start);
+  const toast1 = b.toastV2();
+  await V2()._refrescarFines(); await wait(10);
+  t('la pasada siguiente no repite nada (ya está igual)', L(K).start === '16:50' && b.toastV2() === toast1, b.toastV2());
+  // Antes de publicar: lo del último minuto. El sistema la corre otra vez, a las 17:10.
+  w.Api.getPublishedPlan = async (day, o) => {
+    const p = await plan0(day, o);
+    if (p && p.vueltas) p.vueltas.forEach((v) => { if (v.id === raK) { v.startAt = `${w.RV2Fixture.DAY}T17:10:00-05:00`; v.driverProfileId = 'd5'; } });
+    return p;
+  };
+  b.log.saved.length = 0;
+  V2().abrirPublicar(); await wait(10);
+  const go = q('#rv2-doPublish:not([hidden])');
+  if (go && !go.disabled) { click(go); } else { click(q('#rv2-forceOpen')); await wait(5); const a1 = q('#rv2-forceRisk'); if (a1) { a1.checked = true; a1.dispatchEvent(new w.Event('change')); } const a2 = q('#rv2-forceUnr'); if (a2) { a2.checked = true; a2.dispatchEvent(new w.Event('change')); } click(q('#rv2-doForce')); }
+  await wait(80);
+  const pub = (b.log.saved.at(-1) || { lanes: [] }).lanes.find((l) => l.laneId === K);
+  t('al publicar, primero toma lo que el sistema corrió en el último minuto (17:10, Rubén): no se lo devuelve', !!pub && /T17:10:00/.test(pub.startAt) && pub.driverProfileId === 'd5', JSON.stringify(pub && { s: pub.startAt, d: pub.driverProfileId }) || 'no se publicó');
+  const pubM = (b.log.saved.at(-1) || { lanes: [] }).lanes.find((l) => l.laneId === M);
+  t('…y la de Felipe sale con la hora del jefe (10:05)', !!pubM && /T10:05:00/.test(pubM.startAt), JSON.stringify(pubM && pubM.startAt));
+  t('sin errores de consola (0154)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 console.log('\n── 26-oct · 0132: «¿Qué carro es Carro 1?» (el carro de la flota del plan) ──');
 {
   const b = await boot();
