@@ -125,7 +125,7 @@ console.log('\n── 0152 · La tarjeta «X no alcanza · Recomendado: Y» ─�
   t('core.js: #/rutas?cadena=<id> abre la tarjeta', /params\.get\('cadena'\)/.test(core) && /RendioCadena\.abrir\(cad\)/.test(core));
   t('api.js: las cuatro RPC con sus parámetros', /admin_cadena_ver', \{ p_alert: id \}/.test(api) && /admin_cadena_aplicar', \{ p_alert: id \}/.test(api)
     && /admin_cadena_descartar', \{ p_alert: id \}/.test(api) && /admin_cadena_encender', \{ p_on: !!on \}/.test(api) && /cadenaVer, cadenaAplicar, cadenaDescartar, cadenaEncender/.test(api));
-  t('index.html carga admin-cadena.js y el SW la guarda (v237)', /<script src="admin-cadena\.js"><\/script>/.test(html) && /'\/admin-cadena\.js'/.test(sw) && /rendio-turnos-v237/.test(sw));
+  t('index.html carga admin-cadena.js y el SW la guarda (v237)', /<script src="admin-cadena\.js"><\/script>/.test(html) && /'\/admin-cadena\.js'/.test(sw) && +((/rendio-turnos-v(\d+)/.exec(sw) || [])[1] || 0) >= 237);
 }
 console.log(`\n${ok} en verde, ${bad} en rojo`);
 process.exit(bad ? 1 : 0);

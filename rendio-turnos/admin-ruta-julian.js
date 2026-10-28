@@ -143,19 +143,40 @@
 
   // ── 2. Emparejar ────────────────────────────────────────────────────────────
   // candidato: { rid, auxId, n, type: 'sal'|'lle', dia, dl: 'HH:MM', vuelo, zona, sector }
+  // Cuánto se parece el nombre escrito al del pedido (sin horas ni lugar).
+  // Una inicial sola («Pepe M» y alguien con apellido en M) no basta: tiene que
+  // parecerse una palabra de verdad; la inicial solo ayuda a escoger («Karol L»).
+  function puntosNombre(np, c) {
+    const tk = np.split(' '), cn = norm(c.n).split(' ');
+    let s = 0, palabra = false;
+    tk.forEach((t, i) => {
+      if (cn.includes(t)) { s += (i === 0 ? 35 : 30); if (t.length >= 2) palabra = true; }
+      else if (t.length >= 3 && cn.some((x) => x.startsWith(t))) { s += 20; palabra = true; }
+      else if (t.length >= 4 && cn.some((x) => x.startsWith(t.slice(0, 4)))) { s += 10; palabra = true; }
+      else if (t.length === 1 && cn.slice(1).some((x) => x.startsWith(t))) s += 8;
+    });
+    return palabra ? s : 0;
+  }
   function puntaje(p, c, apodos) {
     const np = norm(p.nombre);
     if (!np) return 0;
-    if (apodos[np] && apodos[np] === c.auxId) return 200;
-    const tk = np.split(' '), cn = norm(c.n).split(' ');
-    let s = 0;
-    tk.forEach((t, i) => {
-      if (cn.includes(t)) s += (i === 0 ? 35 : 30);
-      else if (t.length >= 3 && cn.some((x) => x.startsWith(t))) s += 20;
-      else if (t.length >= 4 && cn.some((x) => x.startsWith(t.slice(0, 4)))) s += 10;
-      else if (t.length === 1 && cn.slice(1).some((x) => x.startsWith(t))) s += 8;
-    });
-    if (!s) return 0;
+    let s = puntosNombre(np, c);
+    // El apodo aprendido SUMA, pero ya no decide solo (27-oct-2026, 2ª). Valía 200
+    // fijo para TODOS los pedidos de esa persona: su salida y su llegada empataban, y
+    // al pegar una actualización sin la línea de la mañana, «cano (AV9340)» de la
+    // noche quedaba emparejada con la salida. Ahora el sentido y la hora deciden entre
+    // sus pedidos, como con cualquier nombre.
+    if (apodos[np] && apodos[np] === c.auxId) s = Math.max(s, 60) + 100;
+    // Sin parecido en el nombre (un apodo que aún no se aprende: «La flaca
+    // (Piedemonte)»): si el paréntesis es SU conjunto y la hora le cuadra, sale de
+    // opción, pero nunca se elige sola. Antes quedaba «sin la app» y la tripulante de
+    // verdad, sin carro.
+    let porLugar = false;
+    if (!s) {
+      const lz = norm(p.lugar), cz = norm(c.zona || '').split(' ');
+      if (p.vuelo || !lz || !lz.split(' ').some((t) => t.length >= 4 && cz.includes(t))) return 0;
+      porLugar = true; s = 1;
+    }
     const dl = toMin(c.dl);
     if (p.vuelo) {
       const dig = (x) => String(x || '').replace(/\D/g, '');
@@ -189,6 +210,7 @@
     if (p.dia && c.dia && p.dia !== c.dia) s -= 30;
     const lz = norm(p.lugar), cz = norm(c.zona + ' ' + (c.sector || ''));
     if (lz && !p.vuelo && cz && lz.split(' ').some((t) => t.length >= 3 && cz.includes(t))) s += 15;
+    if (porLugar) return s >= 36 ? Math.min(s, 30) : 0;   // la hora tiene que cuadrar
     return s;
   }
   // personas: [{ key, nombre, min, dia, vuelo, deadline, lugar }] → { [key]: { auto, rid, opciones } }
@@ -214,7 +236,9 @@
     });
     const out = {};
     pers.forEach((p) => {
-      out[p.key] = { auto: !!hecho[p.key], rid: hecho[p.key] || null, opciones: porPersona[p.key].slice(0, 8).map((o) => o.c.rid) };
+      const ops = porPersona[p.key].slice(0, 8);
+      out[p.key] = { auto: !!hecho[p.key], rid: hecho[p.key] || null, opciones: ops.map((o) => o.c.rid),
+        puntos: Object.fromEntries(ops.map((o) => [o.c.rid, o.s])), nombre: Object.fromEntries(ops.map((o) => [o.c.rid, puntosNombre(norm(p.nombre), o.c)])) };
     });
     return out;
   }
@@ -230,11 +254,23 @@
     }).filter((c) => c.rid);
   }
   async function cargarCandidatos(dia) {
-    // Día mezclado (26-oct-2026): el tablero saca de rt.aux a quien va en una vuelta
-    // pegada (rt.rv2AuxPegadas, admin-rutas-v2.js); para volver a pegar y para el
-    // Excel del día siguen siendo pedidos del día.
-    const hoy = (typeof rt !== 'undefined' && rt.day === dia && rt.aux) ? candidatosDe(Object.assign({}, rt.aux, rt.rv2AuxPegadas || {}), dia)
-      : (W.Api && Api.listRoutePlanning ? candidatosDe(((await Api.listRoutePlanning('all', dia).catch(() => null)) || {}).aux, dia) : []);
+    // LOS PEDIDOS SE LEEN DE LA BASE, FRESCOS (27-oct-2026, 2ª). La profa: «al subir
+    // una actualización no se empareja con la base de datos correctamente». Se
+    // emparejaba contra lo que el tablero leyó al abrir el día (rt.aux): quien pidió
+    // después (o cambió su pedido) no estaba, y la lista ofrecía a otros parecidos.
+    // Ahora cada «Leer la ruta» vuelve a leer los pedidos del día; los nuevos entran
+    // al tablero al pasar (meterPegado, opts.nuevos). Sin conexión, lo del tablero:
+    // en el día mezclado (26-oct) eso incluye rt.rv2AuxPegadas, que el tablero sacó de
+    // rt.aux pero siguen siendo pedidos del día.
+    const enPantalla = typeof rt !== 'undefined' && rt.day === dia && rt.aux;
+    let fresco = null;
+    try { fresco = W.Api && Api.listRoutePlanning ? await Api.listRoutePlanning('all', dia) : null; } catch (_) { fresco = null; }
+    if (fresco && (!fresco.aux || (fresco.day && fresco.day !== dia))) fresco = null;
+    st.frescos = fresco ? { aux: fresco.aux, colors: fresco.colors || {} } : null;
+    // La madrugada que va en una vuelta pegada con el día anterior no se vuelve a ofrecer.
+    const ajenas = new Set((enPantalla && rt.rv2Ajenas) || []);
+    const hoy = fresco ? candidatosDe(fresco.aux, dia).filter((c) => !ajenas.has(c.rid))
+      : (enPantalla ? candidatosDe(Object.assign({}, rt.aux, rt.rv2AuxPegadas || {}), dia) : []);
     let mad = [];
     try {
       const sig = W.Api && Api.listRoutePlanning ? await Api.listRoutePlanning('all', sumarDia(dia, 1)) : null;
@@ -244,7 +280,8 @@
   }
 
   // ── 4. La hoja: pegar → revisar → publicar ──────────────────────────────────
-  const st = { dia: null, texto: '', lectura: null, cands: [], apodos: {}, elegido: {}, auto: {}, opciones: {}, ocupado: false };
+  const st = { dia: null, texto: '', lectura: null, cands: [], apodos: {}, elegido: {}, auto: {}, opciones: {}, puntos: {}, ocupado: false,
+    frescos: null, modo: 'rearmar', modoMano: false, sinApp: {} };
   const V2 = () => W.RendioRutasV2 || null;
   const sheet = () => (V2() && V2()._sheet) || null;
   const say = (m) => { const v = V2(); if (v && v.toast) v.toast(m); else if (W.toast) W.toast(m); };
@@ -277,8 +314,13 @@
       else if (k === 'xl') descargarDelAviso(b.getAttribute('data-dia'));
     });
     sh.addEventListener('change', (e) => {
+      if (e.target && e.target.name === 'rj-modo') { st.modo = e.target.value === 'parte' ? 'parte' : 'rearmar'; st.modoMano = true; pintarPrevia(); return; }
       const s = e.target.closest('[data-rj-pick]'); if (!s) return;
-      st.elegido[s.getAttribute('data-rj-pick')] = s.value || '';
+      const k = s.getAttribute('data-rj-pick');
+      let v = s.value || '';
+      delete st.sinApp[k];
+      if (v === APP) { v = conLaApp(k); if (!v) st.sinApp[k] = true; }
+      st.elegido[k] = v;
       pintarPrevia();
     });
     sh.addEventListener('input', (e) => {
@@ -304,22 +346,49 @@
     // 0133: los conjuntos, para ubicar al que no tiene cuenta por lo que dice el paréntesis.
     st.residencias = [];
     try { st.residencias = (W.Api && Api.listResidencesAdmin) ? ((await Api.listResidencesAdmin()) || []).filter((x) => x.is_active !== false) : []; } catch (_) { st.residencias = []; }
-    st.elegido = {}; st.auto = {}; st.opciones = {};
-    Object.keys(r).forEach((k) => { st.elegido[k] = r[k].rid || ''; st.auto[k] = r[k].rid || ''; st.opciones[k] = r[k].opciones; });
+    st.elegido = {}; st.auto = {}; st.opciones = {}; st.puntos = {}; st.nombre = {}; st.sinApp = {};
+    Object.keys(r).forEach((k) => { st.elegido[k] = r[k].rid || ''; st.auto[k] = r[k].rid || ''; st.opciones[k] = r[k].opciones; st.puntos[k] = r[k].puntos || {}; st.nombre[k] = r[k].nombre || {}; });
     // 0133 (lista de los jefes, 26-oct): quien no pidió por la app pero Julián lo
     // puso con lugar (o vuelo) VA en la ruta, sin cuenta (Kriss). Solo si no se
     // parece a nadie del día: si hay parecidos («Revisa: elige quién es»), decide
-    // el jefe. Siempre se puede cambiar a «No va».
+    // el jefe. Siempre se puede cambiar a «Va en la ruta (tiene la app)».
     pers.forEach((p) => { if (!st.elegido[p.key] && !(st.opciones[p.key] || []).length && (p.lugar || p.vuelo)) { st.elegido[p.key] = GUEST; st.auto[p.key] = GUEST; } });
+    // ¿El texto es el día entero o unas vueltas? Si trae a la mayoría de los que
+    // siguen por mover en el tablero, se rearma el día (lo de siempre al mandar la
+    // ruta al grupo); si son unas pocas, solo esas. El jefe lo puede cambiar.
+    if (!st.modoMano) {
+      const v2 = V2();
+      const pend = v2 && typeof v2.pendientesDelTablero === 'function' && typeof rt !== 'undefined' && rt.day === st.dia ? v2.pendientesDelTablero() : [];
+      const elegidos = new Set(Object.values(st.elegido).filter(esPersona));
+      const traidos = pend.filter((x) => elegidos.has(x)).length;
+      st.modo = !pend.length || traidos * 2 >= pend.length ? 'rearmar' : 'parte';
+    }
     pintarPrevia();
   }
   // 0133: el pasajero sin cuenta («Va sin cuenta»).
   const GUEST = '__guest';
   // 27-oct (Camilo): «no entiendo qué significan esas dos opciones», y si no elegía
-  // nada la persona no entraba y «nunca aparece en el listado». Ahora '' es FALTA
-  // ELEGIR (no deja pasar al tablero) y «No va» es una opción que se elige.
-  const NOVA = '__nova';
-  const esPersona = (rid) => !!rid && rid !== GUEST && rid !== NOVA;
+  // nada la persona no entraba y «nunca aparece en el listado». '' es FALTA ELEGIR
+  // (no deja pasar al tablero).
+  // 27-oct (2ª, la profa): «No va en esta ruta» no servía: al actualizar, quien la
+  // elegía no subía. Si está en el texto, VA. Las dos opciones son:
+  //   · «Va en la ruta (tiene la app y le llega aviso)»: su pedido en la base, el que
+  //     más se parece (o el que el jefe elija de la lista);
+  //   · «Va, pero no tiene la app (no le llegan avisos)»: sin pedido; entra al
+  //     tablero igual y se mueve como cualquiera.
+  const APP = '__app';
+  const esPersona = (rid) => !!rid && rid !== GUEST && rid !== APP;
+  // «Va en la ruta (tiene la app)»: el pedido que se eligió solo; si no hubo, el más
+  // parecido que nadie más tenga, con el nombre de verdad parecido (no solo la hora).
+  function conLaApp(k) {
+    const otros = new Set(Object.entries(st.elegido).filter(([x, r]) => x !== k && esPersona(r)).map(([, r]) => r));
+    if (esPersona(st.auto[k]) && !otros.has(st.auto[k])) return st.auto[k];
+    const pts = st.puntos[k] || {}, nom = st.nombre[k] || {};
+    const libres = (st.opciones[k] || []).filter((rid) => !otros.has(rid) && (pts[rid] || 0) >= 25);
+    // Con el nombre parecido, el primero; si no (un apodo), solo si hay UNO que cuadra
+    // por su conjunto y su hora.
+    return libres.find((rid) => (nom[rid] || 0) >= 20) || (libres.length === 1 ? libres[0] : '');
+  }
   // El conjunto que dice el paréntesis («Campus Reservado»), si está en el catálogo.
   function conjuntoDe(lugar) {
     const n = norm(lugar || ''); if (n.length < 3) return null;
@@ -339,7 +408,7 @@
     const usados = new Map();
     Object.entries(st.elegido).forEach(([k, rid]) => { if (esPersona(rid)) usados.set(rid, (usados.get(rid) || []).concat(k)); });
     let h = '';
-    let nOk = 0, nRev = 0, nSin = 0, nGuest = 0, nFalta = 0;
+    let nOk = 0, nRev = 0, nGuest = 0, nFalta = 0;
     L.bloques.forEach((b, bi) => {
       const lle = esLlegada(b);
       // Dónde los recoge una llegada que no es (solo) de vuelos: «Recoge en JMC», «…en el Hotel Río Verde».
@@ -352,16 +421,16 @@
         const esG = rid === GUEST;
         const c = esPersona(rid) ? cand(rid) : null;
         const doble = esPersona(rid) && (usados.get(rid) || []).length > 1;
-        const estado = esG ? 'guest' : rid === NOVA ? 'sin' : !rid ? 'falta' : (doble ? 'rev' : (st.auto[k] === rid ? 'ok' : 'man'));
-        if (estado === 'ok' || estado === 'man') nOk++; else if (estado === 'rev') nRev++; else if (estado === 'guest') nGuest++; else if (estado === 'falta') nFalta++; else nSin++;
+        const estado = esG ? 'guest' : !rid ? 'falta' : (doble ? 'rev' : (st.auto[k] === rid ? 'ok' : 'man'));
+        if (estado === 'ok' || estado === 'man') nOk++; else if (estado === 'rev') nRev++; else if (estado === 'guest') nGuest++; else nFalta++;
         const casa = casaDe(l);
         const cj = esG ? conjuntoDe(casa) : null;
         const ops = [...new Set([...(st.opciones[k] || []), ...(esPersona(rid) ? [rid] : [])])].map(cand).filter(Boolean);
         const resto = st.cands.filter((x) => !ops.includes(x)).sort((a, z) => a.n.localeCompare(z.n));
         h += `<div class="rj-p" data-st="${estado}"><span class="rj-t">${esc(hmTxt(l.min))}</span><span class="rj-w">${esc(nombre)}${l.lugar ? ` <em>(${esc(l.lugar)})</em>` : ''}</span>`
           + `<select data-rj-pick="${k}" aria-label="${esc('Quién es ' + nombre)}">${!rid ? '<option value="" selected disabled>— Elige quién es —</option>' : ''}`
-          + `<option value="${NOVA}"${rid === NOVA ? ' selected' : ''}>— No va en esta ruta —</option>`
-          + `<option value="${GUEST}"${esG ? ' selected' : ''}>— Va, pero no tiene la app (no le llega aviso) —</option>`
+          + `<option value="${APP}">Va en la ruta (tiene la app y le llega aviso)</option>`
+          + `<option value="${GUEST}"${esG ? ' selected' : ''}>Va, pero no tiene la app (no le llegan avisos)</option>`
           + (ops.length ? `<optgroup label="Más probables">${ops.map((x) => `<option value="${esc(x.rid)}"${x.rid === rid ? ' selected' : ''}>${esc(etiqueta(x))}</option>`).join('')}</optgroup>` : '')
           + (resto.length ? `<optgroup label="Todos los del día">${resto.map((x) => `<option value="${esc(x.rid)}">${esc(etiqueta(x))}</option>`).join('')}</optgroup>` : '')
           + `</select>${doble ? '<small class="rj-bad">Está dos veces</small>'
@@ -369,9 +438,9 @@
             : (c && c.type !== (lle ? 'lle' : 'sal') ? (desde && c.type === 'sal'
                 ? `<small class="rj-bad">Pidió una salida (de la casa a JMC), no el regreso desde ${esc(DESDE_TXT[desde])}: va en otra vuelta. Revisa que sea ella</small>`
                 : `<small class="rj-bad">Es ${c.type === 'lle' ? 'una llegada' : 'una salida'}: va en otra vuelta. Revisa que sea ella</small>`)
-              : esG ? `<small>Sin cuenta: va en la ruta${cj ? ' · ' + esc(cj.name) : (casa ? ' · «' + esc(casa) + '» (sin ubicar en el mapa)' : ' sin dirección: el conductor no sabrá dónde es')}. No le llegan avisos.</small>`
-              : estado === 'sin' ? '<small>No va: no entra a la ruta.</small>'
-              : (estado === 'falta' ? `<small class="rj-bad">${!ops.length ? 'No la encontré en los pedidos del día: búscala abajo en la lista, o elige «No tiene la app» o «No va»'
+              : esG ? `<small>Sin la app: va en la ruta${cj ? ' · ' + esc(cj.name) : (casa ? ' · «' + esc(casa) + '» (sin ubicar en el mapa)' : ' sin dirección: el conductor no sabrá dónde es')}. No le llegan avisos; en el tablero se mueve como cualquiera.</small>`
+              : (estado === 'falta' ? `<small class="rj-bad">${st.sinApp[k] ? `No encontré a «${esc(nombre)}» en los pedidos de este día. Si tiene la app, búscala en «Todos los del día»; si no, elige «Va, pero no tiene la app»`
+                : !ops.length ? 'No está en los pedidos del día: búscala en «Todos los del día», o elige «Va, pero no tiene la app»'
                 : (desde && ops.every((x) => x.type === 'sal') ? `Pidió una salida, no el regreso desde ${esc(DESDE_TXT[desde])}: elige quién es` : 'Hay pedidos parecidos: elige quién es')}</small>`
                 : (estado === 'man' && c ? '<small>Elegido a mano: se aprende</small>' : '')))}</div>`;
       }));
@@ -380,14 +449,22 @@
     const elegidos = new Set(Object.values(st.elegido).filter(esPersona));
     const fuera = st.cands.filter((c) => !elegidos.has(c.rid));
     const resumen = `<div class="rj-sum"><b>${L.bloques.length} vueltas · ${nOk} emparejados</b>`
-      + (nFalta ? `<span class="rj-bad">${nFalta} sin elegir: elige quién es (o «No va») antes de pasar al tablero</span>` : '')
+      + (nFalta ? `<span class="rj-bad">${nFalta} sin elegir: elige quién es (o «Va, pero no tiene la app») antes de pasar al tablero</span>` : '')
       + (nRev ? `<span class="rj-bad">${nRev} repetidos: corrígelos antes de publicar</span>` : '')
-      + (nGuest ? `<span>${nGuest} sin cuenta: van en la ruta, sin aviso</span>` : '')
-      + (nSin ? `<span>${nSin} no van</span>` : '')
+      + (nGuest ? `<span>${nGuest} sin la app: van en la ruta, sin aviso</span>` : '')
       + (fuera.length ? `<span class="rj-warn">Pidieron por la app y no están en tu ruta: ${esc(fuera.map((c) => `${c.n.split(' ')[0]} (${c.type === 'lle' ? 'llega' : 'sale'} ${c.dl})`).join(', '))}</span>` : '')
       + (L.raras.length ? `<span class="rj-warn">No entendí: ${esc(L.raras.join(' · '))}</span>` : '')
       + '</div>';
-    prev.innerHTML = resumen + h;
+    // Qué hace con el tablero (27-oct-2026, 2ª): rearmar el día o solo esas vueltas.
+    const v2 = V2();
+    const pend = v2 && typeof v2.pendientesDelTablero === 'function' && typeof rt !== 'undefined' && rt.day === st.dia ? v2.pendientesDelTablero() : [];
+    const quedan = pend.filter((x) => !elegidos.has(x)).length;
+    const modo = `<div class="rj-modo" role="radiogroup" aria-label="Qué hace con el tablero">`
+      + `<label class="rj-modo-op"><input type="radio" name="rj-modo" value="rearmar"${st.modo !== 'parte' ? ' checked' : ''}><span><b>Rearmar el día con esta ruta</b>`
+      + `<small>El tablero queda como el texto, sin repetidos. ${quedan ? `${quedan} ${quedan === 1 ? 'pedido que no está en el texto queda' : 'pedidos que no están en el texto quedan'} sin carro (en Avisos).` : 'Nadie queda sin carro.'} Las vueltas que no cambian se quedan con su conductor; lo que ya arrancó no se toca.</small></span></label>`
+      + `<label class="rj-modo-op"><input type="radio" name="rj-modo" value="parte"${st.modo === 'parte' ? ' checked' : ''}><span><b>Solo cambiar estas vueltas</b>`
+      + '<small>Para cuando pegas unas pocas: el resto del tablero queda como está.</small></span></label></div>';
+    prev.innerHTML = resumen + modo + h;
     const pub = document.querySelector('#rv2-sheet [data-rj="publicar"]');
     if (pub) {
       pub.disabled = !(nOk + nGuest) || nRev > 0 || nFalta > 0 || st.ocupado;
@@ -482,10 +559,12 @@
       let vuelos = 0;
       try { vuelos = W.renderVuelos && typeof W.renderVuelos.seguirDesdeTexto === 'function' ? await W.renderVuelos.seguirDesdeTexto(st.texto, st.dia) : 0; } catch (_) { vuelos = 0; }
       const S = sheet(); if (S) S.close();
-      const r = hoy.length ? v2.meterPegado(hoy) : null;
+      const r = hoy.length ? v2.meterPegado(hoy, { rearmar: st.modo !== 'parte', nuevos: st.frescos }) : null;
       if (sig.length && typeof v2.guardarPegado === 'function') v2.guardarPegado(sumarDia(st.dia, 1), sig);
       const partes = [];
       if (r && r.vueltas) partes.push(`${r.vueltas} ${r.vueltas === 1 ? 'vuelta quedó' : 'vueltas quedaron'} en el tablero (${r.carros.join(', ')})`);
+      if (r && r.iguales) partes.push(`${r.iguales} ${r.iguales === 1 ? 'sigue igual, con su conductor' : 'siguen iguales, con su conductor'}`);
+      if (r && r.sinCarro && r.sinCarro.length) partes.push(`${r.sinCarro.length === 1 ? 'quedó sin carro' : 'quedaron sin carro'} (no ${r.sinCarro.length === 1 ? 'está' : 'están'} en tu ruta): ${r.sinCarro.join(', ')}`);
       if (r && r.nuevosCarros && r.nuevosCarros.length) partes.push(`no cabían en los carros del día: se agregó ${r.nuevosCarros.join(', ')}`);
       if (r && r.enCurso && r.enCurso.length) partes.push(`${r.enCurso.join(', ')} ya ${r.enCurso.length === 1 ? 'va' : 'van'} en una vuelta en curso y ${r.enCurso.length === 1 ? 'se queda' : 'se quedan'} ahí`);
       if (sig.length) partes.push(`la madrugada del ${diaTxt(sumarDia(st.dia, 1))} (${sig.length} ${sig.length === 1 ? 'vuelta' : 'vueltas'}) entra cuando abras ese día`);

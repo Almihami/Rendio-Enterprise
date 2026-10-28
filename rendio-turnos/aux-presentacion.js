@@ -449,7 +449,7 @@
   // conductor (admin-rutas.js, «Conductor asignado»), sin el emoji del título.
   const RX_DEMO_PUSH = {
     t: 'Conductor asignado',
-    d: 'Ya tienes conductor para tu traslado. Ábrelo para seguirlo en vivo.',
+    d: 'Te recogemos mañana a las 4:30. Ábrelo para seguirlo en vivo.',   // 27-oct: con la hora
   };
 
   const rxLast = () => SLIDES.length - 1;

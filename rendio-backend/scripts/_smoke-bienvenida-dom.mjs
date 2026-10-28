@@ -138,7 +138,7 @@ if (RX) {
     !!q('.rx-center .rx-bell-big svg') && qa('.rx-bell-big i').length === 2 && !!q('.rx-center h1.rx-c-h') && !!q('.rx-center p.rx-c-p'));
   const demo = q('.rx-demo-push');
   t('el ejemplo es un aviso REAL de la app (el de «Conductor asignado»), sin nombres', !!demo && !!demo.querySelector('.rx-push-ic svg')
-    && /Conductor asignado/.test(demo.textContent) && /Ya tienes conductor para tu traslado/.test(demo.textContent));
+    && /Conductor asignado/.test(demo.textContent) && /Te recogemos mañana a las 4:30/.test(demo.textContent));
   t('«Activar notificaciones» y «Ahora no» en .rx-foot.abs (onb-allow / onb-later)',
     /Activar notificaciones/.test(q('.rx-foot.abs .rx-btn.pri[data-ax="onb-allow"]')?.textContent || '') && !!q('.rx-foot.abs .rx-btn.ghost[data-ax="onb-later"]'));
   t('sin datos inventados', prohibidos().length === 0, prohibidos().join(', '));
