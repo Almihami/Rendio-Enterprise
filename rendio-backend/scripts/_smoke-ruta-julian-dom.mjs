@@ -1215,7 +1215,10 @@ console.log('\n── T · «Conductor asignado» trae la hora (los tripulantes:
 console.log('\n── U · 28-oct (Camilo): «el que se debe pegar es de la base de datos de tripulantes» ──');
 {
   const creados = [], extra = {}, aprendidos = [];
+  const reloj0 = Date.now;
   const U0 = await boot({ antes: (w) => {
+    // El día de prueba visto desde su madrugada: todo lo del texto está por venir.
+    w.Date.now = () => Date.parse(DAY + 'T02:00:00-05:00');
     w.Api.listAuxiliares = async () => [
       { id: 'aux-isa', name: 'Isabella Páez Gómez', active: true, deleted: false, res1: { name: 'Marinilla Real', sector: 'Marinilla' }, phone: '3000000001' },
       { id: 'aux-va1', name: 'Valeria Ríos Arango', active: true, deleted: false, res1: { name: 'Solare', sector: 'Marinilla' } },
@@ -1244,6 +1247,7 @@ console.log('\n── U · 28-oct (Camilo): «el que se debe pegar es de la base
   const fila = (nombre) => qa('#rj-prev .rj-p').find((p) => txt(p.querySelector('.rj-w')).startsWith(nombre));
   const quien = (nombre) => { const f = fila(nombre); return f ? f.querySelector('select').value : null; };
   const pub = () => q('#rv2-sheet [data-rj="publicar"]');
+  t('el paréntesis suelto no queda en el nombre («Isabella Páez Gómez», sin « )»)', JJ()._st.lectura.bloques[0].lineas[0].quien === 'Isabella Páez Gómez', JJ()._st.lectura.bloques[0].lineas[0].quien);
   t('Isabella (no pidió ese día) se encuentra por su CUENTA y se elige sola', quien('Isabella') === 'aux:aux-isa' && fila('Isabella').dataset.st === 'crear', fila('Isabella') && txt(fila('Isabella')));
   t('…y dice qué va a pasar: «Tiene la app y no pidió este día: … se le crea el pedido (salida 12:10)»', /Tiene la app y no pidió este día: al pasar al tablero se le crea el pedido \(salida 12:10\) y lo ve en su app/.test(txt(fila('Isabella'))), txt(fila('Isabella')));
   t('…su lista trae el grupo «Tienen cuenta y no pidieron este día» (sin la borrada)', [...fila('Isabella').querySelectorAll('optgroup')].some((g) => /Tienen cuenta y no pidieron/.test(g.label))
@@ -1265,22 +1269,58 @@ console.log('\n── U · 28-oct (Camilo): «el que se debe pegar es de la base
   t('…y entran al tablero como cualquiera, con su pedido nuevo (Isabella a las 11:20)', !!laneCon('res-X1') && !!laneCon('res-X2') && laneCon('res-X1').start === '11:20', JSON.stringify([laneCon('res-X1') && laneCon('res-X1').start, laneCon('res-X2') && laneCon('res-X2').start]));
   t('…sin pasajeros sin cuenta (nadie quedó como «no tiene la app»)', !Object.values(R.aux).some((a) => a.guest));
   t('el apodo elegido a mano («valeria» → Valeria Ríos) se aprende', aprendidos.some((a) => a.alias === 'valeria' && a.auxiliar_profile_id === 'aux-va1'), JSON.stringify(aprendidos));
+  t('…y el aviso dice a cuántos se les creó el pedido', /se les creó el pedido a 2 tripulantes que no habían pedido/.test(U0.toastV2() || ''), U0.toastV2());
   t('sin errores de script', U0.errors.length === 0, U0.errors.join(' | '));
+  U0.w.Date.now = reloj0;
 }
 {
-  // Si la base dice que no (ya tiene una salida a esa hora), la hoja se queda abierta y lo dice.
+  // 28-oct (2ª, video de Camilo: «no hace nada, no pasa al tablero»): si a uno no se le
+  // puede crear el pedido, el pegado NO se frena: ese va sin cuenta y el aviso lo dice.
+  const reloj0 = Date.now;
   const U1 = await boot({ antes: (w) => {
+    w.Date.now = () => Date.parse(DAY + 'T02:00:00-05:00');
     w.Api.listAuxiliares = async () => [{ id: 'aux-isa', name: 'Isabella Páez Gómez', active: true, deleted: false, res1: null }];
     w.Api.adminCreateReservation = async () => { throw new Error('Ya tiene una salida a esa hora (menos de 3 h): revísala en Reservas'); };
   } });
-  const { q, qa, click, type } = U1;
+  const { q, qa, click, type, T } = U1;
   click(q('#rv2-julian')); await wait();
-  type(q('#rj-ta'), '11:20 Isabella Paez (Marinilla)\nDeben estar 12:10');
+  type(q('#rj-ta'), '11:20 Isabella Paez Gomez (Marinilla)\nDeben estar 12:10\n\n4:10 Laura G (Olivar)\nDeben estar 5:00');
   click(q('#rv2-sheet [data-rj="leer"]')); await wait(60);
-  click(q('#rv2-sheet [data-rj="publicar"]')); await wait(120);
-  const f = qa('#rj-prev .rj-p')[0];
-  t('si no se puede crear su pedido, NO pasa al tablero: la hoja sigue abierta y dice por qué', !!f && /No se pudo crear su pedido: Ya tiene una salida a esa hora/.test(txt(f)) && !q('#rv2-sheet').hidden, f && txt(f));
+  t('Isabella sale «se le crea el pedido»', qa('#rj-prev .rj-p')[0].dataset.st === 'crear', txt(qa('#rj-prev .rj-p')[0]));
+  click(q('#rv2-sheet [data-rj="publicar"]')); await wait(150);
+  const R = T().rt;
+  const isa = Object.keys(R.aux).find((k) => R.aux[k].guest && /Isabella/.test(R.aux[k].n));
+  t('la base dice que no: igual PASA al tablero (la hoja se cierra) e Isabella va sin cuenta en su vuelta', q('#rv2-sheet').hidden === false ? !/Ruta de Julián/.test(txt(q('#rv2-sheet'))) : true
+    && !!isa && R.lanes.some((l) => (R.order[l.id] || []).includes(isa)), JSON.stringify(Object.values(R.aux).filter((a) => a.guest).map((a) => a.n)));
+  t('…y el aviso dice a quién y por qué', /no se le pudo crear el pedido y va sin cuenta: Isabella Paez \(ya tenía un pedido cerca de esa hora: revísalo en Reservas\)/.test(U1.toastV2() || ''), U1.toastV2());
   t('sin errores de script', U1.errors.length === 0, U1.errors.join(' | '));
+  U1.w.Date.now = reloj0;
+}
+{
+  // Volver a pegar el día a media mañana: la gente de las vueltas que YA PASARON no
+  // se le crea pedido (la base no deja pedir hacia atrás y esa gente ya viajó).
+  const reloj0 = Date.now;
+  const llamadas = [];
+  const U2 = await boot({ antes: (w) => {
+    w.Date.now = () => Date.parse(DAY + 'T10:00:00-05:00');
+    w.Api.listAuxiliares = async () => [{ id: 'aux-isa', name: 'Isabella Páez Gómez', active: true, deleted: false, res1: null },
+      { id: 'aux-ma', name: 'Marcela Toro Ruiz', active: true, deleted: false, res1: null }];
+    w.Api.adminCreateReservation = async (f) => { llamadas.push(f); return 'res-Q'; };
+  } });
+  const { q, qa, click, type } = U2;
+  click(q('#rv2-julian')); await wait();
+  type(q('#rj-ta'), '4:10 Isabella Paez Gomez (Marinilla)\nDeben estar 5:00\n\n7:00 Marcela Toro\nDeben estar 7:40');
+  click(q('#rv2-sheet [data-rj="leer"]')); await wait(60);
+  const [fi, fm] = qa('#rj-prev .rj-p');
+  t('a las 10 a. m., Isabella (vuelta de las 4:10) va sin cuenta y lo explica: no se le crea pedido hacia atrás', fi.dataset.st === 'guest' && /Su vuelta ya pasó: va en la ruta sin cuenta \(Isabella Páez tiene cuenta/.test(txt(fi)), txt(fi));
+  t('…y ya NO se elige sola a Laura Gómez solo por el apellido y la hora (era otra persona)', fi.querySelector('select').value === '__guest');
+  t('…Marcela (7:00, también pasó) igual: sin cuenta, sin «se le crea el pedido»', fm.dataset.st === 'guest', txt(fm));
+  click(q('#rv2-sheet [data-rj="leer"]')); await wait(60);
+  const s2 = qa('#rj-prev .rj-p')[1].querySelector('select'); s2.value = 'aux:aux-ma'; s2.dispatchEvent(new U2.w.Event('change', { bubbles: true })); await wait();
+  click(q('#rv2-sheet [data-rj="publicar"]')); await wait(150);
+  t('…y si el jefe la elige igual, no se llama a la base (ya pasó): va sin cuenta y el aviso lo dice', llamadas.length === 0 && /Marcela Toro \(su vuelta ya pasó\)/.test(U2.toastV2() || ''), JSON.stringify(llamadas) + ' · ' + U2.toastV2());
+  t('sin errores de script', U2.errors.length === 0, U2.errors.join(' | '));
+  U2.w.Date.now = reloj0;
 }
 
 t('sin errores de script (instancia base)', base.errors.length === 0, base.errors.join(' | '));
