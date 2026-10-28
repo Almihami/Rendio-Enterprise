@@ -612,8 +612,8 @@
   function avisosDe() {
     if (!D || ui.cargando || rt.source !== 'live') return [];
     const out = [];
-    (rt.pool || []).slice().sort((a, b) => rtToMin((aux(a) || {}).dl) - rtToMin((aux(b) || {}).dl)).forEach((id) => {
-      const a = aux(id); if (!a) return;
+    (rt.pool || []).filter((id) => aux(id)).sort((a, b) => rtToMin(aux(a).dl) - rtToMin(aux(b).dl)).forEach((id) => {
+      const a = aux(id);
       const cuando = (a.type === 'lle' ? `${a.reserva ? 'Termina la asignación' : (a.tierra ? 'Sale del terminal' : 'Aterriza')} ${a.dl}` : `Presentación ${a.dl}`)
         + (resTxt(a) ? ` · ${resTxt(a)}` : '')
         + (rtToMin(a.dl) < rtCut() ? ` (madrugada, turno PM del ${rtDiaAnterior()})` : '');
@@ -2306,11 +2306,17 @@
       catch (e) { if (e && e.vencida) throw e; fallo = true; }
     }
     if (!vigente()) return false;
+    // Los sin carro (rt.pool) se arman en rtLoad con TODO rt.aux, y aquí se sacan
+    // de rt.aux los sin cuenta, la madrugada de otro día y la gente de la ruta
+    // pegada. Si el día sale antes de rearmar el tablero (sin vueltas del tablero),
+    // rt.pool quedaba con llaves que ya no existen y Asignación no abría el día:
+    // «undefined is not an object (evaluating 't.split')» (miércoles 28-oct-2026).
+    const podarPool = () => { rt.pool = (rt.pool || []).filter((k) => rt.aux && rt.aux[k]); return false; };
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {}; rt.rv2Fin = {};
     ui.manual = null; rt.manualDia = false; rt.rv2Solas = []; rt.rv2AuxPegadas = {};
     // Los sin cuenta salen de las vueltas publicadas: se vuelven a leer de ahí.
     Object.keys(rt.aux || {}).forEach((k) => { if (rt.aux[k] && rt.aux[k].guest) delete rt.aux[k]; });
-    if (!puede || fallo) return false;
+    if (!puede || fallo) return podarPool();
     const todas = (plan && plan.vueltas) || [];
     // 0125: las vueltas que pegó Julián (pool) no entran al tablero: el día se
     // muestra con su ruta y los conductores las toman (admin-ruta-julian.js).
@@ -2345,7 +2351,7 @@
     if (deJulian.size) Object.keys(rt.aux).forEach((k) => { if (deJulian.has(rt.aux[k].reservationId)) { rt.rv2AuxPegadas[k] = rt.aux[k]; delete rt.aux[k]; } });
     ui.manual = pegadas.length ? { vueltas: pegadas, otras: vueltas.length, mixto: false } : null;
     rt.manualDia = !!ui.manual;
-    if (!vueltas.length) return false;
+    if (!vueltas.length) return podarPool();
     const porReserva = {};
     Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
     const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {}, guardado = {}, fines = {}, delegQuien = {}, tomarDe = {};
@@ -2407,7 +2413,7 @@
         if (!v.paraTomar) rtSetCarDrv(car, banda, rtCarDrv(car, banda) || v.driverProfileId);
       }
     });
-    if (!lanes.length) return false;
+    if (!lanes.length) return podarPool();
     // Día mezclado: hay tablero, así que se ve y se publica como siempre; la ruta
     // pegada va arriba de la lista con sus botones (renderList → pegadasHTML).
     // Publicar no la toca: saveRoutePlan no borra vueltas pool ni re-mete a su gente.

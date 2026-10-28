@@ -1609,6 +1609,31 @@ console.log('\n── 26-oct · carga del día: consulta colgada, plazo, Reinten
   t('…arreglado lo que fallaba, «Reintentar» lo muestra', T().rt.day === '2026-10-12' && V2().dia().routes.length === 9 && !V2()._ui.falloCarga && /vueltas/.test(txt(q('#rv2-say'))));
 }
 
+console.log('\n── 28-oct · el día es solo la ruta pegada (sin vueltas del tablero) ──');
+{
+  // Producción, miércoles 28-oct-2026: «No se pudo cargar Mié 28 oct · t.split».
+  // rtLoad arma los sin carro con TODAS las reservas; rearmarPublicado saca de
+  // rt.aux a quien va en la ruta pegada y, sin vueltas del tablero, salía antes de
+  // rearmar rt.pool: quedaba una llave sin tripulante y Avisos reventaba al ordenar.
+  for (const caso of ['pegada', 'madrugada del día anterior']) {
+    const b = await boot();
+    const { w, q, T, V2 } = b;
+    const DAY = w.RV2Fixture.DAY;
+    const ANT = new Date(Date.parse(DAY + 'T12:00:00-05:00') - 864e5).toISOString().slice(0, 10);
+    const vs = [{ id: 'ra-jul', type: 'sal', status: 'planned', startAt: `${DAY}T09:40:00-05:00`, pool: true, autoCreated: false, paraTomar: false,
+      manualDay: caso === 'pegada' ? DAY : ANT,
+      vehicleId: null, planCar: null, carro: 'Carro', placa: null, cap: 4, driverProfileId: null, conductor: 'Sin conductor', delegated: false,
+      pendientes: [{ stopId: 'st-jul', rid: 'res-M', order: 1, status: 'pending', etaAt: `${DAY}T09:40:00-05:00`, name: 'Felipe Vélez' }], atendidas: [] }];
+    w.Api.getPublishedPlan = async () => ({ vueltas: vs, publicado: true });
+    await V2().cargarDia(T().rt.day); await wait(30);
+    const rt = T().rt;
+    t(`${caso}: el día abre (no sale «No se pudo cargar»)`, !V2()._ui.falloCarga, JSON.stringify(V2()._ui.falloCarga));
+    t(`${caso}: los sin carro son solo tripulantes que existen (Felipe no queda colgado)`, (rt.pool || []).every((k) => rt.aux[k]) && !(rt.pool || []).includes('rM'), JSON.stringify((rt.pool || []).filter((k) => !rt.aux[k])));
+    t(`${caso}: Avisos no dice que Felipe no tiene carro (va en la ruta pegada)`, !/Felipe Vélez no tiene carro/.test(txt(q('#rv2-avisos')) || ''), txt(q('#rv2-avisos')));
+    t(`${caso}: sin errores de consola`, b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+  }
+}
+
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: layout real (puntos de quiebre, cajón, tarjetas, barra fija del celular: ver _capturas-rutas-v2.mjs y revisar en un teléfono), la base real (RLS, saveRoutePlan/getPublishedPlan en producción), TomTom/OSRM reales, el mapa Leaflet real, el push real y el módulo de WhatsApp.');
 process.exit(bad ? 1 : 0);
