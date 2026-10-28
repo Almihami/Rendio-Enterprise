@@ -1612,6 +1612,29 @@
     say((s.late ? `${vueltas} vueltas programadas (${how}) — ${s.late} ${s.late === 1 ? 'llega tarde, revísala' : 'llegan tarde, revísalas'}.` : `${vueltas} vueltas programadas entre ${rt.cars.length} carros (${how}). Todas llegan a tiempo.`) + dia);
   }
 
+  // «Te recogemos mañana a las 4:30.» para el aviso de «Conductor asignado»: la hora
+  // que se acaba de publicar (la cita de su parada en una salida; la salida de JMC en
+  // una llegada), con el mismo lugar que los avisos de «Cambiar hora».
+  function rtTextoRecogida(rid, lanes) {
+    const l = (lanes || []).find(x => (x.stops || []).includes(rid));
+    if (!l || !rt.day) return null;
+    const lle = l.type === 'lle';
+    const ini = rtToMin(String(l.startAt || '').slice(11, 16));
+    const m = lle ? ini : (l.etas && l.etas[rid] != null ? l.etas[rid] : ini);
+    if (m == null || !isFinite(m)) return null;
+    const h = `${Math.floor(((m % 1440) + 1440) % 1440 / 60)}:${String(((Math.round(m) % 60) + 60) % 60).padStart(2, '0')}`;
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+    const manana = new Date(Date.parse(hoy + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+    const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+    const dia = rt.day === hoy ? 'hoy' : rt.day === manana ? 'mañana' : `el ${DIAS[new Date(rt.day + 'T12:00:00Z').getUTCDay()]} ${Number(rt.day.slice(8, 10))}`;
+    if (!lle) return `Te recogemos ${dia} a las ${h}. Ábrelo para seguirlo en vivo.`;
+    const a = Object.values(rt.aux || {}).find(x => x.reservationId === rid) || {};
+    const P = a.reserva && Api.reservePlace ? Api.reservePlace(a.reserva) : null;
+    if (P) return `Te recogemos ${dia} ${P.hotel ? 'en el ' + P.name : 'en JMC'} hacia las ${h}. Ábrelo para seguirlo en vivo.`;
+    if (a.tierra) return `Te recogemos ${dia} en JMC hacia las ${h}. Ábrelo para seguirlo en vivo.`;
+    return `Cuando aterrices te esperamos en JMC (sale ${dia} hacia las ${h}). Ábrelo para seguirlo en vivo.`;
+  }
+
   // Persiste el plan del día: cada vuelta → route_assignment + route_stops.
   // Las vueltas con conductor asignado quedan visibles para ese conductor.
   // opts.toast: igual que en rtOptimize. Devuelve { ok, saved, … } para que
@@ -1711,11 +1734,19 @@
             title: `Te recogerá ${corto} 🤝`,
             body: `Tu traslado lo hace ${corto}.${g.phone ? ` Su número de contacto es ${g.phone}.` : ''}`, url: '/#/viajes' });
         }
+        // 27-oct (2ª): «Conductor asignado» trae LA HORA. Los tripulantes: «como en el
+        // chat dijeron que ya se podía ver en la app la hora de recogida»: el aviso no
+        // la decía y había que abrir la app a buscarla. Un push por texto (los de la
+        // misma hora y lugar van juntos); sin hora, el texto de siempre.
         if (fresh.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
-          const ids = await Api.auxiliarUserIdsForReservations(fresh);
-          if (ids.length) await Api.sendPush({ profileIds: ids,
-            title: 'Conductor asignado 🚗',
-            body: 'Ya tienes conductor para tu traslado. Ábrelo para seguirlo en vivo.', url: '/#/viajes' });
+          const porTexto = {};
+          fresh.forEach(rid => { const b = rtTextoRecogida(rid, lanes) || 'Ya tienes conductor para tu traslado. Ábrelo para seguirlo en vivo.'; (porTexto[b] = porTexto[b] || []).push(rid); });
+          for (const [body, rids] of Object.entries(porTexto)) {
+            const ids = await Api.auxiliarUserIdsForReservations(rids);
+            if (ids.length) await Api.sendPush({ profileIds: ids,
+              title: 'Conductor asignado 🚗',
+              body, url: '/#/viajes' });
+          }
         }
         if (moved.length && Api.auxiliarUserIdsForReservations && Api.sendPush) {
           const ids = await Api.auxiliarUserIdsForReservations(moved);

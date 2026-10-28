@@ -245,11 +245,16 @@ const C = await boot({
   t('«Kevin (AV9412)»: Kevin Uribe llega en otro vuelo (AV9414) → no se elige solo, pero sale de primera opción',
     quien('Kevin') === '' && fila('Kevin').dataset.st === 'falta' && fila('Kevin').querySelector('optgroup[label="Más probables"] option').value === 'res-O' && /Hay pedidos parecidos: elige quién es/.test(txt(fila('Kevin'))), fila('Kevin') && fila('Kevin').innerHTML.slice(0, 200));
   // 0133 (lista de los jefes, 26-oct): quien no se parece a nadie y trae lugar VA sin cuenta.
-  t('0133: «Pepe (Mota)»: no pidió y no se parece a nadie → «Va sin cuenta» por defecto (en la ruta, sin aviso)', quien('Pepe') === '__guest' && fila('Pepe').dataset.st === 'guest' && /Sin cuenta: va en la ruta/.test(txt(fila('Pepe'))) && /No le llegan avisos/.test(txt(fila('Pepe'))), fila('Pepe') && txt(fila('Pepe')));
-  t('…y se puede elegir «No va en esta ruta» (27-oct: antes «No pidió por la app», que nadie entendía)', [...fila('Pepe').querySelectorAll('option')].some((o) => o.value === '__nova' && /No va en esta ruta/.test(o.textContent)) && [...fila('Pepe').querySelectorAll('option')].some((o) => o.value === '__guest' && /no tiene la app/.test(o.textContent)));
+  t('0133: «Pepe (Mota)»: no pidió y no se parece a nadie → «Va sin cuenta» por defecto (en la ruta, sin aviso)', quien('Pepe') === '__guest' && fila('Pepe').dataset.st === 'guest' && /Sin la app: va en la ruta/.test(txt(fila('Pepe'))) && /No le llegan avisos/.test(txt(fila('Pepe'))), fila('Pepe') && txt(fila('Pepe')));
+  {
+    const ops = [...fila('Pepe').querySelectorAll('select > option')].map((o) => [o.value, txt(o)]);
+    t('27-oct (2ª): arriba de la lista, «Va en la ruta (tiene la app y le llega aviso)» y «Va, pero no tiene la app (no le llegan avisos)»',
+      ops[0] && ops[0][0] === '__app' && ops[0][1] === 'Va en la ruta (tiene la app y le llega aviso)' && ops[1] && ops[1][0] === '__guest' && ops[1][1] === 'Va, pero no tiene la app (no le llegan avisos)', JSON.stringify(ops.slice(0, 3)));
+    t('…y «No va en esta ruta» ya no existe (al actualizar, quien la elegía no subía)', !qa('#rj-prev option').some((o) => o.value === '__nova' || /No va/.test(o.textContent)));
+  }
   t('27-oct: quien no está elegido arranca en «— Elige quién es —» (no en «no va» callado)', fila('Kevin').querySelector('select option[value=""]') && /Elige quién es/.test(fila('Kevin').querySelector('select option[value=""]').textContent) && !fila('Pepe').querySelector('select option[value=""]'));
   const sum = () => txt(q('#rj-prev .rj-sum'));
-  t('el resumen: 7 vueltas · 9 emparejados · 1 sin cuenta (Pepe) · 1 sin elegir (Kevin)', /7 vueltas · 9 emparejados/.test(sum()) && /1 sin cuenta: van en la ruta, sin aviso/.test(sum()) && /1 sin elegir: elige quién es \(o «No va»\) antes de pasar al tablero/.test(sum()), sum());
+  t('el resumen: 7 vueltas · 9 emparejados · 1 sin cuenta (Pepe) · 1 sin elegir (Kevin)', /7 vueltas · 9 emparejados/.test(sum()) && /1 sin la app: van en la ruta, sin aviso/.test(sum()) && /1 sin elegir: elige quién es \(o «Va, pero no tiene la app»\) antes de pasar al tablero/.test(sum()), sum());
   t('…y quién pidió por la app y NO está en la ruta (Valentina, Sergio, Paula, Mateo, Juliana, Manuela, Kevin)',
     ['Valentina (sale 06:00)', 'Sergio (sale 07:40)', 'Paula', 'Mateo', 'Juliana', 'Manuela (sale 09:10)', 'Kevin (llega 15:05)'].every((x) => sum().includes(x)), sum());
   const pub = () => q('#rv2-sheet [data-rj="publicar"]');
@@ -258,20 +263,27 @@ const C = await boot({
 
   pick(fila('Pepe').querySelector('select'), 'res-A'); await wait();
   t('elegir a Laura también para Pepe: «Está dos veces» en los dos y Publicar se apaga', /Está dos veces/.test(txt(fila('Pepe'))) && /Está dos veces/.test(txt(fila('Laura G'))) && pub().disabled && /1 repetidos|2 repetidos/.test(sum()), sum());
-  pick(fila('Pepe').querySelector('select'), '__nova'); await wait();
-  t('27-oct: «No va» elegido a mano: «No va: no entra a la ruta» y cuenta en el resumen', fila('Pepe').dataset.st === 'sin' && /No va: no entra a la ruta/.test(txt(fila('Pepe'))) && /1 no van/.test(sum()), txt(fila('Pepe')));
+  pick(fila('Pepe').querySelector('select'), '__app'); await wait();
+  t('27-oct (2ª): «Va en la ruta (tiene la app)» para Pepe, que no pidió: no inventa a nadie, lo dice y pide elegir', fila('Pepe').dataset.st === 'falta' && quien('Pepe') === '' && /No encontré a «Pepe» en los pedidos de este día/.test(txt(fila('Pepe'))) && /Va, pero no tiene la app/.test(txt(fila('Pepe'))), txt(fila('Pepe')));
+  pick(fila('Pepe').querySelector('select'), '__guest'); await wait();
+  t('…y de vuelta a «Va, pero no tiene la app»: va en la ruta, sin aviso', fila('Pepe').dataset.st === 'guest' && /1 sin la app/.test(sum()), sum());
   pick(fila('Andres').querySelector('select'), 'res-O'); await wait();
   t('elegir una LLEGADA (Kevin) en una vuelta de salidas: lo advierte («va en otra vuelta»)', /Es una llegada: va en otra vuelta/.test(txt(fila('Andres'))));
   pick(fila('Andres').querySelector('select'), 'res-B'); await wait();
   t('…y al volver a Andrés se quita', !/otra vuelta/.test(txt(fila('Andres'))));
-  pick(fila('Kevin').querySelector('select'), 'res-O'); await wait();
-  t('Kevin elegido a mano: «Elegido a mano: se aprende» y «Pasar al tablero · 10»', /se aprende/.test(txt(fila('Kevin'))) && !pub().disabled && txt(pub()) === 'Pasar al tablero · 10', txt(pub()));
+  pick(fila('Kevin').querySelector('select'), '__app'); await wait();
+  t('27-oct (2ª): «Va en la ruta (tiene la app)» para Kevin: toma su pedido (el único Kevin del día)', quien('Kevin') === 'res-O', quien('Kevin'));
+  t('Kevin elegido a mano: «Elegido a mano: se aprende» y «Pasar al tablero · 10 y 1 sin cuenta»', /se aprende/.test(txt(fila('Kevin'))) && !pub().disabled && txt(pub()) === 'Pasar al tablero · 10 y 1 sin cuenta', txt(pub()));
+  const modo = () => (q('#rj-prev input[name="rj-modo"]:checked') || {}).value;
+  t('27-oct (2ª): el texto trae a la mayoría de lo que sigue por mover → «Rearmar el día con esta ruta», ya marcado', modo() === 'rearmar' && /Rearmar el día con esta ruta/.test(txt(q('#rj-prev .rj-modo'))) && /Solo cambiar estas vueltas/.test(txt(q('#rj-prev .rj-modo'))), modo());
+  t('…y dice cuántos que pidieron por la app quedan sin carro (Valentina, Sergio, Mateo, Juliana, Manuela)', /5 pedidos que no están en el texto quedan sin carro \(en Avisos\)/.test(txt(q('#rj-prev .rj-modo'))), txt(q('#rj-prev .rj-modo')));
   t('…y ya no sale en «no están en tu ruta»', !/Kevin \(llega/.test(sum()));
 
   // 27-oct-2026: PEGAR = LLENAR EL TABLERO. Nada de otra clase de vuelta: cada
   // bloque entra como una vuelta del tablero, con las horas del jefe, y se
   // publica con la hoja de siempre.
-  const bloquesViejos = JJ()._bloques();   // lo que antes iba a admin_manual_route_publish (para D)
+  // Lo que antes iba a admin_manual_route_publish (para D), sin el sin cuenta (Pepe), como cuando «no iba».
+  const bloquesViejos = JJ()._bloques().map((b) => Object.assign({}, b, { stops: b.stops.filter((x) => x.reservation_id) })).filter((b) => b.stops.length);
   const aprendidos = []; w.Api.saveCrewAliases = async (a) => { aprendidos.push(JSON.parse(JSON.stringify(a))); return a.length; };
   const seguidos = []; C.w.renderVuelos = { seguirDesdeTexto: async (texto, dia) => { seguidos.push([texto, dia]); return 2; } };   // Vuelos (admin-vuelos.js), lista de los jefes 26-oct
   C.confirms.length = 0;
@@ -289,14 +301,18 @@ const C = await boot({
   t('…y es una vuelta como cualquiera: tiene fila en la lista, con su carro', !!q(`#rv2-list [data-id="${lC && lC.id}"]`) && !q('#rv2-list .rj-v'), q('#rv2-list') && txt(q('#rv2-list')).slice(0, 160));
   const lle = laneCon('rF');
   t('la llegada AV9412: Natalia y Kevin juntos, aterrizan 14:40, salen de JMC después del desembarque', lle && lle.type === 'lle' && [...R.order[lle.id]].sort().join() === 'rF,rO' && lle.landing === '14:40' && lle.start > '14:40', lle && JSON.stringify([lle.start, lle.landing]));
-  t('Pepe quedó en «No pidió»: no entra (no hay sin cuenta)', !Object.keys(R.aux).some((k) => R.aux[k].guest));
+  const kPepe = Object.keys(R.aux).find((k) => R.aux[k].guest && R.aux[k].n === 'Pepe');
+  t('27-oct (2ª): Pepe («no tiene la app») entra al tablero en su vuelta de las 8:20, sin pedido', kPepe && laneCon(kPepe) && laneCon(kPepe).start === '08:20' && R.aux[kPepe].reservationId === null, kPepe);
   t('José y Camila salieron de su vuelta vieja del tablero (la de las 04:45 ya no existe)', !R.lanes.some((l) => l.start === '04:45' && (R.order[l.id] || []).length), JSON.stringify(R.lanes.map((l) => l.start)));
-  t('quien no está en lo pegado sigue donde iba (Valentina 06:00)', !!laneCon(Object.keys(R.aux).find((k) => /Valentina/.test(R.aux[k].n))));
+  t('27-oct (2ª): rearmar: quien pidió y NO está en el texto sale de su vuelta y queda sin carro (Valentina, Sergio, Mateo, Juliana)', ['rE', 'rG', 'rI', 'rJ'].every((k) => !laneCon(k) && R.pool.includes(k)), JSON.stringify(R.pool));
+  t('…sin repetidos: nadie queda en dos vueltas', Object.keys(R.aux).every((k) => R.lanes.filter((l) => (R.order[l.id] || []).includes(k)).length <= 1));
+  t('…la vuelta que sigue igual (Tomás y Sara, AV9420) se queda en su carro (V-03) con su conductor', (() => { const l = laneCon('rK'); return l && laneCon('rL') === l && l.car === 'V-03' && l.raId === 'ra-9'; })(), JSON.stringify(laneCon('rK')));
+  t('…y la de Felipe también, con la hora del texto (10:30)', laneCon('rM') && laneCon('rM').raId === 'ra-6' && laneCon('rM').start === '10:30', JSON.stringify(laneCon('rM')));
   const choque = R.cars.map((c) => R.lanes.filter((l) => l.car === c.id && (R.order[l.id] || []).length).sort((x, y) => x.vuelta - y.vuelta))
     .some((ls) => ls.some((l, i) => i > 0 && (C.V2().dia().byId[l.id] || {}).retraso > 0));
   t('ningún carro queda con dos vueltas que se cruzan', !choque);
   t('se abre la hoja de Publicar de siempre (la que avisa)', /Publicar/.test(txt(q('#rv2-shTitle')) || '') && !!q('#rv2-doPublish'), txt(q('#rv2-shTitle')));
-  t('el aviso dice cuántas vueltas quedaron, quién se quedó en su vuelta en curso y que nadie ha recibido aviso', /5 vueltas quedaron en el tablero/.test(C.toastV2() || '') && /Laura Gómez, Andrés Ruiz ya van en una vuelta en curso y se quedan ahí/.test(C.toastV2() || '') && /Nadie ha recibido aviso: revisa y dale Publicar/.test(C.toastV2() || ''), C.toastV2());
+  t('el aviso dice cuántas vueltas quedaron, quién se quedó en su vuelta en curso y que nadie ha recibido aviso', /6 vueltas quedaron en el tablero/.test(C.toastV2() || '') && /3 siguen iguales, con su conductor/.test(C.toastV2() || '') && /quedaron sin carro \(no están en tu ruta\): Valentina Ríos, Sergio Molina, Mateo Zapata, Juliana Ossa/.test(C.toastV2() || '') && /Laura Gómez, Andrés Ruiz ya van en una vuelta en curso y se quedan ahí/.test(C.toastV2() || '') && /Nadie ha recibido aviso: revisa y dale Publicar/.test(C.toastV2() || ''), C.toastV2());
   t('aprende solo lo elegido a mano (0149): «kevin» → el perfil de Kevin', JSON.stringify(aprendidos) === JSON.stringify([[{ alias: 'kevin', auxiliar_profile_id: 'aux-rO' }]]), JSON.stringify(aprendidos));
   t('26-oct: las llegadas del mismo texto pasan solas a Vuelos (el día de la ruta)', seguidos.length === 1 && seguidos[0][1] === DAY && /AV9412/i.test(seguidos[0][0]), JSON.stringify(seguidos.map((x) => x[1])));
   t('…y el aviso lo dice («· 2 vuelos a Vuelos»)', /2 vuelos a Vuelos/.test(C.toastV2() || ''), C.toastV2());
@@ -660,7 +676,7 @@ console.log('\n── A2 · «(Aero r)», «(Hotel)», «(Río Verde)»: de JMC 
   t('«Paula (aero r)», que solo pidió salida: «Pidió una salida, no el regreso desde JMC: elige quién es»', /Pidió una salida, no el regreso desde JMC: elige quién es/.test(txt(bs[1])) && bs[1].querySelector('select').value === '', txt(bs[1]));
   H.pick(bs[1].querySelector('select'), 'res-P'); await wait();
   t('…y si el jefe la elige igual, lo advierte en palabras', /Pidió una salida \(de la casa a JMC\), no el regreso desde JMC/.test(txt(H.qa('#rj-prev .rj-b')[1])), txt(H.qa('#rj-prev .rj-b')[1]));
-  H.pick(H.qa('#rj-prev .rj-b')[1].querySelector('select'), '__nova'); await wait();
+  H.pick(H.qa('#rj-prev .rj-b')[1].querySelector('select'), '__guest'); await wait();
   H.w.__confirma = true;
   H.click(H.q('#rv2-sheet [data-rj="publicar"]')); await wait(80);
   {
@@ -830,7 +846,7 @@ console.log('\n── 0133 · Un pasajero sin cuenta en el tablero (Pepe · Kris
   type(q('#rj-ta'), TEXTO + '\n\n8:50 Kriss (Campus reservado)\nDeben estar 9:10');
   click(q('#rv2-sheet [data-rj="leer"]')); await wait(60);
   const fila = (nombre) => qa('#rj-prev .rj-p').find((p) => txt(p.querySelector('.rj-w')).startsWith(nombre));
-  t('Kriss (Campus reservado): «Va sin cuenta» y lo ubica en el conjunto «Campus Reservado»', fila('Kriss') && fila('Kriss').dataset.st === 'guest' && /Sin cuenta: va en la ruta · Campus Reservado/.test(txt(fila('Kriss'))), fila('Kriss') && txt(fila('Kriss')));
+  t('Kriss (Campus reservado): «Va sin cuenta» y lo ubica en el conjunto «Campus Reservado»', fila('Kriss') && fila('Kriss').dataset.st === 'guest' && /Sin la app: va en la ruta · Campus Reservado/.test(txt(fila('Kriss'))), fila('Kriss') && txt(fila('Kriss')));
   pick(fila('Kevin').querySelector('select'), 'res-O'); await wait();
   const pub = q('#rv2-sheet [data-rj="publicar"]');
   t('el botón cuenta a los sin cuenta aparte («y 2 sin cuenta»)', txt(pub) === 'Pasar al tablero · 10 y 2 sin cuenta', txt(pub));
@@ -1016,6 +1032,183 @@ console.log('\n── P · Pegar = llenar el tablero (27-oct-2026): carros, madr
   const PT = P.J()._paraTablero();
   t('la hoja parte lo pegado: lo del día al tablero, lo de después de medianoche al día siguiente', PT.hoy.length >= 1 && PT.sig.length === 1 && PT.sig[0].stops[0].min === 20 && PT.sig[0].deadline === 50, JSON.stringify(PT.sig));
   t('sin errores de script', P.errors.length === 0, P.errors.join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── R · Volver a pegar (27-oct-2026, 2ª): rearma el día, sin repetidos, con los pedidos de la base ──');
+{
+  const R0 = await boot({
+    antes(w) {
+      const plan2 = w.Api.listRoutePlanning;
+      w.Api.listRoutePlanning = async (tipo, day) => {
+        const x = await plan2(tipo, day);
+        // Leslie pidió DESPUÉS de abrir el día: la lectura del tablero no la trae.
+        if (x && (day || DAY) === DAY && w.__leslie) x.aux.rZ = Object.assign({}, x.aux.rI, { n: 'Leslie Mora Ríos', dl: '09:40', reservationId: 'res-Z', auxId: 'aux-rZ', zona: 'Cerezos', sector: 'Rionegro', lat: 6.021 });
+        return x;
+      };
+    },
+  });
+  const { w, q, qa, click, type, pick, T, V2, log } = R0;
+  const R = () => T().rt;
+  const laneCon = (k) => R().lanes.find((l) => (R().order[l.id] || []).includes(k)) || null;
+  const fila = (nombre) => qa('#rj-prev .rj-p').find((p) => txt(p.querySelector('.rj-w')).startsWith(nombre));
+  const pub = () => q('#rv2-sheet [data-rj="publicar"]');
+  const pegar = async (texto) => { click(q('#rv2-julian')); await wait(); type(q('#rj-ta'), texto); click(q('#rv2-sheet [data-rj="leer"]')); await wait(60); };
+  const unaVez = () => Object.keys(R().aux).every((k) => R().lanes.filter((l) => (R().order[l.id] || []).includes(k)).length <= 1);
+  const PRIMERA = ['5:30 José (Cerezos)', '5:40 Cami (Ébano)', 'Deben estar 6:10', '', '5:20 Valentina (Solare)', 'Deben estar 5:50', '',
+    '7:10 La flaca (Piedemonte)', '7:20 Sergio (Hotel Sandiego)', 'Deben estar 7:40', '', '8:20 Pepe (Mota)', 'Deben estar 8:50', '',
+    '8:40 Mateo (Cámbulo)', '8:45 Juliana (Aurora)', 'Deben estar 9:00', '', '10:30 Felipe (Altos del lago)', 'Deben estar 11:20', '',
+    '14:40 Natalia (AV9412)', '', '15:05 Kevin (AV9414)', '', '16:10 Tomás y Sara (Av 9420)'].join('\n');
+  await pegar(PRIMERA);
+  t('la primera ruta del día: todos emparejados (y Pepe sin la app)', !pub().disabled && txt(pub()) === 'Pasar al tablero · 12 y 1 sin cuenta', txt(pub()) + ' · ' + txt(q('#rj-prev .rj-sum')));
+  click(pub()); await wait(80);
+  R0.V2()._sheet.close(); await wait();
+  await T().rtSavePlan();
+  const lMJ = laneCon('rI'), lKL = laneCon('rK'), lM = laneCon('rM');
+  t('publicada: cada uno en una sola vuelta', unaVez() && lMJ && laneCon('rJ') === lMJ);
+
+  // LA ACTUALIZACIÓN: Cami pasa con Valentina, Sergio ya no va, Pepe se escribe
+  // distinto y Leslie (que pidió después de abrir el día) entra.
+  w.__leslie = true;
+  const SEGUNDA = ['5:30 José (Cerezos)', 'Deben estar 6:10', '', '5:20 Valentina (Solare)', '5:35 Cami (Ébano)', 'Deben estar 5:50', '',
+    '7:10 La flaca (Piedemonte)', 'Deben estar 7:40', '', '8:25 Pepe M (Mota)', 'Deben estar 8:50', '',
+    '8:40 Mateo (Cámbulo)', '8:45 Juliana (Aurora)', 'Deben estar 9:00', '', '9:10 Lesli (Cerezos)', 'Deben estar 9:40', '',
+    '10:30 Felipe (Altos del lago)', 'Deben estar 11:20', '', '14:40 Natalia (AV9412)', '', '15:05 Kevin (AV9414)', '', '16:10 Tomás y Sara (Av 9420)'].join('\n');
+  await pegar(SEGUNDA);
+  t('«Lesli (Cerezos)»: la encuentra en la base aunque pidió después de abrir el día (Leslie Mora Ríos)', fila('Lesli') && fila('Lesli').querySelector('select').value === 'res-Z' && fila('Lesli').dataset.st === 'ok', fila('Lesli') && txt(fila('Lesli')));
+  t('…y marca «Rearmar el día» (el texto es el día entero)', (q('#rj-prev input[name="rj-modo"]:checked') || {}).value === 'rearmar');
+  click(pub()); await wait(80);
+  const guests = Object.keys(R().aux).filter((k) => R().aux[k].guest);
+  t('sin repetidos: cada uno en UNA vuelta', unaVez(), JSON.stringify(R().lanes.map((l) => [l.id, R().order[l.id]])));
+  t('Pepe («Pepe M» en la actualización) es el MISMO sin cuenta: uno solo, a las 8:25', guests.length === 1 && laneCon(guests[0]) && laneCon(guests[0]).start === '08:25', JSON.stringify(guests.map((k) => R().aux[k].n)));
+  t('Cami quedó con Valentina, y José solo', laneCon('rD') === laneCon('rE') && laneCon('rC') !== laneCon('rD') && R().order[laneCon('rC').id].join() === 'rC');
+  t('Sergio (ya no está en el texto) quedó sin carro, en Avisos', !laneCon('rG') && R().pool.includes('rG'), JSON.stringify(R().pool));
+  const kZ = Object.keys(R().aux).find((k) => R().aux[k].reservationId === 'res-Z');
+  t('Leslie entró al tablero con su pedido, a las 9:10', kZ && laneCon(kZ) && laneCon(kZ).start === '09:10' && R().aux[kZ].n === 'Leslie Mora Ríos', kZ);
+  t('las vueltas que no cambiaron son las MISMAS (Mateo y Juliana, Tomás y Sara, Felipe): mismo carro y vuelta', [['rI', lMJ], ['rK', lKL], ['rM', lM]].every(([k, l]) => laneCon(k) && l && laneCon(k).id === l.id && laneCon(k).car === l.car), JSON.stringify([laneCon('rI') && laneCon('rI').id, lMJ && lMJ.id]));
+  t('el aviso: quién quedó sin carro', /quedó sin carro \(no está en tu ruta\): Sergio Molina/.test(R0.toastV2() || ''), R0.toastV2());
+  R0.V2()._sheet.close(); await wait();
+  const antes = log.saved.length;
+  await T().rtSavePlan();
+  const S = log.saved[log.saved.length - 1];
+  const rids = S ? S.lanes.flatMap((l) => l.stops) : [];
+  t('Publicar manda a cada reserva UNA vez (sin duplicados) y a Leslie', log.saved.length === antes + 1 && rids.length === new Set(rids).size && rids.includes('res-Z') && !rids.includes('res-G'), JSON.stringify(rids));
+  // «Deshacer» la actualización: vuelve todo, también Sergio, Pepe y sin Leslie.
+  await pegar(SEGUNDA.replace('8:25 Pepe M', '8:30 Pepe M').replace('5:30 José', '5:25 José'));
+  click(pub()); await wait(80);
+  R0.V2()._sheet.close(); await wait();
+  R0.V2().toast('pegado', true); click(q('#rv2-toast [data-act="undo"]')); await wait();
+  const g2 = Object.keys(R().aux).filter((k) => R().aux[k].guest);
+  t('«Deshacer» devuelve el tablero de antes de pegar (José 5:30, Pepe 8:25, un solo sin cuenta)', laneCon('rC') && laneCon('rC').start === '05:30' && g2.length === 1 && laneCon(g2[0]).start === '08:25' && unaVez(), JSON.stringify([laneCon('rC') && laneCon('rC').start, g2]));
+
+  // SOLO UNAS VUELTAS: lo demás queda como está.
+  await pegar('9:00 Sergio (Hotel Sandiego)\nDeben estar 9:30');
+  t('un texto con una sola vuelta marca «Solo cambiar estas vueltas»', (q('#rj-prev input[name="rj-modo"]:checked') || {}).value === 'parte');
+  const nLanes = R().lanes.filter((l) => (R().order[l.id] || []).length).length;
+  click(pub()); await wait(80);
+  t('…y solo agrega esa: Sergio a las 9:00 y el resto del tablero igual (José solo, Leslie 9:10)', laneCon('rG') && laneCon('rG').start === '09:00' && R().order[laneCon('rC').id].join() === 'rC' && laneCon(kZ) && R().lanes.filter((l) => (R().order[l.id] || []).length).length === nLanes + 1,
+    JSON.stringify(laneCon('rG')));
+  R0.V2()._sheet.close(); await wait();
+  // Elegir «Rearmar» a mano en ese mismo texto: todos los demás quedarían sin carro.
+  await pegar('9:00 Sergio (Hotel Sandiego)\nDeben estar 9:30');
+  pick(q('#rj-prev input[name="rj-modo"][value="rearmar"]'), 'rearmar');
+  const rr = q('#rj-prev input[name="rj-modo"][value="rearmar"]'); rr.checked = true; rr.dispatchEvent(new w.Event('change', { bubbles: true })); await wait();
+  t('…el jefe puede elegir «Rearmar» y la hoja dice cuántos quedarían sin carro', (q('#rj-prev input[name="rj-modo"]:checked') || {}).value === 'rearmar' && /pedidos que no están en el texto quedan sin carro/.test(txt(q('#rj-prev .rj-modo'))), txt(q('#rj-prev .rj-modo')));
+  R0.V2()._sheet.close(); await wait();
+  t('sin errores de script', R0.errors.length === 0, R0.errors.join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── R3 · Rearmar no toca lo que pasó sin marcar ni la delegada (como Re-optimizar) ──');
+{
+  const Q = await boot();
+  const R = () => Q.T().rt;
+  const laneCon = (k) => R().lanes.find((l) => (R().order[l.id] || []).includes(k)) || null;
+  const lE = laneCon('rE'), lHG = laneCon('rH');
+  R().rv2Fin[lE.id] = { estado: 'sinmarcar' };   // Valentina 04:35: pasó y el conductor no la marcó
+  lHG.deleg = true; lHG.delegName = 'Uber de Camilo';   // Daniela y Sergio: delegada
+  Q.V2().render();
+  t('lo que pasó sin marcar no cuenta como «por mover»', !Q.V2().pendientesDelTablero().includes('res-E'));
+  const r = Q.V2().meterPegado([{ type: 'sal', stops: [{ rid: 'res-E', min: 300 }] }, { type: 'sal', stops: [{ rid: 'res-M', min: 630 }] }], { rearmar: true });
+  t('Valentina (vuelta pasada sin marcar) se queda en su vuelta aunque venga en el texto', laneCon('rE') && laneCon('rE').id === lE.id && r.enCurso.includes('Valentina Ríos'), JSON.stringify(r));
+  t('la delegada (Daniela y Sergio), que no está en el texto, se queda como estaba', laneCon('rH') && laneCon('rH').id === lHG.id && laneCon('rG') === laneCon('rH') && laneCon('rH').deleg === true);
+  t('…y lo demás sin arrancar sí se rearma (José y Camila quedan sin carro)', !laneCon('rC') && R().pool.includes('rC') && R().pool.includes('rD'));
+  t('sin errores de script', Q.errors.length === 0, Q.errors.join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── R2 · El apodo aprendido ya no decide solo (salida o llegada) ──');
+{
+  const C2 = [
+    { rid: 's', auxId: 'a1', n: 'Maria Camila Cano Florez', type: 'sal', dia: DAY, dl: '09:20', zona: 'Ruta 39' },
+    { rid: 'l', auxId: 'a1', n: 'Maria Camila Cano Florez', type: 'lle', dia: DAY, dl: '20:20', vuelo: 'AV9340', zona: 'Ruta 39' },
+  ];
+  const P2 = (key, o) => Object.assign({ key, nombre: 'cano', dia: DAY, vuelo: null, deadline: null, lugar: '' }, o);
+  const r = J._emparejar([P2('x', { min: 1220, vuelo: 'AV9340' })], C2, { cano: 'a1' });
+  t('«cano (AV9340)» sola en la actualización (sin la línea de la mañana): su LLEGADA, no su salida', r.x.auto && r.x.rid === 'l', JSON.stringify(r.x));
+  const r2 = J._emparejar([P2('y', { min: 520, deadline: 560 })], C2, { cano: 'a1' });
+  t('«cano» con «Deben estar»: su SALIDA', r2.y.auto && r2.y.rid === 's', JSON.stringify(r2.y));
+  // Un apodo SIN aprender: «La flaca (Piedemonte)» a la hora de Daniela, que vive en Piedemonte.
+  const C3 = [{ rid: 'dan', auxId: 'a9', n: 'Daniela Cano', type: 'sal', dia: DAY, dl: '07:40', zona: 'Piedemonte', sector: 'Rionegro' },
+    { rid: 'otra', auxId: 'a8', n: 'Sofía Mesa', type: 'sal', dia: DAY, dl: '15:00', zona: 'Piedemonte', sector: 'Rionegro' }];
+  const r3 = J._emparejar([P2('z', { nombre: 'La flaca', min: 430, deadline: 460, lugar: 'Piedemonte' })], C3, {});
+  t('apodo sin aprender «La flaca (Piedemonte)»: Daniela (su conjunto y su hora) sale de opción, pero NO se elige sola', !r3.z.auto && r3.z.opciones.join() === 'dan', JSON.stringify(r3.z));
+  const r4 = J._emparejar([P2('z', { nombre: 'Pepe', min: 430, deadline: 460, lugar: 'Mota' })], C3, {});
+  t('…y sin conjunto que cuadre (Mota), nadie (va sin la app)', r4.z.opciones.length === 0, JSON.stringify(r4.z));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── S · «Pasar a una vuelta sola» (27-oct-2026, 2ª) ──');
+{
+  const S0 = await boot();
+  const { q, qa, click, T, V2 } = S0;
+  const R = () => T().rt;
+  const laneCon = (k) => R().lanes.find((l) => (R().order[l.id] || []).includes(k)) || null;
+  const l0 = laneCon('rJ');
+  const t0 = V2().dia().byId[l0.id].stops.find((s) => s.crewId === 'rJ').time;
+  const chip = q(`#rv2-list [data-act="move"][data-crew="rJ"]`);
+  click(chip); await wait();
+  const btn = q('#routes-v2 [data-act="sola"][data-crew="rJ"]');
+  t('«Mover a Juliana a…» ofrece «Pasar a una vuelta sola»', !!btn && /Pasar a una vuelta sola/.test(txt(btn)) && /Después le pones el conductor/.test(txt(btn)), btn && txt(btn));
+  click(btn); await wait();
+  const l1 = laneCon('rJ');
+  const r1 = l1 && V2().dia().byId[l1.id];
+  t('Juliana queda sola en una vuelta NUEVA, a la hora a la que la recogían', l1 && l1 !== l0 && R().order[l1.id].join() === 'rJ' && r1 && r1.stops[0].time === t0, JSON.stringify([l1 && l1.id, r1 && r1.stops, t0]));
+  t('…Mateo sigue en la suya, sin ella', R().order[l0.id].join() === 'rI');
+  t('…en un carro donde no se cruza con nada', !R().cars.some((c) => R().lanes.filter((l) => l.car === c.id && (R().order[l.id] || []).length).some((l) => (V2().dia().byId[l.id] || {}).retraso > 0)));
+  t('…y la vuelta queda abierta con «Cambiar» para el conductor', /Pasar|Cambiar/.test(txt(q('#routes-v2 .rv2-detail')) || '') && !!q('#routes-v2 [data-act="assign"]'), txt(q('#routes-v2 .rv2-detail')) && txt(q('#routes-v2 .rv2-detail')).slice(0, 120));
+  t('…y el aviso lo dice', /Juliana Ossa pasó a una vuelta sola en/.test(S0.toastV2() || ''), S0.toastV2());
+  click(q('#rv2-toast [data-act="undo"]')); await wait();
+  t('«Deshacer»: Juliana vuelve con Mateo', laneCon('rJ') === laneCon('rI') && laneCon('rJ').id === l0.id);
+  // Desde Avisos (sin carro): Manuela.
+  click(q('#routes-v2 [data-act="route"][data-crew="rN"]')); await wait();
+  const b2 = q('#rv2-sheet [data-act="sola"][data-crew="rN"]');
+  t('«Ubicar a Manuela» (sin carro) también ofrece «En una vuelta sola»', !!b2, txt(q('#rv2-sheet')) && txt(q('#rv2-sheet')).slice(0, 200));
+  click(b2); await wait();
+  const lN = laneCon('rN');
+  t('…y queda sola, con hora antes de su presentación (9:10)', lN && R().order[lN.id].join() === 'rN' && !R().pool.includes('rN') && (V2().dia().byId[lN.id] || {}).arrival <= 9 * 60 + 10, lN && JSON.stringify([lN.start, (V2().dia().byId[lN.id] || {}).arrival]));
+  // Una vuelta de UNA persona no ofrece «sola» (ya lo está).
+  click(q(`#rv2-list [data-act="move"][data-crew="rM"]`)); await wait();
+  t('quien ya va sola no ve «Pasar a una vuelta sola»', !q('#routes-v2 [data-act="sola"][data-crew="rM"]'));
+  t('sin errores de script', S0.errors.length === 0, S0.errors.join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── T · «Conductor asignado» trae la hora (los tripulantes: «ya se podía ver en la app la hora de recogida») ──');
+{
+  const T0 = await boot({ publicado: false });
+  const { w, T, log } = T0;
+  w.Api.auxiliarUserIdsForReservations = async (rids) => rids.map((x) => 'u-' + x);
+  w.Api.reservePlace = () => null;
+  const R = T().rt;
+  // Un plan con conductor: José y Camila salen a las 5:30 (horas del jefe) y Natalia llega.
+  T0.V2().meterPegado([{ type: 'sal', stops: [{ rid: 'res-C', min: 330 }, { rid: 'res-D', min: 340 }] }, { type: 'lle', stops: [{ rid: 'res-F', min: 880 }] }]);
+  T0.V2().render();
+  await T().rtSavePlan();
+  const bodies = log.push.filter((p) => /Conductor asignado/.test(p.title)).map((p) => [p.body, p.profileIds.join()]);
+  t('a José le llega «Te recogemos … a las 5:30» y a Camila «… a las 5:40»', bodies.some(([b, ids]) => /Te recogemos el lunes 12 a las 5:30\./.test(b) && ids === 'u-res-C') && bodies.some(([b, ids]) => /a las 5:40\./.test(b) && ids === 'u-res-D'), JSON.stringify(bodies));
+  t('…y a Natalia (llega en vuelo) «Cuando aterrices te esperamos en JMC (sale … hacia las …)»', bodies.some(([b, ids]) => /Cuando aterrices te esperamos en JMC \(sale el lunes 12 hacia las 15:\d\d\)/.test(b) && ids === 'u-res-F'), JSON.stringify(bodies));
+  t('sin errores de script', T0.errors.length === 0, T0.errors.join(' | '));
 }
 
 t('sin errores de script (instancia base)', base.errors.length === 0, base.errors.join(' | '));

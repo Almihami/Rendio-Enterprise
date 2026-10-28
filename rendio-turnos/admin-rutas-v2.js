@@ -361,16 +361,23 @@
 
   /* ---------- 3. Mover / simular (con el modelo de tiempos real) ---------- */
   // Pegar la ruta del jefe (meterPegado) también pone horas (rt.horasPub), carros
-  // y pasajeros sin cuenta (rt.aux): «Deshacer» los quita.
-  const foto = () => ({ lanes: clone(rt.lanes), order: clone(rt.order), pool: rt.pool.slice(), drv: rt.cars.map((c) => [c.driverAM || null, c.driverPM || null, c.driverMad || null]), optimized: rt.optimized, fijas: clone(rt.rv2Fijas || {}), auto: clone(rt.rv2Auto || {}),
-    horas: clone(rt.horasPub || {}), fin: clone(rt.rv2Fin || {}), nCars: rt.cars.length, sinCuenta: Object.keys(rt.aux || {}).filter((k) => rt.aux[k].guest) });
+  // y pasajeros sin cuenta (rt.aux): «Deshacer» los quita. Desde que pegar REARMA
+  // el día (27-oct-2026, 2ª) también saca sin cuenta y trae pedidos nuevos: la foto
+  // guarda las llaves de rt.aux y los sin cuenta enteros, para devolverlos.
+  const foto = () => {
+    const sinCuenta = {};
+    Object.keys(rt.aux || {}).forEach((k) => { if (rt.aux[k].guest) sinCuenta[k] = clone(rt.aux[k]); });
+    return { lanes: clone(rt.lanes), order: clone(rt.order), pool: rt.pool.slice(), drv: rt.cars.map((c) => [c.driverAM || null, c.driverPM || null, c.driverMad || null]), optimized: rt.optimized, fijas: clone(rt.rv2Fijas || {}), auto: clone(rt.rv2Auto || {}),
+      horas: clone(rt.horasPub || {}), fin: clone(rt.rv2Fin || {}), nCars: rt.cars.length, llaves: Object.keys(rt.aux || {}), sinCuenta };
+  };
   function restaurar(f) {
     rt.lanes = clone(f.lanes); rt.order = clone(f.order); rt.pool = f.pool.slice(); rt.optimized = f.optimized;
     rt.rv2Fijas = clone(f.fijas || {}); rt.rv2Auto = clone(f.auto || {});
     if (f.horas) rt.horasPub = clone(f.horas);
     if (f.fin) rt.rv2Fin = clone(f.fin);   // 27-oct: «Deshacer» un re-optimizar perdía cómo terminó cada vuelta
     if (f.nCars != null && rt.cars.length > f.nCars) rt.cars.length = f.nCars;
-    if (f.sinCuenta) Object.keys(rt.aux || {}).forEach((k) => { if (rt.aux[k].guest && !f.sinCuenta.includes(k)) delete rt.aux[k]; });
+    if (f.llaves) { const ya = new Set(f.llaves); Object.keys(rt.aux || {}).forEach((k) => { if (!ya.has(k)) delete rt.aux[k]; }); }
+    if (f.sinCuenta) Object.keys(f.sinCuenta).forEach((k) => { rt.aux[k] = clone(f.sinCuenta[k]); });
     rt.cars.forEach((c, i) => { const d = f.drv[i] || [null, null, null]; c.driverAM = d[0]; c.driverPM = d[1]; c.driverMad = d[2] || null; });
   }
   function aplicarMovida(crewId, fromId, toId) {
@@ -1216,6 +1223,7 @@
       `<div class="rv2-mvopts" id="rv2-mvopts">${ops.length ? ops.map((o) => optHTML(o, `data-act="moveto" data-crew="${esc(crew)}" data-from="${esc(r.id)}" data-to="${esc(o.lane.id)}"`)).join('')
         : `<p class="rv2-impact">No hay ${a.type === 'lle' ? 'llegadas' : 'salidas'} con cupo ${ui.todas ? 'ese día' : 'cerca de esa hora'}.</p>`}</div>` +
       (ui.todas ? '' : '<button class="rv2-linkbtn" data-act="mvtodas">Ver todas las vueltas con cupo</button>') +
+      ((r.stops || []).length > 1 ? `<button class="rv2-opt rv2-opt--sola" data-act="sola" data-crew="${esc(crew)}" data-from="${esc(r.id)}"><span class="t"><b>Pasar a una vuelta sola</b></span><small>Una vuelta nueva solo con ${esc(String(a.n || '').split(' ')[0] || 'ella')}, en un carro libre a esa hora. Después le pones el conductor.</small></button>` : '') +
       `<button class="rv2-opt rv2-opt--drop" data-act="unroute" data-crew="${esc(crew)}" data-from="${esc(r.id)}"><span class="t"><b>Dejar sin carro</b></span><small>Queda en Avisos para ubicarlo después.</small></button>`;
     dibujarMapa(r, { note: mq('(hover: hover)') ? 'Pasa el cursor por una opción para verla en el mapa.' : '' });
   }
@@ -1368,6 +1376,99 @@
     commit(`${nombre(crewId)} quedó sin carro · aparece en Avisos`);
   }
 
+  // UNA VUELTA EN UN CARRO (27-oct-2026). Lo que pegar y «Pasar a una vuelta sola»
+  // comparten: el primer carro que esté libre a esa hora; si ninguno, uno más (los
+  // planes del jefe piden un tercero en el pico). El conductor lo pone el turno del
+  // carro (autoLlenar), y se cambia con «Cambiar», como en cualquier vuelta.
+  //   n: { type, ids, start: 'HH:MM', landing?: min, horas?: { llave: min } }
+  const renumerarCarro = (carId) => {
+    rt.lanes.filter((l) => l.car === carId && (rt.order[l.id] || []).length)
+      .sort((a, b) => rtToMin(a.start) - rtToMin(b.start) || a.vuelta - b.vuelta)
+      .forEach((l, i) => { l.vuelta = i + 1; });
+    encadenar(carId);
+  };
+  // Cuándo tiene que estar libre el carro: en una llegada, a la salida de JMC; en
+  // una salida, la primera recogida menos lo que tarda en llegar ahí.
+  const hacePorLaFalta = (l) => {
+    if (l.type === 'lle') return rtToMin(l.start);
+    const ids = rt.order[l.id] || [];
+    const s0 = (rtCarCompute(l.id).stops || [])[0];
+    return s0 ? s0.eta - (l.origin && ids[0] ? rtLegMin(l.origin, ids[0]) : 0) : rtToMin(l.start);
+  };
+  const cabeEnCarro = (lane) => {
+    const l0 = libreDe(lane);
+    if (l0 != null && l0 > hacePorLaFalta(lane) + TOL_CHOQUE) return false;
+    const sig = siguienteDe(lane.id);
+    const l1 = sig ? libreDe(sig) : null;
+    return !(sig && l1 != null && l1 > hacePorLaFalta(sig) + TOL_CHOQUE);
+  };
+  const idLibreDe = (carId) => { let i = 1; while (rt.order[`${carId}·V${i}`] || rt.lanes.some((l) => l.id === `${carId}·V${i}`)) i++; return `${carId}·V${i}`; };
+  function ubicarVuelta(n, nuevosCarros) {
+    const lane = { id: null, car: null, vuelta: 0, type: n.type, start: n.start, origin: n.type === 'lle' ? 'airport' : null };
+    if (n.type === 'lle' && n.landing != null) lane.landing = rtToHM(n.landing);
+    const poner = (car) => {
+      lane.car = car.id; lane.id = idLibreDe(car.id);
+      rt.lanes.push(lane); rt.order[lane.id] = n.ids.slice();
+      if (n.horas) rt.horasPub[lane.id] = { start: lane.start, sig: n.ids.join(','), etas: n.type === 'lle' ? {} : Object.assign({}, n.horas) };
+      renumerarCarro(car.id);
+    };
+    const quitar = () => {
+      rt.lanes = rt.lanes.filter((l) => l !== lane);
+      delete rt.order[lane.id]; delete rt.horasPub[lane.id]; renumerarCarro(lane.car);
+    };
+    let car = rt.cars.find((c) => { poner(c); if (cabeEnCarro(lane)) return true; quitar(); return false; });
+    if (!car) {
+      let i = rt.cars.length + 1, id; do { id = 'Carro ' + i++; } while (rt.cars.some((c) => c.id === id));
+      car = { id, avail0: '00:00', driver: null, capacity: rt.CAP, vehicleId: null };
+      rt.cars.push(car); if (nuevosCarros) nuevosCarros.push(id);
+      poner(car);
+    }
+    return lane;
+  }
+
+  // «PASAR A UNA VUELTA SOLA» (27-oct-2026, la profa: «tomar un tripulante de una
+  // vuelta, quitarlo y pasarlo a estar solo para asignarle un conductor»). Hasta hoy
+  // Mover y Ubicar solo ofrecían vueltas que ya existían: la de Manuela con Daniel se
+  // hizo por script. Sale de su vuelta (que se reprograma sin ella) a una vuelta
+  // NUEVA solo con ella, y queda abierta para ponerle conductor.
+  //   Salida: conserva la hora a la que la recogían (o la del modelo si no tenía).
+  //   Llegada: sale de JMC cuando ella ya salió (su vuelo + desembarque).
+  function pasarASola(crewId, fromId) {
+    const a = aux(crewId); if (!a) return null;
+    const from = fromId ? rtLaneOf(fromId) : null;
+    if (from && (fijaDe(from.id) || atendida(crewId))) { toast(`${nombre(crewId)} va en una vuelta que ya arrancó: no se puede sacar.`); return null; }
+    if (from && (rt.order[fromId] || []).length === 1) { toast(`${nombre(crewId)} ya va sola en esa vuelta.`); return null; }
+    const r0 = from ? ruta(from) : null;
+    const st = r0 ? r0.stops.find((s) => s.crewId === crewId) : null;
+    snapshot('sola');
+    if (from) rt.order[fromId] = (rt.order[fromId] || []).filter((x) => x !== crewId);
+    rt.pool = rt.pool.filter((x) => x !== crewId);
+    rt.horasPub = rt.horasPub || {};
+    const n = { type: a.type === 'lle' ? 'lle' : 'sal', ids: [crewId] };
+    if (n.type === 'lle') {
+      n.landing = horaVuelta([crewId]);
+      n.start = rtInicioLle(n.landing + rtDeplaneOf([crewId], n.landing));
+    } else if (st && st.time != null) {
+      n.start = rtToHM(st.time); n.horas = { [crewId]: st.time };
+    } else {
+      // Sin hora todavía (estaba sin carro): la del modelo, como si saliera de su casa.
+      const pres = rtToMin(a.dl);
+      const t = pres - (rt.AIRPORT_BUFFER || 10) - rtLegMin(crewId, 'airport') - (rt.SERVICE_MIN || 4);
+      n.start = rtToHM(Math.max(0, rtRedondea5(t - 2)));
+    }
+    const lane = ubicarVuelta(n, []);
+    if (!n.horas) reprogramar(lane);
+    if (from) {
+      if (!(rt.order[fromId] || []).length) { rt.lanes = rt.lanes.filter((l) => l.id !== fromId); delete rt.order[fromId]; delete rt.horasPub[fromId]; renumerarCarro(from.car); }
+      else { encadenar(from.car); reprogramar(from); }
+    }
+    ui.moving = null; ui.sel = lane.id;
+    const r = ruta(lane);
+    commit(`${nombre(crewId)} pasó a una vuelta sola en ${lane.car} (${r ? hhmm(r.pickup) : lane.start}) · el conductor se cambia con «Cambiar»`);
+    verRuta(lane.id);   // queda abierta: ahí está «Cambiar» para el conductor
+    return lane;
+  }
+
   // PEGAR = LLENAR EL TABLERO (27-oct-2026). La profa: «lo único que debería
   // cambiar es cuando alguien suba». La ruta que pega el jefe (admin-ruta-julian.js)
   // era otra clase de vuelta: otra tarjeta, sin trayecto, sin mapa, otra forma de
@@ -1382,22 +1483,57 @@
   //               stops: [{ rid, min } | { guest: { name, place, residence_id, lat, lng, zona, vuelo }, min }] }]
   //   min = minutos del día del tablero (su madrugada va de 0 al corte).
   // Quien va en una vuelta que ya arrancó se queda donde va (enCurso).
-  function meterPegado(vueltas) {
+  //
+  // REARMAR EL DÍA (27-oct-2026, 2ª). La profa: «al pegar la actualización… debería
+  // armar de nuevo el tablero con la actualización y no dejar duplicidad». Antes
+  // solo se movía a la gente del texto: quien ya no estaba (o el sin cuenta escrito
+  // distinto) se quedaba en su vuelta vieja y el día salía repetido. Con
+  // opts.rearmar el texto MANDA: toda vuelta que no ha arrancado se rehace con él;
+  // quien pidió por la app y no está en el texto queda sin carro (en Avisos) y el sin
+  // cuenta que ya no está, sale. La vuelta que sigue IGUAL (misma gente, mismo
+  // sentido) se queda con su carro, su conductor y su delegado: solo toma las horas
+  // del texto, y si no cambiaron, al publicar no le llega nada a nadie.
+  //   opts.rearmar: true = el texto es el día entero · false = solo esas vueltas.
+  //   opts.nuevos: { aux, colors } de una lectura fresca de los pedidos: quien pidió
+  //   después de abrir el día también se puede pegar.
+  function meterPegado(vueltas, opts = {}) {
     if (!Array.isArray(vueltas) || !vueltas.length || !rt.cars || !rt.aux) return null;
     snapshot('pegar');
     rt.lanes = rt.lanes || []; rt.order = rt.order || {}; rt.pool = rt.pool || []; rt.horasPub = rt.horasPub || {};
     const porReserva = {};
     Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
+    const frescos = (opts.nuevos && opts.nuevos.aux) || {};
+    const enPegadas = new Set(Object.values(rt.rv2AuxPegadas || {}).map((a) => a && a.reservationId).filter(Boolean));
+    const nuevosPedidos = [];
+    const traerPedido = (rid) => {
+      const k0 = Object.keys(frescos).find((k) => frescos[k] && frescos[k].reservationId === rid);
+      if (!k0 || enPegadas.has(rid)) return null;
+      let k = k0; while (rt.aux[k]) k += 'n';
+      rt.aux[k] = clone(frescos[k0]);
+      if (rt.colors && !rt.colors[k]) rt.colors[k] = (opts.nuevos.colors && opts.nuevos.colors[k0]) || '#8895a7';
+      porReserva[rid] = k; nuevosPedidos.push(k);
+      return k;
+    };
     const laneDe = (k) => rt.lanes.find((l) => (rt.order[l.id] || []).includes(k)) || null;
-    const enCurso = [], tocadas = new Set(), nuevas = [];
+    // Quieta (como en Re-optimizar, vueltasQuietas): arrancó, terminó o ya pasó sin
+    // que el conductor la marcara. Su gente se queda ahí aunque venga en el texto.
+    const quieta = (l) => !!(l && (fijaDe(l.id) || esSinMarcar(l)));
+    const enCurso = [], nuevas = [];
     let sinCuenta = 0, gN = 0;
-    // El sin cuenta que ya iba en el tablero (volver a pegar) es el mismo: se mueve.
+    // El sin cuenta que ya iba en el tablero es el mismo: se mueve. También si Julián
+    // lo escribió un poco distinto («Lesli» / «Leslie»), si es del mismo sentido y a
+    // una hora parecida: así no queda dos veces.
+    const yaUsados = new Set();
     const llaveSinCuenta = (g, type, min) => {
-      const n = norm(g.name);
-      const ya = Object.keys(rt.aux).filter((k) => rt.aux[k].guest && rt.aux[k].type === type && norm(rt.aux[k].n) === n)
-        .sort((a, b) => Math.abs(rtToMin(rt.aux[a].dl) - min) - Math.abs(rtToMin(rt.aux[b].dl) - min))[0];
-      if (ya) return ya;
-      let k; do { k = 'gp' + (++gN); } while (rt.aux[k]);
+      const n = norm(g.name).trim(), n1 = n.split(/\s+/)[0] || '';
+      const libres = Object.keys(rt.aux).filter((k) => rt.aux[k].guest && rt.aux[k].type === type && !yaUsados.has(k));
+      const dif = (k) => Math.abs(rtToMin(rt.aux[k].dl) - min);
+      const cerca = (k) => { const m1 = norm(rt.aux[k].n).trim().split(/\s+/)[0] || ''; return n1.length >= 3 && m1.length >= 3 && (m1.startsWith(n1) || n1.startsWith(m1)) && dif(k) <= 120; };
+      const ya = libres.filter((k) => norm(rt.aux[k].n).trim() === n).sort((a, b) => dif(a) - dif(b))[0]
+        || libres.filter(cerca).sort((a, b) => dif(a) - dif(b))[0];
+      let k = ya;
+      if (!k) do { k = 'gp' + (++gN); } while (rt.aux[k]);
+      yaUsados.add(k);
       return k;
     };
     vueltas.forEach((v) => {
@@ -1406,11 +1542,11 @@
       (v.stops || []).forEach((s) => {
         if (s.min == null || !isFinite(s.min)) return;
         let k = null;
-        if (s.rid) k = porReserva[s.rid] || null;
+        if (s.rid) k = porReserva[s.rid] || traerPedido(s.rid);
         else if (s.guest && s.guest.name) {
           k = llaveSinCuenta(s.guest, type, s.min);
           const de = laneDe(k);
-          if (!(de && (fijaDe(de.id) || atendida(k)))) {
+          if (!(de && (quieta(de) || atendida(k)))) {
             const stopId = rt.aux[k] && rt.aux[k].guest ? rt.aux[k].guest.stopId : null;
             rt.aux[k] = auxSinCuenta(Object.assign({}, s.guest, { stopId }), type,
               type === 'lle' ? s.min : (v.deadline != null ? v.deadline : s.min + 60));
@@ -1418,22 +1554,14 @@
             sinCuenta++;
           }
         }
-        if (!k || ids.includes(k)) return;
+        if (!k || ids.includes(k) || nuevas.some((x) => x.ids.includes(k))) return;
         const de = laneDe(k);
-        if (de && (fijaDe(de.id) || atendida(k))) { enCurso.push(nombre(k)); return; }
-        if (de) { rt.order[de.id] = rt.order[de.id].filter((x) => x !== k); tocadas.add(de.id); }
-        rt.pool = rt.pool.filter((x) => x !== k);
+        if (de && (quieta(de) || atendida(k))) { enCurso.push(nombre(k)); return; }
         ids.push(k); horas[k] = s.min;
       });
       if (ids.length) nuevas.push({ type, ids, horas });
     });
-    if (!nuevas.length) { hist.pop(); return { vueltas: 0, carros: [], nuevosCarros: [], enCurso, sinCuenta: 0 }; }
-    // La vuelta del tablero que se quedó sin nadie sobra.
-    [...tocadas].forEach((id) => {
-      if ((rt.order[id] || []).length || fijaDe(id)) return;
-      rt.lanes = rt.lanes.filter((l) => l.id !== id);
-      delete rt.order[id]; delete rt.horasPub[id]; tocadas.delete(id);
-    });
+    if (!nuevas.length) { const h = hist.pop(); if (h) restaurar(h.f); return { vueltas: 0, iguales: 0, carros: [], nuevosCarros: [], enCurso, sinCuenta: 0, sinCarro: [], nuevosPedidos: 0 }; }
     // Las horas del jefe. Salida: la primera recogida (y cada recogida la suya).
     // Llegada: sale de JMC cuando ya salió el último (su hora + desembarque), la
     // misma cuenta del tablero (reprogramar), y reparte en el orden del tablero.
@@ -1448,51 +1576,56 @@
         n.start = rtToHM(n.t);
       }
     });
-    const renumerar = (carId) => {
-      rt.lanes.filter((l) => l.car === carId && (rt.order[l.id] || []).length)
-        .sort((a, b) => rtToMin(a.start) - rtToMin(b.start) || a.vuelta - b.vuelta)
-        .forEach((l, i) => { l.vuelta = i + 1; });
-      encadenar(carId);
-    };
-    // Cuándo tiene que estar libre el carro: en una llegada, a la salida de JMC; en
-    // una salida, la primera recogida menos lo que tarda en llegar ahí.
-    const hacePorLaFalta = (l) => {
-      if (l.type === 'lle') return rtToMin(l.start);
+    // La vuelta que sigue igual (misma gente y sentido, sin arrancar) se queda.
+    const pegados = new Set(nuevas.flatMap((n) => n.ids));
+    const misma = (l, n) => { const a = rt.order[l.id] || []; return l.type === n.type && a.length === n.ids.length && n.ids.every((k) => a.includes(k)); };
+    nuevas.forEach((n) => { n.lane = rt.lanes.find((l) => !quieta(l) && !nuevas.some((m) => m.lane === l) && misma(l, n)) || null; });
+    // Lo que sale de las demás vueltas sin arrancar: con rearmar, todos; si no, solo
+    // los del texto. Quien no está en el texto queda sin carro; el sin cuenta, sale.
+    // La delegada (o la «para tomar» que alguien ya tomó) la puso Coordinación en el
+    // tablero: solo se toca si su gente viene en el texto.
+    const tocadas = new Set(), sinCarro = [];
+    rt.lanes.slice().forEach((l) => {
+      if (quieta(l) || nuevas.some((n) => n.lane === l)) return;
       const ids = rt.order[l.id] || [];
-      const s0 = (rtCarCompute(l.id).stops || [])[0];
-      return s0 ? s0.eta - (l.origin && ids[0] ? rtLegMin(l.origin, ids[0]) : 0) : rtToMin(l.start);
-    };
-    const cabe = (lane) => {
-      const l0 = libreDe(lane);
-      if (l0 != null && l0 > hacePorLaFalta(lane) + TOL_CHOQUE) return false;
-      const sig = siguienteDe(lane.id);
-      const l1 = sig ? libreDe(sig) : null;
-      return !(sig && l1 != null && l1 > hacePorLaFalta(sig) + TOL_CHOQUE);
-    };
-    const idLibre = (carId) => { let i = 1; while (rt.order[`${carId}·V${i}`] || rt.lanes.some((l) => l.id === `${carId}·V${i}`)) i++; return `${carId}·V${i}`; };
-    const nuevosCarros = [], carros = new Set();
-    const carroNuevo = () => {
-      let i = rt.cars.length + 1, id; do { id = 'Carro ' + i++; } while (rt.cars.some((c) => c.id === id));
-      const car = { id, avail0: '00:00', driver: null, capacity: rt.CAP, vehicleId: null };
-      rt.cars.push(car); nuevosCarros.push(id); return car;
-    };
-    nuevas.sort((a, b) => a.t - b.t).forEach((n) => {
-      const lane = { id: null, car: null, vuelta: 0, type: n.type, start: n.start, origin: n.type === 'lle' ? 'airport' : null };
-      if (n.type === 'lle') lane.landing = rtToHM(n.landing);
-      const poner = (car) => {
-        lane.car = car.id; lane.id = idLibre(car.id);
-        rt.lanes.push(lane); rt.order[lane.id] = n.ids.slice();
-        rt.horasPub[lane.id] = { start: lane.start, sig: n.ids.join(','), etas: n.type === 'lle' ? {} : Object.assign({}, n.horas) };
-        renumerar(car.id);
-      };
-      const quitar = () => {
-        rt.lanes = rt.lanes.filter((l) => l !== lane);
-        delete rt.order[lane.id]; delete rt.horasPub[lane.id]; renumerar(lane.car);
-      };
-      let car = rt.cars.find((c) => { poner(c); if (cabe(lane)) return true; quitar(); return false; });
-      if (!car) { car = carroNuevo(); poner(car); }
-      carros.add(car.id);
+      const aparte = l.deleg === true || (l.tomar === true && !!l.drv);
+      const salen = ids.filter((k) => (opts.rearmar && !aparte ? !atendida(k) : pegados.has(k)));
+      if (!salen.length) return;
+      rt.order[l.id] = ids.filter((k) => !salen.includes(k));
+      salen.forEach((k) => {
+        if (pegados.has(k)) return;
+        if (rt.aux[k] && rt.aux[k].guest) { delete rt.aux[k]; return; }
+        if (!rt.pool.includes(k)) rt.pool.push(k);
+        sinCarro.push(nombre(k));
+      });
+      tocadas.add(l.id);
     });
+    rt.pool = rt.pool.filter((k) => !pegados.has(k) && rt.aux[k]);
+    // La vuelta del tablero que se quedó sin nadie sobra.
+    [...tocadas].forEach((id) => {
+      if ((rt.order[id] || []).length || quieta(rtLaneOf(id))) return;
+      rt.lanes = rt.lanes.filter((l) => l.id !== id);
+      delete rt.order[id]; delete rt.horasPub[id]; tocadas.delete(id);
+    });
+    // Las que siguen iguales toman el orden y las horas del texto. Si con la hora
+    // nueva ya no le cabe a su carro, se ubica como una nueva.
+    nuevas.filter((n) => n.lane).forEach((n) => {
+      const l = n.lane;
+      rt.order[l.id] = n.ids.slice();
+      l.start = n.start; if (n.type === 'lle') l.landing = rtToHM(n.landing);
+      rt.horasPub[l.id] = { start: l.start, sig: n.ids.join(','), etas: n.type === 'lle' ? {} : Object.assign({}, n.horas) };
+    });
+    [...new Set(nuevas.filter((n) => n.lane).map((n) => n.lane.car))].forEach(renumerarCarro);
+    nuevas.filter((n) => n.lane).sort((a, b) => a.t - b.t).forEach((n) => {
+      if (cabeEnCarro(n.lane)) return;
+      const l = n.lane;
+      rt.lanes = rt.lanes.filter((x) => x !== l); delete rt.order[l.id]; delete rt.horasPub[l.id];
+      renumerarCarro(l.car); n.lane = null;
+    });
+    const nuevosCarros = [], carros = new Set();
+    nuevas.filter((n) => n.lane).forEach((n) => carros.add(n.lane.car));
+    const iguales = nuevas.filter((n) => n.lane).length;
+    nuevas.filter((n) => !n.lane).sort((a, b) => a.t - b.t).forEach((n) => { carros.add(ubicarVuelta(n, nuevosCarros).car); });
     // Las del tablero que perdieron gente se reprograman, como al mover a alguien.
     tocadas.forEach((id) => { const l = rtLaneOf(id); if (l) reprogramar(l); });
     // Un día que iba solo con la ruta pegada (0125) ya tiene tablero.
@@ -1500,8 +1633,19 @@
     rt.optimized = true;
     ui.sel = null; ui.moving = null;
     render();
-    return { vueltas: nuevas.length, carros: [...carros], nuevosCarros, enCurso, sinCuenta };
+    return { vueltas: nuevas.length, iguales, carros: [...carros], nuevosCarros, enCurso, sinCuenta, sinCarro, nuevosPedidos: nuevosPedidos.length };
   }
+  // Para la hoja de la ruta de Julián: quién del día sigue por mover (sin carro o en
+  // una vuelta que no ha arrancado). Si el texto trae a la mayoría, es el día entero.
+  function pendientesDelTablero() {
+    return Object.keys(rt.aux || {}).filter((k) => {
+      const a = rt.aux[k]; if (!a || !a.reservationId || atendida(k)) return false;
+      const l = (rt.lanes || []).find((x) => (rt.order[x.id] || []).includes(k));
+      return !(l && (fijaDe(l.id) || esSinMarcar(l)));
+    }).map((k) => rt.aux[k].reservationId);
+  }
+  // La vuelta que ya pasó y el conductor no marcó (finFila, la de Re-optimizar).
+  const esSinMarcar = (l) => !!(l && D && D.byId && D.byId[l.id] && finFila(D.byId[l.id]) === 'sinmarcar');
   // La madrugada del día siguiente que el jefe pega con este día (después de la
   // noche) es del plan de ESE día: queda aquí y entra sola cuando se abre ese día.
   const pegadoPendiente = {};
@@ -1738,7 +1882,8 @@
     };
     openSheet(sheetHead(`Ubicar a ${esc(a.n)}`, sub) +
       `<div class="rv2-sh-body"><h3 class="rv2-cap" id="rv2-optsCap"></h3><div id="rv2-opts" role="radiogroup" aria-label="Vueltas destino" style="display:flex;flex-direction:column;gap:8px"></div>` +
-      `<label class="rv2-search" style="width:100%;height:44px">${IC.search}<input id="rv2-optq" type="search" placeholder="Buscar otra vuelta o carro" autocomplete="off" aria-label="Buscar otra vuelta o carro"></label></div>` +
+      `<label class="rv2-search" style="width:100%;height:44px">${IC.search}<input id="rv2-optq" type="search" placeholder="Buscar otra vuelta o carro" autocomplete="off" aria-label="Buscar otra vuelta o carro"></label>` +
+      `<button class="rv2-opt rv2-opt--sola" data-act="sola" data-crew="${esc(crewId)}"><span class="t"><b>En una vuelta sola</b></span><small>Una vuelta nueva solo con ${esc(String(a.n || '').split(' ')[0] || 'ella')}, en un carro libre a esa hora. Después le pones el conductor.</small></button></div>` +
       `<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button><button class="rv2-btn rv2-btn--cta" id="rv2-doMove">Mover</button></div>`);
     setLabel();
     const btn = $('#rv2-doMove');
@@ -2313,7 +2458,7 @@
     // «undefined is not an object (evaluating 't.split')» (miércoles 28-oct-2026).
     const podarPool = () => { rt.pool = (rt.pool || []).filter((k) => rt.aux && rt.aux[k]); return false; };
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {}; rt.rv2Fin = {};
-    ui.manual = null; rt.manualDia = false; rt.rv2Solas = []; rt.rv2AuxPegadas = {};
+    ui.manual = null; rt.manualDia = false; rt.rv2Solas = []; rt.rv2AuxPegadas = {}; rt.rv2Ajenas = [];
     // Los sin cuenta salen de las vueltas publicadas: se vuelven a leer de ahí.
     Object.keys(rt.aux || {}).forEach((k) => { if (rt.aux[k] && rt.aux[k].guest) delete rt.aux[k]; });
     if (!puede || fallo) return podarPool();
@@ -2340,6 +2485,7 @@
     // personas ya van en una vuelta suya, así que el tablero no las vuelve a rutear.
     const ajenas = new Set(todas.filter((v) => v.pool && !v.paraTomar && (v.autoCreated || !deEste(v))).flatMap(genteDe));
     if (ajenas.size) Object.keys(rt.aux).forEach((k) => { if (ajenas.has(rt.aux[k].reservationId)) delete rt.aux[k]; });
+    rt.rv2Ajenas = [...ajenas];   // la hoja de la ruta de Julián no las vuelve a ofrecer
     // Día mezclado (26-oct-2026): quien va en una vuelta pegada de ESTE día tampoco
     // se rutea en el tablero (saldría «sin carro» y Re-optimizar lo metería en otra
     // vuelta; saveRoutePlan igual lo saltaría). Salvo que ya vaya en una vuelta del
@@ -2764,6 +2910,7 @@
       if (a === 'mvcancel') { ui.moving = null; return renderDetail(); }
       if (a === 'mvtodas') { ui.todas = true; return renderDetail(); }
       if (a === 'unroute') return sacarDeRuta(act.dataset.crew, act.dataset.from);
+      if (a === 'sola') { if (!el.sheet.hidden) closeSheet(); return pasarASola(act.dataset.crew, act.dataset.from || null); }
       if (a === 'apply') return moveCrew(act.dataset.crew, act.dataset.from, act.dataset.to);
       if (a === 'autoassign') { closeSheet(); return autoAssign(); }
       if (a === 'ver') return verRuta(act.dataset.id);
@@ -2863,6 +3010,7 @@
     pegadas: () => (ui.manual && ui.manual.vueltas) || [],   // 0145: «Cambiar hora» busca aquí su vuelta
     // 27-oct-2026: la ruta pegada entra al tablero (meterPegado) y se publica con la hoja de siempre.
     meterPegado, guardarPegado, abrirPublicar: () => openPublish(), _pegadoPendiente: pegadoPendiente,
+    pendientesDelTablero, pasarASola,   // 27-oct-2026 (2ª): rearmar el día al pegar · una vuelta sola
     _ui: ui, _hist: hist, dia: () => D, medir, sugerencia: (id) => sugerencia(D && D.byId[id]), candidatas, _mover: moveCrew,
     _avisos: () => avisosDe(), _sacar: sacarDeRuta,
     _refrescarFines: refrescarFines,   // 0137 (pruebas)
