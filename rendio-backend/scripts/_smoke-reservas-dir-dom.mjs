@@ -4,7 +4,8 @@
 // Los jefes se enredaban con las salidas y las llegadas mezcladas en la misma
 // lista por hora. Carga index.html + api.js + admin-reservas.js con un `sb`
 // FALSO y comprueba:
-//   · arranca en «Todas» y muestra las dos;
+//   · arranca en «Todas» y muestra las dos (28-oct: «Todas» = las que siguen en
+//     pie; la cancelada solo sale en «Canceladas», Camilo);
 //   · «Salidas» deja solo casa → JMC y «Llegadas» solo JMC → casa (incluida la
 //     de tierra y la de reserva en hotel, que también son salida o llegada);
 //   · los números se cruzan con el estado y el día (cada fila de filtros cuenta
@@ -126,10 +127,10 @@ console.log('\n── El filtro existe y arranca en «Todas» ──');
   t('los botones dicen Todas · Salidas · Llegadas', b.qa('#rv-ui [data-rv-dir]').map(x => txt(x).replace(/\s*\d+$/, '')).join(' · ') === 'Todas · Salidas · Llegadas',
     b.qa('#rv-ui [data-rv-dir]').map(txt).join(' | '));
   t('arranca en «Todas» (encendido)', b.q('[data-rv-dir="all"]').classList.contains('on') && !b.q('[data-rv-dir="sal"]').classList.contains('on'));
-  t('se ven las 8 reservas', b.ids() === 'l1,l2,l3,l4,s1,s2,s3,s4', b.ids());
-  t('números: Todas 8 · Salidas 4 · Llegadas 4', b.n('[data-rv-dir="all"]') === 8 && b.n('[data-rv-dir="sal"]') === 4 && b.n('[data-rv-dir="lle"]') === 4,
+  t('se ven las 7 en pie (la cancelada no: está en Canceladas)', b.ids() === 'l1,l2,l3,l4,s1,s2,s4', b.ids());
+  t('números: Todas 7 · Salidas 3 · Llegadas 4', b.n('[data-rv-dir="all"]') === 7 && b.n('[data-rv-dir="sal"]') === 3 && b.n('[data-rv-dir="lle"]') === 4,
     [b.n('[data-rv-dir="all"]'), b.n('[data-rv-dir="sal"]'), b.n('[data-rv-dir="lle"]')].join('/'));
-  t('cabecera: 8', txt(b.q('#rv-count')) === '8');
+  t('cabecera: 7', txt(b.q('#rv-count')) === '7');
   t('sin errores al cargar', b.errors.length === 0, b.errors.join(' | '));
 }
 
@@ -138,10 +139,9 @@ console.log('\n── La etiqueta en cada fila ──');
   const tag = (id) => b.q(`[data-rv-row="${id}"] .rv-when .rv-dirtag`);
   t('salida: «Salida» naranja con flecha ↑', tag('s1') && tag('s1').classList.contains('sal') && txt(tag('s1')) === 'Salida' && tag('s1').querySelector('use').getAttribute('href') === '#i-up');
   t('llegada: «Llegada» verde con flecha ↓', tag('l1') && tag('l1').classList.contains('lle') && txt(tag('l1')) === 'Llegada' && tag('l1').querySelector('use').getAttribute('href') === '#i-down');
-  t('la cancelada también la lleva', tag('s3') && txt(tag('s3')) === 'Salida');
   t('la de tierra es llegada', tag('l2') && txt(tag('l2')) === 'Llegada');
   t('la de reserva en hotel es salida', tag('s4') && txt(tag('s4')) === 'Salida');
-  t('las 8 filas tienen etiqueta', b.qa('#rv-list .rv-dirtag').length === 8);
+  t('las 7 filas tienen etiqueta', b.qa('#rv-list .rv-dirtag').length === 7);
   t('la etiqueta coincide con el trayecto de la línea gris', b.qa('#rv-list [data-rv-row]').every(r => {
     const s = txt(r.querySelector('.rv-sub')), e = txt(r.querySelector('.rv-dirtag'));
     return e === 'Llegada' ? /→ casa/.test(s) : /^casa →/.test(s);
@@ -151,15 +151,15 @@ console.log('\n── La etiqueta en cada fila ──');
 console.log('\n── Salidas / Llegadas filtran ──');
 {
   await b.click('[data-rv-dir="sal"]');
-  t('«Salidas»: solo s1–s4', b.ids() === 's1,s2,s3,s4', b.ids());
+  t('«Salidas»: solo s1, s2 y s4 (s3 está cancelada)', b.ids() === 's1,s2,s4', b.ids());
   t('«Salidas» queda encendido y «Todas» apagado', b.q('[data-rv-dir="sal"]').classList.contains('on') && !b.q('[data-rv-dir="all"]').classList.contains('on'));
-  t('cabecera: 4', txt(b.q('#rv-count')) === '4');
+  t('cabecera: 3', txt(b.q('#rv-count')) === '3');
   t('todas las filas dicen «Salida»', b.qa('#rv-list .rv-dirtag').every(e => txt(e) === 'Salida'));
   await b.click('[data-rv-dir="lle"]');
   t('«Llegadas»: solo l1–l4', b.ids() === 'l1,l2,l3,l4', b.ids());
   t('todas las filas dicen «Llegada»', b.qa('#rv-list .rv-dirtag').every(e => txt(e) === 'Llegada'));
   await b.click('[data-rv-dir="all"]');
-  t('«Todas» vuelve a las 8', b.ids() === 'l1,l2,l3,l4,s1,s2,s3,s4', b.ids());
+  t('«Todas» vuelve a las 7', b.ids() === 'l1,l2,l3,l4,s1,s2,s4', b.ids());
 }
 
 console.log('\n── Los números se cruzan con estado y día ──');
@@ -170,8 +170,8 @@ console.log('\n── Los números se cruzan con estado y día ──');
     [b.n('[data-rv-dir="all"]'), b.n('[data-rv-dir="sal"]'), b.n('[data-rv-dir="lle"]')].join('/'));
   await b.click('[data-rv-dir="sal"]');
   t('Sin rutear + Salidas: s1, s4', b.ids() === 's1,s4', b.ids());
-  t('con Salidas puesto, el estado cuenta solo salidas (Todas 4 · Sin rutear 2 · Canceladas 1)',
-    b.n('[data-rv-f="all"]') === 4 && b.n('[data-rv-f="pending"]') === 2 && b.n('[data-rv-f="cancelled"]') === 1,
+  t('con Salidas puesto, el estado cuenta solo salidas (Todas 3 · Sin rutear 2 · Canceladas 1)',
+    b.n('[data-rv-f="all"]') === 3 && b.n('[data-rv-f="pending"]') === 2 && b.n('[data-rv-f="cancelled"]') === 1,
     [b.n('[data-rv-f="all"]'), b.n('[data-rv-f="pending"]'), b.n('[data-rv-f="cancelled"]')].join('/'));
   const dias = b.qa('#rv-days [data-rv-day]');
   const dia = (d) => b.n(`#rv-days [data-rv-day="${d}"]`);
@@ -185,6 +185,7 @@ console.log('\n── Los números se cruzan con estado y día ──');
     [b.n('[data-rv-dir="all"]'), b.n('[data-rv-dir="sal"]'), b.n('[data-rv-dir="lle"]')].join('/'));
   await b.click('[data-rv-f="cancelled"]');
   t('Hoy + Salidas + Canceladas: s3', b.ids() === 's3', b.ids());
+  t('la cancelada también lleva su etiqueta «Salida»', txt(b.q('[data-rv-row="s3"] .rv-when .rv-dirtag')) === 'Salida');
   t('el filtro de salidas sigue puesto al cambiar de estado', b.q('[data-rv-dir="sal"]').classList.contains('on'));
   await b.click('[data-rv-dir="lle"]');
   t('Hoy + Llegadas + Canceladas: vacío con su mensaje', b.ids() === '' && /Sin reservas/.test(txt(b.q('#rv-list'))));

@@ -431,6 +431,40 @@
 #routes-v2:where([data-fila="tarjeta"]) .rv2-summary { grid-template-columns: minmax(0, 1fr); }
 
 /* =====================================================================
+   28-oct-2026 (Camilo, audios y video): «de las cuatro líneas de scroll, que
+   solo la de la derecha, la más grande, me permita bajar todo».
+   · Avisos es una barrita con la cantidad; al tocarla se abre la lista entera
+     (sin caja con scroll propio). Va arriba, y Conductores debajo con todo el ancho.
+   · En el computador #routes-v2 ya no tiene alto fijo: crece con su contenido y se
+     desplaza la página. El detalle con el mapa sale como cajón al tocar una vuelta
+     (admin-rutas-v2.js › medir: siempre «cajon»), con su propio scroll adentro.
+   ===================================================================== */
+#routes-v2 .rv2-summary { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+#routes-v2 .rv2-summary .rv2-avcard { padding: 0; overflow: hidden; }
+#routes-v2 .rv2-avcard > h2 { padding: 10px 14px 0; }
+#routes-v2 .rv2-avcard > .rv2-al { padding: 0 14px 10px; }
+#routes-v2 .rv2-avcard .rv2-al { max-height: none; overflow: visible; }
+#routes-v2 .rv2-avbar { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 8px 14px; border: 0; background: transparent; text-align: left; }
+#routes-v2 .rv2-avbar:hover { background: var(--panel2); }
+#routes-v2 .rv2-avbar h2 { font-size: 14.5px; }
+#routes-v2 .rv2-avbar-q { margin-left: auto; font-size: 12.5px; font-weight: 700; color: var(--orange-ink); }
+#routes-v2 .rv2-avbar svg { width: 16px; height: 16px; color: var(--ink2); transition: transform .18s ease; flex: 0 0 auto; }
+#routes-v2 .rv2-avbar[aria-expanded="true"] svg { transform: rotate(180deg); }
+#routes-v2 .rv2-avbar + .rv2-al { margin: 0; padding: 0 14px 12px; }
+@media (min-width: 768px) {
+  #routes-v2 { height: auto; min-height: 0; overflow: visible; }
+  #routes-v2 .rv2-stage { flex: none; min-height: auto; }
+  #routes-v2 .rv2-listwrap { overflow: visible; min-height: auto; padding-right: 0; }
+  /* La barra (día, Cambios, Publicar) se queda arriba al bajar: antes nunca se iba
+     porque se desplazaba solo la lista. Quien se desplaza es #app-main, y Chrome le
+     descuenta su relleno de arriba al «sticky» (como en el celular, abajo): ese
+     relleno pasa a ser margen de #routes-v2. */
+  #app-main:has(section[data-panel="routes"]:not(.hidden) > #routes-v2:not([hidden])) { padding-top: 0; }
+  #routes-v2 { margin-top: 24px; }
+  #routes-v2 .rv2-bar { position: sticky; top: 0; z-index: 6; background: var(--bg); border-radius: 16px 16px 0 0; }
+}
+
+/* =====================================================================
    Celular: ≤ 767 px → una columna, tarjetas, hojas inferiores
    ===================================================================== */
 @media (max-width: 767px) {

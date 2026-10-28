@@ -8,7 +8,7 @@
 //   · el corte (Api.crewRequestDeadline / isLateRequest / hm12): el día operativo
 //     empieza a las 2:00, la madrugada es del día anterior, el corte es la víspera
 //     a las 7:40 p. m. y se puede mover en Ajustes;
-//   · el botón «Late» va justo después de «En pie» y cuenta solo lo vivo pedido
+//   · el botón «Late» va justo después de «En pie» (desde el 28-oct, de «Cambios»: «En pie» se quitó) y cuenta solo lo vivo pedido
 //     después del corte (no lo cancelado);
 //   · la fila dice «Late · pidió 7:41 p. m. del dom»; «⏱ Pedido tarde» (poca
 //     antelación) sale solo si no es Late;
@@ -137,12 +137,14 @@ console.log('\n── El corte (api.js) ──');
 
 console.log('\n── El botón «Late» ──');
 {
-  const enPie = b.q('[data-rv-f="active"]'), late = b.q('[data-rv-f="late"]');
-  t('existe y va justo a la derecha de «En pie»', late && enPie.nextElementSibling === late && /^Late/.test(txt(late)), late && txt(late));
+  // 28-oct (Camilo): sin «En pie»; «Late» va después de «Todas» y «Cambios».
+  const late = b.q('[data-rv-f="late"]');
+  t('existe y va a la derecha de «Cambios» (donde estaba «En pie»)', late && late.previousElementSibling && late.previousElementSibling.dataset.rvF === 'cambios'
+    && late.previousElementSibling.previousElementSibling.dataset.rvF === 'all' && /^Late/.test(txt(late)), late && txt(late));
   t('cuenta 3: los vivos pedidos después del corte (no la cancelada)', b.n('[data-rv-f="late"]') === 3, String(b.n('[data-rv-f="late"]')));
   await b.click('[data-rv-f="late"]');
   t('al tocarlo: solo a2, a3 y a6', b.ids() === 'a2,a3,a6', b.ids());
-  t('queda encendido', b.q('[data-rv-f="late"]').classList.contains('on') && !b.q('[data-rv-f="active"]').classList.contains('on'));
+  t('queda encendido', b.q('[data-rv-f="late"]').classList.contains('on') && !b.q('[data-rv-f="all"]').classList.contains('on'));
   t('se cruza con salidas/llegadas: en Late, Salidas 1 · Llegadas 2', b.n('[data-rv-dir="sal"]') === 1 && b.n('[data-rv-dir="lle"]') === 2);
   await b.click('[data-rv-f="all"]');
 }

@@ -1323,6 +1323,47 @@ console.log('\n── U · 28-oct (Camilo): «el que se debe pegar es de la base
   U2.w.Date.now = reloj0;
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── V · 28-oct (Camilo, 2:08 p. m.): quien está en una «para tomar» que armó el sistema se pega con SU pedido ──');
+{
+  // Manuela pidió con el día publicado y el sistema le armó una vuelta para tomar
+  // («Creada sola»). Antes el pegado la escondía, la buscaba entre los tripulantes
+  // «sin pedido», la base no dejaba crearle otro y entraba SIN CUENTA: iba en el
+  // tablero y en la para tomar, que les seguía saliendo a los conductores.
+  const reloj0 = Date.now;
+  const creados = [];
+  const V0 = await boot({ antes: (w) => {
+    w.Date.now = () => Date.parse(DAY + 'T02:00:00-05:00');
+    w.Api.listAuxiliares = async () => [{ id: 'aux-rN', name: 'Manuela Franco', active: true, deleted: false, res1: { name: 'Mangle', sector: 'El Porvenir' } }];
+    w.Api.adminCreateReservation = async (f) => { creados.push(f); throw new Error('Ya tiene una salida a esa hora (menos de 3 h): revísala en Reservas'); };
+    const pub0 = w.Api.getPublishedPlan;
+    w.Api.getPublishedPlan = async (day, o) => {
+      const r = await pub0(day, o);
+      if (day !== DAY) return r;
+      return { ...r, vueltas: r.vueltas.concat([{ id: 'sola-man', type: 'sal', status: 'planned', startAt: `${DAY}T08:20:00-05:00`, pool: true, autoCreated: true, paraTomar: false,
+        manualDay: DAY, nota: 'Creada sola: pidió con el día publicado', vehicleId: null, carro: 'Carro', placa: null, cap: 4, driverProfileId: null, conductor: 'Sin conductor',
+        pendientes: [{ stopId: 'st-man', rid: 'res-N', order: 1, status: 'pending', name: 'Manuela Franco' }], atendidas: [] }]) };
+    };
+  } });
+  const { q, qa, click, type, T } = V0;
+  const R = T().rt;
+  t('al abrir el día, Manuela no se rutea en el tablero (va en la para tomar)', !Object.values(R.aux).some((a) => a.reservationId === 'res-N'));
+  t('…pero el tablero sabe que está en una para tomar del sistema (rv2EnSolas)', (R.rv2EnSolas || []).includes('res-N'), JSON.stringify(R.rv2EnSolas));
+  click(q('#rv2-julian')); await wait();
+  type(q('#rj-ta'), '8:20 Manuela Franco (Mangle)\nDeben estar 9:10');
+  click(q('#rv2-sheet [data-rj="leer"]')); await wait(60);
+  const f = qa('#rj-prev .rj-p')[0];
+  t('el pegado la empareja con su pedido (res-N), no con su cuenta «sin pedido»', f && f.querySelector('select').value === 'res-N' && f.dataset.st !== 'crear', f && (f.querySelector('select').value + ' · ' + f.dataset.st + ' · ' + txt(f)));
+  click(q('#rv2-sheet [data-rj="publicar"]')); await wait(150);
+  t('al pasar al tablero no se intenta crearle otro pedido', creados.length === 0, JSON.stringify(creados));
+  const k = Object.keys(R.aux).find((x) => R.aux[x].reservationId === 'res-N');
+  t('…entra al tablero con su pedido (con cuenta, no «sin cuenta»), en una vuelta', !!k && !R.aux[k].guest && R.lanes.some((l) => (R.order[l.id] || []).includes(k)),
+    JSON.stringify(Object.values(R.aux).filter((a) => /Manuela/.test(a.n)).map((a) => [a.reservationId, !!a.guest])));
+  t('…y nadie quedó como pasajero sin cuenta', !Object.values(R.aux).some((a) => a.guest && /Manuela/.test(a.n)));
+  t('sin errores de script', V0.errors.length === 0, V0.errors.join(' | '));
+  V0.w.Date.now = reloj0;
+}
+
 t('sin errores de script (instancia base)', base.errors.length === 0, base.errors.join(' | '));
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ` · ${bad} FALLARON` : ''}`);
 console.log('NO cubierto: la base (_verify-0125.mjs), el layout real (ancho de la hoja, el select en un teléfono), la descarga real del archivo, los push reales y la app del conductor (driver-rutas.js: _smoke-rx-admin-coord-dom).');

@@ -1731,6 +1731,79 @@ console.log('\n── 28-oct · el día es solo la ruta pegada (sin vueltas del 
   }
 }
 
+console.log('\n── 28-oct · Conductores: los carros de más van en UNA fila «Carro Apoyo» ──');
+{
+  // La profa, 28-oct-2026 (captura de Conductores con Carro 3, «Carro» y Carro 4):
+  // «que solo quede Carro 1, Carro 2 y Carro Apoyo». Solo cambia cómo se ve.
+  const b = await boot();
+  const { w, q, qa, click, T, V2 } = b;
+  const de = { 'ra-3': 'Carro 3', 'ra-8': 'Carro 4', 'ra-9': 'Carro 4' };
+  const vs = w.RV2Fixture.vueltas().map((v) => {
+    if (!de[v.id]) return v;
+    Object.assign(v, { planCar: de[v.id], vehicleId: null });
+    if (v.id === 'ra-8') Object.assign(v, { driverProfileId: null, conductor: 'Sin conductor', status: 'draft' });
+    return v;
+  });
+  w.Api.getPublishedPlan = async () => ({ vueltas: vs, publicado: true });
+  await V2().cargarDia(T().rt.day); await wait(30);
+  const rt = T().rt;
+  const carro = (id) => rt.cars.find((c) => c.id === id);
+  t('el tablero sigue teniendo Carro 3 y Carro 4 (marcados de apoyo); los de la flota no',
+    !!carro('Carro 3') && carro('Carro 3').apoyo && carro('Carro 4').apoyo && ['V-01', 'V-02', 'V-03'].every((id) => !carro(id).apoyo), JSON.stringify(rt.cars.map((c) => [c.id, !!c.apoyo])));
+  const filas = qa('#rv2-drivers .rv2-dgrid .car').map((x) => txt(x.querySelector('b') || x));
+  t('Conductores: V-01, V-02, V-03 y Carro Apoyo (sin Carro 3 ni Carro 4)', JSON.stringify(filas) === JSON.stringify(['V-01', 'V-02', 'V-03', 'Carro Apoyo']), JSON.stringify(filas));
+  t('ninguna casilla es de Carro 3 o Carro 4', !q('#rv2-drivers [data-car="Carro 3"]') && !q('#rv2-drivers [data-car="Carro 4"]'));
+  t('Carro Apoyo no ofrece «Elegir» placa (no es de la flota)', !q('#rv2-drivers [data-act="plancar"][data-car="__apoyo"]') && /Carro Apoyo/.test(txt(q('#rv2-drivers .rv2-dgrid span.car'))));
+  const celA = () => q('#rv2-drivers [data-act="assignslot"][data-car="__apoyo"][data-shift="am"]');
+  const celP = () => q('#rv2-drivers [data-act="assignslot"][data-car="__apoyo"][data-shift="pm"]');
+  t('AM: «Sin conductor · 1 vuelta» en rojo (la de I y J)', !!celA() && /Sin conductor/.test(txt(celA())) && /1 vuelta/.test(txt(celA())) && celA().classList.contains('need'), txt(celA()));
+  const pm0 = txt(celP());
+  t('PM: suma las de los dos carros («2 vueltas») con Diego', /2 vueltas/.test(pm0) && /Diego/.test(pm0), pm0);
+  // Tocar la de PM: la hoja es de «Carro Apoyo» y el conductor va a los dos carros.
+  click(celP()); await wait(10);
+  t('la hoja dice «Conductor para Carro Apoyo»', /Conductor para Carro Apoyo/.test(txt(q('#rv2-sheet'))), txt(q('#rv2-sheet')).slice(0, 120));
+  click(q('#rv2-sheet [data-pick="d5"]')); await wait(5);
+  click(q('#rv2-doAssign')); await wait(10);
+  t('Rubén queda en Carro 3 y Carro 4 (PM)', carro('Carro 3').driverPM === 'd5' && carro('Carro 4').driverPM === 'd5', JSON.stringify([carro('Carro 3').driverPM, carro('Carro 4').driverPM]));
+  t('…la casilla lo dice y deja de estar en rojo', /Rubén/.test(txt(celP())) && !/Diego/.test(txt(celP())) && !celP().classList.contains('need'), txt(celP()));
+  t('…y el aviso de abajo habla de Carro Apoyo', /Rubén Díaz asignado a Carro Apoyo · turno PM/.test(b.toastV2()), b.toastV2());
+  // AM: Jorge maneja V-01; si se elige para Carro Apoyo, se intercambian (V-01 queda sin nadie).
+  click(celA()); await wait(10);
+  const opJ = q('#rv2-sheet [data-pick="d1"]');
+  t('en la hoja, Jorge dice «Maneja V-01»', /Maneja V-01/.test(txt(opJ)), txt(opJ));
+  click(opJ); await wait(5); click(q('#rv2-doAssign')); await wait(10);
+  t('Jorge pasa a Carro Apoyo y V-01 AM queda sin conductor', carro('Carro 4').driverAM === 'd1' && !carro('V-01').driverAM, JSON.stringify([carro('Carro 4').driverAM, carro('V-01').driverAM]));
+  click(q('#rv2-toast [data-act="undo"]') || q('[data-act="undo"]')); await wait(10);
+  t('Deshacer: Jorge vuelve a V-01', carro('V-01').driverAM === 'd1' && !carro('Carro 4').driverAM, JSON.stringify([carro('V-01').driverAM, carro('Carro 4').driverAM]));
+  t('la lista de vueltas no cambió: siguen en su carro', rt.lanes.filter((l) => l.car === 'Carro 4').length === 2 && rt.lanes.filter((l) => l.car === 'Carro 3').length === 1, JSON.stringify(rt.lanes.map((l) => l.id)));
+  t('sin errores de consola', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 28-oct (Camilo, audios y video): Avisos en una barrita y el detalle como cajón ──');
+{
+  const b = await boot();
+  const { q, click, V2 } = b;
+  const bar = () => q('#rv2-avisos .rv2-avbar');
+  const lista = () => q('#rv2-avisos .rv2-al');
+  t('Avisos es una barrita con la cantidad: «Avisos 3 · Ver los 3»', !!bar() && /Avisos 3/.test(txt(bar())) && /Ver los 3/.test(txt(bar())), bar() && txt(bar()));
+  t('…plegada: la lista no se ve hasta tocarla', lista() && lista().hidden && bar().getAttribute('aria-expanded') === 'false');
+  click(bar()); await wait(5);
+  t('al tocarla se abre la lista entera (los 3) y dice «Ocultar»', !lista().hidden && lista().children.length === 3 && bar().getAttribute('aria-expanded') === 'true' && /Ocultar/.test(txt(bar())));
+  V2().render(); await wait(5);
+  t('…y sigue abierta cuando el tablero se repinta', !lista().hidden && bar().getAttribute('aria-expanded') === 'true');
+  click(bar()); await wait(5);
+  t('tocarla otra vez la pliega', lista().hidden && /Ver los 3/.test(txt(bar())));
+  click(q('#rv2-say [data-act="avisos"]')); await wait(5);
+  t('«revisa 3 avisos» (la frase de arriba) la abre', !lista().hidden);
+  const r = q('#routes-v2');
+  const ancho = (px) => { Object.defineProperty(r, 'clientWidth', { configurable: true, value: px }); V2().medir(); return [r.dataset.lay, r.dataset.fila].join('/'); };
+  t('el detalle sale como cajón también en una pantalla ancha (1600 px), con filas de escritorio', ancho(1600) === 'cajon/fila', ancho(1600));
+  t('…y en 1100 px (antes ahí quedaba fijo a la derecha)', ancho(1100) === 'cajon/fila', ancho(1100));
+  t('…y en 900 px, como siempre', ancho(900) === 'cajon/fila', ancho(900));
+  t('sin errores de consola', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: layout real (puntos de quiebre, cajón, tarjetas, barra fija del celular: ver _capturas-rutas-v2.mjs y revisar en un teléfono), la base real (RLS, saveRoutePlan/getPublishedPlan en producción), TomTom/OSRM reales, el mapa Leaflet real, el push real y el módulo de WhatsApp.');
 process.exit(bad ? 1 : 0);
