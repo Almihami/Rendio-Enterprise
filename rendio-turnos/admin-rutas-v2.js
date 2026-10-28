@@ -1979,7 +1979,11 @@
     if (ui.publicando || typeof rtSavePlan !== 'function') return;
     ui.publicando = true; renderSay(avisosDe());
     let res = null;
-    try { res = await rtSavePlan({ toast: (m) => toast(m) }); }
+    // 0154: si el sistema corrió una vuelta en el último minuto, se publica con eso.
+    let previas = [];
+    try { previas = await sincronizarAntesDePublicar(); } catch (_) { previas = []; }
+    const aviso = avisoSincronia(previas);
+    try { res = await rtSavePlan({ toast: (m) => toast(aviso ? `${m} ${aviso}` : m) }); }
     catch (e) { toast('No se pudo publicar: ' + ((e && e.message) || 'error')); }
     finally { ui.publicando = false; }
     render();
@@ -2718,6 +2722,8 @@
       const lane = { id: `${car.id}·V${n}`, car: car.id, vuelta: n, type: v.type === 'lle' ? 'lle' : 'sal', start: hm(v.startAt), origin: null };
       // 0129: la fila publicada de esta vuelta, para «Guardar y publicar» solo ella.
       lane.raId = v.id; lane.raStatus = v.status;
+      // 0154: la hora y el conductor que tenía en la base al abrir el día (ver sincronizarConBase).
+      lane.raStart = v.startAt; lane.raDbDrv = v.driverProfileId || null;
       if (lane.type === 'lle') { lane.origin = 'airport'; lane.landing = rtToHM(horaVuelta(ids)); }
       lanes.push(lane); order[lane.id] = ids;
       guardado[lane.id] = v.delegated ? 'deleg' : (v.driverProfileId || null);
@@ -2763,9 +2769,71 @@
     rt.pool = Object.keys(rt.aux).filter((k) => !usados.has(k));
     rt.rv2Fijas = fijas; rt.rv2Atendidas = atendidas; rt.rv2Fin = fines;
     rt.cars.forEach((c) => encadenar(c.id));
+    marcarComoEnLaBase(rt.lanes);
     rt.optimized = true;
     rt.firmaPublicada = firmaActual();
     return true;
+  }
+
+  // ── 0154 · Lo que el SISTEMA cambió en una vuelta publicada ──────────────────
+  // El acomodo (0135/0154) le corre la hora a una llegada cuyo vuelo viene tarde, o se
+  // la pasa a otro conductor. El tablero no se enteraba: seguía mostrando la hora de
+  // antes y, al publicar, se la devolvía. El 28-oct a Fernando el sistema le corrió la
+  // vuelta tres veces (2:10, 2:20 y 2:30 p. m.) y a Juan le llegó el aviso tres veces.
+  // Ahora, cada minuto (refrescarFines) y justo antes de publicar, si la base cambió
+  // una vuelta y el jefe NO la tocó en la pantalla (misma hora y mismo conductor que
+  // al abrirla), el tablero toma la hora y el conductor de la base. Si el jefe sí la
+  // tocó, manda lo del jefe.
+  const hmIso = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false }).slice(0, 5);
+  function marcarComoEnLaBase(lanes) {
+    (lanes || []).forEach((l) => { if (l.raId) { l.raHm = l.start; l.raDrv = rtDriverOf(l) || null; l.raTomar = l.tomar === true; } });
+  }
+  function sincronizarConBase(porId) {
+    const cambiadas = [];
+    const porReserva = {};
+    Object.keys(rt.aux || {}).forEach((k) => { const x = rt.aux[k].reservationId; if (x) porReserva[x] = k; });
+    (rt.lanes || []).forEach((l) => {
+      if (!l.raId || !l.raStart || fijaDe(l.id) || l.deleg === true) return;
+      const v = porId.get(l.raId); if (!v || v.delegated || v.status === 'completed') return;
+      const sola = v.pool && !v.paraTomar && !v.driverProfileId;   // el sistema la dejó para tomar
+      const drvBase = v.driverProfileId || null;
+      const cambioBase = hmIso(v.startAt) !== hmIso(l.raStart) || drvBase !== l.raDbDrv || (sola && !l.tomar);
+      if (!cambioBase) return;
+      const tocoJefe = l.start !== l.raHm || (rtDriverOf(l) || null) !== l.raDrv || (l.tomar === true) !== l.raTomar;
+      if (tocoJefe) return;   // lo del jefe manda (y el acomodo lo vuelve a mirar)
+      const antes = l.start;
+      l.start = hmIso(v.startAt);
+      const ids = rt.order[l.id] || [];
+      rt.horasPub = rt.horasPub || {};
+      if (l.type === 'lle') rt.horasPub[l.id] = { start: l.start, sig: ids.join(','), etas: {} };
+      else {
+        const etas = {};
+        [...(v.atendidas || []), ...(v.pendientes || [])].forEach((st) => { const k = porReserva[st.rid]; if (k && st.etaAt) etas[k] = rtToMin(hmIso(st.etaAt)); });
+        rt.horasPub[l.id] = { start: l.start, sig: ids.join(','), etas };
+      }
+      const car = rt.cars.find((c) => c.id === l.car);
+      const delCarro = car ? rtCarDrv(car, rtBandOf(l)) : null;
+      if (sola) { l.drv = false; l.tomar = true; }
+      else if (v.paraTomar) { l.tomar = true; l.drv = drvBase || false; }   // 0151: la tomó un conductor (sigue para tomar)
+      else if (drvBase !== (rtDriverOf(l) || null)) { delete l.tomar; if (drvBase && drvBase === delCarro) delete l.drv; else l.drv = drvBase || false; }
+      l.raStart = v.startAt; l.raDbDrv = drvBase; l.raStatus = v.status;
+      cambiadas.push({ lane: l, antes, sola, drv: drvBase });
+    });
+    if (cambiadas.length) marcarComoEnLaBase(cambiadas.map((x) => x.lane));
+    return cambiadas;
+  }
+  // El aviso, en palabras: «El sistema corrió 1 vuelta (vuelo tarde): V-01 11:37 → 12:05 con Juan».
+  function avisoSincronia(cambiadas) {
+    if (!cambiadas.length) return '';
+    const una = (x) => `${x.lane.car} ${x.antes} → ${x.lane.start}${x.sola ? ' (para tomar)' : x.drv ? ` con ${conductor(x.drv).name.split(' ')[0]}` : ''}`;
+    return `El sistema ${cambiadas.length === 1 ? 'cambió 1 vuelta' : `cambió ${cambiadas.length} vueltas`} (vuelo que viene tarde): ${cambiadas.slice(0, 3).map(una).join(' · ')}${cambiadas.length > 3 ? '…' : ''}. El tablero ya lo tiene.`;
+  }
+  // Antes de publicar: se lee la base otra vez (lo del último minuto) y se toma.
+  async function sincronizarAntesDePublicar() {
+    if (rt.source !== 'live' || !rt.day || !window.Api || typeof Api.getPublishedPlan !== 'function') return [];
+    let plan = null;
+    try { plan = await Api.getPublishedPlan(rt.day, { estados: ESTADOS_PLAN }); } catch (_) { return []; }
+    return sincronizarConBase(new Map(((plan && plan.vueltas) || []).map((v) => [v.id, v])));
   }
 
   // 0137 · CÓMO VA CADA VUELTA, SIN RECARGAR. Asignación solo leía el día al
@@ -2797,6 +2865,13 @@
       if (v.fin && (v.fin.estado === 'ok' || v.fin.estado === 'bad')) rt.rv2Fijas[l.id] = 'completed';
       else if (!rt.rv2Fijas[l.id] && (v.atendidas || []).length) rt.rv2Fijas[l.id] = 'in_progress';
     });
+    // 0154: lo que el sistema le cambió a una vuelta que el jefe no ha tocado.
+    const limpio = publicado() && firmaActual() === rt.firmaPublicada;
+    const cambiadas = sincronizarConBase(porId);
+    if (cambiadas.length) {
+      if (limpio) rt.firmaPublicada = firmaActual();
+      toast(avisoSincronia(cambiadas), true);
+    }
     // Con una vuelta abierta no se rehace el detalle (el mapa parpadearía): solo la lista.
     if (ui.sel && !ui.manual) { D = armarDia(); renderList(); renderDrivers(); pintarEntregas(); }
     else render();

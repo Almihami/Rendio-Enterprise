@@ -1696,11 +1696,21 @@
       // 28-oct (Camilo, «No deja cambiar conductor · Esa vuelta no existe»): publicar
       // vuelve a crear las vueltas que no han arrancado, con id nuevo. El tablero se
       // queda con el nuevo; la que no se volvió a crear y no arrancó ya no existe.
-      if (r && r.ids) rt.lanes.forEach(l => {
-        const x = r.ids[l.id];
-        if (x) { l.raId = x.id; l.raStatus = x.status; }
-        else if (l.raId && !(rt.rv2Fijas && rt.rv2Fijas[l.id])) { delete l.raId; delete l.raStatus; }
-      });
+      if (r && r.ids) {
+        const pub = {}; lanes.forEach(x => { if (x.laneId) pub[x.laneId] = x; });
+        rt.lanes.forEach(l => {
+          const x = r.ids[l.id];
+          if (x) {
+            l.raId = x.id; l.raStatus = x.status;
+            // 0154: lo publicado es lo que queda en la base (para ver después si el
+            // sistema le cambió algo a esta vuelta sin que el jefe la tocara).
+            const p = pub[l.id];
+            l.raStart = p ? p.startAt : l.raStart; l.raDbDrv = p ? (p.driverProfileId || null) : l.raDbDrv;
+            l.raHm = l.start; l.raDrv = rtDriverOf(l) || null; l.raTomar = l.tomar === true;
+          }
+          else if (l.raId && !(rt.rv2Fijas && rt.rv2Fijas[l.id])) { delete l.raId; delete l.raStatus; }
+        });
+      }
       // Si alguna vuelta no entró, el plan NO queda como publicado: el botón sigue
       // pidiendo publicar y el jefe lo ve (antes se contaba en silencio como «skipped»).
       if (!r.failed) rt.firmaPublicada = firma;
