@@ -489,6 +489,8 @@
     if (name === 'consola') renderConsola();
     if (name === 'routes') renderRoutes();
     if (name === 'reservas') renderReservas();
+    // 28-oct-2026: las calificaciones salieron de Reservas a su pantalla (admin-calificaciones.js).
+    if (name === 'calificaciones') { if (typeof window.renderCalificaciones === 'function') window.renderCalificaciones(); }
     if (name === 'privados') renderPrivados();
     if (name === 'tripulantes') renderTripulantes();
     if (name === 'eventualidades') renderEventualidades();

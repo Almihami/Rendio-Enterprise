@@ -219,5 +219,6 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', atar); else atar();
 
-  W.RendioCambios = { pintar, abrir, leer, _st: st, _queCambio: queCambio };
+  // cuando y _queCambio también los usa Reservas › Cambios (admin-reservas.js, 28-oct).
+  W.RendioCambios = { pintar, abrir, leer, cuando, _st: st, _queCambio: queCambio };
 })();

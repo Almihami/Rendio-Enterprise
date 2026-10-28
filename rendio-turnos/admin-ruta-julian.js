@@ -269,7 +269,14 @@
     if (fresco && (!fresco.aux || (fresco.day && fresco.day !== dia))) fresco = null;
     st.frescos = fresco ? { aux: fresco.aux, colors: fresco.colors || {} } : null;
     // La madrugada que va en una vuelta pegada con el día anterior no se vuelve a ofrecer.
-    const ajenas = new Set((enPantalla && rt.rv2Ajenas) || []);
+    // 28-oct (Camilo: «aparecen servicios a tomar… ya asignados y finalizados»): la
+    // gente de las vueltas para tomar que armó el sistema SÍ. Antes también se
+    // escondía, el pegado la buscaba entre los tripulantes «sin pedido», la base no
+    // dejaba crearle otro («ya tenía un pedido cerca de esa hora») y entraba sin
+    // cuenta: iba en el tablero Y en la para tomar, que les seguía saliendo a los
+    // conductores.
+    const enSolas = new Set((enPantalla && rt.rv2EnSolas) || []);
+    const ajenas = new Set(((enPantalla && rt.rv2Ajenas) || []).filter((rid) => !enSolas.has(rid)));
     const hoy = fresco ? candidatosDe(fresco.aux, dia).filter((c) => !ajenas.has(c.rid))
       : (enPantalla ? candidatosDe(Object.assign({}, rt.aux, rt.rv2AuxPegadas || {}), dia) : []);
     let mad = [];

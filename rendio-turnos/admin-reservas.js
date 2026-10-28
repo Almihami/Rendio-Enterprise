@@ -5,10 +5,14 @@
 //   2. Nadie podía cancelar un traslado: si a un auxiliar le corrían el vuelo,
 //      la reserva se quedaba viva y el carro iba igual. Ahora hay botón (RPC
 //      admin_cancel_reservation de 0050, que además la saca de la ruta activa).
-//   3. Las calificaciones se guardaban (0048) y NO las veía nadie. Aquí salen.
+//   3. Las calificaciones se guardaban (0048) y NO las veía nadie. Aquí salían;
+//      desde el 28-oct-2026 tienen su pantalla (admin-calificaciones.js).
 // Comparte scope global con los demás módulos; el orden de carga está en index.html.
 
-  const rvState = { items: [], filter: 'all', day: 'all', dir: 'all', cancelId: null, loading: false, focusChatId: null, cutoff: null };
+  // cambios (28-oct, 0153): reserva → lo que cambió el tripulante, lo más nuevo primero.
+  // cambiosVistoAlAbrir: lo que ya había visto al entrar a «Cambios» (marca «Nuevo»).
+  const rvState = { items: [], filter: 'all', day: 'all', dir: 'all', cancelId: null, loading: false, focusChatId: null, cutoff: null,
+    cambios: {}, cambiosOk: false, cambiosVistoAlAbrir: '' };
 
   const RV_ST = {
     pending:  { cls: 'warn',  label: 'Sin rutear' },
@@ -102,6 +106,7 @@
     await rvLoadExternos(rows);
     await rvLoadDelegadas(rows);
     await rvuLoadFlights(rows);
+    await rvLeerCambios();
     renderReservasList();
     // Si llegamos desde un push (`#/reservas?chat=<id>`), se abre directo el hilo
     // que motivó el aviso. Se consume una sola vez: un refresco no lo reabre.
@@ -112,6 +117,72 @@
       if (r) jcOpen(rid, r.name || 'Traslado', `${r.time} · ${r.address || 'sin dirección'}`.slice(0, 60));
       else toast('Ese traslado ya no está en la lista de la semana.');
     }
+  }
+
+  // ── Cambios (28-oct-2026, Camilo) ───────────────────────────────────────────
+  // «En vez de En pie, CAMBIOS, para ver cuando actualicen algo y que se ponga rojo
+  // el icono si yo no he entrado ahí». Lo que el MISMO tripulante cambió o canceló
+  // en la app (hora, vuelo, lugar, punto, nivel, cancelación) — lo que hace
+  // Coordinación no sale: eso ya lo sabe el jefe. Un pedido nuevo tampoco (eso es
+  // «Late»). Datos: admin_cambios_tripulantes (0153, ventana de máximo 3 días: se
+  // pide en tramos que cubren la semana de la lista). La campana se pone roja
+  // mientras haya cambios de traslados que no han pasado más nuevos que la última
+  // vez que el jefe abrió «Cambios» en ese equipo (localStorage, como el botón de
+  // Asignación). Sin 0153 el filtro no aparece.
+  const RV_CAMBIOS_LS = 'rendio.reservas.cambios.visto';
+  const rvCambiosVisto = () => { try { return localStorage.getItem(RV_CAMBIOS_LS) || ''; } catch (_) { return ''; } };
+  const rvMarcarCambiosVistos = () => { try { localStorage.setItem(RV_CAMBIOS_LS, new Date(Date.now()).toISOString()); } catch (_) { /* sin almacenamiento: vuelve a salir */ } };
+  const rvDespues = (a, b) => !b || Date.parse(a) > Date.parse(b);
+  async function rvLeerCambios() {
+    if (!window.Api || typeof Api.listCrewChanges !== 'function') { rvState.cambiosOk = false; return; }
+    const H = 3600000, t0 = Date.now() - 26 * H, t1 = Date.now() + 7 * 24 * H + 2 * H, paso = 72 * H - 60000;
+    const tramos = [];
+    for (let a = t0; a < t1; a += paso) tramos.push([a, Math.min(a + paso, t1)]);
+    try {
+      const partes = await Promise.all(tramos.map(([a, b]) => Api.listCrewChanges(new Date(a).toISOString(), new Date(b).toISOString())));
+      if (partes.some((p) => p === null)) { rvState.cambiosOk = false; rvState.cambios = {}; return; }
+      const vistos = new Set(), por = {};
+      partes.flat().forEach((f) => {
+        if (!f || !f.rid || vistos.has(f.id)) return;
+        vistos.add(f.id);
+        if (!f.by_owner || f.kind === 'nuevo') return;
+        (por[f.rid] = por[f.rid] || []).push(f);
+      });
+      Object.values(por).forEach((xs) => xs.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)));
+      rvState.cambios = por; rvState.cambiosOk = true;
+    } catch (e) { console.warn('[reservas] cambios:', e && e.message); }
+  }
+  const rvCambiosDe = (r) => rvState.cambios[r.id] || [];
+  const rvUltimoCambio = (r) => { const c = rvCambiosDe(r)[0]; return c ? Date.parse(c.at) : 0; };
+  // Cuántos cambios nuevos (de traslados que no han pasado): lo que pinta la campana.
+  function rvCambiosNuevos() {
+    const visto = rvCambiosVisto(), ya = Date.now() - 3600000;
+    return rvState.items.filter((r) => Date.parse(r.when) >= ya)
+      .reduce((n, r) => n + rvCambiosDe(r).filter((c) => rvDespues(c.at, visto)).length, 0);
+  }
+  function rvPintarCampana() {
+    const b = $('#rv-fcambios'); if (!b) return;
+    b.hidden = !rvState.cambiosOk;
+    const n = rvState.filter === 'cambios' ? 0 : rvCambiosNuevos();
+    b.classList.toggle('is-new', n > 0);
+    const dot = b.querySelector('.rv-dot'); if (dot) dot.hidden = !n;
+    b.title = n ? `${n} ${n === 1 ? 'cambio nuevo' : 'cambios nuevos'} de los tripulantes desde la última vez que entraste`
+      : 'Lo que los tripulantes cambiaron o cancelaron en la app';
+  }
+  // «4:12 p. m.» si es de hoy; «ayer 9:40 p. m.» o «lun 26 9:40 p. m.» si no.
+  function rvCambioCuando(iso) {
+    if (window.RendioCambios && typeof RendioCambios.cuando === 'function') return RendioCambios.cuando(iso);
+    try { return new Date(iso).toLocaleString('es-CO', { timeZone: 'America/Bogota', weekday: 'short', hour: 'numeric', minute: '2-digit' }); } catch (_) { return ''; }
+  }
+  const rvQueCambio = (f) => (window.RendioCambios && typeof RendioCambios._queCambio === 'function') ? RendioCambios._queCambio(f) : 'Cambió su pedido';
+  function rvCambiosHTML(r) {
+    const xs = rvCambiosDe(r);
+    if (!xs.length) return '';
+    const v = rvState.cambiosVistoAlAbrir;
+    return `<ul class="rv-cambios">${xs.map((f) => {
+      const nuevo = rvDespues(f.at, v);
+      return `<li class="${nuevo ? 'is-new' : ''}"><span class="rv-cb-at">${escapeHtml(rvCambioCuando(f.at))}${nuevo ? '<em>Nuevo</em>' : ''}</span><span>${escapeHtml(rvQueCambio(f))}</span></li>`;
+    }).join('')}</ul>`;
   }
 
   // 0139: quién es externo sin app (lo cargó Coordinación). Sin la migración, nadie.
@@ -182,13 +253,16 @@
   // «2 maletas», «1 maleta», «Sin maletas». null = el tripulante no lo dijo.
   const rvBagsLabel = (n) => n == null ? '' : n === 0 ? 'Sin maletas' : `${n} maleta${n === 1 ? '' : 's'}`;
 
+  // 28-oct-2026 (Camilo): «Todas» = las que siguen en pie (si está en Salidas o
+  // Llegadas es porque sigue en pie; si no, está en Canceladas). Sin «En pie» ni
+  // «Calificadas» (Análisis › Calificaciones). «Cambios» sí trae las canceladas por
+  // el tripulante: cancelar es un cambio.
   const RV_F = {
-    all:       () => true,
-    active:    (r) => !['cancelled', 'done', 'noshow'].includes(r.status),
+    all:       (r) => r.status !== 'cancelled',
+    cambios:   (r) => rvCambiosDe(r).length > 0,
     late:      (r) => !['cancelled', 'done', 'noshow'].includes(r.status) && rvLateCut(r),
     pending:   (r) => r.status === 'pending' && !r.delegated,
     cancelled: (r) => r.status === 'cancelled',
-    rated:     (r) => r.rating > 0,
   };
   // Salidas y llegadas (25-oct-2026): los jefes se enredaban con las dos
   // mezcladas en la misma lista por hora. Arranca en «Todas».
@@ -201,7 +275,9 @@
   const rvOfDir = (items) => items.filter(RV_DIR[rvState.dir] || RV_DIR.all);
 
   function rvFiltered() {
-    return rvOfDir(rvOfDay(rvState.items)).filter(RV_F[rvState.filter] || RV_F.all);
+    const xs = rvOfDir(rvOfDay(rvState.items)).filter(RV_F[rvState.filter] || RV_F.all);
+    // En «Cambios», lo último que cambió va arriba (no la hora del traslado).
+    return rvState.filter === 'cambios' ? xs.slice().sort((a, b) => rvUltimoCambio(b) - rvUltimoCambio(a)) : xs;
   }
 
   function renderReservasList() {
@@ -232,9 +308,12 @@
       if (n) { const c = delDia.filter(RV_F[b.dataset.rvF] || RV_F.all).length; n.textContent = c; n.classList.toggle('zero', !c); }
     });
     if ($('#rv-count')) $('#rv-count').textContent = items.length;
+    rvPintarCampana();
 
     if (!items.length) {
-      list.innerHTML = `<div class="rv-empty"><svg class="icon"><use href="#i-list"/></svg><h3>Sin reservas</h3><p>No hay traslados que cumplan este filtro.</p></div>`;
+      list.innerHTML = rvState.filter === 'cambios'
+        ? `<div class="rv-empty"><svg class="icon"><use href="#i-bell"/></svg><h3>Sin cambios</h3><p>Ningún tripulante ha cambiado ni cancelado nada en la app para estos traslados.</p></div>`
+        : `<div class="rv-empty"><svg class="icon"><use href="#i-list"/></svg><h3>Sin reservas</h3><p>No hay traslados que cumplan este filtro.</p></div>`;
       return;
     }
     list.innerHTML = items.map(rvRow).join('');
@@ -288,6 +367,7 @@
         </div>
         <div class="rv-sub">${escapeHtml(dir)} · ${escapeHtml(r.address || 'sin dirección')}${rvuFlightLabel(r)}</div>
         ${chips.length ? `<div class="rv-tags">${chips.join('')}</div>` : ''}
+        ${rvState.filter === 'cambios' ? rvCambiosHTML(r) : ''}
         ${r.cancelledAt ? `<div class="rv-note">Cancelado${r.cancelReason ? ': ' + escapeHtml(r.cancelReason) : ''}</div>` : ''}
         ${cancelling ? `<div class="rv-cancel">
             <input class="set-input" id="rv-reason" type="text" placeholder="Motivo (opcional): vuelo cancelado, cambio de itinerario…" />
@@ -309,10 +389,24 @@
     const root = $('#rv-ui');
     if (!root || root._rvBound) return;
     root._rvBound = true;
+    // Mientras Reservas está a la vista, los cambios se vuelven a leer cada 90 s: la
+    // campana se prende sola. Con un «Cancelar» a medio escribir no se repinta la lista.
+    if (typeof setInterval === 'function') setInterval(async () => {
+      const panel = $('[data-panel="reservas"]');
+      if (!panel || panel.classList.contains('hidden') || document.hidden || rvState.loading) return;
+      await rvLeerCambios();
+      if (rvState.filter === 'cambios' && !rvState.cancelId) { rvMarcarCambiosVistos(); renderReservasList(); }
+      else rvPintarCampana();
+    }, 90000);
     root.addEventListener('click', async (e) => {
       if (e.target.closest('#rv-refresh')) { renderReservas(); return; }
       const f = e.target.closest('[data-rv-f]');
-      if (f) { rvState.filter = f.dataset.rvF; rvState.cancelId = null; renderReservasList(); return; }
+      if (f) {
+        rvState.filter = f.dataset.rvF; rvState.cancelId = null;
+        // Al entrar a «Cambios» se apaga la campana; lo que no había visto queda «Nuevo» mientras esté ahí.
+        if (rvState.filter === 'cambios') { rvState.cambiosVistoAlAbrir = rvCambiosVisto(); rvMarcarCambiosVistos(); }
+        renderReservasList(); return;
+      }
       const dr = e.target.closest('[data-rv-dir]');
       if (dr) { rvState.dir = dr.dataset.rvDir; rvState.cancelId = null; renderReservasList(); return; }
       const d = e.target.closest('[data-rv-day]');

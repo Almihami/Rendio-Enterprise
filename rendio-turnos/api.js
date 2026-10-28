@@ -3187,6 +3187,34 @@
     }));
   }
 
+  // Calificaciones (28-oct-2026, Camilo: «lo de calificadas ponlo en otro lado, de
+  // servicio al cliente o métricas»): las reservas calificadas de los últimos `days`
+  // días (por la fecha en que calificó), con quién hizo el traslado. Sin conductor
+  // = la parada no está en ninguna vuelta (se borró, o la vuelta la hizo un delegado).
+  async function listRatings(days) {
+    const desde = new Date(Date.now() - (days || 30) * 86400000).toISOString();
+    const COLS = 'id, direction, required_arrival_at, rating, rating_tags, rated_at, auxiliar_profiles(profiles(full_name)), '
+      + 'route_stops(status, route_assignments(driver_profiles(profiles(full_name))))';
+    const q = (cols) => sb.from('reservations').select(cols)
+      .not('rating', 'is', null).gte('rated_at', desde)
+      .order('rated_at', { ascending: false }).limit(1000);
+    let { data, error } = await q(COLS);
+    // Si el embed de las vueltas falla, igual se ven las estrellas (sin conductor).
+    if (error) ({ data, error } = await q('id, direction, required_arrival_at, rating, rating_tags, rated_at, auxiliar_profiles(profiles(full_name))'));
+    if (error) return null;
+    const hecho = (s) => s && ['delivered', 'picked_up', 'arrived'].includes(s.status);
+    return (data || []).map(r => {
+      const paradas = r.route_stops || [];
+      const p = paradas.find(hecho) || paradas[0] || null;
+      return {
+        id: r.id, type: r.direction === 'airport_to_home' ? 'lle' : 'sal', when: r.required_arrival_at,
+        rating: r.rating, tags: r.rating_tags || [], ratedAt: r.rated_at,
+        name: r.auxiliar_profiles?.profiles?.full_name || 'Tripulante',
+        driver: p?.route_assignments?.driver_profiles?.profiles?.full_name || null,
+      };
+    });
+  }
+
   // Rastreo EN VIVO de UNA reserva para su dueño (auxiliar). Vía RPC SECURITY
   // DEFINER (0047): valida ownership y devuelve la última posición conocida del
   // conductor (gps/ancla), su identidad y el avance real. Devuelve:
@@ -3521,6 +3549,14 @@
     const movableInProgress = [];   // route_stops.id pendientes de rutas ya arrancadas
     const arrancadas = new Set();   // route_assignments.id que NO se borran
     const enPool = new Set();       // 0134: reservas que ya van en una vuelta para tomar
+    // 28-oct (Camilo: «aparecen servicios a tomar a pesar de que en admin ya están
+    // asignados y finalizados»): la vuelta para tomar que armó el sistema (cambio de
+    // vuelo, pedido con el día publicado) y que nadie ha tomado NO manda sobre el
+    // tablero. Si el jefe pone a esa persona en una vuelta, sale de la para tomar
+    // (antes se saltaba: se quedaba en las dos, y la para tomar se les seguía
+    // ofreciendo a los conductores). reserva → { raId, stopId }.
+    const enSola = {};
+    const paradasDe = {};           // route_assignments.id → sus paradas (para saber si queda vacía)
     const sinCuentaQueda = new Set(); // 0133: paradas de sin cuenta en vueltas que no se borran
     // 27-oct: la hora que ya tenía cada tripulante al que se le había avisado (con
     // conductor o delegada): si al publicar cambia, se le avisa («Cambió tu hora»).
@@ -3536,7 +3572,8 @@
       // 0131: + a quién se delegó (si cambia, se le avisa al tripulante).
       // 0134: + pool, para no volver a meter a quien ya va en una vuelta para tomar.
       // 0151: + para_tomar (las del tablero dejadas para tomar SÍ se reemplazan).
-      let { data, error } = await leerPlan('pool, para_tomar, delegated_at, delegate_name, ');
+      // 28-oct: + auto_created (0134, más vieja que 0151: va en el mismo escalón).
+      let { data, error } = await leerPlan('pool, para_tomar, auto_created, delegated_at, delegate_name, ');
       if (!error) conParaTomar = true;
       if (error && (error.code === '42703' || /para_tomar/.test(error.message || ''))) ({ data, error } = await leerPlan('pool, delegated_at, delegate_name, '));
       if (error && (error.code === '42703' || /pool/.test(error.message || ''))) ({ data, error } = await leerPlan('delegated_at, delegate_name, '));
@@ -3549,6 +3586,9 @@
         const stops = ra.route_stops || [];
         const arrancada = ra.status === 'in_progress' || stops.some(s => s.status && s.status !== 'pending');
         if (arrancada || ra.status === 'completed') arrancadas.add(ra.id);
+        paradasDe[ra.id] = stops.map(s => s.id);
+        const solaLibre = ra.pool && ra.auto_created === true && !ra.para_tomar && !ra.driver_profile_id
+          && !ra.delegated_at && ra.status === 'planned' && !arrancada;
         stops.forEach(s => {
           // 0133: el sin cuenta no tiene reserva. Si su vuelta no se borra (arrancó, o
           // es una vuelta pegada), su parada sigue ahí y no se vuelve a crear.
@@ -3557,7 +3597,10 @@
           if (pid || ra.delegated_at) prevHora[s.reservation_id] = ra.direction === 'airport_to_home' ? ra.planned_start_at : s.estimated_arrival_at;
           // 0134: va en una vuelta para tomar (la de Julián o una que armó el sistema
           // al cambiar de vuelo): el tablero no la vuelve a poner en otra.
-          if (ra.pool && !ra.para_tomar && (ra.status === 'planned' || ra.status === 'in_progress')) enPool.add(s.reservation_id);
+          // 28-oct: la que armó el sistema y nadie tomó cede (enSola); la que ya tomó
+          // un conductor o arrancó, se queda como siempre.
+          if (solaLibre) enSola[s.reservation_id] = { raId: ra.id, stopId: s.id };
+          else if (ra.pool && !ra.para_tomar && (ra.status === 'planned' || ra.status === 'in_progress')) enPool.add(s.reservation_id);
           if (ra.para_tomar) { prevEnTomar.add(s.reservation_id); if (ra.driver_profile_id) prevTomada[s.reservation_id] = ra.driver_profile_id; }
           if (ra.delegated_at) { prevDeleg[s.reservation_id] = true; prevDelegName[s.reservation_id] = ra.delegate_name || null; }
           const atendida = s.status && s.status !== 'pending';
@@ -3602,6 +3645,30 @@
     if (aMover.length) {
       const { error } = await sb.from('route_stops').delete().in('id', aMover);
       if (error) throw new Error('No se pudieron mover las paradas pendientes: ' + error.message);
+    }
+    // 28-oct: quien el jefe puso en una vuelta del tablero sale de la vuelta para
+    // tomar que armó el sistema; si esa vuelta queda vacía, se borra (ya no se le
+    // ofrece a ningún conductor). Si la base no deja, se queda donde estaba (enPool):
+    // nunca en las dos.
+    {
+      const enTablero = new Set();
+      lanes.forEach(l => (l.stops || []).forEach(rid => enTablero.add(rid)));
+      const sacar = Object.keys(enSola).filter(rid => enTablero.has(rid));
+      if (sacar.length) {
+        const stopIds = sacar.map(rid => enSola[rid].stopId);
+        const { error } = await sb.from('route_stops').delete().in('id', stopIds);
+        if (error) sacar.forEach(rid => enPool.add(rid));
+        else {
+          const quitadas = new Set(stopIds);
+          const vacias = [...new Set(sacar.map(rid => enSola[rid].raId))]
+            .filter(raId => (paradasDe[raId] || []).every(id => quitadas.has(id)));
+          if (vacias.length) {
+            const { error: e2 } = await sb.from('route_assignments').delete().in('id', vacias)
+              .eq('pool', true).eq('auto_created', true).is('driver_profile_id', null).eq('status', 'planned');
+            if (e2) console.warn('[saveRoutePlan] no se borró la vuelta para tomar vacía:', e2.message);
+          }
+        }
+      }
     }
 
     // skipped = carril vacío o ya todo en curso (normal); failed = la base dijo que no.
@@ -4877,7 +4944,7 @@
     listResidences, getMyAuxiliarPlace, getMyAirlineIata, saveMyResidence,
     getMyAuxHeader, notesUser,
     privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,
-    cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin,
+    cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin, listRatings,
     saveRoutePlan, listMyVueltasForDriver, getMadrugadaSiguiente, driverSetStopStatus, auxiliarUserIdsForReservations,
     driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverAirportUndo, driverNearStop, driverRouteStarted,
     sendDriverLocation, listLiveOperation,

@@ -119,6 +119,7 @@
   <!-- Admin del rediseño: Coordinación, Cuentas de cobro y Rendio Points -->
   <link rel="stylesheet" href="admin-coordinacion.css" />
   <link rel="stylesheet" href="admin-cobro.css" />
+  <link rel="stylesheet" href="admin-calificaciones.css" />
   <link rel="stylesheet" href="admin-puntos.css" />
   <link rel="stylesheet" href="admin-inspecciones.css" />
   <link rel="stylesheet" href="admin-whatsapp.css" />
@@ -1289,7 +1290,7 @@
             <div>
               <h1>Reservas <span class="sh-ct" id="rv-count">0</span></h1>
               <p>Traslados pedidos por los tripulantes (y los que pide Coordinación a nombre de alguien).</p>
-              <details class="rd-why"><summary aria-expanded="false">¿Qué se puede hacer acá?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Arriba separas las <b>salidas</b> (↑ casa → JMC) de las <b>llegadas</b> (↓ JMC → casa). Aquí ves el detalle uno por uno, quién confirmó su recogida, quién pidió tarde y las calificaciones. Si un vuelo se cae, <b>cancela el traslado</b>: sale de la ruta del conductor y les avisamos a los dos.</div></details>
+              <details class="rd-why"><summary aria-expanded="false">¿Qué se puede hacer acá?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Arriba separas las <b>salidas</b> (↑ casa → JMC) de las <b>llegadas</b> (↓ JMC → casa). Aquí ves el detalle uno por uno, quién confirmó su recogida y quién pidió tarde. En <b>Cambios</b> sale lo que los tripulantes cambiaron o cancelaron en la app (la campana se pone roja si hay algo que no has visto). Si un vuelo se cae, <b>cancela el traslado</b>: sale de la ruta del conductor y les avisamos a los dos. Las calificaciones están en Análisis › Calificaciones.</div></details>
             </div>
             <div class="rv-hacts">
               <!-- 0139: pedir a nombre de un tripulante o de un externo sin app (admin-pedido-externo.js). -->
@@ -1308,20 +1309,26 @@
               <button class="rv-fbtn" data-rv-dir="sal"><svg class="icon rv-ar sal"><use href="#i-up"/></svg>Salidas <span class="n"></span></button>
               <button class="rv-fbtn" data-rv-dir="lle"><svg class="icon rv-ar lle"><use href="#i-down"/></svg>Llegadas <span class="n"></span></button>
             </div>
+            <!-- 28-oct-2026 (Camilo): sin «En pie» (lo que sale en Salidas/Llegadas ya está
+                 en pie; lo que no, está en Canceladas) ni «Calificadas» (se mudó a Rutas ›
+                 Análisis › Calificaciones). En su lugar «Cambios»: lo que actualizaron los
+                 tripulantes, con la campana en rojo si hay algo que no ha visto. -->
             <div class="rv-bar" role="group" aria-label="Filtrar por estado">
               <button class="rv-fbtn on" data-rv-f="all">Todas <span class="n"></span></button>
-              <button class="rv-fbtn" data-rv-f="active">En pie <span class="n"></span></button>
+              <button class="rv-fbtn rv-fcambios" data-rv-f="cambios" id="rv-fcambios" hidden><span class="rv-bell"><svg class="icon"><use href="#i-bell"/></svg><i class="rv-dot" hidden></i></span>Cambios <span class="n"></span></button>
               <!-- 0130: pedidos después del corte de las 7:40 p. m. (no salen en el Excel del día). -->
               <button class="rv-fbtn" data-rv-f="late" title="Pedidos después del corte de las 7:40 p. m.: no salen en el Excel del día">Late <span class="n"></span></button>
               <button class="rv-fbtn" data-rv-f="pending">Sin rutear <span class="n"></span></button>
               <button class="rv-fbtn" data-rv-f="cancelled">Canceladas <span class="n"></span></button>
-              <button class="rv-fbtn" data-rv-f="rated">Calificadas <span class="n"></span></button>
             </div>
             <div class="rv-days" id="rv-days" role="group" aria-label="Filtrar por día"></div>
           </div>
           <div id="rv-list"></div>
         </div>
       </section>
+
+      <!-- ADMIN: Calificaciones (28-oct-2026): las estrellas de los tripulantes, aparte de Reservas (admin-calificaciones.js) -->
+      <section data-panel="calificaciones" class="hidden"><div id="cal-ui" data-theme="light"></div></section>
 
       <!-- ADMIN: Eventualidades (lo que se sale del plan mientras el traslado corre) -->
       <section data-panel="eventualidades" class="hidden">
@@ -1727,6 +1734,7 @@
   <script src="admin-entregas.js"></script>
   <script src="admin-cambios.js"></script>
   <script src="admin-reservas.js"></script>
+  <script src="admin-calificaciones.js"></script>
   <script src="admin-pedido-externo.js"></script>
   <script src="admin-tripulantes.js"></script>
   <script src="admin-privados.js"></script>

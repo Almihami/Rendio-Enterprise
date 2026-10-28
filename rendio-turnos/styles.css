@@ -1471,6 +1471,22 @@ details[open] .details-chevron { transform: rotate(180deg); }
 #rv-ui .rv-ar.lle{color:var(--rv-lle)}
 #rv-ui .rv-fbtn.on .rv-ar.sal{color:#FF8A55}
 #rv-ui .rv-fbtn.on .rv-ar.lle{color:#3DD39C}
+/* Cambios (28-oct-2026, Camilo): la campana se pone roja, con un punto, si hay
+   cambios de los tripulantes que el jefe no ha visto. */
+#rv-ui .rv-fbtn[hidden]{display:none}
+#rv-ui .rv-bell{position:relative;display:inline-grid;place-items:center;margin-right:-1px}
+#rv-ui .rv-bell .icon{width:14px;height:14px;stroke-width:2.2}
+#rv-ui .rv-fcambios.is-new{color:var(--red)}
+#rv-ui .rv-fcambios.is-new .rv-bell .icon{color:var(--red);animation:rv-ring 1.6s ease-in-out 2}
+#rv-ui .rv-dot{position:absolute;top:-3px;right:-4px;width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 0 2px var(--panel)}
+#rv-ui .rv-dot[hidden]{display:none}
+@keyframes rv-ring{0%,100%{transform:rotate(0)}15%{transform:rotate(14deg)}30%{transform:rotate(-12deg)}45%{transform:rotate(8deg)}60%{transform:rotate(-4deg)}}
+@media (prefers-reduced-motion:reduce){#rv-ui .rv-fcambios.is-new .rv-bell .icon{animation:none}}
+#rv-ui .rv-cambios{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+#rv-ui .rv-cambios li{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;color:var(--ink);line-height:1.4;padding:6px 10px;border-radius:9px;background:var(--panel2);border:1px solid var(--line)}
+#rv-ui .rv-cambios li.is-new{background:#FFF6F4;border-color:#F6D6D1}
+#rv-ui .rv-cb-at{flex:0 0 auto;font-family:var(--mono);font-size:11px;color:var(--ink3);display:inline-flex;gap:6px;align-items:center}
+#rv-ui .rv-cb-at em{font-style:normal;font-family:var(--font);font-size:10.5px;font-weight:800;color:#FFF;background:var(--red);border-radius:999px;padding:1px 7px}
 @media (min-width:769px){
   #rv-ui .rv-tools{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
   #rv-ui .rv-bar,#rv-ui .rv-days{display:inline-flex;flex-wrap:wrap;gap:2px;margin:0;padding:3px;background:var(--panel);border:1px solid var(--line2);border-radius:11px}

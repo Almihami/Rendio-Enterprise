@@ -58,7 +58,7 @@
       groups: [
         { id: 'plan', name: 'Planeación', icon: 'g-plan', desc: 'Armar las rutas del día', items: [
           { id: 'asign', name: 'Asignación', icon: 'm-asign', desc: 'Optimizar reservas en rutas para 2–3 carros, con semáforo de holgura vs. deadline.', star: true, tab: 'routes' },
-          { id: 'reservas', name: 'Reservas', icon: 'm-reservas', desc: 'Tabla de traslados: detalle, pernocta, calificaciones y cancelar si se cae un vuelo.', tab: 'reservas' },
+          { id: 'reservas', name: 'Reservas', icon: 'm-reservas', desc: 'Tabla de traslados: detalle, pernocta, lo que cambiaron los tripulantes y cancelar si se cae un vuelo.', tab: 'reservas' },
           { id: 'privados', name: 'Privados', icon: 'm-reservas', desc: 'Solicitudes de la camioneta: aprobar o negar. Hay una sola, así que aprobar aparta la franja.', tab: 'privados' },
           { id: 'vuelos', name: 'Vuelos', icon: 'm-vuelos', desc: 'Las llegadas del día con Flightradar24: dónde viene cada avión, quiénes vienen y si llega tarde. Aquí se pega la ruta del WhatsApp.', tab: 'vuelos', need: 'renderVuelos' },
         ] },
@@ -79,6 +79,9 @@
           { id: 'puntos', name: 'Rendio Points', icon: 'i-gift', desc: 'Encender el programa, los valores de cada acción y los canjes por cumplir.', tab: 'puntos', need: 'renderPuntos' },
         ] },
         { id: 'data', name: 'Análisis', icon: 'g-data', desc: 'Reportes', items: [
+          // 28-oct-2026 (Camilo): «lo de calificadas ponlo en otro lado, de servicio al
+          // cliente o métricas». Era un filtro de Reservas.
+          { id: 'calif', name: 'Calificaciones', icon: 'i-medal', desc: 'Servicio al cliente: las estrellas que dejan los tripulantes, las bajas para revisar y cómo le va a cada conductor.', tab: 'calificaciones', need: 'renderCalificaciones' },
           { id: 'metricas', name: 'Métricas', icon: 'm-metricas', desc: 'Rutas a tiempo, km y ocupación de carros.', soon: 'build' },
         ] },
         // Rutas no tenía Configuración y sí tenía 26 parámetros propios — estaban de
