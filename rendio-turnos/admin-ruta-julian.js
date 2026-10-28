@@ -100,7 +100,8 @@
       if (h && +h[1] <= 23 && +h[2] <= 59) {
         const ld = lugarDe(h[3] || '');
         const lugar = ld.lugar;
-        const quien = ld.quien.trim().replace(/^[,\s]+|[,\s]+$/g, '').replace(/\s+y$/i, '').trim();
+        // 28-oct: un paréntesis suelto («Isabella Páez Gómez ) (Marinilla…») no es parte del nombre.
+        const quien = ld.quien.replace(/[()]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^[,\s]+|[,\s]+$/g, '').replace(/\s+y$/i, '').trim();
         if (!quien) { raras.push(l); continue; }
         const min = (+h[1]) * 60 + (+h[2]);
         // Madrugada: una hora antes de las 4 a. m. DESPUÉS de una de la tarde es del
@@ -313,7 +314,7 @@
 
   // ── 4. La hoja: pegar → revisar → publicar ──────────────────────────────────
   const st = { dia: null, texto: '', lectura: null, cands: [], apodos: {}, elegido: {}, auto: {}, opciones: {}, puntos: {}, ocupado: false,
-    frescos: null, modo: 'rearmar', modoMano: false, sinApp: {}, todos: [], tripOps: {}, tripPts: {}, errores: {} };
+    frescos: null, modo: 'rearmar', modoMano: false, sinApp: {}, todos: [], tripOps: {}, tripPts: {}, errores: {}, yaPasoTrip: {} };
   const V2 = () => W.RendioRutasV2 || null;
   const sheet = () => (V2() && V2()._sheet) || null;
   const say = (m) => { const v = V2(); if (v && v.toast) v.toast(m); else if (W.toast) W.toast(m); };
@@ -378,22 +379,35 @@
     // 0133: los conjuntos, para ubicar al que no tiene cuenta por lo que dice el paréntesis.
     st.residencias = [];
     try { st.residencias = (W.Api && Api.listResidencesAdmin) ? ((await Api.listResidencesAdmin()) || []).filter((x) => x.is_active !== false) : []; } catch (_) { st.residencias = []; }
-    st.elegido = {}; st.auto = {}; st.opciones = {}; st.puntos = {}; st.nombre = {}; st.sinApp = {}; st.tripOps = {}; st.tripPts = {}; st.errores = {};
+    st.elegido = {}; st.auto = {}; st.opciones = {}; st.puntos = {}; st.nombre = {}; st.sinApp = {}; st.tripOps = {}; st.tripPts = {}; st.errores = {}; st.yaPasoTrip = {};
     Object.keys(r).forEach((k) => { st.elegido[k] = r[k].rid || ''; st.auto[k] = r[k].rid || ''; st.opciones[k] = r[k].opciones; st.puntos[k] = r[k].puntos || {}; st.nombre[k] = r[k].nombre || {}; });
     // 28-oct: quien no salió en los pedidos se busca entre los tripulantes con cuenta.
     // Se elige solo si el nombre se parece de verdad (dos palabras: «Isabella Páez»),
     // nadie más se le acerca y ningún pedido del día se le parece casi igual (un
     // apellido suelto, «Gómez» de Laura Gómez, no cuenta); si no, queda de opción
     // («Karol L» con tres Karol).
+    // 28-oct (2ª, video de Camilo «no pasa al tablero»): lo que YA PASÓ (la mañana, al
+    // volver a pegar el día) no se le crea pedido: la base no deja pedir hacia atrás y
+    // esa gente ya viajó. Queda como antes (sin cuenta si trae lugar).
+    const yaPaso = (p) => Date.parse(isoDe(p.dia, p.min)) < Date.now() - 30 * 60000;
     const tomadosTrip = new Set();
     pers.forEach((p) => {
       const ts = tripulantesPara(p, st.apodos);
       st.tripOps[p.key] = ts.slice(0, 6).map((x) => x.t.rid);
       st.tripPts[p.key] = Object.fromEntries(ts.slice(0, 6).map((x) => [x.t.rid, x.s]));
+      // 28-oct (2ª): el pedido que se eligió solo por un apellido y la hora («Isabella
+      // Paez Gomez» → Laura Gómez, que sale a la misma hora) no vale si alguien con
+      // cuenta tiene el nombre casi completo: era otra persona.
+      const auto = st.auto[p.key];
+      if (auto && esPersona(auto) && !esSinPedido(auto) && ts.length && ts[0].s >= 60 && ts[0].s - ((st.nombre[p.key] || {})[auto] || 0) >= 30) {
+        st.elegido[p.key] = ''; st.auto[p.key] = '';
+      }
       if (st.elegido[p.key] || !ts.length) return;
       const nomPedido = Math.max(0, ...Object.values(st.nombre[p.key] || {}));
       const [a, b] = ts;
       if (a.s >= 60 && a.s - nomPedido >= 20 && (!b || a.s - b.s >= 20) && !tomadosTrip.has(a.t.rid)) {
+        // Ya pasó: es ella, pero ya viajó. Va sin cuenta, como antes (no se pide hacia atrás).
+        if (yaPaso(p)) { st.elegido[p.key] = GUEST; st.auto[p.key] = GUEST; st.yaPasoTrip[p.key] = a.t.n; return; }
         st.elegido[p.key] = a.t.rid; st.auto[p.key] = a.t.rid; tomadosTrip.add(a.t.rid);
       }
     });
@@ -403,7 +417,7 @@
     // el jefe. Siempre se puede cambiar a «Va en la ruta (tiene la app)».
     // 28-oct: si se parece a alguien con cuenta (el nombre de pila al menos), decide el jefe.
     const pareceTrip = (k) => Object.values(st.tripPts[k] || {}).some((x) => x >= 35);
-    pers.forEach((p) => { if (!st.elegido[p.key] && !(st.opciones[p.key] || []).length && !pareceTrip(p.key) && (p.lugar || p.vuelo)) { st.elegido[p.key] = GUEST; st.auto[p.key] = GUEST; } });
+    pers.forEach((p) => { if (!st.elegido[p.key] && !(st.opciones[p.key] || []).length && (!pareceTrip(p.key) || yaPaso(p)) && (p.lugar || p.vuelo)) { st.elegido[p.key] = GUEST; st.auto[p.key] = GUEST; } });
     // ¿El texto es el día entero o unas vueltas? Si trae a la mayoría de los que
     // siguen por mover en el tablero, se rearma el día (lo de siempre al mandar la
     // ruta al grupo); si son unas pocas, solo esas. El jefe lo puede cambiar.
@@ -503,6 +517,7 @@
             : (c && !c.sinPedido && c.type !== (lle ? 'lle' : 'sal') ? (desde && c.type === 'sal'
                 ? `<small class="rj-bad">Pidió una salida (de la casa a JMC), no el regreso desde ${esc(DESDE_TXT[desde])}: va en otra vuelta. Revisa que sea ella</small>`
                 : `<small class="rj-bad">Es ${c.type === 'lle' ? 'una llegada' : 'una salida'}: va en otra vuelta. Revisa que sea ella</small>`)
+              : esG && st.yaPasoTrip[k] ? `<small>Su vuelta ya pasó: va en la ruta sin cuenta (${esc(corto(st.yaPasoTrip[k]))} tiene cuenta, pero no se le crea un pedido hacia atrás).</small>`
               : esG ? `<small>Sin la app: va en la ruta${cj ? ' · ' + esc(cj.name) : (casa ? ' · «' + esc(casa) + '» (sin ubicar en el mapa)' : ' sin dirección: el conductor no sabrá dónde es')}. No le llegan avisos; en el tablero se mueve como cualquiera.</small>`
               : (estado === 'falta' ? `<small class="rj-bad">${st.sinApp[k] ? `No encontré a «${esc(nombre)}» ni en los pedidos del día ni entre los tripulantes con cuenta. Búscala en «Todos los tripulantes»; si no tiene cuenta, elige «Va, pero no tiene la app»`
                 : !ops.length ? 'No está en los pedidos del día: búscala en «Todos los tripulantes» (se le crea el pedido), o elige «Va, pero no tiene la app»'
@@ -535,7 +550,7 @@
     if (pub) {
       pub.disabled = !(nOk + nGuest + nCrear) || nRev > 0 || nFalta > 0 || st.ocupado;
       const nCon = nOk + nCrear;
-      pub.textContent = st.ocupado ? 'Pasando al tablero…' : nFalta ? `Falta elegir ${nFalta}` : nCon ? `Pasar al tablero · ${nCon}${nGuest ? ` y ${nGuest} sin cuenta` : ''}` : (nGuest ? `Pasar al tablero · ${nGuest} sin cuenta` : 'Pasar al tablero');
+      pub.textContent = st.ocupado ? (nCrear ? `Creando ${nCrear} ${nCrear === 1 ? 'pedido' : 'pedidos'}…` : 'Pasando al tablero…') : nFalta ? `Falta elegir ${nFalta}` : nCon ? `Pasar al tablero · ${nCon}${nGuest ? ` y ${nGuest} sin cuenta` : ''}` : (nGuest ? `Pasar al tablero · ${nGuest} sin cuenta` : 'Pasar al tablero');
     }
   }
   // Los bloques para la base: horas resueltas a fecha y hora; un bloque con
@@ -616,11 +631,13 @@
     if (!v2 || typeof v2.meterPegado !== 'function') { say('No se pudo pasar al tablero: recarga la página.'); return; }
     if (typeof rt !== 'undefined' && rt.day && rt.day !== st.dia) { say('El tablero está en otro día: vuelve al ' + diaTxt(st.dia) + ' y pega otra vez.'); return; }
     st.ocupado = true; pintarPrevia();
-    // 28-oct: primero el pedido de quien tiene cuenta y no pidió (si alguno falla, la
-    // hoja se queda abierta diciendo por qué; los que sí se crearon ya quedan elegidos).
-    let listos = false;
-    try { listos = await crearPedidos(); } catch (e) { say('No se pudo crear el pedido: ' + ((e && e.message) || 'error')); }
-    if (!listos) { st.ocupado = false; pintarPrevia(); return; }
+    // 28-oct: primero el pedido de quien tiene cuenta y no pidió. Si a alguno no se le
+    // puede crear, NO frena el pegado (así se quedaba «Pasando al tablero…» y volvía,
+    // con el motivo en una fila escondida arriba): va en la ruta sin cuenta, como
+    // antes, y el aviso final dice a quién y por qué.
+    let noCreados = [];
+    try { noCreados = await crearPedidos(); }
+    catch (e) { noCreados = sinPedidoAGuest((e && e.message) || 'error'); }
     const { hoy, sig } = vueltasParaTablero();
     if (!hoy.length && !sig.length) { st.ocupado = false; pintarPrevia(); return; }
     try {
@@ -641,6 +658,8 @@
       if (r && r.enCurso && r.enCurso.length) partes.push(`${r.enCurso.join(', ')} ya ${r.enCurso.length === 1 ? 'va' : 'van'} en una vuelta en curso y ${r.enCurso.length === 1 ? 'se queda' : 'se quedan'} ahí`);
       if (sig.length) partes.push(`la madrugada del ${diaTxt(sumarDia(st.dia, 1))} (${sig.length} ${sig.length === 1 ? 'vuelta' : 'vueltas'}) entra cuando abras ese día`);
       if (vuelos) partes.push(`${vuelos} ${vuelos === 1 ? 'vuelo' : 'vuelos'} a Vuelos`);
+      if (st.creados) partes.push(`se ${st.creados === 1 ? 'le creó el pedido a 1 tripulante que no había pedido' : `les creó el pedido a ${st.creados} tripulantes que no habían pedido`}`);
+      if (noCreados.length) partes.push(`a ${noCreados.length === 1 ? 'este no se le pudo' : 'estos no se les pudo'} crear el pedido y ${noCreados.length === 1 ? 'va' : 'van'} sin cuenta: ${noCreados.join('; ')}`);
       // Con «Deshacer», como cualquier cambio del tablero.
       const msg = (partes.length ? partes.join(' · ') : 'No entró ninguna vuelta') + '. Nadie ha recibido aviso: revisa y dale Publicar.';
       if (r && r.vueltas && typeof v2.toast === 'function') v2.toast(msg, true); else say(msg);
@@ -656,35 +675,50 @@
   // recogida), llegada con la hora y el vuelo de la línea. Después se releen los
   // pedidos del día: el tablero los necesita con su punto, como a los demás.
   const masMin = (iso, n) => new Date(Date.parse(iso) + n * 60000).toISOString();
-  async function crearPedidos() {
-    const faltan = [];
+  const quienes = () => {
+    const out = [];
     st.lectura.bloques.forEach((b, bi) => b.lineas.forEach((l, li) => l.personas.forEach((nombre, pi) => {
       const k = `${bi}.${li}.${pi}`, v = st.elegido[k];
-      if (esSinPedido(v)) faltan.push({ k, b, l, nombre, v, auxId: v.slice(SIN.length) });
+      if (esSinPedido(v)) out.push({ k, b, l, nombre, v, auxId: v.slice(SIN.length) });
     })));
-    st.errores = {};
-    if (!faltan.length) return true;
-    if (!W.Api || typeof Api.adminCreateReservation !== 'function') throw new Error('recarga la página');
+    return out;
+  };
+  // A quien no se le pudo crear: va en la ruta sin cuenta (lo de antes de 0153).
+  const corto = (n) => String(n || '').trim().split(/\s+/).slice(0, 2).join(' ');
+  function aGuest(f, motivo) { st.elegido[f.k] = GUEST; st.errores[f.k] = motivo; return `${corto(f.nombre)} (${motivo})`; }
+  function sinPedidoAGuest(motivo) { return quienes().map((f) => aGuest(f, motivo)); }
+  // Devuelve a quién NO se le pudo crear (nombre y motivo); a esos los deja sin cuenta.
+  async function crearPedidos() {
+    const faltan = quienes();
+    st.errores = {}; st.creados = 0;
+    if (!faltan.length) return [];
+    if (!W.Api || typeof Api.adminCreateReservation !== 'function') return faltan.map((f) => aGuest(f, 'recarga la página'));
+    const malos = [];
     for (const f of faltan) {
       const lle = esLlegada(f.b);
       const when = lle ? isoDe(f.l.dia, f.l.min)
         : (f.b.deadline && !f.b.deadline.mala ? isoDe(f.b.deadline.dia, f.b.deadline.min) : masMin(isoDe(f.l.dia, f.l.min), 40));
+      // La base no deja pedir hacia atrás (2 h): esa vuelta ya pasó.
+      if (Date.parse(when) < Date.now() - 100 * 60000) { malos.push(aGuest(f, 'su vuelta ya pasó')); continue; }
       try {
         f.rid = await Api.adminCreateReservation({ auxId: f.auxId, type: lle ? 'lle' : 'sal', whenIso: when,
           flight: lle ? (f.l.vuelo || null) : null, note: 'Desde la ruta de Julián.', acomodar: false });
-      } catch (e) { st.errores[f.k] = (e && e.message) || 'error'; }
+      } catch (e) {
+        const m = (e && e.message) || 'error';
+        malos.push(aGuest(f, /Ya tiene una/.test(m) ? 'ya tenía un pedido cerca de esa hora: revísalo en Reservas' : m));
+      }
     }
     const hechos = faltan.filter((f) => f.rid);
     if (hechos.length) {
-      st.cands = await cargarCandidatos(st.dia);
+      try { st.cands = await cargarCandidatos(st.dia); } catch (_) { /* abajo: no se pudo leer */ }
       hechos.forEach((f) => {
-        if (!cand(f.rid)) { st.errores[f.k] = 'se creó, pero no se pudo leer: vuelve a «Leer la ruta»'; return; }
+        if (!cand(f.rid)) { malos.push(aGuest(f, 'se le creó el pedido pero no se pudo leer: revísalo en Reservas')); return; }
         // Elegido a mano (no lo eligió el sistema): se aprende el apodo como siempre.
         if (st.auto[f.k] === f.v) st.auto[f.k] = f.rid;
-        st.elegido[f.k] = f.rid;
+        st.elegido[f.k] = f.rid; st.creados++;
       });
     }
-    return !Object.keys(st.errores).length;
+    return malos;
   }
 
   // ── 5. El Excel del día (la estructura del Formulario) ──────────────────────
