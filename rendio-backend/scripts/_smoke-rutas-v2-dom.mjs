@@ -1386,6 +1386,103 @@ console.log('\n── 26-oct · 0129: «Guardar y publicar» solo esa vuelta (si
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 28-oct · «No deja cambiar conductor · Esa vuelta no existe» (Camilo) ──');
+{
+  // Publicar el día borra y vuelve a crear las vueltas que no han arrancado (id
+  // nuevo). El tablero se quedaba con el id viejo y «Guardar y publicar» de UNA
+  // vuelta iba a una fila que ya no existía.
+  const b = await boot();
+  const { w, q, click, T, V2 } = b;
+  const rt = T().rt;
+  const laneDe = (k) => rt.lanes.find((l) => (rt.order[l.id] || []).includes('r' + k));
+  const save0 = w.Api.saveRoutePlan;
+  let pasada = 0;
+  w.Api.saveRoutePlan = async (day, lanes) => {
+    const r = await save0(day, lanes); pasada++;
+    // Como el real: cada vuelta guardada vuelve con su fila NUEVA.
+    r.ids = Object.fromEntries(lanes.filter((l) => l.laneId && (l.stops || []).length).map((l) => [l.laneId, { id: `nueva${pasada}-${l.laneId}`, status: l.driverProfileId ? 'planned' : 'draft' }]));
+    return r;
+  };
+  const lM = laneDe('M'), viejo = lM.raId;
+  const enCurso = laneDe('P'), idCurso = enCurso.raId;
+  await T().rtSavePlan(); await wait(10);
+  t('después de publicar, cada vuelta queda con su fila nueva (no la vieja)', lM.raId === `nueva1-${lM.id}` && lM.raId !== viejo, JSON.stringify([viejo, lM.raId]));
+  t('…y cada carril le mandó su laneId a saveRoutePlan', b.log.saved.at(-1).lanes.every((l) => !!l.laneId));
+  const calls = [];
+  let noExiste = new Set();
+  w.Api.setVueltaDriver = async (ra, pid) => { calls.push([ra, pid]); if (noExiste.has(ra)) { const e = new Error('Esa vuelta no existe'); e.code = 'P0002'; throw e; } return { status: 'planned', notified: 1 }; };
+  const abrir = async (id) => { click(q(`#rv2-list .rv2-row[data-id="${id}"]`)); await wait(10); click(q(`#routes-v2 [data-act="assign"][data-id="${id}"]`)); await wait(10); };
+  await abrir(lM.id);
+  click(q('#rv2-sheet [data-pick="d3"]')); await wait(5); click(q('#rv2-doPub')); await wait(20);
+  t('«Guardar y publicar» va a la fila NUEVA de la vuelta', calls.length === 1 && calls[0][0] === `nueva1-${lM.id}` && V2().dia().byId[lM.id].driverId === 'd3', JSON.stringify(calls));
+  // Otro jefe publicó desde otro equipo: la fila que tiene este tablero ya no existe.
+  noExiste = new Set([lM.raId]);
+  w.Api.getPublishedPlan = async (day, o) => ({ day, publicado: true, vueltas: w.RV2Fixture.vueltas().map((v) => Object.assign(v, { id: v.id + '-otro' })) });
+  await abrir(lM.id);
+  click(q('#rv2-sheet [data-pick="d2"]')); await wait(5); click(q('#rv2-doPub')); await wait(40);
+  const otro = w.RV2Fixture.vueltas().find((v) => [...v.pendientes, ...v.atendidas].map((x) => x.rid).join() === 'res-M').id + '-otro';
+  t('si la base dice «Esa vuelta no existe», busca la misma vuelta (misma gente) y la publica ahí', calls.length === 3 && calls[2][0] === otro && lM.raId === otro && V2().dia().byId[lM.id].driverId === 'd2', JSON.stringify(calls));
+  t('…y el aviso dice «Publicado»', /^Publicado: Luis Arango hace la vuelta/.test(b.toastV2() || ''), b.toastV2());
+  // Si tampoco está (nadie con esa gente), lo dice claro y no cambia nada.
+  noExiste = new Set([lM.raId]);
+  w.Api.getPublishedPlan = async (day) => ({ day, publicado: true, vueltas: [] });
+  await abrir(lM.id);
+  click(q('#rv2-sheet [data-pick="d3"]')); await wait(5); click(q('#rv2-doPub')); await wait(40);
+  t('…si ya no está publicada así: «vuelve a publicar el día» y el tablero no cambia', V2().dia().byId[lM.id].driverId === 'd2' && /No se pudo publicar esta vuelta: esa vuelta ya no está publicada así: vuelve a publicar el día\. No cambió nada\./.test(b.toastV2() || ''), b.toastV2());
+  t('la vuelta en curso (no se vuelve a crear) conserva su fila', enCurso.raId === idCurso || !!enCurso.raId, JSON.stringify([idCurso, enCurso.raId]));
+  t('sin errores de consola (no existe)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── 28-oct · «Enrutar»: solo los conductores, el tablero no cambia (Camilo) ──');
+{
+  const b = await boot();
+  const { w, q, click, T, V2 } = b;
+  const rt = T().rt;
+  const DAY = w.RV2Fixture.DAY;
+  const now0 = w.Date.now;
+  w.Date.now = () => Date.parse(DAY + 'T02:00:00-05:00');   // la madrugada: todo el día por hacer
+  try {
+    const laneDe = (k) => rt.lanes.find((l) => (rt.order[l.id] || []).includes('r' + k));
+    const btn = q('#rv2-enrutar');
+    t('la barra trae «Enrutar» a la derecha de Re-optimizar', !!btn && /Enrutar/.test(txt(btn)) && btn.previousElementSibling === q('#rv2-reopt') && !btn.disabled);
+    // Un choque a propósito: Luis (d2), que sale a las 04:35 con Valentina, también con la
+    // de las 04:45 de V-01 (Camila y José): no alcanza a volver por ellos.
+    const lI = laneDe('D'); lI.drv = 'd2'; V2().render(); await wait(5);
+    const quietoAntes = rt.lanes.filter((l) => l.id !== lI.id).map((l) => [l.id, V2().dia().byId[l.id] && V2().dia().byId[l.id].driverId]);
+    const choques = () => V2()._avisos().filter((a) => a.k === 'drv').length;
+    const antes = choques();
+    const foto = () => JSON.stringify({ order: rt.order, lanes: rt.lanes.map((l) => [l.id, l.car, l.start, l.type]), horas: rt.horasPub || null });
+    const f0 = foto();
+    const drvDe = (id) => V2().dia().byId[id].driverId;
+    const fijas = rt.lanes.filter((l) => V2().dia().byId[l.id] && V2().dia().byId[l.id].fija).map((l) => [l.id, drvDe(l.id)]);
+    t('antes: el aviso marca el choque de Luis', antes >= 1, String(antes));
+    click(btn); await wait(10);
+    t('después de Enrutar: la gente, las horas, los carros y las vueltas quedan IGUALES', foto() === f0);
+    t('…las terminadas y en curso siguen con su conductor', fijas.every(([id, d]) => drvDe(id) === d), JSON.stringify(fijas));
+    t('…la de las 04:45 ya no es de Luis (no alcanzaba): vuelve a Jorge, que sí llega', drvDe(lI.id) === 'd1', drvDe(lI.id));
+    t('…y SOLO cambia esa: las que ya cuadraban se quedan con su conductor (sin avisos de más)', quietoAntes.every(([id, d]) => drvDe(id) === d), JSON.stringify(quietoAntes.filter(([id, d]) => drvDe(id) !== d)));
+    t('…y no quedan choques de conductor', choques() === 0, JSON.stringify(V2()._avisos().filter((a) => a.k === 'drv').map((a) => a.html)));
+    const lF = laneDe('F');
+    t('…la llegada de las 15:20 (sin conductor) queda con uno del turno PM', ['d4', 'd5'].includes(drvDe(lF.id)), drvDe(lF.id));
+    t('el aviso dice cuántas cambian y que lo demás no cambió', /^Enrutado: 1 vuelta cambia de conductor \(1 a Jorge\)\. Las horas, la gente y los carros no cambiaron\. Revisa y dale Publicar/.test(b.toastV2() || ''), b.toastV2());
+    t('…con «Deshacer»', !!q('#rv2-toast [data-act="undo"]'));
+    click(btn); await wait(10);
+    t('otra vez: «Ya estaba bien enrutado» (no mueve nada)', /^Ya estaba bien enrutado/.test(b.toastV2() || ''), b.toastV2());
+    // Deshacer vuelve a como estaba (Luis con las dos).
+    click(btn); await wait(5);
+    lI.drv = 'd2'; V2().render(); click(btn); await wait(10);
+    click(q('#rv2-toast [data-act="undo"]')); await wait(10);
+    t('«Deshacer» devuelve los conductores de antes', drvDe(lI.id) === 'd2' && foto() === f0, drvDe(lI.id));
+    // Lo que ya debía haber arrancado no se mueve.
+    w.Date.now = () => Date.parse(DAY + 'T23:00:00-05:00');
+    click(btn); await wait(10);
+    t('a las 11 p. m. todo ya pasó: «No hay vueltas por enrutar» y nada cambia', /No hay vueltas por enrutar/.test(b.toastV2() || '') && drvDe(lI.id) === 'd2', b.toastV2());
+  } finally { w.Date.now = now0; }
+  t('sin errores de consola (enrutar)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 console.log('\n── 26-oct · 0132: «¿Qué carro es Carro 1?» (el carro de la flota del plan) ──');
 {
   const b = await boot();

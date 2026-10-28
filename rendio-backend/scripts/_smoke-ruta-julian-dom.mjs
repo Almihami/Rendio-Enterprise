@@ -264,7 +264,7 @@ const C = await boot({
   pick(fila('Pepe').querySelector('select'), 'res-A'); await wait();
   t('elegir a Laura también para Pepe: «Está dos veces» en los dos y Publicar se apaga', /Está dos veces/.test(txt(fila('Pepe'))) && /Está dos veces/.test(txt(fila('Laura G'))) && pub().disabled && /1 repetidos|2 repetidos/.test(sum()), sum());
   pick(fila('Pepe').querySelector('select'), '__app'); await wait();
-  t('27-oct (2ª): «Va en la ruta (tiene la app)» para Pepe, que no pidió: no inventa a nadie, lo dice y pide elegir', fila('Pepe').dataset.st === 'falta' && quien('Pepe') === '' && /No encontré a «Pepe» en los pedidos de este día/.test(txt(fila('Pepe'))) && /Va, pero no tiene la app/.test(txt(fila('Pepe'))), txt(fila('Pepe')));
+  t('27-oct (2ª): «Va en la ruta (tiene la app)» para Pepe, que no pidió: no inventa a nadie, lo dice y pide elegir', fila('Pepe').dataset.st === 'falta' && quien('Pepe') === '' && /No encontré a «Pepe» ni en los pedidos del día ni entre los tripulantes con cuenta/.test(txt(fila('Pepe'))) && /Va, pero no tiene la app/.test(txt(fila('Pepe'))), txt(fila('Pepe')));
   pick(fila('Pepe').querySelector('select'), '__guest'); await wait();
   t('…y de vuelta a «Va, pero no tiene la app»: va en la ruta, sin aviso', fila('Pepe').dataset.st === 'guest' && /1 sin la app/.test(sum()), sum());
   pick(fila('Andres').querySelector('select'), 'res-O'); await wait();
@@ -1209,6 +1209,78 @@ console.log('\n── T · «Conductor asignado» trae la hora (los tripulantes:
   t('a José le llega «Te recogemos … a las 5:30» y a Camila «… a las 5:40»', bodies.some(([b, ids]) => /Te recogemos el lunes 12 a las 5:30\./.test(b) && ids === 'u-res-C') && bodies.some(([b, ids]) => /a las 5:40\./.test(b) && ids === 'u-res-D'), JSON.stringify(bodies));
   t('…y a Natalia (llega en vuelo) «Cuando aterrices te esperamos en JMC (sale … hacia las …)»', bodies.some(([b, ids]) => /Cuando aterrices te esperamos en JMC \(sale el lunes 12 hacia las 15:\d\d\)/.test(b) && ids === 'u-res-F'), JSON.stringify(bodies));
   t('sin errores de script', T0.errors.length === 0, T0.errors.join(' | '));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── U · 28-oct (Camilo): «el que se debe pegar es de la base de datos de tripulantes» ──');
+{
+  const creados = [], extra = {}, aprendidos = [];
+  const U0 = await boot({ antes: (w) => {
+    w.Api.listAuxiliares = async () => [
+      { id: 'aux-isa', name: 'Isabella Páez Gómez', active: true, deleted: false, res1: { name: 'Marinilla Real', sector: 'Marinilla' }, phone: '3000000001' },
+      { id: 'aux-va1', name: 'Valeria Ríos Arango', active: true, deleted: false, res1: { name: 'Solare', sector: 'Marinilla' } },
+      { id: 'aux-va2', name: 'Valeria Soto', active: true, deleted: false, res1: null },
+      { id: 'aux-bor', name: 'Isabella Borrada Páez', active: true, deleted: true },
+      { id: 'aux-rA', name: 'Laura Gómez', active: true, deleted: false },
+    ];
+    w.Api.saveCrewAliases = async (xs) => { aprendidos.push(...xs); };
+    // El pedido a su nombre: queda en los pedidos del día (como la base de verdad).
+    w.Api.adminCreateReservation = async (f) => {
+      creados.push(JSON.parse(JSON.stringify(f)));
+      const n = creados.length, k = 'rX' + n;
+      const nombre = { 'aux-isa': 'Isabella Páez Gómez', 'aux-va1': 'Valeria Ríos Arango' }[f.auxId] || 'Otra';
+      const hm = new Date(f.whenIso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+      extra[k] = { n: nombre, zona: 'Marinilla Real', sector: 'Marinilla', resId: null, zonaJefe: null, dir: 'Marinilla', lat: 6.03 + n / 1000, lng: -75.41,
+        dl: hm, pax: 1, type: f.type, reservationId: 'res-X' + n, tel: '', vuelo: '', tierra: false, notas: '', hotel: false, auxId: f.auxId };
+      return 'res-X' + n;
+    };
+    const plan = w.Api.listRoutePlanning;
+    w.Api.listRoutePlanning = async (tipo, day) => { const r = await plan(tipo, day); if (r && (day || DAY) === DAY) Object.assign(r.aux, JSON.parse(JSON.stringify(extra))); return r; };
+  } });
+  const { q, qa, click, type, pick, T, J: JJ } = U0;
+  click(q('#rv2-julian')); await wait();
+  type(q('#rj-ta'), '11:20 Isabella Páez Gómez ) (Marinilla (Isabella y Valeria)\nDeben estar 12:10\n\n8:20 Valeria (Mota)\nDeben estar 9:00\n\n4:10 Laura G (Olivar)\nDeben estar 5:00');
+  click(q('#rv2-sheet [data-rj="leer"]')); await wait(60);
+  const fila = (nombre) => qa('#rj-prev .rj-p').find((p) => txt(p.querySelector('.rj-w')).startsWith(nombre));
+  const quien = (nombre) => { const f = fila(nombre); return f ? f.querySelector('select').value : null; };
+  const pub = () => q('#rv2-sheet [data-rj="publicar"]');
+  t('Isabella (no pidió ese día) se encuentra por su CUENTA y se elige sola', quien('Isabella') === 'aux:aux-isa' && fila('Isabella').dataset.st === 'crear', fila('Isabella') && txt(fila('Isabella')));
+  t('…y dice qué va a pasar: «Tiene la app y no pidió este día: … se le crea el pedido (salida 12:10)»', /Tiene la app y no pidió este día: al pasar al tablero se le crea el pedido \(salida 12:10\) y lo ve en su app/.test(txt(fila('Isabella'))), txt(fila('Isabella')));
+  t('…su lista trae el grupo «Tienen cuenta y no pidieron este día» (sin la borrada)', [...fila('Isabella').querySelectorAll('optgroup')].some((g) => /Tienen cuenta y no pidieron/.test(g.label))
+    && ![...fila('Isabella').querySelectorAll('option')].some((o) => o.value === 'aux:aux-bor'), [...fila('Isabella').querySelectorAll('optgroup')].map((g) => g.label).join(' | '));
+  t('«Valeria (Mota)» con dos Valerias: NO se elige sola ni queda «sin la app»; las dos salen de opción', quien('Valeria') === '' && fila('Valeria').dataset.st === 'falta'
+    && ['aux:aux-va1', 'aux:aux-va2'].every((v) => [...fila('Valeria').querySelectorAll('option')].some((o) => o.value === v)), fila('Valeria') && txt(fila('Valeria')).slice(0, 200));
+  t('Laura (sí pidió su salida) sigue con su pedido, no con su cuenta', quien('Laura G') === 'res-A');
+  t('«Falta elegir 1» (Valeria)', pub().disabled && txt(pub()) === 'Falta elegir 1', txt(pub()));
+  pick(fila('Valeria').querySelector('select'), '__app'); await wait();
+  t('«Va en la ruta (tiene la app)» para Valeria: la que más se parece por el nombre, con su cuenta', /^aux:aux-va/.test(JJ()._st.elegido[Object.keys(JJ()._st.elegido).find((k) => k.startsWith('1.'))] || ''), JSON.stringify(JJ()._st.elegido));
+  pick(fila('Valeria').querySelector('select'), 'aux:aux-va1'); await wait();
+  t('…elegida a mano: «se le crea el pedido» y el botón cuenta 3', fila('Valeria').dataset.st === 'crear' && !pub().disabled && /Pasar al tablero · 3/.test(txt(pub())) && /2 tienen cuenta y no pidieron: se les crea el pedido/.test(txt(q('#rj-prev .rj-sum'))), txt(pub()) + ' · ' + txt(q('#rj-prev .rj-sum')));
+  click(pub()); await wait(150);
+  const de = (aux) => creados.find((f) => f.auxId === aux) || {};
+  t('al pasar al tablero se crean los 2 pedidos a su nombre, SIN que el sistema los acomode (acomodar: false)', creados.length === 2 && creados.every((f) => f.acomodar === false && f.type === 'sal'), JSON.stringify(creados));
+  t('…salida = la hora de «Deben estar» (12:10 y 9:00), la presentación en JMC', de('aux-isa').whenIso === DAY + 'T12:10:00-05:00' && de('aux-va1').whenIso === DAY + 'T09:00:00-05:00', JSON.stringify(creados.map((f) => f.whenIso)));
+  const R = T().rt;
+  const laneCon = (rid) => { const k = Object.keys(R.aux).find((x) => R.aux[x].reservationId === rid); return k && R.lanes.find((l) => (R.order[l.id] || []).includes(k)); };
+  t('…y entran al tablero como cualquiera, con su pedido nuevo (Isabella a las 11:20)', !!laneCon('res-X1') && !!laneCon('res-X2') && laneCon('res-X1').start === '11:20', JSON.stringify([laneCon('res-X1') && laneCon('res-X1').start, laneCon('res-X2') && laneCon('res-X2').start]));
+  t('…sin pasajeros sin cuenta (nadie quedó como «no tiene la app»)', !Object.values(R.aux).some((a) => a.guest));
+  t('el apodo elegido a mano («valeria» → Valeria Ríos) se aprende', aprendidos.some((a) => a.alias === 'valeria' && a.auxiliar_profile_id === 'aux-va1'), JSON.stringify(aprendidos));
+  t('sin errores de script', U0.errors.length === 0, U0.errors.join(' | '));
+}
+{
+  // Si la base dice que no (ya tiene una salida a esa hora), la hoja se queda abierta y lo dice.
+  const U1 = await boot({ antes: (w) => {
+    w.Api.listAuxiliares = async () => [{ id: 'aux-isa', name: 'Isabella Páez Gómez', active: true, deleted: false, res1: null }];
+    w.Api.adminCreateReservation = async () => { throw new Error('Ya tiene una salida a esa hora (menos de 3 h): revísala en Reservas'); };
+  } });
+  const { q, qa, click, type } = U1;
+  click(q('#rv2-julian')); await wait();
+  type(q('#rj-ta'), '11:20 Isabella Paez (Marinilla)\nDeben estar 12:10');
+  click(q('#rv2-sheet [data-rj="leer"]')); await wait(60);
+  click(q('#rv2-sheet [data-rj="publicar"]')); await wait(120);
+  const f = qa('#rj-prev .rj-p')[0];
+  t('si no se puede crear su pedido, NO pasa al tablero: la hoja sigue abierta y dice por qué', !!f && /No se pudo crear su pedido: Ya tiene una salida a esa hora/.test(txt(f)) && !q('#rv2-sheet').hidden, f && txt(f));
+  t('sin errores de script', U1.errors.length === 0, U1.errors.join(' | '));
 }
 
 t('sin errores de script (instancia base)', base.errors.length === 0, base.errors.join(' | '));
