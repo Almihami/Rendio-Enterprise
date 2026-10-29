@@ -118,6 +118,10 @@
 #cobro-ui .cb-hist th{text-align:left;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3);padding:6px 8px;border-bottom:1px solid var(--line)}
 #cobro-ui .cb-hist td{padding:8px;border-bottom:1px solid var(--line);color:var(--ink);vertical-align:top}
 #cobro-ui .cb-hist td em{display:block;font-style:normal;font-size:11px;color:var(--ink3)}
+/* 28-oct: «Ver» el comprobante ya revisado (historial y balance). */
+#cobro-ui .cb-see{display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 8px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);color:var(--blue);font:inherit;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;vertical-align:baseline}
+#cobro-ui .cb-see .icon{width:13px;height:13px}
+#cobro-ui .cb-see:hover{border-color:var(--blue)}
 
 /* Paneles de la organización (métodos y valores por defecto). */
 #cobro-ui .cb-panel{border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;background:#FBFBFC}

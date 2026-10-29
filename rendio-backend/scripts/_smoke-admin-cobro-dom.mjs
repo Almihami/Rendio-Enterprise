@@ -234,6 +234,10 @@ async function boot(o = {}) {
   w.console.error = (...a) => { errors.push(a.map(x => (x && x.message) || String(x)).join(' ')); };
   w.addEventListener('error', (e) => errors.push(e.message));
   w.RENDIO_CONFIG = {};
+  // 28-oct: el sondeo de 30 s se puede disparar a mano (w.__iv) y window.open queda anotado.
+  const siv = w.setInterval.bind(w);
+  w.setInterval = (fn, ms, ...r) => { if (ms === 30000) (w.__iv = w.__iv || []).push(fn); return siv(fn, ms, ...r); };
+  w.open = (u, n) => { const v = { u, n, opener: w, location: { href: '' }, closed: false, close() { this.closed = true; } }; (w.__abiertas = w.__abiertas || []).push(v); return v; };
   w.toast = (m) => toasts.push(m);
   w.confirm = () => true;
   const red = [];
@@ -1139,6 +1143,111 @@ console.log('\n── 0123 · Por adelantado: la del próximo corte ──');
   t('base sin 0123: el guardado no manda earlyOpenDay', sv && !('earlyOpenDay' in sv[1]), JSON.stringify(sv));
   t('base sin 0123: la fila sin openCut sigue con la regla de antes («Abrir cuenta de cobro»)', !!b.row('a-corte').querySelector('[data-cb="open-st"]') && txt(b.row('a-corte').querySelector('[data-cb="open-st"]')) === 'Abrir cuenta de cobro');
   w.stopCobroTimer();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 28-oct (Camilo): el enlace firmado dura 10 min y se firmaba UNA vez al cargar
+// (con Cobro abierto un rato, la foto daba «"exp" claim timestamp check failed»), y
+// un comprobante ya aprobado no se podía volver a ver.
+console.log('\n── 28-oct: abrir comprobantes (firma al tocar, se renueva, «Ver» en historial y balance) ──');
+{
+  const b = await boot();
+  const { w } = b;
+  let n = 0;
+  w.ApiCobro.proofUrl = async (p) => { n++; b.calls.push(['proofUrl', p]); return 'https://almacen.prueba/firmado/' + p + '?v=' + n; };
+  const firmas = (p) => b.calls.filter(c => c[0] === 'proofUrl' && c[1] === p).length;
+  w.renderCobro(); await wait(40);
+  const img = () => b.q('.cb-proof[data-proof="pf-1"] .cb-proof-img img');
+  const src0 = img() && img().getAttribute('src');
+  t('por revisar: la foto sale del enlace firmado', /firmado\/org\/p1\/s-rev\/a\.jpg\?v=\d+$/.test(src0 || ''), src0);
+  const antes = firmas('org/p1/s-rev/a.jpg');
+  const ev0 = new w.MouseEvent('click', { bubbles: true, cancelable: true });
+  img().dispatchEvent(ev0); await wait(20);
+  t('recién firmado: tocar la foto la abre como cualquier enlace (sin volver a firmar ni ventana emergente)',
+    !ev0.defaultPrevented && !(w.__abiertas || []).length && firmas('org/p1/s-rev/a.jpg') === antes);
+  const t0 = w.Date.now;
+  w.Date.now = () => t0.call(w.Date) + 9 * 60e3;
+  const ev = new w.MouseEvent('click', { bubbles: true, cancelable: true });
+  img().dispatchEvent(ev); await wait(20);
+  const v1 = (w.__abiertas || []).at(-1);
+  t('9 min después (sin sondeo): tocar la foto firma un enlace NUEVO y abre ESE en otra ventana (no el vencido)',
+    !!v1 && ev.defaultPrevented && firmas('org/p1/s-rev/a.jpg') === antes + 1 && v1.location.href !== src0 && /a\.jpg\?v=\d+$/.test(v1.location.href) && v1.opener === null,
+    v1 && v1.location.href);
+  const nSondeo = firmas('org/p1/s-rev/a.jpg');
+  (w.__iv || []).forEach(f => f()); await wait(40);
+  const src1 = img() && img().getAttribute('src');
+  t('Cobro abierto 9 min: el sondeo de 30 s (sin nada nuevo) vuelve a firmar la foto', (w.__iv || []).length === 1 && firmas('org/p1/s-rev/a.jpg') === nSondeo + 1 && src1 && src1 !== src0, src0 + ' → ' + src1);
+  const n1 = n;
+  (w.__iv || []).forEach(f => f()); await wait(40);
+  t('…y no la vuelve a firmar en cada sondeo (solo pasados 8 min)', n === n1, n1 + ' → ' + n);
+  // Vencido y sin poder firmar: no deja una ventana en blanco.
+  w.Date.now = () => t0.call(w.Date) + 20 * 60e3;
+  w.ApiCobro.proofUrl = async () => { throw new Error('sin red'); };
+  b.click(b.q('.cb-proof[data-proof="pf-2"] .cb-proof-img a')); await wait(20);
+  t('vencido y sin poder firmar: cierra la ventana y lo dice', w.__abiertas.at(-1).closed && /No se pudo abrir el comprobante/.test(b.toasts.at(-1)), b.toasts.at(-1));
+  w.Date.now = t0;
+  w.ApiCobro.proofUrl = async (p) => { n++; b.calls.push(['proofUrl', p]); return 'https://almacen.prueba/firmado/' + p + '?v=' + n; };
+
+  // Historial del tripulante: «Ver» en cada comprobante con archivo (también los aprobados).
+  w.ApiCobro.adminDetail = async (aux) => ({ statements: [st({ id: 's-ok', dia: 4, paid: true, amt: 470000 })],
+    proofs: [{ id: 'pf-r', statementId: 's-ok', status: 'rejected', rejectReason: 'No se lee el comprobante', path: 'org/p0/s-ok/r.jpg' },
+      { id: 'pf-a', statementId: 's-ok', status: 'approved', path: 'org/p0/s-ok/z.jpg' },
+      { id: 'pf-v', statementId: 's-ok', status: 'approved' }], payments: [], extraCharges: [] });
+  b.click(b.row('a-ok').querySelector('[data-m="hist"]')); await wait(40);
+  const hp = [...b.row('a-ok').querySelectorAll('[data-cb-hist-proof]')];
+  t('historial: «Aprobado Ver» y «Rechazado: … Ver»; sin archivo, sin «Ver»', hp.length === 3 && txt(hp[0]) === 'Rechazado: No se lee el comprobante Ver' && txt(hp[1]) === 'Aprobado Ver' && txt(hp[2]) === 'Aprobado' && !hp[2].querySelector('.cb-see'),
+    hp.map(txt).join(' | '));
+  const verA = hp[1].querySelector('.cb-see');
+  t('…al abrir el historial se firman sus archivos: «Ver» es un enlace normal al aprobado', verA && verA.tagName === 'A' && /^https:\/\/almacen\.prueba\/firmado\/org\/p0\/s-ok\/z\.jpg\?v=\d+$/.test(verA.getAttribute('href')) && verA.getAttribute('target') === '_blank'
+    && firmas('org/p0/s-ok/z.jpg') === 1 && firmas('org/p0/s-ok/r.jpg') === 1, verA && verA.outerHTML);
+  const nAb = w.__abiertas.length;
+  const evA = new w.MouseEvent('click', { bubbles: true, cancelable: true });
+  verA.dispatchEvent(evA); await wait(20);
+  t('…tocar «Ver» recién firmado lo abre como enlace (sin ventana emergente)', !evA.defaultPrevented && w.__abiertas.length === nAb);
+  w.Date.now = () => t0.call(w.Date) + 30 * 60e3;
+  const evB = new w.MouseEvent('click', { bubbles: true, cancelable: true });
+  verA.dispatchEvent(evB); await wait(20);
+  t('…con el historial abierto 30 min, «Ver» firma otra vez ESE archivo y lo abre', evB.defaultPrevented && firmas('org/p0/s-ok/z.jpg') === 2 && w.__abiertas.at(-1).location.href === 'https://almacen.prueba/firmado/org/p0/s-ok/z.jpg?v=' + n && !w.__abiertas.at(-1).closed, w.__abiertas.at(-1).location.href);
+  w.Date.now = t0;
+
+  // Balance › Comprobantes y pagos: el comprobante tiene «Ver» (la base no da la ruta:
+  // se busca por tripulante + hora en que lo envió); el pago no.
+  const AT = '2026-10-27T14:40:57.112345+00:00';
+  b.D.bal.payments[0] = { ...b.D.bal.payments[0], auxiliarProfileId: 'b-rio', at: AT };
+  b.D.bal.payments[1] = { ...b.D.bal.payments[1], auxiliarProfileId: 'b-rio', at: '2026-10-28T23:26:54.485+00:00' };
+  let busca = { path: 'org/b/s-rio/n.jpg', contentType: 'image/jpeg' };
+  w.ApiCobro.adminProofFile = async (aux, at) => { b.calls.push(['adminProofFile', aux, at]); return busca; };
+  b.click(b.q('[data-cb="view"][data-v="balance"]')); await wait(40);
+  const pays = b.qa('.cb-bal-pays tbody tr');
+  const verB = pays[0] && pays[0].querySelector('.cb-see[data-cb="proof-open-at"]');
+  t('balance: el comprobante dice «Comprobante Ver»; el pago no tiene «Ver»', !!verB && txt(pays[0].querySelectorAll('td')[2]) === 'Comprobante Ver' && !pays[1].querySelector('.cb-see'),
+    pays.slice(0, 2).map(r => txt(r)).join(' // '));
+  b.click(verB); await wait(30);
+  t('…«Ver» busca el archivo (tripulante + hora), lo firma y lo abre', b.calls.some(c => c[0] === 'adminProofFile' && c[1] === 'b-rio' && c[2] === AT)
+    && w.__abiertas.at(-1).location.href === 'https://almacen.prueba/firmado/org/b/s-rio/n.jpg?v=' + n, w.__abiertas.at(-1).location.href);
+  busca = null;
+  b.click(verB); await wait(30);
+  t('…si no encuentra el archivo: cierra la ventana y lo dice', w.__abiertas.at(-1).closed && /No se pudo abrir el comprobante/.test(b.toasts.at(-1)));
+  w.stopCobroTimer();
+  t('sin errores de consola (28-oct)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+  t('sin red (28-oct)', b.red.length === 0, b.red.slice(0, 5).join(','));
+}
+{
+  // api-cobro: adminProofFile lee billing_proofs (RLS del jefe) y devuelve la ruta.
+  const b = await boot();
+  const { w } = b;
+  const q = [];
+  let filas = [{ storage_path: 'o/p/s/x.jpg', content_type: 'image/jpeg' }];
+  const ch = { select(s) { q.push(['select', s]); return ch; }, eq(k, v) { q.push(['eq', k, v]); return ch; },
+    limit(k) { q.push(['limit', k]); return Promise.resolve({ data: filas, error: null }); } };
+  w.sb = { from(tb) { q.push(['from', tb]); return ch; } };
+  const r = await w.ApiCobro.adminProofFile('aux-1', '2026-10-27T14:40:57.112345+00:00');
+  t('api: adminProofFile → billing_proofs del tripulante a esa hora, {path, contentType}', r && r.path === 'o/p/s/x.jpg' && r.contentType === 'image/jpeg'
+    && JSON.stringify(q) === JSON.stringify([['from', 'billing_proofs'], ['select', 'storage_path, content_type'], ['eq', 'auxiliar_profile_id', 'aux-1'], ['eq', 'submitted_at', '2026-10-27T14:40:57.112345+00:00'], ['limit', 1]]), JSON.stringify(q));
+  filas = [];
+  t('api: sin fila → null', (await w.ApiCobro.adminProofFile('aux-1', 'x')) === null);
+  t('api: sin tripulante u hora → null sin ir a la base', (await w.ApiCobro.adminProofFile(null, 'x')) === null && q.filter(x => x[0] === 'from').length === 2);
+  w.stopCobroTimer && w.stopCobroTimer();
 }
 
 console.log(`\n${ok} ✓ · ${bad} ✗`);

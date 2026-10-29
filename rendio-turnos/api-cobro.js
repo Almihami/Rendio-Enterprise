@@ -324,6 +324,16 @@
     if (error) throw error;
     return data && data.signedUrl;
   }
+  // 28-oct: el archivo de un comprobante del Balance, que trae quién y cuándo pero no
+  // la ruta. El jefe lee los billing_proofs de su org (p_billing_proofs_select_admin).
+  async function adminProofFile(auxId, submittedAt) {
+    if (!auxId || !submittedAt) return null;
+    const { data, error } = await client().from('billing_proofs').select('storage_path, content_type')
+      .eq('auxiliar_profile_id', auxId).eq('submitted_at', submittedAt).limit(1);
+    if (error) throw error;
+    const r = Array.isArray(data) ? data[0] : null;
+    return r && r.storage_path ? { path: r.storage_path, contentType: r.content_type || null } : null;
+  }
 
   async function reasons() {
     try { const r = await rpc('billing_reject_reasons'); return Array.isArray(r) && r.length ? r : REASONS.slice(); }
@@ -654,7 +664,7 @@
     PERIODS, vacationTotal, setVacation, cancelVacation,
     // jefe
     adminList, adminDetail, adminSaveAccount, adminOpenStatement, adminAdjust,
-    adminProofs, adminApprove, adminReject, adminMarkPaid,
+    adminProofs, adminApprove, adminReject, adminMarkPaid, adminProofFile,
     // jefe (0115)
     adminMarkPaidWithProof, adminOpenMany, adminRestartTerms,
     adminSettings, adminSaveSettings, adminMethods, adminSaveMethod, adminSetMethodActive, adminDeleteMethod,

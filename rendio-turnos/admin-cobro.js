@@ -108,7 +108,8 @@
     panel: null,              // 'methods' | 'settings' | null
     mform: null,              // método en edición (nuevo: {})
     sform: null,              // valores por defecto en edición
-    urls: {},                 // proofId → {url} | {err:true}
+    urls: {},                 // proofId → {url, at} | {err:true, at}
+    signed: {},               // 28-oct: ruta del archivo → {url, at} (lo último firmado, para abrir sin volver a firmar)
     busy: null,
     poll: null,
     bound: false,
@@ -337,13 +338,13 @@
     else cb.proofs = Array.isArray(p.v) ? p.v.filter(isObj) : [];
     cb.lastRun = r.e ? undefined : (isObj(r.v) ? r.v : null);
     if (cb.pendingAux) focusAux(cb.pendingAux);
+    loadUrls();                                     // también sin cambios: renueva los enlaces
     const sig = JSON.stringify([cb.list, cb.proofs, cb.lastRun]);
     if (quiet && sig === cb.sig) return;
     cb.sig = sig;
     // Mientras escribe en un formulario, el sondeo no le borra lo que lleva.
     if (quiet && (cb.open || cb.panel || cb.rejecting || typing())) return;
     paint();
-    loadUrls();
   }
   async function loadPanel() {
     const a = api(); if (!a) return;
@@ -393,16 +394,54 @@
     cb.bal = r.e ? null : (isObj(r.v) ? r.v : null);
     if (cb.view === 'balance') paint();
   }
-  // Enlaces firmados de los comprobantes por revisar (10 min).
+  // Enlaces firmados de los comprobantes por revisar (10 min). 28-oct: se vuelven a
+  // firmar a los 8 min mientras la pantalla siga abierta (antes se firmaban una vez y,
+  // con Cobro abierto un rato, la foto daba «"exp" claim timestamp check failed»).
+  const URL_SECS = 600, URL_RENEW_MS = 8 * 60e3;
   function loadUrls() {
     const a = api(); if (!a || typeof a.proofUrl !== 'function' || !Array.isArray(cb.proofs)) return;
     cb.proofs.forEach(p => {
-      if (!p.id || !p.path || cb.urls[p.id]) return;
-      cb.urls[p.id] = { loading: true };
-      Promise.resolve().then(() => a.proofUrl(p.path, 600)).then(u => {
-        cb.urls[p.id] = u ? { url: u } : { err: true };
-      }).catch(() => { cb.urls[p.id] = { err: true }; }).then(() => paintProofImg(p.id));
+      if (!p.id || !p.path) return;
+      const u0 = cb.urls[p.id];
+      if (u0 && (u0.busy || Date.now() - (u0.at || 0) < URL_RENEW_MS)) return;
+      // Al renovar sigue la foto de antes hasta que llega el enlace nuevo.
+      cb.urls[p.id] = Object.assign({}, u0, { busy: true, loading: !(u0 && u0.url) });
+      Promise.resolve().then(() => a.proofUrl(p.path, URL_SECS)).then(u => {
+        cb.urls[p.id] = u ? { url: u, at: Date.now() } : { err: true, at: Date.now() };
+        if (u) cb.signed[p.path] = cb.urls[p.id];
+      }).catch(() => { cb.urls[p.id] = { err: true, at: Date.now() }; }).then(() => paintProofImg(p.id));
     });
+  }
+  const freshUrl = (u) => !!(u && u.url && Date.now() - (u.at || 0) < URL_RENEW_MS);
+  // Historial: firma los archivos de sus comprobantes al abrirlo, así «Ver» es un enlace
+  // normal (sin ventanas emergentes).
+  function signHist(aux) {
+    const a = api(), d = cb.detail[aux];
+    if (!a || typeof a.proofUrl !== 'function' || !isObj(d) || !Array.isArray(d.proofs)) return;
+    const paths = d.proofs.filter(isObj).map(p => p.path).filter(p => p && !freshUrl(cb.signed[p]));
+    if (!paths.length) return;
+    Promise.all(paths.map(p => Promise.resolve().then(() => a.proofUrl(p, URL_SECS))
+      .then(u => { if (u) cb.signed[p] = { url: u, at: Date.now() }; }).catch(() => {})))
+      .then(() => { if (cb.open === aux && cb.mode === 'hist' && !typing()) paint(); });
+  }
+  // 28-oct: abrir un comprobante cuyo enlace ya venció (o que no lo tiene: el balance)
+  // firma uno en ese momento. La ventana se abre YA, con el toque: abierta después de
+  // esperar la firma, el navegador la bloquea.
+  async function openProof(path, find) {
+    const a = api(); if (!a || typeof a.proofUrl !== 'function') return;
+    const w = window.open('', '_blank');
+    try {
+      if (!path && find) { const f = await find(); path = f && f.path; }
+      if (!path) throw new Error('sin archivo');
+      const u = await a.proofUrl(path, URL_SECS);
+      if (!u) throw new Error('sin enlace');
+      cb.signed[path] = { url: u, at: Date.now() };
+      if (w) { w.opener = null; w.location.href = u; }
+      else say('El navegador no dejó abrir el comprobante: permite las ventanas emergentes de Rendio y vuelve a tocarlo');
+    } catch (_) {
+      if (w) w.close();
+      say('No se pudo abrir el comprobante. Revisa tu conexión y reintenta.');
+    }
   }
   function typing() {
     const el = document.activeElement;
@@ -453,8 +492,18 @@
     const pdf = /pdf/i.test(String(p.contentType || '')) || /\.pdf$/i.test(String(p.path || ''));
     if (!u || u.loading) return '<div class="cb-proof-img">Cargando el archivo…</div>';
     if (u.err) return '<div class="cb-proof-img">No se pudo abrir el archivo.</div>';
-    if (pdf) return '<div class="cb-proof-img"><a href="' + esc(u.url) + '" target="_blank" rel="noopener">' + icon('i-doc') + 'Abrir el PDF</a></div>';
-    return '<div class="cb-proof-img"><a href="' + esc(u.url) + '" target="_blank" rel="noopener"><img src="' + esc(u.url) + '" alt="Comprobante de ' + esc(p.name || '') + '"></a></div>';
+    // El toque firma un enlace nuevo (openProof); el href queda para «abrir en otra pestaña».
+    const a = '<a href="' + esc(u.url) + '" target="_blank" rel="noopener" data-cb="proof-open" data-path="' + esc(p.path) + '">';
+    if (pdf) return '<div class="cb-proof-img">' + a + icon('i-doc') + 'Abrir el PDF</a></div>';
+    return '<div class="cb-proof-img">' + a + '<img src="' + esc(u.url) + '" alt="Comprobante de ' + esc(p.name || '') + '"></a></div>';
+  }
+  // 28-oct: «Ver» de un comprobante ya revisado (historial y balance). Con el enlace
+  // firmado a la mano es un enlace normal; sin él, un botón que lo firma al tocarlo.
+  function proofLink(attrs, path) {
+    const s = path ? cb.signed[path] : null;
+    return s && s.url
+      ? ' <a class="cb-see" href="' + esc(s.url) + '" target="_blank" rel="noopener" ' + attrs + '>' + icon('i-doc') + 'Ver</a>'
+      : ' <button type="button" class="cb-see" ' + attrs + '>' + icon('i-doc') + 'Ver</button>';
   }
   function proofHTML(p) {
     const st = isObj(p.statement) ? p.statement : {};
@@ -733,7 +782,8 @@
               + (num(s.discountCOP) > 0 ? '<em data-cb-hist-disc>− ' + esc(money(num(s.discountCOP))) + (s.discountNote ? ' · ' + esc(s.discountNote) : '') + esc(dCut) + '</em>' : '')
               + exs.map(x => '<em data-cb-hist-extra>Incluye: ' + esc(x.label || ('Viajes extra: ' + money(num(x.amountCOP)))) + '</em>').join('') + '</td>'
               + '<td>' + tag(stt) + '</td><td>' + (s.paid ? esc(fmtDay(s.paidOn)) + ' · ' + esc(s.paidViaLabel || (s.paidVia === 'manual' ? 'a mano' : 'comprobante')) : '—') + '</td>'
-              + '<td>' + (ps.length ? ps.map(p => esc(p.status === 'approved' ? 'Aprobado' : p.status === 'rejected' ? 'Rechazado: ' + (p.rejectReason || '') : 'En revisión')).join('<br>') : '—') + '</td></tr>';
+              + '<td>' + (ps.length ? ps.map(p => '<span data-cb-hist-proof>' + esc(p.status === 'approved' ? 'Aprobado' : p.status === 'rejected' ? 'Rechazado: ' + (p.rejectReason || '') : 'En revisión')
+                + (p.path ? proofLink('data-cb="proof-open" data-path="' + esc(p.path) + '"', p.path) : '') + '</span>').join('<br>') : '—') + '</td></tr>';
           }).join('') + '</tbody></table>'
           : '<div class="cb-empty sm">Todavía no tiene cuentas de cobro.</div>';
         // Viajes extra de vacaciones que todavía no entran en ninguna cuenta.
@@ -1155,7 +1205,9 @@
     h += '<div class="cb-sec"><h2>Comprobantes y pagos <span class="sh-ct">' + pays.length + '</span></h2>' + (pays.length
       ? '<div class="cb-scroll"><table class="cb-hist cb-bal-pays"><thead><tr><th>Fecha</th><th>Tripulante</th><th>Qué</th><th>Medio</th><th>Monto</th><th>Estado</th><th>Quién</th></tr></thead><tbody>'
         + pays.map(p => '<tr><td>' + esc(fmtDay(p.date)) + '</td><td>' + esc(p.name || '—') + '<em>' + esc(monthLabel(p.periodStart)) + '</em></td>'
-          + '<td>' + esc(p.kind === 'proof' ? 'Comprobante' : 'Pago') + '</td><td>' + esc(p.viaLabel || '—') + '</td>'
+          + '<td>' + esc(p.kind === 'proof' ? 'Comprobante' : 'Pago')
+          + (p.kind === 'proof' && p.auxiliarProfileId && p.at ? proofLink('data-cb="proof-open-at" data-aux="' + esc(p.auxiliarProfileId) + '" data-at="' + esc(p.at) + '"') : '')
+          + '</td><td>' + esc(p.viaLabel || '—') + '</td>'
           + '<td>' + esc(num(p.amountCOP) != null ? money(num(p.amountCOP)) : '—') + '</td>'
           + '<td>' + esc(payState(p)) + (p.rejectReason ? '<em>' + esc(p.rejectReason) + '</em>' : '') + '</td>'
           + '<td>' + esc(p.by || (p.kind === 'payment' ? 'Automático' : '—')) + '</td></tr>').join('')
@@ -1495,7 +1547,7 @@
       cb.form = {};
       const a = api();
       cb.detail[aux] = undefined;
-      if (a) tryCall(() => a.adminDetail(aux)).then(x => { cb.detail[aux] = x.e ? null : (isObj(x.v) ? x.v : null); if (cb.open === aux && cb.mode === 'hist') paint(); });
+      if (a) tryCall(() => a.adminDetail(aux)).then(x => { cb.detail[aux] = x.e ? null : (isObj(x.v) ? x.v : null); if (cb.open === aux && cb.mode === 'hist') paint(); signHist(aux); });
     }
     paint();
     const el = root() && root().querySelector('.cb-row.open input');
@@ -1796,7 +1848,7 @@
     const aux = el.getAttribute('data-aux');
     const id = el.getAttribute('data-id');
     switch (k) {
-      case 'reload': cb.urls = {}; loadAll(false); if (cb.panel) loadPanel(); if (cb.view === 'balance') { cb.bal = undefined; loadBal(); } break;
+      case 'reload': cb.urls = {}; cb.signed = {}; loadAll(false); if (cb.panel) loadPanel(); if (cb.view === 'balance') { cb.bal = undefined; loadBal(); } break;
       case 'filter': cb.filter = el.getAttribute('data-v') || 'todos'; paint(); break;
       case 'panel': {
         const v = el.getAttribute('data-v');
@@ -1848,6 +1900,20 @@
       case 'save-adjust': saveAdjust(aux); break;
       case 'open-st': openStatement(aux); break;
       case 'approve': approve(id); break;
+      // 28-oct
+      case 'proof-open': {
+        const path = el.getAttribute('data-path');
+        const s = cb.signed[path];
+        // Enlace de hace menos de 8 min: se abre como cualquier enlace. Vencido: se firma otro.
+        if (el.tagName === 'A' && freshUrl(s) && el.getAttribute('href') === s.url) break;
+        e.preventDefault(); openProof(path);
+        break;
+      }
+      case 'proof-open-at': {
+        const a = api(), at = el.getAttribute('data-at');
+        openProof(null, () => (a && typeof a.adminProofFile === 'function' ? a.adminProofFile(aux, at) : null));
+        break;
+      }
       case 'reject': cb.rejecting = id; cb.reason = null; paint(); break;
       case 'reject-cancel': cb.rejecting = null; cb.reason = null; paint(); break;
       case 'reject-go': rejectGo(id); break;
