@@ -1,0 +1,41 @@
+/* aux-pausa.css — App del tripulante en pausa (28-oct-2026, aux-pausa.js).
+   Pantalla completa encima de todo, con la misma cara del login: fondo claro,
+   logo centrado, tarjeta blanca y el naranja de Rendio en el botón. */
+#aux-pausa{
+  --r-bg:#F8F8F6; --r-card:#FFFFFF; --r-accent:#F26522; --r-accent-soft:#FEEEE3;
+  --r-text:#18181B; --r-text-2:#71717A; --r-text-3:#A1A1AA; --r-border:#E4E4E7;
+  --r-font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  position:fixed; inset:0; z-index:2147483000; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  display:flex; align-items:center; justify-content:center;
+  padding:calc(env(safe-area-inset-top, 0px) + 28px) 16px calc(env(safe-area-inset-bottom, 0px) + 28px);
+  background:linear-gradient(135deg, #FFFFFF 0%, var(--r-bg) 55%, var(--r-accent-soft) 100%);
+  color:var(--r-text); font-family:var(--r-font); -webkit-font-smoothing:antialiased;
+}
+#aux-pausa *{ box-sizing:border-box; }
+#aux-pausa .axp-box{ width:100%; max-width:384px; display:flex; flex-direction:column; align-items:center; gap:22px; }
+#aux-pausa .axp-logo{ height:48px; width:auto; }
+#aux-pausa .axp-card{
+  width:100%; background:var(--r-card); border-radius:20px; padding:28px 22px 24px; text-align:center;
+  box-shadow:0 1px 3px rgba(20,20,30,.05), 0 12px 32px -12px rgba(20,20,30,.14);
+}
+#aux-pausa .axp-ic{
+  width:60px; height:60px; border-radius:50%; margin:0 auto 16px; display:flex; align-items:center; justify-content:center;
+  background:var(--r-accent-soft); color:var(--r-accent);
+}
+#aux-pausa h1{ margin:0 0 12px; font-size:22px; line-height:1.2; font-weight:700; letter-spacing:-.4px; }
+#aux-pausa p{ margin:0 0 12px; font-size:16px; line-height:1.45; color:var(--r-text-2); }
+#aux-pausa p b{ color:var(--r-text); font-weight:650; }
+#aux-pausa .axp-btn{
+  display:flex; align-items:center; justify-content:center; width:100%; height:54px; margin-top:6px;
+  border-radius:14px; background:var(--r-accent); color:#fff; text-decoration:none;
+  font-size:17px; font-weight:650; letter-spacing:-.2px; -webkit-tap-highlight-color:transparent;
+  box-shadow:0 10px 22px -12px rgba(242,101,34,.8); transition:transform .12s, opacity .2s;
+}
+#aux-pausa .axp-btn:active{ transform:scale(.98); }
+#aux-pausa .axp-btn:focus-visible, #aux-pausa .axp-url:focus-visible, #aux-pausa .axp-out:focus-visible{ outline:2px solid var(--r-accent); outline-offset:3px; }
+#aux-pausa .axp-url{ display:inline-block; margin-top:10px; font-size:13px; color:var(--r-text-3); text-decoration:underline; word-break:break-all; }
+#aux-pausa .axp-note{ margin:18px 0 0; padding-top:16px; border-top:1px solid var(--r-border); font-size:14px; }
+#aux-pausa .axp-out{
+  border:0; background:none; padding:10px 14px; font-family:inherit; font-size:15px; font-weight:600;
+  color:var(--r-text-2); cursor:pointer; -webkit-tap-highlight-color:transparent;
+}

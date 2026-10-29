@@ -9,4 +9,9 @@ window.RENDIO_CONFIG = {
   // y «Repetir» muestran «Estamos en mantenimiento» y no abren el pedido.
   // En false (lo normal) los tripulantes piden por la app.
   PEDIDOS_EN_MANTENIMIENTO: false,
+  // App del tripulante en pausa (28-oct-2026, aux-pausa.js): en true, el
+  // tripulante solo ve «Estamos trabajando para mejorar el servicio» con el
+  // botón a APP_TRIPULANTES_LINK. Conductores y jefes siguen igual.
+  APP_TRIPULANTES_PAUSADA: true,
+  APP_TRIPULANTES_LINK: 'https://near.tl/sm/utPnvBNfR',
 };

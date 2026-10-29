@@ -88,7 +88,10 @@
           // tiene perfil asociado», que para él es una pared. Ahora se le
           // retoma el registro donde iba.
           const pend = session.user?.user_metadata?.pending_role === 'auxiliar';
-          if (pend && window.AuxRegistro) {
+          if (pend && window.AuxPausa && AuxPausa.on()) {
+            // App del tripulante en pausa (28-oct-2026): ni el registro se retoma.
+            nextAction = () => AuxPausa.show({ sesion: true });
+          } else if (pend && window.AuxRegistro) {
             nextAction = () => AuxRegistro.resume(session.user);
           } else {
             await Api.signOut();
@@ -165,6 +168,8 @@
 
     $('#login-form').addEventListener('submit', onLoginSubmit);
     $('#login-signup')?.addEventListener('click', () => {
+      // App del tripulante en pausa (28-oct-2026): «Crear cuenta» lleva al aviso.
+      if (window.AuxPausa && AuxPausa.on()) { AuxPausa.show({ sesion: false }); return; }
       if (window.AuxRegistro) AuxRegistro.start();
     });
     $('#logout-btn').addEventListener('click', onLogout);
@@ -373,6 +378,9 @@
     // Auxiliar (pasajero): pantalla propia full-screen, fuera del shell admin/conductor.
     if (state.profile.role === 'auxiliar') {
       $('#app-shell').classList.add('hidden');
+      // App del tripulante en pausa (28-oct-2026, aux-pausa.js): solo el aviso
+      // con el link de siempre; no se carga nada más del tripulante.
+      if (window.AuxPausa && AuxPausa.on()) { AuxPausa.show({ sesion: true }); return; }
       $('#auxiliar-root').classList.remove('hidden');
       if (window.Auxiliar) Auxiliar.init(state.profile);
       return;
