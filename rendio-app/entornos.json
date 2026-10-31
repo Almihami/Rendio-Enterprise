@@ -1,0 +1,19 @@
+{
+  "dev": {
+    "SUPABASE_URL": "https://lxlphbafhtphulanhzlp.supabase.co",
+    "SUPABASE_ANON_KEY": "sb_publishable_Jj4JIZ870ZY1wJMWpY8U6A_6Jz7icoo",
+    "VAPID_PUBLIC_KEY": "BDbSeYdp1m3324kEA_t4naZMFm_T-iPMmjsSaMkrIcsnZ2jvXEhOarlP6sztOGTySex8gP1FQ0zMFwv96bpvUTE",
+    "APP": {
+      "ENTORNO": "dev",
+      "PUSH_NATIVO": false,
+      "VERSION_URL": ""
+    }
+  },
+  "prod": {
+    "APP": {
+      "ENTORNO": "prod",
+      "PUSH_NATIVO": false,
+      "VERSION_URL": "https://rendio.co/app-version.json"
+    }
+  }
+}

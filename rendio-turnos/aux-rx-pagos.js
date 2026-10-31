@@ -801,6 +801,7 @@
   function pushOn() {
     const acc = S.acc;
     if (isObj(acc) && isObj(acc.prefs) && acc.prefs.push === false) return false;
+    if (window.RendioNative && RendioNative.isNative) return RendioNative.push.activas();   // app de las tiendas
     try { return typeof Notification !== 'undefined' && Notification.permission === 'granted'; } catch (_) { return false; }
   }
   const avisoTxt = () => (pushOn() ? 'Te avisamos por push' : 'Te avisamos aquí');

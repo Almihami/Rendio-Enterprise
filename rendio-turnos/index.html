@@ -293,6 +293,8 @@
         <!-- Notificaciones (14-oct-2026): lugar FIJO para ver si están activas en este
              dispositivo, activarlas o mandarse una de prueba. En el celular es el menú ☰. -->
         <div class="sf-i" id="adm-push" role="button" tabindex="0"><span class="ni-ic"><svg class="icon"><use href="#i-bell"/></svg></span><span class="ni-tx">Notificaciones<small id="adm-push-st"></small></span></div>
+        <!-- 0156: Apple y Google piden poder eliminar la cuenta desde la app. -->
+        <div class="sf-i" id="adm-delete" data-cuenta="eliminar" role="button" tabindex="0"><span class="ni-ic"><svg class="icon"><use href="#i-trash"/></svg></span><span class="ni-tx">Eliminar mi cuenta</span></div>
         <div class="sf-i" id="adm-logout"><span class="ni-ic"><svg class="icon"><use href="#i-exit"/></svg></span><span class="ni-tx">Salir</span></div>
       </div>
     </aside>
@@ -1681,7 +1683,11 @@
   <div id="toast" class="hidden fixed bottom-20 md:bottom-4 left-1/2 -translate-x-1/2 z-40 bg-ink text-white px-4 py-2.5 rounded-full text-sm font-medium shadow-lg"></div>
 
   <script src="config.js"></script>
+  <!-- App de las tiendas (Capacitor, 31-oct-2026): en la web no hace nada. -->
+  <script src="native.js"></script>
   <script src="supabase-client.js"></script>
+  <!-- «Eliminar mi cuenta» (0156): lo exigen Apple y Google; sirve igual en la web. -->
+  <script src="cuenta-eliminar.js"></script>
   <script src="scheduler.js"></script>
   <script src="zonas-dibujo.js"></script>
   <script src="mapa-zonas.js"></script>
@@ -1779,7 +1785,9 @@
 
   <!-- PWA: registrar service worker + detectar updates -->
   <script>
-    if ('serviceWorker' in navigator) {
+    // Dentro de la app de las tiendas no hay service worker: los archivos ya
+    // vienen en la app y los avisos son nativos (native.js).
+    if ('serviceWorker' in navigator && !(window.RendioNative && RendioNative.isNative)) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(err => {
           console.warn('SW registration failed:', err);

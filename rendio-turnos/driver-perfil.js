@@ -235,6 +235,11 @@
           <span class="lbl">Cambiar mi contraseña</span>
           <span class="chev">${avIcon('chevronRight', 16)}</span>
         </button>
+        <button class="rc-listrow" id="pf-delete" type="button" data-cuenta="eliminar">
+          <span class="ic">${avIcon('user', 18)}</span>
+          <span class="lbl">Eliminar mi cuenta</span>
+          <span class="chev">${avIcon('chevronRight', 16)}</span>
+        </button>
         <button class="rc-listrow" id="pf-logout" type="button" style="border-bottom:0">
           <span class="ic" style="color:var(--r-error)">${avIcon('x', 18)}</span>
           <span class="lbl" style="color:var(--r-error)">Cerrar sesión</span>

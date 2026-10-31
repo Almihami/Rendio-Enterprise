@@ -1,0 +1,33 @@
+{
+  "appId": "co.rendio.app",
+  "appName": "Rendio",
+  "webDir": "www",
+  "android": {
+    "useLegacyBridge": true
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0A0A0A"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "native",
+      "initialViewportFitValueHint": "cover",
+      "style": "DARK"
+    },
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "launchAutoHide": true,
+      "backgroundColor": "#0A0A0A",
+      "showSpinner": false
+    },
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "banner",
+        "list"
+      ]
+    }
+  }
+}

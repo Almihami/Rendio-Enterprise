@@ -36,6 +36,9 @@
   }
 
   async function signOut() {
+    // App de las tiendas: el token de avisos de este teléfono se borra antes de
+    // salir, o le seguirían llegando a quien entre después (native.js).
+    if (window.RendioNative && RendioNative.isNative) await RendioNative.push.olvidar();
     await sb.auth.signOut();
   }
 
@@ -4012,6 +4015,9 @@
     if (o.routeAssignmentId) row.route_assignment_id = o.routeAssignmentId;
     if (isFinite(o.heading)) row.heading = o.heading;
     if (isFinite(o.speedKmh)) row.speed_kmh = o.speedKmh;
+    // App de las tiendas: con Waze adelante, Android frena las peticiones del
+    // WebView a los 5 min; por la red nativa siguen saliendo (native.js).
+    if (window.RendioNative && RendioNative.isNative) return RendioNative.insertarRest('driver_locations', row);
     const { error } = await sb.from('driver_locations').insert(row);
     if (error) throw error;
   }

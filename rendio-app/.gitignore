@@ -1,0 +1,13 @@
+node_modules/
+# www/ se arma con npm run web:dev / web:prod desde rendio-turnos.
+www/
+# Llaves de firma: NUNCA al repositorio (ver GUIA-TIENDAS.md).
+*.jks
+*.keystore
+keystore.properties
+# Firebase: se agregan a mano en cada máquina que compila (ver la guía).
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
+
+# APK/AAB de prueba copiados para pasarlos al teléfono.
+salidas/

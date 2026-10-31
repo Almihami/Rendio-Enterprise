@@ -910,6 +910,15 @@
       applyDeep(h);
     });
     // Fuente 1 del banner: sw.js hace postMessage({type:'rendio-push',title,body,url}).
+    // En la app de las tiendas no hay service worker: native.js manda el mismo
+    // aviso como evento 'rendio-push' de window (preventDefault = ya se mostró).
+    window.addEventListener('rendio-push', (e) => {
+      const d = e && e.detail;
+      if (!d || !sk || !on()) return;
+      e.preventDefault();
+      banner({ icon: 'Bell', title: d.title || 'Rendio', body: d.body || '', go: d.url || null });
+      refreshTrips({ silent: true });
+    });
     try {
       if (navigator.serviceWorker && typeof navigator.serviceWorker.addEventListener === 'function') {
         navigator.serviceWorker.addEventListener('message', (e) => {

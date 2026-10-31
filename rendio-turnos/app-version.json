@@ -1,0 +1,12 @@
+{
+  "android": {
+    "min": 1,
+    "store": "https://play.google.com/store/apps/details?id=co.rendio.app",
+    "msg": "Hay una versión nueva de Rendio. Actualízala para seguir usándola."
+  },
+  "ios": {
+    "min": 1,
+    "store": "",
+    "msg": "Hay una versión nueva de Rendio. Actualízala para seguir usándola."
+  }
+}

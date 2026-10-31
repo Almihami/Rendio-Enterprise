@@ -494,7 +494,9 @@
     if (ins) ins.classList.toggle('hidden', !canInstall);
     let showPush = false;
     try {
-      if (typeof pushSupported === 'function' && pushSupported() && Notification.permission !== 'denied') {
+      // App de las tiendas: avisos nativos, sin service worker (native.js).
+      if (window.RendioNative && RendioNative.isNative && typeof pushStatus === 'function') showPush = (await pushStatus()) === 'off';
+      else if (typeof pushSupported === 'function' && pushSupported() && Notification.permission !== 'denied') {
         const reg = await navigator.serviceWorker.ready;
         showPush = !(await reg.pushManager.getSubscription());
       }

@@ -185,7 +185,7 @@
     const base = s === 'on' ? 'Activas'
       : s === 'off' ? 'Actívalas para saber cuándo llega tu conductor'
       : s === 'blocked' ? 'Bloqueadas en los ajustes del teléfono'
-      : s === 'na' ? 'No disponibles en este navegador'
+      : s === 'na' ? (window.RendioNative && RendioNative.isNative ? 'Todavía no disponibles en la app' : 'No disponibles en este navegador')
       : 'Los avisos de tu traslado';
     return ins && s !== 'off' ? base + ' · puedes instalar la app' : base;
   }
@@ -195,7 +195,9 @@
     try {
       // eslint-disable-next-line no-undef
       const sup = typeof pushSupported === 'function' && pushSupported();
-      if (!sup) s = 'na';
+      // App de las tiendas: avisos nativos, sin service worker (native.js).
+      if (window.RendioNative && RendioNative.isNative && typeof pushStatus === 'function') s = await pushStatus();
+      else if (!sup) s = 'na';
       else if (typeof Notification !== 'undefined' && Notification.permission === 'denied') s = 'blocked';
       else {
         const reg = await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(() => r(null), 3000))]);
@@ -333,6 +335,8 @@
       window.AuxPresentacion ? U.row({ icon: 'RotateCcw', tone: 'n', title: 'Ver la bienvenida', sub: 'La presentación del primer día', attrs: { 'data-ax': 'onb-again', 'data-me': 'row-onb' } }) : '',
       U.row({ icon: 'AlertTriangle', tone: 'n', title: 'Algo no va bien', sub: 'Qué hacer según lo que esté pasando', attrs: { 'data-ax': 'support', 'data-me': 'row-support' } }),
       canChangePw() ? U.row({ icon: 'Lock', tone: 'n', title: 'Cambiar mi contraseña', sub: 'Te pedimos la actual', attrs: { 'data-ax': 'change-pw', 'data-me': 'row-pw' } }) : '',
+      // 0156: Apple y Google piden poder eliminar la cuenta desde la app (cuenta-eliminar.js).
+      U.row({ icon: 'User', tone: 'n', title: 'Eliminar mi cuenta', sub: 'Dejas de poder entrar con este correo', attrs: { 'data-cuenta': 'eliminar', 'data-me': 'row-delete' } }),
       U.row({ icon: 'LogOut', tone: 'n', title: 'Cerrar sesión', chevron: false, attrs: { 'data-ax': 'logout', 'data-me': 'row-logout' } }),
     ].join('');
 

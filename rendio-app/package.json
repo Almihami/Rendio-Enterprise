@@ -1,0 +1,29 @@
+{
+  "name": "rendio-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "App de Rendio para Play Store y App Store: envuelve rendio-turnos con Capacitor.",
+  "scripts": {
+    "web:dev": "node scripts/preparar-web.mjs dev",
+    "web:prod": "node scripts/preparar-web.mjs prod",
+    "sync:dev": "npm run web:dev && npx cap sync",
+    "sync:prod": "npm run web:prod && npx cap sync",
+    "iconos": "npx @capacitor/assets generate --iconBackgroundColor '#0A0A0A' --iconBackgroundColorDark '#0A0A0A' --splashBackgroundColor '#0A0A0A' --splashBackgroundColorDark '#0A0A0A'"
+  },
+  "dependencies": {
+    "@capacitor-community/background-geolocation": "1.3.1",
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/app-launcher": "8.0.1",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/ios": "8.6.0",
+    "@capacitor/push-notifications": "8.1.3",
+    "@capacitor/share": "8.0.3",
+    "@capacitor/splash-screen": "8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0",
+    "sharp": "0.35.5"
+  }
+}

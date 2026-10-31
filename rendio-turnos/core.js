@@ -374,6 +374,8 @@
 
     state.settings = await Api.getSettings();
     await loadRules();
+    // App de las tiendas: si ya dio permiso de avisos, el token se vuelve a guardar.
+    if (window.RendioNative && RendioNative.isNative) RendioNative.pushAlEntrar();
 
     // Auxiliar (pasajero): pantalla propia full-screen, fuera del shell admin/conductor.
     if (state.profile.role === 'auxiliar') {

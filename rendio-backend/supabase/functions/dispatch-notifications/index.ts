@@ -17,10 +17,12 @@
 //
 // Secretos que necesita (los mismos de send-push): VAPID_PUBLIC_KEY,
 // VAPID_PRIVATE_KEY, VAPID_SUBJECT, y SUPABASE_SERVICE_ROLE_KEY (la inyecta
-// Supabase sola).
+// Supabase sola). Para la app de las tiendas, además FCM_SERVICE_ACCOUNT y
+// APNS_* (ver _shared/push-nativo.ts).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import webpush from "https://esm.sh/web-push@3.6.7";
+import { enviarNativo, esNativo } from "../_shared/push-nativo.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -114,6 +116,16 @@ Deno.serve(async (req: Request) => {
     let ultimoError = "";
 
     for (const s of destinos) {
+      // Teléfono con la app de las tiendas: FCM / APNs en vez de Web Push.
+      if (esNativo(s.endpoint)) {
+        const r = await enviarNativo(s.endpoint, { title: fila.title, body: fila.body, url: fila.url || "/" });
+        if (r.ok) algunaSalio = true;
+        else {
+          ultimoError = r.error || "aviso nativo no salió";
+          if (r.muerto) await db.from("push_subscriptions").delete().eq("id", s.id);
+        }
+        continue;
+      }
       try {
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },

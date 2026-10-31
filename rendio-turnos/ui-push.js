@@ -20,6 +20,7 @@
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
       || window.navigator.standalone === true;
     if (isStandalone) return; // ya instalado
+    if (window.RendioNative && RendioNative.isNative) return; // es la app de la tienda
 
     const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
@@ -84,14 +85,18 @@
   // ====================================================================
 
   const VAPID_PUBLIC_KEY = (window.RENDIO_CONFIG && window.RENDIO_CONFIG.VAPID_PUBLIC_KEY) || '';
+  // App de las tiendas (native.js): los avisos son nativos (FCM / APNs), no Web Push.
+  const NATIVO = !!(window.RendioNative && RendioNative.isNative);
 
   function pushSupported() {
+    if (NATIVO) return !!RendioNative.push.available;
     return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && !!VAPID_PUBLIC_KEY;
   }
   // iPhone/iPad en Safari SIN instalar: iOS solo entrega avisos a la app que está
   // en la pantalla de inicio. Ahí «Activar notificaciones» no puede funcionar, y
   // hay que decirle a la persona qué hacer en vez de un «no disponible» a secas.
   function pushNeedsInstall() {
+    if (NATIVO) return false;
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent)
       || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -112,6 +117,17 @@
   // Suscribe el dispositivo y guarda la suscripción en la BD.
   async function enablePush() {
     if (!pushSupported()) { toast(pushNeedsInstall() ? IOS_PUSH_MSG : 'Las notificaciones no están disponibles en este dispositivo.'); return; }
+    if (NATIVO) {
+      try {
+        if (!(await RendioNative.push.enable())) { toast('No autorizaste las notificaciones.'); return; }
+        toast('🔔 Notificaciones activadas.');
+        setupPushUI();
+      } catch (e) {
+        toast('No se pudieron activar las notificaciones.');
+        console.error(e);
+      }
+      return;
+    }
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { toast('No autorizaste las notificaciones.'); return; }
@@ -151,13 +167,17 @@
     // CELULAR sí se muestra: es el único canal por el que un jefe se entera de
     // una falla mecánica a las 4 de la mañana sin tener la pantalla abierta.
     if (state.profile?.role === 'admin' && !adminOnPhone()) { existing?.remove(); return; }
-    if (!pushSupported() || Notification.permission === 'denied') { existing?.remove(); return; }
-    let alreadySub = false;
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      alreadySub = !!(await reg.pushManager.getSubscription());
-    } catch (e) { /* ignore */ }
-    if (alreadySub) { existing?.remove(); return; }
+    if (NATIVO) {
+      if ((await pushStatus()) !== 'off') { existing?.remove(); return; }
+    } else {
+      if (!pushSupported() || Notification.permission === 'denied') { existing?.remove(); return; }
+      let alreadySub = false;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        alreadySub = !!(await reg.pushManager.getSubscription());
+      } catch (e) { /* ignore */ }
+      if (alreadySub) { existing?.remove(); return; }
+    }
 
     // Contenedor según el rol (conductor: dentro de la pestaña Inicio).
     //
@@ -218,6 +238,7 @@
   // Estado en ESTE dispositivo: 'on' | 'off' | 'blocked' | 'install' (iPhone
   // sin la app en la pantalla de inicio) | 'na' (el navegador no las soporta).
   async function pushStatus() {
+    if (NATIVO) return RendioNative.push.status();
     if (!pushSupported()) return pushNeedsInstall() ? 'install' : 'na';
     if (Notification.permission === 'denied') return 'blocked';
     try {
@@ -239,6 +260,7 @@
     toast(s === 'blocked'
       ? 'Están bloqueadas para Rendio. Actívalas en los ajustes del teléfono (Notificaciones) y vuelve a abrir la app.'
       : s === 'install' ? IOS_PUSH_MSG
+      : NATIVO ? 'Los avisos de la app todavía no están disponibles en esta versión.'
       : 'Este navegador no permite notificaciones. Abre Rendio en Chrome o Safari actualizado.', 6000);
   }
 
@@ -247,8 +269,9 @@
   // celular cree que están activas y no le llega nada. Así se arregla sola.
   async function pushSendTest() {
     try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
+      const reg = NATIVO ? null : await navigator.serviceWorker.ready;
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      if (NATIVO) await RendioNative.push.resave();
       if (sub) {
         const json = sub.toJSON();
         await Api.savePushSubscription({

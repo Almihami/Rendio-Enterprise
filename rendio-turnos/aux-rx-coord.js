@@ -630,6 +630,12 @@
   }
   // Un push de Coordinación con la app abierta: la campana (y el hilo, si se
   // está viendo) no esperan al siguiente refresco.
+  window.addEventListener('rendio-push', (e) => {   // app de las tiendas (native.js)
+    const d = e && e.detail;
+    if (!d || !/#\/coordinacion/.test(String(d.url || '')) || !on()) return;
+    if (isOpen()) load();
+    refreshUnread(true);
+  });
   try {
     const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null;
     if (sw && typeof sw.addEventListener === 'function') {

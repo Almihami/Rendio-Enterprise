@@ -634,7 +634,9 @@
     try {
       // eslint-disable-next-line no-undef
       const sup = typeof pushSupported === 'function' ? pushSupported() : false;
-      if (sup && typeof Notification !== 'undefined' && Notification.permission !== 'denied' && navigator.serviceWorker) {
+      // App de las tiendas: avisos nativos, sin service worker (native.js).
+      if (window.RendioNative && RendioNative.isNative && typeof pushStatus === 'function') need = (await pushStatus()) === 'off';
+      else if (sup && typeof Notification !== 'undefined' && Notification.permission !== 'denied' && navigator.serviceWorker) {
         const reg = await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(() => r(null), 3000))]);
         if (reg && reg.pushManager) need = !(await reg.pushManager.getSubscription());
       }

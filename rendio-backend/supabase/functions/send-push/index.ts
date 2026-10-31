@@ -21,6 +21,8 @@
 //
 // Requiere los secrets (supabase secrets set ...):
 //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (mailto:tu@correo)
+//   App de las tiendas (31-oct-2026): FCM_SERVICE_ACCOUNT y APNS_* — ver
+//   _shared/push-nativo.ts. Las filas «fcm:» / «apns:» salen por ahí.
 //
 // Respuesta: 200 { sent, failed, rejected }
 // =============================================================================
@@ -29,6 +31,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 // @ts-ignore — web-push para Deno.
 import webpush from "https://esm.sh/web-push@3.6.7";
+import { enviarNativo, esNativo } from "../_shared/push-nativo.ts";
 
 // @ts-ignore — globals Deno.* en runtime Edge.
 declare const Deno: { env: { get(k: string): string | undefined }; serve: (h: (r: Request) => Response | Promise<Response>) => void };
@@ -112,6 +115,17 @@ Deno.serve(async (req: Request) => {
   let sent = 0, failed = 0;
   const stale: string[] = [];
   await Promise.all(subs.map(async (s: { id: string; endpoint: string; p256dh: string; auth: string }) => {
+    // Teléfono con la app de las tiendas: FCM / APNs en vez de Web Push.
+    if (esNativo(s.endpoint)) {
+      const r = await enviarNativo(s.endpoint, { title, body: text, url: clickUrl });
+      if (r.ok) sent++;
+      else {
+        failed++;
+        if (r.muerto) stale.push(s.id);
+        console.log(JSON.stringify({ level: "warn", msg: "send-push: aviso nativo no salió", ctx: { error: r.error } }));
+      }
+      return;
+    }
     try {
       await webpush.sendNotification(
         { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },

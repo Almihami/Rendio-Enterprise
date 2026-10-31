@@ -51,6 +51,7 @@
         <p class="axp-note">Te avisaremos cuando la app vuelva a estar disponible. Gracias por tu paciencia.</p>
       </div>
       <button type="button" class="axp-out" data-axp="${sesion ? 'logout' : 'back'}">${sesion ? 'Cerrar sesión' : 'Volver'}</button>
+      ${sesion ? '<button type="button" class="axp-out" data-cuenta="eliminar" style="opacity:.7;font-size:.9em">Eliminar mi cuenta</button>' : ''}
     </div>`;
     el.querySelector('[data-axp]')?.addEventListener('click', async (e) => {
       const accion = e.currentTarget.getAttribute('data-axp');

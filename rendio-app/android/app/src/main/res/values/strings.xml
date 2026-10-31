@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Rendio</string>
+    <string name="title_activity_main">Rendio</string>
+    <string name="package_name">co.rendio.app</string>
+    <string name="custom_url_scheme">co.rendio.app</string>
+    <!-- Notificación fija mientras se comparte la ubicación (background-geolocation). -->
+    <string name="capacitor_background_geolocation_notification_channel_name">Ubicación durante la vuelta</string>
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_stat_rendio</string>
+    <string name="capacitor_background_geolocation_notification_color">#F4791F</string>
+</resources>

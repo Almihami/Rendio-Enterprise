@@ -1850,13 +1850,27 @@
 
   // ── GPS ───────────────────────────────────────────────────────────────────────
   function gpsStart() {
+    if (window.RendioNative && RendioNative.isNative) { gpsStartNative(); return; }
     if (RT.watchId != null || !navigator.geolocation) { liveBadges(); return; }
     try {
       RT.watchId = navigator.geolocation.watchPosition(onPos, () => { RT.sharing = false; liveBadges(); }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
     } catch (e) { RT.watchId = null; }
   }
+  // App de las tiendas: el GPS sigue en segundo plano (native.js). addWatcher
+  // responde con una promesa; mientras llega, RT.watchId queda «apartado» para
+  // que un segundo gpsStart no abra otro.
+  function gpsStartNative() {
+    if (RT.watchId != null) { liveBadges(); return; }
+    const pedido = RT.watchId = {};
+    RendioNative.geo.watch(onPos, () => { RT.sharing = false; liveBadges(); }).then((id) => {
+      if (RT.watchId !== pedido) { RendioNative.geo.clear(id); return; }   // se paró mientras tanto
+      RT.watchId = id == null ? null : { nativo: id };
+      if (id == null) liveBadges();
+    }).catch(() => { if (RT.watchId === pedido) RT.watchId = null; liveBadges(); });
+  }
   function gpsStop() {
-    if (RT.watchId != null && navigator.geolocation) { try { navigator.geolocation.clearWatch(RT.watchId); } catch (e) { /* */ } }
+    if (RT.watchId && RT.watchId.nativo != null) RendioNative.geo.clear(RT.watchId.nativo);
+    else if (RT.watchId != null && typeof RT.watchId !== 'object' && navigator.geolocation) { try { navigator.geolocation.clearWatch(RT.watchId); } catch (e) { /* */ } }
     RT.watchId = null; RT.sharing = false;
     liveBadges();
   }
