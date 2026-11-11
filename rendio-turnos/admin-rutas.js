@@ -1056,6 +1056,12 @@
     const finDe = (l) => { const c = rtCarCompute(l.id); return l.type === 'sal' ? c.arrival + rt.TURNAROUND : c.arrival + 2; };
     const posDe = (l) => (l.type === 'sal' ? 'airport' : order[l.id][order[l.id].length - 1]);
     const madrugaDe = (r) => Math.max(...r.stops.map(x => dlDe(x.id) - x.eta));
+    // Lo que espera EL QUE MÁS ESPERA de una llegada: cada uno desde que sale él
+    // (su vuelo + su desembarque; en tierra, su hora), no desde que sale el último.
+    // rtCarComputeLle mide contra el último, y con eso se colaba en la vuelta de las
+    // 24:00 uno que había salido a las 23:21 (11-nov).
+    const saleDeUno = (id) => dlDe(id) + rtDeplaneOf([id], dlDe(id));
+    const esperaLle = (lane) => Math.max(...order[lane.id].map(id => Math.max(M(lane.start), saleDeUno(id)) - saleDeUno(id)));
     // Holgura con la que YA venía cada salida: correr una vuelta no puede dejarla
     // peor que como la dejó el reparto (que tolera unos minutos dentro del colchón).
     const holg0 = {};
@@ -1073,7 +1079,7 @@
           if (ini - ideal > ESPERA_MAX) return false;
           l.start = rtToHM24(ini);
           const c = rtCarCompute(l.id);
-          if (c.wait > ESPERA_MAX) return false;
+          if (c.wait > ESPERA_MAX || esperaLle(l) > ESPERA_MAX) return false;
           fin = c.arrival + 2; pos = posDe(l);
         } else {
           const mismo = (l.origin || null) === (pos || null);
@@ -1136,7 +1142,7 @@
         if (ini - ideal > ESPERA_MAX) return null;
         lane.start = rtToHM24(ini);
         const r = rtCarCompute(lane.id);
-        if (r.wait > ESPERA_MAX) return null;
+        if (r.wait > ESPERA_MAX || esperaLle(lane) > ESPERA_MAX) return null;
         fin = r.arrival + 2; posFin = plan.last;
         costo = (ini - ideal) * 10000 + idx * 1000;               // primero, que nadie espere
       }
@@ -1160,7 +1166,7 @@
       const plan = rtHomesPlan(previo.concat([id]));
       order[lane.id] = plan.ord;
       const r = rtCarCompute(lane.id);
-      if (r.wait > ESPERA_MAX) return null;
+      if (r.wait > ESPERA_MAX || esperaLle(lane) > ESPERA_MAX) return null;
       const cc = delCarro(lane.car), k = cc.findIndex(l => l.id === lane.id);
       if (!encadenar(cc, k + 1, r.arrival + 2, plan.last)) return null;
       return Math.max(0, M(lane.start) - ideal) * 10000 + 500;
