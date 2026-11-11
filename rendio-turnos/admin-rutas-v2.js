@@ -613,6 +613,8 @@
     el.reopt.disabled = !live || ui.cargando || ui.optimizando;
     el.reoptLabel.textContent = hayVueltas() ? 'Re-optimizar' : 'Optimizar';
     if (el.enrutar) { el.enrutar.disabled = !live || ui.cargando || ui.optimizando || !hayVueltas(); el.enrutar.hidden = !hayVueltas() && !ui.cargando; }
+    // 10-nov: solo con el despacho encendido (0158); sin él nadie las repartiría solas.
+    if (el.espera) { const on = !!(state.settings && state.settings.despacho_activo); el.espera.hidden = !on || (!hayVueltas() && !ui.cargando); el.espera.disabled = !live || ui.cargando || ui.optimizando || !hayVueltas(); }
     // ‹ › siempre se pueden usar, también a mitad de una carga o si falló: la
     // carga vieja se descarta (cargarDia). Antes se apagaban y una consulta
     // colgada dejaba al jefe atrapado en ese día hasta recargar la página.
@@ -1349,7 +1351,7 @@
     if (ui.falloCarga) { pintarFallo(); return; }
     if (soloJulian() && !ui.cargando && window.RendioRutaJulian) { renderManual(); return; }
     // Lo que dejó un día solo de Julián (el título de los botones apagados).
-    [el.publish, el.publishM, el.reopt, el.enrutar].forEach((b) => { if (b && b.title === T_JULIAN) b.title = ''; });
+    [el.publish, el.publishM, el.reopt, el.enrutar, el.espera].forEach((b) => { if (b && b.title === T_JULIAN) b.title = ''; });
     if (!ui.cargando) autoLlenar();
     D = armarDia();
     if (ui.sel && !D.byId[ui.sel]) { ui.sel = null; ui.moving = null; }
@@ -1366,7 +1368,7 @@
     el.summary.hidden = true; el.avisos.innerHTML = ''; el.drivers.innerHTML = '';
     try { pintarEntregas(); } catch (_) { /* sin entregas */ }
     el.list.innerHTML = emptyHTML();
-    [el.publish, el.publishM, el.reopt, el.enrutar].forEach((b) => { if (b) b.disabled = true; });
+    [el.publish, el.publishM, el.reopt, el.enrutar, el.espera].forEach((b) => { if (b) b.disabled = true; });
     if (el.dhead) { el.dhead.innerHTML = ''; el.dtop.innerHTML = ''; el.dbot.innerHTML = ''; el.mapwrap.hidden = true; }
   }
   // Para el aviso: qué falló y dónde (en Safari «armarDia@…/admin-rutas-v2.js:812:33»).
@@ -1395,7 +1397,7 @@
     el.list.innerHTML = window.RendioRutaJulian.diaHTML(ui.manual.vueltas, ui.dia, ui.manual.otras);
     ui.sel = null;
     if (el.detail) { el.detail.classList.remove('is-open'); if (el.dhead) el.dhead.innerHTML = ''; if (el.dtop) el.dtop.innerHTML = ''; if (el.dbot) el.dbot.innerHTML = ''; if (el.mapwrap) el.mapwrap.hidden = true; }
-    [el.publish, el.publishM, el.reopt, el.enrutar].forEach((b) => { if (b) { b.disabled = true; b.title = T_JULIAN; } });
+    [el.publish, el.publishM, el.reopt, el.enrutar, el.espera].forEach((b) => { if (b) { b.disabled = true; b.title = T_JULIAN; } });
     el.publishLabel.textContent = 'Ruta de Julián publicada'; el.pending.hidden = true;
     el.publishM.textContent = 'Ruta de Julián publicada';
   }
@@ -1945,6 +1947,28 @@
       + (malas.length ? ` · nadie llega a tiempo a: ${malas.join(', ')} (delégala o córrele la hora)` : '')
       + (p.sinTurno.length ? ` · ${plural(p.sinTurno.length, 'vuelta', 'vueltas')} sin conductores en el horario: quedan como estaban` : '')
       + '. Revisa y dale Publicar');
+  }
+
+  // ── 10-nov · «Llegadas en espera» (StandBy) ──────────────────────────────────
+  // Las llegadas no se le dan a un carro la noche anterior: quedan «para tomar»
+  // (0151) y el despacho (0158) las reparte cuando FlightRadar confirma la hora,
+  // al conductor que está o va a estar en JMC. Este botón hace de un toque lo que
+  // ya se podía hacer vuelta por vuelta con «Dejarla para tomar». Solo toca las
+  // llegadas que faltan: las terminadas, en curso, delegadas o ya en espera quedan
+  // como están, y las salidas no se tocan.
+  function planEnEspera() {
+    const dia = armarDia();
+    const yaDebia = ahoraEnDia() + 5;
+    return dia.routes.filter((r) => { const lane = rtLaneOf(r.id); return lane && lane.type === 'lle' && r.stops.length && !r.fija && !r.delegada && !r.tomar && finFila(r) !== 'sinmarcar' && inicioDe(r).at > yaDebia; });
+  }
+  function llegadasEnEspera() {
+    if (soloJulian()) { toast('Este día va con la ruta de Julián: quítala para volver al tablero.'); return; }
+    if (rt.source !== 'live' || ui.cargando || ui.optimizando) return;
+    const filas = planEnEspera();
+    if (!filas.length) { toast('No hay llegadas por dejar en espera: las que faltan ya están en espera, delegadas o en curso.'); return; }
+    snapshot('llegadas en espera');
+    filas.forEach((r) => { const lane = rtLaneOf(r.id); if (!lane) return; delete lane.deleg; delete lane.delegName; delete lane.delegPhone; lane.drv = false; lane.tomar = true; });
+    commit(`${plural(filas.length, 'llegada queda', 'llegadas quedan')} en espera: el sistema las reparte cuando el vuelo confirme la hora, al conductor que esté en JMC. Las salidas no cambiaron. Revisa y dale Publicar`);
   }
 
   // Después de optimizar lo pendiente: las vueltas quietas vuelven tal cual. Las
@@ -3098,7 +3122,7 @@
       list: $('#rv2-list'), listwrap: $('#rv2-listwrap'), detail: $('#rv2-detail'), summary: $('#rv2-summary'),
       avisos: $('#rv2-avisos'), drivers: $('#rv2-drivers'), say: $('#rv2-say'), entregas: $('#rv2-entregas'),
       scrim: $('#rv2-scrim'), sheet: $('#rv2-sheet'), toast: $('#rv2-toast'),
-      dayLabel: $('#rv2-dayLabel'), pubChip: $('#rv2-pubChip'), reopt: $('#rv2-reopt'), reoptLabel: $('#rv2-reoptLabel'), enrutar: $('#rv2-enrutar'),
+      dayLabel: $('#rv2-dayLabel'), pubChip: $('#rv2-pubChip'), reopt: $('#rv2-reopt'), reoptLabel: $('#rv2-reoptLabel'), enrutar: $('#rv2-enrutar'), espera: $('#rv2-espera'),
       publish: $('#rv2-publish'), publishLabel: $('#rv2-publishLabel'), pending: $('#rv2-pending'), publishM: $('#rv2-publishM'),
       q: $('#rv2-q'),
     });
@@ -3115,6 +3139,7 @@
     el.publishM.addEventListener('click', openPublish);
     el.reopt.addEventListener('click', reoptimizar);
     if (el.enrutar) el.enrutar.addEventListener('click', enrutar);   // 28-oct
+    if (el.espera) el.espera.addEventListener('click', llegadasEnEspera);   // 10-nov
     $('#rv2-wa').addEventListener('click', abrirWhatsApp);
     // 0125: la ruta de Julián y el Excel del día (con la estructura del Formulario).
     if ($('#rv2-julian')) $('#rv2-julian').addEventListener('click', () => { if (window.RendioRutaJulian) window.RendioRutaJulian.abrir(); });
@@ -3246,6 +3271,7 @@
     _sheet: { open: openSheet, close: closeSheet, head: sheetHead }, toast, diaActual: () => ui.dia,
     delegar: openDelegar,   // 0131: «Delegar a…» (lo usa la ruta de Julián)
     enrutar, _planEnrutar: planEnrutar,   // 28-oct
+    llegadasEnEspera, _planEnEspera: planEnEspera,   // 10-nov
     // 0152: «Ver otras opciones» de la tarjeta del detector de cadena: la hoja
     // «Conductor de esta vuelta» de la vuelta publicada (raId), si está en el día cargado.
     abrirVuelta: (raId) => {

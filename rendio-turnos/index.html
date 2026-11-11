@@ -1408,6 +1408,7 @@
             <button class="rv2-btn" id="rv2-reopt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg><span id="rv2-reoptLabel">Re-optimizar</span></button>
             <!-- 28-oct (Camilo): solo los conductores; el tablero no cambia (admin-rutas-v2.js · enrutar) -->
             <button class="rv2-btn" id="rv2-enrutar" type="button" title="Repartir los conductores entre las vueltas que faltan, sin cambiar horas, gente ni carros"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg><span>Enrutar</span></button>
+            <button class="rv2-btn" id="rv2-espera" type="button" hidden title="Dejar las llegadas que faltan en espera: el sistema las reparte cuando el vuelo confirme la hora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Llegadas en espera</span></button>
             <button class="rv2-btn rv2-btn--cta" id="rv2-publish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg><span id="rv2-publishLabel">Publicar plan</span><span class="rv2-badge" id="rv2-pending">0</span></button>
           </div>
 
@@ -1773,6 +1774,8 @@
   <script src="auxiliar.js"></script>
   <!-- Conductor: rutas de auxiliares -->
   <script src="driver-rutas.js"></script>
+  <!-- Conductor: ubicación durante todo el turno (despacho de llegadas) -->
+  <script src="driver-gps-turno.js"></script>
   <script src="ui-push.js"></script>
 
   <!-- PWA: registrar service worker + detectar updates -->

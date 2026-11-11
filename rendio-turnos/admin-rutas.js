@@ -131,6 +131,26 @@
     rt.RESCUE_MAX_EARLY = s.route_rescue_max_early_min != null ? Number(s.route_rescue_max_early_min) : 45;
     // Preferir los primeros carros (llenar) en vez de repartir parejo.
     rt.CAR_PRIORITY = s.route_car_priority != null ? !!Number(s.route_car_priority) : true;
+    // OPTIMIZADOR V2 (10-nov-2026). Apagado mientras no exista el ajuste: el
+    // tablero se comporta como siempre. Encendido cambia tres cosas de rtSolveDay
+    // (ver «V2» allá): reparte por la hora en que de verdad ARRANCA cada vuelta,
+    // antes de dejar a alguien sin carro busca huecos y reacomoda, y abre un carro
+    // de APOYO solo si con los carros fijos no alcanza.
+    rt.V2 = s.route_solver_v2 != null ? !!Number(s.route_solver_v2) : false;
+    rt.APOYO = s.route_apoyo_car != null ? !!Number(s.route_apoyo_car) : false;
+    // Cuántos minutos del colchón de entrega se pueden gastar ANTES de pedir el
+    // carro de apoyo (0 = ninguno). Con 3 y colchón de 10, una salida que llega 7
+    // min antes de la presentación todavía vale; nunca pasa de la presentación.
+    rt.BUFFER_FLEX = s.route_buffer_flex_min != null ? Math.max(0, Number(s.route_buffer_flex_min) || 0) : 0;
+    // TIEMPOS POR FRANJA. OSRM da UN tiempo para todo el día y las marcas de los
+    // conductores (26–28 oct) dicen otra cosa: de madrugada Olivar→JMC son 15–17
+    // min (el modelo decía 25) y de 6 a 9 Balcones→JMC son 38 (decía 24). Julián
+    // lo tenía dicho en su tabla de tramos (15 de madrugada, 35 en el pico). Es
+    // una lista [{from, to, f}] en horas; f multiplica el manejo de esa franja.
+    // null = un solo tiempo, como antes. No aplica con TomTom (ya trae la hora).
+    rt.FRANJAS = null;
+    try { const fr = typeof s.route_band_factors === 'string' ? JSON.parse(s.route_band_factors) : s.route_band_factors; if (Array.isArray(fr) && fr.length) rt.FRANJAS = fr; } catch (_) { rt.FRANJAS = null; }
+    rt._hora = null;
     // EL BARRIDO. Dictado por Julián el 21-ago-2026: "que hagan un barrido desde
     // lo más lejano hasta el aeropuerto siempre... llega hasta donde Javier,
     // desde ahí solo coja El Porvenir, Llanogrande o el aeropuerto". O sea: una
@@ -468,8 +488,19 @@
     // no entre casas (ver AIRPORT_FACTOR). Con tiempos de TomTom no se toca
     // ninguno de los dos: esos ya vienen medidos de la vía.
     const aero = (aKey === 'airport' || bKey === 'airport') ? rt.AIRPORT_FACTOR : 1;
-    return raw * rt.TRAFFIC_FACTOR * aero;
+    return raw * rt.TRAFFIC_FACTOR * aero * rtFranjaF();
   }
+  // Factor de la franja horaria en la que se está calculando (rt._hora, en
+  // minutos; lo fija quien evalúa una vuelta). Sin franjas o sin hora, 1.
+  function rtFranjaF() {
+    if (!rt.FRANJAS || rt._hora == null) return 1;
+    const h = (((rt._hora % 1440) + 1440) % 1440) / 60;
+    const f = rt.FRANJAS.find(x => h >= Number(x.from) && h < Number(x.to));
+    return f && Number(f.f) > 0 ? Number(f.f) : 1;
+  }
+  // Como rtToHM pero sin darle la vuelta al reloj: 1450 → «24:10» (lo de después
+  // de medianoche del mismo día operativo). rtToMin lo lee bien de vuelta.
+  const rtToHM24 = (m) => { m = Math.round(m); return m < 1440 ? rtToHM(m) : String(Math.floor(m / 60)) + ':' + String(m % 60).padStart(2, '0'); };
 
   // LA HORA QUE SE LE DA A LA GENTE ES REDONDA (pedido del jefe, 24-oct-2026):
   // «nosotros siempre programamos horas en punto, 5:10, 5:00, 5:20, 5:15… si les
@@ -516,6 +547,7 @@
     const lane = rtLaneOf(laneId);
     if (lane.type === 'lle') return rtCarComputeLle(lane);
     const pub = rtHorasPub(laneId);
+    rt._hora = rtToMin(lane.start);         // franja horaria de esta vuelta (rtFranjaF)
     let t = rtToMin(lane.start), prev = lane.origin, stops = [], pax = 0, hardDL = Infinity;
     let prevKey = null, eta = Math.round(t);
     rt.order[laneId].forEach(id => {
@@ -556,6 +588,7 @@
   function rtCarComputeLle(lane) {
     const ideal = rtToMin(lane.landing) + rtDeplaneOf(rt.order[lane.id], rtToMin(lane.landing)); // cuándo sale la gente del terminal (en tierra, 0092: sin desembarque)
     const inicio = rtToMin(lane.start);
+    rt._hora = Math.max(inicio, ideal);     // franja horaria de esta vuelta (rtFranjaF)
     // Publicada y sin tocar (rtHorasPub): sale de JMC a la hora guardada, que es
     // la que tienen el conductor y el tripulante (el jefe puede ponerla a mano).
     const pub = !!rtHorasPub(lane.id);
@@ -991,6 +1024,298 @@
     return { ord, dur: t, last };
   }
 
+  // ---- V2 · REPASO: REACOMODAR ANTES DE DEJAR A ALGUIEN SIN CARRO ----
+  // El reparto de rtSolveDay va hacia adelante y no se devuelve: cada carro tiene
+  // UNA hora «libre desde» y lo que no cabe después de ella queda sin carro,
+  // aunque el carro haya estado parado dos horas antes. Aquí se mira el día de
+  // cada carro como lo que es —vueltas con HUECOS entre una y otra— y se prueba:
+  //   1. meter cada viaje que quedó por fuera en un hueco de algún carro,
+  //      corriendo las vueltas siguientes de ese carro si aguantan;
+  //   2. si el viaje entero no cabe, por porterías y después persona por persona
+  //      (una llegada suelta también puede subirse a una llegada ya armada);
+  //   3. sacar una salida que quedó tarde y buscarle un hueco donde llegue a tiempo;
+  //   4. solo si aun así queda alguien por fuera (o tarde) y hay permiso, abrir
+  //      UN carro de APOYO con lo mínimo: lo que los carros fijos no cubren.
+  // Reglas que no se tocan: cupo, nadie tarde, techo de madrugada (MAX_EARLY) y
+  // la espera máxima de una llegada (15 min). Cada intento se hace sobre una
+  // copia y se deshace entero si algo no cumple.
+  function rtRepasoV2({ lanes, order, unassigned, fallidos, libreDe, conApoyo }) {
+    const ESPERA_MAX = 15;
+    let flex = 0;                              // minutos del colchón que se pueden gastar (ver rt.BUFFER_FLEX)
+    const M = rtToMin, ceil5 = (m) => Math.ceil(m / 5) * 5;
+    const dlDe = (id) => M(rt.aux[id].dl);
+    let nuevo = 0;
+    const foto = () => ({ lanes: lanes.map(l => ({ ...l })), order: Object.fromEntries(Object.entries(order).map(([k, v]) => [k, v.slice()])), un: unassigned.slice(), cars: rt.cars.length });
+    const volver = (f) => {
+      lanes.length = 0; f.lanes.forEach(l => lanes.push({ ...l }));
+      Object.keys(order).forEach(k => delete order[k]); Object.entries(f.order).forEach(([k, v]) => { order[k] = v.slice(); });
+      unassigned.length = 0; unassigned.push(...f.un);
+      rt.cars.length = f.cars;
+    };
+    const delCarro = (car) => lanes.filter(l => l.car === car).sort((a, b) => (M(a.start) - M(b.start)) || (a.vuelta - b.vuelta));
+    const finDe = (l) => { const c = rtCarCompute(l.id); return l.type === 'sal' ? c.arrival + rt.TURNAROUND : c.arrival + 2; };
+    const posDe = (l) => (l.type === 'sal' ? 'airport' : order[l.id][order[l.id].length - 1]);
+    const madrugaDe = (r) => Math.max(...r.stops.map(x => dlDe(x.id) - x.eta));
+    // Holgura con la que YA venía cada salida: correr una vuelta no puede dejarla
+    // peor que como la dejó el reparto (que tolera unos minutos dentro del colchón).
+    const holg0 = {};
+    lanes.forEach(l => { if (l.type === 'sal') holg0[l.id] = Math.min(0, rtCarCompute(l.id).holg); });
+    // El carro queda libre a `fin` en `pos`: ¿aguantan sus vueltas desde la k-ésima?
+    // Corre lo que haga falta (origen y hora) y devuelve false si alguna no cumple.
+    const encadenar = (cc, k, fin, pos) => {
+      for (let i = k; i < cc.length; i++) {
+        const l = cc[i];
+        if (l.type === 'lle') {
+          const listo = fin + (pos && pos !== 'airport' ? rtLegMin(pos, 'airport') : 0);
+          if (listo <= M(l.start)) return true;                   // llega antes: nada cambia de aquí en adelante
+          const ideal = rtCarCompute(l.id).hardDL;
+          const ini = rtRedondea5Arr(listo);
+          if (ini - ideal > ESPERA_MAX) return false;
+          l.start = rtToHM24(ini);
+          const c = rtCarCompute(l.id);
+          if (c.wait > ESPERA_MAX) return false;
+          fin = c.arrival + 2; pos = posDe(l);
+        } else {
+          const mismo = (l.origin || null) === (pos || null);
+          if (mismo && fin <= M(l.start)) return true;
+          const finAntes = finDe(l);
+          l.origin = pos || null;
+          let ini = rtRedondea5(rtCarCompute(l.id).depart);
+          if (ini < fin) ini = ceil5(fin);
+          l.start = rtToHM24(ini);
+          // la franja horaria pudo cambiar con la hora nueva: una segunda pasada
+          const d2 = rtRedondea5(rtCarCompute(l.id).depart);
+          if (d2 >= fin && d2 !== ini) l.start = rtToHM24(d2);
+          const c = rtCarCompute(l.id);
+          if (c.holg < (holg0[l.id] != null ? holg0[l.id] : 0)) return false;
+          if (rt.MAX_EARLY && madrugaDe(c) > rt.MAX_EARLY) return false;
+          const finAhora = c.arrival + rt.TURNAROUND;
+          if (finAhora <= finAntes) return true;
+          fin = finAhora; pos = 'airport';
+        }
+      }
+      return true;
+    };
+    // Mete un viaje como vuelta NUEVA en el hueco i del carro. Devuelve el costo
+    // (menor es mejor) o null si no cumple. Deja el estado cambiado: quien llama
+    // toma la foto antes.
+    const meter = (car, idx, i, tipo, ids, dlMin) => {
+      if (rtPaxOf(ids) > rtCapOf(car)) return null;
+      const cc = delCarro(car.id), prev = cc[i - 1];
+      const libre = prev ? finDe(prev) : libreDe(car), pos = prev ? posDe(prev) : null;
+      const lane = { id: `${car.id}·X${++nuevo}`, car: car.id, vuelta: (prev ? prev.vuelta : 0) + 0.5, type: tipo, start: '00:00', origin: tipo === 'lle' ? 'airport' : pos };
+      lanes.push(lane);
+      let fin, posFin, costo;
+      if (tipo === 'sal') {
+        order[lane.id] = rtBestOrder(ids, pos);
+        const minDl = Math.min(...ids.map(dlDe));
+        lane.start = rtToHM24(Math.max(0, minDl - 45));         // franja aproximada para medir
+        let ini = rtRedondea5(rtCarCompute(lane.id).depart);
+        if (ini < libre) ini = ceil5(libre);
+        lane.start = rtToHM24(ini);
+        const d2 = rtRedondea5(rtCarCompute(lane.id).depart);
+        if (d2 >= libre && d2 !== ini) lane.start = rtToHM24(d2);
+        const r = rtCarCompute(lane.id);
+        const techo = rtTechoEspera(minDl);
+        if (r.holg < -flex) return null;
+        if (rt.MAX_EARLY && madrugaDe(r) > rt.MAX_EARLY) return null;
+        if (techo && rtEsperaDe('sal', order[lane.id]) > techo) return null;
+        holg0[lane.id] = Math.min(0, r.holg);
+        fin = r.arrival + rt.TURNAROUND; posFin = 'airport';
+        // Entre huecos posibles: primero los carros fijos en su orden; y dentro
+        // del carro, el que menos lo hace rodar vacío hasta la primera casa.
+        costo = idx * 1000 + (pos ? rtLegMin(pos, order[lane.id][0]) : 0);
+      } else {
+        lane.landing = rtToHM24(dlMin);
+        const plan = rtHomesPlan(ids);
+        order[lane.id] = plan.ord;
+        rt._hora = dlMin + 20;
+        const ideal = dlMin + rtDeplaneOf(ids, dlMin);
+        const listo = libre + (pos && pos !== 'airport' ? rtLegMin(pos, 'airport') : 0);
+        const ini = rtRedondea5Arr(Math.max(ideal, listo));
+        if (ini - ideal > ESPERA_MAX) return null;
+        lane.start = rtToHM24(ini);
+        const r = rtCarCompute(lane.id);
+        if (r.wait > ESPERA_MAX) return null;
+        fin = r.arrival + 2; posFin = plan.last;
+        costo = (ini - ideal) * 10000 + idx * 1000;               // primero, que nadie espere
+      }
+      if (!encadenar(delCarro(car.id).filter(l => l.id !== lane.id), i, fin, posFin)) return null;
+      return costo;
+    };
+    // Sube a UNA persona a una llegada ya armada (misma espera máxima, cupo).
+    const subirALlegada = (lane, id) => {
+      const car = rt.cars.find(c => c.id === lane.car) || {};
+      const previo = order[lane.id];
+      if (rtPaxOf(previo) + rt.aux[id].pax > rtCapOf(car)) return null;
+      const dl = dlDe(id);
+      const ideal = dl + rtDeplaneOf([id], dl), ini = M(lane.start);
+      if (ini < ideal) {                                         // el vuelo de él sale después: la vuelta lo espera
+        const c0 = rtCarCompute(lane.id);
+        const nuevoIni = rtRedondea5Arr(ideal);
+        if (nuevoIni - c0.hardDL > ESPERA_MAX) return null;      // los que ya iban esperarían de más
+        lane.start = rtToHM24(nuevoIni);
+        if (dl > M(lane.landing)) lane.landing = rtToHM24(dl);
+      } else if (ini - ideal > ESPERA_MAX) return null;
+      const plan = rtHomesPlan(previo.concat([id]));
+      order[lane.id] = plan.ord;
+      const r = rtCarCompute(lane.id);
+      if (r.wait > ESPERA_MAX) return null;
+      const cc = delCarro(lane.car), k = cc.findIndex(l => l.id === lane.id);
+      if (!encadenar(cc, k + 1, r.arrival + 2, plan.last)) return null;
+      return Math.max(0, M(lane.start) - ideal) * 10000 + 500;
+    };
+    // Sube a UNA persona a una salida ya armada, corriendo la hora de la vuelta y
+    // las que siguen en ese carro. Nadie de la vuelta puede quedar tarde ni pasar
+    // el techo de madrugada.
+    const subirASalida = (lane, id) => {
+      const car = rt.cars.find(c => c.id === lane.car) || {};
+      const previo = order[lane.id];
+      if (rtPaxOf(previo) + rt.aux[id].pax > rtCapOf(car)) return null;
+      const cc = delCarro(lane.car), k = cc.findIndex(l => l.id === lane.id), prev = cc[k - 1];
+      const libre = prev ? finDe(prev) : libreDe(car);
+      const dur0 = rtCarCompute(lane.id).arrival - M(lane.start);
+      order[lane.id] = rtBestOrder(previo.concat([id]), lane.origin);
+      if (rtSweepBack(rtGroupByStop(order[lane.id])) > 0) return null;   // el barrido manda
+      let ini = rtRedondea5(rtCarCompute(lane.id).depart);
+      if (ini < libre) ini = ceil5(libre);
+      lane.start = rtToHM24(ini);
+      const r = rtCarCompute(lane.id);
+      const techo = rtTechoEspera(r.hardDL);
+      if (r.holg < Math.min(-flex, holg0[lane.id] != null ? holg0[lane.id] : 0)) return null;
+      if (rt.MAX_EARLY && madrugaDe(r) > rt.MAX_EARLY) return null;
+      if (techo && rtEsperaDe('sal', order[lane.id]) > techo) return null;
+      holg0[lane.id] = Math.min(holg0[lane.id] != null ? holg0[lane.id] : 0, r.holg);
+      if (!encadenar(cc, k + 1, r.arrival + rt.TURNAROUND, 'airport')) return null;
+      const carIdx = rt.cars.indexOf(car);
+      return carIdx * 1000 + 200 + Math.max(0, (r.arrival - M(lane.start)) - dur0);
+    };
+    // Prueba todas las formas de colocar `ids` y se queda con la mejor. true si quedó.
+    const colocar = (tipo, ids, dlMin, soloCarro) => {
+      const antes = foto();
+      let mejor = null;
+      const probar = (fn) => {
+        const costo = fn();
+        if (costo != null && (!mejor || costo < mejor.costo)) mejor = { costo, estado: foto() };
+        volver(antes);
+      };
+      rt.cars.forEach((car, idx) => {
+        if (soloCarro ? car.id !== soloCarro : car.apoyo) return;
+        const n = delCarro(car.id).length;
+        for (let i = 0; i <= n; i++) probar(() => meter(car, idx, i, tipo, ids, dlMin));
+      });
+      if (tipo === 'sal' && ids.length === 1 && !soloCarro) {
+        lanes.filter(l => l.type === 'sal').map(l => l.id).forEach(lid => probar(() => { const l = lanes.find(x => x.id === lid); return l ? subirASalida(l, ids[0]) : null; }));
+      }
+      if (tipo === 'lle' && ids.length === 1 && !soloCarro) {
+        lanes.filter(l => l.type === 'lle').map(l => l.id).forEach(lid => probar(() => { const l = lanes.find(x => x.id === lid); return l ? subirALlegada(l, ids[0]) : null; }));
+      }
+      if (!mejor) return false;
+      volver(mejor.estado);
+      ids.forEach(id => { const k = unassigned.indexOf(id); if (k >= 0) unassigned.splice(k, 1); });
+      return true;
+    };
+    const horaVuelta = (tipo, ids) => {
+      if (tipo === 'sal') return Math.min(...ids.map(dlDe));
+      const vuelo = ids.filter(id => !rt.aux[id].tierra);
+      return Math.max(...(vuelo.length ? vuelo : ids).map(dlDe));
+    };
+    // Un viaje: entero → por porterías → persona por persona.
+    const colocarViaje = (tr, soloCarro) => {
+      let ids = tr.ids.filter(id => unassigned.includes(id));
+      if (!ids.length) return;
+      if (colocar(tr.type, ids, horaVuelta(tr.type, ids), soloCarro)) return;
+      if (ids.length === 1) return;
+      rtGroupByStop(ids).forEach(port => { if (port.length < ids.length) colocar(tr.type, port, horaVuelta(tr.type, port), soloCarro); });
+      ids = ids.filter(id => unassigned.includes(id));
+      ids.forEach(id => colocar(tr.type, [id], dlDe(id), soloCarro));
+    };
+    const tardes = () => lanes.filter(l => l.type === 'sal' && rtCarCompute(l.id).holg < -Math.min(rt.BUFFER_FLEX || 0, rt.AIRPORT_BUFFER)).sort((a, b) => M(a.start) - M(b.start)).map(l => l.id);
+    // Saca una salida tarde de su carro y le busca un hueco donde llegue a tiempo.
+    const moverTarde = (lid, soloCarro) => {
+      const antes = foto();
+      const lane = lanes.find(l => l.id === lid); if (!lane) return false;
+      const ids = order[lid].slice(), cc = delCarro(lane.car), k = cc.findIndex(l => l.id === lid), prev = cc[k - 1];
+      const car = rt.cars.find(c => c.id === lane.car);
+      lanes.splice(lanes.indexOf(lane), 1); delete order[lid];
+      encadenar(cc.filter(l => l.id !== lid), k, prev ? finDe(prev) : libreDe(car), prev ? posDe(prev) : null);
+      unassigned.push(...ids);
+      if (colocar('sal', ids, Math.min(...ids.map(dlDe)), soloCarro)) return true;
+      volver(antes); return false;
+    };
+
+    const porHora = (a, b) => (a._ini ?? a.dlMin) - (b._ini ?? b.dlMin);
+    // DESARMAR Y VOLVER A ARMAR. Cuando un viaje no cabe en ningún hueco, a veces sí
+    // cabe si OTRA vuelta cercana se cambia de sitio (es lo que se hacía a mano cada
+    // noche: «este carro toma la llegada y el otro saca a estos dos»). Se saca una
+    // vuelta vecina, se mete el viaje que estaba por fuera y se le busca sitio a la
+    // que se sacó. Solo vale si las DOS quedan con carro; si no, todo vuelve atrás.
+    const reubicar = (tr) => {
+      const ids = tr.ids.filter(id => unassigned.includes(id));
+      if (!ids.length) return false;
+      const antes = foto();
+      const hora = tr._ini != null ? tr._ini : tr.dlMin;
+      const vecinas = lanes.filter(l => Math.abs(M(l.start) - hora) <= 90).map(l => l.id);
+      for (const lid of vecinas) {
+        const lane = lanes.find(l => l.id === lid); if (!lane) continue;
+        const suyos = order[lid].slice(), tipo = lane.type;
+        const cc = delCarro(lane.car), k = cc.findIndex(l => l.id === lid), prev = cc[k - 1];
+        const car = rt.cars.find(c => c.id === lane.car);
+        lanes.splice(lanes.indexOf(lane), 1); delete order[lid];
+        const sigue = encadenar(cc.filter(l => l.id !== lid), k, prev ? finDe(prev) : libreDe(car), prev ? posDe(prev) : null);
+        unassigned.push(...suyos);
+        if (sigue && colocar(tr.type, ids, horaVuelta(tr.type, ids), null) && colocar(tipo, suyos, horaVuelta(tipo, suyos), null)) return true;
+        volver(antes);
+      }
+      return false;
+    };
+    const pasada = () => {
+      fallidos.slice().sort(porHora).forEach(tr => colocarViaje(tr, null));
+      tardes().forEach(lid => moverTarde(lid, null));
+      // Mover una tarde pudo abrir un hueco para alguien que seguía por fuera.
+      fallidos.slice().sort(porHora).forEach(tr => colocarViaje(tr, null));
+      if (unassigned.length) {
+        fallidos.slice().sort(porHora).forEach(tr => reubicar(tr));
+        // y lo que quede, persona por persona
+        unassigned.slice().forEach(id => reubicar({ type: rt.aux[id].type, ids: [id], dlMin: dlDe(id) }));
+      }
+    };
+    pasada();
+    // Antes de pedir apoyo: gastar unos minutos del colchón, si está permitido.
+    if (unassigned.length && rt.BUFFER_FLEX > 0) { flex = Math.min(rt.BUFFER_FLEX, rt.AIRPORT_BUFFER); pasada(); flex = 0; }
+
+    // APOYO: un carro más, solo con lo que los fijos no cubren.
+    let apoyo = null;
+    if (conApoyo && (unassigned.length || tardes().length)) {
+      const cap = Math.max(...rt.cars.map(rtCapOf));
+      const car = { id: 'Carro ' + (rt.cars.length + 1), avail0: '00:00', capacity: cap, vehicleId: null, apoyo: true };
+      rt.cars.push(car);
+      fallidos.slice().sort(porHora).forEach(tr => colocarViaje(tr, car.id));
+      tardes().forEach(lid => moverTarde(lid, car.id));
+      const suyas = delCarro(car.id);
+      if (!suyas.length) rt.cars.pop();
+      else {
+        // Tramos seguidos: si entre dos vueltas del apoyo pasan más de 90 min, son
+        // dos llamados distintos (no se tiene a alguien parado toda la mañana).
+        const tramos = [];
+        suyas.forEach(l => {
+          const ini = M(l.start), fin = finDe(l), t = tramos[tramos.length - 1];
+          if (t && ini - t.hasta <= 90) { t.hasta = fin; t.vueltas++; t.pax += rtPaxOf(order[l.id]); }
+          else tramos.push({ desde: ini, hasta: fin, vueltas: 1, pax: rtPaxOf(order[l.id]) });
+        });
+        apoyo = { car: car.id, vueltas: suyas.length, tramos: tramos.map(t => ({ desde: rtToHM24(t.desde), hasta: rtToHM24(t.hasta), vueltas: t.vueltas, pax: t.pax })) };
+      }
+    }
+    // Numerar las vueltas de cada carro en el orden en que ruedan.
+    const renom = {};
+    rt.cars.forEach(car => delCarro(car.id).forEach((l, i) => { renom[l.id] = { id: `${car.id}·V${i + 1}`, vuelta: i + 1 }; }));
+    const ordenNuevo = {};
+    lanes.forEach(l => { const r = renom[l.id]; ordenNuevo[r.id] = order[l.id]; l.id = r.id; l.vuelta = r.vuelta; });
+    Object.keys(order).forEach(k => delete order[k]); Object.assign(order, ordenNuevo);
+    lanes.sort((a, b) => (M(a.start) - M(b.start)) || a.car.localeCompare(b.car));
+    return apoyo;
+  }
+
   // opts (27-oct-2026, Camilo: «cuando doy optimizar me toma la programación completa
   // de todo el día, incluyendo servicios que ya se finalizaron»):
   //   solo:  Set de tripulantes a programar (los demás no se tocan: ya van en una
@@ -1119,10 +1444,15 @@
       const vuelo = ids.filter(id => !rt.aux[id].tierra);
       return Math.max(...(vuelo.length ? vuelo : ids).map(dlDe));
     };
+    // A qué hora se RUEDA un viaje, más o menos: la salida, antes de su hora de
+    // presentación; la llegada, después de aterrizar. Es la franja con la que se
+    // miden sus tramos mientras se arma (rtFranjaF).
+    const horaDe = (tipo, dlMin) => tipo === 'sal' ? dlMin - 40 : dlMin + 20;
     const pend = waves.slice();
     const oleadas = [];
     while (pend.length) {
       const base = pend.shift();
+      rt._hora = horaDe(base.type, base.dlMin);
       const g = { type: base.type, dlMin: base.dlMin, ids: base.ids.slice() };
       // El corte natural está donde se ABRE UN HUECO entre hora y hora, no a una
       // distancia fija de la primera. Mirando el día: 3:30 · 3:30 · 3:40 · 3:50 ·
@@ -1178,6 +1508,7 @@
     //    para no separar a dos personas de la misma puerta en carros distintos).
     const trips = [];
     oleadas.forEach(w => {
+      rt._hora = horaDe(w.type, w.dlMin);
       // Un viaje cabe si NO se pasa del cupo y NO se pasa del techo de espera.
       // El techo importa aquí y no solo al fusionar: una oleada de 4 personas
       // regadas por todo Rionegro cabe de sobra en el carro y aun así deja al
@@ -1218,8 +1549,20 @@
     // llenando para poder evaluar una vuelta apenas queda armada (ver el ajuste
     // de la hora de salida más abajo). El llamador los vuelve a asignar al final.
     rt.lanes = lanes; rt.order = order;
+    // V2 · REPARTIR POR LA HORA EN QUE ARRANCA, NO POR LA HORA ESCRITA. Los viajes
+    // venían ordenados por «deben estar» / «aterriza». Pero una llegada de las
+    // 10:00 arranca a las 10:20 y una salida de las 10:30 arranca a las 9:45: al
+    // repartir la llegada primero, el carro quedaba «ocupado hasta las 10:50» y la
+    // salida —que cabía de sobra ANTES— salía sin carro. 10-nov: 13 sin carro.
+    const fallidos = [];
+    if (rt.V2) {
+      const arranca = (tr) => { rt._hora = horaDe(tr.type, tr.dlMin); return tr.type === 'lle' ? tr.dlMin + rtDeplaneOf(tr.ids, tr.dlMin) : tr.dlMin - rt.AIRPORT_BUFFER - rtTripDur(tr.ids, null); };
+      trips.forEach(tr => { tr._ini = arranca(tr); });
+      trips.sort((a, b) => (a._ini - b._ini) || (a.dlMin - b.dlMin));
+    }
     trips.forEach(tr => {
       let best = null;
+      rt._hora = horaDe(tr.type, tr.dlMin);
       if (tr.type === 'lle') {
         // LLEGADA: hay que ESTAR en MDE cuando salgan (aterriza + desembarque;
         // los de tierra, 0092, a su hora).
@@ -1231,10 +1574,12 @@
           const key = wait * 100000 + rtDesempate(s) + s.avail;
           if (!best || key < best.key) best = { key, s, wait, pickup: Math.max(idealPickup, readyAtMDE) };
         });
-        if (!best || best.wait > 15) { unassigned.push(...tr.ids); return; }
+        if (!best || best.wait > 15) { unassigned.push(...tr.ids); fallidos.push(tr); return; }
         const s = best.s; s.vuelta++;
         const plan = rtHomesPlan(tr.ids);
-        const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'lle', start: rtInicioLle(best.pickup), origin: 'airport', landing: rtToHM(tr.dlMin) };
+        // V2: lo de después de medianoche conserva su hora («24:10»). Con el reloj
+        // dado la vuelta, el vuelo «aterrizaba» 24 h antes y la espera salía 1.400 min.
+        const lane = { id: `${s.car.id}·V${s.vuelta}`, car: s.car.id, vuelta: s.vuelta, type: 'lle', start: rt.V2 ? rtToHM24(rtRedondea5Arr(best.pickup)) : rtInicioLle(best.pickup), origin: 'airport', landing: rt.V2 ? rtToHM24(tr.dlMin) : rtToHM(tr.dlMin) };
         lanes.push(lane);
         order[lane.id] = plan.ord;
         s.avail = best.pickup + plan.dur + 2; // termina en la última casa
@@ -1261,7 +1606,9 @@
         const key = late * 100000 + rtDesempate(s) + s.avail;  // factible → carro → quien lleve más rato libre
         if (!best || key < best.key) best = { key, s, origin, depart, late, dur };
       });
-      if (!best || best.late > 15) { unassigned.push(...tr.ids); return; }
+      // V2: una salida no se programa tarde; si a su hora no hay carro, va al
+      // repaso (hueco, otro carro o apoyo) en vez de salir «15 min tarde».
+      if (!best || best.late > (rt.V2 ? 0 : 15)) { unassigned.push(...tr.ids); fallidos.push(tr); return; }
       const s = best.s; s.vuelta++;
       // Hora redonda, como la maneja la operación: las 46 horas del plan manual
       // de Julián son múltiplos de 5. Se redondea HACIA ABAJO — salir un par de
@@ -1364,7 +1711,9 @@
       }
       unassigned.length = 0; unassigned.push(...quedan);
     }
-    return { lanes, order, unassigned };
+    let apoyo = null;
+    if (rt.V2) apoyo = rtRepasoV2({ lanes, order, unassigned, fallidos, libreDe, conApoyo: opts.apoyo != null ? !!opts.apoyo : rt.APOYO });
+    return { lanes, order, unassigned, apoyo };
   }
 
   // De reserva (0121): el nombre corto del lugar, o '' si va en vuelo/tierra.
