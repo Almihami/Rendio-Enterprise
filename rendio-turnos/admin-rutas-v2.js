@@ -637,9 +637,11 @@
   async function cargarApoyo() {
     if (rt.source !== 'live' || !window.Api || typeof Api.listDispatchAlerts !== 'function') return false;
     if (!(state.settings && state.settings.despacho_activo)) { if (rt.rv2Apoyo && Object.keys(rt.rv2Apoyo).length) { rt.rv2Apoyo = {}; return true; } return false; }
-    const nuevo = await Api.listDispatchAlerts();
-    const cambio = JSON.stringify(nuevo) !== JSON.stringify(rt.rv2Apoyo || {});
-    rt.rv2Apoyo = nuevo;
+    const dia = rt.day;
+    const [nuevo, duty] = await Promise.all([Api.listDispatchAlerts(), typeof Api.getSupportDuty === 'function' && dia ? Api.getSupportDuty(dia) : Promise.resolve(null)]);
+    if (rt.day !== dia) return false;
+    const cambio = JSON.stringify(nuevo) !== JSON.stringify(rt.rv2Apoyo || {}) || JSON.stringify(duty) !== JSON.stringify(rt.rv2Duty || null);
+    rt.rv2Apoyo = nuevo; rt.rv2Duty = duty;   // 0162
     return cambio;
   }
   function avisosDe() {
@@ -807,7 +809,34 @@
           `<b>${nombres.length ? esc(nombres.join(' · ')) : 'Sin conductor'}</b><small>${cuentaTxt(c)}${solo ? (auto ? ' · automático' : ' · elegido') : ''}${enTurno}</small></button>`;
       });
     }
-    el.drivers.innerHTML = h + '</div>' + libresHTML(todos, bands, cells);
+    el.drivers.innerHTML = h + '</div>' + apoyoDutyHTML() + libresHTML(todos, bands, cells);
+  }
+  // 0162 · QUIÉN TIENE EL APOYO. Un renglón en la misma tarjeta, no una pantalla: el
+  // jefe elige por turno y queda guardado al instante (no espera a «Publicar»). El
+  // despacho lo usa solo cuando los carros fijos harían esperar de más a una llegada.
+  function apoyoDutyHTML() {
+    if (!(state.settings && state.settings.despacho_activo) || !rt.rv2Duty) return '';
+    const sel = (b, txt) => {
+      const cur = rt.rv2Duty[b];
+      const es = (d) => !!cur && (d.id === cur.dp || d.id === cur.profile);
+      return `<label>${txt}<select data-duty="${b}" aria-label="Quién tiene el apoyo en el turno de la ${txt.toLowerCase()}">`
+        + `<option value="">Nadie</option>`
+        + (rt.drivers || []).map((d) => `<option value="${esc(d.id)}"${es(d) ? ' selected' : ''}>${esc(shortName(d.n || d.name || ''))}</option>`).join('')
+        + '</select></label>';
+    };
+    return `<div class="rv2-duty"><b>Tiene el apoyo</b>${sel('am', 'Mañana')}${sel('pm', 'Tarde')}<small>Sale solo si los carros fijos no alcanzan una llegada. Se le paga por vuelta.</small></div>`;
+  }
+  async function guardarApoyoDuty(band, driverId) {
+    const dia = rt.day;
+    try {
+      await Api.setSupportDuty(dia, band, driverId || null);
+      rt.rv2Duty = (await Api.getSupportDuty(dia)) || rt.rv2Duty;
+      const d = driverId ? (rt.drivers || []).find((x) => x.id === driverId) : null;
+      toast(d ? `${shortName(d.n || d.name || '')} tiene el apoyo en la ${band === 'am' ? 'mañana' : 'tarde'}` : `Nadie tiene el apoyo en la ${band === 'am' ? 'mañana' : 'tarde'}`, true);
+    } catch (e) {
+      toast('No se pudo guardar quién tiene el apoyo: ' + ((e && e.message) || 'reintenta'));
+    }
+    renderDrivers();
   }
   // Los carros de apoyo de un turno con vueltas sin terminar (la fila «Carro Apoyo»).
   const APOYO = '__apoyo', APOYO_TXT = 'Carro Apoyo';
@@ -3179,6 +3208,8 @@
     if ($('#rv2-xlsx')) $('#rv2-xlsx').addEventListener('click', () => { const J = window.RendioRutaJulian; if (J) (J.elegirExcel || J.excel)(); });
     document.addEventListener('keydown', onKey);
     arrancarRefresco();   // 0137
+    // 0162: el desplegable de «Tiene el apoyo» guarda al cambiar.
+    r.addEventListener('change', (e) => { const s = e.target && e.target.closest && e.target.closest('select[data-duty]'); if (s) guardarApoyoDuty(s.dataset.duty, s.value); });
     r.addEventListener('dragstart', onDragStart);
     r.addEventListener('dragover', onDragOver);
     r.addEventListener('drop', onDrop);
