@@ -318,8 +318,28 @@
   // weekly_schedules en el momento de DESCARGAR, y como esa tabla es una fila
   // jsonb mutable sin historial, dos Excel del mismo informe bajados con minutos
   // de diferencia traían Hojas 1 distintas.
+  // 0162 · VUELTAS DE APOYO del rango. Va APARTE de las horas a propósito: el apoyo
+  // se paga por vuelta, no por turno, y este bloque no entra a ningún total ni al
+  // Excel. Si la base no tiene 0162 o no hay vueltas, no se pinta nada.
+  async function pintarApoyoDelRango(fromV, toV) {
+    const old = document.getElementById('balance-apoyo'); if (old) old.remove();
+    if (!fromV || !toV || !window.Api || typeof Api.listSupportTrips !== 'function') return;
+    const filas = await Api.listSupportTrips(fromV, toV);
+    if (!filas || !filas.length) return;
+    if ($('#balance-from').value !== fromV || $('#balance-to').value !== toV) return;   // cambió el rango mientras se leía
+    const sum = $('#balance-summary'); if (!sum) return;
+    const total = filas.reduce((n, f) => n + (Number(f.vueltas) || 0), 0);
+    const div = document.createElement('div');
+    div.id = 'balance-apoyo'; div.className = 'bal-apoyo';
+    div.style.cssText = 'margin-top:12px;padding:12px 14px;border:1px solid var(--line,#E4E1DA);border-radius:12px;font-size:13.5px';
+    div.innerHTML = `<b>Carro de apoyo · ${total} ${total === 1 ? 'vuelta' : 'vueltas'} en el rango</b>`
+      + '<div style="color:var(--ink2,#6b675f);font-size:12px;margin:2px 0 8px">Se paga por vuelta, aparte de las horas de turno. No entra en los totales de arriba ni en el Excel.</div>'
+      + filas.map((f) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0"><span>${escapeHtml(f.nombre || '')}</span><span style="font-variant-numeric:tabular-nums"><b>${f.vueltas}</b> ${Number(f.vueltas) === 1 ? 'vuelta' : 'vueltas'} · ${f.personas} ${Number(f.personas) === 1 ? 'persona' : 'personas'}</span></div>`).join('');
+    sum.insertAdjacentElement('afterend', div);
+  }
   async function onGenerateBalance() {
     const fromV = $('#balance-from').value, toV = $('#balance-to').value;
+    pintarApoyoDelRango(fromV, toV).catch(() => {});
     const box = $('#balance-table'), sum = $('#balance-summary');
     // Sin rango no hay informe: se bota el que estuviera congelado. Si se dejara,
     // el botón de descargar seguiría entregando el Excel del rango ANTERIOR sin

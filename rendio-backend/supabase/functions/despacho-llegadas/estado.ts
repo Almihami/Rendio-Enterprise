@@ -8,6 +8,7 @@ export type Foto = {
   llegadas: { ra: string; sale: string; pax: number; lat: number | null; lng: number | null; quien?: string }[];
   carros: {
     dp: string; cupo: number; known: boolean; free_at: string; lat: number | null; lng: number | null; air: boolean;
+    apoyo?: boolean;
     salida: { eta: string; air: boolean; lat: number | null; lng: number | null } | null;
   }[];
 };
@@ -51,7 +52,8 @@ export function armarEstado(foto: Foto) {
       if (!c.salida.air) puntos[k] = { lat: c.salida.lat, lng: c.salida.lng };
       salida = { primera: k, etaPrimera: aMin(c.salida.eta) };
     }
-    return { id: c.dp, cupo: c.cupo || 4, listoEn, salida };
+    // 0162: el de apoyo va marcado: el motor lo usa solo si los fijos harían esperar de más.
+    return { id: c.dp, cupo: c.cupo || 4, listoEn, salida, apoyo: c.apoyo === true };
   });
   return {
     aISO,

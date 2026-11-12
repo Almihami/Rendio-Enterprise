@@ -237,6 +237,12 @@
 #routes-v2 .rv2-row .l1 .drv.tomar { color: #4338CA; font-weight: 700; }
 #routes-v2 .rv2-row .l1 .drv.tomar.apoyo { color: #B42318; }   /* 0158: el despacho pidió apoyo */
 #routes-v2 .rv2-row .l1 .tag.apoyo { background: #FEE4E2; color: #B42318; white-space: nowrap; }
+/* 0162: quién tiene el apoyo, en la tarjeta de Conductores */
+#routes-v2 .rv2-duty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line, #E7E3DA); font-size: 13px; }
+#routes-v2 .rv2-duty b { font-weight: 800; }
+#routes-v2 .rv2-duty label { display: inline-flex; align-items: center; gap: 6px; color: var(--ink2); }
+#routes-v2 .rv2-duty select { font: inherit; font-size: 16px; height: 36px; padding: 0 8px; border-radius: 9px; border: 1px solid var(--line, #D9D5CC); background: #fff; color: var(--ink); max-width: 100%; }
+#routes-v2 .rv2-duty small { flex-basis: 100%; color: var(--ink3); font-size: 11.5px; }
 #routes-v2 .rv2-row .l1 .tag.tomar { color: #4338CA; background: #EEF0FF; white-space: nowrap; }
 .rv2-sheet .rv2-opt--deleg .t b { color: var(--orange-ink); }
 /* 27-oct: conductores de confianza (libreta) con «Quitar», y la casilla para guardar uno nuevo. */

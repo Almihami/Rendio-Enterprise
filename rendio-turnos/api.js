@@ -4494,6 +4494,29 @@
     } catch (_) { return {}; }
   }
 
+  // 0162 · El carro de apoyo. Quién lo tiene en cada turno del día:
+  // { am: { dp, profile } | null, pm: … }. null = la base no tiene 0162.
+  async function getSupportDuty(day) {
+    try {
+      const { data, error } = await sb.from('support_duty').select('band, driver_profile_id, driver_profiles(profile_id)').eq('day', day);
+      if (error) return null;
+      const out = { am: null, pm: null };
+      (data || []).forEach((r) => { out[r.band] = { dp: r.driver_profile_id, profile: (r.driver_profiles && r.driver_profiles.profile_id) || null }; });
+      return out;
+    } catch (_) { return null; }
+  }
+  async function setSupportDuty(day, band, driverId) {
+    const { error } = await sb.rpc('admin_set_support_duty', { p_day: day, p_band: band, p_driver: driverId || null });
+    if (error) throw error;
+  }
+  // Vueltas hechas teniendo el apoyo, por conductor (para pagar por vuelta). null = sin 0162.
+  async function listSupportTrips(from, to) {
+    try {
+      const { data, error } = await sb.rpc('admin_apoyo_resumen', { p_from: from, p_to: to });
+      return error ? null : (data || []);
+    } catch (_) { return null; }
+  }
+
   async function getPublishedPlan(day, opts) {
     const d0 = day + 'T00:00:00-05:00', d1 = day + 'T23:59:59-05:00';
     const estados = (opts && Array.isArray(opts.estados) && opts.estados.length) ? opts.estados : ['planned', 'in_progress'];
@@ -4974,7 +4997,7 @@
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin, listRatings,
     saveRoutePlan, listMyVueltasForDriver, getMadrugadaSiguiente, driverSetStopStatus, auxiliarUserIdsForReservations,
     driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverAirportUndo, driverNearStop, driverRouteStarted,
-    sendDriverLocation, listLiveOperation, listDispatchAlerts,
+    sendDriverLocation, listLiveOperation, listDispatchAlerts, getSupportDuty, setSupportDuty, listSupportTrips,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
     chatUnreadFor,
     getPublishedPlan, getReservationForFit,
