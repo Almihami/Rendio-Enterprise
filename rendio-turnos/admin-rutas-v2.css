@@ -235,6 +235,8 @@
 #routes-v2 .rv2-row .l1 .drv.deleg { color: var(--orange-ink); font-weight: 700; }
 /* 0151: dejada para tomar (sin conductor, a propósito) y la que ya tomó un conductor. */
 #routes-v2 .rv2-row .l1 .drv.tomar { color: #4338CA; font-weight: 700; }
+#routes-v2 .rv2-row .l1 .drv.tomar.apoyo { color: #B42318; }   /* 0158: el despacho pidió apoyo */
+#routes-v2 .rv2-row .l1 .tag.apoyo { background: #FEE4E2; color: #B42318; white-space: nowrap; }
 #routes-v2 .rv2-row .l1 .tag.tomar { color: #4338CA; background: #EEF0FF; white-space: nowrap; }
 .rv2-sheet .rv2-opt--deleg .t b { color: var(--orange-ink); }
 /* 27-oct: conductores de confianza (libreta) con «Quitar», y la casilla para guardar uno nuevo. */

@@ -4477,6 +4477,23 @@
   // opts.estados (10-oct-2026): qué rutas traer. Por defecto las VIVAS
   // (planned + in_progress), como siempre. Asignación v2 pide también
   // draft (publicadas sin conductor) y completed, para mostrar el día entero.
+  // 0158: llegadas en espera por las que el despacho pidió apoyo (nadie alcanzaba,
+  // o el carro más cercano se demoraba de más). { idDeVuelta: { tipo, at, espera } }.
+  // Sin la migración (o sin permiso) devuelve {}: el tablero se ve como siempre.
+  async function listDispatchAlerts() {
+    try {
+      const { data, error } = await sb.from('arrival_dispatch_log')
+        .select('route_assignment_id, kind, wait_min, created_at')
+        .in('kind', ['sin_carro', 'espera_larga'])
+        .gte('created_at', new Date(Date.now() - 20 * 3600000).toISOString())
+        .order('created_at', { ascending: true });
+      if (error || !data) return {};
+      const out = {};
+      data.forEach((r) => { if (r.route_assignment_id) out[r.route_assignment_id] = { tipo: r.kind, at: r.created_at, espera: r.wait_min }; });
+      return out;
+    } catch (_) { return {}; }
+  }
+
   async function getPublishedPlan(day, opts) {
     const d0 = day + 'T00:00:00-05:00', d1 = day + 'T23:59:59-05:00';
     const estados = (opts && Array.isArray(opts.estados) && opts.estados.length) ? opts.estados : ['planned', 'in_progress'];
@@ -4957,7 +4974,7 @@
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin, listRatings,
     saveRoutePlan, listMyVueltasForDriver, getMadrugadaSiguiente, driverSetStopStatus, auxiliarUserIdsForReservations,
     driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverAirportUndo, driverNearStop, driverRouteStarted,
-    sendDriverLocation, listLiveOperation,
+    sendDriverLocation, listLiveOperation, listDispatchAlerts,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
     chatUnreadFor,
     getPublishedPlan, getReservationForFit,

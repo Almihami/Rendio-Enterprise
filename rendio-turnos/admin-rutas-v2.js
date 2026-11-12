@@ -623,6 +623,25 @@
 
   // Lo que hay que resolver antes de publicar, en palabras. Nada más: lo que
   // está bien no se anuncia («Ajustada» y «Lista» dejaron de ser estados).
+  // ¿El despacho pidió apoyo por esta vuelta? «Sin carro»: mientras siga en espera y
+  // sin conductor. «Espera larga»: el sistema SÍ se la dio al carro que llega primero,
+  // pero la persona espera de más; se muestra hasta que la vuelta arranque.
+  function apoyoDe(r) {
+    if (!r || !r.tomar || r.delegada || r.fija) return null;
+    const lane = rtLaneOf(r.id);
+    const ap = (lane && lane.raId && rt.rv2Apoyo && rt.rv2Apoyo[lane.raId]) || null;
+    if (!ap) return null;
+    return ap.tipo === 'sin_carro' && r.driverId ? null : ap;
+  }
+  const horaDeISO = (iso) => { try { return new Date(iso).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: false }); } catch (_) { return ''; } };
+  async function cargarApoyo() {
+    if (rt.source !== 'live' || !window.Api || typeof Api.listDispatchAlerts !== 'function') return false;
+    if (!(state.settings && state.settings.despacho_activo)) { if (rt.rv2Apoyo && Object.keys(rt.rv2Apoyo).length) { rt.rv2Apoyo = {}; return true; } return false; }
+    const nuevo = await Api.listDispatchAlerts();
+    const cambio = JSON.stringify(nuevo) !== JSON.stringify(rt.rv2Apoyo || {});
+    rt.rv2Apoyo = nuevo;
+    return cambio;
+  }
   function avisosDe() {
     if (!D || ui.cargando || rt.source !== 'live') return [];
     const out = [];
@@ -639,6 +658,12 @@
     });
     D.routes.filter((r) => r.type === 'llegada' && r.fija !== 'completed' && !ocultaFila(r) && (r.wait || 0) > LLE_ESPERA_LARGA).forEach((r) => {
       out.push({ k: 'wait', html: `En <b>${esc(r.vehicle)}</b> esperan <b>${r.wait} min</b> el carro en JMC<small>Aterrizan ${hhmm(r.arrival)} · el carro los recoge ${hhmm(r.pickup)}</small>`, btn: 'Ver', act: `data-act="ver" data-id="${esc(r.id)}"` });
+    });
+    // 0158: el despacho pidió apoyo por una llegada en espera (nadie alcanzaba). El
+    // aviso le llegó al teléfono; aquí queda a la vista mientras siga sin conductor.
+    D.routes.filter((r) => apoyoDe(r) && !ocultaFila(r)).forEach((r) => {
+      const ap = apoyoDe(r);
+      out.push({ k: 'apoyo', html: `La llegada de las <b>${hhmm(inicioDe(r).at)}</b> necesita apoyo<small>${ap.tipo === 'sin_carro' ? 'Ningún conductor en turno alcanza a recogerla' : `Se la dio al carro que llega primero, pero la persona espera unos ${ap.espera || '?'} min`} · el sistema avisó a las ${horaDeISO(ap.at)}</small>`, btn: ap.tipo === 'sin_carro' ? 'Elegir' : 'Cambiar', act: `data-act="assign" data-id="${esc(r.id)}"` });
     });
     slotsSinConductor().forEach((r, k) => {
       const [carId, b] = k.split('|');
@@ -885,6 +910,9 @@
         ? `<span class="drv deleg" title="La hace alguien de afuera: ningún conductor la ve">Delegada${r.delegName ? ' · ' + hl(r.delegName) : ''}</span>`
         : r.tomar
         ? (d ? `<span class="drv">${hl(d.name)}</span> <span class="tag tomar" title="La dejaste para tomar y este conductor la tomó">la tomó</span>`
+            + (apoyoDe(r) ? ` <span class="tag apoyo" title="El sistema se la dio al carro que llega primero y avisó a los jefes">espera ~${apoyoDe(r).espera || '?'} min · pidió apoyo</span>` : '')
+          : apoyoDe(r)
+          ? `<span class="drv tomar apoyo" title="El sistema no encontró un conductor que alcance y avisó a los jefes">En espera · pidió apoyo ${horaDeISO(apoyoDe(r).at)}</span>`
           : '<span class="drv tomar" title="La ven los conductores del turno en «Vueltas para tomar»">Para tomar · nadie la ha tomado</span>')
         : `<span class="drv${d ? '' : ' none'}">${d ? hl(d.name) : 'Sin conductor'}</span>${r.propio ? ' <span class="tag own" title="Conductor puesto solo a esta vuelta">solo esta vuelta</span>' : ''}`) +
       `${enCurso}${horaEditable(r) ? `<button class="rv2-btn rv2-btn--sm rv2-hbtn" data-act="hora" data-id="${esc(r.id)}" aria-label="Cambiar la hora de ${esc(r.vehicle)} de las ${horas(r)}">Cambiar hora</button>` : ''}</div><div class="people">${chips}</div></div></div>`;
@@ -2889,6 +2917,7 @@
       if (v.fin && (v.fin.estado === 'ok' || v.fin.estado === 'bad')) rt.rv2Fijas[l.id] = 'completed';
       else if (!rt.rv2Fijas[l.id] && (v.atendidas || []).length) rt.rv2Fijas[l.id] = 'in_progress';
     });
+    await cargarApoyo().catch(() => false);   // 0158: por cuáles llegadas se pidió apoyo
     // 0154: lo que el sistema le cambió a una vuelta que el jefe no ha tocado.
     const limpio = publicado() && firmaActual() === rt.firmaPublicada;
     const cambiadas = sincronizarConBase(porId);
@@ -2976,6 +3005,9 @@
       return;
     }
     ui.cargando = false; ui.diaPedido = null;
+    // 0158: apenas carga el día, por cuáles llegadas pidió apoyo el despacho (si no,
+    // habría que esperar al refresco del minuto para verlo).
+    cargarApoyo().then((cambio) => { if (cambio && !ui.cargando) render(); }).catch(() => {});
     try {
       pintarDia(n);
       // La madrugada que se pegó con el día anterior (guardarPegado) entra ahora.

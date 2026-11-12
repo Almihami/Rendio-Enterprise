@@ -217,6 +217,10 @@
       bot = '<span class="rx-pass-wait">' + ic('MessageCircle', 16) + '</span><span class="rx-pass-drv"><b>Servicio delegado</b><span>Te contactaremos por WhatsApp</span></span>';
     } else if (L.asked) {
       bot = '<span class="rx-pass-wait"><i></i></span><span class="rx-pass-drv"><b>Coordinación confirma tu privado</b></span>';
+    } else if (pub && t.status !== 'assigned') {
+      // 0158: la llegada está programada pero en espera: el conductor se define cuando
+      // el vuelo confirme la hora. Decía «Conductor asignado» sin que hubiera ninguno.
+      bot = '<span class="rx-pass-wait"><i></i></span><span class="rx-pass-drv"><b>Conductor por confirmar</b><span>Te avisamos apenas lo tengas</span></span>';
     } else if (pub) {
       bot = '<span class="rx-pass-wait">' + ic('Car', 16) + '</span><span class="rx-pass-drv"><b>Conductor asignado</b><span>Toca para ver el detalle</span></span>';
     } else {
