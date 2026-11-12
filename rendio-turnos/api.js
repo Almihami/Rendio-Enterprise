@@ -1030,6 +1030,16 @@
       const { data: priv } = await sel(PRIV_COLS.replace(/^,\s*/, ''));
       if (priv) Object.assign(data, priv);
     }
+    // 0158: despacho de llegadas y optimizador V2. Van SOLAS, no en la cascada: así
+    // una base sin la migración (producción, mientras no se suba) no baja ningún
+    // escalón, y una que sí la tiene no depende de las otras cuarenta columnas.
+    // Sin esto el tablero nunca veía `despacho_activo` ni `route_solver_v2`: el
+    // botón «Llegadas en espera» no salía y el optimizador nuevo no se encendía
+    // aunque el ajuste estuviera puesto (prueba en dev del 11-nov).
+    if (data) {
+      const { data: d58 } = await sel('despacho_activo, route_solver_v2, route_apoyo_car, route_buffer_flex_min, route_band_factors');
+      if (d58) Object.assign(data, d58);
+    }
     // Lo mismo con el plazo de la inspección (0105): que una columna ajena que
     // falte no devuelva a los minutos a un jefe que eligió «al cerrar el turno».
     // Solo si la cascada bajó más allá de 0096; si no, ya se sabe que no está.
