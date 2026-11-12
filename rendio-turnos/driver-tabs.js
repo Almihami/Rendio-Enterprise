@@ -80,16 +80,34 @@
     $('#dh-nudge-btn')?.addEventListener('click', () => setDriverTab('avail'));
   }
 
+  // «Tu día» SE REFRESCA SOLO (11-nov-2026). El despacho le asigna una llegada al
+  // conductor que está en JMC y la pantalla seguía en blanco hasta que recargara:
+  // el aviso llegaba, la vuelta no. Cada minuto con la app a la vista y al volver a
+  // ella, si está en Inicio y no tiene la ruta abierta.
+  function driverHomeRutaALaVista() {
+    const box = document.getElementById('driver-home-ruta');
+    if (!box || box.offsetParent === null) return false;
+    if (document.visibilityState !== 'visible' || !state.profile || state.profile.role !== 'driver') return false;
+    const ruta = document.getElementById('driver-ruta-root');
+    return !(ruta && !ruta.classList.contains('hidden') && ruta.childElementCount);
+  }
+  if (typeof window !== 'undefined' && !window.__rcHomeRutaTimer) {
+    window.__rcHomeRutaTimer = setInterval(() => { if (driverHomeRutaALaVista()) renderDriverHomeRuta(true).catch(() => {}); }, 60000);
+    document.addEventListener('visibilitychange', () => { if (driverHomeRutaALaVista()) renderDriverHomeRuta(true).catch(() => {}); });
+  }
+
   // "Tu día": la vuelta asignada de hoy. Sin vuelta, la sección no existe.
-  async function renderDriverHomeRuta() {
+  // `callado`: refresco de fondo (cada minuto y al volver a la app). No vacía la
+  // sección mientras consulta, para que no parpadee; solo repinta con lo nuevo.
+  async function renderDriverHomeRuta(callado) {
     const box = $('#driver-home-ruta');
     if (!box) return;
-    box.innerHTML = '';
+    if (!callado) box.innerHTML = '';
     let vueltas = null;
     try {
       if (window.Api && Api.listMyVueltasForDriver) vueltas = await Api.listMyVueltasForDriver(state.profile.id);
-    } catch (e) { /* sin ruta: la sección simplemente no aparece */ }
-    if (!vueltas || !vueltas.length) return;
+    } catch (e) { if (callado) return; /* sin ruta: la sección simplemente no aparece */ }
+    if (!vueltas || !vueltas.length) { if (callado) box.innerHTML = ''; return; }
     // Si quedó una vuelta en curso (la app se cerró o se recargó), la ubicación vuelve
     // a compartirse sin tener que entrar a la ruta (ruta v2, cambio 1 de la entrega).
     if (window.DriverRutas && DriverRutas.background) DriverRutas.background(state.profile, vueltas);
