@@ -1434,6 +1434,16 @@
     const saleDe = (ids) => { const base = Math.max(...ids.map(dlDe)); return base + rtDeplaneOf(ids, base); };
     const juntableLle = (g, w) => {
       const cand = g.ids.concat(w.ids);
+      // V2 · SIN CADENAS. La regla de abajo compara contra la hora del grupo, que
+      // sube con cada vuelo que se suma: 23:20 + 23:35 + 23:50 pasaban de a 15 y la
+      // de las 23:20 terminaba esperando 40 min. Se mide del PRIMERO que sale al
+      // último, cada uno con su desembarque.
+      if (rt.V2) {
+        const sale1 = (id) => dlDe(id) + rtDeplaneOf([id], dlDe(id));
+        const salen = cand.map(sale1);
+        if (Math.max(...salen) - Math.min(...salen) > LIM_LLE) return false;
+        if (!hayTierra(cand)) return true;
+      }
       if (!hayTierra(cand)) return w.dlMin - g.dlMin <= LIM_LLE;
       const tierra = cand.filter(id => rt.aux[id].tierra), vuelo = cand.filter(id => !rt.aux[id].tierra);
       const sale = saleDe(cand);
