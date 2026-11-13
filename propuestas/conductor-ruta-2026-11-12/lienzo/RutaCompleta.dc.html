@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Conductor · Ruta completa paso a paso</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; box-sizing: border-box; background: #F8F8F6; color: #18181B; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif">
+
+<sc-if value="{{ showHome }}" hint-placeholder-val="{{ true }}">
+<div style="position: absolute; inset: 0">
+<div style="position: absolute; left: 0; right: 0; top: 0; bottom: 84px; padding: 24px 20px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; overflow: hidden">
+
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 13px; color: #6B6B74; font-weight: 500">Miércoles 11 de noviembre</span>
+<h1 style="margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.8px; line-height: 1.15">Tu día, Carlos</h1>
+</div>
+<span style="display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 100px; background: #E7F8F1; color: #047857; font-size: 12px; font-weight: 700; white-space: nowrap"><span style="width: 8px; height: 8px; border-radius: 4px; background: #10B981"></span>En turno · V-01</span>
+</div>
+
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<b style="font-size: 16px; letter-spacing: -0.3px">Tu siguiente traslado</b>
+<span style="font-size: 13px; color: #6B6B74; font-weight: 600">1 de 3</span>
+</div>
+
+<div style="border-radius: 26px; background: #1B1712; color: #F6F1E7; padding: 18px 18px 14px; position: relative; overflow: hidden; box-shadow: 0 22px 44px -22px rgba(27,23,18,0.7); display: flex; flex-direction: column; gap: 14px">
+<div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(circle at 105% -5%, rgba(242,101,34,0.42), transparent 52%); pointer-events: none"></div>
+<div style="position: relative; display: flex; justify-content: space-between; align-items: center">
+<span style="font-size: 11.5px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: rgba(246,241,231,0.72)">Salida · traslado 1</span>
+<span style="font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 100px; background: rgba(246,241,231,0.14)">{{ homeChip }}</span>
+</div>
+<div style="position: relative; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<b style="font-size: 26px; letter-spacing: 1px; line-height: 1">CASAS</b>
+<span style="font-size: 12px; color: rgba(246,241,231,0.72)">2 recogidas</span>
+</div>
+<div style="display: flex; align-items: center; gap: 6px">
+<span style="flex: 1; border-top: 2px dashed rgba(246,241,231,0.25)"></span>
+<span style="width: 30px; height: 30px; border-radius: 15px; background: #F26522; color: #FFFFFF; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M5 17h14M5 17a2 2 0 0 1-2-2v-3l2-5h14l2 5v3a2 2 0 0 1-2 2M5 17v2M19 17v2"></path></svg></span>
+<span style="flex: 1; border-top: 2px dashed rgba(246,241,231,0.25)"></span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end; text-align: right">
+<b style="font-size: 26px; letter-spacing: 1px; line-height: 1">JMC</b>
+<span style="font-size: 12px; color: rgba(246,241,231,0.72)">llegas 03:50</span>
+</div>
+</div>
+<div style="position: relative; display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 12.5px; color: rgba(246,241,231,0.72)">Recoges a la primera a las</span>
+<b style="font-size: 56px; font-weight: 700; letter-spacing: -2.5px; line-height: 1; font-variant-numeric: tabular-nums">03:10</b>
+</div>
+<div aria-hidden="true" style="position: relative; display: flex; align-items: center; margin: 0 -18px">
+<span style="width: 22px; height: 22px; border-radius: 11px; background: #F8F8F6; margin-left: -11px; flex-shrink: 0"></span>
+<span style="flex: 1; border-top: 2px dashed rgba(246,241,231,0.2); margin: 0 6px"></span>
+<span style="width: 22px; height: 22px; border-radius: 11px; background: #F8F8F6; margin-right: -11px; flex-shrink: 0"></span>
+</div>
+<div style="position: relative; display: flex; align-items: center; gap: 10px">
+<div style="display: flex">
+<span style="width: 34px; height: 34px; border-radius: 17px; background: #3A3128; border: 2px solid #1B1712; margin-right: -8px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700">LG</span>
+<span style="width: 34px; height: 34px; border-radius: 17px; background: #3A3128; border: 2px solid #1B1712; margin-right: -8px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700">ST</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; padding-left: 8px">
+<b style="font-size: 14.5px">Laura y Sara</b>
+<span style="font-size: 12px; color: rgba(246,241,231,0.72)">Vuelo AV9412 · 04:55</span>
+</div>
+</div>
+</div>
+
+<button onClick="{{ homeGo }}" style="height: 58px; border-radius: 16px; border: 0; background: #F26522; color: #FFFFFF; font-family: inherit; font-size: 18px; font-weight: 700; letter-spacing: -0.2px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; box-shadow: 0 10px 22px -10px rgba(242,101,34,0.7)"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 18px; height: 18px; fill: currentColor; stroke: none"><polygon points="7 4 20 12 7 20 7 4"></polygon></svg>{{ homeBtn }}</button>
+<span style="font-size: 12.5px; color: #6B6B74; text-align: center">{{ homeHint }}</span>
+
+<div style="display: flex; flex-direction: column; gap: 8px">
+<b style="font-size: 13px; letter-spacing: 0.6px; text-transform: uppercase; color: #6B6B74">Después</b>
+<div style="display: flex; flex-direction: column; border-radius: 18px; background: #FFFFFF; border: 1px solid #E4E4E7; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid #E4E4E7">
+<b style="font-size: 18px; letter-spacing: -0.4px; font-variant-numeric: tabular-nums; width: 54px; flex-shrink: 0">06:15</b>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<span style="font-size: 13.5px; font-weight: 600">Llegada · JMC → Casas</span>
+<span style="font-size: 12px; color: #6B6B74">1 auxiliar · AV9903 aterriza 06:02</span>
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 11px 14px">
+<b style="font-size: 18px; letter-spacing: -0.4px; font-variant-numeric: tabular-nums; width: 54px; flex-shrink: 0">09:40</b>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+<span style="font-size: 13.5px; font-weight: 600">Salida · Casas → JMC</span>
+<span style="font-size: 12px; color: #6B6B74">3 auxiliares · llegan 10:25</span>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+
+<nav aria-label="Secciones" style="position: absolute; left: 0; right: 0; bottom: 0; height: 84px; padding: 8px 10px 22px; box-sizing: border-box; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: rgba(255,255,255,0.92); border-top: 1px solid #E4E4E7">
+<button style="border: 0; background: none; font-family: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 700; color: #18181B; cursor: pointer"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"></path></svg>Mi día</button>
+<button style="border: 0; background: none; font-family: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; color: #6B6B74; cursor: pointer"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"></path></svg>Disponib.</button>
+<button style="border: 0; background: none; font-family: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; color: #6B6B74; cursor: pointer"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>Horario</button>
+<button style="border: 0; background: none; font-family: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; color: #6B6B74; cursor: pointer"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round"><path d="m17 2 4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3"></path></svg>Solicitudes</button>
+<button style="border: 0; background: none; font-family: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; color: #6B6B74; cursor: pointer"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>Perfil</button>
+</nav>
+</div>
+</sc-if>
+
+<sc-if value="{{ showMode }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; background: #EEF0EC">
+
+<svg aria-hidden="true" viewBox="0 0 390 480" style="position: absolute; left: 0; top: 0; width: 390px; height: 480px">
+<rect x="0" y="0" width="390" height="480" style="fill: #EEF0EC"></rect>
+<rect x="22" y="300" width="110" height="92" rx="14" style="fill: #DDEBDD"></rect>
+<rect x="252" y="36" width="112" height="72" rx="14" style="fill: #DDEBDD"></rect>
+<path d="M-10 130 L400 66" style="fill: none; stroke: #FFFFFF; stroke-width: 14; stroke-linecap: round"></path>
+<path d="M-10 318 L400 392" style="fill: none; stroke: #FFFFFF; stroke-width: 14; stroke-linecap: round"></path>
+<path d="M96 -10 L156 490" style="fill: none; stroke: #FFFFFF; stroke-width: 14; stroke-linecap: round"></path>
+<path d="M262 -10 L336 490" style="fill: none; stroke: #FFFFFF; stroke-width: 14; stroke-linecap: round"></path>
+<path d="M-10 222 L400 204" style="fill: none; stroke: #FFFFFF; stroke-width: 8; stroke-linecap: round"></path>
+<path d="M184 -10 L214 490" style="fill: none; stroke: #FFFFFF; stroke-width: 8; stroke-linecap: round"></path>
+<path d="M330 345 L296 262 L196 178 L78 96" style="fill: none; stroke: #F26522; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round"></path>
+</svg>
+
+<sc-for list="{{ pins }}" as="pin" hint-placeholder-count="3">
+<span style="position: absolute; left: {{ pin.x }}px; top: {{ pin.y }}px; transform: translate(-50%, -50%); min-width: 30px; height: 30px; padding: 0 {{ pin.pad }}px; box-sizing: border-box; border-radius: 15px; background: {{ pin.bg }}; color: {{ pin.fg }}; border: 2px solid #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; box-shadow: 0 2px 6px rgba(0,0,0,0.25)">{{ pin.t }}</span>
+</sc-for>
+<span aria-hidden="true" style="position: absolute; left: {{ car.x }}px; top: {{ car.y }}px; transform: translate(-50%, -50%); width: 38px; height: 38px; border-radius: 19px; background: #18181B; color: #FFFFFF; border: 3px solid #FFFFFF; box-sizing: border-box; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3)"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M5 17h14M5 17a2 2 0 0 1-2-2v-3l2-5h14l2 5v3a2 2 0 0 1-2 2M5 17v2M19 17v2"></path></svg></span>
+
+<div style="position: absolute; top: 16px; left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: center; gap: 8px">
+<button onClick="{{ minimize }}" aria-label="Minimizar y volver a Mi día" style="width: 44px; height: 44px; border-radius: 14px; border: 0; background: #FFFFFF; color: #18181B; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 12px rgba(24,24,27,0.14)"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+<span style="height: 44px; padding: 0 14px; border-radius: 100px; background: #FFFFFF; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; box-shadow: 0 4px 12px rgba(24,24,27,0.14)"><span style="width: 8px; height: 8px; border-radius: 4px; background: #10B981"></span>Traslado 1 de 3 · Salida</span>
+<button aria-label="Emergencia: avisar a Coordinación" style="height: 44px; padding: 0 14px; border-radius: 100px; border: 0; background: #DC2626; color: #FFFFFF; font-family: inherit; font-size: 13px; font-weight: 800; letter-spacing: 0.5px; cursor: pointer; box-shadow: 0 4px 12px rgba(220,38,38,0.35)">SOS</button>
+</div>
+
+<div style="position: absolute; left: 0; right: 0; bottom: 0; background: #FFFFFF; border-radius: 28px 28px 0 0; box-shadow: 0 -12px 30px -12px rgba(24,24,27,0.2); padding: 10px 20px 26px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px">
+<span aria-hidden="true" style="width: 40px; height: 5px; border-radius: 3px; background: #D4D4D8; align-self: center"></span>
+<div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px">
+<sc-for list="{{ segs }}" as="seg" hint-placeholder-count="5">
+<span style="height: 4px; border-radius: 2px; background: {{ seg.bg }}"></span>
+</sc-for>
+</div>
+
+<sc-if value="{{ showGo }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #6B6B74">Parada {{ who.n }} de 3</span>
+<h2 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px; line-height: 1.1">Ve por {{ who.name }}</h2>
+<span style="font-size: 15.5px; color: #3F3F46">{{ who.addr }}</span>
+</div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<span style="padding: 7px 11px; border-radius: 100px; background: #FEEEE3; color: #B4461A; font-size: 13px; font-weight: 700">Recoges {{ who.when }}</span>
+<span style="padding: 7px 11px; border-radius: 100px; background: #F4F4F1; color: #3F3F46; font-size: 13px; font-weight: 600">{{ who.dist }}</span>
+<span style="padding: 7px 11px; border-radius: 100px; background: #F4F4F1; color: #3F3F46; font-size: 13px; font-weight: 600">{{ who.meet }}</span>
+</div>
+<button onClick="{{ next }}" style="height: 64px; border-radius: 18px; border: 0; background: #F26522; color: #FFFFFF; font-family: inherit; font-size: 21px; font-weight: 700; letter-spacing: -0.3px; cursor: pointer; box-shadow: 0 12px 24px -10px rgba(242,101,34,0.7)">Llegué</button>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<button style="height: 48px; border-radius: 14px; border: 1px solid #D4D4D8; background: #FFFFFF; color: #18181B; font-family: inherit; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>Navegar</button>
+<button style="height: 48px; border-radius: 14px; border: 1px solid #D4D4D8; background: #FFFFFF; color: #18181B; font-family: inherit; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.2A8.4 8.4 0 1 1 21 11.5z"></path></svg>Chat</button>
+<button style="height: 48px; border-radius: 14px; border: 1px solid #D4D4D8; background: #FFFFFF; color: #18181B; font-family: inherit; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"></path></svg>Llamar</button>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showCode }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #047857">Estás en la puerta · ya le avisamos</span>
+<h2 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px; line-height: 1.1">Código de {{ who.name }}</h2>
+<span style="font-size: 15.5px; color: #3F3F46">Pídele los dos números que ve en su app</span>
+</div>
+<div style="display: flex; align-items: center; gap: 16px">
+<button onClick="{{ next }}" aria-label="Escribir el código de dos dígitos" style="display: flex; gap: 10px; border: 0; background: none; padding: 0; cursor: pointer">
+<span style="width: 68px; height: 80px; border-radius: 18px; border: 2.5px solid #F26522; background: #FEEEE3; box-sizing: border-box; display: block"></span>
+<span style="width: 68px; height: 80px; border-radius: 18px; border: 2.5px solid #D4D4D8; background: #F4F4F1; box-sizing: border-box; display: block"></span>
+</button>
+<div style="flex: 1; display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 12.5px; color: #6B6B74">Tiempo de espera</span>
+<b style="font-size: 30px; letter-spacing: -0.8px; line-height: 1; font-variant-numeric: tabular-nums">4:32</b>
+<span style="height: 5px; border-radius: 3px; background: #E4E4E7; display: block; overflow: hidden"><span style="display: block; width: 12%; height: 5px; background: #F26522"></span></span>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<button onClick="{{ next }}" style="height: 48px; border-radius: 14px; border: 1px solid #D4D4D8; background: #FFFFFF; color: #18181B; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer">No tiene el código</button>
+<button disabled="disabled" style="height: 48px; border-radius: 14px; border: 0; background: #F4F4F1; color: #6B6B74; font-family: inherit; font-size: 14px; font-weight: 600">No se presentó · 4:32</button>
+</div>
+<span style="font-size: 12.5px; color: #6B6B74; text-align: center">Demo: toca las casillas para escribir el código</span>
+</div>
+</sc-if>
+
+<sc-if value="{{ showApt }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #6B6B74">Última parada</span>
+<h2 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px; line-height: 1.1">Llévalas a JMC</h2>
+<span style="font-size: 15.5px; color: #3F3F46">Laura y Sara van a bordo</span>
+</div>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<span style="padding: 7px 11px; border-radius: 100px; background: #E7F8F1; color: #047857; font-size: 13px; font-weight: 700">Llegas 03:50</span>
+<span style="padding: 7px 11px; border-radius: 100px; background: #F4F4F1; color: #3F3F46; font-size: 13px; font-weight: 600">9,4 km · 18 min</span>
+<span style="padding: 7px 11px; border-radius: 100px; background: #F4F4F1; color: #3F3F46; font-size: 13px; font-weight: 600">AV9412 · 04:55</span>
+</div>
+<button onClick="{{ next }}" style="height: 64px; border-radius: 18px; border: 0; background: #F26522; color: #FFFFFF; font-family: inherit; font-size: 21px; font-weight: 700; letter-spacing: -0.3px; cursor: pointer; box-shadow: 0 12px 24px -10px rgba(242,101,34,0.7)">Entregué en JMC</button>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+<button style="height: 48px; border-radius: 14px; border: 1px solid #D4D4D8; background: #FFFFFF; color: #18181B; font-family: inherit; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>Navegar</button>
+<button style="height: 48px; border-radius: 14px; border: 1px solid #D4D4D8; background: #FFFFFF; color: #18181B; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer">Reportar novedad</button>
+</div>
+</div>
+</sc-if>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showDone }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; padding: 72px 24px 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center">
+<span style="width: 84px; height: 84px; border-radius: 42px; background: #E7F8F1; color: #047857; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" viewBox="0 0 24 24" style="width: 40px; height: 40px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+<h1 style="margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -0.8px">Traslado completo</h1>
+<span style="font-size: 15px; color: #52525B; line-height: 1.45">Laura y Sara quedaron en JMC a las 03:48. Coordinación ya recibió el aviso.</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<div style="padding: 14px 10px; border-radius: 18px; background: #FFFFFF; border: 1px solid #E4E4E7; display: flex; flex-direction: column; gap: 2px; align-items: center">
+<b style="font-size: 22px; letter-spacing: -0.5px">2</b>
+<span style="font-size: 12px; color: #6B6B74">a bordo</span>
+</div>
+<div style="padding: 14px 10px; border-radius: 18px; background: #FFFFFF; border: 1px solid #E4E4E7; display: flex; flex-direction: column; gap: 2px; align-items: center">
+<b style="font-size: 22px; letter-spacing: -0.5px">38 min</b>
+<span style="font-size: 12px; color: #6B6B74">duración</span>
+</div>
+<div style="padding: 14px 10px; border-radius: 18px; background: #FFFFFF; border: 1px solid #E4E4E7; display: flex; flex-direction: column; gap: 2px; align-items: center">
+<b style="font-size: 22px; letter-spacing: -0.5px">03:48</b>
+<span style="font-size: 12px; color: #6B6B74">en JMC</span>
+</div>
+</div>
+<div style="padding: 16px; border-radius: 22px; background: #FFFFFF; border: 1px solid #E4E4E7; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; justify-content: space-between; align-items: center">
+<b style="font-size: 13px; letter-spacing: 0.6px; text-transform: uppercase; color: #6B6B74">Sigue</b>
+<span style="font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 100px; background: #E7F8F1; color: #047857">Arranca en 1 h 44</span>
+</div>
+<div style="display: flex; align-items: center; gap: 14px">
+<b style="font-size: 34px; letter-spacing: -1.2px; line-height: 1; font-variant-numeric: tabular-nums">06:15</b>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 14.5px; font-weight: 600">Llegada · JMC → Casas</span>
+<span style="font-size: 12.5px; color: #6B6B74">Henry · AV9903 aterriza 06:02</span>
+</div>
+</div>
+</div>
+<span style="flex: 1"></span>
+<button onClick="{{ restart }}" style="height: 58px; border-radius: 16px; border: 0; background: #18181B; color: #FFFFFF; font-family: inherit; font-size: 18px; font-weight: 700; cursor: pointer">Volver a mi día</button>
+<span style="font-size: 12.5px; color: #6B6B74; text-align: center">Fin de la demo: vuelve a empezar desde Mi día</span>
+</div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"paso":{"editor":"int","default":0,"min":0,"max":6,"step":1},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const p = st.paso != null ? st.paso : (Number(this.props.paso) || 0);
+    const mini = !!st.mini;
+    const started = p >= 1 && p <= 5;
+    const people = {
+      1: { n: 1, name: 'Laura', addr: 'Olivar Apartamentos · Torre 2 · Apto 504', meet: 'Portería principal', when: '03:10', dist: '1,6 km · 6 min' },
+      3: { n: 2, name: 'Sara', addr: 'Ébano · Casa 14', meet: 'Portería', when: '03:22', dist: '2,1 km · 7 min' }
+    };
+    const who = people[p] || people[p - 1] || people[1];
+    const cur = p <= 2 ? 0 : (p <= 4 ? 1 : 2);
+    const tone = (i) => i < cur ? { bg: '#10B981', fg: '#FFFFFF' } : (i === cur ? { bg: '#F26522', fg: '#FFFFFF' } : { bg: '#FFFFFF', fg: '#3F3F46' });
+    const pins = [
+      { t: '1', x: 296, y: 262, pad: 0, i: 0 },
+      { t: '2', x: 196, y: 178, pad: 0, i: 1 },
+      { t: 'JMC', x: 78, y: 96, pad: 9, i: 2 }
+    ].map((q) => Object.assign({}, q, tone(q.i)));
+    const carAt = { 1: [322, 326], 2: [306, 284], 3: [246, 220], 4: [208, 200], 5: [132, 134] };
+    const c = carAt[p] || carAt[1];
+    return {
+      who, pins,
+      car: { x: c[0], y: c[1] },
+      segs: [1, 2, 3, 4, 5].map((i) => ({ bg: i <= p ? '#F26522' : '#E4E4E7' })),
+      showHome: p === 0 || (started && mini),
+      showMode: started && !mini,
+      showDone: p >= 6,
+      showGo: p === 1 || p === 3,
+      showCode: p === 2 || p === 4,
+      showApt: p === 5,
+      homeChip: started ? 'En curso' : 'Arranca en 12 min',
+      homeBtn: started ? 'Volver a la ruta' : 'Empezar ruta',
+      homeHint: started ? 'Tu ubicación se sigue compartiendo mientras el traslado esté en curso' : 'Avisamos a Coordinación y a Laura que vas en camino',
+      homeGo: started ? () => this.setState({ mini: false }) : () => this.setState({ paso: 1, mini: false }),
+      minimize: () => this.setState({ paso: p, mini: true }),
+      next: () => this.setState({ paso: Math.min(6, p + 1), mini: false }),
+      restart: () => this.setState({ paso: 0, mini: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

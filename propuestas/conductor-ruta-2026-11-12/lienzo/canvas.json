@@ -1,0 +1,31 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-12T04:55:00Z" },
+  "title": "Conductor Rendio · propuestas",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 390, "h": 844, "title": "A1 · Mi día por bloques (demo: dale Play)", "is_interactive": true, "radius": 36 },
+    "A2-EnCamino.dc.html": { "x": 470, "y": 0, "w": 390, "h": 844, "title": "A2 · El bloque se abre: en camino", "radius": 36 },
+    "A3-Codigo.dc.html": { "x": 940, "y": 0, "w": 390, "h": 844, "title": "A3 · En la puerta: código", "radius": 36 },
+    "A4-Aeropuerto.dc.html": { "x": 1410, "y": 0, "w": 390, "h": 844, "title": "A4 · Rumbo al aeropuerto", "radius": 36 },
+    "A5-Hecho.dc.html": { "x": 1880, "y": 0, "w": 390, "h": 844, "title": "A5 · Bloque hecho, sigue el otro", "radius": 36 },
+    "RutaCompleta.dc.html": { "x": 0, "y": 1264, "w": 390, "h": 844, "title": "B1 · Mi día (demo: dale Play)", "is_interactive": true, "radius": 36 },
+    "B2-EnCamino.dc.html": { "x": 470, "y": 1264, "w": 390, "h": 844, "title": "B2 · Modo ruta: en camino", "radius": 36 },
+    "B3-Codigo.dc.html": { "x": 940, "y": 1264, "w": 390, "h": 844, "title": "B3 · Modo ruta: código", "radius": 36 },
+    "B4-Aeropuerto.dc.html": { "x": 1410, "y": 1264, "w": 390, "h": 844, "title": "B4 · Modo ruta: aeropuerto", "radius": 36 },
+    "B5-Hecho.dc.html": { "x": 1880, "y": 1264, "w": 390, "h": 844, "title": "B5 · Traslado completo", "radius": 36 }
+  },
+  "order": [
+    "Main.dc.html", "A2-EnCamino.dc.html", "A3-Codigo.dc.html", "A4-Aeropuerto.dc.html", "A5-Hecho.dc.html",
+    "RutaCompleta.dc.html", "B2-EnCamino.dc.html", "B3-Codigo.dc.html", "B4-Aeropuerto.dc.html", "B5-Hecho.dc.html"
+  ],
+  "notes": {
+    "tA": { "x": 0, "y": -300, "text": "Opción A · Por bloques de traslado", "kind": "title1", "maxW": 2270 },
+    "tB": { "x": 0, "y": 964, "text": "Opción B · Ruta completa, un paso a la vez", "kind": "title1", "maxW": 2270 },
+    "sA": { "x": -460, "y": 0, "w": 380, "fill": "orange", "text": "El día ES la lista de traslados, como la lista del WhatsApp. El siguiente se ve como pasabordo. Al iniciarlo, el mismo bloque se abre y muestra solo el paso que toca y un botón. No hay pantalla aparte: todo pasa en Mi día." },
+    "sB": { "x": -460, "y": 1264, "w": 380, "fill": "green", "text": "Mi día solo muestra el siguiente traslado. Al empezar entra a un modo enfocado: mapa arriba, un paso a la vez y un botón grande. Se puede minimizar y volver; al terminar ofrece el siguiente traslado." },
+    "sL": { "x": 2350, "y": 0, "w": 420, "fill": "gray", "text": "Lo que NO cambia en ninguna opción: cada botón dispara lo mismo de hoy. Iniciar = aviso a jefes + «va en camino». Llegué = «tu conductor llegó» (con chequeo de GPS). Código = a bordo. No se presentó = solo tras la espera y con confirmación. Entregué = entregados + aviso a jefes. GPS, chat, llamar, novedad y SOS quedan iguales." }
+  },
+  "designSystems": []
+}
