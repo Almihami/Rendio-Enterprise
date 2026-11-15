@@ -9,6 +9,9 @@
 //   vuelo <AV99xx> <±min>   mueve la hora de un vuelo (FlightRadar «cambió de opinión»)
 //   mover <julian|juan> <jmc|rionegro|carmen>   pone a un conductor en otro lado
 //   limpiar    borra todo lo de la prueba (pedidos, vueltas, vuelos, turnos, GPS)
+//   armar camino   EL CAMINO REAL DEL JEFE (15-nov): deja solo los conductores (turno + GPS) y calla
+//              a los jefes de verdad; las llegadas NO las crea: se pegan y se publican desde Asignación
+//   vuelo-nuevo <AV99xx> <min>   FlightRadar «dice» que ese vuelo (de un pedido ya pegado) aterriza en <min> minutos
 import pg from 'pg';
 const DEV = 'lxlphbafhtphulanhzlp';
 if ((process.env.SUPABASE_PROJECT_REF || '') !== DEV || !(process.env.SUPABASE_URL || '').includes(DEV)) { console.error('ABORT: esto es solo para dev'); process.exit(2); }
@@ -22,6 +25,7 @@ const COND = { julian: 'julian.lopez@rendio.com', juan: 'juan.franco@rendio.co',
 // `armar` = 3 llegadas espaciadas. `armar pico` = EL CASO CRÍTICO: 6 llegadas que salen en 16 min,
 // con 2 carros fijos (uno en JMC, otro en Rionegro) y un conductor con el apoyo parqueado en JMC.
 const PICO = process.argv.includes('pico');
+const CAMINO = process.argv.includes('camino');
 const TODOS = ['prueba.valeria@rendio.demo', 'prueba.camila@rendio.demo', 'prueba.mateo@rendio.demo', 'laura.gomez@rendio.demo', 'mateo.cardona@rendio.demo', 'manuela.gil@rendio.demo', 'sara.quintero@rendio.demo'];
 const TRIP = PICO
   ? [['prueba.valeria@rendio.demo', 'AV9901', -8], ['prueba.camila@rendio.demo', 'AV9902', -6], ['laura.gomez@rendio.demo', 'AV9903', -5], ['mateo.cardona@rendio.demo', 'AV9904', -2], ['manuela.gil@rendio.demo', 'AV9905', 4], ['sara.quintero@rendio.demo', 'AV9906', 8]]
@@ -79,7 +83,7 @@ else if (orden === 'armar') {
   await silenciar();
   const J = await jefe(), A = await cond('julian'), B = await cond('juan'), T = await trips();
   const TT = await trips(true);
-  if (!J || !A || !B || TT.length !== TRIP.length) { console.error('faltan cuentas de prueba', { jefe: !!J, julian: !!A, juan: !!B, tripulantes: T.length }); process.exit(1); }
+  if (!J || !A || !B || (!CAMINO && TT.length !== TRIP.length)) { console.error('faltan cuentas de prueba', { jefe: !!J, julian: !!A, juan: !!B, tripulantes: T.length }); process.exit(1); }
   const org = A.org;
   const vehs = await q(`SELECT id, coalesce(license_plate, internal_code) placa FROM public.vehicles WHERE organization_id = $1 AND deleted_at IS NULL AND status::text <> 'inactive' ORDER BY internal_code DESC LIMIT 2`, [org]);
   // Turnos de la prueba (los que ya tuvieran abiertos estos dos se cierran; son cuentas de prueba).
@@ -87,7 +91,7 @@ else if (orden === 'armar') {
   for (const [d, v] of [[A, vehs[0]], [B, vehs[1]]]) await c.query(`INSERT INTO public.shifts (organization_id, driver_id, vehicle_id, status, start_at, notes) VALUES ($1, $2, $3, 'active', now() - interval '1 hour', 'PRUEBA despacho')`, [org, d.id, v.id]);
   await gps(A.id, 'jmc'); await gps(B.id, 'rionegro');
   const base = (await one(`SELECT date_trunc('minute', now()) b`)).b;
-  for (const [email, vuelo, enMin] of TRIP) {
+  for (const [email, vuelo, enMin] of (CAMINO ? [] : TRIP)) {
     const t = TT.find((x) => x.email === email);
     const prog = new Date(Date.parse(base) + (enMin + 10) * 60000).toISOString();     // programado: 10 min después de lo que dice FlightRadar (viene adelantado)
     const real = new Date(Date.parse(base) + enMin * 60000).toISOString();
@@ -131,6 +135,19 @@ else if (orden === 'armar') {
   const [, , , code, delta] = process.argv;
   const r = await one(`UPDATE public.flight_statuses SET estimated_at = estimated_at + make_interval(mins => $2), delay_min = coalesce(delay_min, 0) + $2, status = CASE WHEN $2 > 0 THEN 'delayed' ELSE status END, fetched_at = now() WHERE flight_code = $1 RETURNING estimated_at`, [code, Number(delta)]);
   console.log(r ? `${code}: FlightRadar ahora dice ${hm(r.estimated_at)}` : 'no existe ese vuelo');
+} else if (orden === 'vuelo-nuevo') {
+  const [, , , code, enMin] = process.argv;
+  const r = await one(`SELECT r.required_arrival_at prog, p.organization_id org FROM public.reservations r JOIN public.auxiliar_profiles ap ON ap.id = r.auxiliar_profile_id JOIN public.profiles p ON p.id = ap.profile_id
+     WHERE r.flight_code = $1 AND r.cancelled_at IS NULL AND r.direction = 'airport_to_home' AND r.required_arrival_at > now() - interval '3 hours' ORDER BY r.created_at DESC LIMIT 1`, [code]);
+  if (!r) console.log('no hay un pedido con ese vuelo');
+  else {
+    const f = await one(`INSERT INTO public.flight_statuses (organization_id, flight_code, flight_date, direction, sched_at, estimated_at, status, delay_min, source, fetched_at)
+       VALUES ($1, $2, ($3::timestamptz AT TIME ZONE 'America/Bogota')::date, 'airport_to_home', $3, date_trunc('minute', now()) + make_interval(mins => $4), 'in_air',
+               round(extract(epoch FROM (date_trunc('minute', now()) + make_interval(mins => $4)) - $3::timestamptz) / 60)::int, 'flightradar24', now())
+       ON CONFLICT (organization_id, flight_code, flight_date, direction) DO UPDATE SET sched_at = EXCLUDED.sched_at, estimated_at = EXCLUDED.estimated_at, actual_at = NULL, delay_min = EXCLUDED.delay_min, status = 'in_air', fetched_at = now()
+       RETURNING estimated_at, delay_min`, [r.org, code, r.prog, Number(enMin)]);
+    console.log(`${code}: programado ${hm(r.prog)} · FlightRadar dice ${hm(f.estimated_at)} (${f.delay_min} min)`);
+  }
 } else if (orden === 'mover') {
   const [, , , k, donde] = process.argv; const d = await cond(k); await gps(d.id, donde); console.log(`${d.full_name} → ${donde}`);
 }
@@ -146,6 +163,6 @@ if (orden !== 'limpiar') {
   console.log(`\nAHORA ${hm(ahora)}`);
   filas.forEach((f) => console.log(`  ${f.quien.padEnd(16)} ${f.vuelo} · sale ~${f.baja ? hm(Date.parse(f.baja) + f.dep * 60000) : '?'} · ${f.conductor ? 'ASIGNADA a ' + f.conductor + ' · recoge ' + hm(f.ini2) : 'EN ESPERA'}`));
   const log = await q(`SELECT l.created_at, l.kind, l.who, l.wait_min, l.pickup_at, pd.full_name conductor FROM public.arrival_dispatch_log l LEFT JOIN public.driver_profiles dp ON dp.id = l.driver_profile_id LEFT JOIN public.profiles pd ON pd.id = dp.profile_id WHERE l.created_at > now() - interval '3 hours' ORDER BY l.created_at`);
-  if (log.length) { console.log('RASTRO DEL DESPACHO'); log.forEach((l) => console.log(`  ${hm(l.created_at)} · ${l.kind === 'asignada' ? `asignó ${l.who} a ${l.conductor}, recoge ${l.pickup_at ? hm(l.pickup_at) : '?'}, espera ${l.wait_min} min` : `AVISO a jefes: ${l.who} ${l.kind === 'sin_carro' ? 'sin carro' : 'esperaría ' + l.wait_min + ' min'}`}`)); }
+  if (log.length) { console.log('RASTRO DEL DESPACHO'); log.forEach((l) => console.log(`  ${hm(l.created_at)} · ${l.kind === 'devuelta' ? `DEVOLVIÓ a la espera ${l.who} (la tenía ${l.conductor}, iba ${l.wait_min} min tarde)` : l.kind === 'asignada' ? `asignó ${l.who} a ${l.conductor}, recoge ${l.pickup_at ? hm(l.pickup_at) : '?'}, espera ${l.wait_min} min` : `AVISO a jefes: ${l.who} ${l.kind === 'sin_carro' ? 'sin carro' : 'esperaría ' + l.wait_min + ' min'}`}`)); }
 }
 await c.end();

@@ -295,7 +295,7 @@ button.rc-listrow{cursor:pointer}
 .rc-nudge-ic{width:34px;height:34px;border-radius:17px;background:rgba(255,255,255,.55);color:var(--r-warn);display:flex;align-items:center;justify-content:center;flex-shrink:0}
 #driver-tabs-root[data-theme="dark"] .rc-nudge-ic{background:rgba(255,255,255,.1)}
 /* 0163 · «Tienes el carro de apoyo» */
-.rc-apoyo{display:flex;align-items:flex-start;gap:12px;background:var(--r-accent-soft);border-color:transparent}
+.rc-apoyo{display:flex;align-items:flex-start;gap:12px;margin-top:12px;background:var(--r-accent-soft);border-color:transparent}
 .rc-apoyo-ic{width:34px;height:34px;border-radius:17px;background:rgba(255,255,255,.6);color:var(--r-accent);display:flex;align-items:center;justify-content:center;flex-shrink:0}
 #driver-tabs-root[data-theme="dark"] .rc-apoyo-ic{background:rgba(255,255,255,.1)}
 .rc-apoyo-tx{display:flex;flex-direction:column;gap:2px;min-width:0}

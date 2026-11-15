@@ -645,6 +645,20 @@
     let noCreados = [];
     try { noCreados = await crearPedidos(); }
     catch (e) { noCreados = sinPedidoAGuest((e && e.message) || 'error'); }
+    // 15-nov (0163): el día SIN NINGÚN pedido antes de pegar. Con la app del
+    // tripulante en pausa todos piden por el Form, así que este es el caso de todos
+    // los días: el tablero había cargado el día «vacío» (sin carros ni conductores)
+    // y lo pegado entraba a un día que seguía diciendo «Sin traslados», con
+    // «Llegadas en espera» y Publicar apagados. Con los pedidos ya creados, el día
+    // se vuelve a cargar como cualquier otro y ahí sí se pega.
+    if (typeof rt !== 'undefined' && rt && rt.source !== 'live' && typeof v2.cargarDia === 'function') {
+      try { await v2.cargarDia(st.dia); } catch (_) { /* abajo se dice */ }
+      if (rt.source !== 'live') {
+        st.ocupado = false; pintarPrevia();
+        say('Este día no tiene pedidos y nadie de la ruta tiene cuenta en la app: no hay con qué armar el tablero. Revisa los nombres o crea un pedido en Reservas.');
+        return;
+      }
+    }
     const { hoy, sig } = vueltasParaTablero();
     if (!hoy.length && !sig.length) { st.ocupado = false; pintarPrevia(); return; }
     try {
