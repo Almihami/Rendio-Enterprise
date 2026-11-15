@@ -623,6 +623,9 @@
 
   // Lo que hay que resolver antes de publicar, en palabras. Nada más: lo que
   // está bien no se anuncia («Ajustada» y «Lista» dejaron de ser estados).
+  // 0163: con el despacho encendido, una LLEGADA «para tomar» no la toma ningún
+  // conductor: está en espera y la reparte el sistema. Los textos lo dicen así.
+  const enDespacho = (r) => !!r && r.type === 'llegada' && !!(state.settings && state.settings.despacho_activo);
   // ¿El despacho pidió apoyo por esta vuelta? «Sin carro»: mientras siga en espera y
   // sin conductor. «Espera larga»: el sistema SÍ se la dio al carro que llega primero,
   // pero la persona espera de más; se muestra hasta que la vuelta arranque.
@@ -938,10 +941,14 @@
       (r.delegada
         ? `<span class="drv deleg" title="La hace alguien de afuera: ningún conductor la ve">Delegada${r.delegName ? ' · ' + hl(r.delegName) : ''}</span>`
         : r.tomar
-        ? (d ? `<span class="drv">${hl(d.name)}</span> <span class="tag tomar" title="La dejaste para tomar y este conductor la tomó">la tomó</span>`
+        ? (d ? `<span class="drv">${hl(d.name)}</span> ` + (enDespacho(r)
+              ? '<span class="tag tomar" title="Estaba en espera y el sistema se la dio con la hora del vuelo">se la dio el sistema</span>'
+              : '<span class="tag tomar" title="La dejaste para tomar y este conductor la tomó">la tomó</span>')
             + (apoyoDe(r) ? ` <span class="tag apoyo" title="El sistema se la dio al carro que llega primero y avisó a los jefes">espera ~${apoyoDe(r).espera || '?'} min · pidió apoyo</span>` : '')
           : apoyoDe(r)
           ? `<span class="drv tomar apoyo" title="El sistema no encontró un conductor que alcance y avisó a los jefes">En espera · pidió apoyo ${horaDeISO(apoyoDe(r).at)}</span>`
+          : enDespacho(r)
+          ? '<span class="drv tomar" title="El sistema se la da al carro que esté o vaya a estar en JMC cuando el vuelo confirme la hora. Si nadie alcanza, te avisa.">En espera · la reparte el sistema</span>'
           : '<span class="drv tomar" title="La ven los conductores del turno en «Vueltas para tomar»">Para tomar · nadie la ha tomado</span>')
         : `<span class="drv${d ? '' : ' none'}">${d ? hl(d.name) : 'Sin conductor'}</span>${r.propio ? ' <span class="tag own" title="Conductor puesto solo a esta vuelta">solo esta vuelta</span>' : ''}`) +
       `${enCurso}${horaEditable(r) ? `<button class="rv2-btn rv2-btn--sm rv2-hbtn" data-act="hora" data-id="${esc(r.id)}" aria-label="Cambiar la hora de ${esc(r.vehicle)} de las ${horas(r)}">Cambiar hora</button>` : ''}</div><div class="people">${chips}</div></div></div>`;
@@ -1227,7 +1234,9 @@
     const turno = rtBandName(r.shift);
     const auto = d && rt.rv2Auto && rt.rv2Auto[r.vehicle + '|' + r.shift] === r.driverId;
     const quien = r.tomar
-      ? (d ? `<b>${esc(d.name)}</b>La tomó de «Vueltas para tomar»` : '<b>Para tomar</b>La ven los conductores del turno en su app. Si nadie la toma, te avisamos 60 min antes')
+      ? (d ? `<b>${esc(d.name)}</b>${enDespacho(r) ? 'Se la dio el sistema con la hora del vuelo' : 'La tomó de «Vueltas para tomar»'}`
+        : enDespacho(r) ? '<b>En espera</b>El sistema la reparte cuando el vuelo confirme la hora. Si nadie alcanza, te avisamos'
+        : '<b>Para tomar</b>La ven los conductores del turno en su app. Si nadie la toma, te avisamos 60 min antes')
       : r.delegada
       ? (r.delegName
         ? `<b>Delegada a ${esc(r.delegName)}</b>${r.delegPhone ? esc(r.delegPhone) + ' · ' : ''}al tripulante le llega «Te recogerá ${esc(r.delegName.split(' ')[0])}» con este número`
@@ -2204,7 +2213,9 @@
       : 'La hace alguien de afuera (tu carro, un Uber). Ningún conductor la ve. Después eliges a quién (de la libreta o a mano) y al tripulante le llega «Te recogerá… su número de contacto es…».'}</small></button>`);
     // 0151 (Camilo, 27-oct): «que los servicios de llegada queden sin conductor, en una
     // lista que verán los conductores… y ellos mismos se lo asignan». Coordinación elige cuáles.
-    extra.push(`<button class="rv2-opt" role="radio" aria-checked="false" data-pick="__tomar"><span class="t"><b>${r.tomar ? 'Sigue para tomar' : 'Dejarla para tomar'}</b></span><small>${r.tomar && r.driverId
+    extra.push(`<button class="rv2-opt" role="radio" aria-checked="false" data-pick="__tomar"><span class="t"><b>${enDespacho(r) ? (r.tomar && !r.driverId ? 'Sigue en espera' : 'Dejarla en espera') : r.tomar ? 'Sigue para tomar' : 'Dejarla para tomar'}</b></span><small>${enDespacho(r)
+      ? (r.driverId ? `Hoy la tiene ${esc(conductor(r.driverId).name)}. ` : '') + 'Queda sin conductor: el sistema se la da al carro que esté o vaya a estar en JMC cuando el vuelo confirme la hora. Si nadie alcanza, te avisamos.'
+      : r.tomar && r.driverId
       ? `Hoy la tiene ${esc(conductor(r.driverId).name)}, que la tomó. Elige esta opción para que siga en la lista.`
       : 'Sale sin conductor y la ven los conductores del turno en «Vueltas para tomar». Si a uno se le cruza, la toma igual y te avisamos. Si nadie la toma, te avisamos 60 min antes.'}</small></button>`);
     if (cur) extra.push(`<button class="rv2-opt rv2-opt--drop" role="radio" aria-checked="false" data-pick="__none"><span class="t"><b>Quitar el conductor de esta vuelta</b></span><small>Queda sin conductor y nadie la ve hasta que le pongas uno.</small></button>`);
@@ -2235,8 +2246,8 @@
       btn.disabled = !sel;
       if (pub) {
         pub.disabled = !sel || !sePublica(sel);
-        pub.textContent = !sel ? 'Elige un conductor' : sePublica(sel) ? 'Guardar y publicar' : sel === '__tomar' ? 'Para tomar: publica el plan' : 'Delegar: publica el plan';
-      } else btn.textContent = sel === '__none' ? 'Quitar de esta vuelta' : sel === '__deleg' ? 'Delegar esta vuelta' : sel === '__tomar' ? 'Dejarla para tomar' : 'Asignar a esta vuelta';
+        pub.textContent = !sel ? 'Elige un conductor' : sePublica(sel) ? 'Guardar y publicar' : sel === '__tomar' ? (enDespacho(r) ? 'En espera: publica el plan' : 'Para tomar: publica el plan') : 'Delegar: publica el plan';
+      } else btn.textContent = sel === '__none' ? 'Quitar de esta vuelta' : sel === '__deleg' ? 'Delegar esta vuelta' : sel === '__tomar' ? (enDespacho(r) ? 'Dejarla en espera' : 'Dejarla para tomar') : 'Asignar a esta vuelta';
     });
     // 0131: «Delegar» sigue en la hoja «Delegar a…» (a quién), en el tablero o publicando.
     btn.addEventListener('click', () => { if (!sel) return; const s = sel; closeSheet(); if (s === '__deleg') return delegarVuelta(r.id, false); setVueltaDriver(r.id, s); });
@@ -2423,7 +2434,8 @@
     else if (pick === '__none') { lane.drv = false; msg = `${cual} quedó sin conductor · las demás no cambian`; }
     else if (pick === '__tomar') {   // 0151: Coordinación la deja para que un conductor la tome
       lane.drv = false; lane.tomar = true;
-      msg = `${cual} queda para tomar · al publicar la ven los conductores del turno en su app`;
+      msg = enDespacho(r) ? `${cual} queda en espera · al publicar, el sistema la reparte con la hora del vuelo`
+        : `${cual} queda para tomar · al publicar la ven los conductores del turno en su app`;
     }
     else if (pick === '__deleg') {
       lane.drv = false; lane.deleg = true;

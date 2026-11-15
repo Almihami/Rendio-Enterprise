@@ -377,6 +377,9 @@
           <!-- 0140: entrega de turno (a quién le entrega el carro), desde 2 h antes -->
           <div id="driver-home-entrega"></div>
 
+          <!-- 0163: «Tienes el carro de apoyo» (driver-apoyo-turno.js), solo si lo tiene -->
+          <div id="driver-home-apoyo"></div>
+
           <!-- Tu día: la vuelta asignada, si hay -->
           <div id="driver-home-ruta"></div>
 
@@ -1778,6 +1781,7 @@
   <script src="driver-rutas.js"></script>
   <!-- Conductor: ubicación durante todo el turno (despacho de llegadas) -->
   <script src="driver-gps-turno.js"></script>
+  <script src="driver-apoyo-turno.js"></script>
   <script src="ui-push.js"></script>
 
   <!-- PWA: registrar service worker + detectar updates -->
