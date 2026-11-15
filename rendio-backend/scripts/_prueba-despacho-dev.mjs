@@ -12,6 +12,8 @@
 //   armar camino   EL CAMINO REAL DEL JEFE (15-nov): deja solo los conductores (turno + GPS) y calla
 //              a los jefes de verdad; las llegadas NO las crea: se pegan y se publican desde Asignación
 //   vuelo-nuevo <AV99xx> <min>   FlightRadar «dice» que ese vuelo (de un pedido ya pegado) aterriza en <min> minutos
+//   pedidos    (después de «armar camino») crea SOLO los pedidos, como si los tripulantes hubieran pedido por la
+//              app: 3 salidas y 3 llegadas para dentro de unas horas. El día se arma con «Optimizar» en Asignación
 import pg from 'pg';
 const DEV = 'lxlphbafhtphulanhzlp';
 if ((process.env.SUPABASE_PROJECT_REF || '') !== DEV || !(process.env.SUPABASE_URL || '').includes(DEV)) { console.error('ABORT: esto es solo para dev'); process.exit(2); }
@@ -135,6 +137,22 @@ else if (orden === 'armar') {
   const [, , , code, delta] = process.argv;
   const r = await one(`UPDATE public.flight_statuses SET estimated_at = estimated_at + make_interval(mins => $2), delay_min = coalesce(delay_min, 0) + $2, status = CASE WHEN $2 > 0 THEN 'delayed' ELSE status END, fetched_at = now() WHERE flight_code = $1 RETURNING estimated_at`, [code, Number(delta)]);
   console.log(r ? `${code}: FlightRadar ahora dice ${hm(r.estimated_at)}` : 'no existe ese vuelo');
+} else if (orden === 'pedidos') {
+  const J = await jefe(), T = await trips();
+  const base = (await one(`SELECT date_trunc('hour', now()) + interval '2 hours' b`)).b;
+  // [correo, tipo, minutos desde la base, vuelo]
+  const P = [['mateo.cardona@rendio.demo', 'sal', 60, null], ['manuela.gil@rendio.demo', 'sal', 70, null], ['sara.quintero@rendio.demo', 'sal', 100, null],
+    ['prueba.valeria@rendio.demo', 'lle', 0, 'AV9901'], ['prueba.camila@rendio.demo', 'lle', 5, 'AV9902'], ['laura.gomez@rendio.demo', 'lle', 35, 'AV9903']];
+  for (const [email, tipo, min, vuelo] of P) {
+    const t = T.find((x) => x.email === email); if (!t) { console.log('falta ' + email); continue; }
+    const cuando = new Date(Date.parse(base) + min * 60000).toISOString();
+    await c.query('BEGIN');
+    await c.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: J.id, role: 'authenticated' })]);
+    await c.query('SET LOCAL ROLE authenticated');
+    await one(`SELECT public.admin_create_reservation($1, $2, $3::timestamptz, $4, NULL, false) id`, [t.aux, tipo, cuando, vuelo]);
+    await c.query('RESET ROLE'); await c.query('COMMIT');
+    console.log(`  ${t.full_name.padEnd(16)} ${tipo === 'sal' ? 'SALIDA · presentación ' : 'LLEGADA · aterriza '}${hm(cuando)}${vuelo ? ' · ' + vuelo : ''}`);
+  }
 } else if (orden === 'vuelo-nuevo') {
   const [, , , code, enMin] = process.argv;
   const r = await one(`SELECT r.required_arrival_at prog, p.organization_id org FROM public.reservations r JOIN public.auxiliar_profiles ap ON ap.id = r.auxiliar_profile_id JOIN public.profiles p ON p.id = ap.profile_id
