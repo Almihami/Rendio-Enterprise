@@ -51,6 +51,8 @@
     renderDriverHomeNudge();
     // 0140: la entrega de turno va arriba de «Tu día» (no frena lo demás si falla).
     if (window.DriverEntrega) window.DriverEntrega.render().catch(() => {});
+    // 0163: si tiene el carro de apoyo, se lo dice (y arranca su ubicación).
+    if (window.RendioApoyo) window.RendioApoyo.render().catch(() => {});
     await renderDriverHomeRuta();
   }
 

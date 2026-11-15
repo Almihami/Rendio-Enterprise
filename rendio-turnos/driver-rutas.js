@@ -92,6 +92,8 @@
   const first = (n) => String(n || '').trim().split(/\s+/)[0] || '';
   const initials = (n) => (window.AuxRxUI ? AuxRxUI.initials(n) : (first(n)[0] || 'A').toUpperCase());
   const waitMin = () => (typeof state !== 'undefined' && state.settings && state.settings.aux_wait_minutes != null) ? Number(state.settings.aux_wait_minutes) : 5;
+  // 0163: con el despacho encendido las llegadas las reparte el sistema.
+  const despachoOn = () => typeof state !== 'undefined' && !!state.settings && state.settings.despacho_activo === true;
   const waitSec = () => Math.max(60, waitMin() * 60);
   const key = () => 'k' + (++RT.keySeq);
   const fmtSec = (sec) => { const s = Math.max(0, Math.ceil(sec)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -777,7 +779,8 @@
       + (v.type === 'llegada' ? '<div class="rx-note">' + ic('Info', 15) + esc('La hora de cada casa es un estimado de entrega.' + (f && /aterrizó/.test(f.st) ? ` El vuelo ${f.st}.` : '')) + '</div>' : '')
       + '</div>'
       + '<div class="rx-foot">' + (s.done ? btn('Vuelta completada · ver resumen', { kind: 'sec', icon: 'Check', attrs: { 'data-rt': 'done', 'data-v': v.id } })
-        : (v.pool && !s.started ? btn('Soltar esta vuelta', { kind: 'ghost', attrs: { 'data-rt': 'release', 'data-v': v.id } }) : '')
+        // 0163: la llegada que repartió el sistema no se suelta desde aquí (la cambia Coordinación).
+        : (v.pool && !s.started && !(v.type === 'llegada' && despachoOn()) ? btn('Soltar esta vuelta', { kind: 'ghost', attrs: { 'data-rt': 'release', 'data-v': v.id } }) : '')
           // 0151: en una llegada que no ha salido de JMC, el conductor arma su carro.
           + (armaLlegada(v) ? btn('Agregar a alguien', { kind: 'ghost', icon: 'Users', attrs: { 'data-rt': 'addpax', 'data-v': v.id } }) : '')
           + btn(s.started ? `Seguir ruta · parada ${s.idx + 1} de ${v.legs.length}` : `Iniciar ruta · sale ${v.start}`, { cls: 'tone', icon: s.started ? 'Nav' : 'Play', attrs: { 'data-rt': 'start', 'data-v': v.id } })) + '</div>'

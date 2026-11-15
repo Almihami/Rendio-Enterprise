@@ -11,13 +11,18 @@
 // No toca driver-rutas.js: durante una vuelta él sigue mandando cada 6 s con el
 // id de la vuelta. Esto es la red de fondo, sin vuelta. Con el turno cerrado no
 // se pide ni se manda nada.
+//
+// 15-nov (0163): el que tiene el carro de APOYO no abre turno (se le paga por
+// vuelta), así que el despacho nunca sabía dónde estaba y lo contaba a 25 min de
+// JMC. Mientras el apoyo sea suyo (driver-apoyo-turno.js) también se manda.
 (function () {
   'use strict';
   const PING_MS = 45000, REVISA_MS = 20000;
   const G = { watch: null, last: 0, pos: null };
 
   const turno = () => (typeof sf !== 'undefined' && sf && sf.activeShift && !sf.activeShift.end_at) ? sf.activeShift : null;
-  const conductor = () => { const t = turno(); return t ? (t.driver_id || t.driver_profile_id || null) : null; };
+  const apoyo = () => (window.RendioApoyo && RendioApoyo.activo && RendioApoyo.activo()) ? RendioApoyo.conductor() : null;
+  const conductor = () => { const t = turno(); return t ? (t.driver_id || t.driver_profile_id || null) : apoyo(); };
 
   function mandar(c, fuerza) {
     const id = conductor();

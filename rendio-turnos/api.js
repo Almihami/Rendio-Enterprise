@@ -4505,6 +4505,14 @@
       return out;
     } catch (_) { return null; }
   }
+  // 0163: los turnos de apoyo del conductor que está en la app (la tabla solo le
+  // deja ver los suyos). Sin la tabla o sin permiso: ninguno.
+  async function mySupportDuty(fromDay, toDay) {
+    try {
+      const { data, error } = await sb.from('support_duty').select('day, band, driver_profile_id').gte('day', fromDay).lte('day', toDay);
+      return (error || !data) ? [] : data;
+    } catch (_) { return []; }
+  }
   async function setSupportDuty(day, band, driverId) {
     const { error } = await sb.rpc('admin_set_support_duty', { p_day: day, p_band: band, p_driver: driverId || null });
     if (error) throw error;
@@ -4997,7 +5005,7 @@
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin, listRatings,
     saveRoutePlan, listMyVueltasForDriver, getMadrugadaSiguiente, driverSetStopStatus, auxiliarUserIdsForReservations,
     driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverAirportUndo, driverNearStop, driverRouteStarted,
-    sendDriverLocation, listLiveOperation, listDispatchAlerts, getSupportDuty, setSupportDuty, listSupportTrips,
+    sendDriverLocation, listLiveOperation, listDispatchAlerts, getSupportDuty, setSupportDuty, mySupportDuty, listSupportTrips,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
     chatUnreadFor,
     getPublishedPlan, getReservationForFit,
