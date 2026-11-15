@@ -99,3 +99,6 @@ mockups/
 # Config MCP local: contiene un token de Supabase, no versionar
 .mcp.json
 rendio-backend/scripts/.seed-ruta-v2.json
+
+# Estado temporal de la prueba en vivo del despacho (se crea al armar y se borra al limpiar)
+rendio-backend/scripts/.prueba-despacho-avisos.json
