@@ -989,7 +989,7 @@
       const g = groups.get(h).sort((a, b) => a.orden - b.orden || a.arrival - b.arrival);
       const malas = g.filter((r) => r.status === 'risk' || (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA)).length;
       html += `<div class="rv2-gwrap"><div class="rv2-hour"><strong>${pad(h % 24)}:00 – ${pad((h + 1) % 24)}:00</strong>${h >= 24 ? ' · después de medianoche' : ''} · ${plural(g.length, 'vuelta', 'vueltas')}${malas ? ` · <span class="t-risk">${plural(malas, 'con aviso', 'con aviso')}</span>` : ''}</div>`;
-      g.forEach((r) => { html += r.julian ? filaPegada(r) : rowHTML(r); });
+      g.forEach((r) => { html += r.julian ? filaPegada(r) : r.sola ? filaSola(r) : rowHTML(r); });
       html += '</div>';
     });
     return html;
@@ -1074,6 +1074,52 @@
         shift: pickup < rtCut() ? 'mad' : 'dia', fija: hecha ? 'completed' : null, fin: v.fin || null, stops: [] };
     });
   }
+  // 16-nov-2026 (Harold: «el admin no tiene la visual completa»): la vuelta que armó
+  // el sistema (0134: pedido tardío o cambio de vuelo) solo salía resumida en el
+  // recuadro de arriba, y el jefe no encontraba a la persona en la lista del día.
+  // Ahora va como una fila más, en su hora, con su etiqueta. Es de solo lectura: el
+  // tablero no la mueve (sigue siendo del sistema) y Publicar no la toca.
+  function solaCoincide(v, q) {
+    return [...(v.pendientes || []), ...(v.atendidas || [])].some((g) => norm(g.name).includes(q) || norm(((rt.rv2AuxSolas || {})[g.rid] || {}).zona).includes(q))
+      || (v.driverProfileId && norm(v.conductor).includes(q));
+  }
+  function solasLista(buscando) {
+    const q = norm(ui.q);
+    return (rt.rv2Solas || []).map((x) => x.v).filter((v) => v && v.startAt && (!buscando || solaCoincide(v, q))).map((v) => {
+      const g = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
+      const lle = v.type === 'lle';
+      const pickup = minDelDia(lle ? v.startAt : ((g[0] && g[0].etaAt) || v.startAt));
+      const hecha = v.status === 'completed' || (v.fin && (v.fin.estado === 'ok' || v.fin.estado === 'bad'))
+        || (!(v.pendientes || []).length && (v.atendidas || []).length > 0);
+      return { sola: true, id: 'so:' + v.id, v, g, type: lle ? 'llegada' : 'salida', pickup, arrival: pickup, orden: pickup, hora: Math.floor(pickup / 60),
+        shift: pickup < rtCut() ? 'mad' : 'dia', fija: hecha ? 'completed' : null, fin: v.fin || null, stops: [] };
+    });
+  }
+  function filaSola(p) {
+    const v = p.v, lle = p.type === 'llegada', fin = finFila(p);
+    const sub = lle ? 'Recoge en JMC → última entrega' : 'Recoge → llega a JMC';
+    const estado = p.fija === 'completed' ? '<small class="done">Terminada</small>'
+      : fin === 'sinmarcar' ? '<small>Pasó su hora sin marcar</small>'
+      : `<small>${plural(p.g.length, 'persona', 'personas')}</small>`;
+    const quien = v.driverProfileId
+      ? `<span class="drv">${hl(v.conductor || 'Conductor')}</span>`
+      : (enDespacho(p)
+        ? '<span class="drv tomar" title="El sistema se la da al carro que esté o vaya a estar en JMC cuando el vuelo confirme la hora. Si nadie alcanza, te avisa.">En espera · la reparte el sistema</span>'
+        : '<span class="drv tomar" title="La ven los conductores del turno en «Vueltas para tomar»">Para tomar · nadie la ha tomado</span>');
+    const chips = p.g.map((g) => {
+      const a = (rt.rv2AuxSolas || {})[g.rid] || {};
+      const o = lle ? salidaLle(a) : {};
+      return `<span class="rv2-p is-fijo${lle ? ' rv2-p--lle' : ''}">${lle ? (a.dl ? `<span class="mono">${esc(a.dl)}</span>` : '') : (g.etaAt ? `<span class="mono">${hhmm(minDelDia(g.etaAt))}</span>` : '')}` +
+        `<span class="nm">${hl(g.name || 'Tripulante')}${g.guest ? ' <em>(sin cuenta)</em>' : ''}</span>${lle && o.par ? `<span class="org">(${hl(o.par)})</span>` : ''}` +
+        `${a.zona ? `<span class="pl">${lle ? '→ ' : ''}${hl(a.zona)}</span>` : ''}</span>`;
+    }).join('');
+    const aria = `Vuelta que armó el sistema, ${TYPE[p.type]} de las ${hhmm(p.pickup)}, ${p.g.map((g) => g.name).join(', ')}`;
+    return `<div class="rv2-row rv2-row--sola" data-sola="${esc(v.id)}" data-s="${v.driverProfileId ? 'ok' : 'nodriver'}"${fin ? ` data-fin="${fin}"` : ''} aria-label="${esc(aria)}">` +
+      `<div class="when"><b class="mono">${hhmm(p.pickup)}</b><small>${sub}</small>${estado}</div>` +
+      `<div class="main"><div class="l1"><span class="rv2-pill ${p.type}">${TYPE[p.type]}</span>` +
+      '<span class="tag rj-tag" title="Alguien pidió tarde o cambió de vuelo y no cabía en otra vuelta: el sistema le armó esta. Publicar el tablero no la toca.">La armó el sistema</span>' +
+      `${quien}</div><div class="people">${chips}</div></div></div>`;
+  }
   function filaPegada(p) {
     return window.RendioRutaJulian.filaLista(p.v, { hl, aux: auxPegada, fin: finFila(p) });
   }
@@ -1087,13 +1133,13 @@
     const peg = barraPegadas(buscando);
     const pegs = vacio ? [] : pegadasLista(buscando);
     if (vacio) { el.list.innerHTML = peg + vacio + (ui.cargando ? '' : solasHTML() + madSigHTML()); return; }
-    const todas = D.routes.filter(matchesQ).concat(pegs);
+    const todas = D.routes.filter(matchesQ).concat(pegs, solasLista(buscando));
     if (!todas.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
     const hechas = buscando ? [] : todas.filter(ocultaFila);
     const rows = todas.filter((r) => !hechas.includes(r));
     if (!rows.length) { el.list.innerHTML = peg + `<div class="rv2-empty"><b>Ya terminaron todas las vueltas de ${esc(dayLabel(rt.day || ui.dia).toLowerCase())}</b>Quedan abajo, por si quieres revisarlas.</div>` + hechasHTML(hechas) + madSigHTML(); return; }
     const mad = rows.filter((r) => r.shift === 'mad'), resto = rows.filter((r) => r.shift !== 'mad');
-    let html = peg + (buscando ? '' : solasHTML());
+    let html = peg;   // 16-nov: las que armó el sistema ya van como filas (solasLista)
     if (mad.length) {
       html += `<section class="rv2-mad" aria-label="Madrugada, turno PM del ${esc(rtDiaAnterior())}"><div class="rv2-madh"><b>☾ Madrugada · cierre del turno PM del ${esc(rtDiaAnterior())}</b>` +
         `<small>De 00:00 a ${rtHHc()} las hace el conductor de la tarde del ${esc(rtDiaAnterior())}. El día ${esc(dayLabel(rt.day || ui.dia).toLowerCase())} arranca a las ${rtHHc()}.</small></div>` +
@@ -2734,7 +2780,7 @@
     // «undefined is not an object (evaluating 't.split')» (miércoles 28-oct-2026).
     const podarPool = () => { rt.pool = (rt.pool || []).filter((k) => rt.aux && rt.aux[k]); return false; };
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {}; rt.rv2Fin = {};
-    ui.manual = null; rt.manualDia = false; rt.rv2Solas = []; rt.rv2AuxPegadas = {}; rt.rv2Ajenas = []; rt.rv2EnSolas = [];
+    ui.manual = null; rt.manualDia = false; rt.rv2Solas = []; rt.rv2AuxSolas = {}; rt.rv2AuxPegadas = {}; rt.rv2Ajenas = []; rt.rv2EnSolas = [];
     // Los sin cuenta salen de las vueltas publicadas: se vuelven a leer de ahí.
     Object.keys(rt.aux || {}).forEach((k) => { if (rt.aux[k] && rt.aux[k].guest) delete rt.aux[k]; });
     if (!puede || fallo) return podarPool();
@@ -2752,6 +2798,7 @@
       tipo: v.type === 'lle' ? 'Llegada' : 'Salida',
       quienes: [...(v.pendientes || []), ...(v.atendidas || [])].map((x) => String(x.name || '').split(' ')[0]).filter(Boolean).join(', '),
       conductor: v.driverProfileId ? v.conductor : null,
+      v,
     }));
     // 0151: la «para tomar» del tablero ES del tablero (pool solo para que la tomen).
     const pegadas = todas.filter((v) => v.pool && !v.autoCreated && !v.paraTomar && deEste(v));
@@ -2760,6 +2807,10 @@
     // La madrugada que Julián pegó con el día ANTERIOR cae en esta ventana: esas
     // personas ya van en una vuelta suya, así que el tablero no las vuelve a rutear.
     const ajenas = new Set(todas.filter((v) => v.pool && !v.paraTomar && (v.autoCreated || !deEste(v))).flatMap(genteDe));
+    // 16-nov: la gente de esas vueltas sale del tablero, pero su fila de la lista
+    // (solasLista) necesita su conjunto y su vuelo: se guardan antes de sacarla.
+    { const deSolas = new Set(solas.flatMap(genteDe));
+      Object.keys(rt.aux).forEach((k) => { const a = rt.aux[k]; if (a && deSolas.has(a.reservationId)) rt.rv2AuxSolas[a.reservationId] = a; }); }
     if (ajenas.size) Object.keys(rt.aux).forEach((k) => { if (ajenas.has(rt.aux[k].reservationId)) delete rt.aux[k]; });
     rt.rv2Ajenas = [...ajenas];   // la hoja de la ruta de Julián no las vuelve a ofrecer
     // 28-oct: …salvo las de las vueltas que armó el sistema: si el jefe las pega,

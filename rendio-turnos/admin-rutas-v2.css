@@ -675,3 +675,6 @@
   #routes-v2 #rv2-cambios span:not(.rv2-badge), #routes-v2 #rv2-enrutar span { display: none; }
   #routes-v2 #rv2-cambios, #routes-v2 #rv2-enrutar { width: 44px; height: 44px; padding: 0; justify-content: center; }
 }
+
+/* 16-nov-2026: la vuelta que armó el sistema, como fila de la lista (solo lectura). */
+#routes-v2 .rv2-row--sola { cursor: default; }
