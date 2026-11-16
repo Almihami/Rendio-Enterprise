@@ -1620,8 +1620,13 @@ console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio 
   const rt = T().rt;
   t('el día sigue siendo del tablero (no «ruta de Julián»)', rt.manualDia === false && !q('#rv2-list .rj-dia') && q('#rv2-list .rv2-row'), String(rt.manualDia));
   t('Felipe no queda «sin carro» en el tablero (ya va en su vuelta para tomar)', !rt.aux.rM && !(rt.pool || []).includes('rM') && !Object.values(rt.order).some((ids) => ids.includes('rM')));
-  const nota = q('#rv2-list .rv2-solas');
-  t('arriba de la lista: «1 vuelta para tomar que armó el sistema · 09:40 Salida · Felipe · sin tomar»', !!nota && /1 vuelta para tomar que armó el sistema/.test(txt(nota)) && /09:40 Salida · Felipe · sin tomar/.test(txt(nota)) && /cambió de vuelo/.test(txt(nota)), txt(nota));
+  // 16-nov: ya no va resumida en un recuadro arriba: es una fila más, en su hora.
+  const fila = q('#rv2-list .rv2-row--sola');
+  t('en la lista, en su hora: fila «09:40 · Salida · La armó el sistema · Para tomar · Felipe Vélez»', !!fila && /09:40/.test(txt(fila)) && /Salida/.test(txt(fila)) && /La armó el sistema/.test(txt(fila)) && /Para tomar · nadie la ha tomado/.test(txt(fila)) && /Felipe Vélez/.test(txt(fila)), fila ? txt(fila) : 'sin fila');
+  t('va dentro del grupo de las 09:00 y ya no hay recuadro aparte', !!fila && /09:00/.test(txt(fila.closest('.rv2-gwrap'))) && !q('#rv2-list .rv2-solas'));
+  t('la fila no se abre ni se arrastra (es del sistema)', !!fila && !fila.hasAttribute('data-id') && !fila.querySelector('[draggable]'));
+  { const inp = q('#rv2-q') || q('.rv2-search input'); if (inp) { inp.value = 'felipe'; inp.dispatchEvent(new w.Event('input', { bubbles: true })); await wait(30);
+      t('buscando «felipe» sale su fila', !!q('#rv2-list .rv2-row--sola'), txt(q('#rv2-list')).slice(0, 200)); inp.value = ''; inp.dispatchEvent(new w.Event('input', { bubbles: true })); await wait(30); } }
   t('sin errores de consola (vuelta armada sola)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 {
