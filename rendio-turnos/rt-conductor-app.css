@@ -603,3 +603,31 @@
 #rt-sheet-host .rt-addpax span{font-size:13px;color:var(--r-text-2,#57534E);grid-column:1}
 #rt-sheet-host .rt-addpax em{grid-column:2;grid-row:1 / span 2;font-style:normal;font-size:12px;font-weight:700;color:var(--r-text-3,#78716C);text-align:right;max-width:110px}
 #rt-sheet-host .rt-addpax:disabled{opacity:.5}
+
+/* ── 0169 · Mi día: Mis vueltas · Todo el equipo · Vuelos (17-nov-2026) ─────────
+   El interruptor es el mismo de «Tema de la app» en Perfil; las filas son las de
+   «Más tarde» (.rt-vc). Quién la lleva va a la derecha como píldora. */
+#driver-ruta-ui.rx-phone .rt-seg{display:flex;gap:0;background:var(--r-surface-2);border-radius:13px;padding:4px;margin:16px 0 2px}
+#driver-ruta-ui.rx-phone .rt-seg button{flex:1;min-height:38px;border:0;background:none;border-radius:10px;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--r-text-2);cursor:pointer;padding:0 6px}
+#driver-ruta-ui.rx-phone .rt-seg button.on{background:var(--r-card);color:var(--r-text);box-shadow:0 1px 2px rgba(20,20,30,.08)}
+#driver-ruta-ui.rx-phone .rt-eq{cursor:default;margin-bottom:8px}
+#driver-ruta-ui.rx-phone button.rt-eq{cursor:pointer;font-family:inherit;color:inherit}
+#driver-ruta-ui.rx-phone .rt-eq.hecha{opacity:.62}
+#driver-ruta-ui.rx-phone .rt-eq .rt-vc-m{min-width:0;overflow:hidden}
+#driver-ruta-ui.rx-phone .rt-eq .rt-bfl,#driver-ruta-ui.rx-phone .rt-eq .rt-est{max-width:100%;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:top}
+#driver-ruta-ui.rx-phone .rt-eq .rt-bfl svg{vertical-align:-1px;margin-right:4px}
+#driver-ruta-ui.rx-phone .rt-eq-x{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+#driver-ruta-ui.rx-phone .rt-who{justify-self:end;align-self:center;font-size:12.5px;font-weight:700;padding:6px 11px;border-radius:999px;white-space:nowrap;max-width:118px;overflow:hidden;text-overflow:ellipsis}
+#driver-ruta-ui.rx-phone .rt-who.tu{background:var(--r-a2h-soft);color:#0B7A55}
+#driver-ruta-ui.rx-phone .rt-who.otro{background:var(--r-info-soft);color:#1D4FB0}
+#driver-ruta-ui.rx-phone .rt-who.nadie{background:var(--r-warn-soft);color:#8A5A07}
+#driver-ruta-ui.rx-phone .rt-who.del{background:var(--r-surface-2);color:var(--r-text-2)}
+#driver-ruta-ui.rx-phone .rt-est,#driver-ruta-ui.rx-phone .rt-bfl{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;border:0;font-family:inherit;line-height:1.3;white-space:nowrap}
+#driver-ruta-ui.rx-phone button.rt-bfl{cursor:pointer;min-height:26px}
+#driver-ruta-ui.rx-phone .rt-est.ok,#driver-ruta-ui.rx-phone .rt-bfl.ok{background:var(--r-a2h-soft);color:#0B7A55}
+#driver-ruta-ui.rx-phone .rt-est.info,#driver-ruta-ui.rx-phone .rt-bfl.info{background:var(--r-info-soft);color:#1D4FB0}
+#driver-ruta-ui.rx-phone .rt-est.warn,#driver-ruta-ui.rx-phone .rt-bfl.warn{background:var(--r-warn-soft);color:#8A5A07}
+#driver-ruta-ui.rx-phone .rt-est.bad,#driver-ruta-ui.rx-phone .rt-bfl.bad{background:var(--r-error-soft);color:#B42323}
+#driver-ruta-ui.rx-phone .rt-est.gr,#driver-ruta-ui.rx-phone .rt-bfl.muted{background:var(--r-surface-2);color:var(--r-text-2)}
+#driver-ruta-ui.rx-phone .rt-vl-de{font-style:normal;font-weight:400;font-size:13px;color:var(--r-text-2)}
+#driver-ruta-ui.rx-phone .rt-board-pie{font-size:12px;color:var(--r-text-3);line-height:1.4;margin:12px 4px 0}

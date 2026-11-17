@@ -4741,6 +4741,13 @@
     if (error) { if (error.code === '42883' || /driver_open_routes/.test(error.message || '')) return []; throw error; }
     return Array.isArray(data) ? data : [];
   }
+  // 0169: el día de TODO el equipo, para el conductor (solo lectura). { day, vueltas: [...] }.
+  // Sin la migración devuelve null: la pantalla sigue con «Mis vueltas» y lo dice.
+  async function driverDayBoard() {
+    const { data, error } = await sb.rpc('driver_day_board');
+    if (error) { if (error.code === '42883' || error.code === 'PGRST202' || /driver_day_board/.test(error.message || '')) throw new Error('falta la actualización 0169 de la base'); throw error; }
+    return data && Array.isArray(data.vueltas) ? data : { day: null, vueltas: [] };
+  }
   async function driverTakeRoute(routeId) {
     const { data, error } = await sb.rpc('driver_take_route', { p_route: routeId });
     if (error) throw error;
@@ -4973,7 +4980,7 @@
     createExternal, adminCreateReservation, listExternalAuxIds,   // 0139
     listCrewChanges,   // 0153
     listHandovers, setHandover, driverMyHandovers, driverHandoverDelivered,   // 0140
-    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, pasarReserva, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, saveDelegateContact, driverLlegadaCandidatos, driverLlegadaAgregar, driverLlegadaSoltar, offerRoutes, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
+    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, pasarReserva, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverDayBoard, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, saveDelegateContact, driverLlegadaCandidatos, driverLlegadaAgregar, driverLlegadaSoltar, offerRoutes, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,
