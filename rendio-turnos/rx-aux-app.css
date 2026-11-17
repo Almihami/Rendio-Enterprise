@@ -641,3 +641,8 @@
    Ícono de la hoja «Estamos en mantenimiento» (auxLockNotice('maintenance')):
    ámbar de aviso, no el rojo del candado de suspensión. */
 #auxiliar-ui.rx-phone .rx-sh-ic.mnt{background:rgba(201,129,15,.16);color:var(--rx-warn)}
+
+/* 17-nov: chulitos del chat (✓ enviado · ✓✓ leído) */
+#auxiliar-ui.rx-phone .rx-ck{font-style:normal;font-weight:700;margin-left:6px;letter-spacing:-3px;padding-right:3px;opacity:.75}
+#auxiliar-ui.rx-phone .rx-ck.env{opacity:.4}
+#auxiliar-ui.rx-phone .rx-ck.leido{opacity:1;color:#BFF1FF}

@@ -388,6 +388,15 @@
   // la animación continúa donde iba en vez de cortarse o repetirse.
   const BUB_MS = 350;
   const nowMs = () => ((W.performance && W.performance.now) ? W.performance.now() : Date.now());
+  // 17-nov-2026 (audio de los conductores: una tripulante mandaba y mandaba mensajes
+  // sin saber si el conductor ya los había visto): el chulito de WhatsApp en MIS
+  // mensajes. ✓ = enviado · ✓✓ = alguien del otro lado ya lo abrió (read_by, 0067; el
+  // jefe lee sin marcar, así que «leído» es el conductor). Enviando = reloj tenue.
+  function ckHTML(m, me, tmp) {
+    if (tmp) return '<i class="rx-ck env" aria-label="Enviando">✓</i>';
+    const leido = Array.isArray(m.read_by) ? m.read_by.some((x) => x && x !== me) : !!m.read_at;
+    return leido ? '<i class="rx-ck leido" aria-label="Leído">✓✓</i>' : '<i class="rx-ck" aria-label="Enviado">✓</i>';
+  }
   function bubblesHTML(msgs, me) {
     const ch = M.chat;
     const list = Array.isArray(msgs) ? msgs : [];
@@ -416,7 +425,7 @@
       return `<div class="rx-bub ${mine ? 'out' : 'in'}${popping ? ' pop rx-anim' : ''}"${delay}>`
         + (coord ? '<b>Coordinación</b>' : '')
         + `<span class="rx-bub-x">${esc(m && m.body)}</span>`
-        + (at ? `<em class="rx-bub-t">${esc(at)}</em>` : '')
+        + (at || mine ? `<em class="rx-bub-t">${esc(at)}${mine ? ckHTML(m, me, tmp) : ''}</em>` : '')
         + '</div>';
     });
     ch.pop.forEach((v, k) => { if (now - v > BUB_MS * 4) ch.pop.delete(k); });

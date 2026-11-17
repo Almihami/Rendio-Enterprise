@@ -82,6 +82,9 @@
     board: null,               // 0169: { day, vueltas } de driver_day_board
     boardPoll: null, boardErr: '', boardAt: 0,
     showTeamDone: false, showFlPast: false,
+    vivoPoll: null, vivoAt: 0, vivoBusy: false,   // 17-nov: «Mis vueltas» se trae sola
+    nuevas: {},                // assignmentId → hasta cuándo lleva la etiqueta «Nueva»
+    avisadas: {},              // firma de la vuelta ya anunciada (no repetir el aviso)
   };
   window.DriverRutas = { open: rtOpen, close: rtClose, background: rtBackground, deepLink: rtDeepLink };
 
@@ -426,6 +429,65 @@
   }
   const active = () => RT.vueltas.find((v) => S(v).started && !S(v).done);
 
+  // ── «Mis vueltas» EN VIVO (17-nov-2026) ─────────────────────────────────────
+  // Audios del 16 y 17: «que se actualice sin tener que refrescar», «no me llegó la
+  // notificación… la persona ya estaba al lado mío». La lista solo se traía al abrir
+  // la pantalla. Ahora se vuelve a leer cada 30 s y, si aparece una vuelta nueva o le
+  // cambian la hora o la gente a una, lo dice DENTRO de la app, con sonido y
+  // vibración: así no depende de que el teléfono muestre la notificación.
+  const firmaV = (v) => `${v.assignmentId}|${v.start}|${crew(v).map((l) => l.rid).join(',')}`;
+  let actx = null;
+  function sonar() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        actx = actx || new AC(); if (actx.state === 'suspended') actx.resume();
+        const t = actx.currentTime;
+        [880, 1175, 880, 1175].forEach((f, i) => { const o = actx.createOscillator(), g = actx.createGain(), a = t + i * 0.2;
+          o.type = 'sine'; o.frequency.value = f; o.connect(g); g.connect(actx.destination);
+          g.gain.setValueAtTime(0.0001, a); g.gain.exponentialRampToValueAtTime(0.3, a + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, a + 0.17);
+          o.start(a); o.stop(a + 0.19); });
+      }
+    } catch (e) { /* sin sonido */ }
+    try { if (navigator && typeof navigator.vibrate === 'function') navigator.vibrate([160, 90, 160]); } catch (e) { /* */ }
+  }
+  // iPhone solo deja sonar después de un toque: se prepara con el primero.
+  function desbloquearSonido() { try { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; actx = actx || new AC(); if (actx.state === 'suspended') actx.resume(); } catch (e) { /* */ } }
+  async function vivoTick() {
+    if (!RT.open || RT.vivoBusy || document.hidden || !RT.loaded || !RT.profile) return;
+    if (!(window.Api && Api.listMyVueltasForDriver)) return;
+    RT.vivoBusy = true;
+    try {
+      let vs = null;
+      try { vs = await Api.listMyVueltasForDriver(RT.profile.id); } catch (e) { return; }
+      if (!RT.open || vs == null) return;
+      RT.vivoAt = Date.now();
+      const nv = rtBuild(vs.length ? vs : []);
+      const antes = new Map(RT.vueltas.map((v) => [v.assignmentId, firmaV(v)]));
+      const cambio = nv.length !== RT.vueltas.length || nv.some((v) => antes.get(v.assignmentId) !== firmaV(v));
+      const nuevas = nv.filter((v) => !antes.has(v.assignmentId)), movidas = nv.filter((v) => antes.has(v.assignmentId) && antes.get(v.assignmentId) !== firmaV(v));
+      const quitadas = RT.vueltas.filter((v) => !nv.some((x) => x.assignmentId === v.assignmentId) && !S(v).done && !S(v).started);
+      let aviso = null;
+      const sinAvisar = nuevas.concat(movidas).filter((v) => RT.avisadas[v.assignmentId] !== firmaV(v));
+      if (sinAvisar.length || quitadas.length) {
+        nuevas.forEach((v) => { RT.nuevas[v.assignmentId] = Date.now() + 10 * 60000; });
+        sinAvisar.forEach((v) => { RT.avisadas[v.assignmentId] = firmaV(v); });
+        const una = sinAvisar[0];
+        const que = (v) => `${v.type === 'salida' ? 'salida' : 'llegada'} ${v.start}, ${names(v)}`;
+        const msg = nuevas.length && una && nuevas.includes(una) ? `Vuelta nueva para ti: ${que(una)}${sinAvisar.length > 1 ? ` (y ${sinAvisar.length - 1} más)` : ''}`
+          : una ? `Cambió tu vuelta: ${que(una)}`
+            : `Ya no haces la vuelta de las ${quitadas[0].start}: coordinación la cambió`;
+        aviso = [msg, una ? 'Route' : 'AlertTriangle'];
+      }
+      // La lista se rehace solo en «Mi día» (sin detalle ni ruta abiertos): a mitad de
+      // una vuelta no se le mueve la pantalla al conductor; se rehace al volver.
+      if (cambio && RT.stack.length === 0 && !RT.sheet && !RT.busy) { await load(RT.profile); if (RT.open) repaintBase(); }
+      // El aviso va DESPUÉS de repintar: repintar borraba el globo antes de que se leyera.
+      if (aviso && RT.open) { sonar(); toast(aviso[0], aviso[1], 9000); }
+      else if (RT.stack.length === 0 && !RT.sheet) { const p = document.querySelector('#driver-ruta-ui .rt-live.vivo'); if (p) p.title = 'Actualizado ' + bogHM(new Date().toISOString()); }
+    } finally { RT.vivoBusy = false; }
+  }
+
   // opts.startAssignment: abre directo en Ejecución esa vuelta («Iniciar ruta» del Inicio).
   async function rtOpen(profile, opts) {
     const root = host(); if (!root) return;
@@ -437,6 +499,7 @@
     root.innerHTML = shellHTML('<div class="rt-scr"><div class="rt-body rt-loading"><div class="rt-title"><span>Rutas</span><h1>Mi día</h1><p>Cargando tu ruta…</p></div></div></div>');
     RT.vista = 'mias'; RT.showTeamDone = false; RT.showFlPast = false;   // 0169: siempre abre en «Mis vueltas»
     if (RT.boardPoll) { clearInterval(RT.boardPoll); RT.boardPoll = null; }
+    desbloquearSonido();
     await load(profile);
     if (!RT.open) return;
     RT.stack = [];
@@ -450,6 +513,9 @@
     // Cómo vienen los vuelos (la base los consulta cada 15 min en la última hora).
     if (RT.flPoll) clearInterval(RT.flPoll);
     RT.flPoll = setInterval(loadFlights, 120000);
+    if (RT.vivoPoll) clearInterval(RT.vivoPoll);
+    RT.vueltas.forEach((v) => { RT.avisadas[v.assignmentId] = firmaV(v); });   // lo que ya está a la vista no se anuncia
+    RT.vivoPoll = setInterval(vivoTick, 30000);
     const pedida = opts && opts.startAssignment ? RT.vueltas.find((v) => v.assignmentId === opts.startAssignment && !S(v).done) : null;
     if (pedida) start(pedida.id);
   }
@@ -462,6 +528,7 @@
     if (RT.tick) { clearInterval(RT.tick); RT.tick = null; }
     if (RT.flPoll) { clearInterval(RT.flPoll); RT.flPoll = null; }
     if (RT.boardPoll) { clearInterval(RT.boardPoll); RT.boardPoll = null; }
+    if (RT.vivoPoll) { clearInterval(RT.vivoPoll); RT.vivoPoll = null; }
     // La ubicación sigue si hay una vuelta en curso (cambio 1 de la entrega).
     if (!active()) gpsStop();
     const root = host();
@@ -603,7 +670,7 @@
     const unread = c.reduce((a, l) => a + (RT.unread[l.rid] || 0), 0);
     const end = endOf(v);
     return '<div class="rt-hero rx-in" style="--tone:' + t.c + '">'
-      + '<div class="rt-hero-top"><span class="rt-hero-tag"><b>' + esc(v.n) + '</b>' + t.l + '</span>'
+      + '<div class="rt-hero-top"><span class="rt-hero-tag"><b>' + esc(v.n) + '</b>' + t.l + (esNueva(v) ? '<b class="rt-nueva">Nueva</b>' : '') + '</span>'
       + '<span class="rt-hero-st ' + (s.started ? 'live' : '') + '">' + (s.started ? '<i></i>' + esc(`En curso · parada ${s.idx + 1} de ${v.legs.length}`) : esc(soon(v))) + '</span></div>'
       + '<div class="rt-hero-time"><b>' + esc(v.start) + '</b><span>' + (madrugadaDe(v) ? esc(madrugadaDe(v)) + '<br>' : '') + (v.type === 'salida'
         ? 'sale hacia la 1.ª casa<br>' + (end ? 'llega a JMC ' + esc(end) : 'destino JMC')
@@ -632,7 +699,7 @@
     const s = S(v), t = tone(v), c = crew(v), end = endOf(v);
     const f = v.type === 'llegada' && !s.done ? flightOf(v) : null;
     return '<button type="button" class="rt-vc rx-in ' + (s.done ? 'done' : '') + '" style="--tone:' + t.c + ';--d:' + i + '" data-rt="' + (s.done ? 'done' : 'detail') + '" data-v="' + esc(v.id) + '">'
-      + '<span class="rt-vc-t"><em>' + esc(`${v.n} · ${t.l}`) + '</em><b>' + esc(v.start) + '</b>' + (madrugadaDe(v) ? '<em title="' + esc(madrugadaDe(v)) + '">Madrugada</em>' : '') + '</span>'
+      + '<span class="rt-vc-t"><em>' + esc(`${v.n} · ${t.l}`) + '</em><b>' + esc(v.start) + '</b>' + (madrugadaDe(v) ? '<em title="' + esc(madrugadaDe(v)) + '">Madrugada</em>' : '') + (esNueva(v) ? '<em class="rt-nueva-s">Nueva</em>' : '') + '</span>'
       + '<span class="rt-vc-m"><b>' + esc(`${v.from} → ${v.to}`) + '</b><span>' + esc(`${c.length} auxiliares · ${v.type === 'salida' ? (end ? `llega ${end}` : 'destino JMC') : (f && f.st ? `${f.code} ${f.st}` : 'recoge en JMC')}`) + '</span></span>'
       + (s.done ? chip('Check', 'ok', 'Hecha') : ic('ChevronRight', 18, 'color: var(--r-text-3);'))
       + '</button>';
@@ -819,7 +886,11 @@
     if (mia) return flightOpen(mia.id, code);
     flightOpen(null, code, { code, day, quienes: g.quienes.slice(), reqAt: g.ref, recoge: g.ras.map((r) => `${r.hora} · ${r.quien}`).join(' · ') });
   }
-  function liveHTML(on) { return '<span class="rt-live ' + (on ? '' : 'off') + '"><i></i>' + (on ? 'Compartiendo ubicación' : 'Ubicación off') + '</span>'; }
+  function liveHTML(on) {
+    return (RT.source === 'live' || RT.loaded ? '<span class="rt-live vivo" title="Esta pantalla se actualiza sola"><i></i>En vivo</span>' : '')
+      + '<span class="rt-live ' + (on ? '' : 'off') + '"><i></i>' + (on ? 'Compartiendo ubicación' : 'Ubicación off') + '</span>';
+  }
+  const esNueva = (v) => !!(RT.nuevas[v.assignmentId] && RT.nuevas[v.assignmentId] > Date.now() && !S(v).started);
   function dayHTML() {
     const list = RT.vueltas;
     const head = '<div class="rt-head"><button type="button" class="rx-ib" data-rt="close" aria-label="Volver">' + ic('ChevronLeft', 22) + '</button><span style="flex:1"></span>' + liveHTML(RT.sharing && !!active()) + '</div>';
@@ -1561,7 +1632,18 @@
   }
   function bubbleHTML(m, pop) {
     const mine = m.sender_role === 'driver';
-    return '<div class="rx-bub ' + (mine ? 'out' : 'in') + (pop ? ' pop' : '') + '" data-mid="' + esc(m.id) + '">' + (m.sender_role === 'admin' ? '<b>Rendio</b>' : '') + esc(m.body) + '</div>';
+    return '<div class="rx-bub ' + (mine ? 'out' : 'in') + (pop ? ' pop' : '') + '" data-mid="' + esc(m.id) + '">' + (m.sender_role === 'admin' ? '<b>Rendio</b>' : '') + esc(m.body) + (mine ? ckHTML(m) : '') + '</div>';
+  }
+  // 17-nov-2026: el chulito de WhatsApp en mis mensajes. ✓ = enviado · ✓✓ = el
+  // tripulante ya lo abrió (read_by, 0067). El jefe lee sin marcar: no cuenta.
+  function ckEstado(m) {
+    if (String(m.id).indexOf('tmp') === 0) return 'env';
+    const yo = RT.profile && RT.profile.id;
+    return (Array.isArray(m.read_by) ? m.read_by.some((x) => x && x !== yo) : !!m.read_at) ? 'leido' : '';
+  }
+  function ckHTML(m) {
+    const k = ckEstado(m);
+    return '<i class="rx-ck ' + k + '" aria-label="' + (k === 'leido' ? 'Leído' : k === 'env' ? 'Enviando' : 'Enviado') + '">' + (k === 'leido' ? '✓✓' : '✓') + '</i>';
   }
   function chatPaint(msgs) {
     const th = document.getElementById('rt-thread'); if (!th) return;
@@ -1572,6 +1654,11 @@
     // Los temporales («tmp…») se reemplazan por el mensaje real.
     th.querySelectorAll('.rx-bub[data-mid^="tmp"]').forEach((b) => { if (!msgs.some((m) => m.id === b.dataset.mid)) b.remove(); });
     msgs.forEach((m) => { if (!have.has(String(m.id))) th.insertAdjacentHTML('beforeend', bubbleHTML(m, !fresh || msgs.length < 8)); });
+    // Los que ya estaban pintados: el chulito cambia cuando el otro lo lee.
+    msgs.forEach((m) => { if (m.sender_role !== 'driver' || !have.has(String(m.id))) return;
+      const ck = th.querySelector('.rx-bub[data-mid="' + String(m.id).replace(/"/g, '') + '"] .rx-ck'); if (!ck) return;
+      const k = ckEstado(m); if (ck.classList.contains('leido') === (k === 'leido') && ck.classList.contains('env') === (k === 'env')) return;
+      ck.outerHTML = ckHTML(m); });
     th.scrollTop = 99999;
   }
   async function chatSync() {
@@ -1643,12 +1730,13 @@
       + '<div><div class="rx-push-h"><b>Rendio</b><span>ahora</span></div><b>' + esc(p.title) + '</b><div>' + esc(p.body) + '</div></div></div>';
     RT.pushT = setTimeout(() => { box.innerHTML = ''; }, 4200);
   }
-  function toast(m, icon) {
+  function toast(m, icon, ms) {
     const box = document.getElementById('rt-toast-host');
     if (!box) { if (typeof window.toast === 'function') window.toast(m); return; }
     clearTimeout(RT.toastT);
-    box.innerHTML = '<div class="rx-toast">' + ic(icon || 'Check', 16) + esc(m) + '</div>';
-    RT.toastT = setTimeout(() => { box.innerHTML = ''; }, 1800);
+    // El globo se desvanece con su animación (1,8 s): uno largo estira la animación para durar lo que dice.
+    box.innerHTML = '<div class="rx-toast"' + (ms ? ' style="animation-duration:' + Number(ms) + 'ms"' : '') + '>' + ic(icon || 'Check', 16) + esc(m) + '</div>';
+    RT.toastT = setTimeout(() => { box.innerHTML = ''; }, ms || 1800);
   }
 
   // Reportar novedad / SOS (RtReport).
@@ -2233,9 +2321,11 @@
     if (RT.bound) return;
     const root = host(); if (!root) return;
     RT.bound = true;
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && RT.open) vivoTick(); });   // al volver a la app, se trae ya
     root.addEventListener('click', (e) => {
       const el = e.target.closest('[data-rt]'); if (!el || !root.contains(el)) return;
       const a = el.dataset.rt, vid = el.dataset.v, rid = el.dataset.rid;
+      desbloquearSonido();
       if (el.disabled) return;
       if (a === 'close') { rtClose(); return; }
       if (a === 'pop') { pop(); return; }

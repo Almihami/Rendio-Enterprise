@@ -151,13 +151,20 @@
     // CELULAR sí se muestra: es el único canal por el que un jefe se entera de
     // una falla mecánica a las 4 de la mañana sin tener la pantalla abierta.
     if (state.profile?.role === 'admin' && !adminOnPhone()) { existing?.remove(); return; }
-    if (!pushSupported() || Notification.permission === 'denied') { existing?.remove(); return; }
+    if (!pushSupported()) { existing?.remove(); return; }
+    // 17-nov-2026: con las notificaciones BLOQUEADAS no salía nada en Inicio (solo
+    // «Bloqueadas» al final de Perfil), y el conductor no se enteraba de las vueltas
+    // nuevas: el 16-nov cuatro avisos «Llegada para ti» no se pudieron entregar. Al
+    // conductor ahora se le dice arriba, y cómo arreglarlo.
+    const bloqueadas = Notification.permission === 'denied';
+    const esConductor = state.profile.role !== 'admin';
+    if (bloqueadas && !esConductor) { existing?.remove(); return; }
     let alreadySub = false;
     try {
       const reg = await navigator.serviceWorker.ready;
       alreadySub = !!(await reg.pushManager.getSubscription());
     } catch (e) { /* ignore */ }
-    if (alreadySub) { existing?.remove(); return; }
+    if (alreadySub && !bloqueadas) { existing?.remove(); return; }
 
     // Contenedor según el rol (conductor: dentro de la pestaña Inicio).
     //
@@ -174,19 +181,31 @@
       ? document.getElementById('app-main')
       : document.querySelector('#driver-tabs-root [data-dtab="home"]');
     if (!host) return;
-    if (existing) return; // ya está
+    const clase = bloqueadas ? 'blocked' : 'ask';
+    if (existing && existing.dataset.k === clase) return; // ya está
+    existing?.remove();
     const bar = document.createElement('div');
     bar.id = 'enable-push-bar';
-    bar.className = 'push-bar';
+    bar.dataset.k = clase;
+    bar.className = 'push-bar' + (esConductor ? ' push-bar--drv' : '') + (bloqueadas ? ' push-bar--blocked' : '');
+    if (bloqueadas) {
+      bar.innerHTML = '<span><b>No te van a sonar las vueltas nuevas.</b> Las notificaciones de Rendio están bloqueadas en este teléfono. Actívalas en Ajustes › Notificaciones › Rendio y vuelve a abrir la app. Mientras tanto, deja Rendio abierto en «Mi día»: ahí sí suena.</span>';
+      const ancla0 = host.querySelector('#driver-shift-container');
+      if (ancla0 && ancla0.parentElement) ancla0.parentElement.insertBefore(bar, ancla0); else host.insertBefore(bar, host.firstChild);
+      return;
+    }
     // Corto a propósito: es un aviso, no un instructivo. El detalle de por qué
     // importa ya lo sabe quien lo activa, y siete líneas en un aviso no se leen.
     const texto = state.profile.role === 'admin'
       ? '🔔 Activa las notificaciones y entérate de una emergencia de madrugada sin tener la app abierta.'
-      : '🔔 Activa las notificaciones: mensajes de tus pasajeros, cambios de ruta, turnos y horarios.';
+      : '🔔 <b>Activa las notificaciones</b> para que te suenen las vueltas nuevas, los cambios de ruta y los mensajes.';
     bar.innerHTML = `<span>${texto}</span>
       <button id="enable-push-btn" class="wk-btn wk-coord-on" style="flex:0 0 auto;">Activar</button>`;
     // Admin: arriba del contenido. Conductor: al final del Inicio (bajo las 2 tarjetas).
+    // 17-nov: al conductor, ARRIBA (encima de «Iniciar turno»): al final no lo veía nadie.
+    const ancla = esConductor ? host.querySelector('#driver-shift-container') : null;
     if (state.profile.role === 'admin') host.insertBefore(bar, host.firstChild);
+    else if (ancla && ancla.parentElement) ancla.parentElement.insertBefore(bar, ancla);
     else host.appendChild(bar);
     document.getElementById('enable-push-btn').addEventListener('click', enablePush);
   }

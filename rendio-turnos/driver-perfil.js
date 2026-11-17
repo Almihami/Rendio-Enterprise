@@ -93,6 +93,50 @@
     }
   }
 
+  // ── Mis vueltas (17-nov-2026) ──────────────────────────────────────────────
+  // Audio de un conductor: «¿cómo hago para ver mis vueltas anteriores?». En «Mi día»
+  // solo están las de hoy. Aquí, las de los últimos 14 días: un renglón por día; al
+  // tocarlo se abren las de ese día. Solo lectura.
+  const pfV = { dias: null, abierto: null, err: '' };
+  const pfVDia = (d) => { try { const hoy = new Date(Date.now() - 5 * 3600000).toISOString().slice(0, 10); const t = new Date(d + 'T12:00:00-05:00');
+    const txt = t.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'America/Bogota' });
+    const ayer = new Date(Date.parse(hoy + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
+    return { k: d === hoy ? 'HOY' : d === ayer ? 'AYER' : t.toLocaleDateString('es-CO', { weekday: 'short', timeZone: 'America/Bogota' }).replace('.', '').toUpperCase(), t: txt.charAt(0).toUpperCase() + txt.slice(1) }; } catch (_) { return { k: '', t: d }; } };
+  function pfVueltasHtml() {
+    if (pfV.err) return `<div class="rc-card" style="font-size:13px;color:var(--r-text-2)">${escapeHtml(pfV.err)}</div>`;
+    if (!pfV.dias) return '<div class="rc-card" style="font-size:13px;color:var(--r-text-2)">Cargando tus vueltas…</div>';
+    if (!pfV.dias.length) return '<div class="rc-card" style="font-size:13px;color:var(--r-text-2)">No tienes vueltas en los últimos 14 días.</div>';
+    const pill = (t, bg, fg) => `<span style="display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;background:${bg};color:${fg}">${t}</span>`;
+    const est = (v) => v.estado === 'hecha' ? (v.noShow ? pill(v.noShow === 1 ? '1 no se presentó' : v.noShow + ' no se presentaron', 'var(--r-error-soft)', '#B42323') : pill('Terminada', 'var(--r-surface-2)', 'var(--r-text-2)'))
+      : v.estado === 'curso' ? pill('En curso', 'var(--r-a2h-soft)', '#0B7A55') : v.estado === 'sinmarcar' ? pill('Sin marcar', 'var(--r-warn-soft)', '#8A5A07') : pill('Pendiente', 'var(--r-info-soft)', '#1D4FB0');
+    return pfV.dias.map((d, i) => {
+      const lle = d.vueltas.filter((v) => v.type === 'lle').length, sal = d.vueltas.length - lle;
+      const pers = d.vueltas.reduce((a, v) => a + v.names.length, 0), ns = d.vueltas.reduce((a, v) => a + v.noShow, 0);
+      const x = pfVDia(d.day), ab = pfV.abierto === d.day;
+      const res = [lle ? `${lle} ${lle === 1 ? 'llegada' : 'llegadas'}` : '', sal ? `${sal} ${sal === 1 ? 'salida' : 'salidas'}` : '', `${pers} ${pers === 1 ? 'persona' : 'personas'}`, ns ? `${ns} no se ${ns === 1 ? 'presentó' : 'presentaron'}` : ''].filter(Boolean).join(' · ');
+      return `<button type="button" class="rc-card" data-pfv="${escapeHtml(d.day)}" aria-expanded="${ab}" style="display:flex;align-items:center;gap:14px;width:100%;text-align:left;margin-bottom:8px;border-left:4px solid ${i === 0 && x.k === 'HOY' ? 'var(--r-a2h)' : 'var(--r-border-strong)'}">
+          <span style="text-align:center;min-width:40px"><span style="display:block;font-size:10.5px;font-weight:700;letter-spacing:.8px;color:var(--r-text-3)">${escapeHtml(x.k)}</span><span style="display:block;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums">${d.vueltas.length}</span></span>
+          <span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:650">${escapeHtml(x.t)}</span><span style="display:block;font-size:12.5px;color:var(--r-text-2);margin-top:1px">${escapeHtml(res)}</span></span>
+          <span style="color:var(--r-text-3);transform:rotate(${ab ? 90 : 0}deg)">›</span></button>`
+        + (ab ? d.vueltas.map((v) => `<div class="rc-card" style="display:flex;align-items:center;gap:12px;margin:0 0 8px 14px;width:calc(100% - 14px);box-sizing:border-box;padding:11px 14px;border-left:3px solid ${v.type === 'lle' ? 'var(--r-a2h)' : 'var(--r-h2a)'}">
+            <span style="min-width:52px"><span style="display:block;font-size:10px;font-weight:700;letter-spacing:.7px;color:var(--r-text-2);text-transform:uppercase">${v.type === 'lle' ? 'Llegada' : 'Salida'}</span><span style="display:block;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums">${escapeHtml(v.hora)}</span></span>
+            <span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:600">${v.type === 'lle' ? 'JMC → Casas' : 'Casas → JMC'}</span><span style="display:block;font-size:12.5px;color:var(--r-text-2)">${escapeHtml(v.names.join(', '))}</span></span>
+            ${est(v)}</div>`).join('') : '');
+    }).join('');
+  }
+  function pfVueltasPintar() {
+    const box = $('#pf-vueltas-box'); if (!box) return;
+    box.innerHTML = pfVueltasHtml();
+    box.querySelectorAll('[data-pfv]').forEach((b) => b.addEventListener('click', () => { pfV.abierto = pfV.abierto === b.dataset.pfv ? null : b.dataset.pfv; pfVueltasPintar(); }));
+  }
+  async function pfVueltasCargar() {
+    pfVueltasPintar();
+    if (!(window.Api && typeof Api.listMyVueltasHistory === 'function') || !state.profile) { pfV.err = ''; pfV.dias = pfV.dias || []; pfVueltasPintar(); return; }
+    try { pfV.dias = (await Api.listMyVueltasHistory(state.profile.id, 14)).slice(0, 10); pfV.err = ''; }
+    catch (e) { if (!pfV.dias) pfV.err = 'No se pudieron cargar tus vueltas. Revisa la señal y vuelve a entrar a Perfil.'; }
+    pfVueltasPintar();
+  }
+
   function drawProfileView() {
     const box = $('#driver-profile-container'); if (!box) return;
     const v = state.profileView || 'main';
@@ -168,6 +212,9 @@
         <span class="n" style="display:block">${d.kmTotal.toLocaleString('es-CO')} km</span>
         <span class="s" style="display:block">${next ? `Te faltan ${faltan.toLocaleString('es-CO')} km para ${escapeHtml(next.title)}` : (d.rewards.length ? '¡Todo desbloqueado!' : 'Aún no hay recompensas configuradas')}</span>
       </button>
+
+      <div class="rc-sechd">Mis vueltas</div>
+      <div id="pf-vueltas-box"><div class="rc-card" style="font-size:13px;color:var(--r-text-2)">Cargando tus vueltas…</div></div>
 
       <div class="rc-sechd">Mi vehículo</div>
       <div class="rc-card rc-in d3">
@@ -411,6 +458,7 @@
     $('#pf-rewards-btn')?.addEventListener('click', () => { state.profileView = 'rewards'; drawProfileView(); });
     $('#pf-strikes-btn')?.addEventListener('click', () => { state.profileView = 'strikes'; drawProfileView(); });
     $('#pf-horas-btn')?.addEventListener('click', () => { state.profileView = 'horas'; drawProfileView(); });
+    if ($('#pf-vueltas-box')) pfVueltasCargar();   // 17-nov: mis vueltas de los últimos días
     $('#pf-phone')?.addEventListener('click', async () => {
       const nuevo = await drvTelAbrir({ forzado: false });
       if (nuevo && state.profileView === 'main') drawProfileView();
