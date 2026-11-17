@@ -989,7 +989,10 @@
     const chips = gente.map((g) => {
       const a = aux(g.rid) || {};
       const lugar = a.zona || '';
-      return `<span class="rv2-p is-fijo">${!lle && g.etaAt ? `<span class="mono">${esc(pad2(bogHM(g.etaAt)))}</span>` : ''}<span class="nm">${hl(g.name)}${g.guest ? ' <em>(sin cuenta)</em>' : ''}</span>${lugar ? `<span class="pl">${hl(lugar)}</span>` : ''}</span>`;
+      // 0167: la cajita se arrastra o se toca para pasarla a otra vuelta (admin-rutas-v2.js · openPasar).
+      const mv = o.pasar && g.rid && (v.pendientes || []).includes(g) && !arrancoPeg(v) && v.status !== 'completed'
+        ? ` draggable="true" role="button" tabindex="0" data-pasar="${esc(g.rid)}" data-act="pasar" data-rid="${esc(g.rid)}" data-from="${esc(v.id)}" data-tipo="${lle ? 'lle' : 'sal'}" data-nm="${esc(g.name || 'Tripulante')}" title="Arrástralo a otra vuelta o tócalo para pasarlo"` : '';
+      return `<span class="rv2-p ${mv ? 'rv2-p--mv' : 'is-fijo'}"${mv}>${!lle && g.etaAt ? `<span class="mono">${esc(pad2(bogHM(g.etaAt)))}</span>` : ''}<span class="nm">${hl(g.name)}${g.guest ? ' <em>(sin cuenta)</em>' : ''}</span>${lugar ? `<span class="pl">${hl(lugar)}</span>` : ''}</span>`;
     }).join('');
     const btns = botonesPeg(v);
     const aria = `Ruta de Julián, ${lle ? 'llegada' : 'salida'} de las ${t0}, ${estado[1]}, ${gente.map((g) => g.name).join(', ')}`;

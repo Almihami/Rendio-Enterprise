@@ -4712,6 +4712,15 @@
     }
     return data;
   }
+  // 0167: el jefe pasa a una persona a OTRA vuelta ya publicada (se guarda al momento).
+  async function pasarReserva(reservationId, routeId) {
+    const { data, error } = await sb.rpc('admin_pasar_reserva', { p_reservation: reservationId, p_route: routeId });
+    if (error) {
+      if (error.code === '42883' || error.code === 'PGRST202' || /admin_pasar_reserva/.test(error.message || '')) throw new Error('falta la actualización 0167 de la base');
+      throw error;
+    }
+    return data;
+  }
   // 0149: los apodos que el jefe eligió a mano al pegar ([{ alias, auxiliar_profile_id }]).
   // Sin 0149 no se aprenden (la ruta igual entra al tablero).
   async function saveCrewAliases(aliases) {
@@ -4964,7 +4973,7 @@
     createExternal, adminCreateReservation, listExternalAuxIds,   // 0139
     listCrewChanges,   // 0153
     listHandovers, setHandover, driverMyHandovers, driverHandoverDelivered,   // 0140
-    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, saveDelegateContact, driverLlegadaCandidatos, driverLlegadaAgregar, driverLlegadaSoltar, offerRoutes, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
+    adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, pasarReserva, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, saveDelegateContact, driverLlegadaCandidatos, driverLlegadaAgregar, driverLlegadaSoltar, offerRoutes, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
     signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,
