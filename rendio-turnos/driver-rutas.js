@@ -77,7 +77,11 @@
     flPoll: null,              // relee el estado de los vuelos cada 2 min con la ruta abierta
     showDone: false,           // «Completadas» abierta (se cierra cada vez que se entra a la ruta)
     showPast: false,           // 0137: «Pasaron sin marcar» abierta (igual)
-    fl: null,                  // la hoja «Ver avión» abierta: { vid, map, plane, timer }
+    fl: null,                  // la hoja «Ver avión» abierta: { vid, code, libre, map, plane, timer }
+    vista: 'mias',             // 0169: 'mias' | 'equipo' | 'vuelos' (el interruptor de Mi día)
+    board: null,               // 0169: { day, vueltas } de driver_day_board
+    boardPoll: null, boardErr: '', boardAt: 0,
+    showTeamDone: false, showFlPast: false,
   };
   window.DriverRutas = { open: rtOpen, close: rtClose, background: rtBackground, deepLink: rtDeepLink };
 
@@ -226,6 +230,14 @@
       }
     } catch (e2) { /* sin dato de vuelo: solo el código */ }
     return { code, st, tone: tn, e: e || null, quienes: con.map((l) => l.name), reqAt: ref.reqAt || null };
+  }
+  // 17-nov-2026 (Harold: «a veces recogemos gente de diferentes vuelos, necesitamos
+  // ver todos»): TODOS los vuelos de la vuelta, uno por código. flightOf(v) sigue
+  // dando uno solo (o null si hay varios) para lo que necesita «el» vuelo.
+  function flightsOf(v) {
+    const vistos = new Set(), out = [];
+    crew(v).forEach((l) => { const c = flCode(l.flight); if (!c || vistos.has(c)) return; vistos.add(c); const f = flightOf(v, l); if (f) out.push(f); });
+    return out;
   }
   // «Ver avión» solo en llegadas (Flightradar24 sigue las llegadas a JMC) y solo con
   // el seguimiento encendido: apagado, la hoja diría siempre lo mismo.
@@ -423,6 +435,8 @@
     root.classList.remove('hidden');
     root.classList.add('rt-v2');
     root.innerHTML = shellHTML('<div class="rt-scr"><div class="rt-body rt-loading"><div class="rt-title"><span>Rutas</span><h1>Mi día</h1><p>Cargando tu ruta…</p></div></div></div>');
+    RT.vista = 'mias'; RT.showTeamDone = false; RT.showFlPast = false;   // 0169: siempre abre en «Mis vueltas»
+    if (RT.boardPoll) { clearInterval(RT.boardPoll); RT.boardPoll = null; }
     await load(profile);
     if (!RT.open) return;
     RT.stack = [];
@@ -447,6 +461,7 @@
     if (RT.chatPoll) { clearInterval(RT.chatPoll); RT.chatPoll = null; }
     if (RT.tick) { clearInterval(RT.tick); RT.tick = null; }
     if (RT.flPoll) { clearInterval(RT.flPoll); RT.flPoll = null; }
+    if (RT.boardPoll) { clearInterval(RT.boardPoll); RT.boardPoll = null; }
     // La ubicación sigue si hay una vuelta en curso (cambio 1 de la entrega).
     if (!active()) gpsStop();
     const root = host();
@@ -604,11 +619,11 @@
       + '</div>';
   }
   // El vuelo en la tarjeta de Mi día (26-oct-2026): cómo viene y un toque para verlo.
-  function heroFlightHTML(v) {
-    const f = flightOf(v);
+  function heroFlightHTML(v) { return flightsOf(v).map((f) => heroFlightOne(v, f)).join(''); }
+  function heroFlightOne(v, f) {
     if (!flSeguible(v, f)) return '';
     const x = flSituacion(f, Date.now());
-    return '<button type="button" class="rt-hero-fl" data-rt="flight" data-v="' + esc(v.id) + '" aria-label="' + esc(`Ver avión ${f.code}`) + '">'
+    return '<button type="button" class="rt-hero-fl" data-rt="flight" data-v="' + esc(v.id) + '" data-code="' + esc(f.code) + '" aria-label="' + esc(`Ver avión ${f.code}`) + '">'
       + '<span class="rt-hero-fl-ic ' + x.tone + '">' + ic('Plane', 15) + '</span>'
       + '<span class="rt-hero-fl-tx"><b>' + esc(`${f.code} · ${x.t}`) + '</b>' + (x.s ? '<span>' + esc(x.s) + '</span>' : '') + '</span>'
       + '<em>Ver avión</em>' + ic('ChevronRight', 16) + '</button>';
@@ -659,6 +674,151 @@
         + accion + '</div>';
     }).join('');
   }
+  // ── 0169 · Mis vueltas · Todo el equipo · Vuelos (17-nov-2026) ──────────────
+  // Va encima de la tarjeta verde (Harold: «quiero mantener ese estilo verde»).
+  // «Mis vueltas» es la pantalla de siempre. Las otras dos son de SOLO LECTURA y
+  // salen de driver_day_board: lo publicado del día para todo el equipo.
+  function vistaHTML() {
+    if (!(window.Api && typeof Api.driverDayBoard === 'function')) return '';
+    const op = [['mias', 'Mis vueltas'], ['equipo', 'Todo el equipo'], ['vuelos', 'Vuelos']];
+    return '<div class="rt-seg" role="tablist" aria-label="Qué ver">' + op.map(([k, t]) => '<button type="button" role="tab" data-rt="vista" data-k="' + k + '" aria-selected="' + (RT.vista === k) + '" class="' + (RT.vista === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>';
+  }
+  const bLle = (o) => o.direction === 'airport_to_home';
+  const bHecha = (o) => o.status === 'completed' || ((o.stops || []).length > 0 && o.stops.every((x) => x.status === 'delivered' || x.status === 'no_show'));
+  const bCurso = (o) => !bHecha(o) && (o.status === 'in_progress' || (o.stops || []).some((x) => x.status !== 'pending'));
+  const bHora = (o) => { const st = o.stops || []; return bogHM(bLle(o) ? o.start_at : ((st[0] && st[0].at) || o.start_at)); };
+  const bDia = (iso) => (iso ? new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }) : '');
+  const lista = (xs) => (xs.length <= 1 ? xs.join('') : xs.slice(0, -1).join(', ') + (/^(i|hi)/i.test(xs[xs.length - 1]) ? ' e ' : ' y ') + xs[xs.length - 1]);
+  // Quién la lleva, a la derecha: verde = tú, azul = un compañero, ámbar = nadie.
+  function bQuien(o) {
+    if (o.mine) return '<span class="rt-who tu">Tú</span>';
+    if (o.delegated) return '<span class="rt-who del">' + esc(o.delegate ? 'Delegada · ' + first(o.delegate) : 'Delegada') + '</span>';
+    if (o.driver) return '<span class="rt-who otro">' + esc(o.driver) + '</span>';
+    return '<span class="rt-who nadie">Sin conductor</span>';
+  }
+  function bVuelosDe(o) {
+    if (!bLle(o)) return [];
+    const m = new Map();
+    (o.stops || []).forEach((x) => { if (!x.flight) return; const k = x.flight + '|' + bDia(x.req_at); if (!m.has(k)) m.set(k, { code: x.flight, day: bDia(x.req_at), ref: x.req_at, quienes: [] }); m.get(k).quienes.push(first(x.name)); });
+    return [...m.values()];
+  }
+  const bPuedeVuelo = () => !!(window.RendioVuelos && RendioVuelos.habilitada && RendioVuelos.habilitada() === true);
+  function bChipVuelo(fl, o) {
+    const e = window.RendioVuelos && RendioVuelos.para ? RendioVuelos.para(fl.code, fl.day, 'lle') : null;
+    const d = e && RendioVuelos.describir ? RendioVuelos.describir(e, Date.now()) : null;
+    const txt = d ? d.text : fl.code;
+    const tn = d ? d.tone : 'muted';
+    const datos = ' data-code="' + esc(fl.code) + '" data-day="' + esc(fl.day) + '" data-ra="' + esc(o.id) + '"';
+    return bPuedeVuelo()
+      ? '<button type="button" class="rt-bfl ' + tn + '" data-rt="bfl"' + datos + ' aria-label="' + esc('Ver avión ' + fl.code) + '">' + ic('Plane', 12) + esc(txt) + '</button>'
+      : '<span class="rt-bfl muted">' + ic('Plane', 12) + esc(fl.code) + '</span>';
+  }
+  function bFila(o, i) {
+    const lle = bLle(o), st = o.stops || [];
+    const t = lle ? 'var(--r-a2h)' : 'var(--r-h2a)';
+    const hotel = lle && st.some((x) => x.reserve) && window.Api && Api.reservePlace ? (st.map((x) => x.reserve && Api.reservePlace(x.reserve)).find((P) => P && P.hotel) || null) : null;
+    const estado = bHecha(o) ? '<span class="rt-est gr">Terminada</span>' : bCurso(o) ? '<span class="rt-est ok">En curso</span>' : '';
+    const vuelos = bVuelosDe(o).map((fl) => bChipVuelo(fl, o)).join('');
+    return '<div class="rt-vc rt-eq' + (o.mine ? ' mia' : '') + (bHecha(o) ? ' hecha' : '') + '" style="--tone:' + ((!o.mine && !o.driver && !o.delegated && !bHecha(o)) ? 'var(--r-warn)' : t) + ';--d:' + i + '">'
+      + '<span class="rt-vc-t"><em>' + (lle ? 'Llegada' : 'Salida') + '</em><b>' + esc(bHora(o)) + '</b></span>'
+      + '<span class="rt-vc-m"><b>' + esc(lle ? (hotel ? hotel.name + ' → Casas' : 'JMC → Casas') : 'Casas → JMC') + '</b><span>' + esc(lista(st.map((x) => first(x.name))) || 'Sin gente') + '</span>'
+      + (estado || vuelos ? '<span class="rt-eq-x">' + estado + vuelos + '</span>' : '') + '</span>'
+      + bQuien(o) + '</div>';
+  }
+  function boardEstadoHTML() {
+    if (RT.boardErr) return '<div class="rx-note">' + ic('AlertTriangle', 15) + esc(RT.boardErr) + '</div>';
+    if (!RT.board) return '<div class="rt-alldone rx-in"><span class="rt-empty-ic">' + ic('Route', 30) + '</span><b>Cargando…</b></div>';
+    return '';
+  }
+  function equipoHTML() {
+    const x = boardEstadoHTML(); if (x) return x;
+    const vs = RT.board.vueltas || [];
+    if (!vs.length) return '<div class="rt-alldone rx-in"><span class="rt-empty-ic">' + ic('Route', 30) + '</span><b>No hay vueltas publicadas hoy</b><span>Cuando coordinación publique el día, aquí se ve quién lleva a quién.</span></div>';
+    const curso = vs.filter(bCurso), hechas = vs.filter(bHecha), sig = vs.filter((o) => !bCurso(o) && !bHecha(o));
+    const open = !!RT.showTeamDone;
+    return (curso.length ? '<div class="rx-lbl">Ahora</div>' + curso.map(bFila).join('') : '')
+      + (sig.length ? '<div class="rx-lbl">' + (curso.length ? 'Más tarde' : 'Siguen') + '</div>' + sig.map(bFila).join('') : '')
+      + (hechas.length ? '<button type="button" class="rt-donetg" data-rt="toggle-team-done" aria-expanded="' + open + '"><span>' + esc(`Hechas · ${hechas.length}`) + '</span><em>' + (open ? 'Ocultar' : 'Ver') + ic('ChevronDown', 16, open ? 'transform:rotate(180deg)' : '') + '</em></button>' + (open ? hechas.map(bFila).join('') : '') : '')
+      + boardPieHTML();
+  }
+  const boardPieHTML = () => (RT.boardAt ? '<p class="rt-board-pie">Actualizado ' + esc(bogHM(new Date(RT.boardAt).toISOString())) + ' · se actualiza solo. Solo lectura.</p>' : '');
+  // Todos los vuelos de las llegadas del día, uno por vuelo (aunque vengan en vueltas distintas).
+  function boardVuelos() {
+    const m = new Map();
+    ((RT.board && RT.board.vueltas) || []).forEach((o) => bVuelosDe(o).forEach((fl) => {
+      const k = fl.code + '|' + fl.day;
+      if (!m.has(k)) m.set(k, { code: fl.code, day: fl.day, ref: fl.ref, quienes: [], llevan: [], mio: false, ras: [] });
+      const g = m.get(k); fl.quienes.forEach((n) => g.quienes.push(n));
+      if (fl.ref && (!g.ref || Date.parse(fl.ref) < Date.parse(g.ref))) g.ref = fl.ref;
+      const quien = o.mine ? 'tú' : o.delegated ? 'delegada' : (o.driver || 'sin conductor');
+      if (!g.llevan.includes(quien)) g.llevan.push(quien);
+      if (o.mine) g.mio = true;
+      g.ras.push({ hora: bHora(o), quien });
+    }));
+    return [...m.values()].sort((a, b) => (Date.parse(a.ref) || 0) - (Date.parse(b.ref) || 0) || a.code.localeCompare(b.code));
+  }
+  const FL_GRACIA = 20 * 60000;   // como en Vuelos del jefe: aterrizó hace más de 20 min = ya pasó
+  function bVueloPaso(g, e, now) {
+    if (e && e.status === 'landed') { const t = Date.parse(e.actualAt || g.ref); return !!t && now - t > FL_GRACIA; }
+    if (!e || e.status === 'unknown') return !!g.ref && now > Date.parse(g.ref) + 3 * 3600000;
+    return false;
+  }
+  function bVueloFila(g, i) {
+    const RV = window.RendioVuelos, e = RV && RV.para ? RV.para(g.code, g.day, 'lle') : null;
+    const d = e && RV.describir ? RV.describir(e, Date.now()) : null;
+    const origen = e && RV.aeropuerto ? RV.aeropuerto(e.originIcao) : null;
+    const st = d ? d.text.replace(/^[^·]*·\s*/, '') : (bPuedeVuelo() ? 'Sin dato todavía' : '');
+    const puede = bPuedeVuelo();
+    const tag = puede ? 'button type="button"' : 'div';
+    return '<' + tag + ' class="rt-vc rt-eq rt-vl' + (g.mio ? ' mia' : '') + '" style="--tone:' + (g.mio ? 'var(--r-a2h)' : 'var(--r-border-strong)') + ';--d:' + i + '"' + (puede ? ' data-rt="bfl" data-code="' + esc(g.code) + '" data-day="' + esc(g.day) + '" aria-label="' + esc('Ver avión ' + g.code) + '"' : '') + '>'
+      + '<span class="rt-vc-t"><em>Prevista</em><b>' + esc(g.ref ? bogHM(g.ref) : '—') + '</b></span>'
+      + '<span class="rt-vc-m"><b>' + esc(g.code) + (origen ? '<i class="rt-vl-de"> · desde ' + esc(origen.city) + '</i>' : '') + '</b><span>' + esc(lista(g.quienes) + ' · ' + (g.mio && g.llevan.length === 1 ? 'la llevas tú' : g.llevan.join(', '))) + '</span>'
+      + (st ? '<span class="rt-eq-x"><span class="rt-est ' + (d ? (d.tone === 'ok' ? 'ok' : d.tone === 'bad' ? 'bad' : d.tone === 'warn' ? 'warn' : d.tone === 'info' ? 'info' : 'gr') : 'gr') + '">' + esc(st) + '</span></span>' : '') + '</span>'
+      + (puede ? ic('ChevronRight', 18) : '') + '</' + (puede ? 'button' : 'div') + '>';
+  }
+  function vuelosHTML() {
+    const x = boardEstadoHTML(); if (x) return x;
+    const gs = boardVuelos(), now = Date.now(), RV = window.RendioVuelos;
+    const sin = ((RT.board && RT.board.vueltas) || []).filter(bLle).flatMap((o) => (o.stops || []).filter((s) => !s.flight && !s.reserve)).length;
+    if (!gs.length) return '<div class="rt-alldone rx-in"><span class="rt-empty-ic">' + ic('Plane', 30) + '</span><b>No hay llegadas con vuelo hoy</b><span>Aquí salen los vuelos de las llegadas publicadas.</span></div>';
+    const con = gs.map((g) => ({ g, e: RV && RV.para ? RV.para(g.code, g.day, 'lle') : null }));
+    const pas = con.filter((c) => bVueloPaso(c.g, c.e, now)), vig = con.filter((c) => !pas.includes(c));
+    const open = !!RT.showFlPast;
+    return (bPuedeVuelo() ? '' : '<div class="rx-note">' + ic('Info', 15) + 'El seguimiento de vuelos está apagado: se ven los vuelos, pero no cómo van.</div>')
+      + '<div class="rx-lbl">' + esc(`Llegadas de hoy · ${gs.length} ${gs.length === 1 ? 'vuelo' : 'vuelos'}`) + '</div>'
+      + (vig.length ? vig.map((c, i) => bVueloFila(c.g, i)).join('') : '<p class="rt-board-pie">Ya pasaron todos los vuelos de hoy.</p>')
+      + (pas.length ? '<button type="button" class="rt-donetg" data-rt="toggle-fl-past" aria-expanded="' + open + '"><span>' + esc(`Ya pasaron · ${pas.length}`) + '</span><em>' + (open ? 'Ocultar' : 'Ver') + ic('ChevronDown', 16, open ? 'transform:rotate(180deg)' : '') + '</em></button>' + (open ? pas.map((c, i) => bVueloFila(c.g, i)).join('') : '') : '')
+      + (sin ? '<p class="rt-board-pie">' + esc(`${sin} ${sin === 1 ? 'llegada no dijo' : 'llegadas no dijeron'} su vuelo: no se ${sin === 1 ? 'puede' : 'pueden'} seguir.`) + '</p>' : '')
+      + boardPieHTML();
+  }
+  async function loadBoard(silencio) {
+    if (!(window.Api && typeof Api.driverDayBoard === 'function')) return;
+    try {
+      const b = await Api.driverDayBoard();
+      RT.board = b || { day: null, vueltas: [] }; RT.boardErr = ''; RT.boardAt = Date.now();
+      if (window.RendioVuelos && RendioVuelos.cargar) {
+        const days = [...new Set((RT.board.vueltas || []).flatMap((o) => bVuelosDe(o).map((f) => f.day)).filter(Boolean))];
+        if (days.length) { try { await RendioVuelos.cargar(days); } catch (e) { /* sin vuelos */ } }
+      }
+    } catch (e) {
+      if (!silencio || !RT.board) RT.boardErr = 'No se pudo cargar el día del equipo: ' + ((e && e.message) || 'revisa la señal') + '.';
+    }
+    if (RT.open && RT.vista !== 'mias') { repaintBase(); if (RT.fl) flightPaint(); }
+  }
+  function setVista(k) {
+    if (!['mias', 'equipo', 'vuelos'].includes(k) || k === RT.vista) return;
+    RT.vista = k;
+    if (RT.boardPoll) { clearInterval(RT.boardPoll); RT.boardPoll = null; }
+    repaintBase();
+    if (k !== 'mias') { loadBoard(false); RT.boardPoll = setInterval(() => { if (RT.open && RT.vista !== 'mias' && !document.hidden) loadBoard(true); }, 45000); }
+  }
+  // Tocar un vuelo de la lista o de una fila del equipo: el mismo «Ver avión».
+  function boardFlightOpen(code, day) {
+    const g = boardVuelos().find((x) => x.code === code && x.day === day); if (!g) return;
+    const mia = RT.vueltas.find((v) => v.type === 'llegada' && flightsOf(v).some((f) => f.code === code));
+    if (mia) return flightOpen(mia.id, code);
+    flightOpen(null, code, { code, day, quienes: g.quienes.slice(), reqAt: g.ref, recoge: g.ras.map((r) => `${r.hora} · ${r.quien}`).join(' · ') });
+  }
   function liveHTML(on) { return '<span class="rt-live ' + (on ? '' : 'off') + '"><i></i>' + (on ? 'Compartiendo ubicación' : 'Ubicación off') + '</span>'; }
   function dayHTML() {
     const list = RT.vueltas;
@@ -666,10 +826,11 @@
     if (!list.length) {
       return '<div class="rt-scr">' + head + '<div class="rt-body">'
         + '<div class="rt-title"><span>Rutas · ' + esc(fmtDay(null)) + '</span><h1>Mi día</h1><p>Sin vueltas asignadas</p></div>'
-        + '<div class="rt-alldone rx-in"><span class="rt-empty-ic">' + ic('Route', 30) + '</span><b>No tienes ruta asignada</b><span>' + ((RT.libres || []).length
+        + vistaHTML()
+        + (RT.vista !== 'mias' ? (RT.vista === 'equipo' ? equipoHTML() : vuelosHTML()) : '<div class="rt-alldone rx-in"><span class="rt-empty-ic">' + ic('Route', 30) + '</span><b>No tienes ruta asignada</b><span>' + ((RT.libres || []).length
           ? 'Toma una de las vueltas de abajo: es tuya y los tripulantes saben que los recoges.'
           : 'Cuando coordinación publique el plan con tu nombre, o haya vueltas para tomar, aparecen aquí y te llega una notificación.') + '</span></div>'
-        + libresHTML()
+        + libresHTML())
         + '</div></div>';
     }
     // 0137: la que pasó su hora sin que nadie la iniciara no se queda de «siguiente»
@@ -679,9 +840,12 @@
     const done = list.filter((v) => S(v).done);
     const pasadas = list.filter((v) => pasada(v));
     const crewN = list.reduce((a, v) => a + crew(v).length, 0);
-    return '<div class="rt-scr">' + head + '<div class="rt-body">'
+    const cab = '<div class="rt-scr">' + head + '<div class="rt-body">'
       + '<div class="rt-title"><span>' + esc(`Rutas · ${fmtDay(list[0].opDay || list[0].day)}`) + '</span><h1>Mi día</h1><p>' + esc(`${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'} · ${crewN} auxiliares · JMC`) + '</p></div>'
       + '<div class="rt-dayprog"><div>' + list.map((v) => '<i class="' + (S(v).done ? 'on' : v === focus ? 'now' : '') + '"></i>').join('') + '</div><span>' + esc(`${done.length} de ${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'}`) + '</span></div>'
+      + vistaHTML();
+    if (RT.vista !== 'mias') return cab + (RT.vista === 'equipo' ? equipoHTML() : vuelosHTML()) + '</div>' + nowbarHTML() + '</div>';
+    return cab
       + (focus ? '<div class="rx-lbl">' + (S(focus).started ? 'Ahora' : 'Tu siguiente vuelta') + '</div>' + heroHTML(focus)
         : pasadas.length
           ? '<div class="rt-alldone rx-in">' + check(64) + '<b>No te quedan vueltas por delante</b><span>' + esc(`${pasadas.length === 1 ? 'Una pasó' : pasadas.length + ' pasaron'} sin marcar: ábrela${pasadas.length === 1 ? '' : 's'} abajo y marca cómo salió${pasadas.length === 1 ? '' : 'ron'}.`) + '</span></div>'
@@ -772,7 +936,7 @@
       + '<div class="rt-sum"><div class="rt-sum-t"><b>' + esc(v.start) + '</b>' + (end ? '<i></i><b class="lt">' + esc(end) + '</b>' : '') + '</div>'
       + '<div class="rt-chips">' + chip('Users', '', `${c.length} ${v.type === 'salida' ? 'auxiliares' : 'entregas'}`) + chip('MapPin', '', `${v.legs.length} paradas`) + chip('Clock', '', `~${minsOf(v)} min`)
       + (f && !flSeguible(v, f) ? chip('Plane', f.tone, `${f.code}${f.st ? ' · ' + f.st : ''}`) : '') + '</div></div>'
-      + flightCardHTML(v, f)
+      + '<div class="rt-flset">' + (f ? flightCardHTML(v, f) : flightsOf(v).map((x) => flightCardHTML(v, x)).join('')) + '</div>'
       + '<button type="button" class="rt-mapcard" data-rt="bigmap" data-v="' + esc(v.id) + '" aria-label="Abrir mapa grande"><div class="rx-map rt-map rt-lf"></div><span class="rt-mapcard-x">' + ic('Expand', 15) + '</span></button>'
       + '<div class="rx-lbl">Paradas en orden</div>'
       + '<div class="rt-stops">' + v.legs.map((_, i) => stopRowHTML(v, i)).join('') + '</div>'
@@ -794,7 +958,7 @@
     const e = f.e, RV = window.RendioVuelos;
     const origen = e && RV.aeropuerto ? RV.aeropuerto(e.originIcao) : null;
     const top = [f.code, origen ? `desde ${origen.city}` : (RV.aerolinea ? RV.aerolinea(f.code) : '')].filter(Boolean).join(' · ');
-    return '<button type="button" class="rt-flcard" data-rt="flight" data-v="' + esc(v.id) + '">'
+    return '<button type="button" class="rt-flcard" data-rt="flight" data-v="' + esc(v.id) + '" data-code="' + esc(f.code) + '">'
       + '<span class="rt-flcard-ic ' + x.tone + '">' + ic('Plane', 20) + '</span>'
       + '<span class="rt-flcard-tx"><em>' + esc(top) + '</em><b>' + esc(x.t) + '</b>' + (x.s ? '<span>' + esc(x.s) + '</span>' : '') + '</span>'
       + '<span class="rt-flcard-go">Ver avión' + ic('ChevronRight', 16) + '</span></button>';
@@ -809,7 +973,7 @@
       if (a && b) a.replaceWith(b);
     });
     // La tarjeta del vuelo aparece cuando llega el dato de que el seguimiento está encendido.
-    const fa = scr.querySelector('.rt-flcard'), fb = fresh.querySelector('.rt-flcard');
+    const fa = scr.querySelector('.rt-flset'), fb = fresh.querySelector('.rt-flset');
     if (fa && fb) fa.replaceWith(fb);
     else if (fa && !fb) fa.remove();
     else if (!fa && fb) { const sum = scr.querySelector('.rt-sum'); if (sum) sum.after(fb); }
@@ -1585,7 +1749,8 @@
     else if (e && e.estimatedAt) row('Clock', 'Llega (estimado)', bogHM(e.estimatedAt));
     if (e && e.schedAt) row('Clock', 'Hora prevista', bogHM(e.schedAt));
     row('Users', f.quienes.length === 1 ? 'Viene en este vuelo' : 'Vienen en este vuelo', f.quienes.join(', '));
-    row('MapPin', 'Los recoges', `${v.start} · ${aptMeet(v)}`);
+    if (v) row('MapPin', 'Los recoges', `${v.start} · ${aptMeet(v)}`);
+    else if (f.recoge) row('MapPin', f.quienes.length === 1 ? 'Lo recoge' : 'Los recoge', f.recoge);
     const lv = e && e.live, fresco = lv && lv.timestamp && now - Date.parse(lv.timestamp) < 40 * 60000;
     if (fresco && (lv.alt || lv.gspeed)) {
       const alt = lv.alt ? `${Math.round(lv.alt * 0.3048).toLocaleString('es-CO')} m` : '', vel = lv.gspeed ? `${Math.round(lv.gspeed * 1.852)} km/h` : '';
@@ -1599,19 +1764,26 @@
     return '<div class="rt-info">' + rows.join('') + '</div>'
       + (nota || act ? '<div class="rx-note">' + ic('Info', 15) + esc((nota + act).trim()) + '</div>' : '');
   }
-  function flightOpen(vid) {
-    const v = vById(vid); if (!v) return;
-    const f = flightOf(v); if (!f) return;
+  // El vuelo de la hoja abierta: el de una vuelta mía (por código si trae varios) o
+  // uno «libre» de la lista de Vuelos / Todo el equipo (0169), que no tiene vuelta mía.
+  function flDe(h) {
+    if (h.libre) { const L0 = h.libre; return { v: null, f: Object.assign({}, L0, { e: (window.RendioVuelos && RendioVuelos.para(L0.code, L0.day, 'lle')) || null }) }; }
+    const v = vById(h.vid); if (!v) return { v: null, f: null };
+    const fs = flightsOf(v);
+    return { v, f: (h.code && fs.find((x) => x.code === h.code)) || flightOf(v) || fs[0] || null };
+  }
+  function flightOpen(vid, code, libre) {
+    const { v, f } = flDe({ vid, code, libre }); if (!f) return;
     const now = Date.now(), RV = window.RendioVuelos;
     const pos = RV && RV.posicion ? RV.posicion(f.e, now) : null;
     const origen = f.e && RV && RV.aeropuerto ? RV.aeropuerto(f.e.originIcao) : null;
     const conMapa = !!(pos || origen) && typeof L !== 'undefined';
-    openSheet('flight', '<div class="rt-big-map rt-fl" style="--tone:' + tone(v).c + '">'
+    openSheet('flight', '<div class="rt-big-map rt-fl" style="--tone:' + (v ? tone(v).c : 'var(--r-a2h)') + '">'
       + '<div class="rt-fl-top">' + flTopHTML(v, f, now) + '</div>'
       + (conMapa ? '<div class="rt-bm-map rt-fl-map"><div class="rx-map rt-lf"></div></div>' : '')
       + '<div class="rt-fl-info">' + flInfoHTML(v, f, now, pos) + '</div>'
       + '</div>', { tall: true });
-    RT.fl = { vid, map: null, plane: null, timer: null };
+    RT.fl = { vid, code: code || null, libre: libre || null, map: null, plane: null, timer: null };
     if (conMapa) {
       const el = document.querySelector('#rt-sheet-host .rt-fl-map .rt-lf');
       if (el) flMapMount(el, f, pos, origen);
@@ -1651,7 +1823,7 @@
   // Repinta lo que dice la hoja sin rehacer el mapa.
   function flightPaint() {
     const h = RT.fl; if (!h || !RT.sheet || RT.sheet.kind !== 'flight') return;
-    const v = vById(h.vid), f = v && flightOf(v); if (!f) return;
+    const { v, f } = flDe(h); if (!f) return;
     const now = Date.now(), pos = window.RendioVuelos.posicion(f.e, now);
     const top = document.querySelector('#rt-sheet-host .rt-fl-top'), info = document.querySelector('#rt-sheet-host .rt-fl-info');
     if (top) top.innerHTML = flTopHTML(v, f, now);
@@ -2100,7 +2272,11 @@
         return;
       }
       if (a === 'chat') { chatOpen(vid, rid); return; }
-      if (a === 'flight') { flightOpen(vid); return; }
+      if (a === 'flight') { flightOpen(vid, el.dataset.code || null); return; }
+      if (a === 'vista') { setVista(el.dataset.k); return; }
+      if (a === 'bfl') { boardFlightOpen(el.dataset.code, el.dataset.day); return; }
+      if (a === 'toggle-team-done') { RT.showTeamDone = !RT.showTeamDone; repaintBase(); return; }
+      if (a === 'toggle-fl-past') { RT.showFlPast = !RT.showFlPast; repaintBase(); return; }
       if (a === 'toggle-done') { RT.showDone = !RT.showDone; repaintBase(); return; }
       if (a === 'toggle-past') { RT.showPast = !RT.showPast; repaintBase(); return; }
       if (a === 'qr') { chatSend(el.dataset.q); return; }
