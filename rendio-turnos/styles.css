@@ -385,6 +385,10 @@ details[open] .details-chevron { transform: rotate(180deg); }
   padding: 10px 14px; border-radius: 12px; margin: 10px;
 }
 
+/* 17-nov: al conductor, arriba de «Iniciar turno»; bloqueadas = aviso ámbar sin botón */
+.push-bar.push-bar--drv { margin: 0 0 14px; font-size: 13px; font-weight: 500; line-height: 1.4; }
+.push-bar.push-bar--blocked { background: #FEF4E2; border-color: #F8DFAE; color: #7A4F06; }
+
 /* ---------- Conflict modal (pre-Generar) ---------- */
 .conflict-group {
   background: white; border: 1px solid rgb(226 232 240);

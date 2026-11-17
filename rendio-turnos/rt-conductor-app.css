@@ -631,3 +631,15 @@
 #driver-ruta-ui.rx-phone .rt-est.gr,#driver-ruta-ui.rx-phone .rt-bfl.muted{background:var(--r-surface-2);color:var(--r-text-2)}
 #driver-ruta-ui.rx-phone .rt-vl-de{font-style:normal;font-weight:400;font-size:13px;color:var(--r-text-2)}
 #driver-ruta-ui.rx-phone .rt-board-pie{font-size:12px;color:var(--r-text-3);line-height:1.4;margin:12px 4px 0}
+
+/* 17-nov: chulitos del chat (✓ enviado · ✓✓ leído) */
+#driver-ruta-ui.rx-phone .rx-ck{font-style:normal;font-weight:700;font-size:12px;margin-left:8px;letter-spacing:-3px;padding-right:3px;opacity:.75;vertical-align:1px}
+#driver-ruta-ui.rx-phone .rx-ck.env{opacity:.4}
+#driver-ruta-ui.rx-phone .rx-ck.leido{opacity:1;color:#BFF1FF}
+
+/* 17-nov: «Mis vueltas» en vivo */
+#driver-ruta-ui.rx-phone .rt-live.vivo{margin-right:8px;background:var(--r-a2h-soft);color:#0B7A55}
+#driver-ruta-ui.rx-phone .rt-live.vivo i{background:var(--r-a2h)}
+#driver-ruta-ui.rx-phone .rt-nueva{background:var(--r-a2h);color:#fff;font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:7px;margin-left:8px}
+#driver-ruta-ui.rx-phone #rt-toast-host .rx-toast{width:max-content;max-width:calc(100% - 40px);white-space:normal;line-height:1.35}
+#driver-ruta-ui.rx-phone .rt-vc-t em.rt-nueva-s{color:#0B7A55;font-weight:700}

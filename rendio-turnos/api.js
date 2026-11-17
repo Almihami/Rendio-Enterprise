@@ -3816,6 +3816,38 @@
   }
 
   // El conductor lee SU ruta del día (route_assignments asignadas a él) → vueltas.
+  // 17-nov-2026 (audio de un conductor: «¿cómo hago para ver mis vueltas anteriores?»):
+  // las vueltas de ESTE conductor de los últimos días, agrupadas por día de operación
+  // (la madrugada es del día anterior). Solo lectura. [{ day, vueltas: [{ id, type,
+  // hora, names, estado: 'hecha'|'curso'|'sinmarcar'|'pendiente', noShow }] }], lo más nuevo primero.
+  async function listMyVueltasHistory(profileId, days) {
+    const dpid = await getMyDriverProfileId(profileId); if (!dpid) return [];
+    const desde = new Date(Date.now() - (days || 14) * 86400000).toISOString();
+    const q = (extra) => sb.from('route_assignments')
+      .select(`id, direction, planned_start_at, status, route_stops(stop_order, status, reservation_id${extra}, reservations(cancelled_at, auxiliar_profiles(profiles(full_name))))`)
+      .eq('driver_profile_id', dpid).gte('planned_start_at', desde).order('planned_start_at', { ascending: false });
+    let { data, error } = await q(', guest_name');
+    if (error) ({ data, error } = await q(''));   // sin 0133
+    if (error) throw error;
+    const corte = await _corteMadrugada();
+    const ahora = Date.now();
+    const porDia = new Map();
+    (data || []).forEach((ra) => {
+      if (!ra.planned_start_at) return;
+      const stops = (ra.route_stops || []).filter((s) => !(s.reservations && s.reservations.cancelled_at)).sort((a, b) => a.stop_order - b.stop_order);
+      if (!stops.length) return;
+      const resueltas = stops.filter((s) => s.status === 'delivered' || s.status === 'no_show').length;
+      const estado = ra.status === 'completed' || resueltas === stops.length ? 'hecha'
+        : stops.some((s) => s.status !== 'pending') ? 'curso'
+          : Date.parse(ra.planned_start_at) < ahora - 3 * 3600000 ? 'sinmarcar' : 'pendiente';
+      const day = _opDay(ra.planned_start_at, corte);
+      if (!porDia.has(day)) porDia.set(day, []);
+      porDia.get(day).push({ id: ra.id, type: ra.direction === 'airport_to_home' ? 'lle' : 'sal', at: ra.planned_start_at, hora: rtHHMM(ra.planned_start_at),
+        names: stops.map((s) => String((s.reservations && s.reservations.auxiliar_profiles && s.reservations.auxiliar_profiles.profiles && s.reservations.auxiliar_profiles.profiles.full_name) || s.guest_name || 'Auxiliar').trim().split(/\s+/)[0]),
+        estado, noShow: stops.filter((s) => s.status === 'no_show').length });
+    });
+    return [...porDia.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)).map(([day, vueltas]) => ({ day, vueltas: vueltas.sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) }));
+  }
   async function listMyVueltasForDriver(profileId) {
     const dpid = await getMyDriverProfileId(profileId); if (!dpid) return null;
     // Lo que el conductor ve del traslado (rediseño 27-sep-2026): maletas,
@@ -5019,7 +5051,7 @@
     getMyAuxHeader, notesUser,
     privateBusyAt, decidePrivate, listPrivateRequests, listVehiclesBasic,
     cancelMyReservation, adminCancelReservation, confirmReservationReady, listReservationsAdmin, listRatings,
-    saveRoutePlan, listMyVueltasForDriver, getMadrugadaSiguiente, driverSetStopStatus, auxiliarUserIdsForReservations,
+    saveRoutePlan, listMyVueltasForDriver, listMyVueltasHistory, getMadrugadaSiguiente, driverSetStopStatus, auxiliarUserIdsForReservations,
     driverBoardWithCode, driverMarkAirportArrival, driverAirportNoShow, driverAirportUndo, driverNearStop, driverRouteStarted,
     sendDriverLocation, listLiveOperation, listDispatchAlerts, getSupportDuty, setSupportDuty, mySupportDuty, listSupportTrips,
     listReservationMessages, sendReservationMessage, markReservationMessagesRead, countUnreadMessages,
