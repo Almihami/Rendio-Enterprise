@@ -75,3 +75,9 @@
 #vuelos-ui .vu-sinvuelo-r{display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:13.5px}
 #vuelos-ui .vu-sinvuelo-r b{font-variant-numeric:tabular-nums;min-width:46px}
 #vuelos-ui .vu-opc{font-size:12px;font-weight:500;color:var(--ink2)}
+
+/* 17-nov: los vuelos que ya pasaron, plegados al final (como las vueltas hechas de Asignación) */
+#vuelos-ui .vu-pasados{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin-top:12px;padding:11px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);font:inherit;color:var(--ink);cursor:pointer;text-align:left}
+#vuelos-ui .vu-pasados b{font-size:13.5px;font-weight:600}
+#vuelos-ui .vu-pasados small{font-size:12.5px;color:var(--ink2)}
+#vuelos-ui .vu-pasados-l{margin-top:8px;opacity:.72}

@@ -195,8 +195,14 @@ console.log('\n── La pantalla ──');
   const b = b0;
   await b.w.renderVuelos(); await wait(60);
   t('carga y pinta sin errores', b.errors.length === 0 && !!b.q('#vu-card'), b.errors.join(' | '));
+  // 17-nov: los que ya pasaron (aterrizaron hace más de 20 min) van plegados al final.
+  eq('a la vista solo los que no han pasado', b.qa('#vu-lista .vu-row').map(r => r.dataset.code), ['P57617', 'AV9384', 'AV9318']);
+  const pl = b.q('#vu-lista [data-vu="pasados"]');
+  t('los que ya pasaron quedan en un renglón plegado: «2 vuelos que ya pasaron · Ver»', !!pl && /2 vuelos que ya pasaron/.test(pl.textContent) && /Ver/.test(pl.textContent) && pl.getAttribute('aria-expanded') === 'false', pl ? pl.textContent : 'sin renglón');
+  if (pl) { pl.click(); await wait(30); }
+  t('al tocarlo se despliegan abajo y dice «Ocultar»', b.qa('#vu-lista .vu-pasados-l .vu-row').length === 2 && /Ocultar/.test(b.q('#vu-lista [data-vu="pasados"]').textContent));
   const codes = b.qa('#vu-lista .vu-row').map(r => r.dataset.code);
-  eq('una fila por vuelo, en orden de hora (pegados + reserva + FR24)', codes, ['JA5987', 'AV9563', 'P57617', 'AV9384', 'AV9318']);
+  eq('desplegados: una fila por vuelo (pegados + reserva + FR24), los pasados al final', codes, ['P57617', 'AV9384', 'AV9318', 'JA5987', 'AV9563']);
   const res = txt(b.q('#vu-resumen'));
   t('resumen: «Hoy · 5 llegadas · 2 en el aire · 2 aterrizaron · 2 con retraso»', res === 'Hoy · 5 llegadas · 2 en el aire · 2 aterrizaron · 2 con retraso', res);
   const r4 = b.row('AV9384');
@@ -265,11 +271,11 @@ console.log('\n── Bandera apagada y base sin 0122 ──');
 {
   const b = await boot({ enabled: false });
   await b.w.renderVuelos(); await wait(60);
-  t('bandera apagada: lo dice arriba (y muestra lo último que se guardó)', /apagado/.test(txt(b.q('#vu-aviso'))) && b.qa('#vu-lista .vu-row').length === 5, txt(b.q('#vu-aviso')));
+  t('bandera apagada: lo dice arriba (y muestra lo último que se guardó)', /apagado/.test(txt(b.q('#vu-aviso'))) && b.qa('#vu-lista .vu-row').length === 3 && /2 vuelos que ya pasaron/.test(txt(b.q('#vu-lista [data-vu="pasados"]'))), txt(b.q('#vu-aviso')));
   b.w.stopVuelosTimer();
   const c = await boot({ sin0122: true });
   await c.w.renderVuelos(); await wait(60);
-  t('sin 0122: «Falta la migración 0122», sin botón de pegar; el resto sigue', /Falta la migración 0122/.test(txt(c.q('#vu-pegar'))) && c.q('#vu-pegar-toggle').hidden && c.qa('#vu-lista .vu-row').length === 5, txt(c.q('#vu-pegar')));
+  t('sin 0122: «Falta la migración 0122», sin botón de pegar; el resto sigue', /Falta la migración 0122/.test(txt(c.q('#vu-pegar'))) && c.q('#vu-pegar-toggle').hidden && c.qa('#vu-lista .vu-row').length === 3 && /2 vuelos que ya pasaron/.test(txt(c.q('#vu-lista [data-vu="pasados"]'))), txt(c.q('#vu-pegar')));
   c.w.stopVuelosTimer();
   t('sin errores en consola', b.errors.length === 0 && c.errors.length === 0, [...b.errors, ...c.errors].join(' | '));
 }

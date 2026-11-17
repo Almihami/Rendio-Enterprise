@@ -41,6 +41,7 @@
 
   const st = {
     dia: 'hoy',                 // 'hoy' | 'manana'
+    verPasados: false,          // 17-nov: los que ya pasaron van plegados al final
     vuelos: null,               // la lista armada (ver armar)
     flag: null, sin0122: false, err: null, cargando: false,
     cargadoEn: 0,
@@ -223,6 +224,18 @@
     if (d <= -10) return { txt: (-d) + ' min antes', tono: 'info', tarde: false };
     return { txt: 'a tiempo', tono: 'ok', tarde: false };
   }
+  // 17-nov-2026 (Harold: «aunque ya haya pasado el vuelo, sigue apareciendo; que se
+  // oculte como los viajes ya hechos en el asignador, y si uno quiere los agranda»).
+  // YA PASÓ = aterrizó hace más de 20 min (mientras tanto sigue a la vista: el
+  // conductor aún lo está recogiendo), o nunca hubo dato y su hora pasó hace 3 h.
+  // Un desviado no se esconde. Mañana no tiene pasados.
+  const GRACIA_ATERRIZADO = 20 * 60000;
+  function yaPaso(v, e, now) {
+    if (st.dia === 'manana') return false;
+    if (e.grupo === 'aterrizo') { const t = tms(v.st && v.st.actual_at) || v.ref; return !!t && now - t > GRACIA_ATERRIZADO; }
+    if (e.grupo === 'sindato') return !!v.ref && now > v.ref + 3 * HORA;
+    return false;
+  }
   const chip = (txt, tono) => `<span class="rvu-chip rvu-chip--${tono}">${esc(txt)}</span>`;
 
   // ── Pintar ──────────────────────────────────────────────────────────────────
@@ -295,7 +308,12 @@
         n((x) => x.e.grupo === 'sindato') ? `${n((x) => x.e.grupo === 'sindato')} sin dato` : '',
       ].filter(Boolean);
       resumen.textContent = (st.dia === 'manana' ? 'Mañana · ' : 'Hoy · ') + partes.join(' · ');
-      lista.innerHTML = (vs.length ? g.map(({ v, e, r }) => fila(v, e, r)).join('') : `<div class="vu-vacio">No hay llegadas con vuelo para ${st.dia === 'manana' ? 'mañana' : 'hoy'}. Esto se llena solo con las llegadas de Reservas y con la ruta de Julián que se publica en Asignación.</div>`)
+      const pas = g.filter((x) => yaPaso(x.v, x.e, now) && st.sel !== x.v.code), vig = g.filter((x) => !pas.includes(x));
+      const plegados = pas.length
+        ? `<button type="button" class="vu-pasados" data-vu="pasados" aria-expanded="${st.verPasados}"><b>✓ ${pas.length} ${pas.length === 1 ? 'vuelo que ya pasó' : 'vuelos que ya pasaron'}</b><small>${st.verPasados ? 'Ocultar' : 'Ver'}</small></button>`
+          + (st.verPasados ? `<div class="vu-pasados-l">${pas.map(({ v, e, r }) => fila(v, e, r)).join('')}</div>` : '')
+        : '';
+      lista.innerHTML = (vs.length ? (vig.length ? vig.map(({ v, e, r }) => fila(v, e, r)).join('') : `<div class="vu-vacio">Ya pasaron todas las llegadas de hoy. Quedan abajo, por si quieres revisarlas.</div>`) + plegados : `<div class="vu-vacio">No hay llegadas con vuelo para ${st.dia === 'manana' ? 'mañana' : 'hoy'}. Esto se llena solo con las llegadas de Reservas y con la ruta de Julián que se publica en Asignación.</div>`)
         + sinVueloHTML();
     }
     const ult = (st.vuelos || []).map((v) => tms(v.st && v.st.fetched_at)).filter(Boolean).sort((a, b) => b - a)[0];
@@ -490,6 +508,7 @@
       else if (a === 'pegar-abrir') { st.pegar.abierto = true; pintarPegar(); document.getElementById('vu-pegar-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => document.getElementById('vu-texto')?.focus(), 300); }
       else if (a === 'leer') { const t = document.getElementById('vu-texto'); st.pegar.texto = t ? t.value : ''; st.pegar.leidos = leerPlan(st.pegar.texto, diaSel()); st.pegar.msg = ''; pintarPegar(); }
       else if (a === 'guardar') guardarPegados();
+      else if (a === 'pasados') { st.verPasados = !st.verPasados; pintar(); }
       else if (a === 'quitar') { e.stopPropagation(); quitar(b.dataset.id); }
       else if (a === 'sel') {
         st.sel = st.sel === b.dataset.code ? null : b.dataset.code;
