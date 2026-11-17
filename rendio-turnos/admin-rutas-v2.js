@@ -1193,7 +1193,48 @@
     openSheet(sheetHead(`Pasar a ${esc(nm)} a…`, 'Se guarda ya, sin Publicar: le llega el aviso a la persona, al conductor que la recibe y al que la tenía.')
       + `<div class="rv2-sh-body"><div class="rv2-mvopts">${ops.length ? ops.map((o) => optPasar(o, rid, nm, from)).join('')
         : `<p class="rv2-impact">No hay otra ${tipo === 'lle' ? 'llegada' : 'salida'} publicada que no haya arrancado.</p>`}</div></div>`
-      + '<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button></div>');
+      + `<div class="rv2-sh-foot"><button class="rv2-btn rv2-btn--danger" data-act="cancelartras" data-rid="${esc(rid)}" data-nm="${esc(nm)}">Cancelar traslado</button><button class="rv2-btn" data-act="sclose">Cerrar</button></div>`);
+  }
+  // ── 17-nov-2026 · Cancelar un traslado desde Asignación ─────────────────────
+  // Harold: «en Asignación, donde está toda la ruta, debería haber un acceso
+  // rápido». Solo se cancelaba en Reservas. Es lo MISMO de allá
+  // (admin_cancel_reservation: la saca de su vuelta) con los mismos avisos: al
+  // tripulante «Traslado cancelado» y a su conductor «Parada cancelada».
+  function openCancelar(rid, nm) {
+    if (rt.source !== 'live' || !rid || !window.Api || typeof Api.adminCancelReservation !== 'function') return;
+    openSheet(sheetHead(`¿Cancelar el traslado de ${esc(nm)}?`, 'Sale de su vuelta y le llega el aviso, con el motivo si lo escribes. Si la vuelta ya tiene conductor, a él también. No se puede deshacer: tendría que pedirlo otra vez.')
+      + '<div class="rv2-sh-body"><label class="rv2-cap" for="rv2-cx-motivo">Motivo (opcional)</label>'
+      + '<input id="rv2-cx-motivo" type="text" maxlength="140" autocomplete="off" placeholder="Ej.: canceló por WhatsApp" style="width:100%;font:inherit;font-size:16px;min-height:42px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink)">'
+      + '<p class="rj-warn" id="rv2-cx-msg" hidden></p></div>'
+      + `<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">No, dejarlo</button><button class="rv2-btn rv2-btn--cta rv2-btn--danger" id="rv2-cx-ok" data-rid="${esc(rid)}" data-nm="${esc(nm)}">Sí, cancelar traslado</button></div>`);
+    $('#rv2-cx-ok').addEventListener('click', () => doCancelar(rid, nm));
+  }
+  let cancelando = false;
+  async function doCancelar(rid, nm) {
+    if (cancelando) return;
+    const ok = $('#rv2-cx-ok'), msg = $('#rv2-cx-msg');
+    const reason = (($('#rv2-cx-motivo') || {}).value || '').trim();
+    cancelando = true;
+    if (ok) { ok.disabled = true; ok.textContent = 'Cancelando…'; }
+    try {
+      const res = await Api.adminCancelReservation(rid, reason);
+      const who = String(nm || 'El tripulante').split(' ')[0];
+      const fecha = (() => { try { return new Date((rt.day || ui.dia) + 'T12:00:00-05:00').toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'America/Bogota' }); } catch (_) { return ''; } })();
+      try {
+        const ids = typeof Api.auxiliarUserIdsForReservations === 'function' ? await Api.auxiliarUserIdsForReservations([rid]) : [];
+        if (ids.length && Api.sendPush) await Api.sendPush({ profileIds: ids, title: 'Traslado cancelado',
+          body: reason ? `Tu traslado del ${fecha} fue cancelado: ${reason}` : `Tu traslado del ${fecha} fue cancelado por coordinación.`, url: '/#/viaje?r=' + encodeURIComponent(rid) });
+        if (res && res.driver_profile_id && Api.sendPush) await Api.sendPush({ profileIds: [res.driver_profile_id], title: 'Parada cancelada',
+          body: `${who} ya no va en tu ruta. Coordinación canceló su traslado.`, url: '/' });
+      } catch (_) { /* cancelado igual: el aviso es lo de menos */ }
+      closeSheet();
+      const dia = rt.day; if (dia) await cargarDia(dia);
+      toast(`Traslado de ${nm} cancelado y avisado.`, true);
+    } catch (e) {
+      const t = (e && e.message) || 'error';
+      if (msg) { msg.textContent = 'No se pudo cancelar: ' + (/en curso/.test(t) ? 'el viaje ya está en curso.' : t); msg.hidden = false; }
+      if (ok) { ok.disabled = false; ok.textContent = 'Sí, cancelar traslado'; }
+    } finally { cancelando = false; }
   }
   let pasando = false;
   async function doPasar(rid, ra, nm) {
@@ -1483,7 +1524,8 @@
       (ui.todas ? '' : '<button class="rv2-linkbtn" data-act="mvtodas">Ver todas las vueltas con cupo</button>') +
       otrasPasar(crew, r) +
       ((r.stops || []).length > 1 ? `<button class="rv2-opt rv2-opt--sola" data-act="sola" data-crew="${esc(crew)}" data-from="${esc(r.id)}"><span class="t"><b>Pasar a una vuelta sola</b></span><small>Una vuelta nueva solo con ${esc(String(a.n || '').split(' ')[0] || 'ella')}, en un carro libre a esa hora. Después le pones el conductor.</small></button>` : '') +
-      `<button class="rv2-opt rv2-opt--drop" data-act="unroute" data-crew="${esc(crew)}" data-from="${esc(r.id)}"><span class="t"><b>Dejar sin carro</b></span><small>Queda en Avisos para ubicarlo después.</small></button>`;
+      `<button class="rv2-opt rv2-opt--drop" data-act="unroute" data-crew="${esc(crew)}" data-from="${esc(r.id)}"><span class="t"><b>Dejar sin carro</b></span><small>Queda en Avisos para ubicarlo después.</small></button>` +
+      (a.reservationId && !a.guest && rt.source === 'live' ? `<button class="rv2-opt rv2-opt--drop" data-act="cancelartras" data-rid="${esc(a.reservationId)}" data-nm="${esc(a.n || 'Tripulante')}"><span class="t"><b>Cancelar traslado</b></span><small>Cancela el pedido de ${esc(String(a.n || '').split(' ')[0] || 'esta persona')}: sale de la ruta y se le avisa. Se guarda ya.</small></button>` : '');
     dibujarMapa(r, { note: mq('(hover: hover)') ? 'Pasa el cursor por una opción para verla en el mapa.' : '' });
   }
   // 0167: desde una fila del tablero, a una vuelta del sistema o pegada (se guarda ya).
@@ -3437,6 +3479,7 @@
         return select(act.dataset.from, { moving: { crew: act.dataset.crew, from: act.dataset.from } });
       }
       if (a === 'pasar') return openPasar(act.dataset.rid, act.dataset.nm, act.dataset.tipo, act.dataset.from);
+      if (a === 'cancelartras') return openCancelar(act.dataset.rid, act.dataset.nm);
       if (a === 'pasarto') return doPasar(act.dataset.rid, act.dataset.ra, act.dataset.nm);
       if (a === 'route') return openMove(act.dataset.crew);
       if (a === 'moveto') { ui.prevDe = null; return moveCrew(act.dataset.crew, act.dataset.from, act.dataset.to, pillDe(simular(act.dataset.crew, act.dataset.from, act.dataset.to)).txt); }
