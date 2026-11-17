@@ -1627,6 +1627,27 @@ console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio 
   t('la fila no se abre ni se arrastra (es del sistema)', !!fila && !fila.hasAttribute('data-id') && !fila.querySelector('[draggable]'));
   { const inp = q('#rv2-q') || q('.rv2-search input'); if (inp) { inp.value = 'felipe'; inp.dispatchEvent(new w.Event('input', { bubbles: true })); await wait(30);
       t('buscando «felipe» sale su fila', !!q('#rv2-list .rv2-row--sola'), txt(q('#rv2-list')).slice(0, 200)); inp.value = ''; inp.dispatchEvent(new w.Event('input', { bubbles: true })); await wait(30); } }
+  // 17-nov: el jefe le pone conductor, le cambia la hora o la delega ahí mismo.
+  { // Los botones son los de la vuelta pegada (admin-ruta-julian.js): aquí se carga y se repinta.
+    w.rt = T().rt; w.eval(read('admin-ruta-julian.js')); w.Api.adminManualRouteSetTimes = async () => ({}); w.Api.setVueltaDriver = w.Api.setVueltaDriver || (async () => ({}));
+    await V2().cargarDia(T().rt.day); await wait(30);
+    const f2 = q('#rv2-list .rv2-row--sola');
+    const bd = f2 && f2.querySelector('[data-rj-drv]'), bh = f2 && f2.querySelector('[data-rj-hora]'), bg = f2 && f2.querySelector('[data-rj-deleg]');
+    t('la fila del sistema trae «Asignar conductor», «Cambiar hora» y «Delegar»', !!bd && /Asignar conductor/.test(txt(bd)) && !!bh && !!bg, f2 ? txt(f2) : 'sin fila');
+    const llam = []; const s0 = w.Api.setVueltaDriver;
+    w.Api.setVueltaDriver = async (id, d) => { llam.push([id, d]); vs.find((v) => v.id === id).driverProfileId = d; vs.find((v) => v.id === id).conductor = 'Rubén'; return { notified: 1 }; };
+    if (bd) { bd.click(); await wait(20);
+      const sel = q('#rv2-list .rv2-row--sola .rj-pick select'), ok = q('#rv2-list .rv2-row--sola [data-rj-drv-ok]');
+      t('al tocar sale la lista de conductores', !!sel && sel.options.length > 1, sel ? String(sel.options.length) : 'sin lista');
+      if (sel && ok) { sel.value = sel.options[1].value; sel.dispatchEvent(new w.Event('change', { bubbles: true })); ok.click(); await wait(60); }
+      t('«Asignar» manda SOLO esa vuelta a la base (setVueltaDriver ra-sola)', llam.length === 1 && llam[0][0] === 'ra-sola' && !!llam[0][1], JSON.stringify(llam));
+      const f3 = q('#rv2-list .rv2-row--sola');
+      t('…y la fila queda con su conductor y «Cambiar conductor»', !!f3 && /Rubén/.test(txt(f3)) && /Cambiar conductor/.test(txt(f3)), f3 ? txt(f3) : 'sin fila'); }
+    w.Api.setVueltaDriver = s0;
+    const bh2 = q('#rv2-list .rv2-row--sola [data-rj-hora]');
+    if (bh2) { bh2.click(); await wait(30);
+      t('«Cambiar hora» abre la hoja con la hora de esa vuelta', !!q('#rv2-sheet .rj-h-in') && /09:40/.test(q('#rv2-sheet .rj-h-in').value), q('#rv2-sheet') ? txt(q('#rv2-sheet')).slice(0, 120) : 'sin hoja');
+      const x = q('#rv2-sheet [data-act="sclose"]'); if (x) { x.click(); await wait(20); } } }
   t('sin errores de consola (vuelta armada sola)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 {
