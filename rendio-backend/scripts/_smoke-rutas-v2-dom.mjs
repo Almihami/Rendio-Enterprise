@@ -1648,6 +1648,36 @@ console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio 
     if (bh2) { bh2.click(); await wait(30);
       t('«Cambiar hora» abre la hoja con la hora de esa vuelta', !!q('#rv2-sheet .rj-h-in') && /09:40/.test(q('#rv2-sheet .rj-h-in').value), q('#rv2-sheet') ? txt(q('#rv2-sheet')).slice(0, 120) : 'sin hoja');
       const x = q('#rv2-sheet [data-act="sclose"]'); if (x) { x.click(); await wait(20); } } }
+  // 0167: la cajita del nombre se pasa a otra vuelta publicada (botón o arrastre), al momento.
+  { const llam = []; w.Api.pasarReserva = async (rid, ra) => { llam.push([rid, ra]); return { id: ra, start_at: `${DAY}T10:00:00-05:00`, driver_name: 'Rubén Díaz', pax: 2 }; };
+    await V2().cargarDia(T().rt.day); await wait(30);
+    const chip = q('#rv2-list .rv2-row--sola [data-pasar]');
+    t('la cajita de la fila del sistema se puede arrastrar y tocar', !!chip && chip.getAttribute('draggable') === 'true' && chip.dataset.rid === 'res-M' && chip.dataset.from === 'ra-sola', chip ? chip.outerHTML.slice(0, 200) : 'sin cajita');
+    if (chip) { chip.click(); await wait(30);
+      const ops = [...w.document.querySelectorAll('#rv2-sheet [data-act="pasarto"]')];
+      t('al tocarla sale «Pasar a Felipe Vélez a…» con las otras salidas publicadas', ops.length > 0 && /Pasar a Felipe Vélez/.test(txt(q('#rv2-sheet'))) && ops.every((o) => o.dataset.ra && o.dataset.ra !== 'ra-sola'), txt(q('#rv2-sheet')).slice(0, 200));
+      if (ops[0]) { const dest = ops[0].dataset.ra; ops[0].click(); await wait(80);
+        t('elegir una manda admin_pasar_reserva(res-M, esa vuelta) y avisa', llam.length === 1 && llam[0][0] === 'res-M' && llam[0][1] === dest && /Felipe Vélez pasó a la vuelta de las 10:00 con Rubén/.test(txt(q('#rv2-toast'))), JSON.stringify(llam) + ' ' + txt(q('#rv2-toast'))); } }
+    // arrastre: de la fila del sistema a una del tablero
+    const chip2 = q('#rv2-list .rv2-row--sola [data-pasar]');
+    if (chip2) { const dt = { setData() {}, effectAllowed: '' };
+      const ev = (tipo, el2) => { const e = new w.Event(tipo, { bubbles: true, cancelable: true }); e.dataTransfer = dt; el2.dispatchEvent(e); };
+      ev('dragstart', chip2); await wait(10);
+      const drops = [...w.document.querySelectorAll('#rv2-list .rv2-row.is-drop')];
+      t('al arrastrarla se marcan las vueltas que la pueden recibir (mismo sentido, sin arrancar)', drops.length > 0 && drops.every((r) => !r.matches('[data-sola="ra-sola"]')), String(drops.length));
+      if (drops[0]) { llam.length = 0; ev('dragover', drops[0]); ev('drop', drops[0]); await wait(80);
+        t('soltarla en una vuelta la pasa ahí', llam.length === 1 && llam[0][0] === 'res-M' && !!llam[0][1] && llam[0][1] !== 'ra-sola', JSON.stringify(llam)); } }
+    // del tablero hacia la fila del sistema
+    { const tc = [...w.document.querySelectorAll('#rv2-list .rv2-row[data-id] [data-drag]')].find((c) => { const a = T().rt.aux[c.dataset.drag]; return a && a.type !== 'lle' && a.reservationId; });
+      if (tc) { const dt = { setData() {}, effectAllowed: '' };
+        const ev = (tipo, el2) => { const e = new w.Event(tipo, { bubbles: true, cancelable: true }); e.dataTransfer = dt; el2.dispatchEvent(e); };
+        ev('dragstart', tc); await wait(10);
+        const fs = q('#rv2-list .rv2-row--sola');
+        t('arrastrando a alguien del tablero, la fila del sistema también recibe', !!fs && fs.classList.contains('is-drop'), fs ? fs.className : 'sin fila');
+        if (fs && fs.classList.contains('is-drop')) { llam.length = 0; ev('dragover', fs); ev('drop', fs); await wait(80);
+          t('…y al soltar se pasa a esa vuelta (ra-sola)', llam.length === 1 && llam[0][1] === 'ra-sola' && llam[0][0] === T().rt.aux[tc.dataset.drag].reservationId, JSON.stringify(llam)); }
+        else ev('dragend', tc); } else t('hay una salida publicada del tablero para arrastrar', false, 'no la encontré'); }
+    delete w.Api.pasarReserva; }
   t('sin errores de consola (vuelta armada sola)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 {

@@ -1109,7 +1109,9 @@
     const chips = p.g.map((g) => {
       const a = (rt.rv2AuxSolas || {})[g.rid] || {};
       const o = lle ? salidaLle(a) : {};
-      return `<span class="rv2-p is-fijo${lle ? ' rv2-p--lle' : ''}">${lle ? (a.dl ? `<span class="mono">${esc(a.dl)}</span>` : '') : (g.etaAt ? `<span class="mono">${hhmm(minDelDia(g.etaAt))}</span>` : '')}` +
+      const mv = pasable() && g.rid && (v.pendientes || []).includes(g) && p.fija !== 'completed'
+        ? ` draggable="true" role="button" tabindex="0" data-pasar="${esc(g.rid)}" data-act="pasar" data-rid="${esc(g.rid)}" data-from="${esc(v.id)}" data-tipo="${lle ? 'lle' : 'sal'}" data-nm="${esc(g.name || 'Tripulante')}" title="Arrástralo a otra vuelta o tócalo para pasarlo"` : '';
+      return `<span class="rv2-p ${mv ? 'rv2-p--mv' : 'is-fijo'}${lle ? ' rv2-p--lle' : ''}"${mv}>${lle ? (a.dl ? `<span class="mono">${esc(a.dl)}</span>` : '') : (g.etaAt ? `<span class="mono">${hhmm(minDelDia(g.etaAt))}</span>` : '')}` +
         `<span class="nm">${hl(g.name || 'Tripulante')}${g.guest ? ' <em>(sin cuenta)</em>' : ''}</span>${lle && o.par ? `<span class="org">(${hl(o.par)})</span>` : ''}` +
         `${a.zona ? `<span class="pl">${lle ? '→ ' : ''}${hl(a.zona)}</span>` : ''}</span>`;
     }).join('');
@@ -1125,8 +1127,78 @@
       '<span class="tag rj-tag" title="Alguien pidió tarde o cambió de vuelo y no cabía en otra vuelta: el sistema le armó esta. Puedes ponerle conductor, cambiarle la hora o delegarla aquí mismo; Publicar el tablero no la toca.">La armó el sistema</span>' +
       `${quien}</div><div class="people">${chips}</div>${btns ? `<div class="rj-acts">${btns}</div>` : ''}</div></div>`;
   }
+  // ── 0167 · Pasar a alguien a OTRA vuelta ya publicada, al momento ───────────
+  // Harold, 17-nov: «poder mover la cajita del nombre y pasarlo a otro combo y
+  // listo», arrastrando o con botón, en cualquier fila. Mover dentro del tablero
+  // sigue igual (queda en el tablero hasta Publicar). Esto es lo demás: desde o
+  // hacia una vuelta que armó el sistema o una pegada. Se guarda YA en la base
+  // (admin_pasar_reserva): avisa a la persona y a los conductores, y se vuelve a
+  // leer el día.
+  const pasable = () => rt.source === 'live' && !!window.Api && typeof Api.pasarReserva === 'function';
+  const vueltasSueltas = () => ((ui.manual && ui.manual.vueltas) || []).concat((rt.rv2Solas || []).map((x) => x.v).filter(Boolean));
+  const arrancoV = (v) => v.status === 'in_progress' || v.status === 'completed' || (v.atendidas || []).length > 0
+    || !!(v.fin && ['ok', 'bad', 'sinmarcar', 'delegada'].includes(v.fin.estado));
+  // La vuelta publicada detrás de una fila de la lista, si todavía puede recibir gente.
+  function raDeFila(row) {
+    if (!row) return null;
+    if (row.dataset.id) {
+      const l = rtLaneOf(row.dataset.id), r = D && D.byId[row.dataset.id];
+      return l && l.raId && r && !r.fija && finFila(r) !== 'sinmarcar' ? { ra: l.raId, tipo: r.type === 'llegada' ? 'lle' : 'sal' } : null;
+    }
+    const id = row.dataset.sola || row.dataset.julian;
+    const v = id && vueltasSueltas().find((x) => x.id === id);
+    return v && !arrancoV(v) ? { ra: v.id, tipo: v.type === 'lle' ? 'lle' : 'sal' } : null;
+  }
+  // A dónde se puede pasar: todas las vueltas publicadas de ese sentido, sin arrancar.
+  // soloSueltas: solo las que no son del tablero (para «Mover» de una fila del tablero).
+  function destinosPasar(tipo, fromRa, soloSueltas) {
+    const out = [];
+    if (!soloSueltas) ((D && D.routes) || []).forEach((r) => {
+      const l = rtLaneOf(r.id);
+      if (!l || !l.raId || l.raId === fromRa || r.fija || finFila(r) === 'sinmarcar' || (r.type === 'llegada' ? 'lle' : 'sal') !== tipo) return;
+      const d = rtDriverOf(l);
+      out.push({ ra: l.raId, min: r.pickup, hora: horas(r), quien: l.deleg ? 'Delegada' : d ? conductor(d).name : (l.tomar ? 'En espera' : 'Sin conductor'), carro: r.vehicle,
+        gente: r.stops.map((x) => nombre(x.crewId)).join(', ') });
+    });
+    vueltasSueltas().forEach((v) => {
+      if (v.id === fromRa || arrancoV(v) || (v.type === 'lle' ? 'lle' : 'sal') !== tipo) return;
+      const g = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
+      const iso = v.type === 'lle' ? v.startAt : ((g[0] && g[0].etaAt) || v.startAt);
+      out.push({ ra: v.id, min: minDelDia(iso), hora: hmIso(iso), quien: v.delegated ? 'Delegada' : v.driverProfileId ? (v.conductor || 'Conductor') : 'Sin conductor',
+        carro: v.autoCreated ? 'La armó el sistema' : 'Ruta de Julián', gente: g.map((x) => x.name).join(', ') });
+    });
+    return out.sort((a, b) => a.min - b.min);
+  }
+  const optPasar = (o, rid, nm, from) => `<button class="rv2-opt" data-act="pasarto" data-rid="${esc(rid)}" data-ra="${esc(o.ra)}" data-nm="${esc(nm)}" data-from="${esc(from || '')}">` +
+    `<span class="t"><b>${esc(o.hora)} · ${esc(o.quien)}</b><span class="tag">${esc(o.carro)}</span></span><small>${esc(o.gente || 'Sin gente')}</small></button>`;
+  function openPasar(rid, nm, tipo, from) {
+    if (!pasable() || !rid) return;
+    const ops = destinosPasar(tipo, from);
+    openSheet(sheetHead(`Pasar a ${esc(nm)} a…`, 'Se guarda ya, sin Publicar: le llega el aviso a la persona, al conductor que la recibe y al que la tenía.')
+      + `<div class="rv2-sh-body"><div class="rv2-mvopts">${ops.length ? ops.map((o) => optPasar(o, rid, nm, from)).join('')
+        : `<p class="rv2-impact">No hay otra ${tipo === 'lle' ? 'llegada' : 'salida'} publicada que no haya arrancado.</p>`}</div></div>`
+      + '<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cancelar</button></div>');
+  }
+  let pasando = false;
+  async function doPasar(rid, ra, nm) {
+    if (pasando || !pasable() || !rid || !ra) return;
+    const sucio = (rt.lanes || []).length && firmaActual() !== rt.firmaPublicada;
+    if (sucio && typeof window.confirm === 'function' && !window.confirm(`Tienes cambios en el tablero sin publicar. Al pasar a ${nm} se vuelve a leer el día y esos cambios se pierden. ¿Seguir?`)) return;
+    pasando = true;
+    if (!el.sheet.hidden) closeSheet();
+    toast(`Pasando a ${nm}…`);
+    try {
+      const r = await Api.pasarReserva(rid, ra);
+      const dia = rt.day;
+      if (dia) await cargarDia(dia);
+      toast(r && r.unchanged ? `${nm} ya iba en esa vuelta.`
+        : `${nm} pasó a la vuelta de las ${r && r.start_at ? hmIso(r.start_at) : ''}${r && r.driver_name ? ' con ' + String(r.driver_name).split(' ')[0] : ''} · ya se avisó${r && r.pax > 4 ? ` · ojo: van ${r.pax}` : ''}.`, true);
+    } catch (e) {
+      toast('No se pudo pasar: ' + ((e && e.message) || 'error') + '. No cambió nada.');
+    } finally { pasando = false; }
+  }
   function filaPegada(p) {
-    return window.RendioRutaJulian.filaLista(p.v, { hl, aux: auxPegada, fin: finFila(p) });
+    return window.RendioRutaJulian.filaLista(p.v, { hl, aux: auxPegada, fin: finFila(p), pasar: pasable() });
   }
   function barraPegadas(buscando) {
     return !buscando && hayPegadas() && typeof window.RendioRutaJulian.barraHTML === 'function'
@@ -1393,9 +1465,17 @@
       `<div class="rv2-mvopts" id="rv2-mvopts">${ops.length ? ops.map((o) => optHTML(o, `data-act="moveto" data-crew="${esc(crew)}" data-from="${esc(r.id)}" data-to="${esc(o.lane.id)}"`)).join('')
         : `<p class="rv2-impact">No hay ${a.type === 'lle' ? 'llegadas' : 'salidas'} con cupo ${ui.todas ? 'ese día' : 'cerca de esa hora'}.</p>`}</div>` +
       (ui.todas ? '' : '<button class="rv2-linkbtn" data-act="mvtodas">Ver todas las vueltas con cupo</button>') +
+      otrasPasar(crew, r) +
       ((r.stops || []).length > 1 ? `<button class="rv2-opt rv2-opt--sola" data-act="sola" data-crew="${esc(crew)}" data-from="${esc(r.id)}"><span class="t"><b>Pasar a una vuelta sola</b></span><small>Una vuelta nueva solo con ${esc(String(a.n || '').split(' ')[0] || 'ella')}, en un carro libre a esa hora. Después le pones el conductor.</small></button>` : '') +
       `<button class="rv2-opt rv2-opt--drop" data-act="unroute" data-crew="${esc(crew)}" data-from="${esc(r.id)}"><span class="t"><b>Dejar sin carro</b></span><small>Queda en Avisos para ubicarlo después.</small></button>`;
     dibujarMapa(r, { note: mq('(hover: hover)') ? 'Pasa el cursor por una opción para verla en el mapa.' : '' });
+  }
+  // 0167: desde una fila del tablero, a una vuelta del sistema o pegada (se guarda ya).
+  function otrasPasar(crew, r) {
+    const a = aux(crew) || {}; const l = rtLaneOf(r.id);
+    if (!pasable() || !a.reservationId || a.guest || !l || !l.raId) return '';
+    const ops = destinosPasar(a.type === 'lle' ? 'lle' : 'sal', l.raId, true);
+    return ops.length ? `<h3 class="rv2-cap">Vueltas del sistema o de Julián · se guarda ya, sin Publicar</h3><div class="rv2-mvopts">${ops.map((o) => optPasar(o, a.reservationId, a.n || 'Tripulante', l.raId)).join('')}</div>` : '';
   }
   function previsualizar(b) {
     const sim = simular(b.dataset.crew, b.dataset.from, b.dataset.to);
@@ -2729,6 +2809,16 @@
     $$('.rv2-row.is-drop, .rv2-row.is-over', root()).forEach((x) => x.classList.remove('is-drop', 'is-over'));
   }
   function onDragStart(e) {
+    // 0167: la cajita de una vuelta del sistema o pegada → cualquier otra vuelta publicada.
+    const pp = e.target.closest && e.target.closest('[data-pasar]');
+    if (pp) {
+      if (!pasable()) return;
+      ui.drag = { pasar: true, rid: pp.dataset.rid, fromRa: pp.dataset.from, tipo: pp.dataset.tipo, nm: pp.dataset.nm || 'Tripulante' };
+      try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ui.drag.rid); } catch (_) { /* */ }
+      root().classList.add('is-dragging');
+      $$('.rv2-row', root()).forEach((row) => { const d = raDeFila(row); row.classList.toggle('is-drop', !!d && d.tipo === ui.drag.tipo && d.ra !== ui.drag.fromRa); });
+      return;
+    }
     const p = e.target.closest && e.target.closest('[data-drag]'); if (!p) return;
     const crewId = p.dataset.drag; const fromId = p.dataset.from || null;
     if (!aux(crewId)) return;
@@ -2737,6 +2827,12 @@
     root().classList.add('is-dragging');
     // Las vueltas pegadas (sin data-id) no reciben: no son del tablero.
     $$('.rv2-row[data-id]', root()).forEach((row) => row.classList.toggle('is-drop', puedeRecibir(row.dataset.id, crewId, fromId)));
+    // 0167: …y sobre una vuelta del sistema o pegada, si esta persona ya está publicada.
+    { const a = aux(crewId) || {}; const lf = fromId ? rtLaneOf(fromId) : null;
+      if (pasable() && a.reservationId && !a.guest && lf && lf.raId) {
+        const tipo = a.type === 'lle' ? 'lle' : 'sal';
+        $$('.rv2-row[data-sola], .rv2-row[data-julian]', root()).forEach((row) => { const d = raDeFila(row); row.classList.toggle('is-drop', !!d && d.tipo === tipo); });
+      } }
   }
   function onDragOver(e) {
     if (!ui.drag) return;
@@ -2750,10 +2846,13 @@
   function onDrop(e) {
     if (!ui.drag) return;
     const row = e.target.closest && e.target.closest('.rv2-row.is-drop');
-    const { crewId, fromId } = ui.drag;
+    const dg = ui.drag;
+    const { crewId, fromId } = dg;
     finDrag();
     if (!row) return;
     e.preventDefault();
+    if (dg.pasar) { const d = raDeFila(row); if (d) doPasar(dg.rid, d.ra, dg.nm); return; }
+    if (!row.dataset.id) { const d = raDeFila(row), a = aux(crewId) || {}; if (d && a.reservationId) doPasar(a.reservationId, d.ra, a.n || 'Tripulante'); return; }
     const fx = pillDe(simular(crewId, fromId, row.dataset.id)).txt;
     moveCrew(crewId, fromId, row.dataset.id, fx);
   }
@@ -3320,6 +3419,8 @@
         if (!act.dataset.from) return openMove(act.dataset.crew);
         return select(act.dataset.from, { moving: { crew: act.dataset.crew, from: act.dataset.from } });
       }
+      if (a === 'pasar') return openPasar(act.dataset.rid, act.dataset.nm, act.dataset.tipo, act.dataset.from);
+      if (a === 'pasarto') return doPasar(act.dataset.rid, act.dataset.ra, act.dataset.nm);
       if (a === 'route') return openMove(act.dataset.crew);
       if (a === 'moveto') { ui.prevDe = null; return moveCrew(act.dataset.crew, act.dataset.from, act.dataset.to, pillDe(simular(act.dataset.crew, act.dataset.from, act.dataset.to)).txt); }
       if (a === 'mvcancel') { ui.moving = null; return renderDetail(); }
