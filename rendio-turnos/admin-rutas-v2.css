@@ -637,7 +637,7 @@
 #routes-v2 .rv2-p.is-fijo { cursor: default; }
 #routes-v2 .rv2-p.is-fijo:hover { border-color: var(--line); background: var(--panel2); }
 #routes-v2 .rv2-p em { font-style: normal; color: var(--ink3); }
-#routes-v2 .rv2-row--julian .rj-acts, #routes-v2 .rv2-row--sola .rj-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+#routes-v2 .rv2-row .rj-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 /* 0145 · «Cambiar hora»: una fila por recogida (o la salida de la llegada). */
 .rv2-sheet .rj-hora { display: flex; flex-direction: column; gap: 8px; }
 .rv2-sheet .rj-h-p { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; align-items: center; font-size: 14px; }
