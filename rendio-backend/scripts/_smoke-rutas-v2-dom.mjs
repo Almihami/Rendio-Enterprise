@@ -1687,6 +1687,22 @@ console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio 
     if (bd) { bd.click(); await wait(30); t('«Delegar» en la tarjeta abre «Delegar a…»', /Delegar a/.test(txt(q('#rv2-sheet'))), txt(q('#rv2-sheet')).slice(0, 80)); const x = q('#rv2-sheet [data-act="sclose"]'); if (x) { x.click(); await wait(20); } }
     const ba = filas[0] && filas[0].querySelector('[data-act="assign"]');
     if (ba) { ba.click(); await wait(30); t('«Cambiar conductor» en la tarjeta abre la hoja de conductores', !q('#rv2-sheet').hidden && !!q('#rv2-sheet [data-pick]'), txt(q('#rv2-sheet')).slice(0, 80)); const x = q('#rv2-sheet [data-act="sclose"]'); if (x) { x.click(); await wait(20); } } }
+  // 17-nov: acceso rápido a «Cancelar traslado» desde Asignación (lo mismo de Reservas).
+  { const llam = [], push = []; w.Api.pasarReserva = async () => ({}); 
+    w.Api.adminCancelReservation = async (rid, reason) => { llam.push([rid, reason]); return { ok: true, driver_profile_id: 'prof-d2' }; };
+    w.Api.auxiliarUserIdsForReservations = async () => ['prof-felipe']; w.Api.sendPush = async (o) => { push.push(o); };
+    await V2().cargarDia(T().rt.day); await wait(30);
+    const chip = q('#rv2-list .rv2-row--sola [data-pasar]');
+    if (chip) { chip.click(); await wait(30);
+      const bc = q('#rv2-sheet [data-act="cancelartras"]');
+      t('la hoja de la cajita trae «Cancelar traslado»', !!bc && bc.dataset.rid === 'res-M', txt(q('#rv2-sheet')).slice(-80));
+      if (bc) { bc.click(); await wait(30);
+        t('pide confirmar, con motivo opcional', /¿Cancelar el traslado de Felipe Vélez\?/.test(txt(q('#rv2-sheet'))) && !!q('#rv2-cx-motivo') && llam.length === 0, txt(q('#rv2-sheet')).slice(0, 120));
+        q('#rv2-cx-motivo').value = 'canceló por WhatsApp'; q('#rv2-cx-ok').click(); await wait(80);
+        t('al confirmar cancela ESE pedido con el motivo', llam.length === 1 && llam[0][0] === 'res-M' && llam[0][1] === 'canceló por WhatsApp', JSON.stringify(llam));
+        t('…y avisa al tripulante y a su conductor', push.length === 2 && push[0].title === 'Traslado cancelado' && /canceló por WhatsApp/.test(push[0].body) && push[1].title === 'Parada cancelada' && push[1].profileIds[0] === 'prof-d2', JSON.stringify(push).slice(0, 300));
+        t('…cierra la hoja y lo dice', q('#rv2-sheet').hidden && /Traslado de Felipe Vélez cancelado/.test(txt(q('#rv2-toast'))), txt(q('#rv2-toast'))); } }
+    delete w.Api.pasarReserva; }
   t('sin errores de consola (vuelta armada sola)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 {
