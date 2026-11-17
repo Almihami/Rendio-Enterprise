@@ -1193,7 +1193,7 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', atarDia); else atarDia();
 
-  W.RendioRutaJulian = { abrir, excel, elegirExcel, ofrecer, diaHTML, barraHTML, filaLista, abrirHora,
+  W.RendioRutaJulian = { abrir, excel, elegirExcel, ofrecer, diaHTML, barraHTML, filaLista, abrirHora, botones: botonesPeg,
     _leer: leer, _emparejar: emparejar, _filasExcel: filasExcel, _st: st, _norm: norm, _isoCerca: isoCerca,
     _bloques: () => bloquesParaBase(), _paraTablero: () => vueltasParaTablero() };
 })();

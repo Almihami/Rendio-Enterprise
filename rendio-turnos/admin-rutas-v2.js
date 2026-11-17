@@ -1077,8 +1077,8 @@
   // 16-nov-2026 (Harold: «el admin no tiene la visual completa»): la vuelta que armó
   // el sistema (0134: pedido tardío o cambio de vuelo) solo salía resumida en el
   // recuadro de arriba, y el jefe no encontraba a la persona en la lista del día.
-  // Ahora va como una fila más, en su hora, con su etiqueta. Es de solo lectura: el
-  // tablero no la mueve (sigue siendo del sistema) y Publicar no la toca.
+  // Ahora va como una fila más, en su hora, con su etiqueta. Publicar no la toca.
+  // 17-nov: ya no es de solo lectura (ver filaSola).
   function solaCoincide(v, q) {
     return [...(v.pendientes || []), ...(v.atendidas || [])].some((g) => norm(g.name).includes(q) || norm(((rt.rv2AuxSolas || {})[g.rid] || {}).zona).includes(q))
       || (v.driverProfileId && norm(v.conductor).includes(q));
@@ -1113,12 +1113,17 @@
         `<span class="nm">${hl(g.name || 'Tripulante')}${g.guest ? ' <em>(sin cuenta)</em>' : ''}</span>${lle && o.par ? `<span class="org">(${hl(o.par)})</span>` : ''}` +
         `${a.zona ? `<span class="pl">${lle ? '→ ' : ''}${hl(a.zona)}</span>` : ''}</span>`;
     }).join('');
+    // 17-nov-2026 (Harold: «todo eso debería poder moverse por si el admin quiere hacer
+    // algún cambio»): los mismos botones de una vuelta pegada (conductor, hora, delegar;
+    // admin-ruta-julian.js · botonesPeg). Aplican al momento, sin Publicar.
+    const RJ = window.RendioRutaJulian;
+    const btns = p.fija !== 'completed' && fin !== 'sinmarcar' && rt.source === 'live' && RJ && typeof RJ.botones === 'function' ? RJ.botones(v) : '';
     const aria = `Vuelta que armó el sistema, ${TYPE[p.type]} de las ${hhmm(p.pickup)}, ${p.g.map((g) => g.name).join(', ')}`;
     return `<div class="rv2-row rv2-row--sola" data-sola="${esc(v.id)}" data-s="${v.driverProfileId ? 'ok' : 'nodriver'}"${fin ? ` data-fin="${fin}"` : ''} aria-label="${esc(aria)}">` +
       `<div class="when"><b class="mono">${hhmm(p.pickup)}</b><small>${sub}</small>${estado}</div>` +
       `<div class="main"><div class="l1"><span class="rv2-pill ${p.type}">${TYPE[p.type]}</span>` +
-      '<span class="tag rj-tag" title="Alguien pidió tarde o cambió de vuelo y no cabía en otra vuelta: el sistema le armó esta. Publicar el tablero no la toca.">La armó el sistema</span>' +
-      `${quien}</div><div class="people">${chips}</div></div></div>`;
+      '<span class="tag rj-tag" title="Alguien pidió tarde o cambió de vuelo y no cabía en otra vuelta: el sistema le armó esta. Puedes ponerle conductor, cambiarle la hora o delegarla aquí mismo; Publicar el tablero no la toca.">La armó el sistema</span>' +
+      `${quien}</div><div class="people">${chips}</div>${btns ? `<div class="rj-acts">${btns}</div>` : ''}</div></div>`;
   }
   function filaPegada(p) {
     return window.RendioRutaJulian.filaLista(p.v, { hl, aux: auxPegada, fin: finFila(p) });
@@ -3421,7 +3426,8 @@
       render();
       return true;
     },
-    pegadas: () => (ui.manual && ui.manual.vueltas) || [],   // 0145: «Cambiar hora» busca aquí su vuelta
+    // 0145: «Cambiar hora» busca aquí su vuelta. 17-nov: también las que armó el sistema.
+    pegadas: () => ((ui.manual && ui.manual.vueltas) || []).concat((rt.rv2Solas || []).map((x) => x.v).filter(Boolean)),
     // 27-oct-2026: la ruta pegada entra al tablero (meterPegado) y se publica con la hoja de siempre.
     meterPegado, guardarPegado, abrirPublicar: () => openPublish(), _pegadoPendiente: pegadoPendiente,
     pendientesDelTablero, pasarASola,   // 27-oct-2026 (2ª): rearmar el día al pegar · una vuelta sola
