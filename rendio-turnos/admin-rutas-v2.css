@@ -223,6 +223,8 @@
 #routes-v2 .rv2-row .l1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; min-width: 0; }
 #routes-v2 .rv2-row .l1 .car { font-weight: 800; }
 /* 27-oct (Camilo): «Cambiar hora» en todas las vueltas, a la derecha de la fila. */
+#routes-v2 .rv2-row .l1 .rv2-xbtn { margin-left: auto; height: 28px; padding: 0 10px; font-size: 12px; flex: 0 0 auto; background: var(--red-ink); border-color: var(--red-ink); color: #FFF; }
+#routes-v2 .rv2-row .l1 .rv2-xbtn:hover { background: #A8322A; border-color: #A8322A; }
 #routes-v2 .rv2-row .l1 .rv2-hbtn { margin-left: auto; height: 28px; padding: 0 10px; font-size: 12px; flex: 0 0 auto; }
 #routes-v2 .rv2-caprow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
 #routes-v2 .rv2-caprow .rv2-cap { margin: 0; }
@@ -509,6 +511,7 @@
   #routes-v2 .rv2-al li { flex-wrap: nowrap; }
   #routes-v2 .rv2-al li .rv2-btn--sm { height: 40px; }
   #routes-v2 .rv2-row .l1 .rv2-hbtn { height: 36px; }
+  #routes-v2 .rv2-row .l1 .rv2-xbtn { height: 36px; }
   #routes-v2 .rv2-p { min-height: 40px; align-items: center; }
   #routes-v2 .rv2-map { height: 38vh; }
   #routes-v2 .rv2-stops .rv2-mv { height: 44px; }

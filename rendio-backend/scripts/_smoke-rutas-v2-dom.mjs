@@ -1703,6 +1703,18 @@ console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio 
         t('…y avisa al tripulante y a su conductor', push.length === 2 && push[0].title === 'Traslado cancelado' && /canceló por WhatsApp/.test(push[0].body) && push[1].title === 'Parada cancelada' && push[1].profileIds[0] === 'prof-d2', JSON.stringify(push).slice(0, 300));
         t('…cierra la hoja y lo dice', q('#rv2-sheet').hidden && /Traslado de Felipe Vélez cancelado/.test(txt(q('#rv2-toast'))), txt(q('#rv2-toast'))); } }
     delete w.Api.pasarReserva; }
+  // 17-nov: el botón rojo «Cancelar traslado» va en la tarjeta, arriba a la derecha.
+  { w.Api.adminCancelReservation = async () => ({ ok: true }); await V2().cargarDia(T().rt.day); await wait(30);
+    const bs = q('#rv2-list .rv2-row--sola .l1 .rv2-xbtn');
+    t('la tarjeta del sistema trae el botón rojo «Cancelar traslado» en su primera línea', !!bs && /Cancelar traslado/.test(txt(bs)), txt(q('#rv2-list .rv2-row--sola')));
+    if (bs) { bs.click(); await wait(30); t('con una sola persona va directo a confirmar', /¿Cancelar el traslado de Felipe Vélez\?/.test(txt(q('#rv2-sheet'))), txt(q('#rv2-sheet')).slice(0, 80)); q('#rv2-sheet [data-act="sclose"]').click(); await wait(20); }
+    const varias = [...w.document.querySelectorAll('#rv2-list .rv2-row[data-id]')].find((f) => f.querySelectorAll('[data-drag]').length > 1 && f.querySelector('.l1 .rv2-xbtn'));
+    t('las tarjetas del tablero sin arrancar también lo traen', !!varias, 'ninguna con varias personas lo trae');
+    if (varias) { varias.querySelector('.l1 .rv2-xbtn').click(); await wait(30);
+      const ops = [...w.document.querySelectorAll('#rv2-sheet [data-act="cancelartras"]')];
+      t('con varias personas pregunta a quién', /¿A quién le cancelas/.test(txt(q('#rv2-sheet'))) && ops.length === varias.querySelectorAll('[data-drag]').length, txt(q('#rv2-sheet')).slice(0, 120));
+      if (ops[0]) { ops[0].click(); await wait(30); t('…y al elegir pide confirmar para ESA persona', /¿Cancelar el traslado de /.test(txt(q('#rv2-sheet'))) && !!q('#rv2-cx-ok'), txt(q('#rv2-sheet')).slice(0, 80)); }
+      const x = q('#rv2-sheet [data-act="sclose"]'); if (x) { x.click(); await wait(20); } } }
   t('sin errores de consola (vuelta armada sola)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 {
