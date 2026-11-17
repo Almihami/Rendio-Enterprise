@@ -951,7 +951,23 @@
           ? '<span class="drv tomar" title="El sistema se la da al carro que esté o vaya a estar en JMC cuando el vuelo confirme la hora. Si nadie alcanza, te avisa.">En espera · la reparte el sistema</span>'
           : '<span class="drv tomar" title="La ven los conductores del turno en «Vueltas para tomar»">Para tomar · nadie la ha tomado</span>')
         : `<span class="drv${d ? '' : ' none'}">${d ? hl(d.name) : 'Sin conductor'}</span>${r.propio ? ' <span class="tag own" title="Conductor puesto solo a esta vuelta">solo esta vuelta</span>' : ''}`) +
-      `${enCurso}${horaEditable(r) ? `<button class="rv2-btn rv2-btn--sm rv2-hbtn" data-act="hora" data-id="${esc(r.id)}" aria-label="Cambiar la hora de ${esc(r.vehicle)} de las ${horas(r)}">Cambiar hora</button>` : ''}</div><div class="people">${chips}</div></div></div>`;
+      `${enCurso}</div><div class="people">${chips}</div>${accionesFila(r, d)}</div></div>`;
+  }
+
+  // 17-nov-2026 (Harold: «no tiene sentido que, porque se programó diferente, tengan
+  // opciones diferentes»): TODAS las tarjetas que no han arrancado traen los mismos
+  // tres botones, en el mismo sitio (debajo de la gente): Cambiar hora, conductor y
+  // Delegar. Antes la del tablero solo mostraba «Cambiar hora» y lo demás estaba
+  // dentro del detalle. Abren las mismas hojas de siempre.
+  function accionesFila(r, d) {
+    if (!horaEditable(r)) return '';
+    const l = rtLaneOf(r.id) || {};
+    const de = `${esc(r.vehicle)} de las ${horas(r)}`;
+    return '<div class="rj-acts">' +
+      `<button class="rv2-btn rv2-btn--sm" data-act="hora" data-id="${esc(r.id)}" aria-label="Cambiar la hora de ${de}">Cambiar hora</button>` +
+      `<button class="rv2-btn rv2-btn--sm" data-act="assign" data-id="${esc(r.id)}" aria-label="${d ? 'Cambiar' : 'Asignar'} el conductor de ${de}">${d ? 'Cambiar conductor' : 'Asignar conductor'}</button>` +
+      `<button class="rv2-btn rv2-btn--sm" data-act="delegar" data-id="${esc(r.id)}" aria-label="Delegar ${de}">${l.deleg ? 'Cambiar a quién' : 'Delegar'}</button>` +
+      '</div>';
   }
 
   function emptyHTML() {
@@ -3410,6 +3426,7 @@
       if (act.disabled) return;
       const a = act.dataset.act; e.stopPropagation();
       if (a === 'assign') return openAssign(act.dataset.id);
+      if (a === 'delegar') { const l = rtLaneOf(act.dataset.id); return delegarVuelta(act.dataset.id, !!(l && l.raId && l.raStatus === 'planned')); }   // 17-nov: a la vista en la tarjeta
       if (a === 'hora') return openHora(act.dataset.id);          // 27-oct: cualquier vuelta
       if (a === 'datos') return abrirDatos(act.dataset.crew);     // 27-oct: la ficha del tripulante
       if (a === 'assignslot') return openAssignSlot(act.dataset.car, act.dataset.shift);

@@ -1678,6 +1678,15 @@ console.log('\n── 0134 · la vuelta para tomar que armó el sistema (cambio 
           t('…y al soltar se pasa a esa vuelta (ra-sola)', llam.length === 1 && llam[0][1] === 'ra-sola' && llam[0][0] === T().rt.aux[tc.dataset.drag].reservationId, JSON.stringify(llam)); }
         else ev('dragend', tc); } else t('hay una salida publicada del tablero para arrastrar', false, 'no la encontré'); }
     delete w.Api.pasarReserva; }
+  // 17-nov: todas las tarjetas sin arrancar traen los mismos tres botones, en el mismo sitio.
+  { const filas = [...w.document.querySelectorAll('#rv2-list .rv2-row[data-id]')].filter((f) => f.querySelector('.rj-acts'));
+    const tres = (f) => [...f.querySelectorAll('.rj-acts > button')].map((x) => txt(x).replace(/Asignar|Cambiar a quién/, (m) => (m === 'Asignar' ? 'Cambiar' : 'Delegar')));
+    const fs = q('#rv2-list .rv2-row--sola');
+    t('la tarjeta del tablero trae «Cambiar hora · conductor · Delegar», igual que la del sistema', filas.length > 0 && filas.every((f) => tres(f).join('|') === 'Cambiar hora|Cambiar conductor|Delegar') && !!fs && tres(fs).join('|') === 'Cambiar hora|Cambiar conductor|Delegar' && !q('#rv2-list .rv2-hbtn'), filas[0] ? tres(filas[0]).join('|') + ' / ' + (fs ? tres(fs).join('|') : '') : 'sin filas');
+    const bd = filas[0] && filas[0].querySelector('[data-act="delegar"]');
+    if (bd) { bd.click(); await wait(30); t('«Delegar» en la tarjeta abre «Delegar a…»', /Delegar a/.test(txt(q('#rv2-sheet'))), txt(q('#rv2-sheet')).slice(0, 80)); const x = q('#rv2-sheet [data-act="sclose"]'); if (x) { x.click(); await wait(20); } }
+    const ba = filas[0] && filas[0].querySelector('[data-act="assign"]');
+    if (ba) { ba.click(); await wait(30); t('«Cambiar conductor» en la tarjeta abre la hoja de conductores', !q('#rv2-sheet').hidden && !!q('#rv2-sheet [data-pick]'), txt(q('#rv2-sheet')).slice(0, 80)); const x = q('#rv2-sheet [data-act="sclose"]'); if (x) { x.click(); await wait(20); } } }
   t('sin errores de consola (vuelta armada sola)', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 {
