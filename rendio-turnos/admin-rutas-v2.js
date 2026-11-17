@@ -951,7 +951,7 @@
           ? '<span class="drv tomar" title="El sistema se la da al carro que esté o vaya a estar en JMC cuando el vuelo confirme la hora. Si nadie alcanza, te avisa.">En espera · la reparte el sistema</span>'
           : '<span class="drv tomar" title="La ven los conductores del turno en «Vueltas para tomar»">Para tomar · nadie la ha tomado</span>')
         : `<span class="drv${d ? '' : ' none'}">${d ? hl(d.name) : 'Sin conductor'}</span>${r.propio ? ' <span class="tag own" title="Conductor puesto solo a esta vuelta">solo esta vuelta</span>' : ''}`) +
-      `${enCurso}</div><div class="people">${chips}</div>${accionesFila(r, d)}</div></div>`;
+      `${enCurso}${horaEditable(r) ? btnCancelar(r.stops.filter((x) => !atendida(x.crewId)).map((x) => { const a = aux(x.crewId) || {}; return a.guest ? null : { rid: a.reservationId, nm: a.n || 'Tripulante' }; })) : ''}</div><div class="people">${chips}</div>${accionesFila(r, d)}</div></div>`;
   }
 
   // 17-nov-2026 (Harold: «no tiene sentido que, porque se programó diferente, tengan
@@ -1141,7 +1141,7 @@
       `<div class="when"><b class="mono">${hhmm(p.pickup)}</b><small>${sub}</small>${estado}</div>` +
       `<div class="main"><div class="l1"><span class="rv2-pill ${p.type}">${TYPE[p.type]}</span>` +
       '<span class="tag rj-tag" title="Alguien pidió tarde o cambió de vuelo y no cabía en otra vuelta: el sistema le armó esta. Puedes ponerle conductor, cambiarle la hora o delegarla aquí mismo; Publicar el tablero no la toca.">La armó el sistema</span>' +
-      `${quien}</div><div class="people">${chips}</div>${btns ? `<div class="rj-acts">${btns}</div>` : ''}</div></div>`;
+      `${quien}${btns ? btnCancelar((v.pendientes || []).map((g) => ({ rid: g.rid, nm: g.name || 'Tripulante' }))) : ''}</div><div class="people">${chips}</div>${btns ? `<div class="rj-acts">${btns}</div>` : ''}</div></div>`;
   }
   // ── 0167 · Pasar a alguien a OTRA vuelta ya publicada, al momento ───────────
   // Harold, 17-nov: «poder mover la cajita del nombre y pasarlo a otro combo y
@@ -1209,6 +1209,21 @@
       + `<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">No, dejarlo</button><button class="rv2-btn rv2-btn--cta rv2-btn--danger" id="rv2-cx-ok" data-rid="${esc(rid)}" data-nm="${esc(nm)}">Sí, cancelar traslado</button></div>`);
     $('#rv2-cx-ok').addEventListener('click', () => doCancelar(rid, nm));
   }
+  // El botón rojo de la tarjeta (arriba a la derecha): Harold, 17-nov, «0 intuitivo»
+  // lo de tocar la cajita. gente: [{ rid, nm }] de los que aún se pueden cancelar.
+  function btnCancelar(gente) {
+    const g = (gente || []).filter((x) => x && x.rid);
+    if (!g.length || rt.source !== 'live' || !window.Api || typeof Api.adminCancelReservation !== 'function') return '';
+    return `<button class="rv2-btn rv2-btn--sm rv2-xbtn" data-act="cancelarfila" data-g="${esc(JSON.stringify(g))}" aria-label="Cancelar el traslado de ${esc(g.map((x) => x.nm).join(', '))}">Cancelar traslado</button>`;
+  }
+  function cancelarDeFila(json) {
+    let g = []; try { g = JSON.parse(json || '[]'); } catch (_) { g = []; }
+    if (!g.length) return;
+    if (g.length === 1) return openCancelar(g[0].rid, g[0].nm);
+    openSheet(sheetHead('¿A quién le cancelas el traslado?', 'En esta vuelta van varias personas: elige a una. Las demás siguen igual.')
+      + `<div class="rv2-sh-body"><div class="rv2-mvopts">${g.map((x) => `<button class="rv2-opt rv2-opt--drop" data-act="cancelartras" data-rid="${esc(x.rid)}" data-nm="${esc(x.nm)}"><span class="t"><b>${esc(x.nm)}</b></span></button>`).join('')}</div></div>`
+      + '<div class="rv2-sh-foot"><button class="rv2-btn" data-act="sclose">Cerrar</button></div>');
+  }
   let cancelando = false;
   async function doCancelar(rid, nm) {
     if (cancelando) return;
@@ -1255,7 +1270,7 @@
     } finally { pasando = false; }
   }
   function filaPegada(p) {
-    return window.RendioRutaJulian.filaLista(p.v, { hl, aux: auxPegada, fin: finFila(p), pasar: pasable() });
+    return window.RendioRutaJulian.filaLista(p.v, { hl, aux: auxPegada, fin: finFila(p), pasar: pasable(), cancelar: btnCancelar });
   }
   function barraPegadas(buscando) {
     return !buscando && hayPegadas() && typeof window.RendioRutaJulian.barraHTML === 'function'
@@ -3479,6 +3494,7 @@
         return select(act.dataset.from, { moving: { crew: act.dataset.crew, from: act.dataset.from } });
       }
       if (a === 'pasar') return openPasar(act.dataset.rid, act.dataset.nm, act.dataset.tipo, act.dataset.from);
+      if (a === 'cancelarfila') return cancelarDeFila(act.dataset.g);
       if (a === 'cancelartras') return openCancelar(act.dataset.rid, act.dataset.nm);
       if (a === 'pasarto') return doPasar(act.dataset.rid, act.dataset.ra, act.dataset.nm);
       if (a === 'route') return openMove(act.dataset.crew);

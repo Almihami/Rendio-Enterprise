@@ -1000,7 +1000,7 @@
       + `<div class="when"><b class="mono">${esc(pad2(t0))}${dl ? ' → ' + esc(pad2(dl)) : ''}</b><small>${esc(sub)}</small><small>${esc(que)}</small>${resultado}</div>`
       + `<div class="main"><div class="l1"><span class="rv2-pill ${lle ? 'llegada' : 'salida'}">${lle ? 'Llegada' : 'Salida'}</span>`
       + '<span class="tag rj-tag" title="La pegó Julián: la toman los conductores en su app y Publicar el tablero no la toca">Ruta de Julián</span>'
-      + `${quien}${estado[0] === 'curso' ? ' <span class="tag">en curso</span>' : ''}</div>`
+      + `${quien}${estado[0] === 'curso' ? ' <span class="tag">en curso</span>' : ''}${btns && typeof o.cancelar === 'function' ? o.cancelar((v.pendientes || []).map((g) => ({ rid: g.rid, nm: g.name || 'Tripulante' }))) : ''}</div>`
       + `<div class="people">${chips}</div>${btns ? `<div class="rj-acts">${btns}</div>` : ''}</div></div>`;
   }
 
