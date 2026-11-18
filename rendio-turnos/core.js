@@ -414,7 +414,6 @@
       refreshInspectionsBadge();
       refreshShiftsBadge();
       refreshOilBadge();
-      refreshEventsBadge();
     } else {
       $('#app-shell').classList.remove('admin-shell');
       $('#admin-side')?.classList.add('hidden');
@@ -501,8 +500,6 @@
     if (name === 'calificaciones') { if (typeof window.renderCalificaciones === 'function') window.renderCalificaciones(); }
     if (name === 'privados') renderPrivados();
     if (name === 'tripulantes') renderTripulantes();
-    if (name === 'eventualidades') renderEventualidades();
-    else stopEvtTimer(); // al salir de la bandeja, frena su polling
     if (name === 'oper') renderOperacion();
     else stopOperTimers(); // al salir de Operación, frena el reloj/simulación
     // Rediseño del auxiliar (27-sep-2026): Coordinación, Cuentas de cobro y
@@ -538,7 +535,10 @@
     // de los canjes de puntos traen `#/coordinacion?aux=`, `#/cobro?aux=` y
     // `#/puntos`. Los enlaces DEL TRIPULANTE (#/viaje, #/pagos…) no pasan por
     // aquí: los resuelve aux-shell.js (este camino es solo del admin).
-    const tab = m[1] === 'eventualidades' ? 'eventualidades'
+    // La pantalla Eventualidades se quitó el 17-nov-2026. Los avisos que todavía
+    // traen #/eventualidades (reporte del conductor, botón rojo del tripulante)
+    // abren Operación, que es donde está el jefe.
+    const tab = m[1] === 'eventualidades' ? 'oper'
       : m[1] === 'reservas' ? 'reservas'
       : m[1] === 'coordinacion' && typeof window.renderCoordinacion === 'function' ? 'coordinacion'
       : m[1] === 'cobro' && typeof window.renderCobro === 'function' ? 'cobro'
@@ -557,8 +557,6 @@
       : m[1] === 'tripulantes' || m[1] === 'usuarios' ? 'tripulantes' : null;
     if (!tab) return false;
     const params = new URLSearchParams(m[2] || '');
-    const ev = params.get('ev');
-    if (ev) evtState.focusId = ev;
     const chat = params.get('chat');
     if (chat) rvState.focusChatId = chat;
     const aux = params.get('aux');

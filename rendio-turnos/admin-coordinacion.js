@@ -57,6 +57,20 @@
     histShow: false,         // la lista del historial a la vista
     closing: false,
     sinAvisos: new Set(),    // tripulantes de los que ya se dijo que no tienen notificaciones
+    // 17-nov-2026 (Harold): dos pestañas, buscador y los chats con conductores por turno.
+    tab: 'oficina',          // 'oficina' (crew_messages) | 'conductores' (chat de cada traslado, 0177)
+    q: '',                   // lo que se escribió en «Buscar tripulante»
+    roster: undefined,       // tripulantes para el buscador: undefined = sin pedir · null = falló · []
+    rosterLoading: false,
+    extra: new Map(),        // tripulantes abiertos desde el buscador que todavía no tienen hilo
+    cc: undefined,           // chats con conductores: undefined = cargando · null = falló o sin 0177 · []
+    ccAt: 0,
+    ccLoading: false,
+    ccSig: '',
+    keep: undefined,         // días que se guardan (0177): undefined = sin leer · null = sin la columna
+    keepEdit: false,
+    keepBusy: false,
+    keepMsg: '',
   };
 
   // ── utilidades ───────────────────────────────────────────────────────────
@@ -96,7 +110,7 @@
   // Hora si es de hoy; si no, el día.
   const when = (iso) => !iso ? '' : (bogDay(iso) === bogDay(Date.now()) ? hm(iso) : dayShort(bogDay(iso)));
 
-  const threadOf = (auxId) => (Array.isArray(co.threads) ? co.threads.find(t => t.auxId === auxId) : null) || null;
+  const threadOf = (auxId) => (Array.isArray(co.threads) ? co.threads.find(t => t.auxId === auxId) : null) || co.extra.get(auxId) || null;
 
   // «Salida del jue 16 oct · 05:30». Sin fecha, solo el tipo.
   function resLabel(r) {
@@ -113,14 +127,21 @@
       <div class="sh-phead">
         <div>
           <h1>Coordinación <span class="sh-ct" id="co-count">0</span></h1>
-          <p>Lo que los tripulantes les escriben a los jefes, <b>por conversaciones</b>: cuando una quede atendida, márcala «Resuelta»; el siguiente mensaje empieza otra. Si escriben desde un viaje, el traslado va como contexto.</p>
-          <details class="rd-why"><summary aria-expanded="false">¿Y el chat del traslado?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Lo que es de un viaje puntual con su conductor sigue en <b>Reservas</b>. Aquí llega lo que el tripulante quiere decirle a la operación. Si el mensaje trae un traslado, el enlace abre ese chat.</div></details>
+          <p><b>Con la oficina</b>: lo que los tripulantes les escriben a los jefes, por conversaciones (márcala «Resuelta» cuando quede atendida). <b>Con conductores</b>: lo que cada tripulante habló con su conductor, por turno.</p>
+          <details class="rd-why"><summary aria-expanded="false">¿Cómo le escribo a alguien que no ha escrito?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">En «Con la oficina», búscalo por su nombre o su conjunto y ábrelo: lo que escribas le suena en el celular y queda en su chat con Coordinación.</div></details>
         </div>
         <button class="set-btn ghost" data-co="refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
       </div>
       <div id="co-contact"></div>
       <div class="co-grid" id="co-grid">
-        <div class="co-list" id="co-list" role="list"></div>
+        <div class="co-side" id="co-side">
+          <div class="co-seg" role="tablist">
+            <button type="button" role="tab" data-co="tab" data-tab="oficina">Con la oficina <i id="co-n-of"></i></button>
+            <button type="button" role="tab" data-co="tab" data-tab="conductores">Con conductores</button>
+          </div>
+          <label class="co-search" id="co-search"><svg class="icon"><use href="#i-search"/></svg><input id="co-q" type="search" placeholder="Buscar tripulante para escribirle…" autocomplete="off" enterkeyhint="search" aria-label="Buscar tripulante"></label>
+          <div class="co-list" id="co-list" role="list"></div>
+        </div>
         <div class="co-thread" id="co-thread"></div>
       </div>
     </div>`;
@@ -223,8 +244,19 @@
       ${t.unread ? `<i class="co-badge" aria-label="${t.unread} sin leer">${t.unread > 9 ? '9+' : t.unread}</i>` : ''}
     </button>`;
   }
+  // El número sin leer de «Con la oficina»: encabezado, pestaña y menú.
+  function pintarConteoOficina() {
+    if (!Array.isArray(co.threads)) return;
+    const unread = co.threads.reduce((n, t) => n + (t.unread || 0), 0);
+    const cnt = $co('co-count'); if (cnt) cnt.textContent = String(unread);
+    const ti = $co('co-n-of'); if (ti) ti.textContent = unread ? (unread > 99 ? '99+' : String(unread)) : '';
+    pintarBadge(unread);   // el número del menú baja apenas el jefe lee
+  }
   function paintList(force) {
     const el = $co('co-list'); if (!el) return;
+    pintarConteoOficina();
+    if (co.tab === 'conductores') { paintConductores(force); return; }
+    if (co.q.trim()) { co.sig = ''; paintBusqueda(el); return; }
     const cnt = $co('co-count');
     if (co.threads === undefined) {
       if (cnt) cnt.textContent = '0';
@@ -239,8 +271,6 @@
       co.sig = '';
       return;
     }
-    const unread = co.threads.reduce((n, t) => n + (t.unread || 0), 0);
-    if (cnt) cnt.textContent = String(unread);
     const sig = JSON.stringify([co.openAux, co.threads.map(t => [t.auxId, t.lastAt, t.unread, t.lastBody, t.name, t.open, t.lastSenderName])]);
     if (!force && sig === co.sig) return;
     co.sig = sig;
@@ -286,7 +316,7 @@
   function paintThread() {
     const el = $co('co-thread'); if (!el) return;
     const grid = $co('co-grid');
-    if (grid) grid.classList.toggle('has-open', !!co.openAux);
+    if (grid) grid.classList.toggle('has-open', !!co.openAux && co.tab === 'oficina');
     if (!co.openAux) {
       el.innerHTML = `<div class="co-th-none"><svg class="icon"><use href="#i-chat"/></svg><b>Elige un hilo</b><span>Para leerlo y responderle al tripulante.</span></div>`;
       co.msgSig = '';
@@ -535,7 +565,7 @@
   const MQ_APP = '(max-width: 999px)';
   const modoApp = () => !!(window.matchMedia && window.matchMedia(MQ_APP).matches);
   function sincronizarModoApp() {
-    const on = !!co.openAux && modoApp() && visible();
+    const on = !!co.openAux && co.tab === 'oficina' && modoApp() && visible();
     document.documentElement.classList.toggle('co-chat-open', on);
     if (on) seguirTeclado(); else soltarTeclado();
   }
@@ -650,6 +680,7 @@
     if (!visible()) { stopCoordTimer(); return; }
     loadThreads(true);
     if (co.openAux) loadMsgs(true);
+    if (co.tab === 'conductores' && Date.now() - co.ccAt > CC_POLL_MS) loadCC(true);
   }
   function stopCoordTimer() {
     if (co.poll) { clearInterval(co.poll); co.poll = null; }
@@ -667,6 +698,14 @@
       const el = e.target.closest('[data-co]'); if (!el || !r.contains(el)) return;
       const act = el.getAttribute('data-co');
       if (act === 'open') { openThread(el.getAttribute('data-aux')); return; }
+      if (act === 'open-new') { abrirDesdeBuscador(el.getAttribute('data-aux')); return; }
+      if (act === 'tab') { cambiarPestana(el.getAttribute('data-tab')); return; }
+      if (act === 'cc-open') { abrirChatTraslado(el.getAttribute('data-rid')); return; }
+      if (act === 'cc-reload') { co.cc = undefined; paintList(true); loadCC(false); return; }
+      if (act === 'roster-reload') { co.roster = undefined; paintList(true); return; }
+      if (act === 'keep-edit') { co.keepEdit = true; co.keepMsg = ''; co.ccSig = ''; paintList(true); const k = $co('co-keep'); if (k) k.focus(); return; }
+      if (act === 'keep-cancel') { co.keepEdit = false; co.keepMsg = ''; co.ccSig = ''; paintList(true); return; }
+      if (act === 'keep-save') { guardarKeep(); return; }
       if (act === 'close') { closeThread(); return; }
       if (act === 'send') { send(); return; }
       if (act === 'ctx-off') { co.ctxOff = true; paintCtx(); return; }
@@ -682,12 +721,16 @@
       // 'res-chat' es un <a href="#/reservas?chat=…">: el hashchange de core
       // abre Reservas con ese hilo. No se intercepta.
     });
-    r.addEventListener('input', (e) => { if (e.target && e.target.id === 'co-input') ajustarCampo(); });
+    r.addEventListener('input', (e) => {
+      if (e.target && e.target.id === 'co-input') ajustarCampo();
+      if (e.target && e.target.id === 'co-q') { co.q = e.target.value || ''; paintList(true); }
+    });
     // Abrir o cerrar la tarjeta del teléfono cambia lo que queda para el chat
     // ('toggle' no burbujea: se escucha en captura).
     r.addEventListener('toggle', () => ajustarAltoPc(), true);
     // Enter manda (Mayúscula + Enter = otro renglón en el computador).
     r.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target && e.target.id === 'co-keep') { e.preventDefault(); guardarKeep(); return; }
       if (e.key === 'Enter' && e.target && e.target.id === 'co-input' && !e.shiftKey) { e.preventDefault(); send(); }
     });
   }
@@ -696,8 +739,11 @@
     if (!ensureShell()) return;
     bind();
     const pend = co.pendingAux; co.pendingAux = null;
+    if (pend) co.tab = 'oficina';   // un aviso de Coordinación abre esa pestaña
     paintContact();
+    paintTabs();
     paintList(true);
+    if (co.tab === 'conductores') { loadCC(false); loadKeep(); }
     if (pend) openThread(pend);
     else paintThread();
     // Al entrar se pide de nuevo y sin red se dice (la lista vieja no se
@@ -726,7 +772,7 @@
   function tomarHash() {
     const d = leerHash(); if (!d || !esJefe()) return false;
     try { history.replaceState(null, '', location.pathname + location.search); } catch (_) { /* */ }
-    if (d.aux) co.pendingAux = d.aux;
+    if (d.aux) { co.pendingAux = d.aux; co.tab = 'oficina'; }
     if (typeof setTab === 'function') setTab('coordinacion');       // core.js (ámbito global)
     else renderCoordinacion();
     return true;
@@ -765,11 +811,255 @@
   // paneles publica solo render*/stop*Timer.
   function coordFocus(auxId) {
     if (!auxId) return;
+    if (co.tab !== 'oficina') { co.tab = 'oficina'; paintTabs(); paintList(true); }
     if (visible() && root() && root().querySelector('.co-wrap')) openThread(auxId);
     else co.pendingAux = auxId;
   }
 
+  // ── pestañas, buscador y chats con conductores (17-nov-2026) ─────────────
+  // Harold: «a veces veo chats entre la tripulante y el conductor, y otras entre
+  // el tripulante y el admin: debería estar segmentada y decir qué conductor
+  // es», «una manera de buscar un tripulante y hablarle» y «segmentar por
+  // turnos: turno tal se conversó con tal». Los chats con conductores son el
+  // chat de cada traslado (reservation_messages): se ven los últimos 7 días y
+  // se abren en la misma hoja que usa Reservas (admin-chat.js, jcOpen), que ya
+  // dice el nombre del conductor en cada burbuja. Se borran solos a los N días
+  // (0177, app_settings.reservation_chat_keep_days, 30 por defecto).
+  const CC_DIAS = 7;
+  const CC_POLL_MS = 30000;
+  const norm = (x) => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const corto = (nombre) => String(nombre || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ');
+  const primero = (nombre) => String(nombre || '').trim().split(/\s+/)[0] || '';
+
+  function paintTabs() {
+    const r = root(); if (!r) return;
+    r.querySelectorAll('.co-seg [data-tab]').forEach(b => {
+      const on = b.getAttribute('data-tab') === co.tab;
+      b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    const s = $co('co-search'); if (s) s.hidden = co.tab !== 'oficina';
+    const g = $co('co-grid'); if (g) g.classList.toggle('cc', co.tab === 'conductores');
+  }
+  function cambiarPestana(tab) {
+    const t = tab === 'conductores' ? 'conductores' : 'oficina';
+    if (t === co.tab) return;
+    co.tab = t; co.sig = ''; co.ccSig = '';
+    paintTabs();
+    paintThread();          // en «Con conductores» el panel del hilo no se usa
+    sincronizarModoApp();
+    paintList(true);
+    if (t === 'conductores') { if (co.cc === undefined || Date.now() - co.ccAt > CC_POLL_MS) loadCC(false); if (co.keep === undefined) loadKeep(); }
+    ajustarAltoPc();
+  }
+
+  // Buscador: cualquier tripulante activo con app (Api.listAuxiliares, el mismo
+  // padrón de Rutas › Tripulantes). Los que ya tienen hilo salen con su hilo.
+  async function cargarRoster() {
+    if (co.rosterLoading) return;
+    co.rosterLoading = true;
+    let lista = null;
+    try {
+      const A = window.Api;
+      const raw = (A && typeof A.listAuxiliares === 'function') ? await A.listAuxiliares() : null;
+      lista = Array.isArray(raw) ? raw
+        .filter(a => !a.deleted && a.active !== false && !a.external)
+        .map(a => ({ auxId: a.id, name: a.name || '', phone: a.phone || '',
+          residence: (a.res1 && a.res1.name) || '', sector: (a.res1 && a.res1.sector) || '' })) : null;
+    } catch (_) { lista = null; }
+    co.rosterLoading = false;
+    co.roster = lista;
+    if (co.tab === 'oficina' && co.q.trim()) paintList(true);
+  }
+  function rowNuevoHTML(a) {
+    const lugar = [a.residence, a.sector].filter(Boolean).join(' · ');
+    return `<button class="co-row co-row-new${a.auxId === co.openAux ? ' on' : ''}" data-co="open-new" data-aux="${esc(a.auxId)}" role="listitem">
+      <span class="co-av">${esc(ini(a.name))}</span>
+      <span class="co-row-b">
+        <span class="co-row-t"><b>${esc(a.name || 'Tripulante')}</b></span>
+        ${lugar ? `<span class="co-row-s">${esc(lugar)}</span>` : ''}
+        <span class="co-row-p co-row-go">Sin mensajes · toca para escribirle</span>
+      </span>
+    </button>`;
+  }
+  function paintBusqueda(el) {
+    const q = norm(co.q.trim());
+    if (co.roster === undefined) { el.innerHTML = '<div class="co-empty">Buscando…</div>'; cargarRoster(); return; }
+    if (co.roster === null) {
+      el.innerHTML = `<div class="co-empty"><b>No se pudo cargar la lista de tripulantes</b>
+        <span>Revisa la conexión y vuelve a intentar.</span>
+        <button class="set-btn ghost" data-co="roster-reload">Reintentar</button></div>`;
+      return;
+    }
+    const hilos = new Map((Array.isArray(co.threads) ? co.threads : []).map(t => [t.auxId, t]));
+    const hits = co.roster.filter(a => norm(a.name).includes(q) || norm(a.residence).includes(q)).slice(0, 40);
+    if (!hits.length) {
+      el.innerHTML = `<div class="co-empty"><b>Nadie con «${esc(co.q.trim())}»</b><span>Busca por nombre, apellido o conjunto.</span></div>`;
+      return;
+    }
+    el.innerHTML = hits.map(a => hilos.has(a.auxId) ? rowHTML(hilos.get(a.auxId)) : rowNuevoHTML(a)).join('');
+  }
+  function abrirDesdeBuscador(auxId) {
+    if (!auxId) return;
+    const a = (co.roster || []).find(x => x.auxId === auxId);
+    if (a && !(Array.isArray(co.threads) && co.threads.some(t => t.auxId === auxId))) {
+      co.extra.set(auxId, { auxId, name: a.name, phone: a.phone, residence: a.residence, sector: a.sector, unread: 0, open: null });
+    }
+    openThread(auxId);
+  }
+
+  async function loadCC(silent) {
+    if (co.ccLoading) return;
+    const a = api();
+    co.ccLoading = true;
+    if (!silent && co.cc === undefined && co.tab === 'conductores') paintList(true);
+    let r = null;
+    try { r = (a && typeof a.chatsConductores === 'function') ? await a.chatsConductores(CC_DIAS) : null; } catch (_) { r = null; }
+    co.ccLoading = false; co.ccAt = Date.now();
+    // En el sondeo, un fallo no borra lo que ya se ve.
+    if (r === null && silent && Array.isArray(co.cc)) return;
+    co.cc = Array.isArray(r) ? r : null;
+    if (co.tab === 'conductores') paintList();
+  }
+  async function loadKeep() {
+    const a = api();
+    let n = null;
+    try { n = (a && typeof a.getChatKeepDays === 'function') ? await a.getChatKeepDays() : null; } catch (_) { n = null; }
+    co.keep = n;
+    co.ccSig = '';
+    if (co.tab === 'conductores') paintList();
+  }
+  async function guardarKeep() {
+    const a = api(); const k = $co('co-keep');
+    if (!a || typeof a.setChatKeepDays !== 'function' || co.keepBusy || !k) return;
+    co.keepBusy = true; co.keepMsg = '';
+    try {
+      const v = await a.setChatKeepDays(k.value);
+      if (v === null) co.keepMsg = 'No se guardó: a la base le falta la actualización 0177.';
+      else { co.keep = v; co.keepEdit = false; say(`Listo: cada chat se borra a los ${v} días de su último mensaje.`); }
+    } catch (e) { co.keepMsg = (e && e.message) || 'No se pudo guardar.'; }
+    co.keepBusy = false; co.ccSig = '';
+    paintList(true);
+  }
+
+  // «Hoy · Turno mañana», «Ayer · Turno tarde», «lun 16 nov · Turno tarde».
+  const turnoTxt = (t) => t === 'pm' ? 'Turno tarde' : 'Turno mañana';
+  function ccRowHTML(x) {
+    const tipo = x.tipo === 'lle' ? 'Llegada' : 'Salida';
+    const sub = [`${tipo}${x.hora ? ' ' + hm(x.hora) : ''}`, x.vuelo, x.residence, x.cancelada ? 'cancelada' : ''].filter(Boolean).join(' · ');
+    const quien = x.lastRole === 'driver' ? primero(x.conductor) || 'Conductor'
+      : x.lastRole === 'admin' ? 'Oficina' : primero(x.tripulante) || 'Tripulante';
+    return `<button class="co-row co-cc-row" data-co="cc-open" data-rid="${esc(x.rid)}" role="listitem">
+      <span class="co-av">${esc(ini(x.tripulante))}</span>
+      <span class="co-row-b">
+        <span class="co-row-t"><b>${esc(x.tripulante || 'Tripulante')}</b><time>${esc(when(x.lastAt))}</time></span>
+        <span class="co-row-s">${esc(sub)}</span>
+        <span class="co-row-p">${esc(quien + ': ' + (x.lastBody || ''))}</span>
+      </span>
+    </button>`;
+  }
+  function keepHTML() {
+    const dias = co.keep;
+    if (co.keepEdit) {
+      return `<div class="co-cc-foot"><label for="co-keep">Borrar cada chat a los</label>
+        <input class="set-input" id="co-keep" type="number" inputmode="numeric" min="1" max="365" value="${esc(dias || 30)}" />
+        <span>días de su último mensaje</span>
+        <button class="set-btn" data-co="keep-save"${co.keepBusy ? ' disabled' : ''}>${co.keepBusy ? 'Guardando…' : 'Guardar'}</button>
+        <button class="set-btn ghost" data-co="keep-cancel">Cancelar</button>
+        ${co.keepMsg ? `<span class="co-cstate">${esc(co.keepMsg)}</span>` : ''}</div>`;
+    }
+    const plazo = dias ? `Cada chat se borra solo a los <b>${esc(dias)} días</b> de su último mensaje.`
+      : (dias === null ? 'Todavía no se borran solos: a la base le falta la actualización 0177.' : '');
+    return `<div class="co-cc-foot"><span>Se ven los últimos ${CC_DIAS} días. ${plazo}</span>${dias ? '<button class="set-btn ghost" data-co="keep-edit">Cambiar</button>' : ''}</div>`;
+  }
+  function paintConductores(force) {
+    const el = $co('co-list'); if (!el) return;
+    // No se repinta encima del número de días que el jefe está escribiendo.
+    const f = document.activeElement;
+    if (f && f.id === 'co-keep' && el.contains(f)) return;
+    if (co.cc === undefined) { el.innerHTML = '<div class="co-empty">Cargando los chats con conductores…</div>'; co.ccSig = ''; return; }
+    if (co.cc === null) {
+      el.innerHTML = `<div class="co-empty"><b>No se pudieron cargar los chats con conductores</b>
+        <span>Revisa la conexión. Si no se arregla, a la base le falta la actualización 0177.</span>
+        <button class="set-btn ghost" data-co="cc-reload">Reintentar</button></div>`;
+      co.ccSig = '';
+      return;
+    }
+    const sig = JSON.stringify([co.keep, co.keepEdit, co.keepMsg, co.keepBusy, co.cc.map(x => [x.rid, x.lastAt, x.conductorId, x.lastBody])]);
+    if (!force && sig === co.ccSig) return;
+    co.ccSig = sig;
+    if (!co.cc.length) {
+      el.innerHTML = `<div class="co-empty"><b>Sin chats con conductores</b>
+        <span>En los últimos ${CC_DIAS} días ningún tripulante habló con su conductor por la app.</span></div>${keepHTML()}`;
+      return;
+    }
+    // Turno (más reciente primero) → conductor → tripulantes (por hora del traslado).
+    const turnos = new Map();
+    co.cc.forEach(x => {
+      const k = x.dia + '|' + x.turno;
+      if (!turnos.has(k)) turnos.set(k, { dia: x.dia, turno: x.turno, filas: [] });
+      turnos.get(k).filas.push(x);
+    });
+    const orden = [...turnos.values()].sort((a, b) => (b.dia + (b.turno === 'pm' ? '2' : '1')).localeCompare(a.dia + (a.turno === 'pm' ? '2' : '1')));
+    el.innerHTML = orden.map(g => {
+      const porConductor = new Map();
+      g.filas.forEach(x => {
+        const k = x.conductorId || '';
+        if (!porConductor.has(k)) porConductor.set(k, { nombre: x.conductor, filas: [] });
+        porConductor.get(k).filas.push(x);
+      });
+      const conductores = [...porConductor.values()].sort((a, b) => (!a.nombre) - (!b.nombre) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+      return `<div class="co-cc-grp">
+        <div class="co-cc-h"><b>${esc(dayLabel(g.dia))} · ${turnoTxt(g.turno)}</b><span>${g.filas.length} ${g.filas.length === 1 ? 'chat' : 'chats'}</span></div>
+        ${conductores.map(c => `<div class="co-cc-drv"><svg class="icon"><use href="#i-van"/></svg><b>${esc(c.nombre ? corto(c.nombre) : 'Sin conductor asignado')}</b><span>${c.filas.length} ${c.filas.length === 1 ? 'tripulante' : 'tripulantes'}</span></div>
+          ${c.filas.sort((a, b) => String(a.hora || '').localeCompare(String(b.hora || ''))).map(ccRowHTML).join('')}`).join('')}
+      </div>`;
+    }).join('') + keepHTML();
+  }
+  function abrirChatTraslado(rid) {
+    const x = (co.cc || []).find(y => y.rid === rid); if (!x) return;
+    if (typeof jcOpen !== 'function') { say('No se pudo abrir el chat de ese traslado.'); return; }
+    const titulo = `${x.tripulante || 'Tripulante'} · ${x.conductor ? 'con ' + corto(x.conductor) : 'sin conductor'}`;
+    const sub = `${x.tipo === 'lle' ? 'Llegada' : 'Salida'}${x.hora ? ' ' + hm(x.hora) : ''} · ${dayLabel(x.dia)}, ${turnoTxt(x.turno).toLowerCase()}`;
+    jcOpen(rid, titulo, sub);   // admin-chat.js (ámbito global)
+  }
+
+  // ── número junto a «Coordinación» en el menú (17-nov-2026) ───────────────
+  // Harold: «no está saliendo un numerito al lado cuando tiene chats
+  // pendientes». El menú nunca lo pedía. Cuenta los mensajes de tripulantes que
+  // ningún jefe ha leído (crew_unread, 0088): el mismo número que la bandeja
+  // muestra arriba. Se pide al pintar el menú y cada 30 s mientras la app está
+  // a la vista; adentro de Coordinación lo mueve el sondeo de 5 s (paintList).
+  const COORD_BADGE_MS = 30000;
+  function pintarBadge(n) {
+    const b = document.getElementById('coord-badge'); if (!b) return;
+    const v = Math.max(0, Number(n) || 0);
+    b.textContent = v > 99 ? '99+' : String(v);
+    b.classList.toggle('hidden', !v);
+    b.setAttribute('aria-label', v === 1 ? '1 mensaje sin leer' : v + ' mensajes sin leer');
+  }
+  let badgeBusy = false;
+  async function refreshCoordBadge() {
+    if (badgeBusy || !document.getElementById('coord-badge') || !esJefe()) return;
+    const a = api(); if (!a || typeof a.crewUnread !== 'function') return;
+    badgeBusy = true;
+    let n = null;
+    try { n = await a.crewUnread(); } catch (_) { n = null; }
+    badgeBusy = false;
+    // Sin red o sin respuesta no se toca lo que ya se ve.
+    if (n == null) return;
+    // Con un hilo abierto a la vista, lo que el jefe está leyendo no cuenta:
+    // ahí manda la bandeja (paintList), que ya lo descuenta.
+    if (visible() && Array.isArray(co.threads)) return;
+    pintarBadge(n);
+  }
+  setInterval(() => { if (!document.hidden) refreshCoordBadge(); }, COORD_BADGE_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshCoordBadge(); });
+
   renderCoordinacion.focus = coordFocus;
+  // El menú (admin-consola.js) pide el número por aquí: colgado de
+  // renderCoordinacion, como .focus, porque el contrato de los paneles publica
+  // solo render*/stop*Timer en window.
+  renderCoordinacion.badge = refreshCoordBadge;
   window.renderCoordinacion = renderCoordinacion;
   window.stopCoordTimer = stopCoordTimer;
 })();

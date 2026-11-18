@@ -152,7 +152,7 @@
     const avisosHtml = (p) => {
       const dev = p.devices;
       const nota = (txt, tono) => `<p style="font-size:12.5px;line-height:1.5;margin-top:10px;color:${tono || 'var(--pc-ink2)'}">${txt}</p>`;
-      return `<div class="ruleitem"><span class="t">Eventualidades y mensajes a Coordinación</span><span class="v">${p.getsAlerts ? 'Le llegan' : 'No le llegan'}</span></div>
+      return `<div class="ruleitem"><span class="t">Avisos de la operación y mensajes a Coordinación</span><span class="v">${p.getsAlerts ? 'Le llegan' : 'No le llegan'}</span></div>
         ${dev ? `<div class="ruleitem"><span class="t">Dispositivos con avisos activos</span><span class="v">${dev.n || 'Ninguno'}</span></div>` : ''}
         ${!p.active ? nota('Sin acceso a la app: no le llega nada.')
           : !p.getsAlerts ? nota('Solo les llegan a los jefes marcados con <b>🔔 Recibe alertas</b>. Márcalo abajo si también las debe recibir.')
@@ -249,7 +249,7 @@
           ${yo ? `<button class="pc-btn" data-act="my-pw" data-id="${p.id}" data-name="${nm}">Cambiar mi contraseña</button>`
                : `<button class="pc-btn" data-act="reset-pw" data-id="${p.id}" data-name="${nm}">Restablecer contraseña</button>`}
           <button class="pc-btn ${p.coord ? 'on' : ''}" data-act="${adm ? (p.coord ? 'coord-off' : 'coord-on') : (p.coord ? 'dcoord-off' : 'dcoord-on')}" data-id="${p.id}" data-name="${nm}">${p.coord ? '✓ Lidera' : '✕ No lidera'}</button>
-          ${adm ? `<button class="pc-btn ${p.alerts ? 'on' : ''}" data-act="${p.alerts ? 'alerts-off' : 'alerts-on'}" data-id="${p.id}" data-name="${nm}" title="Recibe en su celular las eventualidades de la operación (falla mecánica, botón rojo, carro atrasado)">${p.alerts ? '🔔 Recibe alertas' : '🔕 Sin alertas'}</button>` : ''}
+          ${adm ? `<button class="pc-btn ${p.alerts ? 'on' : ''}" data-act="${p.alerts ? 'alerts-off' : 'alerts-on'}" data-id="${p.id}" data-name="${nm}" title="Recibe en su celular los avisos de la operación (falla mecánica, botón rojo, carro atrasado)">${p.alerts ? '🔔 Recibe alertas' : '🔕 Sin alertas'}</button>` : ''}
           ${adm ? '' : `<button class="pc-btn" data-act="strike" data-id="${p.id}" data-name="${nm}">⚠ Strike</button>
           <button class="pc-btn" data-act="strikes-history" data-id="${p.id}" data-name="${nm}">Historial</button>
           ${p.suspWeek ? `<button class="pc-btn" data-act="lift-susp" data-id="${p.id}" data-name="${nm}" data-susp-id="${p.suspRow ? p.suspRow.id : ''}">✓ Levantar suspensión</button>` : ''}
@@ -392,8 +392,8 @@
       promote: `${name} ahora es administrador.`, demote: `${name} ahora es conductor.`,
       'coord-off': `${name} ya no entra como Líder de turno.`, 'coord-on': `${name} ahora entra como Líder de turno.`,
       'dcoord-off': `${name} ya no entra como Líder de turno.`, 'dcoord-on': `${name} ahora puede liderar.`,
-      'alerts-on': `${name} recibirá las eventualidades en su celular.`,
-      'alerts-off': `${name} ya no recibirá eventualidades.`,
+      'alerts-on': `${name} recibirá los avisos de la operación en su celular.`,
+      'alerts-off': `${name} ya no recibirá los avisos de la operación.`,
     };
     try {
       if (act === 'suspend') await usrSetStatus(id, 'suspended', reason);

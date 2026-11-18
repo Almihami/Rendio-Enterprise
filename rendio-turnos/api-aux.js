@@ -444,11 +444,55 @@
     return true;
   }
 
+
+  // ── Chats con conductores (0177) ─────────────────────────────────────────
+  // Los chats de traslado (tripulante ↔ su conductor) de los últimos `dias`
+  // días, cada uno con su turno (turno_de: la madrugada cuenta en la tarde del
+  // día anterior) y el conductor con el que se habló. Solo jefes. null = sin
+  // 0177 en la base o sin respuesta (la pantalla lo dice, no inventa).
+  async function chatsConductores(dias) {
+    const r = await rpc('admin_chats_conductores', { p_dias: dias || 7 });
+    if (r.missing) return null;
+    if (r.error) { console.warn('[ApiAux.chatsConductores]', r.error.message || r.error); return null; }
+    if (!Array.isArray(r.data)) return null;
+    return r.data.map(x => ({
+      rid: x.reservation_id, dia: String(x.dia || '').slice(0, 10), turno: x.turno === 'pm' ? 'pm' : 'am',
+      tipo: x.direction === 'airport_to_home' ? 'lle' : 'sal', hora: x.hora || null,
+      vuelo: x.flight_code || '', cancelada: x.cancelled === true,
+      auxId: x.auxiliar_profile_id || null, tripulante: x.tripulante || '', telTripulante: x.tripulante_phone || '',
+      residence: x.residence || '',
+      conductorId: x.conductor_profile_id || null, conductor: x.conductor || '', telConductor: x.conductor_phone || '',
+      mensajes: num(x.mensajes) || 0, delConductor: num(x.del_conductor) || 0,
+      lastBody: x.last_body || '', lastRole: x.last_role || null, lastAt: x.last_at || null,
+    }));
+  }
+  // Días que se guarda el chat de un traslado después de su último mensaje
+  // (app_settings.reservation_chat_keep_days, 0177). null = sin la columna.
+  async function getChatKeepDays() {
+    if (!(await uid())) return null;
+    const { data, error } = await cli().from('app_settings')
+      .select('reservation_chat_keep_days').eq('id', 'singleton').maybeSingle();
+    if (error) { if (!falta(error)) console.warn('[ApiAux.getChatKeepDays]', error.message || error); return null; }
+    const n = data ? num(data.reservation_chat_keep_days) : null;
+    return n || null;
+  }
+  async function setChatKeepDays(n) {
+    if (!(await uid())) return null;
+    const v = Math.round(Number(n));
+    if (!(v >= 1 && v <= 365)) throw new Error('Pon un número de días entre 1 y 365');
+    const { data, error } = await cli().from('app_settings')
+      .update({ reservation_chat_keep_days: v }).eq('id', 'singleton').select('id');
+    if (error) { if (falta(error)) return null; lanzar(error); }
+    if (!data || !data.length) throw new Error('Solo un administrador puede cambiar cuánto se guardan los chats');
+    return v;
+  }
+
   window.ApiAux = {
     listMyTrips, getMyStats, saveMyPrefs, changeFlight,
     crewList, crewSend, crewMarkRead, crewUnread, crewThreadsAdmin,
     crewConversations, crewClose,
     getOpsContact, setOpsContact, setVehicleColor,
+    chatsConductores, getChatKeepDays, setChatKeepDays,
     mapTrip,
   };
 })();

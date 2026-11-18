@@ -63,6 +63,25 @@
     // mark_reservation_messages_read (0067) devuelve 0 para un admin.
   }
 
+  // 17-nov-2026 (Harold: «debería decir qué conductor es»): el conductor sale
+  // con su nombre, y lo que escribió OTRO jefe, con el nombre de ese jefe. Los
+  // nombres salen de state.drivers / state.admins (core.js, ya cargados al
+  // entrar); si no está (un conductor eliminado), queda «Conductor».
+  function jcQuien(m) {
+    const st = (typeof state !== 'undefined' && state) ? state : {};
+    const corto = (n) => String(n || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join(' ');
+    if (m.sender_role === 'driver') {
+      const d = Array.isArray(st.drivers) ? st.drivers.find(x => x.id === m.sender_profile_id) : null;
+      return d && d.name ? corto(d.name) + ' (conductor)' : 'Conductor';
+    }
+    if (m.sender_role === 'admin') {
+      if (!m.sender_profile_id || (st.profile && m.sender_profile_id === st.profile.id)) return '';
+      const a = Array.isArray(st.admins) ? st.admins.find(x => x.id === m.sender_profile_id) : null;
+      return a && a.name ? String(a.name).trim().split(/\s+/)[0] + ' (oficina)' : 'Oficina';
+    }
+    return JC_WHO[m.sender_role] || m.sender_role;
+  }
+
   function jcBubbles() {
     const el = document.getElementById('jc-body'); if (!el) return;
     const msgs = jcState.msgs || [];
@@ -79,7 +98,7 @@
     };
     el.innerHTML = msgs.map(m => {
       const mio = m.sender_role === 'admin';
-      const who = JC_WHO[m.sender_role] || m.sender_role;
+      const who = jcQuien(m);
       return `<div class="jc-msg ${mio ? 'mine' : 'their'}">
         ${who ? `<em>${escapeHtml(who)}</em>` : ''}
         <p>${escapeHtml(m.body)}</p><span>${hora(m.created_at)}</span>
