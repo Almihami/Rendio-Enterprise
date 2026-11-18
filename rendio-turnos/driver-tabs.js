@@ -141,6 +141,25 @@
     const cuando = (v) => {
       if (v.type !== 'lle') return v.start ? ` · sale ${escapeHtml(v.start)}` : '';
       const gente = (v.legs || []).filter(l => l.kind !== 'airport');
+      // 17-nov-2026 (Harold): con gente de horas distintas, cada hora con su persona
+      // («aterrizan 23:30 Laura · 23:40 Lady · 23:55 Dayana (hotel)»). Con una sola, como antes.
+      const por = new Map();
+      gente.forEach(l => {
+        const code = String(l.flight || '').replace(/[\s-]/g, '').toUpperCase();
+        let e = null;
+        if (code) { try { e = window.RendioVuelos ? RendioVuelos.para(code, l.reqDay || v.day, 'lle') : null; } catch (_) { e = null; } if (e && e.status === 'unknown') e = null; }
+        const pedida = l.reqAt ? Date.parse(l.reqAt) : NaN;
+        let ms = Date.parse((e && (e.actualAt || e.estimatedAt || e.schedAt)) || '');
+        if (!isFinite(ms) || (isFinite(pedida) && Math.abs(ms - pedida) > 6 * 3600000)) { ms = pedida; e = null; }
+        if (!isFinite(ms)) return;
+        const hm = hmBog(ms), g = por.get(hm) || { hm, ms, n: [], marca: '' };
+        g.n.push(String(l.name || '').trim().split(/\s+/)[0] || 'Tripulante');
+        const m = l.reserva ? 'hotel' : !code ? 'terminal' : (e && e.status === 'landed' ? 'aterrizó' : '');
+        if (m && !g.marca) g.marca = m;
+        por.set(hm, g);
+      });
+      const horas = [...por.values()].sort((a, b) => a.ms - b.ms);
+      if (horas.length > 1) return ' · aterrizan ' + escapeHtml(horas.map(g => `${g.hm} ${g.n.join(', ')}${g.marca ? ` (${g.marca})` : ''}`).join(' · '));
       let top = null, landed = false;
       gente.forEach(l => {
         const code = String(l.flight || '').replace(/[\s-]/g, '').toUpperCase();

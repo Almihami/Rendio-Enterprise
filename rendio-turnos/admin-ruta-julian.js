@@ -984,7 +984,7 @@
     // digan lo mismo; sin ella (día solo pegado, pruebas) queda como antes.
     const L = lle && o.llegada && typeof o.llegada.hora === 'function' ? o.llegada : null;
     const cuando = L
-      ? `<b class="mono">${esc(L.hm)}</b><small${L.late ? ' class="late"' : ''}>${esc(L.rotulo)}${L.txt ? ' · ' + esc(L.txt) : ''}</small>${lugares.some((x) => x !== 'de JMC') ? `<small>${esc(sub)}</small>` : ''}`
+      ? `${L.html || `<b class="mono">${esc(L.hm)}</b><small${L.late ? ' class="late"' : ''}>${esc(L.rotulo)}${L.txt ? ' · ' + esc(L.txt) : ''}</small>`}${lugares.some((x) => x !== 'de JMC') ? `<small>${esc(sub)}</small>` : ''}`
       : `<b class="mono">${esc(pad2(t0))}${dl ? ' → ' + esc(pad2(dl)) : ''}</b><small>${esc(sub)}</small>`;
     const que = [v.nota || '', `${gente.length} ${gente.length === 1 ? 'persona' : 'personas'}`].filter(Boolean).join(' · ');
     // Cómo terminó (0137 de los pendientes: «Terminada 4:05», «Pasó su hora · …»), como en el tablero.

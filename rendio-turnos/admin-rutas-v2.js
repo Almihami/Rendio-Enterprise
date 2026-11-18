@@ -638,6 +638,8 @@
     return v && Math.abs(v.min - plan) <= 360 ? { min: v.min, st: v.st } : { min: plan, st: null };
   }
   const dlVivo = (a, ref) => (a && a.dl ? hhmm(minVivo(a, ref).min) : '—');
+  // «Laura Valentina Fernández» → «Laura V.» (cabe en la columna de la hora).
+  const nombreCorto = (n) => { const w = String(n || 'Tripulante').trim().split(/\s+/); return w.length > 1 ? `${w[0]} ${w[1].charAt(0).toUpperCase()}.` : w[0]; };
   function llegadaVista(gente, ref) {
     const todos = (gente || []).filter((a) => a && a.dl);
     const conVuelo = todos.filter((a) => !a.tierra);
@@ -648,7 +650,26 @@
     let top = null;
     base.forEach((a) => { const x = minVivo(a, ref); if (!top || x.min > top.min) top = x; });
     const tierra = !conVuelo.length, reserva = tierra && base.every((a) => a.reserva), st = top.st;
+    // 17-nov-2026 (Harold, con la llegada de las 23:40 de Juan Ospina: «aquí solo hay
+    // una hora de aterrizado; debería salir la hora y la persona que aterriza cuando
+    // son varias; cuando solo es una, pues solo una hora»). Cada persona con SU hora
+    // (la del vuelo en vivo si se sabe), juntando a quienes tienen la misma. Con una
+    // sola hora se ve igual que antes. La fila se sigue ordenando por L.min.
+    const porMin = new Map();
+    todos.forEach((a) => {
+      const x = minVivo(a, ref), e = x.st;
+      const g = porMin.get(x.min) || { min: x.min, quienes: [], marca: '', late: false };
+      g.quienes.push(nombreCorto(a.n));
+      const m = a.reserva ? 'hotel' : a.tierra ? 'terminal' : (e && e.status === 'landed' ? 'aterrizó' : '');
+      if (m && !g.marca) g.marca = m;
+      if (e && (e.status === 'cancelled' || e.status === 'diverted' || (e.status !== 'landed' && e.delayMin != null && e.delayMin >= 30))) {
+        g.late = true; g.tarde = e.status === 'cancelled' ? 'cancelado' : e.status === 'diverted' ? 'desviado' : e.delayMin + ' min tarde';
+      }
+      porMin.set(x.min, g);
+    });
+    const lista = [...porMin.values()].sort((a, b) => a.min - b.min);
     return {
+      lista, varias: lista.length > 1,
       min: top.min, sinHora: false,
       rotulo: reserva ? 'Termina la asignación' : tierra ? 'Salen del terminal' : (st && st.status === 'landed' ? 'Aterrizó' : 'Aterriza'),
       txt: tierra ? '' : estadoVueloTxt(st),
@@ -658,14 +679,18 @@
   // La de una fila de la lista, sea del tablero, pegada o de las que armó el sistema.
   function vistaFila(r) {
     if (!r || r.type !== 'llegada') return null;
-    const gente = r.julian ? [...((r.v && r.v.atendidas) || []), ...((r.v && r.v.pendientes) || [])].map((g) => auxPegada(g.rid))
+    const gente = r.sinVuelta ? [aux(r.crewId)]
+      : r.julian ? [...((r.v && r.v.atendidas) || []), ...((r.v && r.v.pendientes) || [])].map((g) => auxPegada(g.rid))
       : r.sola ? (r.g || []).map((g) => (rt.rv2AuxSolas || {})[g.rid])
         : (r.stops || []).map((s) => aux(s.crewId));
     return llegadaVista(gente, r.pickup);
   }
-  const vistaHTML = (L) => `<b class="mono">${hhmm(L.min)}</b><small${L.late ? ' class="late"' : ''}>${esc(L.rotulo)}${L.txt ? ' · ' + esc(L.txt) : ''}</small>`;
+  const vistaHTML = (L) => (L.varias
+    ? `<span class="rv2-whens">${L.lista.map((g) => `<span class="rv2-wl${g.late ? ' late' : ''}"><b class="mono">${hhmm(g.min)}</b><span>${esc(g.quienes.join(', '))}${g.marca ? ` <em>${esc(g.marca)}</em>` : ''}${g.late ? ` <em>${esc(g.tarde)}</em>` : ''}</span></span>`).join('')}</span>`
+      + `<small>${L.lista.every((g) => g.marca === 'aterrizó') ? 'Aterrizaron' : L.lista.some((g) => !g.marca || g.marca === 'aterrizó') ? 'Aterrizan' : 'Salen'}</small>`
+    : `<b class="mono">${hhmm(L.min)}</b><small${L.late ? ' class="late"' : ''}>${esc(L.rotulo)}${L.txt ? ' · ' + esc(L.txt) : ''}</small>`);
   // Lo que se lee de una vuelta cuando se la nombra («Carro 1 de las …»).
-  const horaLeida = (r) => { const L = vistaFila(r); return L ? `${L.rotulo.toLowerCase()} ${hhmm(L.min)}` : horas(r); };
+  const horaLeida = (r) => { const L = vistaFila(r); return !L ? horas(r) : L.varias ? `aterrizan de ${hhmm(L.lista[0].min)} a ${hhmm(L.lista[L.lista.length - 1].min)}` : `${L.rotulo.toLowerCase()} ${hhmm(L.min)}`; };
   const turnoTxt = (b) => 'Turno ' + rtBandName(b);   // «Turno AM», «Turno PM del lunes»
 
   function renderBar() {
@@ -1080,9 +1105,11 @@
     const h24 = (h) => ((h % 24) + 24) % 24;
     [...groups.keys()].sort((a, b) => a - b).forEach((h) => {
       const g = groups.get(h).sort((a, b) => leida.get(a) - leida.get(b) || a.orden - b.orden || a.arrival - b.arrival);
-      const malas = g.filter((r) => r.status === 'risk' || (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA)).length;
-      html += `<div class="rv2-gwrap"><div class="rv2-hour"><strong>${pad(h24(h))}:00 – ${pad(h24(h + 1))}:00</strong>${h >= 24 ? ' · después de medianoche' : ''} · ${plural(g.length, 'vuelta', 'vueltas')}${malas ? ` · <span class="t-risk">${plural(malas, 'con aviso', 'con aviso')}</span>` : ''}</div>`;
-      g.forEach((r) => { html += r.julian ? filaPegada(r) : r.sola ? filaSola(r) : rowHTML(r); });
+      const sinv = g.filter((r) => r.sinVuelta).length, nv = g.length - sinv;
+      const malas = g.filter((r) => !r.sinVuelta && (r.status === 'risk' || (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA))).length;
+      const cuenta = [nv ? plural(nv, 'vuelta', 'vueltas') : '', sinv ? `<span class="t-risk">${sinv} sin vuelta</span>` : ''].filter(Boolean).join(' · ');
+      html += `<div class="rv2-gwrap"><div class="rv2-hour"><strong>${pad(h24(h))}:00 – ${pad(h24(h + 1))}:00</strong>${h >= 24 ? ' · después de medianoche' : ''} · ${cuenta}${malas ? ` · <span class="t-risk">${plural(malas, 'con aviso', 'con aviso')}</span>` : ''}</div>`;
+      g.forEach((r) => { html += r.sinVuelta ? filaSinVuelta(r) : r.julian ? filaPegada(r) : r.sola ? filaSola(r) : rowHTML(r); });
       html += '</div>';
     });
     return html;
@@ -1348,10 +1375,37 @@
       toast('No se pudo pasar: ' + ((e && e.message) || 'error') + '. No cambió nada.');
     } finally { pasando = false; }
   }
+  // 17-nov-2026 (Harold: «Las llegadas de las 23, ¿por qué no aparecen en el
+  // sistema?»). Un Publicar les había borrado la vuelta y la lista, que se arma con
+  // vueltas, no las mostraba: solo estaban en la barra plegada de Avisos. Ahora quien
+  // no tiene vuelta sale EN SU HORA, en rojo, con «Ubicar». Lo que ya pasó hace más de
+  // una hora no se pinta (sigue en Avisos); en un día pasado, nada.
+  function sinVueltaLista(buscando) {
+    if (rt.source !== 'live') return [];
+    const ya = ahoraEnDia(), q = norm(ui.q);
+    return (rt.pool || []).filter((id) => aux(id) && aux(id).dl).map((id) => {
+      const a = aux(id), m = rtToMin(a.dl);
+      return { sinVuelta: true, id: 'sv:' + id, crewId: id, type: a.type === 'lle' ? 'llegada' : 'salida', pickup: m, arrival: m, orden: m,
+        hora: Math.floor(m / 60), shift: m < rtCut() ? 'mad' : 'dia', fija: null, fin: null, stops: [] };
+    }).filter((r) => r.orden >= ya - 60)
+      .filter((r) => !buscando || (() => { const a = aux(r.crewId) || {}; return norm(a.n).includes(q) || norm(a.zona).includes(q) || norm(a.sector).includes(q); })());
+  }
+  function filaSinVuelta(p) {
+    const a = aux(p.crewId) || {}, lle = p.type === 'llegada';
+    const L = vistaFila(p), o = lle ? salidaLle(a) : {};
+    const aria = `${a.n || 'Tripulante'} no tiene vuelta, ${TYPE[p.type]}${L ? ', ' + L.rotulo.toLowerCase() + ' ' + hhmm(L.min) : ', presentación ' + (a.dl || '')}`;
+    return `<div class="rv2-row rv2-row--sinv" data-s="risk" data-sinv="${esc(p.crewId)}" aria-label="${esc(aria)}">` +
+      `<div class="when">${L ? vistaHTML(L) : `<b class="mono">${esc(a.dl || '—')}</b><small>Presentación</small>`}<small class="late">Sin vuelta</small></div>` +
+      `<div class="main"><div class="l1"><span class="rv2-pill ${p.type}">${TYPE[p.type]}</span>` +
+      '<span class="drv sinv" title="No va en ninguna vuelta: si nadie la ubica, se queda sin carro. El sistema la repone sola si viaja en las próximas horas.">No tiene carro</span></div>' +
+      `<div class="people"><span class="rv2-p is-fijo${lle ? ' rv2-p--lle' : ''}"><span class="mono">${esc(lle ? dlVivo(a, p.pickup) : (a.dl || ''))}</span>` +
+      `<span class="nm">${hl(a.n || 'Tripulante')}</span>${o.par ? `<span class="org">(${hl(o.par)})</span>` : ''}<span class="pl">${lle ? '→ ' : ''}${hl(a.zona || '—')}</span></span></div>` +
+      `<div class="rj-acts"><button class="rv2-btn rv2-btn--sm rv2-btn--cta" data-act="route" data-crew="${esc(p.crewId)}" aria-label="Ubicar a ${esc(a.n || 'Tripulante')} en una vuelta">Ubicar</button></div></div></div>`;
+  }
   function filaPegada(p) {
     const L = vistaFila(p);   // 17-nov: una llegada se lee por la hora del vuelo
     return window.RendioRutaJulian.filaLista(p.v, { hl, aux: auxPegada, fin: finFila(p), pasar: pasable(), cancelar: btnCancelar,
-      llegada: L ? { hm: hhmm(L.min), rotulo: L.rotulo, txt: L.txt, late: L.late, hora: (a) => dlVivo(a, p.pickup) } : null });
+      llegada: L ? { hm: hhmm(L.min), rotulo: L.rotulo, txt: L.txt, late: L.late, hora: (a) => dlVivo(a, p.pickup), html: vistaHTML(L) } : null });
   }
   function barraPegadas(buscando) {
     return !buscando && hayPegadas() && typeof window.RendioRutaJulian.barraHTML === 'function'
@@ -1363,7 +1417,7 @@
     const peg = barraPegadas(buscando);
     const pegs = vacio ? [] : pegadasLista(buscando);
     if (vacio) { el.list.innerHTML = peg + vacio + (ui.cargando ? '' : solasHTML() + madSigHTML()); return; }
-    const todas = D.routes.filter(matchesQ).concat(pegs, solasLista(buscando));
+    const todas = D.routes.filter(matchesQ).concat(pegs, solasLista(buscando), sinVueltaLista(buscando));
     if (!todas.length) { el.list.innerHTML = `<div class="rv2-empty"><b>Sin resultados para «${esc(ui.q)}»</b>Prueba con otro nombre, carro o conjunto.</div>`; return; }
     const hechas = buscando ? [] : todas.filter(ocultaFila);
     const rows = todas.filter((r) => !hechas.includes(r));

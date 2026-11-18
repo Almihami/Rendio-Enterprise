@@ -682,3 +682,17 @@
 
 /* 16-nov-2026: la vuelta que armó el sistema, como fila de la lista (solo lectura). */
 #routes-v2 .rv2-row--sola { cursor: default; }
+
+/* 17-nov-2026 (Harold): una llegada con gente de horas distintas muestra cada hora
+   con su persona («23:30 Laura V.», «23:40 Lady J.», «23:55 Dayana V. hotel»).
+   Con una sola hora se ve como antes. */
+#routes-v2 .rv2-row .when .rv2-whens { display: flex; flex-direction: column; gap: 3px; }
+#routes-v2 .rv2-row .when .rv2-wl { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+#routes-v2 .rv2-row .when .rv2-wl b { display: inline; width: auto; flex: none; }
+#routes-v2 .rv2-row .when .rv2-wl span { font-size: 12.5px; color: var(--ink2); line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
+#routes-v2 .rv2-row .when .rv2-wl em { font-style: normal; color: var(--ink3); }
+#routes-v2 .rv2-row .when .rv2-wl.late b, #routes-v2 .rv2-row .when .rv2-wl.late em { color: var(--red-ink); }
+#routes-v2:where([data-fila="tarjeta"]) .rv2-row .when .rv2-whens { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 2px 14px; }
+/* Quien no tiene vuelta, en su hora y en rojo (antes solo estaba en Avisos). */
+#routes-v2 .rv2-row--sinv { border-color: #F0C2BB; box-shadow: inset 4px 0 0 var(--red); background: color-mix(in srgb, var(--red-soft) 40%, var(--panel)); cursor: default; }
+#routes-v2 .rv2-row--sinv .drv.sinv { color: var(--red-ink); font-weight: 700; }
