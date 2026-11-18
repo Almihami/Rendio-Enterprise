@@ -102,6 +102,17 @@ for (const [w, h, pre] of [[1440, 900, 'pc'], [390, 844, 'cel']]) {
   ok('con el mismo vuelo 40 min tarde los dos quedan en UNA hora (16:40) y se dice tarde', !!tarde && /16:40/.test(tarde.cuando) && /tarde/.test(tarde.cuando), tarde);
   await page.evaluate(() => { const f = [...document.querySelectorAll('#rv2-list .rv2-row')].find((x) => /Tomás Arias/.test(x.textContent)); if (f) f.scrollIntoView({ block: 'center' }); });
   await page.waitForTimeout(300); await page.screenshot({ path: `${OUT}${pre}-4-vuelo-tarde.png` });
+  // La espera se mide con la hora REAL del vuelo (Nicol, 17-nov). Natalia (AV9412, pidió 15:00):
+  // si aterriza 40 min ANTES, espera de más y sale el aviso; si aterriza 16 min tarde, no.
+  const conVuelo = async (extra) => { await page.evaluate((x) => { window.RendioVuelos.para = (c) => (String(c).toUpperCase() === 'AV9412' ? Object.assign({ code: 'AV9412', direction: 'airport_to_home', schedAt: '2026-10-12T15:00:00-05:00' }, x) : null); window.RendioRutasV2.render(); }, extra); await page.waitForTimeout(250);
+    return (await leer(page)).find((f) => !f.sinv && f.gente.includes('Natalia Duque')); };
+  const base = await conVuelo(null);
+  const antes = await conVuelo({ status: 'landed', delayMin: -40, actualAt: '2026-10-12T14:20:00-05:00' });
+  const tarde16 = await conVuelo({ status: 'landed', delayMin: 16, actualAt: '2026-10-12T15:16:00-05:00' });
+  console.log('   Natalia sin dato:', base.cuando, '· aterrizó 14:20:', antes.cuando, '· aterrizó 15:16:', tarde16.cuando);
+  ok('con el vuelo de Natalia aterrizado 40 min antes, el aviso de espera sale con la hora real', /Esperan \d+ min/.test(antes.cuando), antes);
+  ok('con el vuelo 16 min tarde, NO sale «Esperan…» (cuenta desde el aterrizaje real)', !/Esperan/.test(tarde16.cuando), tarde16);
+  await page.evaluate(() => { window.RendioVuelos.para = window.__p0; window.RendioRutasV2.render(); });
   await ctx.close();
 }
 console.log('\nerrores de página:', errores.length ? errores : 'ninguno');
