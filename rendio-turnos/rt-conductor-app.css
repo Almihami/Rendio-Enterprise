@@ -642,4 +642,39 @@
 #driver-ruta-ui.rx-phone .rt-live.vivo i{background:var(--r-a2h)}
 #driver-ruta-ui.rx-phone .rt-nueva{background:var(--r-a2h);color:#fff;font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:7px;margin-left:8px}
 #driver-ruta-ui.rx-phone #rt-toast-host .rx-toast{width:max-content;max-width:calc(100% - 40px);white-space:normal;line-height:1.35}
+/* 17-nov-2026: el globo solo informa (no tiene botones): que no tape «Salir del aeropuerto»
+   justo después de soltar a alguien; el toque pasa al botón de debajo. */
+#driver-ruta-ui.rx-phone #rt-toast-host .rx-toast{pointer-events:none}
 #driver-ruta-ui.rx-phone .rt-vc-t em.rt-nueva-s{color:#0B7A55;font-weight:700}
+
+/* 17-nov-2026 · Deslizar para soltar (fila de JMC). La fila no cambia a la vista:
+   «Soltar» vive detrás y aparece al deslizar a la izquierda; al soltar, la fila queda
+   en «Se demora» (como «A bordo» / «No llegó») con «Deshacer» y una rayita de 6 s.
+   Tacto de «Deslizar para pedir» (RxSlide): sin transición mientras el dedo arrastra;
+   al soltar vuelve con .35s cubic-bezier(.2,.8,.2,1). */
+#driver-ruta-ui.rx-phone .rt-cr.sw{ padding:0; display:block; position:relative; overflow:hidden; }
+#driver-ruta-ui.rx-phone .rt-cr-in{ position:relative; z-index:1; padding:12px 14px; display:flex; flex-direction:column; gap:10px; background:var(--r-card); touch-action:pan-y; transition:transform .35s cubic-bezier(.2,.8,.2,1); will-change:transform; }
+#driver-ruta-ui.rx-phone .rt-cr-in.drag{ transition:none; user-select:none; -webkit-user-select:none; }
+#driver-ruta-ui.rx-phone .rt-cr-bg{ position:absolute; inset:0; display:flex; align-items:center; justify-content:flex-end; padding-right:22px; background:var(--rx-warn); color:var(--r-bg); font-size:14px; font-weight:700; letter-spacing:.01em; }
+#driver-ruta-ui.rx-phone .rt-cr-bg span{ display:inline-flex; align-items:center; gap:7px; opacity:.6; transform:scale(.92); transition:transform .22s cubic-bezier(.2,1.2,.3,1), opacity .22s ease; }
+#driver-ruta-ui.rx-phone .rt-cr-bg.arm span,
+#driver-ruta-ui.rx-phone .rt-cr-bg.pista span{ opacity:1; transform:scale(1.06); }
+/* La pista: se corre sola, se queda un instante y vuelve. */
+#driver-ruta-ui.rx-phone .rt-cr-in.pista{ animation:rtSueltaPista 1.5s cubic-bezier(.2,.8,.2,1); }
+@keyframes rtSueltaPista{ 0%{transform:none} 28%,62%{transform:translateX(-92px)} 100%{transform:none} }
+/* «Deshacer»: la fila vuelve a entrar desde la izquierda. */
+#driver-ruta-ui.rx-phone .rt-cr.sw.vuelve > .rt-cr-in{ animation:rtSueltaVuelve .4s cubic-bezier(.2,.8,.2,1); }
+@keyframes rtSueltaVuelve{ from{ transform:translateX(-104%); } }
+#driver-ruta-ui.rx-phone .rt-sr{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+/* «Se demora»: la fila en su estado (mismo molde que «A bordo»), con la rayita de 6 s. */
+#driver-ruta-ui.rx-phone .rt-cr.rt-cr-dem{ position:relative; overflow:hidden; }
+#driver-ruta-ui.rx-phone .rt-cr.rt-cr-dem.entra{ animation:rtSueltaEntra .34s cubic-bezier(.2,.8,.2,1); }
+@keyframes rtSueltaEntra{ from{ opacity:0; transform:translateX(28px); } }
+#driver-ruta-ui.rx-phone .rt-cr.rt-cr-dem .rt-cl-tx>span{ display:inline-flex; align-items:center; gap:5px; }
+#driver-ruta-ui.rx-phone .rt-suelta-t{ position:absolute; left:0; right:0; bottom:0; height:3px; background:var(--rx-warn); opacity:.55; transform-origin:left center; animation:rtSueltaT linear forwards; }
+@keyframes rtSueltaT{ from{ transform:scaleX(1); } to{ transform:scaleX(0); } }
+@media (prefers-reduced-motion: reduce){
+  #driver-ruta-ui.rx-phone .rt-cr.rt-cr-dem.entra,
+  #driver-ruta-ui.rx-phone .rt-cr.sw.vuelve > .rt-cr-in{ animation:none; }
+  #driver-ruta-ui.rx-phone .rt-cr-in.pista{ animation-duration:2.2s; }
+}

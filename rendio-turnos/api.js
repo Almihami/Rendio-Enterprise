@@ -5032,6 +5032,7 @@
   };
   const driverLlegadaCandidatos = (routeId) => _rpc0151('driver_llegada_candidatos', { p_route: routeId }).then((d) => d || []);
   const driverLlegadaAgregar = (routeId, resId) => _rpc0151('driver_llegada_agregar', { p_route: routeId, p_res: resId });
+  // 0172: devuelve a dónde fue la persona: { id, start_at, kind: joined|new|espera, driver_name }.
   const driverLlegadaSoltar = (routeId, stopId) => _rpc0151('driver_llegada_soltar', { p_route: routeId, p_stop: stopId });
   // Al publicar: «Hay una vuelta para tomar» a los del turno (las que se dejaron para tomar).
   const offerRoutes = (ids) => (ids && ids.length ? _rpc0151('admin_routes_offer', { p_routes: ids }) : Promise.resolve(0));

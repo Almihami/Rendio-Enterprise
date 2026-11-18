@@ -706,7 +706,7 @@
     setTimeout(() => { if (el.isConnected) el.classList.add('rx-noanim'); }, 700);
     const v = vById(L.vid);
     if (L.id === 'detail') mapMount(L.key, el.querySelector('.rt-mapcard .rt-lf'), v, 'detail');
-    if (L.id === 'exec') { mapMount(L.key, el.querySelector('.rt-map-full .rt-lf'), v, 'exec'); focusCode(el); }
+    if (L.id === 'exec') { mapMount(L.key, el.querySelector('.rt-map-full .rt-lf'), v, 'exec'); focusCode(el); sueltaPista(el, v); }
     bindCodes(el);
   }
   const layerEl = (k) => document.querySelector('#rt-layers > .rx-layer[data-key="' + k + '"]');
@@ -1402,14 +1402,14 @@
     const s = S(v), r = s.res[c.rid], u = RT.unread[c.rid] || 0, f = first(c.name);
     const code = String(c.meetCode || '').trim(), cs = RT.code[c.rid] || {}, ask = RT.ask[c.rid] || null;
     const b = c.bags != null ? Number(c.bags) : null;
+    if (!r && RT.suelta && RT.suelta.rid === c.rid && RT.suelta.aid === v.assignmentId) return sueltaFilaHTML(c);   // «Se demora»
     if (r) {
       return '<div class="rt-cr done ' + RT_RES[r][1] + '" data-row="' + esc(c.rid) + '">' + av(c.ini, 'sm')
         + '<span class="rt-cl-tx"><b>' + esc(c.name) + '</b><span>' + esc(r === 'onboard' ? '✓ A bordo' : RT_RES[r][0]) + '</span></span>'
         + '<button type="button" class="rt-link" data-rt="undo" data-v="' + esc(v.id) + '" data-rid="' + esc(c.rid) + '">Deshacer</button></div>';
     }
     const sub = cs.st === 'err' ? 'Ese no es su código' : cs.st === 'ok' ? '✓ Código correcto' : (b != null ? `${b} ${b === 1 ? 'maleta' : 'maletas'}` : (code ? 'Pídele su código' : 'Sin código en su reserva'));
-    return '<div class="rt-cr" data-row="' + esc(c.rid) + '">'
-      + '<div class="rt-cr-top">' + av(c.ini, 'sm')
+    const inner = '<div class="rt-cr-top">' + av(c.ini, 'sm')
       + '<span class="rt-cl-tx"><b>' + esc(c.name) + '</b><span class="' + (cs.st === 'err' ? 'err' : '') + '">' + esc(sub) + '</span></span>'
       + (code ? codeBoxesHTML(c.rid, 'sm', cs, codeLen(c)) : '') + '</div>'
       + (!ask ? '<div class="rt-cr-acts">'
@@ -1418,8 +1418,19 @@
         + '<button type="button" class="err" data-rt="ask" data-rid="' + esc(c.rid) + '" data-ask="notarrived">No llegó</button></div>'
         : '<div class="rt-cr-ask"><span>' + esc(ask === 'nocode' ? (code ? `¿Subir a ${f} sin código?` : `¿${f} ya está a bordo?`) : `¿Marcar que ${f} no llegó? Le avisamos.`) + '</span>'
         + '<button type="button" data-rt="ask-no" data-rid="' + esc(c.rid) + '">No</button>'
-        + '<button type="button" class="' + (ask === 'notarrived' ? 'err' : 'pri') + '" data-rt="ask-yes" data-v="' + esc(v.id) + '" data-rid="' + esc(c.rid) + '">Sí</button></div>')
-      + '</div>';
+        + '<button type="button" class="' + (ask === 'notarrived' ? 'err' : 'pri') + '" data-rt="ask-yes" data-v="' + esc(v.id) + '" data-rid="' + esc(c.rid) + '">Sí</button></div>');
+    // 17-nov-2026 · Deslizar a la izquierda = soltar (0151/0172). Harold: «que sea
+    // deslizar y ya, como archivar un chat». La fila sigue igual a la vista; detrás
+    // está «Soltar». Solo mientras el carro no sale de JMC y sin una pregunta abierta.
+    if (!ask && sueltaPuede(v, c)) {
+      return '<div class="rt-cr sw' + (RT.sueltaVuelve === c.rid ? ' vuelve' : '') + '" data-row="' + esc(c.rid) + '" data-aid="' + esc(v.assignmentId) + '" data-stop="' + esc(c.stopId) + '">'
+        + '<div class="rt-cr-bg" aria-hidden="true"><span>' + ic('LogOut', 18) + 'Soltar</span></div>'
+        + '<div class="rt-cr-in">' + inner
+        // Quien usa lector de pantalla no puede deslizar: el mismo «Soltar» como botón oculto.
+        + '<button type="button" class="rt-sr" data-rt="suelta-sr" data-rid="' + esc(c.rid) + '">' + esc(`Soltar a ${c.name}`) + '</button>'
+        + '</div></div>';
+    }
+    return '<div class="rt-cr" data-row="' + esc(c.rid) + '">' + inner + '</div>';
   }
   // Punto de encuentro común en MDE (si todos dijeron el mismo); si no, el general.
   function aptMeet(v) {
@@ -1427,8 +1438,11 @@
     return m.length === 1 && m[0] ? m[0] : 'Salida de pasajeros';
   }
   function aptInHTML(v, st) {
-    const s = S(v), at = s.phase === 'at', c = crew(v);
-    const open = c.filter((l) => !s.res[l.rid]).length, onb = c.filter((l) => RT_ON.includes(s.res[l.rid])).length;
+    const s = S(v), at = s.phase === 'at';
+    // La que está en «Se demora» (deslizada, 6 s para deshacer) ya no cuenta como «por resolver».
+    const pend = RT.suelta && RT.suelta.aid === v.assignmentId ? RT.suelta.rid : null;
+    const c = crew(v);
+    const open = c.filter((l) => !s.res[l.rid] && l.rid !== pend).length, onb = c.filter((l) => RT_ON.includes(s.res[l.rid])).length;
     const f = flightOf(v), meet = aptMeet(v);
     let h = '<div class="rt-eb">' + (at ? '<i class="ok"></i><span>' + esc(`En JMC · les avisamos a los ${c.length}`) + '</span>'
       : '<i></i><span>Vas a JMC</span><span class="dist">' + esc(liveDist(v)) + '</span>') + '</div>';
@@ -1487,13 +1501,15 @@
     const ae = document.activeElement;
     const typing = !!(ae && ae.matches && ae.matches('input[data-code]') && el.contains(ae));
     if (!changed && !force && typing) return;
+    // Ni mientras arrastra una fila para soltar (se le iría la fila de debajo del dedo).
+    if (!changed && RT.drag) return;
     const n = document.createElement('div');
     n.className = 'rt-xs' + (changed ? ' rx-anim' : '');
     n.dataset.xs = k;
     n.innerHTML = xsHTML(v);
     xs.replaceWith(n);
     bindCodes(el);
-    if (changed) focusCode(el);
+    if (changed) { focusCode(el); sueltaPista(el, v); }
     const h = RT.maps[el.dataset.key]; if (h) { mapPaint(h); if (changed) { h.follow = true; mapFit(h); } }
   }
   function focusCode(el) {
@@ -1675,6 +1691,13 @@
   function leaveApt(vid) {
     const v = vById(vid); if (!v) return;
     const s = S(v);
+    // Con alguien en «Se demora»: se manda ya (sin esperar los 6 s) y, si salió bien,
+    // sigue saliendo del aeropuerto (la vuelta se recarga y cambia de número).
+    if (RT.suelta && RT.suelta.aid === v.assignmentId) {
+      const aid = v.assignmentId;
+      sueltaEnviar().then((ok) => { const nv = ok && RT.vueltas.find((x) => x.assignmentId === aid); if (nv) leaveApt(nv.id); });
+      return;
+    }
     if (crew(v).some((l) => !s.res[l.rid])) return;
     advance(v);
   }
@@ -2430,10 +2453,178 @@
     const v = vById(vid); if (!armaLlegada(v) || !stopId) return;
     const leg = v.legs.find((l) => l.stopId === stopId); const n = leg ? first(leg.name) : 'esta persona';
     if (typeof window.confirm === 'function' && !window.confirm(`¿Soltar a ${n}? Queda en «Vueltas para tomar» y le avisamos a Coordinación.`)) return;
-    try { await Api.driverLlegadaSoltar(v.assignmentId, stopId); toast(`Soltaste a ${n}: quedó para tomar. Coordinación ya sabe.`, 'Check'); }
+    try {
+      const res = await Api.driverLlegadaSoltar(v.assignmentId, stopId);
+      // 0172: a la siguiente recogida (con quién y a qué hora) o a su vuelta; sin 0172, como antes.
+      toast(res && res.kind === 'joined' ? `${n} va en la vuelta de las ${bogHM(res.start_at)}${res.driver_name ? ' con ' + res.driver_name : ''}.`
+        : res && res.kind ? `A ${n} le buscamos otro carro. Coordinación ya sabe.` : `Soltaste a ${n}: quedó para tomar. Coordinación ya sabe.`, 'Check', 4000);
+    }
     catch (e) { toast((e && e.message) || 'No se pudo soltar', 'AlertTriangle'); return; }
     await load(RT.profile);
     repaintBase();
+  }
+  // ── Deslizar para soltar (fila de JMC, 17-nov-2026) ──────────────────────────
+  // Harold: «que sea deslizar y ya, como archivar un chat»; «que se demora, y ya, y
+  // la cambie de estado, para no complicarnos». Deslizar a la izquierda deja la fila
+  // en «Se demora» (como «A bordo» o «No llegó», con «Deshacer»). A la base no va
+  // nada en 6 s: un deslizón sin querer se deshace sin avisarle a nadie. Después la
+  // base la pasa a la siguiente recogida o le arma su vuelta (0172).
+  const SUELTA_MS = 6000;
+  const sueltaPuede = (v, c) => !!(v && c && armaLlegada(v) && c.reservationId && c.stopId && Api.driverLlegadaSoltar
+    && S(v).phase === 'at' && !(RT.suelta && RT.suelta.rid === c.rid));
+  // La fila mientras corre el tiempo: «Se demora · le buscamos otro carro» + Deshacer.
+  function sueltaFilaHTML(c) {
+    const p = RT.suelta;
+    return '<div class="rt-cr done warn rt-cr-dem' + (p.nueva ? ' entra' : '') + '" data-row="' + esc(c.rid) + '">' + av(c.ini, 'sm')
+      + '<span class="rt-cl-tx"><b>' + esc(c.name) + '</b><span>' + ic('Clock', 14) + (p.sending ? 'Se demora · buscándole carro…' : 'Se demora · le buscamos otro carro') + '</span></span>'
+      + (p.sending ? '' : '<button type="button" class="rt-link" data-rt="suelta-undo">Deshacer</button>'
+        // Si se repinta a mitad de camino, la rayita sigue donde iba (retraso negativo).
+        + '<i class="rt-suelta-t" style="animation-duration:' + SUELTA_MS + 'ms;animation-delay:-' + Math.min(SUELTA_MS, Date.now() - p.at) + 'ms"></i>')
+      + '</div>';
+  }
+  function sueltaIniciar(aid, rid) {
+    const v = RT.vueltas.find((x) => x.assignmentId === aid); if (!v) return;
+    const leg = v.legs.find((l) => l.rid === rid); if (!sueltaPuede(v, leg)) { refreshVisible(); return; }
+    // Si ya había otra corriendo, esa se manda ya.
+    if (RT.suelta) sueltaEnviar();
+    try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) { /* sin vibración */ }
+    delete RT.ask[rid];
+    const p = RT.suelta = { aid, rid, stopId: leg.stopId, name: first(leg.name), sending: false, at: Date.now(), nueva: true };
+    p.t = setTimeout(() => sueltaEnviar(), SUELTA_MS);
+    refreshVisible();
+    p.nueva = false;   // la entrada se anima una sola vez
+  }
+  function sueltaDeshacer() {
+    const p = RT.suelta; if (!p || p.sending) return;
+    clearTimeout(p.t);
+    RT.suelta = null; RT.sueltaVuelve = p.rid;   // la fila vuelve a entrar desde la izquierda
+    refreshVisible();
+    setTimeout(() => { if (RT.sueltaVuelve === p.rid) RT.sueltaVuelve = null; }, 600);
+  }
+  // Manda a la base la que está en «Se demora». Devuelve si se pudo.
+  async function sueltaEnviar() {
+    const p = RT.suelta; if (!p || p.sending) return false;
+    clearTimeout(p.t);
+    p.sending = true;
+    refreshVisible();
+    const ok = await soltarEnJMC(p.aid, p.stopId, p.rid, p.name);
+    if (RT.suelta === p) RT.suelta = null;
+    if (!ok) refreshVisible();
+    return ok;
+  }
+  // El mismo «Soltar», desde la fila de JMC (con la vuelta en curso). No va a la cola
+  // sin señal: la base tiene que contestar para que la persona quede con otro carro.
+  // Las vueltas se numeran por orden (V1, V2…): se vuelve a buscar la mía por su id real.
+  async function soltarEnJMC(aid, stopId, rid, n) {
+    // Si está guardando otra cosa (un abordaje), espera su turno en vez de perderse.
+    for (let i = 0; RT.busy && i < 60; i++) await new Promise((r) => setTimeout(r, 150));
+    const v = RT.vueltas.find((x) => x.assignmentId === aid);
+    if (!v || !armaLlegada(v) || RT.busy) { toast(`No se pudo soltar a ${n}: la vuelta ya cambió`, 'AlertTriangle'); return false; }
+    const vid = v.id, a = S(v);
+    let res = null;
+    RT.busy = true;
+    try { res = await Api.driverLlegadaSoltar(aid, stopId); }
+    catch (e) { RT.busy = false; toast((e && e.message) || `No se pudo soltar a ${n}: revisa la señal`, 'AlertTriangle'); return false; }
+    RT.busy = false;
+    delete RT.code[rid]; delete RT.nc[rid]; delete RT.ask[rid];
+    // 0172 dice a dónde fue: a la siguiente recogida (con quién y a qué hora) o a su vuelta.
+    const hora = res && res.start_at ? bogHM(res.start_at) : '';
+    const dijo = res && res.kind === 'joined'
+      ? `${n} va en la vuelta de las ${hora}${res.driver_name ? ' con ' + res.driver_name : ''}.`
+      : `A ${n} le buscamos otro carro${hora ? ' (sale de JMC hacia las ' + hora + ')' : ''}.`;
+    await load(RT.profile);
+    if (!RT.open) return true;
+    const nv = RT.vueltas.find((x) => x.assignmentId === aid);
+    // Era la única persona de la vuelta: la vuelta ya no existe.
+    if (!nv) { popAll(); toast(`${dijo} Tu vuelta quedó sin nadie.`, 'Check', 6000); return true; }
+    // Sigue parado en JMC: si era la última por resolver, al recargar la app lo daba
+    // por salido (todos a bordo) y se saltaba «Salir del aeropuerto».
+    const s = S(nv);
+    if (a.phase === 'at' && (a.idx || 0) === 0 && !s.done) { s.started = true; s.idx = 0; s.phase = 'at'; s.at = a.at; s.aptAt = a.aptAt; s.startedAt = a.startedAt; save(); }
+    RT.stack.forEach((L) => { if (L.vid === vid) L.vid = nv.id; });
+    refreshVisible();
+    toast(dijo, 'Check', 4000);
+    return true;
+  }
+
+  // El dedo sobre la fila: horizontal = soltar; vertical = la hoja hace scroll normal
+  // (touch-action: pan-y). Mismo tacto que «Deslizar para pedir» del diseño (RxSlide):
+  // sin transición mientras arrastra, vuelve con .35 s cubic-bezier(.2,.8,.2,1).
+  function sueltaBind(root) {
+    let d = null;
+    const fin = (e, cancel) => {
+      if (!d) return;
+      const x = d, row = x.row, bg = x.bg;
+      d = null;
+      if (x.cap) { try { row.releasePointerCapture(x.id); } catch (er) { /* ya suelto */ } }
+      if (!x.h) { RT.drag = false; return; }
+      RT.swClick = Date.now();   // el «click» que sigue al arrastre no toca botones
+      row.classList.remove('drag');
+      const W = row.offsetWidth || 320;
+      const vel = x.v;   // px/ms (negativo = hacia la izquierda)
+      const sale = !cancel && (x.tx < -W * 0.38 || (x.tx < -56 && vel < -0.55));
+      if (!sale) {
+        row.style.transform = '';
+        bg.classList.remove('arm');
+        setTimeout(() => { RT.drag = false; }, 360);
+        return;
+      }
+      const cr = row.parentElement;
+      row.style.transform = 'translateX(-104%)';
+      bg.classList.add('arm');
+      // Se va la fila y en su lugar entra «Se demora».
+      setTimeout(() => { RT.drag = false; sueltaIniciar(cr.dataset.aid, cr.dataset.row); }, 260);
+    };
+    root.addEventListener('pointerdown', (e) => {
+      if (d || RT.drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      const row = e.target.closest && e.target.closest('.rt-cr.sw > .rt-cr-in');
+      if (!row || e.target.closest('.rt-boxes, input')) return;
+      d = { row, bg: row.parentElement.querySelector('.rt-cr-bg'), id: e.pointerId, x0: e.clientX, y0: e.clientY, h: false, cap: false, tx: 0, v: 0, lx: e.clientX, lt: e.timeStamp };
+    }, { passive: true });
+    root.addEventListener('pointermove', (e) => {
+      if (!d || e.pointerId !== d.id) return;
+      const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+      if (!d.h) {
+        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { d = null; return; }   // scroll de la hoja
+        if (dx > -10 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
+        d.h = true; RT.drag = true;
+        try { d.row.setPointerCapture(d.id); d.cap = true; } catch (er) { /* sin captura */ }
+        d.row.classList.add('drag');
+        const ae = document.activeElement; if (ae && ae.matches && ae.matches('input[data-code]')) ae.blur();
+      }
+      const W = d.row.offsetWidth || 320;
+      // Hacia la derecha casi no se mueve (resorte); hacia la izquierda sigue el dedo.
+      d.tx = dx > 0 ? Math.min(dx * 0.15, 14) : Math.max(dx, -W);
+      const dt = Math.max(1, e.timeStamp - d.lt);
+      d.v = d.v * 0.4 + ((e.clientX - d.lx) / dt) * 0.6; d.lx = e.clientX; d.lt = e.timeStamp;
+      d.row.style.transform = 'translateX(' + d.tx + 'px)';
+      if (d.bg) d.bg.classList.toggle('arm', d.tx < -W * 0.38);
+    }, { passive: true });
+    root.addEventListener('pointerup', (e) => { if (d && e.pointerId === d.id) fin(e, false); });
+    root.addEventListener('pointercancel', (e) => { if (d && e.pointerId === d.id) fin(e, true); });
+    // Tras arrastrar, el navegador manda un click al botón de debajo del dedo: se ignora.
+    root.addEventListener('click', (e) => {
+      if (RT.swClick && Date.now() - RT.swClick < 400 && e.target.closest && e.target.closest('.rt-cr.sw')) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+    // Si se va de la app con la ventanita abierta, se manda ya (con lo que haya elegido).
+    document.addEventListener('visibilitychange', () => { if (document.hidden && RT.suelta) sueltaEnviar(); });
+  }
+  // Pista: las primeras 3 veces que llega a JMC con alguien por soltar, la primera
+  // fila se corre sola un poco y deja ver «Soltar» (como Gmail con archivar).
+  function sueltaPista(el, v) {
+    if (!v || v.type !== 'llegada' || S(v).phase !== 'at') return;
+    let n = 0;
+    try { n = Number(localStorage.getItem('rt-pista-soltar') || 0); } catch (e) { return; }
+    if (n >= 3 || RT.pistaHecha === v.assignmentId) return;
+    RT.pistaHecha = v.assignmentId;
+    setTimeout(() => {
+      const row = el.isConnected && el.querySelector('.rt-cr.sw > .rt-cr-in');
+      if (!row || RT.drag || RT.suelta) return;
+      try { localStorage.setItem('rt-pista-soltar', String(n + 1)); } catch (e) { /* sin memoria */ }
+      const bg = row.parentElement.querySelector('.rt-cr-bg');
+      row.classList.add('pista'); if (bg) bg.classList.add('pista');
+      setTimeout(() => { row.classList.remove('pista'); if (bg) bg.classList.remove('pista'); }, 1500);
+    }, 1100);
   }
 
   // ── 0125: tomar y soltar una vuelta de la ruta de Julián ──────────────────────
@@ -2473,6 +2664,7 @@
     const root = host(); if (!root) return;
     RT.bound = true;
     document.addEventListener('visibilitychange', () => { if (!document.hidden && RT.open) vivoTick(); });   // al volver a la app, se trae ya
+    sueltaBind(root);   // deslizar para soltar (fila de JMC)
     root.addEventListener('click', (e) => {
       const el = e.target.closest('[data-rt]'); if (!el || !root.contains(el)) return;
       const a = el.dataset.rt, vid = el.dataset.v, rid = el.dataset.rid;
@@ -2536,6 +2728,8 @@
       if (a === 'addpax') { openAddPax(vid); return; }                       // 0151
       if (a === 'addpax-pick') { addPax(vid, el.dataset.rid, el); return; }  // 0151
       if (a === 'droppax') { dropPax(vid, el.dataset.stop); return; }       // 0151
+      if (a === 'suelta-undo') { sueltaDeshacer(); return; }                 // deslizar para soltar
+      if (a === 'suelta-sr') { const cr = el.closest('.rt-cr.sw'); if (cr) sueltaIniciar(cr.dataset.aid, cr.dataset.row); return; }
       if (a === 'release') { releaseRoute(vid); return; }
     });
   }
