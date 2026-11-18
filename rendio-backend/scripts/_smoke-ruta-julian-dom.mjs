@@ -1207,7 +1207,8 @@ console.log('\n── T · «Conductor asignado» trae la hora (los tripulantes:
   await T().rtSavePlan();
   const bodies = log.push.filter((p) => /Conductor asignado/.test(p.title)).map((p) => [p.body, p.profileIds.join()]);
   t('a José le llega «Te recogemos … a las 5:30» y a Camila «… a las 5:40»', bodies.some(([b, ids]) => /Te recogemos el lunes 12 a las 5:30\./.test(b) && ids === 'u-res-C') && bodies.some(([b, ids]) => /a las 5:40\./.test(b) && ids === 'u-res-D'), JSON.stringify(bodies));
-  t('…y a Natalia (llega en vuelo) «Cuando aterrices te esperamos en JMC (sale … hacia las …)»', bodies.some(([b, ids]) => /Cuando aterrices te esperamos en JMC \(sale el lunes 12 hacia las 15:\d\d\)/.test(b) && ids === 'u-res-F'), JSON.stringify(bodies));
+  // 17-nov-2026 (Julián): a quien llega en un vuelo no se le promete la hora de salida de JMC.
+  t('…y a Natalia (llega en vuelo) «Cuando aterrices el lunes 12 te esperamos en JMC», sin «sale hacia las …»', bodies.some(([b, ids]) => /^Cuando aterrices el lunes 12 te esperamos en JMC\. /.test(b) && !/hacia las|\d:\d\d/.test(b) && ids === 'u-res-F'), JSON.stringify(bodies));
   t('sin errores de script', T0.errors.length === 0, T0.errors.join(' | '));
 }
 

@@ -153,6 +153,8 @@
     if (s === 'assigned') {
       // 0097: en una llegada, el conductor ya marcó «Llegué al aeropuerto».
       if (lle && arrivedNow(t)) return ['Te espera', `${first} ya está ${enPunto(t)}`];
+      // 17-nov-2026 (Julián: «quitar esa hora aproximada a la que van a salir del aeropuerto»): a quien llega en un vuelo no se le promete una hora de salida de JMC; lo esperan cuando aterrice. Tierra y reserva conservan su hora.
+      if (lle && !isGround(t) && !resOf(t) && t.pickupAt && hm(t.pickupAt)) return [t.time ? hm(t.time) : 'Al aterrizar', `${dayWord(t.pickupAt)} aterrizas · te esperamos ${enPunto(t)}`];
       if (t.pickupAt && hm(t.pickupAt)) return [hm(t.pickupAt), `${dayWord(t.pickupAt)} te recogemos${lle ? ' ' + enPunto(t) : ''}`];
       return ['Por confirmar', 'Te avisamos cuando armemos tu ruta'];
     }

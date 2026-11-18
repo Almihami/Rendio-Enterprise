@@ -337,6 +337,8 @@
   function reassignToast(t, ra) {
     const hm = ra && pickupHM(ra.pickupAt);
     if (!ra || ra.kind === 'unplanned' || !hm) return 'Actualizamos tu traslado';
+    // 17-nov-2026 (Julián: «quitar esa hora aproximada a la que van a salir del aeropuerto»): a quien llega en un vuelo no se le promete una hora de salida de JMC; lo esperan cuando aterrice. Tierra y reserva conservan su hora.
+    if (isLle(t) && !isGround(t) && !t.reservePlace) return 'Listo: te esperamos en JMC cuando aterrices';
     return isLle(t) ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
   }
   function doneHTML() {
@@ -370,17 +372,19 @@
     const chk = u && u.check ? u.check('ok') : '';
     const hm = pickupHM(ra.pickupAt);
     const lle = r.type === 'lle';
+    // 17-nov-2026 (Julián): a quien llega en un vuelo no se le promete una hora de salida de JMC.
+    const lleVuelo = lle && !r.ground && !r.place;
     const quien = ra.driver ? String(ra.driver).trim().split(/\s+/)[0] : '';
     let h2, p;
     if (ra.kind === 'joined' && hm) {
-      h2 = lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
+      h2 = lleVuelo ? 'Listo: te esperamos en JMC cuando aterrices' : lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
       p = quien ? `Con tu hora nueva te pasamos a la vuelta de ${quien}.` : 'Con tu hora nueva te pasamos a otra vuelta. Te avisamos quién te recoge.';
     } else if (ra.kind === 'retimed' && hm) {
       // 0135: iba sola y su conductor alcanza: su misma vuelta se corrió de hora.
-      h2 = lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
+      h2 = lleVuelo ? 'Listo: te esperamos en JMC cuando aterrices' : lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
       p = quien ? `Corrimos tu vuelta a tu hora nueva: te sigue llevando ${quien}.` : 'Corrimos tu vuelta a tu hora nueva. Te avisamos quién te recoge.';
     } else if (ra.kind === 'new' && hm) {
-      h2 = lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
+      h2 = lleVuelo ? 'Listo: te esperamos en JMC cuando aterrices' : lle ? `Listo: te esperamos en JMC a las ${hm}` : `Listo: te recogemos a las ${hm}`;
       p = 'Con tu hora nueva te armamos una vuelta. Te avisamos quién te recoge.';
     } else {
       h2 = 'Actualizamos tu traslado';

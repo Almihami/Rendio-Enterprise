@@ -242,6 +242,38 @@
     crew(v).forEach((l) => { const c = flCode(l.flight); if (!c || vistos.has(c)) return; vistos.add(c); const f = flightOf(v, l); if (f) out.push(f); });
     return out;
   }
+  // 17-nov-2026 (Julián: «quitar esa hora aproximada a la que van a salir a puertas,
+  // solamente la hora en la que aterriza el vuelo… y que se actualice sola»): una
+  // LLEGADA se lee por la hora de su vuelo, no por la de recoger en JMC (v.start),
+  // que es un cálculo del sistema y se confundía con la de aterrizaje. Con varios
+  // vuelos manda el último que aterriza. Quien no tiene vuelo (tierra, reserva en
+  // hotel) muestra la hora que dio. v.start sigue por dentro (orden, «arranca en»).
+  //   { hm, rot: 'Aterriza' | 'Aterrizó' | 'Sale del terminal' | …, nota } | null
+  //   null = es una salida, o no se sabe ninguna hora (queda v.start).
+  function llegadaDe(v) {
+    if (!v || v.type !== 'llegada') return null;
+    let top = null;
+    flightsOf(v).forEach((f) => {
+      const e = f.e && f.e.status !== 'unknown' ? f.e : null;
+      const iso = (e && (e.actualAt || e.estimatedAt || e.schedAt)) || f.reqAt;
+      const ms = iso ? Date.parse(iso) : NaN;
+      if (isFinite(ms) && (!top || ms > top.ms)) top = { ms, e };
+    });
+    if (top) {
+      const e = top.e, d = e ? e.delayMin : null, landed = !!e && e.status === 'landed';
+      const nota = !e || landed ? '' : e.status === 'cancelled' ? 'cancelado' : e.status === 'diverted' ? 'desviado'
+        : [e.status === 'in_air' ? 'en vuelo' : '', d == null ? '' : d >= 5 ? `${d} min tarde` : d <= -5 ? `${-d} min antes` : (e.status === 'in_air' ? '' : 'a tiempo')].filter(Boolean).join(' · ');
+      return { hm: bogHM(top.ms), rot: landed ? 'Aterrizó' : 'Aterriza', nota };
+    }
+    const con = crew(v).filter((l) => l.dl);
+    if (!con.length) return null;
+    const vuelo = con.filter((l) => flCode(l.flight));
+    const hm = (vuelo.length ? vuelo : con).map((l) => l.dl).sort().pop();
+    return { hm, nota: '', rot: vuelo.length ? 'Aterriza' : con.every((l) => l.reserva) ? 'Termina la asignación' : (con.length > 1 ? 'Salen del terminal' : 'Sale del terminal') };
+  }
+  // La hora que se lee de una vuelta: en una llegada, la del vuelo.
+  const horaV = (v) => { const L = llegadaDe(v); return L ? L.hm : v.start; };
+  const lleTxt = (L) => L.rot.toLowerCase() + (L.nota ? ' · ' + L.nota : '');
   // «Ver avión» solo en llegadas (Flightradar24 sigue las llegadas a JMC) y solo con
   // el seguimiento encendido: apagado, la hoja diría siempre lo mismo.
   const flSeguible = (v, f) => !!(f && v.type === 'llegada' && window.RendioVuelos && RendioVuelos.habilitada && RendioVuelos.habilitada() === true);
@@ -669,12 +701,14 @@
     const s = S(v), t = tone(v), c = crew(v);
     const unread = c.reduce((a, l) => a + (RT.unread[l.rid] || 0), 0);
     const end = endOf(v);
+    const L = llegadaDe(v);   // 17-nov: una llegada se lee por la hora del vuelo
     return '<div class="rt-hero rx-in" style="--tone:' + t.c + '">'
       + '<div class="rt-hero-top"><span class="rt-hero-tag"><b>' + esc(v.n) + '</b>' + t.l + (esNueva(v) ? '<b class="rt-nueva">Nueva</b>' : '') + '</span>'
       + '<span class="rt-hero-st ' + (s.started ? 'live' : '') + '">' + (s.started ? '<i></i>' + esc(`En curso · parada ${s.idx + 1} de ${v.legs.length}`) : esc(soon(v))) + '</span></div>'
-      + '<div class="rt-hero-time"><b>' + esc(v.start) + '</b><span>' + (madrugadaDe(v) ? esc(madrugadaDe(v)) + '<br>' : '') + (v.type === 'salida'
+      + '<div class="rt-hero-time"><b>' + esc(L ? L.hm : v.start) + '</b><span>' + (madrugadaDe(v) ? esc(madrugadaDe(v)) + '<br>' : '') + (v.type === 'salida'
         ? 'sale hacia la 1.ª casa<br>' + (end ? 'llega a JMC ' + esc(end) : 'destino JMC')
-        : 'recoges en JMC<br>' + (end ? 'última casa ~' + esc(end) : 'reparte en las casas')) + '</span></div>'
+        : L ? esc(lleTxt(L)) + '<br>recoges en JMC'
+          : 'recoges en JMC<br>' + (end ? 'última casa ~' + esc(end) : 'reparte en las casas')) + '</span></div>'
       + '<div class="rt-hero-route"><span>' + v.from.toUpperCase() + '</span><i></i><span class="rt-hero-pl">' + ic(v.type === 'salida' ? 'Plane' : 'Home', 15) + '</span><i></i><span>' + v.to.toUpperCase() + '</span></div>'
       + heroFlightHTML(v)
       + '<button type="button" class="rt-crew" data-rt="detail" data-v="' + esc(v.id) + '">'
@@ -682,7 +716,7 @@
       + '<span class="rt-crew-tx"><b>' + c.length + ' auxiliares</b><span>' + esc(s.started ? doing(v) : names(v)) + '</span></span>'
       + (unread > 0 ? '<span class="rt-badge in">' + ic('MessageCircle', 11) + unread + '</span>' : '')
       + ic('ChevronRight', 18) + '</button>'
-      + btn(s.started ? `Seguir ruta · parada ${s.idx + 1}` : `Iniciar ruta · ${v.start}`, { cls: 'tone', icon: s.started ? 'Nav' : 'Play', attrs: { 'data-rt': 'start', 'data-v': v.id } })
+      + btn(s.started ? `Seguir ruta · parada ${s.idx + 1}` : (L ? 'Iniciar ruta' : `Iniciar ruta · ${v.start}`), { cls: 'tone', icon: s.started ? 'Nav' : 'Play', attrs: { 'data-rt': 'start', 'data-v': v.id } })
       + '</div>';
   }
   // El vuelo en la tarjeta de Mi día (26-oct-2026): cómo viene y un toque para verlo.
@@ -699,7 +733,7 @@
     const s = S(v), t = tone(v), c = crew(v), end = endOf(v);
     const f = v.type === 'llegada' && !s.done ? flightOf(v) : null;
     return '<button type="button" class="rt-vc rx-in ' + (s.done ? 'done' : '') + '" style="--tone:' + t.c + ';--d:' + i + '" data-rt="' + (s.done ? 'done' : 'detail') + '" data-v="' + esc(v.id) + '">'
-      + '<span class="rt-vc-t"><em>' + esc(`${v.n} · ${t.l}`) + '</em><b>' + esc(v.start) + '</b>' + (madrugadaDe(v) ? '<em title="' + esc(madrugadaDe(v)) + '">Madrugada</em>' : '') + (esNueva(v) ? '<em class="rt-nueva-s">Nueva</em>' : '') + '</span>'
+      + '<span class="rt-vc-t"><em>' + esc(`${v.n} · ${t.l}`) + '</em><b>' + esc(horaV(v)) + '</b>' + (madrugadaDe(v) ? '<em title="' + esc(madrugadaDe(v)) + '">Madrugada</em>' : '') + (esNueva(v) ? '<em class="rt-nueva-s">Nueva</em>' : '') + '</span>'
       + '<span class="rt-vc-m"><b>' + esc(`${v.from} → ${v.to}`) + '</b><span>' + esc(`${c.length} auxiliares · ${v.type === 'salida' ? (end ? `llega ${end}` : 'destino JMC') : (f && f.st ? `${f.code} ${f.st}` : 'recoge en JMC')}`) + '</span></span>'
       + (s.done ? chip('Check', 'ok', 'Hecha') : ic('ChevronRight', 18, 'color: var(--r-text-3);'))
       + '</button>';
@@ -721,10 +755,11 @@
     return '<div class="rx-lbl">Vueltas para tomar</div>' + list.map((o, i) => {
       const lle = o.direction === 'airport_to_home';
       const st = o.stops || [];
-      const t = lle ? bogHM(o.planned_start_at) : (st[0] && st[0].at ? bogHM(st[0].at) : bogHM(o.planned_start_at));
+      const A = lle ? bAterriza(st, o.planned_start_at) : null;   // 17-nov: la llegada se lee por la hora del vuelo
+      const t = A ? A.hm : lle ? bogHM(o.planned_start_at) : (st[0] && st[0].at ? bogHM(st[0].at) : bogHM(o.planned_start_at));
       const nombres = st.map((x) => String(x.name || '').split(' ')[0]).join(', ');
       const lugares = [...new Set(st.map((x) => x.place).filter(Boolean))].join(' · ');
-      const sub = [lle ? 'Recoges en JMC' : (o.deadline_at ? 'Deben estar ' + bogHM(o.deadline_at) : 'Destino JMC'), o.note || '', lugares].filter(Boolean).join(' · ');
+      const sub = [lle ? (A ? A.rot + ' · recoges en JMC' : 'Recoges en JMC') : (o.deadline_at ? 'Deben estar ' + bogHM(o.deadline_at) : 'Destino JMC'), o.note || '', lugares].filter(Boolean).join(' · ');
       // Bajo la hora, solo si no es de hoy: «Madrugada» (0:20 de la ruta de esta
       // noche), «Mañana» o la fecha.
       const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
@@ -753,7 +788,29 @@
   const bLle = (o) => o.direction === 'airport_to_home';
   const bHecha = (o) => o.status === 'completed' || ((o.stops || []).length > 0 && o.stops.every((x) => x.status === 'delivered' || x.status === 'no_show'));
   const bCurso = (o) => !bHecha(o) && (o.status === 'in_progress' || (o.stops || []).some((x) => x.status !== 'pending'));
-  const bHora = (o) => { const st = o.stops || []; return bogHM(bLle(o) ? o.start_at : ((st[0] && st[0].at) || o.start_at)); };
+  // 17-nov-2026 (Julián: «solamente la hora en la que aterriza el vuelo»): una
+  // llegada se lee por la hora del vuelo (la real de Flightradar24 si se sabe; si
+  // no, la que pidió), no por la de salir de JMC. Sin vuelo, la hora que dio.
+  //   inicio: la salida de JMC que lleva el sistema (para no leer el vuelo de otro día).
+  function bAterriza(stops, inicio) {
+    const ref = inicio ? Date.parse(inicio) : NaN;
+    const una = (x) => {
+      let e = null;
+      if (x.flight) {
+        try { e = window.RendioVuelos && RendioVuelos.para ? RendioVuelos.para(x.flight, bDia(x.req_at || inicio), 'lle') : null; } catch (err) { e = null; }
+        if (e && e.status === 'unknown') e = null;
+      }
+      const ms = Date.parse((e && (e.actualAt || e.estimatedAt || e.schedAt)) || x.req_at || '');
+      return isFinite(ms) && (!isFinite(ref) || Math.abs(ms - ref) <= 6 * 3600000) ? { ms, landed: !!e && e.status === 'landed' } : null;
+    };
+    const mayor = (xs) => xs.map(una).filter(Boolean).sort((a, b) => b.ms - a.ms)[0] || null;
+    const st = stops || [];
+    const v = mayor(st.filter((x) => x.flight));
+    if (v) return { hm: bogHM(v.ms), rot: v.landed ? 'Aterrizó' : 'Aterriza' };
+    const t = mayor(st.filter((x) => !x.flight && x.req_at));
+    return t ? { hm: bogHM(t.ms), rot: 'Sale del terminal' } : null;
+  }
+  const bHora = (o) => { const st = o.stops || []; const A = bLle(o) ? bAterriza(st, o.start_at) : null; return A ? A.hm : bogHM(bLle(o) ? o.start_at : ((st[0] && st[0].at) || o.start_at)); };
   const bDia = (iso) => (iso ? new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }) : '');
   const lista = (xs) => (xs.length <= 1 ? xs.join('') : xs.slice(0, -1).join(', ') + (/^(i|hi)/i.test(xs[xs.length - 1]) ? ' e ' : ' y ') + xs[xs.length - 1]);
   // Quién la lleva, a la derecha: verde = tú, azul = un compañero, ámbar = nadie.
@@ -967,7 +1024,7 @@
   }
   function stopRowHTML(v, i) {
     const s = S(v), st = v.legs[i], ps = pinState(v, i), r = s.res[st.rid], apt = st.k === 'apt';
-    const lt = st.k === 'pick' ? ['recoge', st.pickup || st.eta] : st.k === 'drop' ? ['llega aprox.', st.eta] : v.type === 'salida' ? ['presentación', present(v)] : ['recoges', v.start];
+    const lt = st.k === 'pick' ? ['recoge', st.pickup || st.eta] : st.k === 'drop' ? ['llega aprox.', st.eta] : v.type === 'salida' ? ['presentación', present(v)] : (llegadaDe(v) ? [llegadaDe(v).rot.toLowerCase(), llegadaDe(v).hm] : ['recoges', v.start]);
     const u = RT.unread[st.rid] || 0;
     const f = apt && v.type === 'llegada' ? flightOf(v) : null;
     const pinIn = apt ? ic('Plane', 16) : ps === 'done' ? ic('Check', 16) : ps === 'no' ? ic('X', 15) : legNum(v, i);
@@ -1004,7 +1061,7 @@
       + '<div class="rt-head-c"><span style="color:' + t.fg + '">' + esc(`${v.n} · ${t.l}`) + '</span><b>' + (v.type === 'salida' ? 'Recoges en casa · destino JMC' : 'Recoges en el aeropuerto') + '</b></div>'
       + '<button type="button" class="rx-ib" data-rt="bigmap" data-v="' + esc(v.id) + '" aria-label="Mapa grande">' + ic('Expand', 18) + '</button></div>'
       + '<div class="rt-body">'
-      + '<div class="rt-sum"><div class="rt-sum-t"><b>' + esc(v.start) + '</b>' + (end ? '<i></i><b class="lt">' + esc(end) + '</b>' : '') + '</div>'
+      + '<div class="rt-sum"><div class="rt-sum-t"><b>' + esc(horaV(v)) + '</b>' + (end ? '<i></i><b class="lt">' + esc(end) + '</b>' : '') + '</div>'
       + '<div class="rt-chips">' + chip('Users', '', `${c.length} ${v.type === 'salida' ? 'auxiliares' : 'entregas'}`) + chip('MapPin', '', `${v.legs.length} paradas`) + chip('Clock', '', `~${minsOf(v)} min`)
       + (f && !flSeguible(v, f) ? chip('Plane', f.tone, `${f.code}${f.st ? ' · ' + f.st : ''}`) : '') + '</div></div>'
       + '<div class="rt-flset">' + (f ? flightCardHTML(v, f) : flightsOf(v).map((x) => flightCardHTML(v, x)).join('')) + '</div>'
@@ -1018,7 +1075,7 @@
         : (v.pool && !s.started && !(v.type === 'llegada' && despachoOn()) ? btn('Soltar esta vuelta', { kind: 'ghost', attrs: { 'data-rt': 'release', 'data-v': v.id } }) : '')
           // 0151: en una llegada que no ha salido de JMC, el conductor arma su carro.
           + (armaLlegada(v) ? btn('Agregar a alguien', { kind: 'ghost', icon: 'Users', attrs: { 'data-rt': 'addpax', 'data-v': v.id } }) : '')
-          + btn(s.started ? `Seguir ruta · parada ${s.idx + 1} de ${v.legs.length}` : `Iniciar ruta · sale ${v.start}`, { cls: 'tone', icon: s.started ? 'Nav' : 'Play', attrs: { 'data-rt': 'start', 'data-v': v.id } })) + '</div>'
+          + btn(s.started ? `Seguir ruta · parada ${s.idx + 1} de ${v.legs.length}` : (v.type === 'llegada' && llegadaDe(v) ? 'Iniciar ruta' : `Iniciar ruta · sale ${v.start}`), { cls: 'tone', icon: s.started ? 'Nav' : 'Play', attrs: { 'data-rt': 'start', 'data-v': v.id } })) + '</div>'
       + nowbarHTML(v.id)
       + '</div>';
   }
@@ -1070,8 +1127,8 @@
       + '<div class="rt-stats"><div><b>' + ok.length + '</b><span>' + (v.type === 'salida' ? 'entregados' : 'en casa') + '</span></div><div><b>' + no.length + '</b><span>' + (v.type === 'salida' ? 'no se presentaron' : 'no llegaron') + '</span></div><div><b>' + mins + '</b><span>' + (mins === 1 ? 'minuto' : 'minutos') + '</span></div></div>'
       + '<div class="rx-group rt-done-list">' + c.map((l) => { const r = s.res[l.rid] || 'delivered'; return '<div class="rt-dl">' + av(l.ini, 'sm') + '<b>' + esc(l.name) + '</b>' + chip('', RT_RES[r][1], RT_NO.includes(r) ? RT_RES[r][0] : r === 'nocode' ? 'Sin código' : 'Entregado') + '</div>'; }).join('') + '</div>'
       + (next ? '<button type="button" class="rt-vc" style="--tone:' + nt.c + '" data-rt="nextv" data-v="' + esc(next.id) + '">'
-        + '<span class="rt-vc-t"><em>' + esc(`${next.n} · ${nt.l}`) + '</em><b>' + esc(next.start) + '</b></span>'
-        + '<span class="rt-vc-m"><b>' + esc(`Sale a las ${next.start}`) + '</b><span>' + esc(`${next.from} → ${next.to} · ${crew(next).length} auxiliares`) + '</span></span>'
+        + '<span class="rt-vc-t"><em>' + esc(`${next.n} · ${nt.l}`) + '</em><b>' + esc(horaV(next)) + '</b></span>'
+        + '<span class="rt-vc-m"><b>' + esc(llegadaDe(next) ? `${llegadaDe(next).rot} ${llegadaDe(next).hm}` : `Sale a las ${next.start}`) + '</b><span>' + esc(`${next.from} → ${next.to} · ${crew(next).length} auxiliares`) + '</span></span>'
         + ic('ChevronRight', 18) + '</button>' : '')
       + '</div>'
       + '<div class="rx-foot">' + (next
@@ -1284,7 +1341,7 @@
     const f = flightOf(v), meet = aptMeet(v);
     let h = '<div class="rt-eb">' + (at ? '<i class="ok"></i><span>' + esc(`En JMC · les avisamos a los ${c.length}`) + '</span>'
       : '<i></i><span>Vas a JMC</span><span class="dist">' + esc(liveDist(v)) + '</span>') + '</div>';
-    if (!at) h += '<div class="rt-big"><b>' + esc(`Recoges ${v.start}`) + '</b><span class="ok">' + esc([f ? `${f.code}${f.st ? ' ' + f.st : ''}` : '', meet].filter(Boolean).join(' · ')) + '</span></div>';
+    if (!at) h += '<div class="rt-big"><b>' + esc(llegadaDe(v) ? `${llegadaDe(v).rot} ${llegadaDe(v).hm}` : `Recoges ${v.start}`) + '</b><span class="ok">' + esc([f ? `${f.code}${f.st ? ' ' + f.st : ''}` : '', meet].filter(Boolean).join(' · ')) + '</span></div>';
     if (at) h += '<div class="rt-big sm"><b>Pídele el código a cada uno</b><span>' + esc(`${meet} · cuando lo encuentres, escribe sus 2 dígitos.`) + '</span></div>';
     h += at ? '<div class="rx-group">' + c.map((l) => crewRowHTML(v, l)).join('') + '</div>' : crewListHTML(v, true);
     const nobody = at && open === 0 && onb === 0;
@@ -1837,7 +1894,7 @@
     else if (e && e.estimatedAt) row('Clock', 'Llega (estimado)', bogHM(e.estimatedAt));
     if (e && e.schedAt) row('Clock', 'Hora prevista', bogHM(e.schedAt));
     row('Users', f.quienes.length === 1 ? 'Viene en este vuelo' : 'Vienen en este vuelo', f.quienes.join(', '));
-    if (v) row('MapPin', 'Los recoges', `${v.start} · ${aptMeet(v)}`);
+    if (v) row('MapPin', 'Los recoges', aptMeet(v));
     else if (f.recoge) row('MapPin', f.quienes.length === 1 ? 'Lo recoge' : 'Los recoge', f.recoge);
     const lv = e && e.live, fresco = lv && lv.timestamp && now - Date.parse(lv.timestamp) < 40 * 60000;
     if (fresco && (lv.alt || lv.gspeed)) {

@@ -865,6 +865,10 @@
     const f = firstName(t), plate = plateOf(t), day = dayOf(t);
     if (t.status === 'assigned' && prev !== 'assigned') {
       const hm = t.pickupAt ? hmBog(t.pickupAt) : '';
+      // 17-nov-2026 (Julián: «quitar esa hora aproximada a la que van a salir del aeropuerto»): a quien llega en un vuelo no se le promete una hora de salida de JMC; lo esperan cuando aterrice. Tierra y reserva conservan su hora.
+      if (t.type === 'lle' && t.groundOps !== true && !t.reservePlace) {
+        return { icon: 'Car', title: 'Ya tienes conductor', body: `${f ? f + ' te espera' : 'Te esperamos'} en JMC cuando aterrices el ${day}${plate ? ' · carro ' + plate : ''}.` };
+      }
       return { icon: 'Car', title: 'Ya tienes conductor',
         body: hm ? `Te recogemos el ${day} a las ${hm}${plate ? ' · carro ' + plate : ''}.` : `Tu traslado del ${day} ya tiene conductor.` };
     }

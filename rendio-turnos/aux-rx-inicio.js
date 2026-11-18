@@ -179,11 +179,19 @@
     const from = lle ? apt : ['CASA', [home]];
     const to = lle ? ['CASA', [home]] : apt;
     const enJMC = RL && RL.hotel ? 'en el ' + RL.name : 'en JMC';
+    // 17-nov-2026 (Julián: «quitar esa hora aproximada a la que van a salir del
+    // aeropuerto… solamente la hora en la que aterriza el vuelo»): a quien llega en
+    // un vuelo no se le promete una hora de salida de JMC (es un cálculo: sale antes
+    // o después); su hora es la del vuelo y lo esperan cuando aterrice. Quien no
+    // tiene vuelo (tierra, reserva) sí conserva su hora de recogida.
+    const conVuelo = lle && !ground && !RL;
+    const grande = !!pk && !conVuelo;
     let bigL, bigV;
-    if (pk) { bigL = lle ? 'Te esperamos ' + enJMC : 'Te recogemos'; bigV = hm(pk); }
+    if (grande) { bigL = lle ? 'Te esperamos ' + enJMC : 'Te recogemos'; bigV = hm(pk); }
     else { bigL = lle ? (ground ? 'Sales del aeropuerto' : (RL ? 'Finaliza tu asignación' : 'Aterrizas')) : 'Estar ' + enJMC; bigV = t.time || '--:--'; }
     const note = !pub ? 'Hora de recogida: te avisamos cuando armemos tu ruta'
-      : (!pk ? 'Conductor asignado · hora por confirmar' : '');
+      : conVuelo ? 'Te esperamos ' + enJMC + ' cuando aterrices'
+        : (!pk ? 'Conductor asignado · hora por confirmar' : '');
     // Grilla: nunca «Trayecto» ni «Presentación». La hora del vuelo solo si la
     // grande es la recogida (si no, ya es la grande). En tierra no hay vuelo.
     const cells = [];
@@ -192,7 +200,7 @@
       if (t.flight && !ground && !RL) cells.push(['Vuelo', t.flight]);
     } else {
       if (t.flight && !ground && !RL) cells.push(['Vuelo', t.flight]);
-      if (pk && t.time) cells.push([ground ? 'Sales' : (RL ? 'Finaliza' : 'Aterriza'), t.time]);
+      if (grande && t.time) cells.push([ground ? 'Sales' : (RL ? 'Finaliza' : 'Aterriza'), t.time]);
     }
     if (RL) cells.push(['Reserva', RL.hotel ? RL.short : 'Aeropuerto']);
     if (t.bags != null && t.bags !== '') cells.push(['Maletas', String(t.bags)]);

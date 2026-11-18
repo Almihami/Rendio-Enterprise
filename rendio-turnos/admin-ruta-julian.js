@@ -978,6 +978,14 @@
     // Una llegada de reserva en el hotel sale del hotel (0121); si no, de JMC.
     const lugares = [...new Set(gente.map((g) => { const a = aux(g.rid); const P = a && a.reserva && W.Api && Api.reservePlace ? Api.reservePlace(a.reserva) : null; return P && P.hotel ? 'del ' + P.name : 'de JMC'; }))];
     const sub = lle ? `Sale ${lugares.join(' y ')} → casas` : (dl ? 'Recoge → deben estar en JMC' : 'Primera recogida');
+    // 17-nov-2026 (Julián: «solamente la hora a la que aterriza el avión»): una
+    // llegada se lee por la hora del vuelo, no por la salida de JMC. La arma el
+    // tablero (admin-rutas-v2.js · vistaFila) para que las tres clases de fila
+    // digan lo mismo; sin ella (día solo pegado, pruebas) queda como antes.
+    const L = lle && o.llegada && typeof o.llegada.hora === 'function' ? o.llegada : null;
+    const cuando = L
+      ? `<b class="mono">${esc(L.hm)}</b><small${L.late ? ' class="late"' : ''}>${esc(L.rotulo)}${L.txt ? ' · ' + esc(L.txt) : ''}</small>${lugares.some((x) => x !== 'de JMC') ? `<small>${esc(sub)}</small>` : ''}`
+      : `<b class="mono">${esc(pad2(t0))}${dl ? ' → ' + esc(pad2(dl)) : ''}</b><small>${esc(sub)}</small>`;
     const que = [v.nota || '', `${gente.length} ${gente.length === 1 ? 'persona' : 'personas'}`].filter(Boolean).join(' · ');
     // Cómo terminó (0137 de los pendientes: «Terminada 4:05», «Pasó su hora · …»), como en el tablero.
     const resultado = estado[0] === 'hecha' || estado[0] === 'pasada'
@@ -992,12 +1000,14 @@
       // 0167: la cajita se arrastra o se toca para pasarla a otra vuelta (admin-rutas-v2.js · openPasar).
       const mv = o.pasar && g.rid && (v.pendientes || []).includes(g) && !arrancoPeg(v) && v.status !== 'completed'
         ? ` draggable="true" role="button" tabindex="0" data-pasar="${esc(g.rid)}" data-act="pasar" data-rid="${esc(g.rid)}" data-from="${esc(v.id)}" data-tipo="${lle ? 'lle' : 'sal'}" data-nm="${esc(g.name || 'Tripulante')}" title="Arrástralo a otra vuelta o tócalo para pasarlo"` : '';
-      return `<span class="rv2-p ${mv ? 'rv2-p--mv' : 'is-fijo'}"${mv}>${!lle && g.etaAt ? `<span class="mono">${esc(pad2(bogHM(g.etaAt)))}</span>` : ''}<span class="nm">${hl(g.name)}${g.guest ? ' <em>(sin cuenta)</em>' : ''}</span>${lugar ? `<span class="pl">${hl(lugar)}</span>` : ''}</span>`;
+      // 17-nov: en una llegada, junto al nombre va la hora de SU vuelo (como en el tablero).
+      const hv = L && a.dl ? L.hora(a) : '';
+      return `<span class="rv2-p ${mv ? 'rv2-p--mv' : 'is-fijo'}"${mv}>${!lle && g.etaAt ? `<span class="mono">${esc(pad2(bogHM(g.etaAt)))}</span>` : (hv ? `<span class="mono">${esc(hv)}</span>` : '')}<span class="nm">${hl(g.name)}${g.guest ? ' <em>(sin cuenta)</em>' : ''}</span>${lugar ? `<span class="pl">${hl(lugar)}</span>` : ''}</span>`;
     }).join('');
     const btns = botonesPeg(v);
-    const aria = `Ruta de Julián, ${lle ? 'llegada' : 'salida'} de las ${t0}, ${estado[1]}, ${gente.map((g) => g.name).join(', ')}`;
+    const aria = `Ruta de Julián, ${lle ? 'llegada' : 'salida'}${L ? ', ' + L.rotulo.toLowerCase() + ' ' + L.hm : ' de las ' + t0}, ${estado[1]}, ${gente.map((g) => g.name).join(', ')}`;
     return `<div class="rv2-row rv2-row--julian" data-julian="${esc(v.id)}" data-st="${estado[0]}" data-s="${estado[0] === 'libre' ? 'nodriver' : 'ok'}"${o.fin ? ` data-fin="${o.fin}"` : ''} aria-label="${esc(aria)}">`
-      + `<div class="when"><b class="mono">${esc(pad2(t0))}${dl ? ' → ' + esc(pad2(dl)) : ''}</b><small>${esc(sub)}</small><small>${esc(que)}</small>${resultado}</div>`
+      + `<div class="when">${cuando}<small>${esc(que)}</small>${resultado}</div>`
       + `<div class="main"><div class="l1"><span class="rv2-pill ${lle ? 'llegada' : 'salida'}">${lle ? 'Llegada' : 'Salida'}</span>`
       + '<span class="tag rj-tag" title="La pegó Julián: la toman los conductores en su app y Publicar el tablero no la toca">Ruta de Julián</span>'
       + `${quien}${estado[0] === 'curso' ? ' <span class="tag">en curso</span>' : ''}${btns && typeof o.cancelar === 'function' ? o.cancelar((v.pendientes || []).map((g) => ({ rid: g.rid, nm: g.name || 'Tripulante' }))) : ''}</div>`

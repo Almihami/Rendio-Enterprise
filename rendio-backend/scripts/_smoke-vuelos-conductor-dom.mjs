@@ -197,7 +197,7 @@ console.log('\n── C · La ruta del conductor: el vuelo en la tarjeta y «Ver
   t('…con el vuelo, la aerolínea y de dónde viene', /AV9306 · Avianca/.test(tx(sh())) && /Bogotá \(BOG\) → JMC/.test(tx(sh())), tx(sh()).slice(0, 120));
   t('…cómo va y a qué hora llega', /En el aire/.test(tx(sh())) && new RegExp(`Llega ${hm(48)} · 8 min tarde`).test(tx(sh())));
   t('…despegó, llega (estimado), hora prevista', new RegExp(`Despegó ${hm(-22)}`).test(leer(sh())) && new RegExp(`Llega \\(estimado\\) ${hm(48)}`).test(leer(sh())) && new RegExp(`Hora prevista ${hm(40)}`).test(leer(sh())), leer(sh()));
-  t('…quiénes vienen en ese vuelo y dónde se recogen', /Vienen en este vuelo Laura Prueba Gómez, Andrés Prueba Ruiz/.test(leer(sh())) && new RegExp(`Los recoges ${hm(50)} · Salida de pasajeros`).test(leer(sh())), leer(sh()));
+  t('…quiénes vienen en ese vuelo y dónde se recogen', /Vienen en este vuelo Laura Prueba Gómez, Andrés Prueba Ruiz/.test(leer(sh())) && /Los recoges Salida de pasajeros/.test(leer(sh())) && !new RegExp(`Los recoges ${hm(50)}`).test(leer(sh())), leer(sh()));   // 17-nov: sin la hora de salida de JMC (es un cálculo)
   t('…el último dato en vivo en metros y km/h', /9\.449 m · 796 km\/h · A320/.test(tx(sh())), tx(sh()));
   t('…y dice que la posición sale de FR24 y no va en línea recta', /Última posición de Flightradar24/.test(tx(sh())) && /no va en línea recta/.test(tx(sh())));
   const planes = L.__markers('rt-fl-plane');
