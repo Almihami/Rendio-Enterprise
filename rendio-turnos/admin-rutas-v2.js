@@ -2356,14 +2356,25 @@
   async function publicar() {
     if (ui.publicando || typeof rtSavePlan !== 'function') return;
     ui.publicando = true; renderSay(avisosDe());
-    let res = null;
+    let res = null, dicho = '';
     // 0154: si el sistema corrió una vuelta en el último minuto, se publica con eso.
     let previas = [];
     try { previas = await sincronizarAntesDePublicar(); } catch (_) { previas = []; }
     const aviso = avisoSincronia(previas);
-    try { res = await rtSavePlan({ toast: (m) => toast(aviso ? `${m} ${aviso}` : m) }); }
+    try { res = await rtSavePlan({ toast: (m) => { dicho = aviso ? `${m} ${aviso}` : m; toast(dicho); } }); }
     catch (e) { toast('No se pudo publicar: ' + ((e && e.message) || 'error')); }
     finally { ui.publicando = false; }
+    // 17-nov, por vuelta: si una vuelta chocó con la base (otro jefe o el sistema la
+    // cambió después de abrir el día) o la pantalla tenía una que ya no existe, la
+    // pantalla está vieja. Lo que se podía guardar ya se guardó: se vuelve a leer el
+    // día sola y el aviso se queda más tiempo, para que el jefe repita su cambio
+    // sobre lo que de verdad hay.
+    if (res && (res.conflictos || res.viejas) && rt.day) {
+      let releido = false;
+      try { await cargarDia(rt.day); releido = !ui.falloCarga; } catch (_) { releido = false; }
+      if (dicho) toast(releido ? dicho.replace('Vuelve a leer el día y repite el cambio.', 'Ya se volvió a leer el día: repite el cambio.').replace(/: vuelve a leer el día\.$/, ': ya se volvió a leer el día.') : dicho, false, 12000);
+      return res;
+    }
     render();
     return res;
   }
@@ -2655,6 +2666,9 @@
     const car = rt.cars.find((c) => c.id === lane.car);
     const delCarro = car ? rtCarDrv(car, rtBandOf(lane)) : null;
     const limpio = publicado() && firmaActual() === rt.firmaPublicada;
+    // 17-nov: si el jefe no le había cambiado nada más a ESTA vuelta, después de
+    // guardarla queda como en la base (un Publicar posterior no la vuelve a crear).
+    const limpiaVuelta = typeof rtBaseLimpia === 'function' && rtBaseLimpia(lane);
     publicandoVuelta = true;
     toast('Publicando esta vuelta…');
     try {
@@ -2670,12 +2684,14 @@
         if (!noExiste(e)) throw e;
         const id = await filaDeLaVuelta(lane);
         if (!id || id === lane.raId) throw new Error('esa vuelta ya no está publicada así: vuelve a publicar el día');
+        if (rt.pubBase && rt.pubBase[lane.raId]) { rt.pubBase[id] = rt.pubBase[lane.raId]; delete rt.pubBase[lane.raId]; }   // 17-nov: el registro sigue a la fila
         lane.raId = id;
         resp = await enviar();
       }
       const msg = setVueltaDriver(laneId, pick, true, resp && resp.name ? { name: resp.name, phone: resp.phone } : quien);
       if (resp && resp.status) lane.raStatus = resp.status;
       if (limpio) rt.firmaPublicada = firmaActual();
+      if (limpiaVuelta && typeof rtBaseMarcar === 'function') rtBaseMarcar([lane]);
       // «Deshacer» volvería el tablero a una foto con el conductor anterior y la
       // base ya tiene el nuevo: al re-publicar se desharía a escondidas. Lo
       // publicado se corrige con otro cambio, no con Deshacer.
@@ -2906,11 +2922,12 @@
 
   /* ---------- Avisos y selección ---------- */
   let toastTimer = null;
-  function toast(msg, withUndo = false) {
+  // ms (17-nov): cuánto se queda un aviso largo que hay que alcanzar a leer.
+  function toast(msg, withUndo = false, ms = 0) {
     if (!el.toast) return;
     el.toast.innerHTML = `<span>${esc(msg)}</span>${withUndo && hist.length ? '<button data-act="undo">Deshacer</button>' : ''}`;
     el.toast.hidden = false; clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.toast.hidden = true; }, withUndo ? 6000 : 3200);
+    toastTimer = setTimeout(() => { el.toast.hidden = true; }, ms || (withUndo ? 6000 : 3200));
   }
   function select(id, { open = true, moving = null } = {}) {
     ui.sel = id; ui.moving = moving; ui.todas = false;
@@ -3041,6 +3058,10 @@
     // «undefined is not an object (evaluating 't.split')» (miércoles 28-oct-2026).
     const podarPool = () => { rt.pool = (rt.pool || []).filter((k) => rt.aux && rt.aux[k]); return false; };
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.rv2Auto = {}; rt.horasPub = {}; rt.rv2Fin = {};
+    // 17-nov, publicar vuelta por vuelta: el registro de cómo está cada fila en la
+    // base (admin-rutas.js · rt.pubBase). Aunque lo publicado no se pueda leer queda
+    // vacío y NO nulo: desde esta pantalla nunca se publica «el día entero».
+    rt.pubBase = {};
     ui.manual = null; rt.manualDia = false; rt.rv2Solas = []; rt.rv2AuxSolas = {}; rt.rv2AuxPegadas = {}; rt.rv2Ajenas = []; rt.rv2EnSolas = [];
     // Los sin cuenta salen de las vueltas publicadas: se vuelven a leer de ahí.
     Object.keys(rt.aux || {}).forEach((k) => { if (rt.aux[k] && rt.aux[k].guest) delete rt.aux[k]; });
@@ -3093,6 +3114,7 @@
     const porReserva = {};
     Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (r) porReserva[r] = k; });
     const lanes = [], order = {}, usados = new Set(), nCarro = {}, fijas = {}, atendidas = {}, horas = {}, guardado = {}, fines = {}, delegQuien = {}, tomarDe = {};
+    const ridsBase = {};   // 17-nov: la gente (reservas) que cada fila tiene en la base al leerla
     const hm = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour12: false }).slice(0, 5);
     // 0124: cada vuelta vuelve a su carro del plan («Carro 1»). Las publicadas
     // antes de 0124 no lo traen: se reparten por placa en los carros del plan
@@ -3129,6 +3151,7 @@
       lane.raId = v.id; lane.raStatus = v.status;
       // 0154: la hora y el conductor que tenía en la base al abrir el día (ver sincronizarConBase).
       lane.raStart = v.startAt; lane.raDbDrv = v.driverProfileId || null;
+      ridsBase[v.id] = stops.map((s) => s.rid).filter(Boolean).sort().join(',');
       if (lane.type === 'lle') { lane.origin = 'airport'; lane.landing = rtToHM(horaVuelta(ids)); }
       lanes.push(lane); order[lane.id] = ids;
       guardado[lane.id] = v.delegated ? 'deleg' : (v.driverProfileId || null);
@@ -3175,6 +3198,7 @@
     rt.rv2Fijas = fijas; rt.rv2Atendidas = atendidas; rt.rv2Fin = fines;
     rt.cars.forEach((c) => encadenar(c.id));
     marcarComoEnLaBase(rt.lanes);
+    if (typeof rtBaseMarcar === 'function') rtBaseMarcar(rt.lanes, ridsBase);   // 17-nov: así está cada vuelta en la base
     rt.optimized = true;
     rt.firmaPublicada = firmaActual();
     return true;
@@ -3206,6 +3230,8 @@
       if (!cambioBase) return;
       const tocoJefe = l.start !== l.raHm || (rtDriverOf(l) || null) !== l.raDrv || (l.tomar === true) !== l.raTomar;
       if (tocoJefe) return;   // lo del jefe manda (y el acomodo lo vuelve a mirar)
+      // 17-nov: si el jefe le cambió OTRA cosa (la gente), sigue contando como cambio suyo.
+      const limpia = typeof rtBaseLimpia === 'function' && rtBaseLimpia(l);
       const antes = l.start;
       l.start = hmIso(v.startAt);
       const ids = rt.order[l.id] || [];
@@ -3222,9 +3248,10 @@
       else if (v.paraTomar) { l.tomar = true; l.drv = drvBase || false; }   // 0151: la tomó un conductor (sigue para tomar)
       else if (drvBase !== (rtDriverOf(l) || null)) { delete l.tomar; if (drvBase && drvBase === delCarro) delete l.drv; else l.drv = drvBase || false; }
       l.raStart = v.startAt; l.raDbDrv = drvBase; l.raStatus = v.status;
-      cambiadas.push({ lane: l, antes, sola, drv: drvBase });
+      cambiadas.push({ lane: l, antes, sola, drv: drvBase, limpia });
     });
     if (cambiadas.length) marcarComoEnLaBase(cambiadas.map((x) => x.lane));
+    if (cambiadas.length && typeof rtBaseMarcar === 'function') rtBaseMarcar(cambiadas.filter((x) => x.limpia).map((x) => x.lane));
     return cambiadas;
   }
   // El aviso, en palabras: «El sistema corrió 1 vuelta (vuelo tarde): V-01 11:37 → 12:05 con Juan».
@@ -3681,8 +3708,11 @@
       const r = Object.values(D.byId).find((x) => { const l = x && rtLaneOf(x.id); return l && l.raId === raId; });
       if (!r) return false;
       const limpio = publicado() && firmaActual() === rt.firmaPublicada;
+      const laneR = rtLaneOf(r.id);
+      const limpiaVuelta = typeof rtBaseLimpia === 'function' && rtBaseLimpia(laneR);   // 17-nov
       setVueltaDriver(r.id, pid, true);
       if (limpio) rt.firmaPublicada = firmaActual();
+      if (limpiaVuelta && typeof rtBaseMarcar === 'function') rtBaseMarcar([laneR]);
       hist.length = 0;
       render();
       return true;

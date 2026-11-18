@@ -234,6 +234,7 @@
     // Lo publicado de ESTE día se vuelve a leer en cada carga (Asignación v2):
     // la firma dice si lo que hay en pantalla es lo que ya tienen los conductores.
     rt.firmaPublicada = null; rt.rv2Fijas = {}; rt.rv2Atendidas = {}; rt.horasPub = {}; rt.rv2Fin = {};
+    rt.pubBase = null;   // 17-nov: el registro por vuelta lo arma Asignación v2 al leer lo publicado
     rt.etaSource = null;
     // 0107: el corte de la madrugada (lectura propia; sin la columna, 02:00).
     if (Api.getRouteNightCutoff) {
@@ -312,6 +313,41 @@
     const drv = (rt.cars || []).map(c => [c.id, c.driverAM || null, c.driverPM || null, c.driverMad || null, c.planVehicleId || null]);
     return JSON.stringify([lanes, drv]);
   }
+  // 17-nov-2026 · PUBLICAR VUELTA POR VUELTA. El 17-nov un jefe movió a UNA persona
+  // y Publicar reescribió el día entero con lo que tenía esa pantalla (ver
+  // saveRoutePlan). Ahora cada vuelta publicada tiene su huella y un registro de
+  // cómo estaba la última vez que la pantalla y la base coincidieron (al leer el
+  // día, al tomar un cambio del sistema, al publicar):
+  //   rt.pubBase = { <id de la fila> : { firma, rids } }   ·   null = sin registro
+  // Al publicar solo viajan como «cambio» las vueltas nuevas o cuya huella ya no es
+  // la del registro. Sin registro (la vista anterior) se publica el día entero.
+  // La huella es lo que se publicaría de ESA vuelta: carro, tipo, hora, gente en
+  // orden, conductor de verdad (el suyo o el del carro), delegada y a quién, para
+  // tomar, y en una salida la hora de cada parada (las puestas o publicadas).
+  function rtFirmaLane(l) {
+    if (!l) return '';
+    const ids = rt.order[l.id] || [];
+    const hp = rt.horasPub && rt.horasPub[l.id];
+    const horas = (l.type || 'sal') !== 'lle' && hp && hp.sig === ids.join(',') && hp.etas ? ids.map(k => (hp.etas[k] == null ? null : hp.etas[k])) : null;
+    return JSON.stringify([l.car, l.type || 'sal', l.start, ids.join(','), l.deleg ? null : (rtDriverOf(l) || null), l.deleg ? 1 : 0,
+      l.deleg && l.delegName ? [l.delegName, l.delegPhone || ''] : null, l.tomar ? 1 : 0, horas]);
+  }
+  // Las reservas de una vuelta, ordenadas: con esto la base dice si esa fila sigue
+  // teniendo la misma gente que cuando la pantalla la leyó.
+  const rtRidsLane = (l) => (rt.order[l.id] || []).map(k => rt.aux[k] && rt.aux[k].reservationId).filter(Boolean).sort().join(',');
+  // «Esta vuelta está en la pantalla como en la base.» ridsDe: { id de la fila: reservas }
+  // cuando se acaban de leer de la base; si no, se conservan las que ya tenía.
+  function rtBaseMarcar(lanes, ridsDe) {
+    if (!rt.pubBase) return;
+    (lanes || []).forEach(l => {
+      if (!l || !l.raId) return;
+      const antes = rt.pubBase[l.raId];
+      const rids = ridsDe && ridsDe[l.raId] != null ? ridsDe[l.raId] : (antes ? antes.rids : rtRidsLane(l));
+      rt.pubBase[l.raId] = { firma: rtFirmaLane(l), rids };
+    });
+  }
+  // ¿El jefe NO ha tocado esta vuelta desde la última vez que coincidió con la base?
+  const rtBaseLimpia = (l) => !!(rt.pubBase && l && l.raId && rt.pubBase[l.raId] && rt.pubBase[l.raId].firma === rtFirmaLane(l));
   const rtCarOf = (lane) => rt.cars.find(c => c.id === lane.car);
   const rtLaneOf = (laneId) => rt.lanes.find(l => l.id === laneId);
 
@@ -2029,7 +2065,11 @@
         if (a && a.reservationId) etas[a.reservationId] = s.cita ?? s.eta;
         etaDe[s.id] = s.cita ?? s.eta;
       });
+      // 17-nov, por vuelta: la fila que esta vuelta tenía en la base y si el jefe la
+      // cambió desde entonces (sin registro —la vista anterior— no viaja ninguno).
+      const porVuelta = rt.pubBase ? { raId: l.raId || null, cambio: !rtBaseLimpia(l) } : {};
       return {
+        ...porVuelta,
         laneId: l.id,   // 28-oct: para quedarse con la fila nueva de la vuelta (r.ids)
         vehicleId: car ? car.vehicleId : null,
         planCar: car ? car.id : null,   // 0124: «Carro 1»; la placa la pone el turno del conductor
@@ -2060,34 +2100,79 @@
     let result = { ok: false };
     try {
       const firma = rtFirmaPlan();
-      const r = await Api.saveRoutePlan(rt.day, lanes);
+      // 17-nov, por vuelta: además de las vueltas, viajan las filas que el jefe quitó
+      // (las del registro que ya no lleva ninguna vuelta con gente: la vació, la
+      // borró o re-optimizó), la gente que cada fila tenía al leerla y las reservas
+      // que esta pantalla conoce. Lo que la pantalla no conoce no se toca.
+      let porVuelta = null;
+      if (rt.pubBase) {
+        const llevadas = new Set(lanes.map(x => x.raId).filter(Boolean));
+        const base = {}; Object.keys(rt.pubBase).forEach(id => { base[id] = rt.pubBase[id].rids; });
+        const deAux = (o) => Object.values(o || {}).map(a => a && a.reservationId).filter(Boolean);
+        porVuelta = { quitadas: Object.keys(rt.pubBase).filter(id => !llevadas.has(id)), base,
+          // …las de las vueltas del sistema, las pegadas y la madrugada de otro día también
+          // las conoce (se ven en su fila), aunque no estén en el tablero.
+          conocidas: [...new Set(deAux(rt.aux).concat(deAux(rt.rv2AuxSolas), deAux(rt.rv2AuxPegadas), rt.rv2Ajenas || [], rt.rv2EnSolas || []))] };
+      }
+      const r = porVuelta ? await Api.saveRoutePlan(rt.day, lanes, { porVuelta }) : await Api.saveRoutePlan(rt.day, lanes);
+      const conf = (r && r.conflictos) || [];
       // 28-oct (Camilo, «No deja cambiar conductor · Esa vuelta no existe»): publicar
       // vuelve a crear las vueltas que no han arrancado, con id nuevo. El tablero se
       // queda con el nuevo; la que no se volvió a crear y no arrancó ya no existe.
+      // 17-nov: por vuelta, solo las que cambiaron estrenan fila; las demás conservan la suya.
       if (r && r.ids) {
         const pub = {}; lanes.forEach(x => { if (x.laneId) pub[x.laneId] = x; });
+        const nuevas = [], susRids = {};
         rt.lanes.forEach(l => {
           const x = r.ids[l.id];
+          if (x && (x.intacta || x.conflicto)) { l.raStatus = x.status; return; }   // su fila sigue; su registro también
           if (x) {
+            if (rt.pubBase && l.raId && l.raId !== x.id) delete rt.pubBase[l.raId];
             l.raId = x.id; l.raStatus = x.status;
             // 0154: lo publicado es lo que queda en la base (para ver después si el
             // sistema le cambió algo a esta vuelta sin que el jefe la tocara).
             const p = pub[l.id];
             l.raStart = p ? p.startAt : l.raStart; l.raDbDrv = p ? (p.driverProfileId || null) : l.raDbDrv;
             l.raHm = l.start; l.raDrv = rtDriverOf(l) || null; l.raTomar = l.tomar === true;
+            nuevas.push(l);
+            if (Array.isArray(x.rids)) susRids[x.id] = x.rids.slice().sort().join(',');
           }
-          else if (l.raId && !(rt.rv2Fijas && rt.rv2Fijas[l.id])) { delete l.raId; delete l.raStatus; }
+          else if (l.raId && !(rt.rv2Fijas && rt.rv2Fijas[l.id])) { if (rt.pubBase) delete rt.pubBase[l.raId]; delete l.raId; delete l.raStatus; }
         });
+        if (rt.pubBase) {
+          (r.borradas || []).forEach(id => { if (!nuevas.some(l => l.raId === id)) delete rt.pubBase[id]; });
+          rtBaseMarcar(nuevas, susRids);
+        }
       }
       // Si alguna vuelta no entró, el plan NO queda como publicado: el botón sigue
       // pidiendo publicar y el jefe lo ve (antes se contaba en silencio como «skipped»).
-      if (!r.failed) rt.firmaPublicada = firma;
-      result = { ok: !r.failed, saved: r.saved, skipped: r.skipped, kept: r.kept, failed: r.failed, withDriver, lanes: lanes.length };
+      if (!r.failed && !conf.length) rt.firmaPublicada = firma;
+      result = { ok: !r.failed && !conf.length, saved: r.saved, skipped: r.skipped, kept: r.kept, failed: r.failed, withDriver, lanes: lanes.length,
+        conflictos: conf.length, intactas: r.intactas || 0, quitadas: (r.quitadas || []).length, viejas: (r.viejas || []).length };
+      // 17-nov, por vuelta: se dice lo que de verdad se guardó, y lo que no y por qué.
+      const nQ = (r.quitadas || []).length, nI = r.intactas || 0, nV = (r.viejas || []).length;
+      const hmDe = (c) => {
+        const l = c.laneId ? rt.lanes.find(x => x.id === c.laneId) : null;
+        if (l && l.start) return l.start;
+        try { return new Date(c.startAt).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); } catch (_) { return ''; }
+      };
+      const horasConf = [...new Set(conf.map(hmDe).filter(Boolean))].sort();
+      const txtConf = conf.length
+        ? `No se ${conf.length === 1 ? 'guardó la vuelta' : `guardaron ${conf.length} vueltas`}${horasConf.length ? ` de las ${horasConf.slice(0, 4).join(', ')}${horasConf.length > 4 ? '…' : ''}` : ''}: alguien más ${conf.length === 1 ? 'la' : 'las'} cambió después de que abriste el día. Vuelve a leer el día y repite el cambio.`
+        : '';
+      const txtViejas = nV ? ` Ojo: ${nV === 1 ? 'una vuelta de tu pantalla ya no está' : `${nV} vueltas de tu pantalla ya no están`} así en la app (alguien más ${nV === 1 ? 'la' : 'las'} cambió): vuelve a leer el día.` : '';
+      const cambiaron = `${r.saved === 1 ? '1 vuelta cambió' : `${r.saved} vueltas cambiaron`}${nQ ? ` y ${nQ === 1 ? 'se quitó 1' : `se quitaron ${nQ}`}` : ''}`;
       say(r.failed
-        ? `Ojo: ${r.failed} ${r.failed === 1 ? 'vuelta no se pudo guardar' : 'vueltas no se pudieron guardar'} (${r.failMsg || 'error de la base'}). Se publicaron ${r.saved}. Vuelve a publicar.`
-        : withDriver
-          ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado${delegadas ? `, ${delegadas} delegada${delegadas === 1 ? '' : 's'}` : ''})${r.kept ? ` · ${r.kept} paradas ya en curso quedaron intactas` : ''}. Los conductores ya lo ven.`
-          : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.`);
+        ? `Ojo: ${r.failed} ${r.failed === 1 ? 'vuelta no se pudo guardar' : 'vueltas no se pudieron guardar'} (${r.failMsg || 'error de la base'}). Se publicaron ${r.saved}. Vuelve a publicar.${txtConf ? ' ' + txtConf : ''}`
+        : conf.length
+          ? `${txtConf}${r.saved || nQ ? ` Lo demás sí se publicó (${cambiaron}).` : ' No se publicó nada.'}${txtViejas}`
+          : r.porVuelta && !r.saved && !nQ
+            ? `No hay cambios por publicar: los conductores ya tienen este plan.${txtViejas}`
+            : r.porVuelta && nI
+              ? `Publicado: ${cambiaron}. ${nI === 1 ? 'La otra quedó' : `Las otras ${nI} quedaron`} como ${nI === 1 ? 'estaba' : 'estaban'}, sin tocar.${txtViejas}`
+              : withDriver
+                ? `Plan publicado: ${r.saved} vueltas (${withDriver} con conductor asignado${delegadas ? `, ${delegadas} delegada${delegadas === 1 ? '' : 's'}` : ''})${r.kept ? ` · ${r.kept} paradas ya en curso quedaron intactas` : ''}. Los conductores ya lo ven.${txtViejas}`
+                : `Plan publicado (${r.saved} vueltas). Asigna conductores para que los vean en su turno.${txtViejas}`);
       // Push a los auxiliares cuya asignación CAMBIÓ de verdad. Antes se le
       // avisaba a todos en cada republicación, así que quien ya tenía conductor
       // recibía "Conductor asignado 🚗" otra vez — y a quien SÍ le cambiaron el

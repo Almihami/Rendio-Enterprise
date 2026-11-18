@@ -3524,8 +3524,24 @@
   // Devuelve además `notify`: solo los auxiliares cuya asignación CAMBIÓ
   // (entraron a una ruta con conductor por primera vez, o les cambió el
   // conductor). Así republicar no vuelve a notificar a todo el mundo.
-  async function saveRoutePlan(day, lanes) {
+  //
+  // 17-nov-2026 · PUBLICAR VUELTA POR VUELTA (opts.porVuelta, Asignación v2).
+  // El 17-nov un jefe movió a UNA persona y le dio Publicar: como esto borraba «todo
+  // lo del día que no ha arrancado» y lo volvía a crear con lo que tuviera ESA
+  // pantalla, se recrearon 14 vueltas (8 de la mañana, ya pasadas) y se perdieron dos
+  // llegadas de la noche que esa pantalla no tenía: 5 personas sin carro. Con
+  // opts.porVuelta = { quitadas:[id], base:{ id: 'reservas ordenadas' }, conocidas:[reserva] }
+  // y cada lane con su `raId` (la fila que tenía) y `cambio` (false = el jefe no la tocó):
+  //   · solo se borra la fila de una vuelta que el jefe CAMBIÓ o QUITÓ; la que no
+  //     tocó y la que su pantalla nunca cargó se quedan como están;
+  //   · si la base tiene hoy otra gente en esa vuelta que cuando la pantalla la leyó
+  //     (otro jefe, el sistema, un script), o alguien de la vuelta nueva ya va en otra
+  //     vuelta que no se está cambiando, esa vuelta NO se guarda: va en `conflictos`
+  //     y lo demás sí se publica. Nunca queda alguien en dos vueltas ni sin la suya.
+  // Sin opts.porVuelta se comporta como siempre (la vista anterior publica el día entero).
+  async function saveRoutePlan(day, lanes, opts) {
     const d0 = day + 'T00:00:00-05:00', d1 = day + 'T23:59:59-05:00';
+    const PV = (opts && opts.porVuelta) || null;
     // profile id → driver_profile id (route_assignments referencia driver_profiles).
     const profIds = [...new Set(lanes.map(l => l.driverProfileId).filter(Boolean))];
     const dpMap = {}, dpBack = {};
@@ -3575,9 +3591,14 @@
     // quién ya estaba en una (no se le vuelve a anunciar a los conductores).
     let conParaTomar = false;
     const prevTomada = {}, prevEnTomar = new Set();
+    // Por vuelta (17-nov): cómo está HOY cada fila del día en la base, y en cuál fila
+    // del tablero (sin arrancar) va pendiente cada reserva.
+    const enBase = {}, dondePend = {};
     {
+      // Por vuelta: + si la reserva está cancelada (su parada no cuenta como gente).
+      const paradas = 'route_stops(id, reservation_id, status, estimated_arrival_at' + (PV ? ', reservations(cancelled_at)' : '') + ')';
       const leerPlan = (extra) => sb.from('route_assignments')
-        .select('id, status, direction, planned_start_at, driver_profile_id, ' + extra + 'driver_profiles(profile_id), route_stops(id, reservation_id, status, estimated_arrival_at)')
+        .select('id, status, direction, planned_start_at, driver_profile_id, ' + extra + 'driver_profiles(profile_id), ' + paradas)
         .gte('planned_start_at', d0).lte('planned_start_at', d1);
       // 0131: + a quién se delegó (si cambia, se le avisa al tripulante).
       // 0134: + pool, para no volver a meter a quien ya va en una vuelta para tomar.
@@ -3599,6 +3620,16 @@
         paradasDe[ra.id] = stops.map(s => s.id);
         const solaLibre = ra.pool && ra.auto_created === true && !ra.para_tomar && !ra.driver_profile_id
           && !ra.delegated_at && ra.status === 'planned' && !arrancada;
+        if (PV) {
+          // «Viva» como en getPublishedPlan (de ahí sale la gente que la pantalla leyó):
+          // con reserva a la vista y sin cancelar.
+          const vivas = stops.filter(s => s.reservation_id && s.reservations && !s.reservations.cancelled_at);
+          const delTablero = !ra.pool || ra.para_tomar === true;
+          const borrable = delTablero && (ra.status === 'draft' || ra.status === 'planned') && !arrancada;
+          enBase[ra.id] = { status: ra.status, startAt: ra.planned_start_at, lle: ra.direction === 'airport_to_home', borrable,
+            vivas: vivas.map(s => s.reservation_id), pendientes: vivas.filter(s => !s.status || s.status === 'pending').map(s => s.reservation_id) };
+          if (borrable) enBase[ra.id].pendientes.forEach(rid => { dondePend[rid] = ra.id; });
+        }
         stops.forEach(s => {
           // 0133: el sin cuenta no tiene reserva. Si su vuelta no se borra (arrancó, o
           // es una vuelta pegada), su parada sigue ahí y no se vuelve a crear.
@@ -3624,8 +3655,63 @@
     // Una parada pendiente que sigue con el mismo conductor se deja donde está:
     // borrarla y recrearla partiría su vuelta en dos y le desordenaría la
     // pantalla al conductor sin ninguna razón.
+    // ── Por vuelta (17-nov): qué se escribe, qué se borra y qué NO se toca ──
+    // `escribir` = las vueltas nuevas o que el jefe cambió y que no chocan con la base;
+    // `borrarIds` = las únicas filas que este Publicar puede borrar.
+    let escribir = lanes, borrarIds = null, intactas = 0;
+    const conflictos = [], viejas = [];
+    let quitadasHechas = [];
+    if (PV) {
+      const base = PV.base || {};
+      const conocidas = new Set(PV.conocidas || []);
+      const csv = (a) => a.slice().sort().join(',');
+      const cambiadas = lanes.filter(l => !l.raId || l.cambio !== false);
+      lanes.forEach(l => {
+        if (!l.raId || l.cambio !== false) return;
+        if (enBase[l.raId]) intactas++; else viejas.push(l.laneId || null);   // la pantalla la tiene y la base ya no
+      });
+      // ¿Sigue esa fila con la gente que la pantalla leyó? ¿Y toda su gente está en la pantalla?
+      const revisar = (id) => {
+        const v = enBase[id]; if (!v) return null;
+        if (base[id] != null && csv(v.vivas) !== String(base[id])) return 'otra-gente';
+        if (v.pendientes.some(rid => !conocidas.has(rid))) return 'gente-no-cargada';
+        return null;
+      };
+      const motivo = new Map();   // lane → por qué no se guarda
+      const noBorrar = {};        // fila → por qué no se borra
+      cambiadas.forEach(l => { const m = l.raId ? revisar(l.raId) : null; if (m) { motivo.set(l, m); noBorrar[l.raId] = m; } });
+      const quitadas = [...new Set(PV.quitadas || [])].filter(id => enBase[id] && !cambiadas.some(l => l.raId === id));
+      quitadas.forEach(id => { const m = revisar(id); if (m) noBorrar[id] = m; });
+      const candidatas = new Set(cambiadas.map(l => l.raId).filter(Boolean).concat(quitadas));
+      const laneDe = {};
+      cambiadas.forEach(l => (l.stops || []).forEach(rid => { laneDe[rid] = l; }));
+      // Lo que no se puede guardar arrastra a lo que depende de ello, hasta que nada
+      // cambie: un movimiento entre vueltas se publica entero o no se publica.
+      for (let otra = true; otra;) {
+        otra = false;
+        cambiadas.forEach(l => {
+          if (motivo.has(l)) return;
+          // Su propia fila se queda → la vuelta nueva no puede entrar encima.
+          if (l.raId && noBorrar[l.raId]) { motivo.set(l, noBorrar[l.raId]); otra = true; return; }
+          // Alguien de esta vuelta va pendiente en otra fila del tablero que se queda.
+          const choca = (l.stops || []).some(rid => { const d = dondePend[rid]; return d && (!candidatas.has(d) || noBorrar[d]); });
+          if (choca) { motivo.set(l, 'ya-en-otra'); if (l.raId && enBase[l.raId] && !noBorrar[l.raId]) noBorrar[l.raId] = 'ya-en-otra'; otra = true; }
+        });
+        // Una fila no se borra si alguien suyo iba para una vuelta que no se guarda.
+        candidatas.forEach(id => {
+          if (noBorrar[id] || !enBase[id]) return;
+          if (enBase[id].pendientes.some(rid => laneDe[rid] && motivo.has(laneDe[rid]))) { noBorrar[id] = 'depende'; otra = true; }
+        });
+      }
+      escribir = cambiadas.filter(l => !motivo.has(l));
+      borrarIds = [...candidatas].filter(id => !noBorrar[id] && enBase[id] && enBase[id].borrable);
+      quitadasHechas = quitadas.filter(id => borrarIds.includes(id));
+      cambiadas.forEach(l => { if (motivo.has(l)) conflictos.push({ laneId: l.laneId || null, raId: l.raId || null, motivo: motivo.get(l), startAt: l.startAt || null, type: l.type || 'sal' }); });
+      quitadas.forEach(id => { if (noBorrar[id]) conflictos.push({ laneId: null, raId: id, motivo: noBorrar[id], startAt: enBase[id].startAt, type: enBase[id].lle ? 'lle' : 'sal', quitada: true }); });
+    }
+
     const nuevoDe = {};
-    lanes.forEach(l => (l.stops || []).forEach(rid => { nuevoDe[rid] = l.driverProfileId || null; }));
+    escribir.forEach(l => (l.stops || []).forEach(rid => { nuevoDe[rid] = l.driverProfileId || null; }));
     const aMover = [];
     movableInProgress.forEach(s => {
       const destino = nuevoDe[s.rid];
@@ -3640,14 +3726,19 @@
         let del = sb.from('route_assignments').delete()
           .in('status', ['draft', 'planned'])
           .gte('planned_start_at', d0).lte('planned_start_at', d1);
+        // 17-nov, por vuelta: solo las filas de las vueltas que el jefe cambió o quitó.
+        if (borrarIds) del = del.in('id', borrarIds);
         // 0151: las pegadas (pool) no se tocan; las «para tomar» del tablero sí.
         if (conPool) del = conParaTomar ? del.or('pool.eq.false,para_tomar.eq.true') : del.eq('pool', false);
         if (arrancadas.size) del = del.not('id', 'in', `(${[...arrancadas].join(',')})`);
         return del;
       };
-      let { error } = await borrar(true);
-      if (error && (error.code === '42703' || /pool/.test(error.message || ''))) ({ error } = await borrar(false));
-      if (error) throw new Error('No se pudo reemplazar el plan: ' + error.message);
+      // Por vuelta y sin nada que reemplazar: no se borra nada (ni se pregunta a la base).
+      if (!borrarIds || borrarIds.length) {
+        let { error } = await borrar(true);
+        if (error && (error.code === '42703' || /pool/.test(error.message || ''))) ({ error } = await borrar(false));
+        if (error) throw new Error('No se pudo reemplazar el plan: ' + error.message);
+      }
     }
     // …y de las rutas en curso, solo las paradas que cambian de carro. La ruta
     // sigue viva con lo que el conductor ya hizo: borrarla completa perdería el
@@ -3662,7 +3753,7 @@
     // nunca en las dos.
     {
       const enTablero = new Set();
-      lanes.forEach(l => (l.stops || []).forEach(rid => enTablero.add(rid)));
+      escribir.forEach(l => (l.stops || []).forEach(rid => enTablero.add(rid)));
       const sacar = Object.keys(enSola).filter(rid => enTablero.has(rid));
       if (sacar.length) {
         const stopIds = sacar.map(rid => enSola[rid].stopId);
@@ -3697,7 +3788,7 @@
     // tablero se quedaba con el id viejo y «Guardar y publicar» de UNA vuelta decía
     // «Esa vuelta no existe».
     const ids = {};
-    for (const lane of lanes) {
+    for (const lane of escribir) {
       // 0133: los sin cuenta de la vuelta (los que no siguen en una vuelta que se queda).
       const sinCuenta = (lane.paradas || []).filter(p => p.guest && p.guest.name && !(p.guest.stopId && sinCuentaQueda.has(p.guest.stopId)));
       // 0124: sin placa también: la pone el turno del conductor (la base).
@@ -3753,7 +3844,7 @@
         failed++; failMsg = failMsg || 'para delegar falta la actualización 0126 de la base'; continue;
       }
       if (error) { failed++; failMsg = failMsg || error.message; continue; }
-      if (lane.laneId) ids[lane.laneId] = { id: ra.id, status: fila.status };
+      if (lane.laneId) ids[lane.laneId] = { id: ra.id, status: fila.status, rids: stopIds.slice() };
       if (tomar && !dpid && stopIds.some(rid => !prevEnTomar.has(rid))) ofrecer.push(ra.id);
       // La ETA por parada viaja desde el tablero (lane.etas: minutos desde
       // medianoche). Sin ella, `route_stops.estimated_arrival_at` quedaba NULL
@@ -3812,7 +3903,15 @@
       });
       saved++;
     }
-    return { saved, skipped, kept, failed, failMsg, notify, ofrecer, ids };
+    if (!PV) return { saved, skipped, kept, failed, failMsg, notify, ofrecer, ids };
+    // Por vuelta: la vuelta que no se tocó (o que no se pudo guardar) conserva su fila.
+    lanes.forEach(l => {
+      if (!l.laneId || !l.raId || ids[l.laneId] || !enBase[l.raId]) return;
+      if (l.cambio === false) ids[l.laneId] = { id: l.raId, status: enBase[l.raId].status, intacta: true };
+      else if (!escribir.includes(l)) ids[l.laneId] = { id: l.raId, status: enBase[l.raId].status, conflicto: true };
+    });
+    return { saved, skipped, kept, failed, failMsg, notify, ofrecer, ids, porVuelta: true,
+      intactas, conflictos, viejas, quitadas: quitadasHechas, borradas: borrarIds || [] };
   }
 
   // El conductor lee SU ruta del día (route_assignments asignadas a él) → vueltas.
