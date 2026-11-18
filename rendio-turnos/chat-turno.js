@@ -78,6 +78,7 @@
     draft: '', timer: null, ocupado: false, enviando: false, tmp: [],
     firma: null, firmaTop: null, bajar: false, vistos: new Set(), leidoAbierto: null,
     hist: null, histAbierto: false, viendo: null,
+    altoMax: 0, ancho: 0, kb: false, focoT: null,   // teclado y barra «en curso» (medir)
   };
   const vivo = () => !!(S.host && typeof document !== 'undefined' && document.contains(S.host));
   // ¿El chat está de verdad a la vista? Si el jefe pasó a otra pantalla o a otra
@@ -182,9 +183,13 @@
 
   function ajustarCampo() {
     const i = q('[data-ct-in]'); if (!i) return;
+    // El campo crece con cada renglón y le quita alto al hilo: si estaba abajo, sigue abajo.
+    const box = q('[data-ct-msgs]');
+    const abajo = !!box && box.scrollHeight - box.scrollTop - box.clientHeight < 90;
     i.style.height = 'auto';
     const alto = Math.min(120, i.scrollHeight || 0);
     if (alto) i.style.height = alto + 'px';
+    if (abajo) box.scrollTop = box.scrollHeight;
   }
 
   function pintar() {
@@ -291,14 +296,66 @@
 
   // En el teléfono del conductor el chat ocupa lo que queda de la pantalla (y se
   // encoge con el teclado): el campo de escribir siempre queda a la vista.
+  //
+  // 18-nov-2026 (captura de un conductor en plena vuelta): la barra «V5 en curso ·
+  // Esperando a Farid» de Mi día quedaba ENCIMA del campo y del botón de enviar.
+  //   · Mientras escribe (el campo tiene el foco) el chat toma la pantalla: se
+  //     esconden la barra y el encabezado del día («Mi día», el avance). Con el
+  //     teclado abierto no cabe todo. Vuelven solos al soltar el campo.
+  //   · Sin teclado, el chat termina donde EMPIEZA la barra. Se mide la barra de
+  //     verdad: antes se restaba solo su alto y faltaba la zona segura del iPhone
+  //     (la barra va 34 px más arriba), así que le pisaba 30 px al campo.
+  function escribiendo(alto) {
+    const i = q('[data-ct-in]');
+    if (!i || typeof document === 'undefined' || document.activeElement !== i) { S.kb = false; return false; }
+    // Android: «atrás» cierra el teclado SIN quitarle el foco al campo. Se nota en
+    // que la pantalla vuelve a su alto: ahí la barra regresa.
+    if (alto < S.altoMax - 120) S.kb = true;
+    return !(S.kb && alto >= S.altoMax - 60);
+  }
   function medir() {
     if (!vivo() || S.rol !== 'driver') return;
     const vv = typeof window !== 'undefined' && window.visualViewport;
     const alto = (vv && vv.height) || window.innerHeight || 700;
+    const ancho = window.innerWidth || 0;
+    if (ancho !== S.ancho) { S.ancho = ancho; S.altoMax = 0; }   // giró el teléfono
+    if (alto > S.altoMax) S.altoMax = alto;
+    const scr = S.host.closest ? S.host.closest('.rt-scr') : null;
+    const tecleando = escribiendo(alto);
+    // ¿El hilo estaba abajo? Se mira antes de cambiarle el alto, para dejarlo abajo.
+    const box = q('[data-ct-msgs]');
+    const abajo = !!box && box.scrollHeight - box.scrollTop - box.clientHeight < 90;
+    if (scr) {
+      const entra = tecleando && !scr.classList.contains('ct-escribiendo');
+      scr.classList.toggle('ct-escribiendo', tecleando);
+      // Al empezar a escribir el día vuelve arriba: el chat queda pegado a las pestañas.
+      if (entra) { const sc = S.host.closest('.rt-body'); if (sc) sc.scrollTop = 0; }
+    }
     const top = S.host.getBoundingClientRect().top;
+    // Hasta dónde se ve la pantalla, en las medidas de la página: el iPhone, con el
+    // teclado arriba, además CORRE la página hacia arriba (offsetTop).
+    let fin = alto + ((vv && vv.offsetTop) || 0) - (tecleando ? 8 : 0);   // 8 px de aire sobre el teclado
     const barra = document.querySelector('#driver-ruta-ui .rt-nowbar');
-    const resta = barra ? (barra.offsetHeight || 0) + 14 : 0;
-    S.host.style.setProperty('--ct-h', Math.max(300, Math.round(alto - top - 14 - resta)) + 'px');
+    const hayBarra = !!(barra && barra.offsetHeight);
+    if (hayBarra) fin = Math.min(fin, barra.getBoundingClientRect().top - 10);
+    // El chat empieza 14 px bajo su caja (margen de .ct--drv). El alto mínimo cede
+    // cuando hay menos lugar (teclado o barra): manda que el campo se vea entero.
+    const h = Math.max(tecleando ? 150 : hayBarra ? 220 : 300, Math.round(fin - top - 14));
+    S.host.style.setProperty('--ct-h', h + 'px');
+    // Teléfono chico con el teclado arriba: solo el hilo y el campo (sin «En este
+    // chat: …» ni las respuestas de un toque, que vuelven al cerrar el teclado).
+    const ct = S.host.firstElementChild;
+    if (ct) ct.classList.toggle('ct-apretado', tecleando && h < 300);
+    if (abajo) box.scrollTop = box.scrollHeight;
+  }
+  // El foco del campo esconde y devuelve la barra. Al SOLTARLO se espera un momento:
+  // si la barra volviera en el mismo toque, el chat se encogería bajo el dedo y el
+  // toque a «Enviar» o a una respuesta rápida caería en otro lado.
+  function alFoco(e) {
+    if (!e.target || !e.target.matches || !e.target.matches('[data-ct-in]')) return;
+    if (S.focoT) { clearTimeout(S.focoT); S.focoT = null; }
+    if (e.type === 'focusin') medir();
+    else S.focoT = setTimeout(() => { S.focoT = null; medir(); }, 250);
   }
 
   function alClic(e) {
@@ -329,13 +386,19 @@
     if (S.timer) { clearInterval(S.timer); S.timer = null; }
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', medir);
-      if (window.visualViewport) window.visualViewport.removeEventListener('resize', medir);
+      if (window.visualViewport) { window.visualViewport.removeEventListener('resize', medir); window.visualViewport.removeEventListener('scroll', medir); }
     }
     if (S.host) {
       S.host.removeEventListener('click', alClic);
       S.host.removeEventListener('input', alEscribir);
       S.host.removeEventListener('keydown', alTecla);
+      S.host.removeEventListener('focusin', alFoco);
+      S.host.removeEventListener('focusout', alFoco);
+      const scr = S.host.closest ? S.host.closest('.rt-scr') : null;
+      if (scr) scr.classList.remove('ct-escribiendo');   // la barra «en curso» y el encabezado vuelven
     }
+    if (S.focoT) { clearTimeout(S.focoT); S.focoT = null; }
+    S.kb = false;
     S.host = null;
   }
 
@@ -350,8 +413,11 @@
     host.addEventListener('click', alClic);
     host.addEventListener('input', alEscribir);
     host.addEventListener('keydown', alTecla);
+    host.addEventListener('focusin', alFoco);
+    host.addEventListener('focusout', alFoco);
+    S.altoMax = 0; S.ancho = 0; S.kb = false;
     window.addEventListener('resize', medir);
-    if (window.visualViewport) window.visualViewport.addEventListener('resize', medir);
+    if (window.visualViewport) { window.visualViewport.addEventListener('resize', medir); window.visualViewport.addEventListener('scroll', medir); }
     medir();
     pintar();
     cargar(false);
