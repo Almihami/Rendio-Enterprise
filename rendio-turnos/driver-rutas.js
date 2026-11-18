@@ -753,6 +753,12 @@
   }
 
   // ── Mi día (RtDay) ────────────────────────────────────────────────────────────
+  // 17-nov-2026 (Harold: «hora recomendada de recogida y pum la hora»): la llegada
+  // se lee por la hora del vuelo, pero el conductor necesita saber a qué hora estar
+  // en JMC. Es la salida que calculó el sistema (último en aterrizar + salir del
+  // avión) y se mueve sola con los vuelos. Pequeña y con su nombre, debajo de las
+  // horas del vuelo, para que no se confunda con la de aterrizaje (lo de Julián).
+  const recoHTML = (v, L) => (L && v.start ? '<div class="rt-hero-reco">Recogida recomendada <b>' + esc(v.start) + '</b> · en JMC</div>' : '');
   function heroHTML(v) {
     const s = S(v), t = tone(v), c = crew(v);
     const unread = c.reduce((a, l) => a + (RT.unread[l.rid] || 0), 0);
@@ -764,9 +770,10 @@
       + '<div class="rt-hero-time' + (L && L.varias ? ' varias' : '') + '"><b>' + esc(L ? lleRango(L) : v.start) + '</b><span>' + (madrugadaDe(v) ? esc(madrugadaDe(v)) + '<br>' : '') + (v.type === 'salida'
         ? 'sale hacia la 1.ª casa<br>' + (end ? 'llega a JMC ' + esc(end) : 'destino JMC')
         // 17-nov: con varias horas, una persona por renglón, con la suya.
-        : L && L.varias ? L.lista.map((g) => '<em>' + esc(g.hm) + '</em> ' + esc(g.n.join(', ')) + (g.marca ? ' (' + esc(g.marca) + ')' : '') + (g.tarde ? ' · ' + esc(g.tarde) : '')).join('<br>') + '<br>recoges en JMC'
-        : L ? esc(lleTxt(L)) + '<br>recoges en JMC'
+        : L && L.varias ? L.lista.map((g) => '<em>' + esc(g.hm) + '</em> ' + esc(g.n.join(', ')) + (g.marca ? ' (' + esc(g.marca) + ')' : '') + (g.tarde ? ' · ' + esc(g.tarde) : '')).join('<br>') + (v.start ? '' : '<br>recoges en JMC')
+        : L ? esc(lleTxt(L)) + (v.start ? '' : '<br>recoges en JMC')
           : 'recoges en JMC<br>' + (end ? 'última casa ~' + esc(end) : 'reparte en las casas')) + '</span></div>'
+      + recoHTML(v, L)
       + '<div class="rt-hero-route"><span>' + v.from.toUpperCase() + '</span><i></i><span class="rt-hero-pl">' + ic(v.type === 'salida' ? 'Plane' : 'Home', 15) + '</span><i></i><span>' + v.to.toUpperCase() + '</span></div>'
       + heroFlightHTML(v)
       + '<button type="button" class="rt-crew" data-rt="detail" data-v="' + esc(v.id) + '">'
@@ -1449,6 +1456,7 @@
     const LB = llegadaDe(v);   // 17-nov: con varias horas, cada una con su persona
     if (!at) h += '<div class="rt-big"><b>' + esc(LB ? (LB.varias ? `Aterrizan ${lleRango(LB)}` : `${LB.rot} ${LB.hm}`) : `Recoges ${v.start}`) + '</b>'
       + (LB && LB.varias ? '<span>' + esc(lleQuienes(LB)) + '</span>' : '')
+      + (LB && v.start ? '<span class="reco">Recogida recomendada <b>' + esc(v.start) + '</b></span>' : '')
       + '<span class="ok">' + esc([f ? `${f.code}${f.st ? ' ' + f.st : ''}` : '', meet].filter(Boolean).join(' · ')) + '</span></div>';
     if (at) h += '<div class="rt-big sm"><b>Pídele el código a cada uno</b><span>' + esc(`${meet} · cuando lo encuentres, escribe sus 2 dígitos.`) + '</span></div>';
     h += at ? '<div class="rx-group">' + c.map((l) => crewRowHTML(v, l)).join('') + '</div>' : crewListHTML(v, true);

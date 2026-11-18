@@ -936,3 +936,8 @@
 #driver-ruta-ui.rx-phone .rt-hero-time.varias>b{font-size:46px;letter-spacing:-1.8px}
 #driver-ruta-ui.rx-phone .rt-hero-time.varias>span{padding-bottom:0}
 #driver-ruta-ui.rx-phone .rt-hero-time.varias em{font-style:normal;font-weight:700;color:var(--rx-on);font-variant-numeric:tabular-nums}
+/* 17-nov: «Recogida recomendada 23:50» bajo las horas del vuelo (llegadas) */
+#driver-ruta-ui.rx-phone .rt-hero-reco{margin-top:-6px;font-size:14.5px;color:var(--rx-on);line-height:1.35}
+#driver-ruta-ui.rx-phone .rt-hero-reco b{font-weight:700;font-variant-numeric:tabular-nums}
+#driver-ruta-ui.rx-phone .rt-big>span.reco{color:var(--r-text);font-weight:600}
+#driver-ruta-ui.rx-phone .rt-big>span.reco b{font-variant-numeric:tabular-nums}
