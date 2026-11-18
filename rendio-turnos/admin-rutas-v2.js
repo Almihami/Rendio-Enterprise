@@ -283,6 +283,11 @@
       arrival = rtToMin(lane.landing || lane.start);          // aterrizaje (README §6)
       end = c.arrival + retraso;
       wait = Math.max(0, Math.round(Math.max(c.wait || 0, start + retraso - (c.depart != null ? c.depart : start))));
+      // 17-nov-2026 (Harold, con Nicol: «Esperan 22 min el carro» cuando su vuelo
+      // aterrizó 16 min tarde y en realidad esperó unos 7): si se sabe la hora REAL del
+      // vuelo (la misma que se ve arriba), la espera se mide con ella y no con la pedida.
+      const vivo = esperaViva(ids, start + retraso);
+      if (vivo != null) wait = Math.max(0, Math.round(Math.max(vivo, start + retraso - (c.depart != null ? c.depart : start))));
     } else {
       arrival = c.arrival + retraso;                         // ETA a JMC
       end = arrival;
@@ -638,6 +643,22 @@
     return v && Math.abs(v.min - plan) <= 360 ? { min: v.min, st: v.st } : { min: plan, st: null };
   }
   const dlVivo = (a, ref) => (a && a.dl ? hhmm(minVivo(a, ref).min) : '—');
+  // Cuánto espera el carro la gente de una llegada, con la hora real de los vuelos:
+  // salida de JMC − cuando sale el último del terminal (aterrizaje + desembarque; sin
+  // desembarque en tierra o reserva). Al de tierra se le cuenta desde su hora (0092).
+  // null = ningún vuelo de la vuelta tiene dato en vivo (queda el cálculo de siempre).
+  function esperaViva(ids, salida) {
+    let hay = false, listo = null, tierra = 0;
+    (ids || []).forEach((id) => {
+      const a = aux(id); if (!a || !a.dl) return;
+      const x = minVivo(a, salida);
+      if (x.st) hay = true;
+      const dep = a.tierra || a.reserva ? 0 : (() => { const d = typeof rtDeplaneVuelo === 'function' ? rtDeplaneVuelo(a.vuelo) : null; return d != null ? d : (rt.DEPLANE || 20); })();
+      if (listo == null || x.min + dep > listo) listo = x.min + dep;
+      if (a.tierra) tierra = Math.max(tierra, salida - x.min);
+    });
+    return hay && listo != null ? Math.max(salida - listo, tierra) : null;
+  }
   // «Laura Valentina Fernández» → «Laura V.» (cabe en la columna de la hora).
   const nombreCorto = (n) => { const w = String(n || 'Tripulante').trim().split(/\s+/); return w.length > 1 ? `${w[0]} ${w[1].charAt(0).toUpperCase()}.` : w[0]; };
   function llegadaVista(gente, ref) {
