@@ -441,7 +441,8 @@ BEGIN
   IF v_kind IN ('joined', 'new') AND (v_reub->>'ra_id') IS NOT NULL THEN
     v_new := (v_reub->>'ra_id')::uuid;
     v_sale := coalesce((v_reub->>'start_at')::timestamptz, v_sale);
-    v_drv := public.short_name(v_reub->>'driver_name');
+    -- short_name(NULL) da «Tripulante»: sin conductor, sin nombre.
+    v_drv := CASE WHEN nullif(btrim(v_reub->>'driver_name'), '') IS NOT NULL THEN public.short_name(v_reub->>'driver_name') END;
   ELSE
     -- No se pudo (día sin ruta publicada): su vuelta en espera, como siempre.
     v_kind := 'espera';
