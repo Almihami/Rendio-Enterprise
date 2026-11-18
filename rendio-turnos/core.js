@@ -564,6 +564,8 @@
     const aux = params.get('aux');
     if (aux && tab === 'coordinacion' && typeof window.renderCoordinacion.focus === 'function') window.renderCoordinacion.focus(aux);
     if (aux && tab === 'cobro' && typeof window.renderCobro.focus === 'function') window.renderCobro.focus(aux);
+    // 0173: «💬 Miguel Ángel» (el chat del turno) trae #/operacion?chatturno=1.
+    if (tab === 'oper' && params.get('chatturno') && window.ChatTurno && typeof window.ChatTurno.pedirAbrir === 'function') window.ChatTurno.pedirAbrir();
     // Se limpia el hash para que un refresco no vuelva a abrir lo mismo.
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* */ }
     setTab(tab);

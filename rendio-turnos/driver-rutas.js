@@ -550,6 +550,12 @@
     RT.vivoPoll = setInterval(vivoTick, 30000);
     const pedida = opts && opts.startAssignment ? RT.vueltas.find((v) => v.assignmentId === opts.startAssignment && !S(v).done) : null;
     if (pedida) start(pedida.id);
+    // 0173: la pestaña «Chat» y su globo (opts.vista === 'chat': abre directo en el chat).
+    if (window.ChatTurno) {
+      if (!RT.chatOye) RT.chatOye = ChatTurno.alCambiar(() => { if (RT.open) pintarSeg(); });
+      if (opts && opts.vista === 'chat' && !pedida) irAlChat();
+      else ChatTurno.refrescarResumen().then(() => { if (RT.open) pintarSeg(); }, () => {});
+    }
   }
   function rtClose() {
     RT.open = false;
@@ -561,6 +567,7 @@
     if (RT.flPoll) { clearInterval(RT.flPoll); RT.flPoll = null; }
     if (RT.boardPoll) { clearInterval(RT.boardPoll); RT.boardPoll = null; }
     if (RT.vivoPoll) { clearInterval(RT.vivoPoll); RT.vivoPoll = null; }
+    if (window.ChatTurno) ChatTurno.desmontar();   // 0173
     // La ubicación sigue si hay una vuelta en curso (cambio 1 de la entrega).
     if (!active()) gpsStop();
     const root = host();
@@ -588,6 +595,13 @@
     return m ? m[1] : null;
   }
   async function rtDeepLink(profile) {
+    // 0173: «💬 Julián · jefe» trae #/chat-turno: Mi día, en la pestaña del chat.
+    if (/^#\/chat-turno/i.test(String(location.hash || ''))) {
+      if (!profile || profile.role !== 'driver') return false;
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* */ }
+      if (!RT.open) await rtOpen(profile, { vista: 'chat' }); else irAlChat();
+      return true;
+    }
     const rid = hashRid();
     if (!rid || !profile || profile.role !== 'driver') return false;
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* */ }
@@ -617,8 +631,12 @@
   }
   function repaintBase() {
     const b = document.getElementById('rt-base'); if (!b) return;
+    // 0173: con el chat a la vista el día no se repinta (cada 30 s se relee): se
+    // perdería lo que el conductor va escribiendo. Se rehace al salir de la pestaña.
+    if (RT.vista === 'chat' && window.ChatTurno && ChatTurno.montado() && b.querySelector('#rt-chatturno')) return;
     b.innerHTML = dayHTML();
     b.classList.add('rx-noanim');
+    if (RT.vista === 'chat') chatTurnoMontar();
   }
 
   // ── Pila de pantallas (rt-app.jsx: push / pop / popAll / reset / swapExec) ────
@@ -780,10 +798,37 @@
   // Va encima de la tarjeta verde (Harold: «quiero mantener ese estilo verde»).
   // «Mis vueltas» es la pantalla de siempre. Las otras dos son de SOLO LECTURA y
   // salen de driver_day_board: lo publicado del día para todo el equipo.
+  // 0173 (17-nov-2026): + «Chat», el chat del turno con los jefes y los compañeros
+  // (chat-turno.js). Solo sale si la base ya lo tiene; el globo son los sin leer.
+  const chatOn = () => !!(window.ChatTurno && ChatTurno.resumen().falta === false);
   function vistaHTML() {
-    if (!(window.Api && typeof Api.driverDayBoard === 'function')) return '';
-    const op = [['mias', 'Mis vueltas'], ['equipo', 'Todo el equipo'], ['vuelos', 'Vuelos']];
-    return '<div class="rt-seg" role="tablist" aria-label="Qué ver">' + op.map(([k, t]) => '<button type="button" role="tab" data-rt="vista" data-k="' + k + '" aria-selected="' + (RT.vista === k) + '" class="' + (RT.vista === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>';
+    const tablero = !!(window.Api && typeof Api.driverDayBoard === 'function'), chat = chatOn();
+    if (!tablero && !chat) return '';
+    const op = [['mias', 'Mis vueltas']];
+    if (tablero) op.push(['equipo', 'Todo el equipo'], ['vuelos', 'Vuelos']);
+    if (chat) op.push(['chat', 'Chat']);
+    const sin = chat && RT.vista !== 'chat' ? (ChatTurno.resumen().n || 0) : 0;
+    return '<div class="rt-seg' + (chat ? ' con-chat' : '') + '" role="tablist" aria-label="Qué ver">' + op.map(([k, t]) => '<button type="button" role="tab" data-rt="vista" data-k="' + k + '" aria-selected="' + (RT.vista === k) + '" class="' + (RT.vista === k ? 'on' : '') + '">' + t
+      + (k === 'chat' && sin ? '<i class="ct-n" aria-label="' + sin + ' sin leer">' + (sin > 9 ? '9+' : sin) + '</i>' : '') + '</button>').join('') + '</div>';
+  }
+  // Lo que va debajo de las pestañas cuando no es «Mis vueltas».
+  const otraVistaHTML = () => (RT.vista === 'equipo' ? equipoHTML() : RT.vista === 'chat' ? '<div id="rt-chatturno"></div>' : vuelosHTML());
+  // Solo las pestañas (el globo cambió, o el chat quedó disponible): no se repinta el día.
+  function pintarSeg() {
+    const b = document.getElementById('rt-base'); if (!b || !RT.open) return;
+    const seg = b.querySelector('.rt-seg'), h = vistaHTML();
+    if (seg) { if (h && seg.outerHTML !== h) seg.outerHTML = h; }
+    else if (h && RT.stack.length === 0 && !RT.sheet) repaintBase();
+  }
+  function chatTurnoMontar() {
+    const h = document.getElementById('rt-chatturno'); if (!h || !window.ChatTurno) return;
+    const sc = h.closest('.rt-scr'); if (sc) sc.scrollTop = 0;   // el chat ocupa lo que queda de la pantalla
+    ChatTurno.montar(h, { rol: 'driver' });
+  }
+  // Abre el chat desde afuera (la fila del Inicio o el aviso): primero se sabe si la base lo tiene.
+  function irAlChat() {
+    if (!window.ChatTurno) return;
+    ChatTurno.refrescarResumen().then(() => { if (!RT.open || RT.stack.length > 0 || RT.sheet) return; pintarSeg(); setVista('chat'); }, () => {});
   }
   const bLle = (o) => o.direction === 'airport_to_home';
   const bHecha = (o) => o.status === 'completed' || ((o.stops || []).length > 0 && o.stops.every((x) => x.status === 'delivered' || x.status === 'no_show'));
@@ -927,14 +972,18 @@
     } catch (e) {
       if (!silencio || !RT.board) RT.boardErr = 'No se pudo cargar el día del equipo: ' + ((e && e.message) || 'revisa la señal') + '.';
     }
-    if (RT.open && RT.vista !== 'mias') { repaintBase(); if (RT.fl) flightPaint(); }
+    if (RT.open && deTablero(RT.vista)) { repaintBase(); if (RT.fl) flightPaint(); }
   }
+  const deTablero = (k) => k === 'equipo' || k === 'vuelos';
   function setVista(k) {
-    if (!['mias', 'equipo', 'vuelos'].includes(k) || k === RT.vista) return;
+    if (!['mias', 'equipo', 'vuelos', 'chat'].includes(k) || k === RT.vista) return;
+    if (k === 'chat' && !chatOn()) return;
+    const era = RT.vista;
     RT.vista = k;
     if (RT.boardPoll) { clearInterval(RT.boardPoll); RT.boardPoll = null; }
+    if (era === 'chat' && window.ChatTurno) ChatTurno.desmontar();
     repaintBase();
-    if (k !== 'mias') { loadBoard(false); RT.boardPoll = setInterval(() => { if (RT.open && RT.vista !== 'mias' && !document.hidden) loadBoard(true); }, 45000); }
+    if (deTablero(k)) { loadBoard(false); RT.boardPoll = setInterval(() => { if (RT.open && deTablero(RT.vista) && !document.hidden) loadBoard(true); }, 45000); }
   }
   // Tocar un vuelo de la lista o de una fila del equipo: el mismo «Ver avión».
   function boardFlightOpen(code, day) {
@@ -955,7 +1004,7 @@
       return '<div class="rt-scr">' + head + '<div class="rt-body">'
         + '<div class="rt-title"><span>Rutas · ' + esc(fmtDay(null)) + '</span><h1>Mi día</h1><p>Sin vueltas asignadas</p></div>'
         + vistaHTML()
-        + (RT.vista !== 'mias' ? (RT.vista === 'equipo' ? equipoHTML() : vuelosHTML()) : '<div class="rt-alldone rx-in"><span class="rt-empty-ic">' + ic('Route', 30) + '</span><b>No tienes ruta asignada</b><span>' + ((RT.libres || []).length
+        + (RT.vista !== 'mias' ? otraVistaHTML() : '<div class="rt-alldone rx-in"><span class="rt-empty-ic">' + ic('Route', 30) + '</span><b>No tienes ruta asignada</b><span>' + ((RT.libres || []).length
           ? 'Toma una de las vueltas de abajo: es tuya y los tripulantes saben que los recoges.'
           : 'Cuando coordinación publique el plan con tu nombre, o haya vueltas para tomar, aparecen aquí y te llega una notificación.') + '</span></div>'
         + libresHTML())
@@ -972,7 +1021,7 @@
       + '<div class="rt-title"><span>' + esc(`Rutas · ${fmtDay(list[0].opDay || list[0].day)}`) + '</span><h1>Mi día</h1><p>' + esc(`${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'} · ${crewN} auxiliares · JMC`) + '</p></div>'
       + '<div class="rt-dayprog"><div>' + list.map((v) => '<i class="' + (S(v).done ? 'on' : v === focus ? 'now' : '') + '"></i>').join('') + '</div><span>' + esc(`${done.length} de ${list.length} ${list.length === 1 ? 'vuelta' : 'vueltas'}`) + '</span></div>'
       + vistaHTML();
-    if (RT.vista !== 'mias') return cab + (RT.vista === 'equipo' ? equipoHTML() : vuelosHTML()) + '</div>' + nowbarHTML() + '</div>';
+    if (RT.vista !== 'mias') return cab + otraVistaHTML() + '</div>' + nowbarHTML() + '</div>';
     return cab
       + (focus ? '<div class="rx-lbl">' + (S(focus).started ? 'Ahora' : 'Tu siguiente vuelta') + '</div>' + heroHTML(focus)
         : pasadas.length
