@@ -394,13 +394,38 @@ console.log('\n── A · resumen: frase, Avisos, Conductores automáticos, vue
   // 27-oct-2026 (Camilo): arriba la hora de recoger en JMC; junto a cada nombre su
   // aterrizaje y el vuelo entre paréntesis (como la lista del jefe) y a dónde va.
   const rL = b.rutaDe('V-01·V3'), hm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(Math.round(m) % 60).padStart(2, '0');
-  t('llegada: arriba la recogida en JMC (ya no el aterrizaje de las 15:00) y el conductor puesto solo',
-    rL.pickup > rL.arrival && txt(lle.querySelector('.when b')).startsWith(hm(rL.pickup) + ' → ') && /Recoge en JMC → última entrega/.test(txt(lle))
-    && /Aterriza 15:00/.test(txt(lle.querySelector('.when'))) && txt(lle.querySelector('.l1 .drv')) === 'Rubén Díaz', txt(lle.querySelector('.when')));
+  // 17-nov-2026 (Julián: «quitar esa hora aproximada a la que van a salir a puertas,
+  // solamente la hora en la que aterriza el vuelo»): arriba UNA hora, la del vuelo,
+  // con su rótulo. La recogida en JMC y la última entrega quedan en el detalle.
+  t('llegada: arriba la hora del vuelo («15:00 Aterriza»), sin la recogida en JMC ni «→», y el conductor puesto solo',
+    rL.pickup > rL.arrival && txt(lle.querySelector('.when b')) === '15:00' && !txt(lle.querySelector('.when')).includes(hm(rL.pickup))
+    && !/→/.test(txt(lle.querySelector('.when'))) && !/Recoge en JMC/.test(txt(lle))
+    && /^15:00Aterriza$/.test(txt(lle.querySelector('.when'))) && txt(lle.querySelector('.l1 .drv')) === 'Rubén Díaz', txt(lle.querySelector('.when')));
   const chipsL = [...lle.querySelectorAll('.rv2-p')];
   t('…cada tripulante: «aterriza (VUELO) → a dónde va»; la hora es la del aterrizaje, no la de la casa',
     chipsL.length > 0 && chipsL.every((c) => /^15:00 .+ \([A-Z0-9]+\) → \S/.test(leer(c))), chipsL.map(leer).join(' | '));
-  t('…y la lista se ordena por esa misma hora de arriba (la recogida)', b.rutaDe('V-01·V3').orden === rL.pickup);
+  t('…por dentro la vuelta conserva su salida de JMC (choques, reparto): no cambió', b.rutaDe('V-01·V3').orden === rL.pickup);
+  // 17-nov-2026: con el dato en vivo de Flightradar24 la hora de arriba es la REAL del
+  // vuelo, con su estado en palabras y sin una segunda hora.
+  {
+    const cod = (leer(chipsL[0]).match(/\(([A-Z0-9]+)\)/) || [])[1];
+    const vivo = (extra) => ({ para: (c) => (String(c).replace(/[\s-]/g, '').toUpperCase() === cod ? Object.assign({ code: cod, schedAt: '2026-10-12T15:00:00-05:00' }, extra) : null), chip: () => '', describir: () => null, cargar: async () => [] });
+    const fila = () => b.rows().find((x) => x.dataset.id === 'V-01·V3');
+    b.w.RendioVuelos = vivo({ status: 'in_air', delayMin: 39, estimatedAt: '2026-10-12T15:39:00-05:00' });
+    b.V2().render(); await wait(10);
+    t('vuelo en vivo: arriba «15:39 Aterriza · en vuelo · 39 min tarde», y junto al nombre la misma hora',
+      txt(fila().querySelector('.when b')) === '15:39' && /^15:39Aterriza · en vuelo · 39 min tarde$/.test(txt(fila().querySelector('.when')))
+      && [...fila().querySelectorAll('.rv2-p')].some((c) => /^15:39 /.test(leer(c))), txt(fila().querySelector('.when')) + ' | ' + [...fila().querySelectorAll('.rv2-p')].map(leer).join(' | '));
+    t('…y la fila va en la hora de su vuelo (encabezado 15:00 – 16:00)', (() => { const g = fila().closest('.rv2-gwrap'); return !!g && /^15:00 – 16:00/.test(txt(g.querySelector('.rv2-hour'))); })());
+    b.w.RendioVuelos = vivo({ status: 'landed', delayMin: 41, actualAt: '2026-10-12T15:41:00-05:00' });
+    b.V2().render(); await wait(10);
+    t('cuando aterriza: «15:41 Aterrizó» (sin más)', /^15:41Aterrizó$/.test(txt(fila().querySelector('.when'))), txt(fila().querySelector('.when')));
+    b.w.RendioVuelos = vivo({ status: 'in_air', delayMin: 0, estimatedAt: '2026-10-13T15:02:00-05:00' });
+    b.V2().render(); await wait(10);
+    t('un dato de otro día (mismo número de vuelo) no se usa: queda la hora pedida', /^15:00Aterriza$/.test(txt(fila().querySelector('.when'))), txt(fila().querySelector('.when')));
+    delete b.w.RendioVuelos;
+    b.V2().render(); await wait(10);
+  }
   t('cada tripulante se puede arrastrar (draggable) o tocar para moverlo', tarde.querySelectorAll('.rv2-p[draggable="true"][data-drag][data-act="move"]').length === 2);
   b.click(q('#rv2-list .rv2-hechas-b')); await wait(5);   // las terminadas, a la vista
   t('…menos los de una vuelta terminada', [...rows().find((x) => x.dataset.id === 'V-01·V1').querySelectorAll('.rv2-p')].every((p) => p.disabled && !p.getAttribute('draggable')));

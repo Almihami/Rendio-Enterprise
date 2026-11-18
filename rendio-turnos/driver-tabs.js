@@ -115,12 +115,41 @@
     if (window.DriverRutas && DriverRutas.background) DriverRutas.background(state.profile, vueltas);
     // Llegó desde el aviso de un mensaje (#/viaje?r=…): abre ese chat en la ruta.
     if (window.DriverRutas && DriverRutas.deepLink) DriverRutas.deepLink(state.profile);
+    // Los vuelos de las llegadas de hoy (17-nov: la tarjeta dice a qué hora aterriza
+    // de verdad). Va con caché de 2 min y nunca falla: sin dato, la hora pedida.
+    try {
+      const dias = [...new Set(vueltas.filter(v => v.type === 'lle' && !v.done).flatMap(v => (v.legs || []).map(l => l.reqDay).filter(Boolean)))];
+      if (dias.length && window.RendioVuelos && RendioVuelos.cargar) await RendioVuelos.cargar(dias);
+    } catch (_) { /* sin vuelos: queda la hora pedida */ }
 
     // La primera vuelta sin terminar lleva su «Iniciar ruta» aquí mismo: un toque
     // abre la ruta en ejecución y la base le avisa al primer tripulante (0097).
     // Antes eran 3–4 toques (Ruta → la vuelta → Iniciar ruta).
     // 0137: la que pasó su hora sin que nadie la iniciara no se queda de primera.
     const primera = vueltas.find(v => !v.done && !v.vencida);
+    // 17-nov-2026 (Julián: «solamente la hora en la que aterriza el vuelo»): una
+    // llegada se lee por la hora de su vuelo, no por la de salir de JMC (v.start),
+    // que es un cálculo del sistema. La real de Flightradar24 si se sabe; si no, la
+    // que pidió el tripulante. Quien no tiene vuelo muestra la hora que dio.
+    const hmBog = (ms) => new Date(ms).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: false });
+    const cuando = (v) => {
+      if (v.type !== 'lle') return v.start ? ` · sale ${escapeHtml(v.start)}` : '';
+      const gente = (v.legs || []).filter(l => l.kind !== 'airport');
+      let top = null, landed = false;
+      gente.forEach(l => {
+        const code = String(l.flight || '').replace(/[\s-]/g, '').toUpperCase();
+        if (!code) return;
+        let e = null;
+        try { e = window.RendioVuelos ? RendioVuelos.para(code, l.reqDay || v.day, 'lle') : null; } catch (_) { e = null; }
+        if (e && e.status === 'unknown') e = null;
+        const iso = (e && (e.actualAt || e.estimatedAt || e.schedAt)) || l.reqAt;
+        const ms = iso ? Date.parse(iso) : NaN;
+        if (isFinite(ms) && (top == null || ms > top)) { top = ms; landed = !!e && e.status === 'landed'; }
+      });
+      if (top != null) return ` · ${landed ? 'aterrizó' : 'aterriza'} ${hmBog(top)}`;
+      const dl = gente.filter(l => l.dl).map(l => l.dl).sort().pop();
+      return dl ? ` · sale del terminal ${escapeHtml(dl)}` : '';
+    };
     const tarjeta = (v) => {
       const salida = v.type !== 'lle';
       const tono = salida ? 'var(--r-h2a)' : 'var(--r-a2h)';
@@ -136,7 +165,7 @@
           </span>
           <span style="display:block;font-size:16px;font-weight:650;letter-spacing:-.3px">${salida ? 'Casas → Aeropuerto JMC' : 'Aeropuerto JMC → Casas'}</span>
           <span style="display:block;font-size:13px;color:var(--r-text-2);margin-top:3px">
-            ${n} auxiliar${n === 1 ? '' : 'es'}${v.start ? ` · sale ${escapeHtml(v.start)}` : ''}${v.opDay && v.day && v.day !== v.opDay ? ' · madrugada del día siguiente' : ''}
+            ${n} auxiliar${n === 1 ? '' : 'es'}${cuando(v)}${v.opDay && v.day && v.day !== v.opDay ? ' · madrugada del día siguiente' : ''}
           </span>
           <span style="display:flex;align-items:center;gap:6px;margin-top:11px;font-size:13px;font-weight:600;color:var(--r-accent)">
             Ver la vuelta ${avIcon('chevronRight', 15)}
@@ -144,7 +173,7 @@
         </button>${v === primera && v.assignmentId ? `
         <button class="rc-btn-primary rc-in d2" data-vuelta-start="${escapeHtml(v.assignmentId)}" type="button"
                 style="width:100%;height:52px;border:none;border-radius:14px;background:var(--r-accent);color:#fff;font:inherit;font-size:16px;font-weight:650;display:flex;align-items:center;justify-content:center;gap:8px;margin:-2px 0 14px;cursor:pointer">
-          ${avIcon('car', 18, 1.8)}${(v.legs || []).some(l => l.stopStatus && l.stopStatus !== 'pending') ? 'Seguir ruta' : 'Iniciar ruta'}${v.start ? ` · ${escapeHtml(v.start)}` : ''}
+          ${avIcon('car', 18, 1.8)}${(v.legs || []).some(l => l.stopStatus && l.stopStatus !== 'pending') ? 'Seguir ruta' : 'Iniciar ruta'}${v.type !== 'lle' && v.start ? ` · ${escapeHtml(v.start)}` : ''}
         </button>` : ''}`;
     };
     // Las que ya hizo se guardan (26-oct-2026, pedido de la profa): arriba queda lo

@@ -594,6 +594,78 @@
   // aeropuerto». La llegada se lee desde la recogida, no desde el aterrizaje
   // (el aterrizaje de cada uno va junto a su nombre).
   const horas = (r) => (r.type === 'llegada' ? `${hhmm(r.pickup)} → ${hhmm(ultima(r))}` : `${hhmm(r.pickup)} → ${hhmm(r.arrival)}`);
+
+  // ── La hora que se LEE de una llegada (17-nov-2026) ─────────────────────────
+  // Julián: «yo quitaría el aproximado a la hora que van a salir del aeropuerto;
+  // solamente la hora a la que aterriza el avión… y que se actualice sola con el
+  // FlightRadar. Que el sistema lo lea, pero que no lo ponga». La tarjeta traía
+  // dos horas grandes (salida de JMC → última entrega) y, chiquita, la de
+  // aterrizaje: al leer rápido se confundían. Ahora una llegada muestra UNA hora,
+  // la del vuelo (la real de FlightRadar si la hay; si no, la que pidió), con su
+  // estado en palabras. La salida de JMC la sigue llevando el sistema por dentro
+  // (choques, reparto, acomodo) y se lee en el detalle de la vuelta, con su
+  // rótulo. Quien no tiene vuelo (tierra, reserva en hotel) muestra la hora que
+  // dio, con su rótulo de siempre. Deshace el «recogida arriba» del 27-oct.
+  //   gente: [{ dl: '17:45', vuelo, tierra, reserva }] · ref: el minuto de la
+  //   vuelta (su salida de JMC), para saber de qué lado de la medianoche cae cada hora.
+  const cerca = (m, ref) => { while (ref - m > 720) m += 1440; while (m - ref > 720) m -= 1440; return m; };
+  function vueloVivo(code) {
+    if (!code || !window.RendioVuelos) return null;
+    const st = window.RendioVuelos.para(code, rt.day || ui.dia, 'lle');
+    const best = st && (st.actualAt || st.estimatedAt || st.schedAt);
+    const min = best ? minDelDia(best) : NaN;
+    return isFinite(min) ? { min, st } : null;
+  }
+  // El estado del vuelo en palabras y SIN otra hora (la hora ya es la grande).
+  function estadoVueloTxt(st) {
+    if (!st || !st.status || st.status === 'unknown') return '';
+    if (st.status === 'cancelled') return 'cancelado';
+    if (st.status === 'diverted') return 'desviado';
+    if (st.status === 'landed') return '';
+    const d = st.delayMin, enVuelo = st.status === 'in_air' ? 'en vuelo' : '';
+    if (d != null && d >= 5) return [enVuelo, d + ' min tarde'].filter(Boolean).join(' · ');
+    if (d != null && d <= -5) return [enVuelo, (-d) + ' min antes'].filter(Boolean).join(' · ');
+    if (enVuelo) return enVuelo;
+    if (st.status === 'delayed') return 'retrasado';
+    return d != null ? 'a tiempo' : 'programado';
+  }
+  // La hora de UNA persona de una llegada: la de su vuelo, en vivo si se sabe.
+  function minVivo(a, ref) {
+    const plan = cerca(rtToMin(a.dl), ref);
+    const v = a.tierra ? null : vueloVivo(a.vuelo);
+    // El dato en vivo solo vale si es de ESE vuelo de ese día: a más de 6 h de la
+    // hora pedida es otro (el de mañana, o un código repetido).
+    return v && Math.abs(v.min - plan) <= 360 ? { min: v.min, st: v.st } : { min: plan, st: null };
+  }
+  const dlVivo = (a, ref) => (a && a.dl ? hhmm(minVivo(a, ref).min) : '—');
+  function llegadaVista(gente, ref) {
+    const todos = (gente || []).filter((a) => a && a.dl);
+    const conVuelo = todos.filter((a) => !a.tierra);
+    const base = conVuelo.length ? conVuelo : todos;
+    // Sin ninguna hora pedida (gente sin cuenta que el jefe pegó): no se inventa
+    // un aterrizaje; se dice lo único que se sabe.
+    if (!base.length) return { min: ref, rotulo: 'Sale de JMC', txt: '', late: false, sinHora: true };
+    let top = null;
+    base.forEach((a) => { const x = minVivo(a, ref); if (!top || x.min > top.min) top = x; });
+    const tierra = !conVuelo.length, reserva = tierra && base.every((a) => a.reserva), st = top.st;
+    return {
+      min: top.min, sinHora: false,
+      rotulo: reserva ? 'Termina la asignación' : tierra ? 'Salen del terminal' : (st && st.status === 'landed' ? 'Aterrizó' : 'Aterriza'),
+      txt: tierra ? '' : estadoVueloTxt(st),
+      late: !!st && (st.status === 'cancelled' || st.status === 'diverted' || (st.status !== 'landed' && st.delayMin != null && st.delayMin >= 30)),
+    };
+  }
+  // La de una fila de la lista, sea del tablero, pegada o de las que armó el sistema.
+  function vistaFila(r) {
+    if (!r || r.type !== 'llegada') return null;
+    const gente = r.julian ? [...((r.v && r.v.atendidas) || []), ...((r.v && r.v.pendientes) || [])].map((g) => auxPegada(g.rid))
+      : r.sola ? (r.g || []).map((g) => (rt.rv2AuxSolas || {})[g.rid])
+        : (r.stops || []).map((s) => aux(s.crewId));
+    return llegadaVista(gente, r.pickup);
+  }
+  const vistaHTML = (L) => `<b class="mono">${hhmm(L.min)}</b><small${L.late ? ' class="late"' : ''}>${esc(L.rotulo)}${L.txt ? ' · ' + esc(L.txt) : ''}</small>`;
+  // Lo que se lee de una vuelta cuando se la nombra («Carro 1 de las …»).
+  const horaLeida = (r) => { const L = vistaFila(r); return L ? `${L.rotulo.toLowerCase()} ${hhmm(L.min)}` : horas(r); };
   const turnoTxt = (b) => 'Turno ' + rtBandName(b);   // «Turno AM», «Turno PM del lunes»
 
   function renderBar() {
@@ -911,11 +983,11 @@
     else if (fin === 'sinmarcar') estado = `<small>Pasó su hora · ${plural(r.fin.faltan, 'parada', 'paradas')} sin marcar</small>`;
     else if (r.status === 'risk') estado = `<small class="late">${Math.abs(r.margin)} min tarde · presentación ${hhmm(r.pres)}</small>`;
     else if (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA) estado = `<small class="late">Esperan ${r.wait} min el carro</small>`;
-    else if (lle) {
-      const tierra = r.stops.every((s) => aux(s.crewId) && aux(s.crewId).tierra);
-      const reserva = tierra && r.stops.every((s) => aux(s.crewId).reserva);
-      estado = `<small>${reserva ? 'Termina la asignación' : (tierra ? 'Salen del terminal' : 'Aterriza')} ${hhmm(r.arrival)}</small>`;
-    } else estado = `<small>Presentación ${hhmm(r.pres)}</small>`;
+    // Llegada sin novedad: la hora del vuelo y su rótulo ya van arriba (vistaHTML);
+    // aquí solo queda dónde los recoge si no es en JMC.
+    else if (lle) estado = Hr ? `<small>Recoge en el ${esc(Hr.name)}</small>` : '';
+    else estado = `<small>Presentación ${hhmm(r.pres)}</small>`;
+    const L = vistaFila(r);
     // «en curso» solo mientras de verdad puede ir en curso: la que pasó su hora sin
     // marcar no lo dice (antes se quedaba «en curso» horas después de terminar).
     const enCurso = r.fija === 'in_progress' && !finFila(r) ? ' <span class="tag">en curso</span>' : '';
@@ -929,14 +1001,14 @@
       // Antes era la hora de entrega en la casa y nadie sabía qué era.
       if (lle) {
         const o = salidaLle(a);
-        return `<button class="rv2-p rv2-p--lle" ${attrs}><span class="mono">${esc(a.dl || '—')}</span><span class="nm">${hl(a.n || 'Tripulante')}</span>` +
+        return `<button class="rv2-p rv2-p--lle" ${attrs}><span class="mono">${esc(dlVivo(a, r.pickup))}</span><span class="nm">${hl(a.n || 'Tripulante')}</span>` +
           `${o.par ? `<span class="org">(${hl(o.par)})</span>` : ''}<span class="pl">→ ${hl(a.zona || '—')}</span></button>`;
       }
       return `<button class="rv2-p" ${attrs}><span class="mono">${hhmm(st.time)}</span><span class="nm">${hl(a.n || 'Tripulante')}</span><span class="pl">${hl(a.zona || '')}</span></button>`;
     }).join('');
-    const aria = `${r.vehicle}, ${TYPE[r.type]}, ${horas(r)}${r.status === 'risk' ? ', llega tarde' : ''}, ${r.stops.map((s) => nombre(s.crewId)).join(', ')}`;
+    const aria = `${r.vehicle}, ${TYPE[r.type]}, ${horaLeida(r)}${r.status === 'risk' ? ', llega tarde' : ''}, ${r.stops.map((s) => nombre(s.crewId)).join(', ')}`;
     return `<div class="rv2-row" role="button" tabindex="0" data-id="${esc(r.id)}" data-s="${r.status}"${fin ? ` data-fin="${fin}"` : ''}${ui.sel === r.id ? ' aria-current="true"' : ''} aria-label="${esc(aria)}">` +
-      `<div class="when"><b class="mono">${horas(r)}</b><small>${sub}</small>${estado}</div>` +
+      `<div class="when">${L ? vistaHTML(L) : `<b class="mono">${horas(r)}</b><small>${sub}</small>`}${estado}</div>` +
       `<div class="main"><div class="l1"><span class="rv2-pill ${r.type}">${TYPE[r.type]}</span><b class="car">${hl(r.vehicle)}</b>` +
       (r.delegada
         ? `<span class="drv deleg" title="La hace alguien de afuera: ningún conductor la ve">Delegada${r.delegName ? ' · ' + hl(r.delegName) : ''}</span>`
@@ -962,7 +1034,7 @@
   function accionesFila(r, d) {
     if (!horaEditable(r)) return '';
     const l = rtLaneOf(r.id) || {};
-    const de = `${esc(r.vehicle)} de las ${horas(r)}`;
+    const de = r.type === 'llegada' ? `${esc(r.vehicle)}, ${esc(horaLeida(r))}` : `${esc(r.vehicle)} de las ${horas(r)}`;
     return '<div class="rj-acts">' +
       `<button class="rv2-btn rv2-btn--sm" data-act="hora" data-id="${esc(r.id)}" aria-label="Cambiar la hora de ${de}">Cambiar hora</button>` +
       `<button class="rv2-btn rv2-btn--sm" data-act="assign" data-id="${esc(r.id)}" aria-label="${d ? 'Cambiar' : 'Asignar'} el conductor de ${de}">${d ? 'Cambiar conductor' : 'Asignar conductor'}</button>` +
@@ -998,13 +1070,18 @@
   // Las vueltas pegadas (r.julian, pegadasLista) van en su hora junto a las del
   // tablero. Una hora 24 o más es la madrugada siguiente que Julián pegó con este día.
   function horasHTML(rows) {
+    // El orden es el de la hora que se LEE (pendientes de los jefes, 26-oct): en una
+    // llegada, desde el 17-nov, la del vuelo. Si el vuelo se atrasa, la fila baja sola.
+    const leida = new Map();
+    rows.forEach((r) => { const L = vistaFila(r); leida.set(r, L ? L.min : r.orden); });
     const groups = new Map();
-    rows.forEach((r) => { if (!groups.has(r.hora)) groups.set(r.hora, []); groups.get(r.hora).push(r); });
+    rows.forEach((r) => { const h = Math.floor(leida.get(r) / 60); if (!groups.has(h)) groups.set(h, []); groups.get(h).push(r); });
     let html = '';
+    const h24 = (h) => ((h % 24) + 24) % 24;
     [...groups.keys()].sort((a, b) => a - b).forEach((h) => {
-      const g = groups.get(h).sort((a, b) => a.orden - b.orden || a.arrival - b.arrival);
+      const g = groups.get(h).sort((a, b) => leida.get(a) - leida.get(b) || a.orden - b.orden || a.arrival - b.arrival);
       const malas = g.filter((r) => r.status === 'risk' || (r.type === 'llegada' && (r.wait || 0) > LLE_ESPERA_LARGA)).length;
-      html += `<div class="rv2-gwrap"><div class="rv2-hour"><strong>${pad(h % 24)}:00 – ${pad((h + 1) % 24)}:00</strong>${h >= 24 ? ' · después de medianoche' : ''} · ${plural(g.length, 'vuelta', 'vueltas')}${malas ? ` · <span class="t-risk">${plural(malas, 'con aviso', 'con aviso')}</span>` : ''}</div>`;
+      html += `<div class="rv2-gwrap"><div class="rv2-hour"><strong>${pad(h24(h))}:00 – ${pad(h24(h + 1))}:00</strong>${h >= 24 ? ' · después de medianoche' : ''} · ${plural(g.length, 'vuelta', 'vueltas')}${malas ? ` · <span class="t-risk">${plural(malas, 'con aviso', 'con aviso')}</span>` : ''}</div>`;
       g.forEach((r) => { html += r.julian ? filaPegada(r) : r.sola ? filaSola(r) : rowHTML(r); });
       html += '</div>';
     });
@@ -1127,7 +1204,7 @@
       const o = lle ? salidaLle(a) : {};
       const mv = pasable() && g.rid && (v.pendientes || []).includes(g) && p.fija !== 'completed'
         ? ` draggable="true" role="button" tabindex="0" data-pasar="${esc(g.rid)}" data-act="pasar" data-rid="${esc(g.rid)}" data-from="${esc(v.id)}" data-tipo="${lle ? 'lle' : 'sal'}" data-nm="${esc(g.name || 'Tripulante')}" title="Arrástralo a otra vuelta o tócalo para pasarlo"` : '';
-      return `<span class="rv2-p ${mv ? 'rv2-p--mv' : 'is-fijo'}${lle ? ' rv2-p--lle' : ''}"${mv}>${lle ? (a.dl ? `<span class="mono">${esc(a.dl)}</span>` : '') : (g.etaAt ? `<span class="mono">${hhmm(minDelDia(g.etaAt))}</span>` : '')}` +
+      return `<span class="rv2-p ${mv ? 'rv2-p--mv' : 'is-fijo'}${lle ? ' rv2-p--lle' : ''}"${mv}>${lle ? (a.dl ? `<span class="mono">${esc(dlVivo(a, p.pickup))}</span>` : '') : (g.etaAt ? `<span class="mono">${hhmm(minDelDia(g.etaAt))}</span>` : '')}` +
         `<span class="nm">${hl(g.name || 'Tripulante')}${g.guest ? ' <em>(sin cuenta)</em>' : ''}</span>${lle && o.par ? `<span class="org">(${hl(o.par)})</span>` : ''}` +
         `${a.zona ? `<span class="pl">${lle ? '→ ' : ''}${hl(a.zona)}</span>` : ''}</span>`;
     }).join('');
@@ -1136,9 +1213,10 @@
     // admin-ruta-julian.js · botonesPeg). Aplican al momento, sin Publicar.
     const RJ = window.RendioRutaJulian;
     const btns = p.fija !== 'completed' && fin !== 'sinmarcar' && rt.source === 'live' && RJ && typeof RJ.botones === 'function' ? RJ.botones(v) : '';
-    const aria = `Vuelta que armó el sistema, ${TYPE[p.type]} de las ${hhmm(p.pickup)}, ${p.g.map((g) => g.name).join(', ')}`;
+    const L = vistaFila(p);   // 17-nov: una llegada se lee por la hora del vuelo
+    const aria = `Vuelta que armó el sistema, ${TYPE[p.type]}${L ? ', ' + horaLeida(p) : ' de las ' + hhmm(p.pickup)}, ${p.g.map((g) => g.name).join(', ')}`;
     return `<div class="rv2-row rv2-row--sola" data-sola="${esc(v.id)}" data-s="${v.driverProfileId ? 'ok' : 'nodriver'}"${fin ? ` data-fin="${fin}"` : ''} aria-label="${esc(aria)}">` +
-      `<div class="when"><b class="mono">${hhmm(p.pickup)}</b><small>${sub}</small>${estado}</div>` +
+      `<div class="when">${L ? vistaHTML(L) : `<b class="mono">${hhmm(p.pickup)}</b><small>${sub}</small>`}${estado}</div>` +
       `<div class="main"><div class="l1"><span class="rv2-pill ${p.type}">${TYPE[p.type]}</span>` +
       '<span class="tag rj-tag" title="Alguien pidió tarde o cambió de vuelo y no cabía en otra vuelta: el sistema le armó esta. Puedes ponerle conductor, cambiarle la hora o delegarla aquí mismo; Publicar el tablero no la toca.">La armó el sistema</span>' +
       `${quien}${btns ? btnCancelar((v.pendientes || []).map((g) => ({ rid: g.rid, nm: g.name || 'Tripulante' }))) : ''}</div><div class="people">${chips}</div>${btns ? `<div class="rj-acts">${btns}</div>` : ''}</div></div>`;
@@ -1173,14 +1251,15 @@
       const l = rtLaneOf(r.id);
       if (!l || !l.raId || l.raId === fromRa || r.fija || finFila(r) === 'sinmarcar' || (r.type === 'llegada' ? 'lle' : 'sal') !== tipo) return;
       const d = rtDriverOf(l);
-      out.push({ ra: l.raId, min: r.pickup, hora: horas(r), quien: l.deleg ? 'Delegada' : d ? conductor(d).name : (l.tomar ? 'En espera' : 'Sin conductor'), carro: r.vehicle,
+      out.push({ ra: l.raId, min: r.pickup, hora: horaLeida(r), quien: l.deleg ? 'Delegada' : d ? conductor(d).name : (l.tomar ? 'En espera' : 'Sin conductor'), carro: r.vehicle,
         gente: r.stops.map((x) => nombre(x.crewId)).join(', ') });
     });
     vueltasSueltas().forEach((v) => {
       if (v.id === fromRa || arrancoV(v) || (v.type === 'lle' ? 'lle' : 'sal') !== tipo) return;
       const g = [...(v.atendidas || []), ...(v.pendientes || [])].sort((a, b) => a.order - b.order);
       const iso = v.type === 'lle' ? v.startAt : ((g[0] && g[0].etaAt) || v.startAt);
-      out.push({ ra: v.id, min: minDelDia(iso), hora: hmIso(iso), quien: v.delegated ? 'Delegada' : v.driverProfileId ? (v.conductor || 'Conductor') : 'Sin conductor',
+      const fila = { type: v.type === 'lle' ? 'llegada' : 'salida', pickup: minDelDia(iso), v, g, julian: !v.autoCreated, sola: !!v.autoCreated };
+      out.push({ ra: v.id, min: minDelDia(iso), hora: fila.type === 'llegada' ? horaLeida(fila) : hmIso(iso), quien: v.delegated ? 'Delegada' : v.driverProfileId ? (v.conductor || 'Conductor') : 'Sin conductor',
         carro: v.autoCreated ? 'La armó el sistema' : 'Ruta de Julián', gente: g.map((x) => x.name).join(', ') });
     });
     return out.sort((a, b) => a.min - b.min);
@@ -1270,7 +1349,9 @@
     } finally { pasando = false; }
   }
   function filaPegada(p) {
-    return window.RendioRutaJulian.filaLista(p.v, { hl, aux: auxPegada, fin: finFila(p), pasar: pasable(), cancelar: btnCancelar });
+    const L = vistaFila(p);   // 17-nov: una llegada se lee por la hora del vuelo
+    return window.RendioRutaJulian.filaLista(p.v, { hl, aux: auxPegada, fin: finFila(p), pasar: pasable(), cancelar: btnCancelar,
+      llegada: L ? { hm: hhmm(L.min), rotulo: L.rotulo, txt: L.txt, late: L.late, hora: (a) => dlVivo(a, p.pickup) } : null });
   }
   function barraPegadas(buscando) {
     return !buscando && hayPegadas() && typeof window.RendioRutaJulian.barraHTML === 'function'
@@ -1340,12 +1421,14 @@
     if (r.type === 'llegada') {
       const tierra = r.stops.every((s) => aux(s.crewId) && aux(s.crewId).tierra);
       const reserva = tierra && r.stops.every((s) => aux(s.crewId).reserva);
-      const salir = Math.round(r.pickup - r.arrival);
+      // 17-nov: la hora del vuelo aquí es la misma de la lista (la real, si se sabe).
+      const LV = vistaFila(r), baja = LV && !LV.sinHora ? LV.min : r.arrival;
+      const salir = Math.round(r.pickup - baja);
       // De reserva (0121): si todos salen del mismo hotel, la recogida es ahí;
       // si se mezclan, se dice que además pasa por el hotel.
       const ids = r.stops.map((s) => s.crewId), H = hotelDe(ids), h1 = H ? null : algunHotel(ids);
       const donde = H ? `Recogida en el ${esc(H.name)}` : `Recogida en JMC${h1 ? ' y en el ' + esc(h1.name) : ''}`;
-      end = `<li class="end"><span class="mono">${hhmm(r.pickup)}</span><div><b>${donde}</b>${reserva ? 'Termina la asignación' : (tierra ? 'Salen del terminal' : 'Aterriza')} ${hhmm(r.arrival)}${!tierra && salir > 0 ? ` · ${salir} min para salir del aeropuerto` : ''}${r.wait ? ` · <span class="${r.wait > LLE_ESPERA_LARGA ? 't-risk' : ''}">espera ${r.wait} min</span>` : ''}</div></li>`;
+      end = `<li class="end"><span class="mono">${hhmm(r.pickup)}</span><div><b>${donde}</b>${reserva ? 'Termina la asignación' : (tierra ? 'Salen del terminal' : (LV && LV.rotulo === 'Aterrizó' ? 'Aterrizó' : 'Aterriza'))} ${hhmm(baja)}${!tierra && salir > 0 ? ` · ${salir} min para salir del aeropuerto` : ''}${r.wait ? ` · <span class="${r.wait > LLE_ESPERA_LARGA ? 't-risk' : ''}">espera ${r.wait} min</span>` : ''}</div></li>`;
     } else {
       const ids = r.stops.map((s) => s.crewId), H = hotelDe(ids), h1 = H ? null : algunHotel(ids);
       const llega = H ? `Llegada al ${esc(H.name)}` : `Llegada JMC${h1 ? ' y después el ' + esc(h1.name) : ''}`;
@@ -1366,7 +1449,8 @@
     if (r.status === 'nodriver') return `Sin conductor para el turno ${rtBandName(r.shift)} de ${r.vehicle}`;
     if (r.type === 'llegada') {
       if ((r.wait || 0) > LLE_ESPERA_LARGA) return `Esperan ${r.wait} min el carro en JMC${choque}`;
-      return `A tiempo · aterrizaje ${hhmm(r.arrival)}, última entrega ${hhmm(ultima(r))}`;
+      const LV = vistaFila(r);   // 17-nov: la misma hora del vuelo que se lee en la lista
+      return `A tiempo · aterrizaje ${hhmm(LV && !LV.sinHora ? LV.min : r.arrival)}, última entrega ${hhmm(ultima(r))}`;
     }
     return `A tiempo · llega ${hhmm(r.arrival)} a JMC; presentación ${hhmm(r.pres)}`;
   }
@@ -1414,7 +1498,7 @@
     const fijaTxt = r.fija === 'completed' ? ' · terminada' : finFila(r) === 'sinmarcar' ? ' · pasó su hora' : r.fija === 'in_progress' ? ' · en curso' : '';
     const dur = Math.max(0, Math.round((r.type === 'llegada' ? ultima(r) : r.end) - r.pickup));
     el.dhead.innerHTML = `<button class="rv2-ic rv2-back" data-act="close" aria-label="Volver a la lista">${IC.back}</button>` +
-      `<div><h2>${esc(r.vehicle)} · Vuelta ${r.vuelta}</h2><p>${TYPE_LONG[r.type]} · ${horas(r)} · ${plural(r.pax, 'persona', 'personas')} · ${dur} min${fijaTxt}</p></div>` +
+      `<div><h2>${esc(r.vehicle)} · Vuelta ${r.vuelta}</h2><p>${TYPE_LONG[r.type]} · ${r.type === 'llegada' ? `sale de JMC ${hhmm(r.pickup)} → última entrega ${hhmm(ultima(r))}` : horas(r)} · ${plural(r.pax, 'persona', 'personas')} · ${dur} min${fijaTxt}</p></div>` +
       `<button class="rv2-ic x" data-act="close" aria-label="Cerrar detalle">${IC.x}</button>`;
     const mv = ui.moving;
     if (mv && mv.from === r.id && r.stops.some((s) => s.crewId === mv.crew)) return renderMover(r);

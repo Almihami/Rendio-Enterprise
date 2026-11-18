@@ -146,8 +146,12 @@
         add('onway', 'onway', { rank: 1, icon: 'Car', tone: 'ok', title: first + ' va por ti', body: [plateOf(t), route].filter(Boolean).join(' · ') });
       } else if (up && t.status === 'assigned' && isPublished(t)) {
         const pk = t.pickupAt && hm(t.pickupAt);
-        const hora = pk ? (t.type === 'lle' ? 'Te esperamos en JMC a las ' + pk : 'Te recogemos a las ' + pk) : 'Hora de recogida por confirmar';
-        add('pub', 'assigned' + (pk ? '@' + t.pickupAt : ''), {
+        // 17-nov-2026 (Julián: «quitar esa hora aproximada a la que van a salir del aeropuerto»): a quien llega en un vuelo no se le promete una hora de salida de JMC; lo esperan cuando aterrice. Tierra y reserva conservan su hora.
+        // (y el aviso no vuelve a salir cada vez que el sistema corre esa hora por dentro).
+        const conVuelo = t.type === 'lle' && t.groundOps !== true && !t.reservePlace;
+        const hora = conVuelo ? 'Te espera en JMC cuando aterrices'
+          : pk ? (t.type === 'lle' ? 'Te esperamos en JMC a las ' + pk : 'Te recogemos a las ' + pk) : 'Hora de recogida por confirmar';
+        add('pub', 'assigned' + (pk && !conVuelo ? '@' + t.pickupAt : ''), {
           icon: 'Car', tone: 'ok', title: 'Ya tienes conductor',
           body: [(t.driver && t.driver.name) || '', hora, route].filter(Boolean).join(' · '),
         });

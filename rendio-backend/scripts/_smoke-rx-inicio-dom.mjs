@@ -280,7 +280,10 @@ t('va sola en el carro: «1/1»', !!od && od.querySelector('b').textContent === 
 await montar('llegada-parada');
 od = ordDe(homeEl());
 t('llegada: el orden en que la dejan, «Parada 3/3»', !!od && od.querySelector('span').textContent === 'Parada' && od.querySelector('b').textContent === '3/3');
-t('llegada con 3 celdas: la grilla sigue en 3 columnas (sin style)', !homeEl().querySelector('.rx-pass-grid').getAttribute('style') && celdas(homeEl()).join('|') === 'Vuelo LA4021|Aterriza 21:40|Parada 3/3', celdas(homeEl()).join('|'));
+// 17-nov-2026 (Julián): a quien llega en un vuelo no se le promete una hora de salida
+// de JMC: la hora grande sigue siendo la de su vuelo y por eso «Aterriza» ya no se repite abajo.
+t('llegada publicada con vuelo: la grande es «Aterrizas 21:40», no la salida de JMC', /^Aterrizas\s*21:40$/.test(homeEl().querySelector('.rx-pass-time').textContent.trim()), homeEl().querySelector('.rx-pass-time').textContent);
+t('…y la grilla queda en «Vuelo · Parada» (sin style)', !homeEl().querySelector('.rx-pass-grid').getAttribute('style') && celdas(homeEl()).join('|') === 'Vuelo LA4021|Parada 3/3', celdas(homeEl()).join('|'));
 await montar('pendiente-sin-plan');
 h = homeEl();
 t('sin publicar: NO hay celda de orden (ni placeholder) y la grilla queda como el diseño', !ordDe(h) && !/\d\/\d/.test(h.querySelector('.rx-pass-grid').textContent) && !h.querySelector('.rx-pass-grid').getAttribute('style'));

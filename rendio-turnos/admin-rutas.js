@@ -1997,7 +1997,10 @@
     const P = a.reserva && Api.reservePlace ? Api.reservePlace(a.reserva) : null;
     if (P) return `Te recogemos ${dia} ${P.hotel ? 'en el ' + P.name : 'en JMC'} hacia las ${h}. Ábrelo para seguirlo en vivo.`;
     if (a.tierra) return `Te recogemos ${dia} en JMC hacia las ${h}. Ábrelo para seguirlo en vivo.`;
-    return `Cuando aterrices te esperamos en JMC (sale ${dia} hacia las ${h}). Ábrelo para seguirlo en vivo.`;
+    // 17-nov-2026 (Julián: «quitar esa hora aproximada a la que van a salir del
+    // aeropuerto»): a quien llega en un vuelo no se le promete una hora de salida de
+    // JMC (es un cálculo: sale antes o después). Tierra y reserva conservan la suya.
+    return `Cuando aterrices ${dia} te esperamos en JMC. Ábrelo para seguirlo en vivo.`;
   }
 
   // Persiste el plan del día: cada vuelta → route_assignment + route_stops.
@@ -2146,6 +2149,9 @@
           const h = new Date(n.hora).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit', hour12: false });
           const a = Object.values(rt.aux || {}).find(x => x.reservationId === n.reservationId) || {};
           const P = a.reserva && Api.reservePlace ? Api.reservePlace(a.reserva) : null;
+          // 17-nov-2026: a quien llega en un vuelo ya no se le dice la hora de salida de
+          // JMC, así que correrla por dentro no es noticia para él: no se le avisa.
+          if (n.lle && !P && !a.tierra) return;
           const body = !n.lle ? `Ahora te recogemos a las ${h}.`
             : P ? `Te recogemos ${P.hotel ? 'en el ' + P.name : 'en JMC'} hacia las ${h}.`
               : a.tierra ? `Te recogemos en JMC hacia las ${h}.`
