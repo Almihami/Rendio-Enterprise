@@ -67,16 +67,18 @@ try {
       const pedido = async (a, cuando, vuelo, lugar) => (await one(`INSERT INTO public.reservations SELECT (jsonb_populate_record(NULL::public.reservations, to_jsonb(b) || jsonb_build_object(
             'id', gen_random_uuid(), 'auxiliar_profile_id', $2::uuid, 'direction', 'airport_to_home', 'required_arrival_at', now() + ($3 || ' minutes')::interval,
             'cancelled_at', NULL, 'status_a2h', 'driver_assigned', 'status_h2a', NULL, 'flight_id', NULL, 'flight_code', $4::text, 'reserve_place', $5::text,
-            'ground_ops', false, 'service_level', 'shared', 'private_status', NULL))).*
+            'ground_ops', false, 'service_level', 'shared', 'private_status', NULL, 'quiet_ride', false))).*
           FROM public.reservations b WHERE b.id = $1 RETURNING id`, [base.id, a, String(cuando), vuelo, lugar])).id;
       const A = await pedido(aux[0].id, 180, 'ZZ9384', null);     // aterriza en 3 h: sin dato de FlightRadar
       const B = await pedido(aux[1].id, -60, 'ZZ9234', null);     // aterrizó hace 1 h y se demora (el caso de Taborda)
       const C = await pedido(aux[2].id, 90, null, 'aero');        // de reserva en JMC: sin desembarque
       const D = await pedido(aux[0].id, -30, 'ZZ9111', null);     // va en la vuelta que sale de JMC en minutos
-      const R1 = (await one(`INSERT INTO public.route_assignments (driver_profile_id, vehicle_id, direction, status, planned_start_at, organization_id) VALUES ($1, NULL, 'airport_to_home', 'planned', now() + interval '20 minutes', $2) RETURNING id`, [d1.id, org])).id;
+      // Como una ruta pegada: manual_day = el día de la llegada (cerca de medianoche, la madrugada es del día anterior).
+      const DIA = (await one(`SELECT ((now() - interval '60 minutes') AT TIME ZONE 'America/Bogota')::date::text d`)).d;
+      const R1 = (await one(`INSERT INTO public.route_assignments (driver_profile_id, vehicle_id, direction, status, planned_start_at, organization_id, manual_day) VALUES ($1, NULL, 'airport_to_home', 'planned', now() + interval '20 minutes', $2, $3::date) RETURNING id`, [d1.id, org, DIA])).id;
       for (const [i, r] of [A, B, C].entries()) await c.query(`INSERT INTO public.route_stops (route_assignment_id, reservation_id, stop_order, status) VALUES ($1, $2, $3, $4)`, [R1, r, i + 1, i === 1 ? 'arrived' : 'pending']);
       // La siguiente recogida: en espera (sin conductor), sale de JMC 5 min después de «ya».
-      const R2 = (await one(`INSERT INTO public.route_assignments (driver_profile_id, vehicle_id, direction, status, planned_start_at, pool, organization_id) VALUES (NULL, NULL, 'airport_to_home', 'planned', public.reub_arriba5(now()) + interval '5 minutes', true, $1) RETURNING id`, [org])).id;
+      const R2 = (await one(`INSERT INTO public.route_assignments (driver_profile_id, vehicle_id, direction, status, planned_start_at, pool, organization_id, manual_day) VALUES (NULL, NULL, 'airport_to_home', 'planned', public.reub_arriba5(now()) + interval '5 minutes', true, $1, $2::date) RETURNING id`, [org, DIA])).id;
       await c.query(`INSERT INTO public.route_stops (route_assignment_id, reservation_id, stop_order, status) VALUES ($1, $2, 1, 'pending')`, [R2, D]);
       await c.query(`SET LOCAL session_replication_role = origin`);
       const avisos = async (pre) => q(`SELECT title, body FROM public.notification_outbox WHERE dedupe_key LIKE $1`, [pre + '%']);
@@ -94,7 +96,8 @@ try {
       const vB = await dondeVa(B);
       t(`soltar a la que ya aterrizó: pasa a la siguiente recogida (kind ${rB.kind}, sale ${hm(vB && vB.planned_start_at)})`, rB.kind === 'joined' && vB && vB.id === R2 && vB.n === 2, { rB, vB });
       const bj = await avisos('llegadasuelta-j:' + rB.id);
-      t(`…aviso a los ${jefes} jefes: «· se demora — Pasó a la vuelta de las…»`, jefes === 0 || (bj.length === jefes && /· se demora$/.test(bj[0].title) && /Pasó a la vuelta de las/.test(bj[0].body)), bj[0]);
+      t(`…aviso a los ${jefes} jefes: «· se demora — Pasó a la vuelta de las… (todavía sin conductor)»`, jefes === 0 || (bj.length === jefes && /· se demora$/.test(bj[0].title) && /Pasó a la vuelta de las .* \(todavía sin conductor\)\./.test(bj[0].body)), bj[0]);
+      t('…y la app no recibe un nombre de conductor inventado', rB.driver_name == null, rB);
       const bt = await avisosDe(B);
       t('…y al tripulante «Cambió quién te recoge»', bt.some((x) => /Cambió quién te recoge/.test(x.title) && /Tu conductor tuvo que salir/.test(x.body)), bt);
       console.log('    ·', bj[0] ? bj[0].title + ' — ' + bj[0].body : '(sin jefes con alertas)');
@@ -104,10 +107,11 @@ try {
       const rA = await suelta(A);
       const vA = await dondeVa(A);
       t(`soltar a la que aterriza en 3 h: ${rA.kind === 'joined' ? 'se juntó con otra' : 'su propia vuelta'} a su hora (sale ${hm(vA.planned_start_at)}, en ${vA.en_min} min)`,
-        ['new', 'joined'].includes(rA.kind) && vA.en_min >= 195 && vA.en_min <= 215 && vA.status === 'planned' && (rA.kind === 'joined' || (vA.pool && !vA.driver_profile_id && vA.multiplo)), { rA, vA });
+        ['new', 'joined', 'espera'].includes(rA.kind) && vA.en_min >= 195 && vA.en_min <= 215 && vA.status === 'planned' && (rA.kind === 'joined' || (vA.pool && !vA.driver_profile_id && vA.multiplo)), { rA, vA });
       const aj = await avisos('llegadasuelta-j:' + rA.id), ac = await avisos('reub-pool:' + rA.id);
+      const ac2 = await avisos('llegadasuelta:' + rA.id);
       t(`…aviso a los jefes con el texto del reparto ${rep ? 'encendido' : 'apagado'}`, jefes === 0 || rA.kind === 'joined' || (aj.length === jefes && (rep ? /Quedó en espera/.test(aj[0].body) : /Quedó para tomar/.test(aj[0].body))), aj[0]);
-      t(rep ? '…y NO suena «Hay una vuelta para tomar» a los conductores (reparto encendido)' : '…«Hay una vuelta para tomar» a los conductores del turno', rep ? ac.length === 0 : true, ac);
+      t(rep ? '…y NO suena «Hay una vuelta para tomar» a los conductores (reparto encendido)' : '…«Hay una vuelta para tomar» a los conductores del turno', rep ? ac.length === 0 && ac2.length === 0 : true, { ac, ac2 });
 
       // 3. El freno del acomodo puesto (ya armó muchas): a quien suelta un conductor no lo frena.
       for (let i = 0; i < 12; i++) await c.query(`INSERT INTO public.acomodo_creadas (organization_id, reservation_id, route_assignment_id) VALUES ($1, $2, $3)`, [org, D, R2]);
@@ -118,8 +122,9 @@ try {
       t('…y el «urgente» no se queda prendido para lo que siga', (await one(`SELECT coalesce(current_setting('rendio.acomodo_urgente', true), '') v`)).v !== 'on');
       t('…la vuelta del conductor, ya sin nadie, se borró', !(await one(`SELECT 1 x FROM public.route_assignments WHERE id = $1`, [R1])));
       // 4. No se suelta de una vuelta ajena.
+      const sAjena = (await one(`SELECT id FROM public.route_stops WHERE route_assignment_id = $1 LIMIT 1`, [R2])).id;
       await como(d1.profile_id);
-      const e1 = await falla(`SELECT public.driver_llegada_soltar($1, $2)`, [R2, (await one(`SELECT id FROM public.route_stops WHERE route_assignment_id = $1 LIMIT 1`, [R2])).id]);
+      const e1 = await falla(`SELECT public.driver_llegada_soltar($1, $2)`, [R2, sAjena]);
       await comoDb();
       t('no se suelta de una vuelta que no es tuya', !!e1, e1 && e1.message);
     }
