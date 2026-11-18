@@ -611,8 +611,9 @@
   // (admin_manual_route_publish): vueltas «para tomar», sin carro ni conductor, con
   // otra tarjeta, sin trayecto y con sus propios avisos. Ahora cada bloque entra al
   // tablero como una vuelta más (RendioRutasV2.meterPegado), con las horas del
-  // jefe, en un carro libre y con el conductor del turno; y se publica con la hoja
-  // de siempre, que es la que avisa. Lo que arranca en la madrugada SIGUIENTE (las
+  // jefe, en un carro libre y con el conductor del turno (17-nov: solo las salidas;
+  // las llegadas quedan en espera, sin conductor); y se publica con la hoja de
+  // siempre, que es la que avisa. Lo que arranca en la madrugada SIGUIENTE (las
   // últimas líneas, después de medianoche) es del plan de ese día: entra a su
   // tablero cuando se abre.
   const minDesde = (dia, iso) => Math.round((Date.parse(iso) - Date.parse(dia + 'T00:00:00-05:00')) / 60000);
@@ -672,8 +673,10 @@
       const r = hoy.length ? v2.meterPegado(hoy, { rearmar: st.modo !== 'parte', nuevos: st.frescos }) : null;
       if (sig.length && typeof v2.guardarPegado === 'function') v2.guardarPegado(sumarDia(st.dia, 1), sig);
       const partes = [];
-      if (r && r.vueltas) partes.push(`${r.vueltas} ${r.vueltas === 1 ? 'vuelta quedó' : 'vueltas quedaron'} en el tablero (${r.carros.join(', ')})`);
-      if (r && r.iguales) partes.push(`${r.iguales} ${r.iguales === 1 ? 'sigue igual, con su conductor' : 'siguen iguales, con su conductor'}`);
+      if (r && r.vueltas) partes.push(`${r.vueltas} ${r.vueltas === 1 ? 'vuelta quedó' : 'vueltas quedaron'} en el tablero${r.carros.length ? ` (${r.carros.join(', ')})` : ''}`);
+      // 17-nov: la que sigue igual conserva su conductor solo si es salida (las llegadas van en espera).
+      if (r && r.iguales) partes.push(`${r.iguales} ${r.iguales === 1 ? 'sigue igual' : 'siguen iguales'}${!r.igualesSal ? '' : r.igualesSal === r.iguales ? ', con su conductor' : ` (${r.igualesSal === 1 ? 'la salida' : 'las salidas'} con su conductor)`}`);
+      if (r && r.enEspera) partes.push(`${r.enEspera} ${r.enEspera === 1 ? 'llegada queda' : 'llegadas quedan'} en espera, sin conductor: ${r.despacho ? `el sistema ${r.enEspera === 1 ? 'se la da' : 'se las da'} al conductor que esté en JMC cuando el vuelo confirme la hora` : `${r.enEspera === 1 ? 'la toman' : 'las toman'} los conductores del turno`}`);
       if (r && r.sinCarro && r.sinCarro.length) partes.push(`${r.sinCarro.length === 1 ? 'quedó sin carro' : 'quedaron sin carro'} (no ${r.sinCarro.length === 1 ? 'está' : 'están'} en tu ruta): ${r.sinCarro.join(', ')}`);
       if (r && r.nuevosCarros && r.nuevosCarros.length) partes.push(`no cabían en los carros del día: se agregó ${r.nuevosCarros.join(', ')}`);
       if (r && r.enCurso && r.enCurso.length) partes.push(`${r.enCurso.join(', ')} ya ${r.enCurso.length === 1 ? 'va' : 'van'} en una vuelta en curso y ${r.enCurso.length === 1 ? 'se queda' : 'se quedan'} ahí`);

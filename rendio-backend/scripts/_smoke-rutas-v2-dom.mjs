@@ -1975,6 +1975,31 @@ console.log('\n── 28-oct (Camilo, audios y video): Avisos en una barrita y e
   t('sin errores de consola', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
 }
 
+console.log('\n── 17-nov · «Llegadas en espera»: una casilla con solo llegadas en espera no pide conductor ──');
+{
+  // Harold: las llegadas no se asignan; las reparte el sistema. En Conductores, el carro
+  // y turno que solo tiene llegadas en espera no sale en rojo «Sin conductor».
+  const b = await boot();
+  const { w, q, T, V2 } = b;
+  w.state.settings.despacho_activo = true;
+  const reloj0 = w.Date.now;
+  w.Date.now = () => Date.parse(T().rt.day + 'T05:00:00-05:00');   // la mañana del día: las llegadas faltan
+  V2().render(); await wait(10);
+  const rt = T().rt;
+  const lF = () => rt.lanes.find((l) => (rt.order[l.id] || []).includes('rF'));
+  const cel = () => q('#rv2-drivers [data-act="assignslot"][data-car="V-01"][data-shift="pm"]');
+  t('antes: a la llegada de Natalia (V-01 de la tarde) el tablero le pone conductor solo («Rubén · automático»)', !!cel() && /Rubén/.test(txt(cel())) && /automático/.test(txt(cel())), cel() && (cel().className + ' · ' + txt(cel())));
+  V2().llegadasEnEspera(); await wait(10);
+  t('«Llegadas en espera»: Natalia queda para tomar, sin conductor', lF() && lF().tomar === true && !V2().dia().byId[lF().id].driverId, JSON.stringify(lF()));
+  // V-01 de la tarde ya no tiene nada que siga al carro: sin su conductor, la casilla no pide uno.
+  const v01 = rt.cars.find((c) => c.id === 'V-01'); v01.driverPM = null; if (rt.rv2Auto) delete rt.rv2Auto['V-01|pm'];
+  V2().render(); await wait(10);
+  t('…y sin conductor en ese carro y turno, la casilla dice «Sin conductor · 1 para tomar» SIN rojo (no pide conductor)', !!cel() && !cel().classList.contains('need') && /Sin conductor/.test(txt(cel())) && /1 para tomar/.test(txt(cel())), cel() && (cel().className + ' · ' + txt(cel())));
+  t('…ni sale en Avisos «V-01 no tiene conductor»', !V2()._avisos().some((x) => x.k === 'nodriver' && /V-01/.test(x.html)), JSON.stringify(V2()._avisos().map((x) => x.k)));
+  w.Date.now = reloj0;
+  t('sin errores de consola', b.errors.length === 0, b.errors.slice(0, 3).join(' | '));
+}
+
 console.log(`\n${ok}/${ok + bad} pasaron${bad ? ' · ' + bad + ' FALLARON' : ''}`);
 console.log('NO cubierto: layout real (puntos de quiebre, cajón, tarjetas, barra fija del celular: ver _capturas-rutas-v2.mjs y revisar en un teléfono), la base real (RLS, saveRoutePlan/getPublishedPlan en producción), TomTom/OSRM reales, el mapa Leaflet real, el push real y el módulo de WhatsApp.');
 process.exit(bad ? 1 : 0);

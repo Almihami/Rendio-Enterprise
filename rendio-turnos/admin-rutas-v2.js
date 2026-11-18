@@ -884,7 +884,8 @@
         // 0124: la placa sale del turno. Hoy: la del turno abierto, o «sin iniciar turno».
         const placa = id ? placaDeTurno(id) : null;
         const enTurno = placa ? ' · en ' + esc(placa) : (id && Array.isArray(rt.activos) ? ' · sin iniciar turno' : '');
-        h += `<button class="cell${id ? '' : ' need'}" data-act="assignslot" data-car="${esc(car.id)}" data-shift="${b}" aria-label="${esc(`${car.id}, ${turnoTxt(b)}: ${d ? d.name : 'sin conductor'}${placa ? ', en ' + placa : ''}. Cambiar`)}">` +
+        // 17-nov: en rojo solo si hay vueltas que siguen al carro (las en espera o delegadas no piden conductor).
+        h += `<button class="cell${id || !c.n ? '' : ' need'}" data-act="assignslot" data-car="${esc(car.id)}" data-shift="${b}" aria-label="${esc(`${car.id}, ${turnoTxt(b)}: ${d ? d.name : 'sin conductor'}${placa ? ', en ' + placa : ''}. Cambiar`)}">` +
           `<b>${d ? esc(shortName(d.name)) : 'Sin conductor'}</b><small>${cuentaTxt(c)}${id ? (auto ? ' · automático' : ' · elegido') : ''}${enTurno}</small></button>`;
       });
     });
@@ -899,7 +900,7 @@
         const ids = [...new Set(enB.map((car) => rtCarDrv(car, b)).filter(Boolean))];
         // Rojo si no hay nadie, o si a uno le faltan vueltas que siguen al carro
         // (las que solo tienen «para tomar» o delegadas no piden conductor).
-        const falta = !ids.length || enB.some((car) => !rtCarDrv(car, b) && cells[car.id + '|' + b].n > 0);
+        const falta = enB.some((car) => !rtCarDrv(car, b) && cells[car.id + '|' + b].n > 0);
         const solo = ids.length === 1 ? ids[0] : null;
         const auto = !!solo && !!rt.rv2Auto && enB.every((car) => rtCarDrv(car, b) !== solo || rt.rv2Auto[car.id + '|' + b] === solo);
         const placa = solo ? placaDeTurno(solo) : null;
@@ -1960,6 +1961,18 @@
   //   opts.rearmar: true = el texto es el día entero · false = solo esas vueltas.
   //   opts.nuevos: { aux, colors } de una lectura fresca de los pedidos: quien pidió
   //   después de abrir el día también se puede pegar.
+  //
+  // LAS LLEGADAS PEGADAS QUEDAN EN ESPERA (17-nov-2026). Harold: «cuando lo peguemos
+  // en el tablero no podemos asignar llegadas; ya lo vivimos, asignar es un problema;
+  // el sistema debe hacerlo, o el admin en el momento caliente». Esa noche Camilo
+  // pegó y publicó el miércoles: 17 llegadas salieron con conductor fijo y 2 en un
+  // «Carro 4» sin conductor, en borrador (nadie las ve, ni el sistema). Ahora cada
+  // llegada del texto queda «para tomar» (0151), con la gente que el jefe juntó y sin
+  // conductor: el despacho (0158) se la da al que esté en JMC cuando el vuelo
+  // confirme la hora. Se ubican DESPUÉS de las salidas, para no quitarles el carro;
+  // si una no cabe en ninguno, el carro de más no pide conductor y se publica en
+  // espera, no en borrador. La delegada, y la que ya estaba en espera (con quien la
+  // tenga), quedan como estaban. Ponerle conductor a mano sigue igual: «Cambiar».
   function meterPegado(vueltas, opts = {}) {
     if (!Array.isArray(vueltas) || !vueltas.length || !rt.cars || !rt.aux) return null;
     snapshot('pegar');
@@ -2025,7 +2038,7 @@
       });
       if (ids.length) nuevas.push({ type, ids, horas });
     });
-    if (!nuevas.length) { const h = hist.pop(); if (h) restaurar(h.f); return { vueltas: 0, iguales: 0, carros: [], nuevosCarros: [], enCurso, sinCuenta: 0, sinCarro: [], nuevosPedidos: 0 }; }
+    if (!nuevas.length) { const h = hist.pop(); if (h) restaurar(h.f); return { vueltas: 0, iguales: 0, igualesSal: 0, enEspera: 0, despacho: false, carros: [], nuevosCarros: [], enCurso, sinCuenta: 0, sinCarro: [], nuevosPedidos: 0 }; }
     // Las horas del jefe. Salida: la primera recogida (y cada recogida la suya).
     // Llegada: sale de JMC cuando ya salió el último (su hora + desembarque), la
     // misma cuenta del tablero (reprogramar), y reparte en el orden del tablero.
@@ -2087,9 +2100,23 @@
       renumerarCarro(l.car); n.lane = null;
     });
     const nuevosCarros = [], carros = new Set();
-    nuevas.filter((n) => n.lane).forEach((n) => carros.add(n.lane.car));
-    const iguales = nuevas.filter((n) => n.lane).length;
-    nuevas.filter((n) => !n.lane).sort((a, b) => a.t - b.t).forEach((n) => { carros.add(ubicarVuelta(n, nuevosCarros).car); });
+    const quedan = nuevas.filter((n) => n.lane);
+    quedan.filter((n) => n.type !== 'lle').forEach((n) => carros.add(n.lane.car));
+    const iguales = quedan.length, igualesSal = quedan.filter((n) => n.type !== 'lle').length;
+    // 17-nov: primero las salidas (llevan conductor), después las llegadas (en espera).
+    const porHora = (a, b) => a.t - b.t;
+    const faltan = nuevas.filter((n) => !n.lane);
+    faltan.filter((n) => n.type !== 'lle').sort(porHora).forEach((n) => { n.lane = ubicarVuelta(n, nuevosCarros); carros.add(n.lane.car); });
+    faltan.filter((n) => n.type === 'lle').sort(porHora).forEach((n) => { n.lane = ubicarVuelta(n, []); });
+    // Toda llegada del texto, en espera: sin conductor (drv=false: tampoco el del
+    // carro, ni el que autoLlenar le pondría a un carro de más) y «para tomar».
+    let enEspera = 0;
+    nuevas.filter((n) => n.type === 'lle' && n.lane).forEach((n) => {
+      const l = n.lane;
+      if (l.deleg === true) return;
+      if (l.tomar !== true) { l.drv = false; l.tomar = true; }
+      if (!l.drv) enEspera++;
+    });
     // Las del tablero que perdieron gente se reprograman, como al mover a alguien.
     tocadas.forEach((id) => { const l = rtLaneOf(id); if (l) reprogramar(l); });
     // Un día que iba solo con la ruta pegada (0125) ya tiene tablero.
@@ -2097,7 +2124,8 @@
     rt.optimized = true;
     ui.sel = null; ui.moving = null;
     render();
-    return { vueltas: nuevas.length, iguales, carros: [...carros], nuevosCarros, enCurso, sinCuenta, sinCarro, nuevosPedidos: nuevosPedidos.length };
+    return { vueltas: nuevas.length, iguales, igualesSal, enEspera, despacho: !!(state.settings && state.settings.despacho_activo),
+      carros: [...carros], nuevosCarros, enCurso, sinCuenta, sinCarro, nuevosPedidos: nuevosPedidos.length };
   }
   // Para la hoja de la ruta de Julián: quién del día sigue por mover (sin carro o en
   // una vuelta que no ha arrancado). Si el texto trae a la mayoría, es el día entero.
@@ -2926,6 +2954,8 @@
     const unr = (rt.pool || []).length;
     const espera = D.routes.filter((r) => r.type === 'llegada' && r.fija !== 'completed' && (r.wait || 0) > LLE_ESPERA_LARGA).length;
     const delegadas = D.routes.filter((r) => r.delegada && r.fija !== 'completed').length;
+    // 17-nov: las llegadas en espera se publican sin conductor a propósito; aquí se ve cuántas.
+    const enEsperaL = D.routes.filter((r) => r.type === 'llegada' && r.tomar && !r.driverId && !r.delegada && r.fija !== 'completed').length;
     const item = (ok, warn, title, sub, k) => `<div class="rv2-check"><span class="ico ${ok ? 'ok' : warn ? 'warn' : 'bad'}" aria-hidden="true">${ok ? '✓' : warn ? '!' : '✕'}</span><div>${title}<small>${sub}</small></div>${ok ? '' : `<button class="rv2-btn rv2-btn--sm" data-act="goto" data-k="${k}">Ver</button>`}</div>`;
     const blocking = c.risk + c.nodriver + unr;
     const conductoresConVuelta = new Set(D.routes.map((r) => r.driverId).filter(Boolean)).size;
@@ -2948,6 +2978,9 @@
       item(!unr, false, unr ? `${plural(unr, 'tripulante', 'tripulantes')} sin carro` : 'Todos los tripulantes con carro', 'Nadie puede quedar sin carro.', 'unrouted') +
       (espera ? item(false, true, `${plural(espera, 'llegada', 'llegadas')} con espera larga en JMC`, `Esperan más de ${LLE_ESPERA_LARGA} min el carro. No bloquea.`, 'wait') : '') +
       (delegadas ? item(true, false, `${plural(delegadas, 'vuelta delegada', 'vueltas delegadas')}`, 'Ningún conductor las ve. A sus tripulantes les llega «Tu servicio fue delegado, te contactaremos por WhatsApp».', 'deleg') : '') +
+      (enEsperaL ? item(true, false, `${plural(enEsperaL, 'llegada en espera', 'llegadas en espera')}`, state.settings && state.settings.despacho_activo
+        ? 'Sin conductor fijo: el sistema se las da al conductor que esté en JMC cuando el vuelo confirme la hora.'
+        : 'Sin conductor fijo: las ven los conductores del turno en «Vueltas para tomar».', 'espera') : '') +
       (blocking ? `<button class="rv2-linkbtn" id="rv2-forceOpen" aria-expanded="false" aria-controls="rv2-force">Publicar de todos modos…</button>` +
         `<div class="rv2-force" id="rv2-force" hidden><p>Vas a publicar con:</p><ul>${forzarItems.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` +
         ((c.risk || c.nodriver) ? `<label class="rv2-ack"><input type="checkbox" id="rv2-forceRisk"> Entiendo que ${c.risk && c.nodriver ? 'hay vueltas tarde y sin conductor' : c.risk ? 'hay vueltas que llegan tarde' : 'hay vueltas sin conductor'} y publico así.</label>` : '') +
@@ -3449,7 +3482,7 @@
       if (pend) {
         delete pegadoPendiente[ui.dia];
         const r = meterPegado(pend);
-        if (r && r.vueltas) toast(`Entró la madrugada que pegaste con el día anterior: ${plural(r.vueltas, 'vuelta', 'vueltas')}. Revísala y publica.`, true);
+        if (r && r.vueltas) toast(`Entró la madrugada que pegaste con el día anterior: ${plural(r.vueltas, 'vuelta', 'vueltas')}${r.enEspera ? ` (${plural(r.enEspera, 'llegada en espera', 'llegadas en espera')}, sin conductor)` : ''}. Revísala y publica.`, true);
       }
     }
     catch (e) {
