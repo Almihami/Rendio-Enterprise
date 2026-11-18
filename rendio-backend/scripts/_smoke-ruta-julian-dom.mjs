@@ -308,11 +308,18 @@ const C = await boot({
   t('…sin repetidos: nadie queda en dos vueltas', Object.keys(R.aux).every((k) => R.lanes.filter((l) => (R.order[l.id] || []).includes(k)).length <= 1));
   t('…la vuelta que sigue igual (Tomás y Sara, AV9420) se queda en su carro (V-03) con su conductor', (() => { const l = laneCon('rK'); return l && laneCon('rL') === l && l.car === 'V-03' && l.raId === 'ra-9'; })(), JSON.stringify(laneCon('rK')));
   t('…y la de Felipe también, con la hora del texto (10:30)', laneCon('rM') && laneCon('rM').raId === 'ra-6' && laneCon('rM').start === '10:30', JSON.stringify(laneCon('rM')));
+  // 17-nov-2026 (Harold): «cuando lo peguemos en el tablero no podemos asignar llegadas».
+  const dDe = (l) => (C.V2().dia().byId[l.id] || {}).driverId || null;
+  t('17-nov: Tomás y Sara (llegada publicada con Diego) quedan EN ESPERA: sin conductor y para tomar', (() => { const l = laneCon('rK'); return l && l.tomar === true && l.drv === false && !dDe(l); })(), JSON.stringify(laneCon('rK')));
+  t('17-nov: …y Natalia y Kevin (AV9412, vuelta nueva) también: ninguna llegada del texto lleva conductor',
+    [laneCon('rF'), laneCon('rK')].every((l) => l && l.tomar === true && !dDe(l)) && R.lanes.filter((l) => l.type === 'lle' && (R.order[l.id] || []).length && !C.V2().dia().byId[l.id].fija).every((l) => !dDe(l)),
+    JSON.stringify(R.lanes.filter((l) => l.type === 'lle').map((l) => [l.id, l.tomar, dDe(l)])));
+  t('17-nov: …y las salidas del texto siguen con el conductor del turno (José y Cami, Felipe)', !!dDe(laneCon('rC')) && !!dDe(laneCon('rM')), JSON.stringify([dDe(laneCon('rC')), dDe(laneCon('rM'))]));
   const choque = R.cars.map((c) => R.lanes.filter((l) => l.car === c.id && (R.order[l.id] || []).length).sort((x, y) => x.vuelta - y.vuelta))
     .some((ls) => ls.some((l, i) => i > 0 && (C.V2().dia().byId[l.id] || {}).retraso > 0));
   t('ningún carro queda con dos vueltas que se cruzan', !choque);
   t('se abre la hoja de Publicar de siempre (la que avisa)', /Publicar/.test(txt(q('#rv2-shTitle')) || '') && !!q('#rv2-doPublish'), txt(q('#rv2-shTitle')));
-  t('el aviso dice cuántas vueltas quedaron, quién se quedó en su vuelta en curso y que nadie ha recibido aviso', /6 vueltas quedaron en el tablero/.test(C.toastV2() || '') && /3 siguen iguales, con su conductor/.test(C.toastV2() || '') && /quedaron sin carro \(no están en tu ruta\): Valentina Ríos, Sergio Molina, Mateo Zapata, Juliana Ossa/.test(C.toastV2() || '') && /Laura Gómez, Andrés Ruiz ya van en una vuelta en curso y se quedan ahí/.test(C.toastV2() || '') && /Nadie ha recibido aviso: revisa y dale Publicar/.test(C.toastV2() || ''), C.toastV2());
+  t('el aviso dice cuántas vueltas quedaron, quién se quedó en su vuelta en curso y que nadie ha recibido aviso', /6 vueltas quedaron en el tablero/.test(C.toastV2() || '') && /3 siguen iguales \(las salidas con su conductor\)/.test(C.toastV2() || '') && /2 llegadas quedan en espera, sin conductor: las toman los conductores del turno/.test(C.toastV2() || '') && /quedaron sin carro \(no están en tu ruta\): Valentina Ríos, Sergio Molina, Mateo Zapata, Juliana Ossa/.test(C.toastV2() || '') && /Laura Gómez, Andrés Ruiz ya van en una vuelta en curso y se quedan ahí/.test(C.toastV2() || '') && /Nadie ha recibido aviso: revisa y dale Publicar/.test(C.toastV2() || ''), C.toastV2());
   t('aprende solo lo elegido a mano (0149): «kevin» → el perfil de Kevin', JSON.stringify(aprendidos) === JSON.stringify([[{ alias: 'kevin', auxiliar_profile_id: 'aux-rO' }]]), JSON.stringify(aprendidos));
   t('26-oct: las llegadas del mismo texto pasan solas a Vuelos (el día de la ruta)', seguidos.length === 1 && seguidos[0][1] === DAY && /AV9412/i.test(seguidos[0][0]), JSON.stringify(seguidos.map((x) => x[1])));
   t('…y el aviso lo dice («· 2 vuelos a Vuelos»)', /2 vuelos a Vuelos/.test(C.toastV2() || ''), C.toastV2());
@@ -322,6 +329,8 @@ const C = await boot({
   const S = log.saved[log.saved.length - 1];
   const sC = S && S.lanes.find((l) => l.stops.includes('res-C'));
   t('Publicar manda las horas del jefe: José 5:30, Cami 5:40, la vuelta arranca 5:30', r && r.ok && sC && sC.etas['res-C'] === 330 && sC.etas['res-D'] === 340 && sC.startAt === `${DAY}T05:30:00-05:00`, sC && JSON.stringify([sC.startAt, sC.etas]));
+  const sLle = S ? S.lanes.filter((l) => l.type === 'lle') : [];
+  t('17-nov: Publicar manda las 2 llegadas «para tomar» y sin conductor (nada de llegada con conductor fijo)', sLle.length === 2 && sLle.every((l) => l.paraTomar === true && !l.driverProfileId && !l.delegated), JSON.stringify(sLle.map((l) => [l.stops, l.paraTomar, l.driverProfileId])));
   C.V2().render();
   t('…y el tablero queda publicado (sin «con cambios»)', /Publicado/.test(txt(q('#rv2-pubChip')) || '') && !/con cambios/.test(txt(q('#rv2-pubChip')) || ''), txt(q('#rv2-pubChip')));
   // D y lo que sigue prueban las vueltas pegadas VIEJAS (pool, 0125), que siguen en
@@ -1204,6 +1213,15 @@ console.log('\n── T · «Conductor asignado» trae la hora (los tripulantes:
   // Un plan con conductor: José y Camila salen a las 5:30 (horas del jefe) y Natalia llega.
   T0.V2().meterPegado([{ type: 'sal', stops: [{ rid: 'res-C', min: 330 }, { rid: 'res-D', min: 340 }] }, { type: 'lle', stops: [{ rid: 'res-F', min: 880 }] }]);
   T0.V2().render();
+  // 17-nov-2026: la llegada pegada queda en espera. El jefe le pone conductor A MANO
+  // («Asignar» de la vuelta, en caliente): eso tiene que seguir funcionando.
+  const lF = () => R.lanes.find((l) => (R.order[l.id] || []).includes('rF'));
+  const dF = () => (T0.V2().dia().byId[lF().id] || {}).driverId || null;
+  t('17-nov: la llegada pegada (Natalia) queda en espera, sin conductor', lF() && lF().tomar === true && !dF(), JSON.stringify([lF(), dF()]));
+  T0.click(T0.q(`#rv2-list .rv2-row[data-id="${lF().id}"] .when`)); await wait(10);
+  T0.click(T0.q(`#routes-v2 [data-act="assign"][data-id="${lF().id}"]`)); await wait(10);
+  T0.click(T0.q('#rv2-sheet [data-pick="d4"]')); await wait(5); T0.click(T0.q('#rv2-doAssign')); await wait(10);
+  t('17-nov: …y a mano se le pone conductor (Asignar → Diego): sale de espera', !lF().tomar && dF() === 'd4', JSON.stringify([lF(), dF()]));
   await T().rtSavePlan();
   const bodies = log.push.filter((p) => /Conductor asignado/.test(p.title)).map((p) => [p.body, p.profileIds.join()]);
   t('a José le llega «Te recogemos … a las 5:30» y a Camila «… a las 5:40»', bodies.some(([b, ids]) => /Te recogemos el lunes 12 a las 5:30\./.test(b) && ids === 'u-res-C') && bodies.some(([b, ids]) => /a las 5:40\./.test(b) && ids === 'u-res-D'), JSON.stringify(bodies));
@@ -1363,6 +1381,106 @@ console.log('\n── V · 28-oct (Camilo, 2:08 p. m.): quien está en una «par
   t('…y nadie quedó como pasajero sin cuenta', !Object.values(R.aux).some((a) => a.guest && /Manuela/.test(a.n)));
   t('sin errores de script', V0.errors.length === 0, V0.errors.join(' | '));
   V0.w.Date.now = reloj0;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+console.log('\n── W · 17-nov (Harold): «cuando lo peguemos en el tablero no podemos asignar llegadas» ──');
+{
+  // El miércoles 18: Camilo pegó y publicó; 17 llegadas salieron con conductor fijo y
+  // 2 en un «Carro 4» sin conductor, en BORRADOR (nadie las ve, ni el sistema). Aquí:
+  // el día ya publicado trae una llegada con conductor (Tomás y Sara, con Diego) y otra
+  // en borrador (Natalia, sin conductor). Se pega una lista con salidas y 6 llegadas,
+  // cuatro a las 15:00 (más que carros libres). Con el despacho encendido (0158).
+  const W0 = await boot({ antes: (w) => { w.state.settings.despacho_activo = true; } });
+  const { w, q, click, T, log } = W0;
+  w.Api.auxiliarUserIdsForReservations = async (rids) => rids.map((x) => 'u-' + x);
+  w.Api.reservePlace = () => null;
+  const R = T().rt;
+  const flota = R.cars.map((c) => c.id);
+  const sinCuenta = (name, lat) => ({ guest: { name, place: 'Cerezos', lat, lng: -75.38, zona: 'Rionegro' }, min: 900 });
+  const sal = (rows) => ({ type: 'sal', stops: rows.map(([k, min]) => ({ rid: 'res-' + k, min })) });
+  const lle = (stops) => ({ type: 'lle', stops });
+  const r = W0.V2().meterPegado([
+    sal([['E', 275]]), sal([['C', 300], ['D', 310]]), sal([['H', 360], ['G', 370]]), sal([['I', 460], ['J', 470]]), sal([['N', 480]]), sal([['M', 600]]),
+    lle([{ rid: 'res-F', min: 900 }]), lle([{ rid: 'res-O', min: 905 }]),
+    lle([sinCuenta('Wilson Prueba', 6.151)]), lle([sinCuenta('Yerly Prueba', 6.152)]), lle([sinCuenta('Duvan Prueba', 6.153)]),
+    lle([{ rid: 'res-K', min: 960 }, { rid: 'res-L', min: 970 }]),
+  ], { rearmar: true });
+  W0.V2().render(); await wait(20);
+  const D = () => W0.V2().dia();
+  const dDe = (l) => (D().byId[l.id] || {}).driverId || null;
+  const vivas = (tipo) => R.lanes.filter((l) => l.type === tipo && (R.order[l.id] || []).length && D().byId[l.id] && !D().byId[l.id].fija);
+  const lles = vivas('lle'), sals = vivas('sal');
+  t('entran las 12 vueltas del texto: 6 salidas y 6 llegadas', r && r.vueltas === 12 && lles.length === 6, JSON.stringify(r) + ' · ' + lles.length);
+  t('las 6 llegadas quedan EN ESPERA: para tomar y sin conductor (drv=false, ni el del carro)',
+    lles.every((l) => l.tomar === true && l.drv === false && !dDe(l) && D().byId[l.id].status !== 'nodriver') && r.enEspera === 6,
+    JSON.stringify(lles.map((l) => [l.id, l.tomar, l.drv, dDe(l), D().byId[l.id].status])));
+  t('…también la que estaba publicada con conductor (Tomás y Sara, con Diego) y la que estaba en borrador (Natalia)',
+    ['rK', 'rF'].every((k) => { const l = R.lanes.find((x) => (R.order[x.id] || []).includes(k)); return l && l.tomar === true && !dDe(l); }));
+  const apoyo = lles.filter((l) => !flota.includes(l.car));
+  t('no caben 4 llegadas a las 15:00 en los 3 carros: alguna queda en un carro de más… EN ESPERA, no sin conductor', apoyo.length >= 1 && apoyo.every((l) => l.tomar === true && D().byId[l.id].status !== 'nodriver'),
+    JSON.stringify(lles.map((l) => [l.car, l.start])));
+  t('…y a ese carro de más NO se le pone conductor solo (autoLlenar no lo llena)', apoyo.every((l) => !Object.keys(R.rv2Auto || {}).some((k) => k.startsWith(l.car + '|'))), JSON.stringify(R.rv2Auto));
+  t('…ni se anuncia «se agregó Carro N» (las llegadas en espera no piden carro; las salidas cupieron)', r.nuevosCarros.length === 0 && r.carros.every((c) => flota.includes(c)), JSON.stringify([r.nuevosCarros, r.carros]));
+  t('las 6 salidas siguen con el conductor del turno', sals.length === 6 && sals.every((l) => !!dDe(l) && l.tomar !== true), JSON.stringify(sals.map((l) => [l.id, dDe(l)])));
+  t('en Avisos no sale «no tiene conductor» por ninguna llegada', !W0.V2()._avisos().some((a) => a.k === 'nodriver' && lles.some((l) => a.act.includes(`"${l.id}"`) || (a.act.includes(`data-car="${l.car}"`) && !sals.some((s) => s.car === l.car && s.shift === l.shift)))), JSON.stringify(W0.V2()._avisos().map((a) => a.k + ':' + a.act)));
+  const celApoyo = q('#routes-v2 [data-act="assignslot"][data-car="__apoyo"][data-shift="pm"]');
+  t('Conductores: el «Carro Apoyo» de la tarde (solo llegadas en espera) no sale en rojo pidiendo conductor', celApoyo && !celApoyo.classList.contains('need') && /para tomar/.test(txt(celApoyo)), celApoyo && (celApoyo.className + ' · ' + txt(celApoyo)));
+  W0.V2().abrirPublicar(); await wait(10);
+  const hoja = txt(q('#rv2-sheet'));
+  t('la hoja de Publicar las cuenta («6 llegadas en espera») y dice quién las reparte', /6 llegadas en espera/.test(hoja) && /el sistema se las da al conductor que esté en JMC cuando el vuelo confirme la hora/.test(hoja), hoja);
+  t('…y no las cuenta como vueltas sin conductor (borrador)', /Todos los carros con conductor/.test(hoja) && !/sin conductor \(quedan? en borrador/.test(hoja), hoja);
+  W0.V2()._sheet.close(); await wait();
+  await T().rtSavePlan();
+  const S = log.saved[log.saved.length - 1];
+  const sLle = S.lanes.filter((l) => l.type === 'lle'), sSal = S.lanes.filter((l) => l.type !== 'lle');
+  t('Publicar: 0 llegadas con conductor (todas «para tomar»)', sLle.length === 6 && sLle.every((l) => l.paraTomar === true && !l.driverProfileId && !l.delegated), JSON.stringify(sLle.map((l) => [l.planCar, l.paraTomar, l.driverProfileId])));
+  // 8 = las 6 del texto + las 2 que ya habían arrancado (Laura y Andrés, Paula).
+  t('Publicar: las salidas sí van con conductor', sSal.length === 8 && sSal.every((l) => !!l.driverProfileId && !l.paraTomar), JSON.stringify(sSal.map((l) => [l.planCar, l.driverProfileId])));
+
+  // api.js DE VERDAD con lo que mandó el tablero: qué filas quedan en route_assignments.
+  const dom = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only', url: 'http://localhost/' });
+  const w2 = dom.window; const ins = [];
+  const bld = (name) => {
+    const st = { op: null, payload: null };
+    const b2 = {
+      then(ok2, ko) {
+        let res = { data: [], error: null };
+        if (st.op === 'insert') { ins.push([name, st.payload]); res = { data: name === 'route_assignments' ? { id: 'ra-' + ins.length } : null, error: null }; }
+        else if (st.op === null && name === 'driver_profiles') res = { data: ['d1', 'd2', 'd3', 'd4', 'd5'].map((d) => ({ id: 'dp-' + d, profile_id: d })), error: null };
+        return Promise.resolve(res).then(ok2, ko);
+      },
+    };
+    ['select', 'eq', 'neq', 'in', 'is', 'gte', 'lte', 'gt', 'lt', 'not', 'or', 'order', 'limit', 'single', 'maybeSingle'].forEach((m) => { b2[m] = () => b2; });
+    b2.delete = () => { st.op = 'delete'; return b2; };
+    b2.insert = (p) => { st.op = 'insert'; st.payload = JSON.parse(JSON.stringify(p)); return b2; };
+    return b2;
+  };
+  w2.sb = { from: bld, auth: { getUser: async () => ({ data: { user: null } }), getSession: async () => ({ data: { session: null } }) } };
+  w2.RENDIO_CONFIG = {};
+  w2.eval('var state = { profile: { organization_id: "org-1" } };');
+  w2.eval(read('api.js'));
+  const res = await w2.Api.saveRoutePlan(DAY, JSON.parse(JSON.stringify(S.lanes)));
+  const ras = ins.filter((x) => x[0] === 'route_assignments').map((x) => x[1]);
+  const llegadas = ras.filter((x) => x.direction === 'airport_to_home'), salidas = ras.filter((x) => x.direction === 'home_to_airport');
+  t('base: las 6 llegadas quedan planned + pool + para_tomar, sin conductor', llegadas.length === 6 && llegadas.every((x) => x.status === 'planned' && x.pool === true && x.para_tomar === true && x.driver_profile_id === null),
+    JSON.stringify(llegadas.map((x) => [x.plan_car, x.status, x.pool, x.para_tomar, x.driver_profile_id])));
+  t('base: 0 borradores de llegada (también la del carro de más)', !llegadas.some((x) => x.status === 'draft') && llegadas.some((x) => !flota.includes(x.plan_car)), JSON.stringify(llegadas.map((x) => [x.plan_car, x.status])));
+  t('base: las salidas, planned con su conductor', salidas.length === 8 && salidas.every((x) => x.status === 'planned' && !!x.driver_profile_id), JSON.stringify(salidas.map((x) => [x.plan_car, x.status, x.driver_profile_id])));
+  // Se anuncian las que tienen pedido (Natalia, Kevin, Tomás y Sara); la de solo un sin cuenta no (0151, como antes).
+  t('base: nada falló y las llegadas con pedido se anuncian como «para tomar»', res && res.failed === 0 && res.ofrecer.length === 3, JSON.stringify(res && [res.failed, res.failMsg, res.ofrecer]));
+
+  // En caliente el jefe todavía le pone conductor a una llegada a mano.
+  const lA = () => R.lanes.find((l) => l.id === apoyo[0].id);
+  click(q(`#rv2-list .rv2-row[data-id="${lA().id}"] .when`)); await wait(10);
+  click(q(`#routes-v2 [data-act="assign"][data-id="${lA().id}"]`)); await wait(10);
+  click(q('#rv2-sheet [data-pick="d5"]')); await wait(5); click(q('#rv2-doAssign')); await wait(10);
+  t('en caliente: «Asignar» a una llegada en espera le pone conductor (Rubén) y la saca de espera', !lA().tomar && dDe(lA()) === 'd5', JSON.stringify([lA(), dDe(lA())]));
+  await T().rtSavePlan();
+  const S2 = log.saved[log.saved.length - 1];
+  const sA = S2.lanes.find((l) => l.laneId === lA().id);
+  t('…y se publica con él (no para tomar)', sA && sA.driverProfileId === 'd5' && !sA.paraTomar, JSON.stringify(sA));
+  t('sin errores de script', W0.errors.length === 0, W0.errors.join(' | '));
 }
 
 t('sin errores de script (instancia base)', base.errors.length === 0, base.errors.join(' | '));
