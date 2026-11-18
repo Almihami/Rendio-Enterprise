@@ -1338,28 +1338,7 @@
       <!-- ADMIN: Calificaciones (28-oct-2026): las estrellas de los tripulantes, aparte de Reservas (admin-calificaciones.js) -->
       <section data-panel="calificaciones" class="hidden"><div id="cal-ui" data-theme="light"></div></section>
 
-      <!-- ADMIN: Eventualidades (lo que se sale del plan mientras el traslado corre) -->
-      <section data-panel="eventualidades" class="hidden">
-        <div id="evt-ui" data-theme="light">
-          <div class="sh-phead">
-            <div>
-              <h1>Eventualidades <span class="sh-ct" id="evt-count">0</span></h1>
-              <p>Lo que reportan conductores y tripulantes <b>mientras el traslado va corriendo</b>: fallas mecánicas, trancones, emergencias a bordo.</p>
-              <details class="rd-why"><summary aria-expanded="false">¿Cómo se atiende?<svg class="icon details-chevron"><use href="#i-chev"/></svg></summary><div class="rd-why-body">Ábrela para ver el detalle —con eso queda marcada como vista— y ciérrala cuando quede resuelta. Las novedades del vehículo en el turno siguen en Inspecciones.</div></details>
-            </div>
-            <button class="set-btn ghost" id="evt-refresh"><svg class="icon"><use href="#i-refresh"/></svg>Refrescar</button>
-          </div>
-          <div class="evt-health" id="evt-health"><svg class="icon"><use href="#i-warn"/></svg><span></span></div>
-          <div class="evt-unack" id="evt-unack"><svg class="icon"><use href="#i-warn"/></svg><span></span></div>
-          <div class="evt-bar" id="evt-bar">
-            <button class="on" data-evt-f="open">Abiertas <i>0</i></button>
-            <button data-evt-f="in_progress">En curso <i>0</i></button>
-            <button data-evt-f="resolved">Resueltas <i>0</i></button>
-            <button data-evt-f="all">Todas <i>0</i></button>
-          </div>
-          <div id="evt-list"></div>
-        </div>
-      </section>
+      <!-- ADMIN: acá estuvo Eventualidades; se quitó el 17-nov-2026 (ver admin-consola.js). -->
 
       <!-- ADMIN (rediseño del auxiliar, 27-sep-2026): Coordinación, Cuentas de cobro
            y Rendio Points. Los pintan admin-coordinacion.js, admin-cobro.js y
@@ -1761,7 +1740,6 @@
   <script src="admin-privados.js"></script>
   <script src="admin-vuelos.js"></script>
   <script src="admin-operacion.js"></script>
-  <script src="admin-eventualidades.js"></script>
   <script src="admin-chat.js"></script>
   <script src="admin-coordinacion.js"></script>
   <script src="admin-cobro.js"></script>

@@ -64,7 +64,9 @@
         ] },
         { id: 'ops', name: 'Operación', icon: 'g-ops', desc: 'Monitoreo en vivo', items: [
           { id: 'oper', name: 'Operación', icon: 'm-oper', desc: 'Carros en el mapa en tiempo real y alerta de atraso antes de que ocurra.', star: true, tab: 'oper' },
-          { id: 'evt', name: 'Eventualidades', icon: 'm-insp', desc: 'Fallas mecánicas, trancones y emergencias que reportan conductores y tripulantes en plena ruta.', star: true, tab: 'eventualidades' },
+          // Acá estuvo «Eventualidades» (bandeja de incidentes). Se quitó el 17-nov-2026
+          // (Harold: «están sobrando, solo estorban»): el 97 % lo escribía y cerraba el
+          // sistema solo. La tabla `incidents` sigue: la usa el servidor de rastro.
           // Rediseño del auxiliar (27-sep-2026). `need`: la entrada solo se ve
           // cuando el módulo que la pinta ya existe (hoy es stub → no aparece).
           { id: 'coord', name: 'Coordinación', icon: 'i-chat', desc: 'Lo que los tripulantes les escriben a los jefes: un hilo por persona, con el traslado como contexto.', tab: 'coordinacion', need: 'renderCoordinacion' },
@@ -104,7 +106,7 @@
   // El "!" del aceite se mudó de Ajustes a Flota el 2026-09-11, junto con los carros:
   // una alerta tiene que alumbrar donde está el botón que la apaga. El id del badge
   // (oil-badge) NO cambia — setOilBadge lo busca por id en admin-turnos-activos.js.
-  const SIDEBAR_BADGE_IDS = { approvals: 'pending-badge', inspections: 'inspections-badge', shifts: 'shifts-badge', flota: 'oil-badge', eventualidades: 'events-badge' };
+  const SIDEBAR_BADGE_IDS = { approvals: 'pending-badge', inspections: 'inspections-badge', shifts: 'shifts-badge', flota: 'oil-badge', coordinacion: 'coord-badge' };
 
   // ¿La entrada se muestra? Las que traen `need` dependen de un módulo que
   // exporta esa función por window (rediseño del auxiliar): sin él, no se
@@ -164,7 +166,8 @@
     try { refreshInspectionsBadge(); } catch (e) {}
     try { refreshShiftsBadge(); } catch (e) {}
     try { refreshOilBadge(); } catch (e) {}
-    try { refreshEventsBadge(); } catch (e) {}
+    // 17-nov-2026: lo que los tripulantes escribieron y ningún jefe ha leído.
+    try { const rc = window.renderCoordinacion; if (rc && typeof rc.badge === 'function') rc.badge(); } catch (e) {}
   }
 
   // Actualiza el breadcrumb (Espacio / Módulo) de la barra superior.

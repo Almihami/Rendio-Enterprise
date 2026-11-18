@@ -100,7 +100,7 @@ async function boot(o = {}) {
     listFuelReceiptsForShifts: async () => [],
     getSettings: async () => ({ auto_close_hours: 23 }),
   };
-  for (const f of ['scheduler.js', 'admin-balance.js', 'admin-revision.js', 'admin-turnos-activos.js', 'admin-eventualidades.js']) {
+  for (const f of ['scheduler.js', 'admin-balance.js', 'admin-revision.js', 'admin-turnos-activos.js']) {
     try { w.eval(read(f)); } catch (e) { errors.push(f + ': ' + e.message); }
   }
   return { w, errors, toasts, pedidos, q: (s) => w.document.querySelector(s) };
@@ -306,14 +306,13 @@ console.log('\n── Revisión del corte ──');
   t('ni un decimal de horas en la Revisión', !DECIMAL_H.test(todo), todo.match(DECIMAL_H));
 }
 
-console.log('\n── Turnos activos y Eventualidades ──');
+console.log('\n── Turnos activos ──');
 {
   const { w } = B;
   const hace = (min) => new Date(Date.now() - min * 60000).toISOString();
   t('Turnos activos: 12,5 h → «12 h 30 min»', w.fmtShiftAgo({ start_at: hace(750) }) === '12 h 30 min', w.fmtShiftAgo({ start_at: hace(750) }));
   t('Turnos activos: 30 min → «30 min» · 3 h → «3 h» · 50 h → «2 días»', w.fmtShiftAgo({ start_at: hace(30) }) === '30 min' && w.fmtShiftAgo({ start_at: hace(180) }) === '3 h' && w.fmtShiftAgo({ start_at: hace(3000) }) === '2 días');
-  t('Eventualidades: «hace 2 h 30 min» (no «hace 2.5 h»)', w.evtAgo(hace(150)) === 'hace 2 h 30 min', w.evtAgo(hace(150)));
-  t('Eventualidades: «hace 12 h» · «hace 3 días»', w.evtAgo(hace(720)) === 'hace 12 h' && w.evtAgo(hace(72 * 60)) === 'hace 3 días', w.evtAgo(hace(720)));
+  // (Acá se probaba evtAgo de Eventualidades; la pantalla se quitó el 17-nov-2026.)
 }
 
 if (REALES) {
