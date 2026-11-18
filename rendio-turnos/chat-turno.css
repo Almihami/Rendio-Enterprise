@@ -75,6 +75,16 @@
 .ct-send svg{margin-left:-2px}
 .ct-send:disabled{opacity:.45;cursor:default}
 
+/* 18-nov-2026: mientras el conductor escribe, el chat toma la pantalla. La barra
+   «V5 en curso» de Mi día tapaba el campo y el botón de enviar: se esconde junto
+   con el encabezado del día, y vuelven al soltar el campo (chat-turno.js › medir).
+   En un teléfono chico con el teclado arriba quedan solo el hilo y el campo. */
+#driver-ruta-ui.rx-phone .rt-scr.ct-escribiendo > .rt-nowbar,
+#driver-ruta-ui.rx-phone .rt-scr.ct-escribiendo .rt-title,
+#driver-ruta-ui.rx-phone .rt-scr.ct-escribiendo .rt-dayprog{display:none}
+.ct--drv.ct-apretado .ct-top,
+.ct--drv.ct-apretado .ct-qr{display:none}
+
 /* Globo de «sin leer» en las pestañas (Mi día y Operación) */
 .ct-n{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:999px;background:#F26522;color:#fff;font-size:11px;font-weight:800;font-style:normal;line-height:1;vertical-align:1px}
 .ct-n:empty{display:none}
