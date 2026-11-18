@@ -118,6 +118,8 @@
   <link rel="stylesheet" href="rt-conductor-app.css" />
   <!-- Admin del rediseño: Coordinación, Cuentas de cobro y Rendio Points -->
   <link rel="stylesheet" href="admin-coordinacion.css" />
+  <!-- 0173: el chat del turno (conductor en Mi día, jefe en Operación) -->
+  <link rel="stylesheet" href="chat-turno.css" />
   <link rel="stylesheet" href="admin-cobro.css" />
   <link rel="stylesheet" href="admin-calificaciones.css" />
   <link rel="stylesheet" href="admin-puntos.css" />
@@ -378,6 +380,9 @@
 
           <!-- 0163: «Tienes el carro de apoyo» (driver-apoyo-turno.js), solo si lo tiene -->
           <div id="driver-home-apoyo"></div>
+
+          <!-- 0173: «Chat del turno» (chat-turno.js), solo si está en turno -->
+          <div id="driver-home-chat"></div>
 
           <!-- Tu día: la vuelta asignada, si hay -->
           <div id="driver-home-ruta"></div>
@@ -1519,6 +1524,8 @@
             <button class="on" data-op-tab="cars" role="tab" aria-selected="true">Carros<span class="n" id="oper-tabN"></span></button>
             <button data-op-tab="map" role="tab" aria-selected="false">Mapa</button>
             <button data-op-tab="feed" role="tab" aria-selected="false">Actividad</button>
+            <!-- 0173: el chat del turno con los conductores (solo si la base lo tiene) -->
+            <button data-op-tab="chat" role="tab" aria-selected="false">Chat<i class="ct-n" id="oper-chatN"></i></button>
           </div>
           <div class="op-stage">
             <!-- IZQUIERDA: lista de carros -->
@@ -1559,8 +1566,15 @@
 
             <!-- DERECHA: feed de actividad -->
             <aside class="op-feed">
-              <div class="op-feed-h"><svg class="icon"><use href="#i-activity"/></svg><b>Actividad en vivo</b></div>
+              <div class="op-feed-h"><svg class="icon"><use href="#i-activity"/></svg><b>Actividad en vivo</b>
+                <!-- 0173: en el computador la columna alterna entre la actividad y el chat del turno -->
+                <div class="op-feed-seg" role="tablist" aria-label="Actividad o chat">
+                  <button type="button" class="on" data-op-feed="feed" role="tab" aria-selected="true">Actividad</button>
+                  <button type="button" data-op-feed="chat" role="tab" aria-selected="false">Chat<i class="ct-n" id="oper-chatN2"></i></button>
+                </div>
+              </div>
               <div class="op-feed-l" id="oper-feed"></div>
+              <div class="op-chat" id="oper-chat"></div>
             </aside>
           </div>
         </div>
@@ -1693,6 +1707,9 @@
   <script src="api-aux.js"></script>
   <script src="api-cobro.js"></script>
   <script src="api-puntos.js"></script>
+  <!-- 0173: el chat del turno (jefes ↔ conductores en turno) -->
+  <script src="api-chat-turno.js"></script>
+  <script src="chat-turno.js"></script>
   <!-- Estado de vuelos (0099): extiende window.Api (después de api.js) + el chip -->
   <script src="api-vuelos.js"></script>
   <script src="vuelos-ui.js"></script>

@@ -53,6 +53,12 @@
     if (window.DriverEntrega) window.DriverEntrega.render().catch(() => {});
     // 0163: si tiene el carro de apoyo, se lo dice (y arranca su ubicación).
     if (window.RendioApoyo) window.RendioApoyo.render().catch(() => {});
+    // 0173: «Chat del turno» (solo si está en turno): el último mensaje y los sin leer.
+    if (window.ChatTurno && ChatTurno.filaInicio) {
+      ChatTurno.filaInicio(document.getElementById('driver-home-chat'), () => { if (window.DriverRutas) DriverRutas.open(state.profile, { vista: 'chat' }); });
+    }
+    // El aviso del chat (#/chat-turno) abre Mi día en el chat, tenga o no vueltas hoy.
+    if (/^#\/chat-turno/i.test(String(location.hash || '')) && window.DriverRutas && DriverRutas.deepLink) DriverRutas.deepLink(state.profile);
     await renderDriverHomeRuta();
   }
 

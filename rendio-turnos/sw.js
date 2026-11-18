@@ -6,7 +6,7 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v269';
+const CACHE_VERSION = 'rendio-turnos-v270';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
@@ -32,6 +32,9 @@ const APP_SHELL = [
   // lista falta en el servidor, cache.addAll falla y el SW no se instala: por
   // eso P0 dejó todos los archivos creados (vacíos) antes de registrarlos.
   '/api-aux.js',
+  // Chat del turno (0173): jefes ↔ conductores en turno.
+  '/api-chat-turno.js',
+  '/chat-turno.js',
   '/api-cobro.js',
   '/api-puntos.js',
   // Estado de vuelos (0099).
@@ -133,6 +136,7 @@ const APP_SHELL = [
   '/rt-conductor-app.css',
   '/login-rx.css',
   '/admin-coordinacion.css',
+  '/chat-turno.css',
   '/admin-cobro.css',
   '/admin-calificaciones.css',
   '/admin-puntos.css',

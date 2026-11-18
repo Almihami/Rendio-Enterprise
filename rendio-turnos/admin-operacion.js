@@ -67,7 +67,47 @@
     syncOperDelay();
     bindOperOnce();
     startOperTimers();
+    opChatInit();   // 0173: el chat del turno
     loadRealOps(); // única fuente: rutas publicadas + GPS/anclas reales
+  }
+
+  // ---------------------------------------------------------------------------
+  // 0173 · CHAT DEL TURNO (chat-turno.js). En el teléfono es una pestaña más; en
+  // el computador la columna derecha alterna entre la actividad y el chat. Sin la
+  // migración en la base, #oper-ui no lleva data-op-chat="on" y todo queda igual.
+  // ---------------------------------------------------------------------------
+  function opChatGlobo() {
+    const root = document.getElementById('oper-ui');
+    if (!root || !window.ChatTurno) return;
+    const v = ChatTurno.resumen();
+    root.dataset.opChat = v.falta === false ? 'on' : 'off';
+    const n = root.dataset.opFeed === 'chat' ? 0 : (v.n || 0), t = n ? (n > 9 ? '9+' : String(n)) : '';
+    ['oper-chatN', 'oper-chatN2'].forEach(id => { const e = document.getElementById(id); if (e && e.textContent !== t) e.textContent = t; });
+    // Llegó por el aviso de un mensaje (#/operacion?chatturno=1): se abre en cuanto se sabe que existe.
+    if (opState.abrirChat && v.falta === false) { opState.abrirChat = false; opVista('chat'); }
+  }
+  function opChatInit() {
+    if (!window.ChatTurno) return;
+    if (!opState.chatOye) opState.chatOye = ChatTurno.alCambiar(opChatGlobo);
+    if (ChatTurno.tomarPedido()) opState.abrirChat = true;
+    opChatGlobo();
+    ChatTurno.refrescarResumen();
+  }
+  // Qué muestra la columna de la actividad: 'feed' (lo de siempre) o 'chat'.
+  function opFeed(m) {
+    const root = document.getElementById('oper-ui');
+    if (!root) return;
+    const chat = m === 'chat' && root.dataset.opChat === 'on' && !!window.ChatTurno;
+    root.dataset.opFeed = chat ? 'chat' : 'feed';
+    root.querySelectorAll('button[data-op-feed]').forEach(b => {
+      const on = (b.dataset.opFeed === 'chat') === chat;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    const box = document.getElementById('oper-chat');
+    if (chat) { if (box && !(ChatTurno.montado() && box.firstChild)) ChatTurno.montar(box, { rol: 'admin' }); }
+    else if (box && box.firstChild) { if (window.ChatTurno) ChatTurno.desmontar(); box.innerHTML = ''; }
+    opChatGlobo();
   }
 
   // ---------------------------------------------------------------------------
@@ -502,6 +542,10 @@
     const root = document.getElementById('oper-ui');
     if (!root) return;
     root.dataset.opVista = v;
+    // 0173: «Chat» es la columna de la actividad mostrando el chat del turno.
+    // En el teléfono, salir de la pestaña «Chat» lo cierra (no se marca leído lo que no se ve).
+    let tel = false; try { tel = window.matchMedia('(max-width: 768px)').matches; } catch (e) { tel = false; }
+    if (v === 'chat') opFeed('chat'); else if (v === 'feed' || (tel && root.dataset.opFeed === 'chat')) opFeed('feed');
     root.querySelectorAll('[data-op-tab]').forEach(b => {
       const on = b.dataset.opTab === v;
       b.classList.toggle('on', on);
@@ -691,6 +735,8 @@
     root.addEventListener('click', (e) => {
       const tab = e.target.closest('[data-op-tab]');
       if (tab) { opVista(tab.dataset.opTab); return; }
+      const fd = e.target.closest('button[data-op-feed]');   // 0173: Actividad | Chat (computador)
+      if (fd) { opFeed(fd.dataset.opFeed); return; }
       const call = e.target.closest('[data-op-call]');
       if (call) { opCall(call.dataset.opCall); return; }
       const verMapa = e.target.closest('[data-op-mapa]');
