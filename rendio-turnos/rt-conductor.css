@@ -930,3 +930,9 @@
 #driver-ruta-ui.rx-phone .rt-legend i.car{background:#18181B;box-shadow:inset 0 0 0 3px var(--r-accent)}
 #driver-ruta-ui.rx-phone .rt-chip-t{overflow:hidden;text-overflow:ellipsis}
 #driver-ruta-ui.rx-phone .rt-eb>span:not(.dist){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* 17-nov-2026 (Harold): una llegada con gente de horas distintas: el rango arriba y,
+   debajo, una persona por renglón con su hora. Con una sola hora, como antes. */
+#driver-ruta-ui.rx-phone .rt-hero-time.varias{flex-direction:column;align-items:flex-start;gap:10px}
+#driver-ruta-ui.rx-phone .rt-hero-time.varias>b{font-size:46px;letter-spacing:-1.8px}
+#driver-ruta-ui.rx-phone .rt-hero-time.varias>span{padding-bottom:0}
+#driver-ruta-ui.rx-phone .rt-hero-time.varias em{font-style:normal;font-weight:700;color:var(--rx-on);font-variant-numeric:tabular-nums}
