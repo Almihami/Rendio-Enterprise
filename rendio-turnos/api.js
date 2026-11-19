@@ -4691,6 +4691,18 @@
     const pReglas = yaVa(() => getRouteFinishRules());   // 0137
     const madDe = (c) => sel(c, (x) => x.eq('pool', true).eq('manual_day', day).gt('planned_start_at', d1));
     const pMad = yaVa(() => madDe(C0134));
+    // 18-nov-2026 · PASADA LA MEDIANOCHE. La llegada que aterriza a las 23:20 y cuya
+    // vuelta sale a las 00:10 (el vuelo se atrasó, o un jefe le corrió la hora) no se
+    // veía en NINGÚN día: el plan se guarda por fecha de calendario, así que el tablero
+    // de su día no la traía (y pintaba a su gente «Sin vuelta · No tiene carro») y el
+    // del día siguiente la traía sin su gente (el pedido es de ayer). Sin verla, los
+    // jefes pegaban otra vuelta encima y la persona quedaba en dos o tres. Aquí se piden
+    // las vueltas publicadas de las 6 h siguientes; abajo quedan SOLO las que llevan a
+    // alguien cuyo pedido es de este día, y salen aparte (`sigue`): Asignación las
+    // muestra como filas que se manejan por su id, no como vueltas del tablero.
+    const hastaSig = new Date(Date.parse(d1) + 1000 + 6 * 3600000).toISOString();
+    const pSig = (opts && opts.sinSigue) ? null
+      : yaVa(() => sel(C0151, (x) => x.gt('planned_start_at', d1).lt('planned_start_at', hastaSig).is('manual_day', null)));
     let { data, error } = await sel(C0151);
     let cols = C0151;
     if (error && (error.code === '42703' || /para_tomar/.test(error.message || ''))) { ({ data, error } = await sel(C0134)); cols = C0134; }
@@ -4706,31 +4718,45 @@
         if (!mad.error && mad.data && mad.data.length) data = (data || []).concat(mad.data.filter((r) => !(data || []).some((x) => x.id === r.id)));
       } catch (_) { /* sin la madrugada: el resto del día igual se ve */ }
     }
+    // Pasada la medianoche (ver arriba): solo con la base al día, solo publicadas, y
+    // solo las que llevan a alguien de ESTE día. Si falla, el día se ve como antes.
+    let sigRaws = [];
+    if (!error && pSig && cols === C0151) {
+      try {
+        const sig = await pSig;
+        const deEsteDia = (ra) => (ra.route_stops || []).some((s) => s.reservations && !s.reservations.cancelled_at
+          && s.reservations.required_arrival_at && _bogDay(s.reservations.required_arrival_at) === day);
+        if (sig && !sig.error && sig.data) {
+          sigRaws = sig.data.filter((ra) => ra.status !== 'draft' && deEsteDia(ra) && !(data || []).some((x) => x.id === ra.id));
+        }
+      } catch (_) { sigRaws = []; }
+    }
     if (error && (error.code === '42703' || /pool|deadline_at|manual_note|manual_day/.test(error.message || ''))) ({ data, error } = await sel('plan_car, '));
     if (error && (error.code === '42703' || /plan_car/.test(error.message || ''))) ({ data, error } = await sel(''));
     if (error) throw error;
 
     const raws = data || [];
+    const todosRaws = raws.concat(sigRaws);
     // Cómo terminó cada vuelta (ver _opResultado): la base nunca la cierra, así
     // que Asignación la mostraba «en curso» después de entregar al último.
     // Última posición conocida de cada conductor: si la vuelta ya arrancó, el
     // punto de partida real es donde está el carro, no de donde salió.
     // 0133: los sin cuenta (paradas sin reserva) se llaman por su nombre.
     // Las dos dependen de las vueltas, no una de otra: van juntas.
-    const drvIds = [...new Set(raws.map(r => r.driver_profile_id).filter(Boolean))];
+    const drvIds = [...new Set(todosRaws.map(r => r.driver_profile_id).filter(Boolean))];
     const [locsRes, guests] = await Promise.all([
       drvIds.length ? sb.from('driver_locations')
         .select('driver_profile_id, latitude, longitude, recorded_at')
         .in('driver_profile_id', drvIds)
         .order('recorded_at', { ascending: false }).limit(400) : null,
-      _guestStops(raws.filter(ra => (ra.route_stops || []).some(s => !s.reservation_id)).map(ra => ra.id)),
+      _guestStops(todosRaws.filter(ra => (ra.route_stops || []).some(s => !s.reservation_id)).map(ra => ra.id)),
     ]);
     const posOf = {};
     ((locsRes && locsRes.data) || []).forEach(l => { if (!posOf[l.driver_profile_id]) posOf[l.driver_profile_id] = l; });
     const nov = await pNov;
     const reglas = await pReglas;
     const nowMs = Date.now();
-    const vueltas = raws.map(ra => {
+    const aVuelta = (ra) => {
       const stops = (ra.route_stops || []).slice().sort((a, b) => a.stop_order - b.stop_order);
       // "Atendida" = ya no se puede mover. Es el mismo candado POR PARADA de
       // saveRoutePlan: lo pendiente de una ruta en curso sí se puede reacomodar.
@@ -4790,9 +4816,12 @@
         paxPendiente: pend.reduce((n, s) => n + s.pax, 0),
         pos: pos ? { lat: pos.latitude, lng: pos.longitude, at: pos.recorded_at } : null,
       };
-    });
+    };
+    const vueltas = raws.map(aVuelta);
+    // 18-nov-2026: las de después de medianoche que llevan gente de este día (ver arriba).
+    const sigue = sigRaws.map(aVuelta);
 
-    return { day, vueltas, publicado: vueltas.some(v => v.driverProfileId || v.delegated) };
+    return { day, vueltas, sigue, publicado: vueltas.some(v => v.driverProfileId || v.delegated) };
   }
 
   // Los datos de UNA reserva, para preguntar dónde cabe. Se pide aparte porque

@@ -1138,7 +1138,8 @@
   }
   // 0134: las vueltas para tomar que armó el sistema ese día (cambios de vuelo).
   function solasHTML() {
-    const vs = rt.rv2Solas || [];
+    // 18-nov: solo las que armó el sistema (las de pasada la medianoche van en la lista).
+    const vs = (rt.rv2Solas || []).filter((x) => !(x.v && x.v.fuera) || (x.v && x.v.autoCreated));
     if (!vs.length) return '';
     return `<div class="rv2-madsig rv2-solas" data-k="solas"><div><b>↻ ${plural(vs.length, 'vuelta para tomar que armó el sistema', 'vueltas para tomar que armó el sistema')}</b>` +
       `<small>${vs.map((v) => `${esc(v.hora)} ${esc(v.tipo)} · ${esc(v.quienes || '—')} · ${v.conductor ? 'la tomó ' + esc(v.conductor) : 'sin tomar'}`).join(' · ')}. ` +
@@ -1243,8 +1244,12 @@
     const estado = p.fija === 'completed' ? '<small class="done">Terminada</small>'
       : fin === 'sinmarcar' ? '<small>Pasó su hora sin marcar</small>'
       : `<small>${plural(p.g.length, 'persona', 'personas')}</small>`;
+    // 18-nov: la que sale pasada la medianoche (o trae gente de ayer) también va como
+    // fila propia; si era del tablero y no tiene conductor ni está para tomar, se dice así.
+    const sinNadie = !!v.fuera && !v.driverProfileId && !v.pool;
     const quien = v.driverProfileId
       ? `<span class="drv">${hl(v.conductor || 'Conductor')}</span>`
+      : sinNadie ? `<span class="drv tomar" title="Nadie la tiene y los conductores no la ven para tomar. Asígnale conductor aquí.">${v.delegated ? 'Delegada' : 'Sin conductor'}</span>`
       : (enDespacho(p)
         ? '<span class="drv tomar" title="El sistema se la da al carro que esté o vaya a estar en JMC cuando el vuelo confirme la hora. Si nadie alcanza, te avisa.">En espera · la reparte el sistema</span>'
         : '<span class="drv tomar" title="La ven los conductores del turno en «Vueltas para tomar»">Para tomar · nadie la ha tomado</span>');
@@ -1261,13 +1266,22 @@
     // algún cambio»): los mismos botones de una vuelta pegada (conductor, hora, delegar;
     // admin-ruta-julian.js · botonesPeg). Aplican al momento, sin Publicar.
     const RJ = window.RendioRutaJulian;
-    const btns = p.fija !== 'completed' && fin !== 'sinmarcar' && rt.source === 'live' && RJ && typeof RJ.botones === 'function' ? RJ.botones(v) : '';
+    let btns = p.fija !== 'completed' && fin !== 'sinmarcar' && rt.source === 'live' && RJ && typeof RJ.botones === 'function' ? RJ.botones(v) : '';
+    // «Cambiar hora» (admin_manual_route_set_times) solo acepta vueltas para tomar o
+    // pegadas: en una del tablero con conductor fijo el botón fallaría, así que no sale.
+    if (btns && v.fuera && !v.pool) btns = btns.replace(/<button\b[^>]*\bdata-rj-hora=[^>]*>[^<]*<\/button>/, '');
     const L = vistaFila(p);   // 17-nov: una llegada se lee por la hora del vuelo
-    const aria = `Vuelta que armó el sistema, ${TYPE[p.type]}${L ? ', ' + horaLeida(p) : ' de las ' + hhmm(p.pickup)}, ${p.g.map((g) => g.name).join(', ')}`;
+    // 18-nov: por qué esta vuelta va como fila propia (ver rearmarPublicado · pasadas).
+    const deQue = v.fuera === 'pasada' && !v.autoCreated
+      ? ['Sale después de medianoche', 'Su gente aterriza antes de medianoche y el carro sale después. Se ve aquí, en el día de ellos, para que no parezcan sin carro. Conductor, hora y pasar a alguien aplican al momento; Publicar el tablero no la toca.', 'Vuelta que sale después de medianoche']
+      : v.fuera === 'ajena'
+        ? ['Gente de otro día', 'Lleva gente cuyo pedido es de otro día (por ejemplo, aterrizó antes de medianoche). Conductor y pasar a alguien aplican al momento; Publicar el tablero no la toca.', 'Vuelta con gente de otro día']
+        : ['La armó el sistema', 'Alguien pidió tarde o cambió de vuelo y no cabía en otra vuelta: el sistema le armó esta. Puedes ponerle conductor, cambiarle la hora o delegarla aquí mismo; Publicar el tablero no la toca.', 'Vuelta que armó el sistema'];
+    const aria = `${deQue[2]}, ${TYPE[p.type]}${L ? ', ' + horaLeida(p) : ' de las ' + hhmm(p.pickup)}, ${p.g.map((g) => g.name).join(', ')}`;
     return `<div class="rv2-row rv2-row--sola" data-sola="${esc(v.id)}" data-s="${v.driverProfileId ? 'ok' : 'nodriver'}"${fin ? ` data-fin="${fin}"` : ''} aria-label="${esc(aria)}">` +
       `<div class="when">${L ? vistaHTML(L) : `<b class="mono">${hhmm(p.pickup)}</b><small>${sub}</small>`}${estado}</div>` +
       `<div class="main"><div class="l1"><span class="rv2-pill ${p.type}">${TYPE[p.type]}</span>` +
-      '<span class="tag rj-tag" title="Alguien pidió tarde o cambió de vuelo y no cabía en otra vuelta: el sistema le armó esta. Puedes ponerle conductor, cambiarle la hora o delegarla aquí mismo; Publicar el tablero no la toca.">La armó el sistema</span>' +
+      `<span class="tag rj-tag" title="${esc(deQue[1])}">${esc(deQue[0])}</span>` +
       `${quien}${btns ? btnCancelar((v.pendientes || []).map((g) => ({ rid: g.rid, nm: g.name || 'Tripulante' }))) : ''}</div><div class="people">${chips}</div>${btns ? `<div class="rj-acts">${btns}</div>` : ''}</div></div>`;
   }
   // ── 0167 · Pasar a alguien a OTRA vuelta ya publicada, al momento ───────────
@@ -3182,14 +3196,26 @@
     // cabía en otra) NO pasa el día a «ruta de Julián»: se cuenta aparte y sus
     // personas ya van en una vuelta, así que el tablero no las vuelve a rutear.
     const solas = todas.filter((v) => v.pool && v.autoCreated && !v.paraTomar);
+    // 18-nov-2026 · PASADA LA MEDIANOCHE (María Camila, AV9242 de las 23:20, «Sin vuelta ·
+    // No tiene carro» teniendo vuelta a las 00:10). El plan se guarda por fecha de
+    // calendario: la vuelta que lleva gente de ESTE día pero sale después de medianoche
+    // no llegaba aquí, su gente caía en «sin vuelta» y los jefes le pegaban otra encima.
+    // Api.getPublishedPlan ahora las trae aparte (`sigue`). No entran al tablero (una fila
+    // del tablero se publica por hora del día y la mandaría 24 h atrás): van como fila
+    // propia, manejada por su id, igual que las que arma el sistema. `deHoy` = la gente
+    // del día ANTES de sacar a nadie, para saber de quién es cada vuelta.
+    const deHoy = new Set(Object.keys(rt.aux || {}).map((k) => rt.aux[k] && rt.aux[k].reservationId).filter(Boolean));
+    const pasadas = ((plan && plan.sigue) || []).filter((v) => v && v.id && !todas.some((x) => x.id === v.id));
+    pasadas.forEach((v) => { v.fuera = 'pasada'; });
     const hmSola = (iso) => { try { return new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); } catch (_) { return ''; } };
-    rt.rv2Solas = solas.map((v) => ({
+    const aSola = (v) => ({
       hora: hmSola(v.type === 'lle' ? v.startAt : ((v.pendientes || [])[0] || {}).etaAt || v.startAt),
       tipo: v.type === 'lle' ? 'Llegada' : 'Salida',
       quienes: [...(v.pendientes || []), ...(v.atendidas || [])].map((x) => String(x.name || '').split(' ')[0]).filter(Boolean).join(', '),
       conductor: v.driverProfileId ? v.conductor : null,
       v,
-    }));
+    });
+    rt.rv2Solas = solas.concat(pasadas).map(aSola);
     // 0151: la «para tomar» del tablero ES del tablero (pool solo para que la tomen).
     const pegadas = todas.filter((v) => v.pool && !v.autoCreated && !v.paraTomar && deEste(v));
     const vueltas = todas.filter((v) => !v.pool || v.paraTomar);
@@ -3197,11 +3223,15 @@
     // La madrugada que Julián pegó con el día ANTERIOR cae en esta ventana: esas
     // personas ya van en una vuelta suya, así que el tablero no las vuelve a rutear.
     const ajenas = new Set(todas.filter((v) => v.pool && !v.paraTomar && (v.autoCreated || !deEste(v))).flatMap(genteDe));
+    // 18-nov: la gente de una vuelta que sale pasada la medianoche YA va en una vuelta:
+    // tampoco se rutea aquí (no sale «sin vuelta» ni la toma Optimizar ni Ubicar). No
+    // entra a `ajenas`: la hoja de pegar la sigue reconociendo por su cuenta, como antes.
+    const dePasadas = new Set(pasadas.flatMap(genteDe));
     // 16-nov: la gente de esas vueltas sale del tablero, pero su fila de la lista
     // (solasLista) necesita su conjunto y su vuelo: se guardan antes de sacarla.
-    { const deSolas = new Set(solas.flatMap(genteDe));
+    { const deSolas = new Set(solas.concat(pasadas).flatMap(genteDe));
       Object.keys(rt.aux).forEach((k) => { const a = rt.aux[k]; if (a && deSolas.has(a.reservationId)) rt.rv2AuxSolas[a.reservationId] = a; }); }
-    if (ajenas.size) Object.keys(rt.aux).forEach((k) => { if (ajenas.has(rt.aux[k].reservationId)) delete rt.aux[k]; });
+    if (ajenas.size || dePasadas.size) Object.keys(rt.aux).forEach((k) => { const r = rt.aux[k].reservationId; if (ajenas.has(r) || dePasadas.has(r)) delete rt.aux[k]; });
     rt.rv2Ajenas = [...ajenas];   // la hoja de la ruta de Julián no las vuelve a ofrecer
     // 28-oct: …salvo las de las vueltas que armó el sistema: si el jefe las pega,
     // es su pedido de verdad (no un «sin cuenta» de más) y al publicar salen de la
@@ -3232,6 +3262,15 @@
     const libreParaPlaca = () => rt.cars.find((c) => !Object.values(porPlaca).includes(c.id)
       && !vueltas.some((x) => x.planCar === c.id));
     vueltas.slice().sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt)).forEach((v) => {
+      // 18-nov-2026: el otro lado de «pasada la medianoche». La vuelta de las 00:10 de
+      // HOY que lleva gente de AYER (aterrizó 23:20) no tiene a nadie del día: abajo
+      // quedaba sin gente y no se pintaba (o salía solo con el «sin cuenta»). Si lleva
+      // pedidos y NINGUNO es de este día, va como fila propia, por su id, con todos.
+      // La que repite a alguien del día (ya puesto en otra vuelta) sigue como antes.
+      { const conPedido = [...(v.atendidas || []), ...(v.pendientes || [])].filter((s) => s.rid);
+        if (v.status !== 'draft' && conPedido.length && !conPedido.some((s) => deHoy.has(s.rid))) {
+          v.fuera = 'ajena'; rt.rv2Solas.push(aSola(v)); return;
+        } }
       let car = v.planCar ? rt.cars.find((c) => c.id === v.planCar) : null;
       if (!car && !v.planCar && v.vehicleId) car = rt.cars.find((c) => c.vehicleId && c.vehicleId === v.vehicleId) || null;
       if (!car && !v.planCar && v.vehicleId) {
