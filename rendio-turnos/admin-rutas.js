@@ -2039,6 +2039,23 @@
     return `Cuando aterrices ${dia} te esperamos en JMC. Ábrelo para seguirlo en vivo.`;
   }
 
+  // 0179: el texto del aviso a quien va en una vuelta SIN conductor (día publicado). El día
+  // sale de la hora misma (la madrugada de la vuelta de las 1:40 es «pasado mañana» si el
+  // día del plan es mañana). Sin conductor no hay nada que «seguir en vivo».
+  function rtTextoHoraBorrador(iso, cambio) {
+    const ms = Date.parse(iso || '');
+    if (!isFinite(ms)) return null;
+    const TZ = 'America/Bogota';
+    const h = new Date(ms).toLocaleTimeString('es-CO', { timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: false });
+    if (cambio) return `Ahora te recogemos a las ${h}.`;
+    const d = new Date(ms).toLocaleDateString('en-CA', { timeZone: TZ });
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+    const manana = new Date(Date.parse(hoy + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+    const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+    const dia = d === hoy ? 'hoy' : d === manana ? 'mañana' : `el ${DIAS[new Date(d + 'T12:00:00Z').getUTCDay()]} ${Number(d.slice(8, 10))}`;
+    return `Te recogemos ${dia} a las ${h}. Te avisamos quién te recoge.`;
+  }
+
   // Persiste el plan del día: cada vuelta → route_assignment + route_stops.
   // Las vueltas con conductor asignado quedan visibles para ese conductor.
   // opts.toast: igual que en rtOptimize. Devuelve { ok, saved, … } para que
@@ -2250,8 +2267,24 @@
           if (ids.length) await Api.sendPush({ profileIds: ids,
             title: g.lle ? 'Cambió la hora de tu regreso 🕒' : 'Cambió tu hora de recogida 🕒', body: g.body, url: '/#/viajes' });
         }
+        // 0179 (24-nov, Harold: «tenga o no conductor, debería mostrar la hora»): la salida
+        // en una vuelta SIN conductor ya ve su hora en la app (día publicado): se le avisa.
+        // Un push por texto (los de la misma hora van juntos).
+        const porBorr = {};
+        (r.horasBorrador || []).forEach(n => {
+          const b = rtTextoHoraBorrador(n.hora, n.cambio);
+          if (!b) return;
+          const k = (n.cambio ? 'c' : 'n') + '|' + b;
+          (porBorr[k] = porBorr[k] || { cambio: n.cambio, body: b, rids: [] }).rids.push(n.reservationId);
+        });
+        for (const g of Object.values(porBorr)) {
+          if (!Api.auxiliarUserIdsForReservations || !Api.sendPush) break;
+          const ids = await Api.auxiliarUserIdsForReservations(g.rids);
+          if (ids.length) await Api.sendPush({ profileIds: ids,
+            title: g.cambio ? 'Cambió tu hora de recogida 🕒' : 'Tu hora de recogida 🕒', body: g.body, url: '/#/viajes' });
+        }
         // …y al conductor de esas vueltas, una vez.
-        const condHora = [...new Set((r.notify || []).filter(n => n.hora && n.conductorHora).map(n => n.conductorHora))];
+        const condHora =[...new Set((r.notify || []).filter(n => n.hora && n.conductorHora).map(n => n.conductorHora))];
         if (condHora.length && Api.sendPush) await Api.sendPush({ profileIds: condHora,
           title: 'Cambió la hora de una vuelta 🕒', body: 'Coordinación cambió la hora de una de tus vueltas. Revísala en Ruta.', url: '/#/ruta' });
       } catch (_) {}

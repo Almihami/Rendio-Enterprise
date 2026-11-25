@@ -3587,6 +3587,9 @@
     // 27-oct: la hora que ya tenía cada tripulante al que se le había avisado (con
     // conductor o delegada): si al publicar cambia, se le avisa («Cambió tu hora»).
     const prevHora = {};
+    // 0179 (24-nov): la hora que ya tenía en una SALIDA SIN CONDUCTOR (borrador). Con el
+    // día publicado el tripulante la ve en la app: si no cambia, no se le vuelve a avisar.
+    const prevHoraBorr = {};
     // 0151: las «para tomar» del tablero: quién la tomó (se conserva al republicar) y
     // quién ya estaba en una (no se le vuelve a anunciar a los conductores).
     let conParaTomar = false;
@@ -3636,6 +3639,7 @@
           if (!s.reservation_id) { if (arrancada || ra.status === 'completed' || (ra.pool && !ra.para_tomar)) sinCuentaQueda.add(s.id); return; }
           prev[s.reservation_id] = pid;
           if (pid || ra.delegated_at) prevHora[s.reservation_id] = ra.direction === 'airport_to_home' ? ra.planned_start_at : s.estimated_arrival_at;
+          else if (ra.status === 'draft' && ra.direction === 'home_to_airport' && !ra.auto_created) prevHoraBorr[s.reservation_id] = s.estimated_arrival_at;
           // 0134: va en una vuelta para tomar (la de Julián o una que armó el sistema
           // al cambiar de vuelo): el tablero no la vuelve a poner en otra.
           // 28-oct: la que armó el sistema y nadie tomó cede (enSola); la que ya tomó
@@ -3783,6 +3787,19 @@
     // las «para tomar».
     let orgTomar = (typeof state !== 'undefined' && state.profile) ? state.profile.organization_id : null;
     if (!orgTomar) { try { orgTomar = (await getCurrentProfile())?.organization_id || null; } catch (_) { orgTomar = null; } }
+    // 0179 (24-nov, Harold: «tenga o no conductor, debería mostrar la hora»): ¿la ruta de
+    // este día ya está publicada? (la marca de 0178). Con el día publicado, la salida en una
+    // vuelta SIN conductor ve su hora en la app, así que también se le avisa. null = no se
+    // pudo saber (base sin 0178, sin sesión de jefe): entonces no se avisa.
+    const diaPublicado = async () => {
+      if (!orgTomar) return null;
+      try {
+        const { data, error } = await sb.from('route_published_days').select('id').eq('organization_id', orgTomar).eq('day', day).limit(1);
+        return error ? null : !!(data && data.length);
+      } catch (_) { return null; }
+    };
+    const pubAntes = await diaPublicado();
+    const horaBorr = [];   // 0179: salidas que quedan en una vuelta sin conductor, con su hora
     // 28-oct: la fila nueva de cada vuelta del tablero (laneId → route_assignments.id).
     // Publicar borra y vuelve a crear las vueltas que no han arrancado: sin esto el
     // tablero se quedaba con el id viejo y «Guardar y publicar» de UNA vuelta decía
@@ -3901,16 +3918,33 @@
         if (!antes || !ahora || Math.abs(Date.parse(ahora) - Date.parse(antes)) < 4 * 60000) return;
         notify.push({ reservationId: rid, hora: ahora, lle: lane.type === 'lle', driverProfileId: null, conductorHora: dpid ? lane.driverProfileId : null });
       });
+      // 0179: salida en una vuelta sin conductor (borrador, «Carro 3»): su hora va abajo,
+      // si el día queda publicado.
+      if (fila.status === 'draft' && lane.type !== 'lle') stopIds.forEach(rid => {
+        const ahora = etaIso(lane.etas ? lane.etas[rid] : null);
+        if (ahora) horaBorr.push({ reservationId: rid, hora: ahora });
+      });
       saved++;
     }
-    if (!PV) return { saved, skipped, kept, failed, failMsg, notify, ofrecer, ids };
+    // 0179: con el día publicado (de antes, o lo publicó este mismo guardado), a quien quedó
+    // en una vuelta sin conductor se le avisa su hora: la primera vez «Tu hora de recogida»;
+    // si ya la sabía y cambió 4 min o más, «Cambió tu hora»; si es la misma, nada.
+    const horasBorrador = [];
+    if (horaBorr.length && (pubAntes || await diaPublicado())) {
+      horaBorr.forEach(n => {
+        const sabia = prevHora[n.reservationId] || (pubAntes ? prevHoraBorr[n.reservationId] : null) || null;
+        if (sabia && Math.abs(Date.parse(n.hora) - Date.parse(sabia)) < 4 * 60000) return;
+        horasBorrador.push({ ...n, cambio: !!sabia });
+      });
+    }
+    if (!PV) return { saved, skipped, kept, failed, failMsg, notify, ofrecer, ids, horasBorrador };
     // Por vuelta: la vuelta que no se tocó (o que no se pudo guardar) conserva su fila.
     lanes.forEach(l => {
       if (!l.laneId || !l.raId || ids[l.laneId] || !enBase[l.raId]) return;
       if (l.cambio === false) ids[l.laneId] = { id: l.raId, status: enBase[l.raId].status, intacta: true };
       else if (!escribir.includes(l)) ids[l.laneId] = { id: l.raId, status: enBase[l.raId].status, conflicto: true };
     });
-    return { saved, skipped, kept, failed, failMsg, notify, ofrecer, ids, porVuelta: true,
+    return { saved, skipped, kept, failed, failMsg, notify, ofrecer, ids, horasBorrador, porVuelta: true,
       intactas, conflictos, viejas, quitadas: quitadasHechas, borradas: borrarIds || [] };
   }
 
