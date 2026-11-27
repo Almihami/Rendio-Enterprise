@@ -177,6 +177,12 @@ await noSale('si las ilustraciones no cargan (y no se marca: sale otro día)', a
   return () => { imagenesCargan = true; AN._.olvidarCarga(); };
 });
 await noSale('a quien debe cambiar su contraseña', async (id) => { await entrar(perfil(id, { must_change_password: true })); });
+await noSale('con «Hay una versión nueva · Actualizar» en pantalla (lo perdería al recargar)', async (id) => {
+  const aviso = window.document.createElement('div'); aviso.id = 'sw-update-toast';
+  window.document.body.appendChild(aviso);
+  await entrar(perfil(id));
+  return () => aviso.remove();
+});
 await noSale('fuera de Inicio (en otra pestaña)', async (id) => {
   await entrar(perfil(id, { announcements_seen: { [K]: 'x' } }));
   window.Auxiliar.state.profile.announcements_seen = {};
