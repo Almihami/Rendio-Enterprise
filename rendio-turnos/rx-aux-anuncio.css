@@ -1,0 +1,82 @@
+/* rx-aux-anuncio.css — El anuncio de una sola vez del tripulante (26-nov-2026).
+   Hoy: la expectativa de Navidad («Esta Navidad Rendio te premia · Próximamente»).
+   Lo abre aux-anuncio.js sobre la hoja del shell; aquí esa hoja se vuelve una
+   tarjeta centrada de 342×452 con un telón que se abre.
+
+   De la app ya existente: el velo y su entrada (.rx-sheet-bg, rxFadeO), el botón
+   (.rx-btn.pri), el giro de las fichas (rxFlip, el del código de encuentro), la
+   subida del texto (rxRise, el de .rx-in), el vaivén del regalo (rxBob) y los
+   colores del pase (--rx-pass, --rx-on).
+   Nuevo de este archivo: la tarjeta centrada, el telón que se abre, la nieve y la
+   serif cursiva fuera de Select. Solo se anima transform y opacity.
+
+   Con «reducir movimiento» todo aparece quieto y con el telón ya abierto.
+   Todo acotado a #auxiliar-ui.rx-phone: sin el rediseño no aplica. */
+
+/* ── La hoja del shell, vuelta tarjeta centrada ──────────────────────────── */
+#auxiliar-ui.rx-phone .rx-sheet-bg.rx-nv-bg{align-items:center;justify-content:center}
+#auxiliar-ui.rx-phone .rx-sheet.rx-nv{width:auto;max-height:none;overflow:visible;flex-shrink:0;padding:0;border-radius:0;background:none;animation:none}
+#auxiliar-ui.rx-phone .rx-sheet.rx-nv>.rx-grab{display:none}
+#auxiliar-ui.rx-phone .rx-sheet-bg.out .rx-sheet.rx-nv{animation:rxNvOut .22s ease forwards}
+@keyframes rxNvOut{to{opacity:0;transform:scale(.96)}}
+
+/* En pantallas angostas se encoge entera (--nv-k lo pone aux-anuncio.js). */
+#auxiliar-ui.rx-phone .rx-nv-fit{width:342px;height:452px;transform:scale(var(--nv-k,1));transform-origin:center}
+#auxiliar-ui.rx-phone .rx-nv-card{position:relative;width:342px;height:452px;border-radius:30px;overflow:hidden;display:flex;justify-content:center;background:var(--rx-pass);color:var(--rx-on);box-shadow:0 30px 60px -20px rgba(0,0,0,.55);animation:rxNvCard .4s cubic-bezier(.3,1.4,.5,1) .08s both}
+#auxiliar-ui.rx-phone[data-ax-night="on"] .rx-nv-card{box-shadow:0 0 0 1px rgba(246,241,231,.08),0 30px 60px -20px rgba(0,0,0,.7)}
+@keyframes rxNvCard{from{opacity:0;transform:scale(.92)}}
+
+/* ── El escenario ────────────────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-nv-glow{position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 30%,rgba(242,101,34,.38),transparent 62%)}
+#auxiliar-ui.rx-phone .rx-nv-telon,
+#auxiliar-ui.rx-phone .rx-nv-cenefa{position:absolute;left:0;top:0;width:342px;height:452px;max-width:none;display:block;pointer-events:none}
+
+/* El telón cerrado: dos paños que se recogen hacia los lados y se desvanecen
+   sobre las cortinas ya recogidas del dibujo. La cenefa va por encima. */
+#auxiliar-ui.rx-phone .rx-nv-pano{position:absolute;top:0;width:172px;height:452px;opacity:0;pointer-events:none;animation:rxNvTel .9s cubic-bezier(.6,0,.2,1) .4s both}
+#auxiliar-ui.rx-phone .rx-nv-pano.l{left:0;transform-origin:left center;background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,0) 26%,rgba(0,0,0,0) 80%,rgba(0,0,0,.3) 100%),linear-gradient(90deg,#4e070b 0%,#b81c21 8%,#5a090d 19%,#a8191d 30%,#3a0508 42%,#bd1c21 54%,#5e0a0e 67%,#a3171c 79%,#4e070b 90%,#8f1116 100%)}
+#auxiliar-ui.rx-phone .rx-nv-pano.r{left:170px;transform-origin:right center;background:linear-gradient(180deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,0) 26%,rgba(0,0,0,0) 80%,rgba(0,0,0,.3) 100%),linear-gradient(270deg,#4e070b 0%,#b81c21 8%,#5a090d 19%,#a8191d 30%,#3a0508 42%,#bd1c21 54%,#5e0a0e 67%,#a3171c 79%,#4e070b 90%,#8f1116 100%)}
+@keyframes rxNvTel{0%{transform:scaleX(1);opacity:1}75%{transform:scaleX(.2);opacity:1}100%{transform:scaleX(.12);opacity:0}}
+
+/* La nieve: cae despacio y en bucle, lejos del texto. */
+#auxiliar-ui.rx-phone .rx-nv-copo{position:absolute;width:var(--s);height:var(--s);border-radius:50%;pointer-events:none;background:rgba(246,241,231,var(--o))}
+#auxiliar-ui.rx-phone .rx-nv-copo.a{animation:rxNvA var(--t) linear var(--dl) infinite}
+#auxiliar-ui.rx-phone .rx-nv-copo.b{animation:rxNvB var(--t) linear var(--dl) infinite}
+@keyframes rxNvA{0%{transform:translateY(0);opacity:0}12%{opacity:1}80%{opacity:1}100%{transform:translateY(56px);opacity:0}}
+@keyframes rxNvB{0%{transform:translateY(0);opacity:0}15%{opacity:1}75%{opacity:1}100%{transform:translateY(34px);opacity:0}}
+
+/* ── El contenido ────────────────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-nv-in{position:relative;width:226px;height:100%;padding:100px 0 22px;display:flex;flex-direction:column;align-items:center;text-align:center}
+
+/* Las dos fichas «? ?»: la del código de encuentro (.rx-meet-c b), en naranja. */
+#auxiliar-ui.rx-phone .rx-nv-fichas{position:relative;display:flex;gap:8px}
+#auxiliar-ui.rx-phone .rx-nv-f{display:flex;animation:rxFlip .5s cubic-bezier(.3,1.4,.5,1) calc(.96s + var(--k,0) * 90ms) both}
+#auxiliar-ui.rx-phone .rx-nv-f b{width:56px;height:70px;border-radius:16px;background:#F26522;color:#fff;box-shadow:0 14px 22px -12px rgba(242,101,34,.8);display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:700;transform:rotate(-5deg)}
+#auxiliar-ui.rx-phone .rx-nv-f+.rx-nv-f b{transform:rotate(4deg) translateY(-3px)}
+#auxiliar-ui.rx-phone .rx-nv-regalo{position:absolute;top:-18px;right:-24px;display:flex;animation:rxNvPop .4s cubic-bezier(.3,1.6,.5,1) 1.6s both}
+#auxiliar-ui.rx-phone .rx-nv-regalo>span{width:40px;height:40px;border-radius:20px;background:#F6F1E7;color:#1B1712;box-shadow:0 8px 16px -8px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;animation:rxBob 2.4s ease-in-out infinite}
+@keyframes rxNvPop{from{transform:scale(.6);opacity:0}}
+#auxiliar-ui.rx-phone .rx-nv-dest{position:absolute;left:-30px;top:8px;width:14px;height:14px;fill:#F6F1E7;opacity:.9}
+
+#auxiliar-ui.rx-phone .rx-nv-t{margin:20px 0 0;display:flex;flex-direction:column;align-items:center;font-size:inherit;font-weight:inherit;letter-spacing:0}
+#auxiliar-ui.rx-phone .rx-nv-t1{font-family:var(--r-font-display,inherit);font-size:19px;font-weight:800;letter-spacing:2px;text-transform:uppercase;line-height:1}
+#auxiliar-ui.rx-phone .rx-nv-t2{display:flex;align-items:center;gap:6px;margin-top:8px;font-family:var(--r-font-display,inherit);font-size:31px;font-weight:800;letter-spacing:-1.4px;line-height:1}
+#auxiliar-ui.rx-phone .rx-nv-t2 i{width:7px;height:7px;border-radius:50%;background:#F26522}
+#auxiliar-ui.rx-phone .rx-nv-t3{margin-top:1px;font-family:var(--r-vip-serif,ui-serif,Georgia,"Times New Roman",serif);font-style:italic;font-weight:500;font-size:48px;line-height:1;letter-spacing:-.5px;color:#FF8A4C}
+#auxiliar-ui.rx-phone .rx-nv-prox{margin-top:16px;height:32px;padding:0 15px 0 18px;border-radius:100px;box-shadow:inset 0 0 0 1px rgba(246,241,231,.35);display:flex;align-items:center;font-size:11.5px;font-weight:700;letter-spacing:3px;text-transform:uppercase}
+#auxiliar-ui.rx-phone .rx-nv-ok{margin-top:auto}
+#auxiliar-ui.rx-phone .rx-nv-r{animation:rxRise .5s cubic-bezier(.2,.8,.2,1) calc(1.2s + var(--d,0) * 60ms) both}
+
+#auxiliar-ui.rx-phone .rx-nv-x{position:absolute;top:10px;right:10px;width:44px;height:44px;border-radius:14px;border:0;padding:0;background:rgba(27,23,18,.62);color:#F6F1E7;display:flex;align-items:center;justify-content:center;cursor:pointer}
+
+/* ── Sin movimiento ──────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce){
+  #auxiliar-ui.rx-phone .rx-nv-card,
+  #auxiliar-ui.rx-phone .rx-nv-pano,
+  #auxiliar-ui.rx-phone .rx-nv-copo,
+  #auxiliar-ui.rx-phone .rx-nv-f,
+  #auxiliar-ui.rx-phone .rx-nv-regalo,
+  #auxiliar-ui.rx-phone .rx-nv-regalo>span,
+  #auxiliar-ui.rx-phone .rx-nv-r,
+  #auxiliar-ui.rx-phone .rx-sheet-bg.out .rx-sheet.rx-nv{animation:none}
+}
