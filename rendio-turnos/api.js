@@ -49,10 +49,11 @@
     if (!session) return null;
     const sel = cols => sb.from('profiles').select(cols).eq('id', session.user.id).maybeSingle();
     // 0081 trae la contraseña temporal y el motivo de la suspensión; 0119, cuándo
-    // vio la bienvenida el tripulante. Si alguna no está aplicada, se entra con
-    // lo que haya.
+    // vio la bienvenida el tripulante; 0180, los anuncios de una sola vez que ya
+    // vio. Si alguna no está aplicada, se entra con lo que haya.
     const BASE = 'id, full_name, email, phone, role, organization_id, is_active, deleted_at';
-    let { data, error } = await sel(BASE + ', must_change_password, suspended_reason, welcome_seen_at');
+    let { data, error } = await sel(BASE + ', must_change_password, suspended_reason, welcome_seen_at, announcements_seen');
+    if (error) ({ data, error } = await sel(BASE + ', must_change_password, suspended_reason, welcome_seen_at'));
     if (error) ({ data, error } = await sel(BASE + ', must_change_password, suspended_reason'));
     if (error) ({ data, error } = await sel(BASE));
     if (error) throw error;
@@ -64,6 +65,15 @@
   // almacenamiento: la veían otra vez al instalar. Devuelve la fecha guardada.
   async function markWelcomeSeen() {
     const { data, error } = await sb.rpc('mark_my_welcome_seen');
+    if (error) throw new Error(error.message);
+    return data || null;
+  }
+
+  // Un anuncio de una sola vez (0180), marcado en la CUENTA por la misma razón
+  // que la bienvenida: la marca del teléfono no viaja al otro navegador ni al
+  // otro celular. Devuelve la lista { clave: fecha } como quedó.
+  async function markAnnouncementSeen(key) {
+    const { data, error } = await sb.rpc('mark_my_announcement_seen', { p_key: String(key || '') });
     if (error) throw new Error(error.message);
     return data || null;
   }
@@ -5176,7 +5186,7 @@
     listCrewChanges,   // 0153
     listHandovers, setHandover, driverMyHandovers, driverHandoverDelivered,   // 0140
     adminManualRoutePublish, adminManualRouteClear, adminManualRouteSetTimes, pasarReserva, listCrewAliases, saveCrewAliases, driverOpenRoutes, driverTakeRoute, driverDayBoard, driverReleaseRoute, setRouteDelegated, setVueltaDriver, delegateRoute, listDelegateContacts, removeDelegateContact, saveDelegateContact, driverLlegadaCandidatos, driverLlegadaAgregar, driverLlegadaSoltar, offerRoutes, setPlanCarVehicle, myPlanVehicleToday, driverSetGuestStopStatus,
-    signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen,
+    signIn, signOut, getSession, getCurrentProfile, markWelcomeSeen, markAnnouncementSeen,
     reservePlaces, reservePlace, reserveKey,
     listDrivers, listAdmins, setOpsAlerts,
     getProfileForEdit, listDeletedProfiles, adminUpdateProfile, adminSetEmail, adminSetPassword, adminSetStatus, adminSetRole, changeMyPassword,

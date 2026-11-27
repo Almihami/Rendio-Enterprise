@@ -668,6 +668,13 @@
 
   // ── Pantalla «home» ──────────────────────────────────────────────────────
   let lastSig = null;
+  // El anuncio de una sola vez (aux-anuncio.js, 0180): él decide si le toca (ya
+  // visto, viaje en curso, otra hoja abierta…). Inicio solo le avisa que está arriba.
+  function avisarAnuncio() {
+    const an = window.AuxAnuncio;
+    if (an && typeof an.alEntrar === 'function') safe(() => an.alEntrar(), null);
+  }
+
   const screen = {
     render() {
       lastSig = homeHTML({ sig: true });
@@ -684,6 +691,7 @@
       if (av && typeof av.refresh === 'function') {
         Promise.resolve(safe(() => av.refresh(), null)).then(() => refreshBell()).catch(() => {});
       }
+      avisarAnuncio();
     },
     // Mismo Inicio arriba: si no cambió nada que se vea, no se toca el DOM
     // (el mapa en vivo sigue montado); solo se pone al día el globo.
@@ -691,6 +699,9 @@
       if (homeHTML({ sig: true }) !== lastSig) return false;
       const root = (ctx && (ctx.host || ctx.el)) || homeRoot();
       if (root) paintBell(root, true);
+      // También aquí: si al pintar Inicio no le tocaba (había un viaje en curso,
+      // otra hoja, la pestaña en segundo plano), este repaso es la siguiente ocasión.
+      avisarAnuncio();
       return true;
     },
     destroy() { unmountLive(); },
