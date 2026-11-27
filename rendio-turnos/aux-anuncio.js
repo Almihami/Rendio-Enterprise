@@ -138,6 +138,10 @@
     const st = safe(() => AX().state, null) || {};
     if (st.source !== 'live' && !String(p.id).startsWith('preview-')) return false;
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
+    // Con «Hay una versión nueva · Actualizar» en pantalla (index.html) no sale:
+    // si toca Actualizar la app se recarga y lo habría perdido sin verlo. Sale
+    // después de actualizar, o la próxima vez que abra.
+    if (typeof document !== 'undefined' && document.getElementById('sw-update-toast')) return false;
     if (!enInicio() || enCurso()) return false;
     const r = raiz();
     if (!r || r.querySelector('.rx-sheet-bg')) return false;   // ya hay una hoja arriba
@@ -246,13 +250,26 @@
   // se arma el reloj, y «¿le toca ahora?» se contesta cuando el reloj suena, no
   // en el aviso: al salir de la bienvenida Inicio avisa mientras esa pantalla
   // todavía se está yendo, y decidir en ese instante lo dejaba sin salir.
+  // En un teléfono que instala la app por primera vez, el service worker toma el
+  // control unos segundos después de abrir y ahí aparece «Hay una versión nueva».
+  // Se le da un momento para que ese aviso salga ANTES que el anuncio (y entonces
+  // puede() lo frena). Con la app ya instalada no hay espera.
+  const SW_MS = 5000;
+  async function swAsentado() {
+    const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null;
+    if (!sw || sw.controller) return;
+    await Promise.race([Promise.resolve(sw.ready).catch(() => {}), new Promise((r) => setTimeout(r, SW_MS))]);
+    await new Promise((r) => setTimeout(r, 400));    // el aviso se pinta al tomar control
+  }
+
   let reloj = null;
   function alEntrar() {
     if (abierto || reloj || !pendiente()) return;
     reloj = setTimeout(async () => {
+      if (!puede()) { reloj = null; return; }
+      try { await swAsentado(); } catch (_) { /* sin service worker: se sigue */ }
+      const ok = puede() && await cargar();
       reloj = null;
-      if (!puede()) return;
-      const ok = await cargar();
       if (!ok || abierto || !puede()) return;
       abrir();
     }, ESPERA_MS);
