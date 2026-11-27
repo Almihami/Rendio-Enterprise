@@ -155,6 +155,8 @@
     // Pendiente o asignado cuya hora pasó hace más de 6 h sin moverse: va al
     // historial con el chip «Sin realizar».
     expired: (t) => auxExpired(t),
+    // Iba «a bordo» y su hora pasó hace más de 6 h: viajó, faltó marcar la entrega.
+    staleOnboard: (t) => auxStaleOnboard(t),
     lastTrip: () => auxLastTrip(),
     typeMeta: (t) => auxTypeMeta(t && typeof t === 'object' ? t.type : t),
     statusMeta: (s) => auxStatusMeta(s),
@@ -513,15 +515,23 @@
   // cerrado Y (va en curso, o su hora no pasó hace más de 6 h). Las 6 h dan
   // aire a un vuelo que se atrasó o a un conductor que marca tarde.
   const AUX_UPCOMING_GRACE_MS = 6 * 3600000;
+  // 26-nov-2026: «en camino» o «a bordo» YA NO salta la regla de las 6 h. Antes
+  // un viaje en curso era próximo para siempre, y como la base nunca cierra la
+  // vuelta (0137) y al conductor se le olvida marcar el último «entregado», al
+  // tripulante le quedaban arriba, «en curso», viajes del 28-oct, del 22-nov…
+  // (16 así en producción el 26-nov). Una vuelta de verdad no sigue andando 6 h
+  // después de su hora: pasado eso baja al historial como cualquier otro.
   function auxIsUpcoming(t) {
     if (!t || AUX_CLOSED.includes(t.status)) return false;
-    if (t.status === 'onway' || t.status === 'onboard') return true;
     const ts = auxWhenTs(t);
     // Sin fecha/hora no se puede decir que venció: se deja como próximo.
     return ts == null || ts >= Date.now() - AUX_UPCOMING_GRACE_MS;
   }
-  // Ni cerrado ni próximo: se quedó sin realizar (va al historial).
-  const auxExpired = (t) => !!t && !AUX_CLOSED.includes(t.status) && !auxIsUpcoming(t);
+  // Ni cerrado ni próximo: se quedó sin realizar (va al historial). Salvo el que
+  // ya iba a bordo: a ese lo recogieron, así que sí viajó; solo faltó que el
+  // conductor marcara la entrega (auxStaleOnboard, sale como «Completado»).
+  const auxStaleOnboard = (t) => !!t && t.status === 'onboard' && !auxIsUpcoming(t);
+  const auxExpired = (t) => !!t && !AUX_CLOSED.includes(t.status) && !auxIsUpcoming(t) && !auxStaleOnboard(t);
   // Orden estable por hora. Los que no tienen hora van al final en los dos casos.
   function auxSortByTime(list, desc) {
     const key = (t) => { const v = auxWhenTs(t); return v == null ? null : v; };
@@ -716,7 +726,8 @@
   function auxTripCard(t, hero) {
     const m = auxTypeMeta(t.type);
     // Un pendiente que ya pasó no está «Sin rutear»: se quedó sin realizar.
-    const st = auxExpired(t) ? { cls: 'muted', label: 'Sin realizar' } : auxStatusMeta(t.status);
+    const st = auxExpired(t) ? { cls: 'muted', label: 'Sin realizar' }
+      : auxStaleOnboard(t) ? auxStatusMeta('done') : auxStatusMeta(t.status);
     return `<button class="ax-trip ${hero ? 'hero' : ''}" data-ax="trip" data-id="${t.id}">
       <div class="ax-trip-top">
         <span class="ax-chip ${m.cls}"><svg class="icon"><use href="#${m.ic}"/></svg>${m.label}</span>

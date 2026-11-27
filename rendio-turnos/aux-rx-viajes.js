@@ -66,6 +66,10 @@
     if (a && typeof a.expired === 'function' && safe(() => a.expired(t), false)) {
       return '<span class="rx-hist-chip t-warn">Sin realizar</span>';
     }
+    // Iba a bordo y el conductor no marcó la entrega (26-nov): sí viajó.
+    if (a && typeof a.staleOnboard === 'function' && safe(() => a.staleOnboard(t), false)) {
+      return '<span class="rx-hist-chip t-muted">Completado</span>';
+    }
     const m = (a && typeof a.statusMeta === 'function' ? safe(() => a.statusMeta(t.status), null) : null) || { cls: 'muted', label: t.status };
     const tone = t.status === 'cancelled' ? 'muted' : t.status === 'noshow' ? 'warn' : (m.cls || 'muted');
     return '<span class="rx-hist-chip t-' + esc(tone) + '">' + esc(m.label) + '</span>';

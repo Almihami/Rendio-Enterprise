@@ -1591,11 +1591,58 @@
   }
 
   // ── Acciones (rt-app.jsx: start, arrive, board, drop, finish, leaveApt, noShow, setRes) ──
+  // 26-nov-2026: el «entregado» es OBLIGATORIO. Antes «Iniciar ruta» arrancaba otra
+  // vuelta aunque la anterior siguiera con gente a bordo (caso del 25-nov: dos a bordo
+  // a las 10:35 y 10:45, nunca entregadas, y a las 11:25 arrancó la siguiente). Al otro
+  // día esa vuelta ya no sale en su lista y esa gente quedaba «en curso» para siempre
+  // en la app del tripulante. Ahora no se inicia una vuelta con otra abierta.
+  const aBordo = (o) => crew(o).filter((l) => ['onboard', 'nocode'].includes(S(o).res[l.rid]) && l.stopStatus !== 'delivered');
+  const sinMarcar = (o) => crew(o).filter((l) => !S(o).res[l.rid]);
+  // Abierta = la arrancó, no la terminó y todavía tiene a alguien a bordo o sin marcar.
+  const abiertaOtra = (vid) => RT.vueltas.find((o) => o.id !== vid && S(o).started && !S(o).done && (aBordo(o).length > 0 || sinMarcar(o).length > 0)) || null;
+  const yNombres = (ls) => { const f = ls.map((l) => first(l.name)); return f.length > 1 ? `${f.slice(0, -1).join(', ')} y ${f[f.length - 1]}` : (f[0] || ''); };
+  function openCerrar(o, v) {
+    const ab = aBordo(o), sm = sinMarcar(o), hora = horaV(o), uno = ab.length === 1;
+    if (ab.length && !sm.length) {
+      const si = o.type === 'salida' ? (uno ? 'Sí, ya está en JMC' : 'Sí, ya están en JMC') : (uno ? 'Sí, ya llegó a su casa' : 'Sí, ya llegaron a sus casas');
+      openSheet('cerrar', '<div class="rx-sh"><div class="rx-sh-ic rt-ic warn">' + ic('AlertTriangle', 26) + '</div>'
+        + '<h3>' + esc(`¿Ya entregaste la vuelta de las ${hora}?`) + '</h3>'
+        + '<p>' + esc(`Todavía tienes a bordo a ${yNombres(ab)}. Antes de iniciar otra vuelta, confirma que ${uno ? 'ya llegó' : 'ya llegaron'}.`) + '</p>'
+        + btn(si, { attrs: { 'data-rt': 'cerrar-yes', 'data-v': o.id, 'data-next': v.id } })
+        + btn('Ir a esa vuelta', { kind: 'ghost', attrs: { 'data-rt': 'cerrar-ir', 'data-v': o.id } }) + '</div>');
+      return;
+    }
+    openSheet('cerrar', '<div class="rx-sh"><div class="rx-sh-ic rt-ic warn">' + ic('AlertTriangle', 26) + '</div>'
+      + '<h3>' + esc(`Primero termina la vuelta de las ${hora}`) + '</h3>'
+      + '<p>' + esc(`Te falta marcar a ${yNombres(sm)}${ab.length ? ` y todavía tienes a bordo a ${yNombres(ab)}` : ''}. Ábrela, marca cómo salió y después inicias esta.`) + '</p>'
+      + btn('Ir a esa vuelta', { attrs: { 'data-rt': 'cerrar-ir', 'data-v': o.id } })
+      + btn('Cerrar', { kind: 'ghost', attrs: { 'data-rt': 'sheet-close' } }) + '</div>');
+  }
+  // «Sí, ya llegaron»: se entregan los de a bordo (como finish()), la vuelta queda
+  // hecha y se inicia la que el conductor había tocado.
+  function cerrarYes(oid, nextId) {
+    const o = vById(oid); if (!o) return;
+    closeSheet();
+    if (sinMarcar(o).length) { const v = vById(nextId); if (v) openCerrar(o, v); return; }
+    aBordo(o).forEach((l) => {
+      l.stopStatus = 'delivered';
+      if (l.rid) write({ f: 'status', rid: l.rid, st: 'delivered' }).catch(writeErr);
+    });
+    const s = S(o);
+    s.done = true; s.phase = 'road'; s.finishedAt = Date.now(); o.done = true;
+    save();
+    // Con la siguiente por arrancar, su «Ruta iniciada» taparía este aviso al instante.
+    if (nextId && vById(nextId)) { start(nextId); return; }
+    toast(`Vuelta de las ${horaV(o)} entregada`, 'Check');
+    repaintBase();
+  }
   function start(vid) {
     const v = vById(vid); if (!v) return;
     const s = S(v);
     if (s.done) { swapExec('done', vid); return; }
     if (!s.started) {
+      const o = abiertaOtra(vid);
+      if (o) { openCerrar(o, v); return; }
       s.started = true; s.idx = 0; s.phase = 'road'; s.at = null; s.startedAt = Date.now();
       save();
       // 0136: el aviso «X inició una vuelta» a los jefes. Es un aviso, no una marca:
@@ -2686,6 +2733,8 @@
       if (a === 'exec') { const v = vById(vid); if (v && S(v).started && !S(v).done) swapExec('exec', vid); return; }
       if (a === 'nextv') { reset([{ id: 'detail', vid }]); return; }
       if (a === 'start') { start(vid); return; }
+      if (a === 'cerrar-yes') { cerrarYes(vid, el.dataset.next); return; }
+      if (a === 'cerrar-ir') { closeSheet(); start(vid); return; }
       if (a === 'arrive') { arrive(vid, false); return; }
       if (a === 'arrive-force') { closeSheet(); arrive(vid, true); return; }
       if (a === 'board') {
