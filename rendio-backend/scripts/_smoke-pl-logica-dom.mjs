@@ -196,14 +196,20 @@ console.log('\n── un solo criterio de «próximo» (#20) ──');
     { id: 'ayerTarde', type: 'sal', ...at(-5 * H), status: 'pending', notes: '', address: 'Olivar' },
     { id: 'semana', type: 'sal', ...at(6 * 24 * H), status: 'pending', notes: '', address: 'Olivar' },
     { id: 'manana', type: 'lle', ...at(20 * H), status: 'assigned', notes: '', address: 'Olivar' },
-    { id: 'curso', type: 'sal', ...at(-9 * H), status: 'onway', notes: '', address: 'Olivar' },
+    { id: 'curso', type: 'sal', ...at(-2 * H), status: 'onway', notes: '', address: 'Olivar' },
+    // 26-nov: vueltas que el conductor nunca cerró (en producción había del 28-oct).
+    { id: 'cursoViejo', type: 'sal', ...at(-3 * 24 * H), status: 'onway', notes: '', address: 'Olivar' },
+    { id: 'bordoViejo', type: 'lle', ...at(-4 * 24 * H), status: 'onboard', notes: '', address: 'Olivar' },
   ];
   S.editingTrip = null;
   await A.init(S.profile); await wait(40);
   const up = A.upcoming().map(x => x.id);
   t('un pendiente de hace 3 días NO es próximo', !up.includes('viejo') && A.expired(S.trips.find(x => x.id === 'viejo')));
   t('dentro de las 6 h de gracia sigue próximo', up.includes('ayerTarde'));
-  t('en curso es próximo aunque su hora pasó', up.includes('curso'));
+  t('en curso dentro de las 6 h sigue próximo', up.includes('curso'));
+  t('en camino de hace 3 días NO es próximo (va al historial «Sin realizar»)', !up.includes('cursoViejo') && A.expired(S.trips.find(x => x.id === 'cursoViejo')));
+  const bv = S.trips.find(x => x.id === 'bordoViejo');
+  t('a bordo de hace 4 días NO es próximo: historial, «Completado» y no «Sin realizar»', !up.includes('bordoViejo') && A.past().includes(bv) && A.staleOnboard(bv) && !A.expired(bv));
   t('próximos ordenados por hora', up.indexOf('manana') < up.indexOf('semana'), up.join(','));
   t('el vencido está en el historial', A.past().some(x => x.id === 'viejo'));
   t('isUpcoming = lo que usa upcoming()', S.trips.every(x => A.isUpcoming(x) === up.includes(x.id)));
