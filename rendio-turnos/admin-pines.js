@@ -158,17 +158,28 @@
   const isOn = () => !!(st.data && st.data.settings && st.data.settings.enabled === true);
   const pending = () => (st.data && st.data.counts ? st.data.counts.pending : 0);
   const hayParaReservar = () => !!(st.data && st.data.products.some(p => p.status === 'available' && p.stock > 0));
+  // Cómo está la tienda: 'off' apagada · 'card' solo la tarjeta (0182) · 'open' abierta.
+  const modo = () => { const s = st.data && st.data.settings; return !s || !s.enabled ? 'off' : s.cardOnly ? 'card' : 'open'; };
+  function estadoHTML() {
+    const m = modo();
+    const ir = (t) => '<button class="set-btn ghost sm" data-pn="view" data-v="ajustes">' + t + '</button>';
+    if (m === 'off') {
+      return '<div class="pn-state off">' + svg('i-zzz') + '<span><b>Tienda apagada.</b> Los tripulantes no ven nada de pines.</span>' + ir('Encenderla') + '</div>';
+    }
+    if (m === 'card') {
+      return '<div class="pn-state card">' + svg('i-info') + '<span><b>Solo la tarjeta.</b> Los tripulantes ven el anuncio de pines en su Inicio, pero todavía no pueden entrar a la tienda ni reservar.</span>' + ir('Abrir la tienda') + '</div>';
+    }
+    return '<div class="pn-state on">' + svg('i-check') + '<span>' + (hayParaReservar()
+      ? '<b>Tienda abierta.</b> Los tripulantes entran desde la tarjeta de su Inicio y pueden reservar.'
+      : '<b>Tienda abierta.</b> Los tripulantes entran y ven los pines, pero todavía no pueden reservar: ninguno está «Disponible» con unidades.')
+      + '</span></div>';
+  }
 
   function headHTML() {
     const cnt = st.data && pending() ? '<span class="sh-ct">' + esc(pending()) + '</span>' : '';
     const state = st.data === undefined ? ''
       : st.data === null ? '<div class="pn-state none">' + svg('i-info') + '<span>No se pudo abrir la tienda de pines' + (st.err ? ': ' + esc(st.err) : '. Puede faltar la migración 0181.') + '</span></div>'
-        : '<div class="pn-state ' + (isOn() ? 'on' : 'off') + '">' + svg(isOn() ? 'i-check' : 'i-zzz') + '<span>'
-          + (isOn() ? (hayParaReservar()
-            ? '<b>Tienda encendida.</b> Los tripulantes ven la tarjeta de pines en su Inicio y pueden reservar.'
-            : '<b>Tienda encendida.</b> Los tripulantes ven la tarjeta y los pines, pero todavía no pueden reservar: ninguno está «Disponible» con unidades.')
-            : '<b>Tienda apagada.</b> Los tripulantes no ven la tarjeta ni la tienda. Enciéndela cuando el inventario esté listo.')
-          + '</span>' + (isOn() ? '' : '<button class="set-btn ghost sm" data-pn="view" data-v="ajustes">Encenderla</button>') + '</div>';
+        : estadoHTML();
     return '<div class="sh-phead"><div>'
       + '<h1>Pines ' + cnt + '</h1>'
       + '<p>Los pines que los tripulantes reservan desde su app. <b>En la app no se paga</b>: tú entregas y cobras en persona, y aquí marcas la reserva como entregada.</p>'
@@ -232,7 +243,9 @@
     if (st.filter === 'reserved') list = list.slice().sort((a, b) => String(a.reservedAt).localeCompare(String(b.reservedAt)));
     else if (st.filter === 'delivered') list = list.slice().sort((a, b) => String(b.deliveredAt).localeCompare(String(a.deliveredAt)));
     else list = list.slice().sort((a, b) => String(b.cancelledAt).localeCompare(String(a.cancelledAt)));
-    const vacio = st.filter === 'reserved' ? ['No hay pines por entregar', isOn() ? 'Cuando un tripulante reserve, aparece aquí y te llega la notificación.' : 'La tienda está apagada: nadie puede reservar todavía.']
+    const m = modo();
+    const vacio = st.filter === 'reserved' ? ['No hay pines por entregar', m === 'open' ? 'Cuando un tripulante reserve, aparece aquí y te llega la notificación.'
+      : m === 'card' ? 'La tienda está en «solo la tarjeta»: nadie puede reservar todavía.' : 'La tienda está apagada: nadie puede reservar todavía.']
       : st.filter === 'delivered' ? ['Todavía no has entregado pines', ''] : ['No hay reservas canceladas', ''];
     return filter + (list.length ? list.map(resCard).join('') : emptyHTML(vacio[0], vacio[1]));
   }
@@ -315,9 +328,14 @@
   function ajustesHTML() {
     const s = st.data.settings;
     if (!s) return emptyHTML('No se pudieron leer los ajustes', '', true);
-    return '<div class="pn-card">'
-      + '<label class="pn-switch"><input type="checkbox" data-pn-f="enabled"' + (s.enabled ? ' checked' : '') + '><i></i><span><b>Tienda encendida</b><small>Apagada, los tripulantes no ven la tarjeta de pines ni la tienda. Las reservas que ya existen se quedan.</small></span></label>'
-      + '</div>'
+    const m = modo();
+    const opt = (v, t, d) => '<label class="pn-mode"><input type="radio" name="pn-mode" data-pn-f="mode" value="' + v + '"' + (m === v ? ' checked' : '') + '><span><b>' + t + '</b><small>' + d + '</small></span></label>';
+    return '<div class="pn-card"><h3>Cómo está la tienda</h3><div class="pn-modes">'
+      + opt('off', 'Apagada', 'Los tripulantes no ven nada de pines. Las reservas que ya existen se quedan.')
+      // «Solo la tarjeta» existe desde 0182: en una base sin ella no se ofrece.
+      + (s.cardOnlySupported ? opt('card', 'Solo la tarjeta', 'Ven el anuncio en su Inicio. No pueden entrar a la tienda ni reservar.') : '')
+      + opt('open', 'Abierta', 'Entran a la tienda desde la tarjeta y reservan los pines que estén disponibles.')
+      + '</div></div>'
       + '<div class="pn-card"><h3>Lo que ve el tripulante</h3><div class="pn-grid">'
       + field('title', 'Nombre de la tienda', s.title, { max: 40 })
       + field('contactName', 'Quién entrega', s.contactName, { max: 30, hint: 'Sale así: «A ' + (s.contactName || 'Julián') + ' le llega tu reserva y te entrega los pines».' })
@@ -443,8 +461,11 @@
     const r = root();
     const chk = (k) => !!((r && r.querySelector('[data-pn-f="' + k + '"]')) || {}).checked;
     const num = (k) => { const v = val(k); return v === '' ? NaN : Number(v); };
+    const mode = ((r && r.querySelector('[data-pn-f="mode"]:checked')) || {}).value || 'off';
+    const sup = !!(st.data && st.data.settings && st.data.settings.cardOnlySupported);
     return {
-      enabled: chk('enabled'), title: val('title'), cardText: val('cardText'), storeNote: val('storeNote'),
+      // Apagada deja «solo la tarjeta» puesto: al volver a encender no se abre sola.
+      enabled: mode !== 'off', cardOnly: sup ? mode !== 'open' : undefined, mode, title: val('title'), cardText: val('cardText'), storeNote: val('storeNote'),
       contactName: val('contactName'), unitPriceCOP: num('unitPriceCOP'), promoEnabled: chk('promoEnabled'),
       promoQty: num('promoQty'), promoPriceCOP: num('promoPriceCOP'), lowStockAt: num('lowStockAt'), maxUnits: num('maxUnits'),
     };
@@ -466,7 +487,7 @@
       const saved = await P.adminSaveSettings(s);
       st.busy.settings = false;
       if (saved && st.data) st.data.settings = saved;
-      toastMsg(s.enabled ? 'Pines guardado · tienda encendida' : 'Pines guardado · tienda apagada');
+      toastMsg('Pines guardado · ' + (s.mode === 'open' ? 'tienda abierta' : s.mode === 'card' ? 'solo la tarjeta' : 'tienda apagada'));
       paint();
       setMsg(true, 'Guardado');
       return;

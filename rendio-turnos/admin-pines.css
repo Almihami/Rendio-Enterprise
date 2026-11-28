@@ -29,6 +29,16 @@
 #pines-ui .pn-state.on{background:var(--green-soft);color:var(--green)}
 #pines-ui .pn-state.off{background:var(--panel2);color:var(--ink2);border:1px solid var(--line)}
 #pines-ui .pn-state.none{background:var(--red-soft);color:var(--red)}
+#pines-ui .pn-state.card{background:var(--blue-soft);color:var(--blue)}
+
+/* Cómo está la tienda: apagada / solo la tarjeta / abierta */
+#pines-ui .pn-modes{display:flex;flex-direction:column;gap:8px}
+#pines-ui .pn-mode{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:1px solid var(--line2);border-radius:12px;cursor:pointer}
+#pines-ui .pn-mode:has(input:checked){border-color:var(--orange);background:var(--orange-soft)}
+#pines-ui .pn-mode input{width:18px;height:18px;margin-top:2px;accent-color:var(--orange);flex:0 0 auto}
+#pines-ui .pn-mode span{display:flex;flex-direction:column;gap:2px}
+#pines-ui .pn-mode b{font-size:14.5px}
+#pines-ui .pn-mode small{font-size:12.5px;color:var(--ink2);line-height:1.45}
 #pines-ui .pn-state b{color:inherit}
 
 /* Pestañas y filtro */
