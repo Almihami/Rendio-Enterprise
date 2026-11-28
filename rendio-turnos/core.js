@@ -503,6 +503,9 @@
     else if (typeof window.stopCobroTimer === 'function') window.stopCobroTimer();
     if (name === 'puntos') { if (typeof window.renderPuntos === 'function') window.renderPuntos(); }
     else if (typeof window.stopPuntosTimer === 'function') window.stopPuntosTimer();
+    // Tienda de pines (0181): al salir se frena su consulta cada 30 s.
+    if (name === 'pines') { if (typeof window.renderPines === 'function') window.renderPines(); }
+    else if (typeof window.stopPinesTimer === 'function') window.stopPinesTimer();
     // Vuelos (0118 + 0122): su mapa se mueve cada 20 s; al salir se frena.
     if (name === 'vuelos') { if (typeof window.renderVuelos === 'function') window.renderVuelos(); }
     else if (typeof window.stopVuelosTimer === 'function') window.stopVuelosTimer();
@@ -535,6 +538,8 @@
       : m[1] === 'coordinacion' && typeof window.renderCoordinacion === 'function' ? 'coordinacion'
       : m[1] === 'cobro' && typeof window.renderCobro === 'function' ? 'cobro'
       : m[1] === 'puntos' && typeof window.renderPuntos === 'function' ? 'puntos'
+      // «Nueva reserva de pines» (0181) abre la pantalla Pines.
+      : m[1] === 'pines' && typeof window.renderPines === 'function' ? 'pines'
       // El aviso de un vuelo retrasado (0122) abre la pantalla Vuelos.
       : m[1] === 'vuelos' && typeof window.renderVuelos === 'function' ? 'vuelos'
       // «X terminó una vuelta» (0128) abre Operación; «Nadie ha tomado una

@@ -110,6 +110,7 @@
   <link rel="stylesheet" href="rx-aux-perfil.css" />
   <link rel="stylesheet" href="rx-aux-pagos.css" />
   <link rel="stylesheet" href="rx-aux-puntos.css" />
+  <link rel="stylesheet" href="rx-aux-pines.css" />
   <link rel="stylesheet" href="rx-aux-coord.css" />
   <link rel="stylesheet" href="rx-aux-onboard.css" />
   <link rel="stylesheet" href="login-rx.css" />
@@ -124,6 +125,7 @@
   <link rel="stylesheet" href="admin-cobro.css" />
   <link rel="stylesheet" href="admin-calificaciones.css" />
   <link rel="stylesheet" href="admin-puntos.css" />
+  <link rel="stylesheet" href="admin-pines.css" />
   <link rel="stylesheet" href="admin-inspecciones.css" />
   <link rel="stylesheet" href="admin-whatsapp.css" />
   <link rel="stylesheet" href="admin-conjuntos.css" />
@@ -254,6 +256,7 @@
       <symbol id="m-insp" viewBox="0 0 24 24"><path d="M9 11l2 2 4-4"/><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
       <symbol id="m-personal" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></symbol>
       <symbol id="m-recomp" viewBox="0 0 24 24"><circle cx="12" cy="9" r="6"/><path d="M9 14.5 8 22l4-2 4 2-1-7.5"/></symbol>
+      <symbol id="m-pines" viewBox="0 0 24 24"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></symbol>
       <symbol id="m-balance" viewBox="0 0 24 24"><path d="M12 3v18M5 7l-3 6a3 3 0 0 0 6 0zM19 7l-3 6a3 3 0 0 0 6 0zM5 7h14"/></symbol>
       <symbol id="m-ajustes" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 0 1 0-4h.1A1.6 1.6 0 0 0 2.6 7Z"/></symbol>
       <symbol id="m-asign" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></symbol>
@@ -1348,6 +1351,8 @@
       <section data-panel="coordinacion" class="hidden"><div id="coordinacion-ui" data-theme="light"></div></section>
       <section data-panel="cobro" class="hidden"><div id="cobro-ui" data-theme="light"></div></section>
       <section data-panel="puntos" class="hidden"><div id="puntos-ui" data-theme="light"></div></section>
+      <!-- Tienda de pines (0181): reservas de los tripulantes, inventario y ajustes -->
+      <section data-panel="pines" class="hidden"><div id="pines-ui" data-theme="light"></div></section>
 
       <!-- ===================== RUTAS: CONSOLA (hub por capas) ===================== -->
       <section data-panel="consola" class="hidden">
@@ -1687,6 +1692,7 @@
   <script src="api-aux.js"></script>
   <script src="api-cobro.js"></script>
   <script src="api-puntos.js"></script>
+  <script src="api-pines.js"></script>
   <!-- 0173: el chat del turno (jefes ↔ conductores en turno) -->
   <script src="api-chat-turno.js"></script>
   <script src="chat-turno.js"></script>
@@ -1745,6 +1751,7 @@
   <script src="admin-coordinacion.js"></script>
   <script src="admin-cobro.js"></script>
   <script src="admin-puntos.js"></script>
+  <script src="admin-pines.js"></script>
   <script src="admin-acomodar.js"></script>
   <script src="admin-cadena.js"></script>
   <script src="admin-whatsapp.js"></script>
@@ -1772,6 +1779,8 @@
   <script src="aux-rx-puntos.js"></script>
   <script src="aux-rx-coord.js"></script>
   <script src="aux-rx-vuelo.js"></script>
+  <!-- Tienda de pines (0181): pone su tarjeta en Inicio por el enganche home.card -->
+  <script src="aux-rx-pines.js"></script>
   <script src="auxiliar.js"></script>
   <!-- Conductor: rutas de auxiliares -->
   <script src="driver-rutas.js"></script>

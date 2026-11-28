@@ -1,0 +1,152 @@
+/* admin-pines.css — Pines del jefe (0181, 27-nov-2026).
+   Todo scopeado a #pines-ui. Usa la paleta del shell del admin (.admin-shell:
+   --panel, --ink, --orange, --green, --amber, --red…) y repite el encabezado
+   .sh-phead y el .set-btn como los demás paneles (cada uno los redefine bajo su
+   propio id). Nace responsive: por debajo de 760 px todo se apila.
+   Sin animaciones. */
+#pines-ui *{box-sizing:border-box}
+#pines-ui{font-family:var(--font);color:var(--ink)}
+#pines-ui .icon{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;fill:none}
+#pines-ui .pn-wrap{max-width:980px}
+
+/* Encabezado */
+#pines-ui .sh-phead{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:14px}
+#pines-ui .sh-phead h1{font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;display:flex;align-items:center;gap:11px;color:var(--ink);margin:0}
+#pines-ui .sh-phead h1 .sh-ct{font-size:13px;font-weight:800;font-family:var(--mono);background:var(--amber-soft);color:var(--amber);border-radius:999px;padding:3px 11px}
+#pines-ui .sh-phead p{font-size:13px;color:var(--ink2);margin:8px 0 10px;max-width:660px;line-height:1.5}
+#pines-ui .sh-phead p b{color:var(--ink);font-weight:700}
+
+/* Botones */
+#pines-ui .set-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 16px;border-radius:11px;border:0;background:var(--orange);color:#fff;font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 9px 22px rgba(242,101,34,.26);white-space:nowrap}
+#pines-ui .set-btn.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line2);box-shadow:none}
+#pines-ui .set-btn.danger{background:var(--red);color:#fff;box-shadow:none}
+#pines-ui .set-btn.sm{height:34px;padding:0 12px;font-size:12.5px}
+#pines-ui .set-btn:disabled{opacity:.55;cursor:not-allowed}
+
+/* Estado de la tienda */
+#pines-ui .pn-state{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;margin-bottom:14px;font-size:13px;line-height:1.45}
+#pines-ui .pn-state > span{flex:1 1 260px}
+#pines-ui .pn-state.on{background:var(--green-soft);color:var(--green)}
+#pines-ui .pn-state.off{background:var(--panel2);color:var(--ink2);border:1px solid var(--line)}
+#pines-ui .pn-state.none{background:var(--red-soft);color:var(--red)}
+#pines-ui .pn-state b{color:inherit}
+
+/* Pestañas y filtro */
+#pines-ui .pn-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+#pines-ui .pn-tabs button,#pines-ui .pn-filter button{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);color:var(--ink2);font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer}
+#pines-ui .pn-tabs button.on,#pines-ui .pn-filter button.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+#pines-ui .pn-tabs button i{font-style:normal;font-family:var(--mono);font-size:11px;background:var(--amber);color:#fff;border-radius:999px;padding:1px 7px}
+#pines-ui .pn-filter{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+#pines-ui .pn-filter button{min-height:32px;font-size:12px}
+
+/* Vacío / cargando */
+#pines-ui .pn-empty{padding:34px 18px;text-align:center;color:var(--ink2);background:var(--panel);border:1px dashed var(--line2);border-radius:14px}
+#pines-ui .pn-empty b{display:block;font-size:15px;color:var(--ink)}
+#pines-ui .pn-empty span{display:block;font-size:13px;margin:6px auto 0;max-width:420px;line-height:1.5}
+#pines-ui .pn-empty .set-btn{margin-top:14px}
+
+/* Tarjetas */
+#pines-ui .pn-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}
+#pines-ui .pn-card.res{border-left:4px solid var(--line2)}
+#pines-ui .pn-card.res.wait{border-left-color:var(--amber)}
+#pines-ui .pn-card.res.ok{border-left-color:var(--green)}
+#pines-ui .pn-card.res.no{opacity:.85}
+#pines-ui .pn-card.prod.off{background:var(--panel2)}
+#pines-ui .pn-card h3{font-size:15px;font-weight:800;margin:0 0 12px}
+#pines-ui .pn-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+#pines-ui .pn-top b{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:15.5px;font-weight:750}
+#pines-ui .pn-top > div > span{display:block;font-size:13px;color:var(--ink2);margin-top:2px}
+#pines-ui .pn-tag{flex-shrink:0;font-size:11.5px;font-weight:800;border-radius:999px;padding:4px 10px;white-space:nowrap}
+#pines-ui .pn-tag.wait{background:var(--amber-soft);color:var(--amber)}
+#pines-ui .pn-tag.ok{background:var(--green-soft);color:var(--green)}
+#pines-ui .pn-tag.no{background:var(--panel2);color:var(--ink3);border:1px solid var(--line)}
+#pines-ui .pn-tag.soon{background:var(--blue-soft);color:var(--blue)}
+#pines-ui .pn-tag.out{background:var(--red-soft);color:var(--red)}
+#pines-ui .pn-tag.new{background:var(--orange);color:#fff;font-size:10.5px;padding:3px 8px}
+
+/* Los pines de una reserva */
+#pines-ui .pn-its{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px}
+#pines-ui .pn-it{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650}
+#pines-ui .pn-it em{font-style:normal;font-weight:600;color:var(--ink2)}
+#pines-ui .pn-th{width:38px;height:38px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);display:grid;place-items:center;flex:0 0 auto;color:var(--ink3);overflow:hidden}
+#pines-ui .pn-th img{max-width:30px;max-height:30px;width:auto;height:auto;display:block}
+#pines-ui .pn-th.lg{width:56px;height:56px;border-radius:13px}
+#pines-ui .pn-th.lg img{max-width:44px;max-height:44px}
+#pines-ui .pn-th.xl{width:112px;height:112px;border-radius:16px}
+#pines-ui .pn-th.xl img{max-width:92px;max-height:92px}
+#pines-ui .pn-th.xl .icon{width:24px;height:24px}
+
+#pines-ui .pn-meta{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:12px}
+#pines-ui .pn-meta span{font-size:13px;color:var(--ink)}
+#pines-ui .pn-meta b{display:block;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin-bottom:2px}
+#pines-ui .pn-note{font-size:13px;line-height:1.5;color:var(--ink2);margin:10px 0 0}
+#pines-ui .pn-note b{color:var(--ink)}
+#pines-ui .pn-hint{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.5;color:var(--ink2);margin:12px 0 0}
+#pines-ui .pn-hint .icon{margin-top:2px}
+#pines-ui .pn-hint b{color:var(--ink);font-family:var(--mono);font-weight:700;font-size:12px}
+#pines-ui .pn-lead-row{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+#pines-ui .pn-lead{flex:1 1 380px;font-size:13px;color:var(--ink2);line-height:1.5;margin:0;max-width:680px}
+#pines-ui .pn-lead b{color:var(--ink)}
+#pines-ui .pn-err{margin-top:10px;padding:9px 12px;border-radius:10px;background:var(--red-soft);color:var(--red);font-size:13px;line-height:1.45}
+#pines-ui .pn-acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:12px}
+#pines-ui .pn-rej{margin-top:12px}
+#pines-ui .pn-rej label{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:700;color:var(--ink2)}
+
+/* Campos */
+#pines-ui textarea,#pines-ui input[type=text],#pines-ui input[type=number],#pines-ui select{font-family:var(--font);font-size:14px;color:var(--ink);background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:9px 11px;width:100%}
+#pines-ui select{height:40px;padding:0 10px;cursor:pointer}
+#pines-ui textarea{resize:vertical;min-height:62px}
+#pines-ui input[type=file]{font-family:var(--font);font-size:13px;color:var(--ink2);max-width:100%}
+#pines-ui input:focus,#pines-ui textarea:focus,#pines-ui select:focus{outline:2px solid var(--orange);outline-offset:1px;border-color:var(--orange)}
+#pines-ui .pn-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px}
+#pines-ui .pn-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+#pines-ui .pn-field.wide,#pines-ui .pn-check.wide{grid-column:1 / -1}
+#pines-ui .pn-field > span:first-child{font-size:12.5px;font-weight:700;color:var(--ink2)}
+#pines-ui .pn-field small{font-size:11.5px;color:var(--ink3);line-height:1.4}
+#pines-ui .pn-in{display:flex;align-items:center;gap:8px}
+#pines-ui .pn-in.num input{max-width:150px;font-family:var(--mono)}
+#pines-ui .pn-in em{font-style:normal;font-size:12.5px;color:var(--ink3)}
+#pines-ui .pn-check{display:flex;align-items:center;gap:8px;min-height:38px;font-size:13px;font-weight:600;cursor:pointer}
+#pines-ui .pn-check input{width:18px;height:18px;accent-color:var(--orange)}
+#pines-ui .pn-switch{display:flex;align-items:flex-start;gap:12px;cursor:pointer;position:relative}
+#pines-ui .pn-switch input{position:absolute;opacity:0;width:1px;height:1px}
+#pines-ui .pn-switch i{flex-shrink:0;position:relative;width:46px;height:28px;border-radius:999px;background:var(--line2);transition:background .2s}
+#pines-ui .pn-switch i::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s}
+#pines-ui .pn-switch input:checked + i{background:var(--green)}
+#pines-ui .pn-switch input:checked + i::after{transform:translateX(18px)}
+#pines-ui .pn-switch input:focus-visible + i{outline:2px solid var(--orange);outline-offset:2px}
+#pines-ui .pn-switch span{display:flex;flex-direction:column;gap:3px}
+#pines-ui .pn-switch b{font-size:15px}
+#pines-ui .pn-switch small{font-size:12.5px;color:var(--ink2);line-height:1.45}
+#pines-ui .pn-save{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#pines-ui .pn-msg{font-size:13px;font-weight:700;color:var(--ink2)}
+#pines-ui .pn-msg.ok{color:var(--green)}
+#pines-ui .pn-msg.bad{color:var(--red)}
+
+/* Inventario: una fila por pin */
+#pines-ui .pn-p-row{display:grid;grid-template-columns:auto minmax(0,1fr) 168px auto auto;align-items:center;gap:12px 16px}
+#pines-ui .pn-p-tx b{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:15px;font-weight:750}
+#pines-ui .pn-p-tx > span{display:block;font-size:12.5px;color:var(--ink2);margin-top:3px}
+#pines-ui .pn-field.sm > span:first-child{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3)}
+#pines-ui .pn-stock{display:flex;align-items:center;gap:6px}
+#pines-ui .pn-stock button{width:40px;height:40px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);color:var(--ink);font-family:var(--font);font-size:19px;line-height:1;cursor:pointer;flex:0 0 auto}
+#pines-ui .pn-stock button:disabled{opacity:.4;cursor:not-allowed}
+#pines-ui .pn-stock input{width:72px;height:40px;padding:0 6px;text-align:center;font-family:var(--mono);font-size:15px;font-weight:700;-moz-appearance:textfield}
+#pines-ui .pn-stock input::-webkit-outer-spin-button,#pines-ui .pn-stock input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+/* Editar / crear */
+#pines-ui .pn-card.edit{border-color:var(--orange)}
+#pines-ui .pn-edit{display:flex;align-items:flex-start;gap:18px}
+#pines-ui .pn-edit-f{flex:1;min-width:0;display:flex;flex-direction:column;gap:14px}
+
+@media (max-width:760px){
+  #pines-ui .sh-phead{gap:12px}
+  #pines-ui .sh-phead h1{font-size:22px}
+  #pines-ui .pn-grid{grid-template-columns:minmax(0,1fr)}
+  #pines-ui .pn-acts .set-btn{flex:1 1 calc(50% - 4px)}
+  #pines-ui .pn-top{flex-wrap:wrap}
+  #pines-ui .pn-p-row{grid-template-columns:auto minmax(0,1fr)}
+  #pines-ui .pn-p-row > .pn-field{grid-column:1 / -1}
+  #pines-ui .pn-p-row > .set-btn{grid-column:1 / -1;justify-self:start}
+  #pines-ui .pn-edit{flex-direction:column}
+}

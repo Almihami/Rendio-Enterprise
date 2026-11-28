@@ -1,0 +1,123 @@
+/* rx-aux-pines.css — Tienda de pines del tripulante (0181, 27-nov-2026).
+   Lo que el diseño base no trae: la tarjeta de Inicio, la grilla de pines, la
+   barra del total, la hoja «Tu reserva», «¡Reservado!» y Mis reservas.
+   Selectores #auxiliar-ui.rx-phone … y colores por tokens (claro y nocturno).
+   La tarjeta de Inicio es oscura en los dos temas (--rx-pass), por eso sus
+   textos van en claro fijo.
+   SIN animaciones propias: las entradas son las .rx-in del diseño. */
+
+/* ── Tarjeta de Inicio ─────────────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-pn-card{display:flex;align-items:center;gap:6px;width:100%;text-align:left;border:0;border-radius:24px;background:var(--rx-pass);color:var(--rx-on);padding:16px 8px 16px 18px;box-shadow:var(--rx-shadow),0 0 0 3px rgba(242,101,34,.28);cursor:pointer;font-family:inherit;flex-shrink:0}
+#auxiliar-ui.rx-phone .rx-pn-card.is-mine{padding:16px 18px}
+#auxiliar-ui.rx-phone .rx-pn-card-tx{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+#auxiliar-ui.rx-phone .rx-pn-card-tx > b{font-size:18px;font-weight:700;letter-spacing:-.3px}
+#auxiliar-ui.rx-phone .rx-pn-card-tx > span{font-size:13.5px;line-height:1.3;color:var(--rx-on2)}
+#auxiliar-ui.rx-phone .rx-pn-card-tx > em{font-style:normal;margin-top:8px;font-size:13.5px;font-weight:650;color:#FF9A5C;display:flex;align-items:center;gap:2px}
+#auxiliar-ui.rx-phone .rx-pn-chip{font-style:normal;font-size:10.5px;font-weight:750;letter-spacing:.6px;text-transform:uppercase;padding:3px 8px;border-radius:99px;background:var(--r-accent);color:#fff;margin-bottom:5px}
+#auxiliar-ui.rx-phone .rx-pn-mine-n{font-style:normal;margin-top:5px;font-size:12.5px;font-weight:650;color:#FFD9C2;background:rgba(242,101,34,.26);padding:3px 9px;border-radius:99px}
+#auxiliar-ui.rx-phone .rx-pn-card-im{position:relative;width:114px;height:108px;flex:none}
+#auxiliar-ui.rx-phone .rx-pn-card-im img{position:absolute;width:auto;height:auto;filter:drop-shadow(0 6px 10px rgba(0,0,0,.5))}
+#auxiliar-ui.rx-phone .rx-pn-card-im .i0{max-width:80px;max-height:86px;right:2px;bottom:4px;transform:rotate(6deg);z-index:2}
+#auxiliar-ui.rx-phone .rx-pn-card-im .i1{max-width:66px;max-height:64px;left:0;top:0;transform:rotate(-10deg)}
+#auxiliar-ui.rx-phone .rx-pn-card-im .i2{max-width:50px;max-height:44px;left:4px;bottom:2px;transform:rotate(-7deg);z-index:3}
+#auxiliar-ui.rx-phone .rx-pn-card-im.n1 .i0{max-width:96px;max-height:96px;right:8px;bottom:6px}
+
+/* ── La tienda ─────────────────────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-pn-link{border:0;background:none;color:var(--rx-acc);font-family:inherit;font-size:14px;font-weight:650;padding:8px 2px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer}
+#auxiliar-ui.rx-phone .rx-pn-link i{font-style:normal;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--r-accent);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}
+#auxiliar-ui.rx-phone .rx-pn-hero{display:flex;flex-direction:column;gap:8px;flex-shrink:0}
+#auxiliar-ui.rx-phone .rx-pn-hero-r{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+#auxiliar-ui.rx-phone .rx-pn-hero h2{font-family:var(--r-font-display);font-size:24px;line-height:1.15;font-weight:750;letter-spacing:-.5px;margin:0}
+#auxiliar-ui.rx-phone .rx-pn-hero-r b{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+#auxiliar-ui.rx-phone .rx-pn-hero p{font-size:13.5px;line-height:1.4;color:var(--r-text-2);margin:0}
+#auxiliar-ui.rx-phone .rx-pn-promo{display:flex;align-items:center;gap:8px;min-height:34px;padding:5px 10px 5px 6px;border-radius:11px;background:var(--r-accent-soft);color:var(--r-text);font-size:14px}
+#auxiliar-ui.rx-phone .rx-pn-promo i{font-style:normal;font-size:10.5px;font-weight:750;letter-spacing:.5px;text-transform:uppercase;background:var(--r-accent);color:#fff;padding:2px 7px;border-radius:99px}
+#auxiliar-ui.rx-phone .rx-pn-promo b{font-weight:750}
+#auxiliar-ui.rx-phone .rx-pn-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;flex-shrink:0}
+#auxiliar-ui.rx-phone .rx-pn-prod{position:relative;min-width:0;display:flex;flex-direction:column;gap:7px;padding:8px;border-radius:18px;background:var(--r-card);border:1px solid var(--r-border)}
+#auxiliar-ui.rx-phone .rx-pn-prod.on{border-color:var(--r-accent);box-shadow:0 0 0 1px var(--r-accent)}
+#auxiliar-ui.rx-phone .rx-pn-tile{position:relative;height:108px;border-radius:12px;background:var(--r-surface-2);display:grid;place-items:center}
+#auxiliar-ui.rx-phone .rx-pn-tile img{max-width:76%;max-height:88px;width:auto;height:auto;filter:drop-shadow(0 4px 6px rgba(27,23,18,.3))}
+#auxiliar-ui.rx-phone .rx-pn-noimg{color:var(--r-text-3);display:grid;place-items:center}
+#auxiliar-ui.rx-phone .rx-pn-prod.is-sold_out .rx-pn-tile img{filter:grayscale(1);opacity:.4}
+#auxiliar-ui.rx-phone .rx-pn-prod > b{font-size:14px;font-weight:650;letter-spacing:-.2px;padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#auxiliar-ui.rx-phone .rx-pn-add{height:38px;width:100%;border:0;border-radius:11px;background:var(--r-accent-soft);color:var(--rx-acc);font-family:inherit;font-size:13.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;transition:transform .12s,background .2s}
+#auxiliar-ui.rx-phone .rx-pn-add:active{transform:scale(.97)}
+#auxiliar-ui.rx-phone .rx-pn-add.on{background:var(--r-accent);color:#fff}
+#auxiliar-ui.rx-phone .rx-pn-add:disabled{background:var(--r-surface-2);color:var(--r-text-3);cursor:default;transform:none}
+#auxiliar-ui.rx-phone .rx-pn-tag{position:absolute;top:6px;left:6px;font-style:normal;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:99px}
+#auxiliar-ui.rx-phone .rx-pn-tag.low{background:var(--r-warn-soft);color:var(--rx-warn)}
+#auxiliar-ui.rx-phone .rx-pn-tag.soon{background:var(--r-info-soft);color:var(--rx-info)}
+
+/* La barra del total: aparece al agregar el primer pin. */
+#auxiliar-ui.rx-phone .rx-pn-bar{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px calc(12px + var(--rx-bot,0px)) 20px;background:var(--rx-glass);-webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);border-top:1px solid var(--r-border)}
+#auxiliar-ui.rx-phone .rx-pn-bar.is-off{display:none}
+#auxiliar-ui.rx-phone .rx-pn-bar small{display:block;font-size:12px;font-weight:600;color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-pn-tot{font-size:19px;font-weight:750;letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+#auxiliar-ui.rx-phone .rx-pn-tot s{font-size:13px;font-weight:550;color:var(--r-text-3);margin-left:6px}
+#auxiliar-ui.rx-phone .rx-pn-bar .rx-btn{width:auto;height:46px;padding:0 24px;border-radius:14px}
+
+/* Cargando / vacío / error */
+#auxiliar-ui.rx-phone .rx-pn-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:52px 18px;text-align:center;color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-pn-empty .rx-ic{color:var(--r-text-3);margin-bottom:4px}
+#auxiliar-ui.rx-phone .rx-pn-empty b{font-size:16px;color:var(--r-text)}
+#auxiliar-ui.rx-phone .rx-pn-empty span{font-size:14px;line-height:1.45}
+#auxiliar-ui.rx-phone .rx-pn-empty .rx-btn{width:auto;height:46px;padding:0 22px;margin-top:12px}
+
+/* ── Hoja «Tu reserva» ─────────────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-pn-lines{display:flex;flex-direction:column}
+#auxiliar-ui.rx-phone .rx-pn-line{display:flex;align-items:center;gap:12px;padding:9px 0}
+#auxiliar-ui.rx-phone .rx-pn-line + .rx-pn-line{border-top:1px solid var(--r-border)}
+#auxiliar-ui.rx-phone .rx-pn-thumb{width:54px;height:54px;border-radius:13px;background:var(--r-surface-2);display:grid;place-items:center;flex:none}
+#auxiliar-ui.rx-phone .rx-pn-thumb img{max-width:42px;max-height:42px;width:auto;height:auto;filter:drop-shadow(0 2px 4px rgba(27,23,18,.3))}
+#auxiliar-ui.rx-phone .rx-pn-thumb.sm{width:42px;height:42px;border-radius:11px}
+#auxiliar-ui.rx-phone .rx-pn-thumb.sm img{max-width:32px;max-height:32px}
+#auxiliar-ui.rx-phone .rx-pn-line-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+#auxiliar-ui.rx-phone .rx-pn-line-tx b{font-size:15px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#auxiliar-ui.rx-phone .rx-pn-line-tx span{font-size:13.5px;color:var(--r-text-2);font-variant-numeric:tabular-nums}
+#auxiliar-ui.rx-phone .rx-pn-line .rx-step-ctl button:disabled{opacity:.4;cursor:default}
+#auxiliar-ui.rx-phone .rx-pn-sum{display:flex;flex-direction:column;gap:7px;padding-top:11px;border-top:1px solid var(--r-border);font-variant-numeric:tabular-nums}
+#auxiliar-ui.rx-phone .rx-pn-sum div{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:14.5px}
+#auxiliar-ui.rx-phone .rx-pn-sum .pro{color:var(--rx-acc);font-weight:650}
+#auxiliar-ui.rx-phone .rx-pn-sum .solo{font-size:13px;color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-pn-sum .tot{font-size:20px;font-weight:750;letter-spacing:-.3px}
+#auxiliar-ui.rx-phone .rx-pn-note{display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border-radius:14px;background:var(--r-accent-soft);color:var(--r-text);font-size:13.5px;line-height:1.4}
+#auxiliar-ui.rx-phone .rx-pn-note .rx-ic{color:var(--r-accent);flex:none;margin-top:1px}
+#auxiliar-ui.rx-phone .rx-pn-note p{margin:0}
+#auxiliar-ui.rx-phone .rx-pn-err{font-size:13.5px;line-height:1.45;padding:10px 12px;border-radius:12px;background:var(--r-error-soft);color:var(--r-error)}
+#auxiliar-ui.rx-phone .rx-pn-err[hidden]{display:none}
+
+/* ── «¡Reservado!» ─────────────────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-pn-ok .rx-body{padding-top:calc(var(--rx-top,0px) + 40px);gap:24px}
+#auxiliar-ui.rx-phone .rx-pn-ok-top{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;flex-shrink:0}
+#auxiliar-ui.rx-phone .rx-pn-ok-top h2{font-family:var(--r-font-display);font-size:28px;font-weight:750;letter-spacing:-.6px;margin:0}
+#auxiliar-ui.rx-phone .rx-pn-ok-top p{font-size:15.5px;line-height:1.4;color:var(--r-text-2);margin:0}
+#auxiliar-ui.rx-phone .rx-pn-ok-top p b{color:var(--r-text)}
+#auxiliar-ui.rx-phone .rx-pn-seal{position:relative;width:176px;height:176px;border-radius:50%;background:var(--r-surface-2);display:grid;place-items:center;margin-bottom:14px}
+#auxiliar-ui.rx-phone .rx-pn-seal img{max-width:122px;max-height:126px;width:auto;height:auto;filter:drop-shadow(0 8px 12px rgba(27,23,18,.3))}
+#auxiliar-ui.rx-phone .rx-pn-seal.n2 img{position:absolute}
+#auxiliar-ui.rx-phone .rx-pn-seal.n2 .i0{max-width:100px;max-height:104px;right:18px;bottom:20px;transform:rotate(5deg);z-index:2}
+#auxiliar-ui.rx-phone .rx-pn-seal.n2 .i1{max-width:104px;max-height:96px;left:12px;top:28px;transform:rotate(-9deg)}
+#auxiliar-ui.rx-phone .rx-pn-seal-ok{position:absolute;right:4px;bottom:4px;width:44px;height:44px;border-radius:50%;background:var(--r-success);color:#fff;display:grid;place-items:center;border:4px solid var(--r-bg);z-index:3}
+#auxiliar-ui.rx-phone .rx-pn-next{display:flex;align-items:flex-start;gap:12px;padding:14px}
+#auxiliar-ui.rx-phone .rx-pn-next + .rx-pn-next{border-top:1px solid var(--r-border)}
+#auxiliar-ui.rx-phone .rx-pn-next > i{font-style:normal;width:26px;height:26px;border-radius:50%;background:var(--r-accent-soft);color:var(--rx-acc);font-size:13px;font-weight:750;display:grid;place-items:center;flex:none}
+#auxiliar-ui.rx-phone .rx-pn-next > span{display:flex;flex-direction:column;gap:2px;min-width:0}
+#auxiliar-ui.rx-phone .rx-pn-next b{font-size:15px}
+#auxiliar-ui.rx-phone .rx-pn-next span span{font-size:13.5px;line-height:1.35;color:var(--r-text-2)}
+
+/* ── Mis reservas ──────────────────────────────────────────────────────────── */
+#auxiliar-ui.rx-phone .rx-pn-res{display:flex;flex-direction:column;gap:9px;padding:14px;border-radius:18px;background:var(--r-card);border:1px solid var(--r-border);flex-shrink:0}
+#auxiliar-ui.rx-phone .rx-pn-res.is-cancelled{opacity:.78}
+#auxiliar-ui.rx-phone .rx-pn-res-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#auxiliar-ui.rx-phone .rx-pn-res-h > span{font-size:13px;color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-pn-st{font-style:normal;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
+#auxiliar-ui.rx-phone .rx-pn-st.reserved{background:var(--r-warn-soft);color:var(--rx-warn)}
+#auxiliar-ui.rx-phone .rx-pn-st.delivered{background:var(--r-success-soft);color:var(--rx-ok)}
+#auxiliar-ui.rx-phone .rx-pn-st.cancelled{background:var(--r-surface-2);color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-pn-res-it{display:flex;align-items:center;gap:10px;min-width:0}
+#auxiliar-ui.rx-phone .rx-pn-res-it b{font-size:14.5px;font-weight:650;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#auxiliar-ui.rx-phone .rx-pn-res-it em{font-style:normal;font-size:13.5px;color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-pn-res-f{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-top:9px;border-top:1px solid var(--r-border)}
+#auxiliar-ui.rx-phone .rx-pn-res-f span{font-size:13px;line-height:1.35;color:var(--r-text-2)}
+#auxiliar-ui.rx-phone .rx-pn-res-f b{font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
