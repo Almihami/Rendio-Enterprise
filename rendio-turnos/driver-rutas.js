@@ -35,6 +35,7 @@
   // ── Constantes ────────────────────────────────────────────────────────────────
   const MDE = { lat: 6.1715, lng: -75.4270 };
   const PING_MS = 6000;                       // cada cuánto se escribe la posición
+  const FL_POLL_MS = 120000;                  // cada cuánto se relee el estado de los vuelos
   const FAR_APT_KM = 1.5;                     // «Llegué al aeropuerto» lejos de JMC
   const FAR_HOME_KM = 0.6;                    // «Llegué» lejos de la casa
   const RT_ON = ['onboard', 'nocode', 'delivered'];
@@ -577,12 +578,15 @@
     bindOnce();
     if (active()) gpsStart();
     syncUnread();
+    // 27-nov-2026 (batería): con la app atrás no se consulta nada. Los sin leer, el
+    // chat de la parada y los vuelos seguían pidiendo a la red sin que nadie los
+    // viera; al volver a la app se traen de una (alVolver).
     if (RT.unreadPoll) clearInterval(RT.unreadPoll);
-    RT.unreadPoll = setInterval(syncUnread, 15000);
+    RT.unreadPoll = setInterval(() => { if (!document.hidden) syncUnread(); }, 15000);
     if (!RT.tick) RT.tick = setInterval(tick, 1000);
     // Cómo vienen los vuelos (la base los consulta cada 15 min en la última hora).
     if (RT.flPoll) clearInterval(RT.flPoll);
-    RT.flPoll = setInterval(loadFlights, 120000);
+    RT.flPoll = setInterval(() => { if (!document.hidden) loadFlights(); }, FL_POLL_MS);
     if (RT.vivoPoll) clearInterval(RT.vivoPoll);
     RT.vueltas.forEach((v) => { RT.avisadas[v.assignmentId] = firmaV(v); });   // lo que ya está a la vista no se anuncia
     RT.vivoPoll = setInterval(vivoTick, 30000);
@@ -1857,7 +1861,7 @@
     }
     chatSync();
     if (RT.chatPoll) clearInterval(RT.chatPoll);
-    RT.chatPoll = setInterval(chatSync, 5000);
+    RT.chatPoll = setInterval(() => { if (!document.hidden) chatSync(); }, 5000);
   }
   function bubbleHTML(m, pop) {
     const mine = m.sender_role === 'driver';
@@ -1897,7 +1901,12 @@
     if (!RT.chat || RT.chat.rid !== c.rid) return;
     RT.chatMsgs = msgs || [];
     chatPaint(RT.chatMsgs);
-    if (Api.markReservationMessagesRead) { try { await Api.markReservationMessagesRead(c.rid); } catch (e) { /* */ } }
+    // «Leído» solo si hay algo de otro sin leer PARA MÍ (27-nov-2026): antes se
+    // marcaba en cada vuelta del sondeo (cada 5 s) aunque no hubiera llegado nada.
+    // Si la marca falla, el mensaje sigue sin leer y se reintenta en la siguiente.
+    const yo = RT.profile && RT.profile.id;
+    const porLeer = !Api.chatUnreadFor || RT.chatMsgs.some((m) => m.sender_role !== 'driver' && Api.chatUnreadFor(m, yo));
+    if (porLeer && Api.markReservationMessagesRead) { try { await Api.markReservationMessagesRead(c.rid); } catch (e) { /* */ } }
     RT.unread[c.rid] = 0;
   }
   async function chatSend(text) {
@@ -2148,7 +2157,7 @@
     flPlane(pos);
   }
   async function flightTick() {
-    if (!RT.fl || !RT.sheet || RT.sheet.kind !== 'flight') return;
+    if (!RT.fl || !RT.sheet || RT.sheet.kind !== 'flight' || document.hidden) return;
     await loadFlights();
     flightPaint();
   }
@@ -2459,6 +2468,7 @@
 
   // Estado de los vuelos (0099): el chip aparece cuando llega el dato.
   async function loadFlights() {
+    RT.flAt = Date.now();   // para no repetirla al volver a la app si se acaba de traer
     try {
       if (!window.RendioVuelos || !RT.vueltas.length) return;
       const days = [...new Set(RT.vueltas.flatMap((v) => [v.day].concat(crew(v).map((l) => l.reqDay))).filter(Boolean))];
@@ -2713,12 +2723,23 @@
     repaintBase();
   }
 
+  // Al volver a la app: lo que con la app atrás dejó de consultarse se trae de una
+  // (las vueltas, los sin leer, el chat de la parada si está abierto y, si ya les
+  // tocaba, los vuelos).
+  function alVolver() {
+    if (document.hidden || !RT.open) return;
+    vivoTick();
+    syncUnread();
+    if (RT.chat) chatSync();
+    if (Date.now() - (RT.flAt || 0) >= FL_POLL_MS) loadFlights();
+  }
+
   // ── Eventos (un solo listener delegado) ───────────────────────────────────────
   function bindOnce() {
     if (RT.bound) return;
     const root = host(); if (!root) return;
     RT.bound = true;
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && RT.open) vivoTick(); });   // al volver a la app, se trae ya
+    document.addEventListener('visibilitychange', alVolver);   // al volver a la app, se trae ya
     sueltaBind(root);   // deslizar para soltar (fila de JMC)
     root.addEventListener('click', (e) => {
       const el = e.target.closest('[data-rt]'); if (!el || !root.contains(el)) return;

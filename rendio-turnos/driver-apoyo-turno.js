@@ -87,7 +87,8 @@
   }
 
   if (typeof window !== 'undefined') {
-    setInterval(() => { if (esConductor()) render(true).catch(() => {}); }, REFRESCA_MS);
+    // Con la app atrás no se consulta (27-nov-2026, batería): al volver se trae de una (abajo).
+    setInterval(() => { if (esConductor() && !document.hidden) render(true).catch(() => {}); }, REFRESCA_MS);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && esConductor()) render(true).catch(() => {}); });
     window.RendioApoyo = { render, activo, conductor, _texto: texto, _turnoDe: turnoDe, _bogota: bogota, _estado: A };
   }

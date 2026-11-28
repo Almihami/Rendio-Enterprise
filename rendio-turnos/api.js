@@ -3998,9 +3998,21 @@
     // Cada grupo en su escalón: sin 0086 la ruta se pinta igual, sin esos datos.
     // estimated_arrival_at (0003, la escribe saveRoutePlan al publicar) es la hora
     // estimada de CADA parada: en una llegada, la entrega en cada casa («llega aprox.»).
+    //
+    // Solo desde el inicio del día de turno (27-nov-2026), igual que
+    // listLiveOperation: como ninguna vuelta pasa a 'completed', sin este filtro
+    // cada refresco (30 s en «Mi día», 60 s en Inicio, y cada vez que se vuelve a
+    // la app) bajaba TODAS las vueltas de la historia del conductor, para quedarse
+    // con las de hoy. Es el mismo corte del filtro de abajo (_opDay >= today),
+    // hecho en la base; el de abajo se queda. Día operativo: la madrugada (antes
+    // del corte) cuenta como la noche anterior.
+    const corte = await _corteMadrugada();
+    const today = _opDay(new Date().toISOString(), corte);
+    const desde = new Date(Date.parse(today + 'T00:00:00-05:00') + corte * 60000).toISOString();
     const rv = (extra) => sb.from('route_assignments')
       .select(`id, direction, planned_start_at, status, route_stops(id, stop_order, reservation_id, status, actual_arrival_at, estimated_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, residence_unit${extra}, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))`)
       .eq('driver_profile_id', dpid)
+      .gte('planned_start_at', desde)
       .order('planned_start_at', { ascending: true });
     // boarding_check (0097): si subió con código o «sin código», para pintarlo igual tras recargar.
     // 0121: de reserva (hotel o aeropuerto), escalón propio encima.
@@ -4013,13 +4025,13 @@
     if (error) ({ data, error } = await sb.from('route_assignments')
       .select('id, direction, planned_start_at, status, route_stops(id, stop_order, reservation_id, status, actual_arrival_at, reservations(pickup_address, pickup_latitude, pickup_longitude, required_arrival_at, calculated_pickup_at, notes, auxiliar_profiles(profiles(id, full_name, phone)), flights(flight_number)))')
       .eq('driver_profile_id', dpid)
+      .gte('planned_start_at', desde)
       .order('planned_start_at', { ascending: true }));
     if (error) return null;
     // Día operativo MÁS PRÓXIMO con ruta (hoy si la hay; si no, el siguiente).
     // Operativo: la madrugada (antes del corte) cuenta como la noche anterior,
     // así la vuelta de la 1 a. m. es la última del turno PM, no la primera de mañana.
-    const corte = await _corteMadrugada();
-    const today = _opDay(new Date().toISOString(), corte);
+    // (`corte` y `today` ya salieron arriba, para el filtro de la consulta.)
     const MDE = { name: 'Aeropuerto JMC', addr: 'Terminal de pasajeros · José María Córdova', lat: 6.1715, lng: -75.4270 };
     const active = (data || []).filter(ra => ra.planned_start_at && ra.status !== 'completed' && _opDay(ra.planned_start_at, corte) >= today);
     if (!active.length) return [];
