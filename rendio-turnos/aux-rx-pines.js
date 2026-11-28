@@ -9,7 +9,8 @@
 // PANTALLAS (todas por AuxShell)
 //   · tarjeta en Inicio (enganche 'home.card'): nombre, el texto que pone el
 //     jefe y «Ver la tienda». SIN precio ni promo (Harold: «no me gusta que salga
-//     el precio al principio»); la promo sale al entrar;
+//     el precio al principio»); la promo sale al entrar. Con la tienda en «solo
+//     la tarjeta» (0182) es un anuncio: no dice «Ver la tienda» ni abre nada;
 //   · 'pines'       → la tienda: precio, promo y los pines con su estado
 //     (Agregar / «Próximamente» / «Agotado» / «Quedan N»), y abajo la barra con
 //     el total cuando hay algo agregado;
@@ -160,13 +161,22 @@
     const chip = any('available') ? 'Nuevo' : any('soon') ? 'Próximamente' : 'Agotados';
     const imgs = s.products.filter(p => p.image).slice(0, 3)
       .map((p, i) => '<img class="i' + i + '" src="' + esc(p.image) + '" alt="" decoding="async">').join('');
-    return '<button type="button" class="rx-pn-card rx-in" style="--d:' + d + '" data-rx="pn-open">'
-      + '<span class="rx-pn-card-tx"><i class="rx-pn-chip">' + esc(chip) + '</i><b>' + esc(s.title) + '</b>'
+    const tx = '<span class="rx-pn-card-tx"><i class="rx-pn-chip">' + esc(s.cardOnly ? 'Próximamente' : chip) + '</i><b>' + esc(s.title) + '</b>'
       + (s.cardText ? '<span>' + esc(s.cardText) + '</span>' : '')
-      + mine
-      + '<em>Ver la tienda ' + ic('ChevronRight', 15) + '</em></span>'
-      + (imgs ? '<span class="rx-pn-card-im n' + Math.min(3, s.products.filter(p => p.image).length) + '">' + imgs + '</span>' : '')
-      + '</button>';
+      + mine;
+    const im = imgs ? '<span class="rx-pn-card-im n' + Math.min(3, s.products.filter(p => p.image).length) + '">' + imgs + '</span>' : '';
+    // Solo la tarjeta (0182): es un anuncio. No abre la tienda ni dice «Ver la
+    // tienda» (Harold: «sin ver la tienda, sin poder seleccionar»). Si ya tiene
+    // pines por recibir, lleva a sus reservas para que no se le pierdan.
+    if (s.cardOnly) {
+      if (s.myPending > 0) {
+        return '<button type="button" class="rx-pn-card rx-in" style="--d:' + d + '" data-rx="pn-mine">'
+          + tx + '<em>Ver mis reservas ' + ic('ChevronRight', 15) + '</em></span>' + im + '</button>';
+      }
+      return '<div class="rx-pn-card is-teaser rx-in" style="--d:' + d + '">' + tx + '</span>' + im + '</div>';
+    }
+    return '<button type="button" class="rx-pn-card rx-in" style="--d:' + d + '" data-rx="pn-open">'
+      + tx + '<em>Ver la tienda ' + ic('ChevronRight', 15) + '</em></span>' + im + '</button>';
   }
   const HOME_CARD = {
     id: 'pines', priority: 10,
@@ -213,6 +223,8 @@
     if (s === undefined) return '<div class="rx-pn-empty"><span>Cargando la tienda…</span></div>';
     if (s === null) return emptyHTML('CloudOff', 'No pudimos abrir la tienda', C.err || 'Revisa tu conexión e inténtalo otra vez.', true);
     if (!s.enabled) return emptyHTML('Clock', 'La tienda no está abierta por ahora', s.myPending > 0 ? 'Tus reservas siguen guardadas en «Mis reservas».' : 'Vuelve pronto.');
+    // Solo la tarjeta (0182): aquí no se llega tocando, pero por si acaso.
+    if (s.cardOnly) return emptyHTML('Clock', 'La tienda todavía no está abierta', 'Pronto vas a poder reservar.');
     if (!s.products.length) return emptyHTML('Clock', 'Todavía no hay pines en la tienda', 'Vuelve pronto.');
     const promo = s.promo.on
       ? '<div class="rx-pn-promo"><i>Promo</i><span>Lleva ' + esc(s.promo.qty) + ' por <b>' + esc(money(s.promo.priceCOP)) + '</b></span></div>' : '';
@@ -480,7 +492,7 @@
     sh.register('pines-ok', OK);
     sh.register('pines-mias', MINE);
     sh.hook('home.card', HOME_CARD);
-    sh.action('pn-open', () => { const s = SH(); if (s) s.push('pines', {}); });
+    sh.action('pn-open', () => { const s = SH(); if (s && !(C.store && C.store.cardOnly)) s.push('pines', {}); });
     sh.action('pn-mine', () => { const s = SH(); if (s) s.push('pines-mias', {}); });
     sh.action('pn-ok-mine', () => { const s = SH(); if (!s) return; s.pop(); s.push('pines-mias', {}); });
     sh.action('pn-toggle', toggleAct);

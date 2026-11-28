@@ -2,7 +2,9 @@
 //
 // Todo lo que habla con la base para los pines pasa por aquí (window.ApiPines).
 // La base es 0181_tienda_de_pines.sql:
-//   · la tienda nace APAGADA; el jefe la enciende desde su pantalla Pines;
+//   · la tienda nace APAGADA; el jefe la enciende desde su pantalla Pines. Con
+//     0182 tiene un término medio, «solo la tarjeta»: el tripulante ve el anuncio
+//     en su Inicio y todavía no puede entrar ni reservar;
 //   · en la app NO se paga: reservar aparta las unidades del inventario y les
 //     avisa a los jefes. El pago y la entrega son en persona;
 //   · cada pin tiene un estado: disponible, «Próximamente» (se ve y no se
@@ -146,6 +148,8 @@
     const on = d.enabled === true;
     return {
       enabled: on,
+      // 0182: encendida pero solo se ve la tarjeta de Inicio (sin entrar ni reservar).
+      cardOnly: on && d.card_only === true,
       myPending: int(d.my_pending),
       title: d.title || 'Pines',
       cardText: d.card_text || '',
@@ -171,6 +175,10 @@
     if (!s) return null;
     return {
       enabled: s.enabled === true,
+      // 0182. En una base que solo tiene 0181 el campo no llega: ahí no existe
+      // «solo la tarjeta» y la pantalla del jefe no lo ofrece.
+      cardOnly: s.card_only === true,
+      cardOnlySupported: s.card_only !== undefined,
       title: s.title || '',
       cardText: s.card_text || '',
       storeNote: s.store_note || '',
@@ -259,7 +267,7 @@
 
   async function adminSaveSettings(patch) {
     const p = pick(patch, {
-      enabled: 'enabled', title: 'title', cardText: 'card_text', storeNote: 'store_note',
+      enabled: 'enabled', cardOnly: 'card_only', title: 'title', cardText: 'card_text', storeNote: 'store_note',
       contactName: 'contact_name', unitPriceCOP: 'unit_price_cop', promoEnabled: 'promo_enabled',
       promoQty: 'promo_qty', promoPriceCOP: 'promo_price_cop', lowStockAt: 'low_stock_at', maxUnits: 'max_units',
     });
