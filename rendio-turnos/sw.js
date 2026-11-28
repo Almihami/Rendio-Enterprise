@@ -6,7 +6,7 @@
 //   - Llamadas a Supabase: NUNCA cachear (datos sensibles + necesitan estar
 //     frescos siempre). Pasan directo a la red.
 
-const CACHE_VERSION = 'rendio-turnos-v285';
+const CACHE_VERSION = 'rendio-turnos-v286';
 const OFFLINE_URL = '/offline.html';
 const APP_SHELL = [
   '/',
@@ -37,6 +37,7 @@ const APP_SHELL = [
   '/chat-turno.js',
   '/api-cobro.js',
   '/api-puntos.js',
+  '/api-pines.js',
   // Estado de vuelos (0099).
   '/api-vuelos.js',
   '/vuelos-ui.js',
@@ -105,10 +106,12 @@ const APP_SHELL = [
   '/aux-rx-puntos.js',
   '/aux-rx-coord.js',
   '/aux-rx-vuelo.js',
+  '/aux-rx-pines.js',
   '/admin-chat.js',
   '/admin-coordinacion.js',
   '/admin-cobro.js',
   '/admin-puntos.js',
+  '/admin-pines.js',
   '/admin-acomodar.js',
   '/admin-cadena.js',
   '/admin-whatsapp.js',
@@ -132,6 +135,7 @@ const APP_SHELL = [
   '/rx-aux-perfil.css',
   '/rx-aux-pagos.css',
   '/rx-aux-puntos.css',
+  '/rx-aux-pines.css',
   '/rx-aux-coord.css',
   '/rx-aux-onboard.css',
   '/rt-conductor.css',
@@ -143,6 +147,7 @@ const APP_SHELL = [
   '/admin-cobro.css',
   '/admin-calificaciones.css',
   '/admin-puntos.css',
+  '/admin-pines.css',
   '/admin-inspecciones.css',
   '/admin-whatsapp.css',
   '/admin-conjuntos.css',
@@ -152,6 +157,12 @@ const APP_SHELL = [
   '/manifest.json',
   '/assets/navidad/telon.svg',
   '/assets/navidad/cenefa.svg',
+  '/assets/pines/pinguino-saludo.webp',
+  '/assets/pines/pinguino-gafas.webp',
+  '/assets/pines/alas-r.webp',
+  '/assets/pines/vaso-cafe.webp',
+  '/assets/pines/gorra-piloto.webp',
+  '/assets/pines/cola-avion.webp',
   '/assets/rendio-r.svg',
   '/assets/logo-enterprise.png',
   '/assets/logo-icon.svg',

@@ -590,6 +590,13 @@
     // Accesos rápidos (--d:1).
     h += qaHTML(err ? [] : up, err ? null : live, suspended);
 
+    // Tarjetas de módulos (0181: la tienda de pines). A diferencia del anzuelo
+    // caben varias; como él, nunca con un viaje en curso. Cada una decide en su
+    // when() si le toca.
+    if (!live && !err) {
+      hooksOf('home.card', hctx).forEach(k => { h += hookOut(k, hctx); });
+    }
+
     // Anzuelo: uno solo y nunca con un viaje en curso (D15).
     if (!live && !err) {
       const hk = hooksOf('home.hook', hctx)[0];

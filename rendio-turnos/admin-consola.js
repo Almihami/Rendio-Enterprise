@@ -79,6 +79,8 @@
           { id: 'personas', name: 'Tripulantes', icon: 'm-personas', desc: 'Los TCP que se registraron solos: aerolínea, punto de recogida, sus dos unidades, la antigüedad con Rendio y su cuenta (contraseña, suspender o restaurar).', tab: 'tripulantes' },
           { id: 'cobro', name: 'Cuentas de cobro', icon: 'i-doc', desc: 'La mensualidad de cada tripulante: estado, comprobantes por revisar, marcar pagado y los datos de pago de la organización.', tab: 'cobro', need: 'renderCobro' },
           { id: 'puntos', name: 'Rendio Points', icon: 'i-gift', desc: 'Encender el programa, los valores de cada acción y los canjes por cumplir.', tab: 'puntos', need: 'renderPuntos' },
+          // 27-nov-2026 (0181): los pines que los tripulantes reservan desde su app.
+          { id: 'pines', name: 'Pines', icon: 'm-pines', desc: 'Las reservas de pines de los tripulantes para entregar, el inventario de cada pin y los ajustes de la tienda (precio, promo, encenderla).', tab: 'pines', need: 'renderPines' },
         ] },
         { id: 'data', name: 'Análisis', icon: 'g-data', desc: 'Reportes', items: [
           // 28-oct-2026 (Camilo): «lo de calificadas ponlo en otro lado, de servicio al
@@ -106,7 +108,7 @@
   // El "!" del aceite se mudó de Ajustes a Flota el 2026-09-11, junto con los carros:
   // una alerta tiene que alumbrar donde está el botón que la apaga. El id del badge
   // (oil-badge) NO cambia — setOilBadge lo busca por id en admin-turnos-activos.js.
-  const SIDEBAR_BADGE_IDS = { approvals: 'pending-badge', inspections: 'inspections-badge', shifts: 'shifts-badge', flota: 'oil-badge', coordinacion: 'coord-badge' };
+  const SIDEBAR_BADGE_IDS = { approvals: 'pending-badge', inspections: 'inspections-badge', shifts: 'shifts-badge', flota: 'oil-badge', coordinacion: 'coord-badge', pines: 'pines-badge' };
 
   // ¿La entrada se muestra? Las que traen `need` dependen de un módulo que
   // exporta esa función por window (rediseño del auxiliar): sin él, no se
@@ -168,6 +170,8 @@
     try { refreshOilBadge(); } catch (e) {}
     // 17-nov-2026: lo que los tripulantes escribieron y ningún jefe ha leído.
     try { const rc = window.renderCoordinacion; if (rc && typeof rc.badge === 'function') rc.badge(); } catch (e) {}
+    // 27-nov-2026 (0181): reservas de pines que ningún jefe ha visto.
+    try { const rp = window.renderPines; if (rp && typeof rp.badge === 'function') rp.badge(); } catch (e) {}
   }
 
   // Actualiza el breadcrumb (Espacio / Módulo) de la barra superior.
